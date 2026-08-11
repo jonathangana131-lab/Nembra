@@ -1,0 +1,78 @@
+name: TEMP V14 Private Identity Final Name Sol
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-final-name-after-crash-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-identity-final-name-after-crash-sol-20260811
+          fetch-depth: 0
+      - name: Bind exact parent and fetch expected-red witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 82029557df3e62920e455ee5c99200241cb4c134 HEAD
+          test "$(git rev-parse HEAD:Scripts/provision_capture_tuya_identity_writer.py)" = 86fad360144fed7b26937476f6cd8f4caeba9831
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git fetch --no-tags origin adversarial/v14-private-identity-final-name-race-2874-sol-20260811
+          git cat-file -e 692bed2ad27f154b782eb04f980b3ad0c1bbbee9^{commit}
+      - name: Materialize final-name repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_materialize_private_identity_final_name_sol.py
+      - name: Validate complete private-identity publication suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e scripts/ci/tmp_materialize_private_identity_final_name_sol.py
+          test ! -e .github/workflows/tmp-v14-private-identity-final-name-sol.yml
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+          /usr/bin/python3 Scripts/provision_capture_tuya_identity_writer.py --self-test
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          /bin/rm -rf -- Scripts/__pycache__ scripts/ci/tests/__pycache__
+          git diff --check
+      - name: Verify clean permanent scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          /usr/bin/python3 - <<'PY'
+          import subprocess
+          expected = {
+              "Scripts/provision_capture_tuya_identity_writer.py",
+              "Scripts/provision_capture_tuya_identity.sh",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift",
+              ".github/workflows/capture-private-identity-publication-races-redteam.yml",
+              "scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py",
+              "scripts/ci/tmp_materialize_private_identity_final_name_sol.py",
+              ".github/workflows/tmp-v14-private-identity-final-name-sol.yml",
+          }
+          actual = set(subprocess.check_output(["git", "diff", "--cached", "--name-only"], text=True).splitlines())
+          if actual != expected:
+              raise SystemExit(f"unexpected materialized path set: {sorted(actual)}")
+          PY
+      - name: Publish clean successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra V14 Sol"
+          git config user.email "nembra-v14-sol@users.noreply.github.com"
+          git commit -m "Capture: bind private identity final destination"
+          git push origin HEAD:repair/v14-private-identity-final-name-after-crash-sol-20260811
