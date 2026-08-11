@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "064530-integration-merged-v15",
+  "type": "MERGED",
+  "workerId": "sol-20260811-rv2804",
+  "laneId": "swarm-control-plane-foundation",
+  "message": "PR #2804 V15 merged from exact reviewed head 9851a9de62cfc3a0be1fcb5014063bc52a2f84db after green Swarm Control Plane Shadow and Xcode 27 exact-head QA. Main observed at merge commit 3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc.",
+  "createdAt": "2026-08-11T06:45:30Z",
+  "data": {
+    "pr": 2804,
+    "reviewedHeadSHA": "9851a9de62cfc3a0be1fcb5014063bc52a2f84db",
+    "mergeSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+    "shadowRun": 31465265676,
+    "xcodeRun": 31465265686
+  }
+}
