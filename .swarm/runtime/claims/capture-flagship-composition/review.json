@@ -9,7 +9,7 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:52:00Z",
-  "lastHeartbeatAt": "2026-08-11T11:52:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:02:48Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-two-file-closure-sol-20260811",
   "pr": 2891,
