@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "212400-blocker-final-go-whole-tree-3024",
+  "type": "BLOCKER_FOUND",
+  "workerId": "sol-20260811-1404m2",
+  "laneId": "capture-flagship-composition",
+  "message": "Critical exact-current adversarial evidence invalidates the Final-GO ingredient embedded in composition #3023. PR #3024 exact c8ecaaa9717c685af05449e1b2c33c2c91d3c216 run 31537399059 is terminal SUCCESS as an exploit-positive whole-tree audit TOCTOU witness against #2921 exact 471cc025b332f4df8b43a98d709710aeb4e0698f: a tracked pathname can be replaced after its descriptor-bound acceptance but before overall _audit_candidate_tree returns, leaving the final raw walk unable to detect changed tracked bytes. #3023 exact 29f58fd3919ea2035a9cf6846b2e3e8a2ecaf226 was immediately converted to DRAFT and must not be promoted regardless of green composition CI. Require a repaired Final-GO successor that closes/replays #3024, then deliberate recomposition and complete exact-head acceptance reset. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T21:24:00Z"
+}
