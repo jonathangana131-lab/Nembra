@@ -9,12 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:25:20Z",
-  "lastHeartbeatAt": "2026-08-11T21:25:20Z",
+  "lastHeartbeatAt": "2026-08-11T21:29:00Z",
   "leaseSeconds": 2700,
-  "branch": "",
+  "branch": "repair/v14-final-go-whole-tree-custody-sol-1404m2",
   "pr": null,
   "sourceSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
   "currentHeadSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
   "takeoverFromWorkerId": "sol-20260811-1311qy",
-  "takeoverReason": "Generation-3 implementation claim was released after prior acceptance. New exact-current expected-red #3024 run 31537399059 mechanically defeats 471cc025 whole-tree audit atomicity after per-subject admission. Recover the free primary to close that exact production invariant, preserve all inherited descriptor/raw-tree/Git-object authority, replay the unchanged witness, and return a newly accepted Final-GO ingredient for flagship recomposition. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-3 implementation claim was released after prior acceptance. New exact-current expected-red #3024 run 31537399059 mechanically defeats 471cc025 whole-tree audit atomicity after per-subject admission. Recover the free primary to close that exact production invariant, preserve all inherited descriptor/raw-tree/Git-object authority, replay the unchanged witness, and return a newly accepted Final-GO ingredient for flagship recomposition. PHYSICAL NO-GO.",
+  "checkpoint": "Repair branch created directly from defeated exact parent 471cc025. Selected architecture: hold descriptor identity for every tracked file/directory across audit and the inherited parent build; on Darwin arm fail-closed kqueue vnode mutation history before per-subject admission so replace/restore cannot disappear between endpoint checks; on portable CI retain held-descriptor + final live-namespace rebind so deterministic post-admission replacement is rejected. Add permanent exact regression for #3024 invariant and a Darwin transient replace/restore replay. No field inputs/physical actions are authorized."
 }
