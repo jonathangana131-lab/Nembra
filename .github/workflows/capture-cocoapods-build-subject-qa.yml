@@ -8,6 +8,7 @@ on:
       - Scripts/capture_tuya_private_input_provenance.py
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - scripts/ci/tests/test_capture_cocoapods_guard_accepted_subject.py
       - .github/workflows/capture-cocoapods-build-subject-qa.yml
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - Scripts/capture_tuya_private_input_provenance.py
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - scripts/ci/tests/test_capture_cocoapods_guard_accepted_subject.py
       - .github/workflows/capture-cocoapods-build-subject-qa.yml
   workflow_dispatch:
 
@@ -51,7 +53,8 @@ jobs:
             Scripts/capture_cocoapods_build_subject.py \
             Scripts/capture_tuya_private_input_provenance.py \
             Scripts/capture_tuya_private_input_build_guard.py \
-            scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+            scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py \
+            scripts/ci/tests/test_capture_cocoapods_guard_accepted_subject.py
           /usr/bin/python3 -I Scripts/capture_cocoapods_build_subject.py --self-test
 
       - name: Prove lock-preserving generated substitution fails closed
@@ -59,3 +62,9 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+
+      - name: Prove guard admission remains bound to reviewed subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_guard_accepted_subject.py
