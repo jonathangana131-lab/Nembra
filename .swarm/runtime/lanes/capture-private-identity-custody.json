@@ -6,9 +6,11 @@
   "title": "Capture private Tuya identity publication custody",
   "objective": "Close credential-bearing private identity publication and crash-recovery custody, including canonical destination-name authority, exact accepted bytes, stage-residue recovery, and source-contract acceptance before flagship composition.",
   "priority": 1,
-  "state": "REVIEW",
+  "state": "BLOCKED",
   "dependencies": [],
-  "blockers": [],
+  "blockers": [
+    "#2918 exact d8c069069daa32da048e3fb02426c81776f38de0 / run 31488913742 mechanically confirms a crash-residue check-to-unlink replacement race on merged #2899: recovery can delete a same-UID replacement inode before detecting that the admitted held residue still has a link. Production repair is actively owned; #2899 exact greens are not acceptance for this defect."
+  ],
   "mode": "exclusive",
   "allowedWriteAreas": ["Scripts/provision_capture_tuya_identity.sh","Scripts/provision_capture_tuya_identity_writer.py",".gitignore"],
   "adjacentWriteAreas": ["scripts/ci/tests/test_capture_private_identity_publication_races.py","Packages/NembraBluetoothCapture/Tests",".github/workflows"],
@@ -27,9 +29,9 @@
     "primaryHeadSHA": "3f662b7a3f3da667ce3f916ee3f0a65629269c8a",
     "supersedesPrimaryPR": 2755,
     "absorbedEvidencePRs": [2733,2755,2870,2872,2874,2877,2879,2887,2902],
-    "lineagePRs": [2719,2733,2734,2755,2767,2858,2861,2868,2870,2872,2874,2877,2879,2887,2899,2902],
-    "exactHeadGateState": "ALL_REQUIRED_EXACT_HEAD_GATES_GREEN_AWAITING_INDEPENDENT_REVIEW",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T11:53Z. Live successor #2899 exact 3f662b7a supersedes the old #2755/#2870 blocker picture: it composes bounded next-start stage recovery, final canonical-name rebind, trusted macOS realpath self-test correction, and current package source-contract repairs. Exact-head Capture Private Identity Publication Races, Field Build Provenance, Main Selective Graft, and Xcode 27 are all terminal SUCCESS. Independent review and composition remain; no child green authorizes hardware. PHYSICAL NO-GO."
+    "lineagePRs": [2719,2733,2734,2755,2767,2858,2861,2868,2870,2872,2874,2877,2879,2887,2899,2902,2918],
+    "exactHeadGateState": "BLOCKED_BY_EXPECTED_RED_2918_AFTER_MERGED_2899",
+    "knownExactHeadFinding": "Reconciled after the stale 2026-08-11T11:53Z lane snapshot. #2899 merged at 2026-08-11T11:52:05Z even though an independent blocking review was posted at 11:52:04Z. Canonical test-only successor #2918 exact d8c069069daa32da048e3fb02426c81776f38de0 then mechanically confirmed the final check-to-unlink replacement race: Capture Private Identity Recovery Unlink Race Red Team run 31488913742 is terminal FAILURE at the intended exact-inode deletion-authority assertion. The former Field/Main-Graft/Xcode greens on #2899 exact 3f662b7a remain useful ancestor evidence but do not accept this newly demonstrated defect. Production must close #2918 without weakening crash-residue/final-name/payload/admitted-root contracts and the repaired exact head must re-earn all required gates plus independent review before composition. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","private-identity","publication-custody","lifecycle","legacy-import"]
 }
