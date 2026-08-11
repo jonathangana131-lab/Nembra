@@ -9,13 +9,13 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:37:36Z",
-  "lastHeartbeatAt": "2026-08-11T22:06:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:10:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-custody-recovery-gpt56-sol-20260811",
   "pr": 3056,
   "sourceSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
-  "currentHeadSHA": "baa17f6de30f56640f70b623ee93a0f852d280ab",
+  "currentHeadSHA": "7e7ac8b97306cb52439daae15c371b570b0d0701",
   "takeoverFromWorkerId": "sol-20260811-1312n8",
   "takeoverReason": "Generation-4 primary last heartbeat 2026-08-11T20:34:04Z plus 2700-second lease expired before recovery. Recover the same Capture P0 signed-install compiler-output-origin lane from live #2995 exact a71cc55 without touching active review/tests. Preserve #2998 detached-FD blocker and all protected-stage/signature/intended-device custody. PHYSICAL NO-GO.",
-  "checkpoint": "Draft #3056 exact baa17f6d is the production successor. Sudo revocation/verification models the actual non-root invoking groups; compiler child remains primary GID + exactly the fresh capability GID. Independent review root-group gap is closed: invoking primary GID 0 and any root/invalid ambient supplementary GID fail closed, with direct structured-credential and SUDO_GID=0 regressions. Old-head acceptance is stale; fresh exact-head gates are required. Detached FD/dirfd/mmap freeze, inherited private-Tuya provenance, and final composition remain blockers. PHYSICAL NO-GO."
+  "checkpoint": "Draft #3056 exact 7e7ac8b9 is the production successor. Production rejects root UID/GID/ambient root-group authority, models the real invoking non-root groups for sudo revocation, and gives the compiler only primary GID + the fresh capability GID. The real-Xcode acceptance oracle is now aligned: it independently rejects root user/group/normal-group authority and records fieldNormalGroups for semantic acceptance. All earlier #3056 gate results are stale; fresh exact-head gates are required. Detached FD/dirfd/mmap freeze, inherited private-Tuya provenance, and final composition remain blockers. PHYSICAL NO-GO."
 }
