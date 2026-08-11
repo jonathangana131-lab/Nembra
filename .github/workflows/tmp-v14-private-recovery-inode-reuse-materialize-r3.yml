@@ -1,0 +1,72 @@
+name: tmp V14 Private Recovery Inode Reuse Materializer R3
+
+on:
+  push:
+    branches:
+      - repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811
+    paths:
+      - .github/workflows/tmp-v14-private-recovery-inode-reuse-materialize-r3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 20
+
+      - name: Bind temporary construction lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='9e14bdf0813fe6d3fe930692f75e7060efa58889'
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/tmp-v14-private-recovery-inode-reuse-materialize-r2.yml' \
+            '.github/workflows/tmp-v14-private-recovery-inode-reuse-materialize-r3.yml' \
+            '.github/workflows/tmp-v14-private-recovery-inode-reuse-materialize.yml' \
+            'scripts/ci/tmp_v14_private_recovery_inode_reuse_materialize.py' | sort)"
+          test "$changed" = "$expected"
+
+      - name: Materialize validated product and regression bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_v14_private_recovery_inode_reuse_materialize.py
+          # Workflow mutation is published separately through the GitHub connector.
+          git restore -- .github/workflows/capture-private-identity-publication-races-redteam.yml
+
+      - name: Re-run focused validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+          git diff --check
+
+      - name: Publish durable non-workflow bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Nembra Swarm'
+          git config user.email 'noreply@users.noreply.github.com'
+          git add \
+            Scripts/provision_capture_tuya_identity_writer.py \
+            Scripts/provision_capture_tuya_identity.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift \
+            scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Capture P0: preserve crash-residue inode authority'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
