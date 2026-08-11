@@ -77,13 +77,13 @@ private struct CaptureP0Root: View {
 
     @ViewBuilder
     private var rootHero: some View {
-        VStack(alignment: .leading, spacing: isAccessibilityLayout ? 4 : 8) {
-            Text(isAccessibilityLayout ? "Prepare scooter link" : "Prepare the scooter link")
-                .font(isAccessibilityLayout ? .title2.bold() : .largeTitle.bold())
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
+        if !isAccessibilityLayout {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Prepare the scooter link")
+                    .font(.largeTitle.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
 
-            if !isAccessibilityLayout {
                 Text("Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified.")
                     .font(.body)
                     .foregroundStyle(Color.white.opacity(0.78))
@@ -93,17 +93,23 @@ private struct CaptureP0Root: View {
     }
 
     private var buildAuthorityStatus: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: isAccessibilityLayout ? 8 : 12) {
             Image(systemName: fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "lock.shield.fill")
-                .font(.title3)
+                .font(isAccessibilityLayout ? .body : .title3)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
-                    .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)
-                    .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    fieldBuildIsAuthoritative
+                        ? (isAccessibilityLayout ? "Build ready" : "Build provenance ready")
+                        : (isAccessibilityLayout ? "Physical lock" : "Physical capture locked")
+                )
+                .font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                .fixedSize(horizontal: false, vertical: true)
 
                 if !isAccessibilityLayout {
                     Text(
@@ -117,7 +123,7 @@ private struct CaptureP0Root: View {
                 }
             }
         }
-        .padding(.vertical, isAccessibilityLayout ? 4 : 10)
+        .padding(.vertical, isAccessibilityLayout ? 2 : 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .top) {
             Rectangle()
@@ -155,7 +161,7 @@ private struct CaptureP0Root: View {
                         Text(
                             tuya.isLinked
                                 ? "Account metadata ready"
-                                : (isAccessibilityLayout ? "Set up account metadata" : "Prepare account metadata")
+                                : (isAccessibilityLayout ? "Account setup" : "Prepare account metadata")
                         )
                         .font(isAccessibilityLayout ? .headline : .title3.bold())
                         .accessibilityAddTraits(.isHeader)
@@ -186,9 +192,11 @@ private struct CaptureP0Root: View {
                     }
 
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("Tuya Smart user code")
-                            .font(.subheadline.weight(.semibold))
-                        TextField("Paste user code", text: $tuya.userCode)
+                        if !isAccessibilityLayout {
+                            Text("Tuya Smart user code")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .padding(.horizontal, 14)
@@ -205,25 +213,18 @@ private struct CaptureP0Root: View {
                     Button {
                         tuya.requestApproval()
                     } label: {
-                        Label("Create approval QR", systemImage: "qrcode")
-                            .font(.headline)
+                        Label(isAccessibilityLayout ? "Create QR" : "Create approval QR", systemImage: "qrcode")
+                            .font(isAccessibilityLayout ? .body.bold() : .headline)
                             .frame(maxWidth: .infinity, minHeight: 50)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.cyan)
                     .foregroundStyle(.black)
                     .accessibilityIdentifier("nembra.capture.root.account-link-action")
+                    .accessibilityLabel("Create approval QR")
                     .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
 
-                    if isAccessibilityLayout {
-                        Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(0.78))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
-                            .font(.footnote)
-                            .foregroundStyle(Color.white.opacity(0.72))
-                            .fixedSize(horizontal: false, vertical: true)
+                    if isAccessibilityLayout, tuya.phase != .needsUserCode {
                         statusText
                     }
                 }
