@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "071900-review-result-package-runner-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-package-test-runner-recovery",
+  "message": "NEEDS_CHANGES. Imported V15 lane contract is not valid/usable for the now-proven repair. First, its primary slot requests resource XCODE_27_RUNNER, but V15 model RESOURCE_CLASSES contains XCODE_BUILD/IOS_SIMULATOR/IOS_DEVICE/PHYSICAL_SCOOTER/BLUETOOTH_CAPTURE/SIGNING/RELEASE_INTEGRATION/PROJECT_STATE_WRITER/HIGH_CONTENTION_FILE and validate_slot rejects unknown resources. Second, allowedWriteAreas do not include the exact source-proven culprit Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift, so the active repair worker cannot legally make the minimal repair required by the objective. Third, active PR #2808@be29d23a1218ca14ef8bbe70a241af32edb6d61b omits TuyaCapturePrimaryLanguageSourceTests from its focused suite list and can therefore misclassify the already serially isolated source-test Range trap as a runner/full-suite interaction. Amend lane resource to supported XCODE_BUILD where needed, authorize the exact Swift test path, preserve #2799 metadata repairs as predecessor evidence, and repair ordered marker lookup without weakening assertions. PR review comment 4903827657 carries the exact source finding. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:19:00Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "activePR": 2808,
+    "activeHeadSHA": "be29d23a1218ca14ef8bbe70a241af32edb6d61b",
+    "invalidResource": "XCODE_27_RUNNER",
+    "supportedReplacement": "XCODE_BUILD",
+    "requiredWritePath": "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift",
+    "sourceEvidenceArtifact": 9092226121,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
