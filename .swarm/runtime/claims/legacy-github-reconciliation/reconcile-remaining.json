@@ -4,14 +4,17 @@
   "laneId": "legacy-github-reconciliation",
   "slot": "reconcile-remaining",
   "role": "scheduler-reconciler",
-  "workerId": "sol-20260811-3f7c",
-  "leaseId": "reconcile-remaining-3f7c-0754",
-  "generation": 1,
+  "workerId": "sol-20260811-1405rc",
+  "leaseId": "reconcile-remaining-1405rc-20260811-2106",
+  "generation": 2,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T07:54:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:24:00Z",
+  "claimedAt": "2026-08-11T21:06:10Z",
+  "lastHeartbeatAt": "2026-08-11T21:06:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "takeoverFromWorkerId": "sol-20260811-3f7c",
+  "takeoverFromLeaseId": "reconcile-remaining-3f7c-0754",
+  "takeoverReason": "Generation-1 reconciliation lease expired more than eleven hours ago. Reconcile live orphaned/missing control-plane records that affect current P0 Capture without modifying actively owned product implementation paths; start with runtime VoiceOver state whose claim references a missing lane record. PHYSICAL NO-GO."
 }
