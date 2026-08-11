@@ -1,0 +1,115 @@
+name: Capture R3 Base Loader Repair Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-r3-base-module-execution-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-r3-base-module-execution-sol-20260811
+          fetch-depth: 0
+      - name: Materialize accepted-Git parent loader
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin adversarial/v14-r3-base-module-execution-r3-current-sol
+          git show FETCH_HEAD:scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py > scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py')
+          text = path.read_text(encoding='utf-8')
+          old_import = 'import importlib.util\n'
+          if text.count(old_import) != 1:
+              raise SystemExit(f'importlib loader import count drifted: {text.count(old_import)}')
+          text = text.replace(old_import, '', 1)
+          old = '''def _load_base_module():
+              path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")
+              spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)
+              if spec is None or spec.loader is None:
+                  raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+          '''
+          old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines()) + '\n'
+          new = '''BASE_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"
+
+
+def _load_base_module():
+    root = Path(__file__).resolve().parents[2]
+    environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
+    try:
+        source = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", "HEAD"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout.strip().lower()
+        accepted_blob = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{source}:{BASE_MODULE_PATH}"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout.strip().lower()
+        payload = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", accepted_blob],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout
+        verified = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "hash-object", "--stdin"],
+            input=payload,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout.decode("ascii").strip().lower()
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git custody failed") from error
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source):
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO control source is invalid")
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_blob):
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob is invalid")
+    if not payload or verified != accepted_blob:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git bytes failed identity verification")
+    filename = f"git:{source}:{BASE_MODULE_PATH}"
+    module = types.ModuleType("nembra_authenticated_stationary_final_go")
+    module.__file__ = filename
+    module.__nembra_accepted_control_source__ = source
+    module.__nembra_accepted_control_blob__ = accepted_blob
+    try:
+        exec(compile(payload, filename, "exec", dont_inherit=True), module.__dict__)
+    except Exception as error:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary Final-GO parent could not execute") from error
+    return module
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'R3 mutable base loader count drifted: {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+          python3 -m unittest -v scripts.ci.tests.test_es80_generated_subject_base_module_execution_custody
+          python3 -m unittest -v scripts.ci.tests.test_es80_authenticated_stationary_generated_subject_final_go
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+          git commit -m 'Capture: execute R3 parent from accepted Git bytes'
+          git push origin HEAD:repair/v14-r3-base-module-execution-sol-20260811
