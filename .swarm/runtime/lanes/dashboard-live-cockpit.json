@@ -6,14 +6,22 @@
   "title": "Dashboard / Live Cockpit Energy Rail convergence",
   "objective": "Recover the canonical receipt-fenced Energy Rail and rolling-instrument Dashboard onto current main, preserve simulator-only synthetic authority and unavailable/retained/live truth, then close exact-head Xcode, screenshot/visual, accessibility, and performance acceptance before merge.",
   "priority": 1,
-  "state": "NEEDS_CHANGES",
+  "state": "VERIFYING",
   "dependencies": [],
   "blockers": [
     {
-      "id": "simulator-runtime-public-authority-mint",
-      "state": "REPAIR_CANDIDATE",
+      "id": "authority-external-regression-uncomposed",
+      "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Independent adversarial review of PR #2817 exact head 182dd4b97a121c13fc9c99d3b5c078b6267d3652 found that public PropulsionEnergyRailSimulatorRuntime.acceptLiveSource/retainSource accepted caller-provided watts plus receipt chronology and minted accepted .simulator propulsion samples. Repair candidate 28c7e886f1152ab92a673029b4a1e966f2610e01 removes those raw methods from the public API, admits positive authority only through source-file-sealed SimulatorPowerEvidenceAvailability, preserves Store transport fencing as negative-only retainCurrentSource, and adds a public-boundary regression. Independent re-review and fresh exact-head Xcode are required before this blocker may close.",
+      "reason": "Independent re-review on PR #2817 exact head 28c7e886f1152ab92a673029b4a1e966f2610e01 clears the original public raw-scalar authority defect: positive admission is source-sealed and raw chronology methods are no longer public. Child test PR #2833 exact head f9250b38facff51e79e324934b3c6f2a936fd18a supplies the requested real external-package compile proof. Compose that one-file regression into the flagship Dashboard head before final acceptance; do not count the child as accepted app product independently.",
+      "pr": 2833,
+      "headSHA": "f9250b38facff51e79e324934b3c6f2a936fd18a"
+    },
+    {
+      "id": "exact-head-xcode-visual-performance-pending",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "On 28c7e886 the Xcode exact-head workflow jobs are skipped, not green. Final composed head still requires Xcode 27/iPhone 12 Simulator execution, required Dashboard screenshots and visual critique, accessibility/Reduce Motion verification, high-frequency presentation/performance evidence, and exact-head recheck before integration.",
       "pr": 2817,
       "headSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01"
     }
@@ -58,9 +66,11 @@
     "mergeBaseSHA": "7f29b468a869f4e1534665f8c46c4188e0398850",
     "mainAheadBy": 64,
     "changedFileOverlapWithNewMain": 0,
-    "knownExactHeadFinding": "Legacy head is eight commits ahead of its merge base and 64 commits behind current main. The 64 newer main commits touch none of the 19 Dashboard changed paths, so an exact selective graft onto current main is structurally safe. Prior Xcode run 31463695136 failed at an obsolete Capture-authority workflow step before Simulator execution; current main workflow no longer contains that step. A fresh /xcode27 request was issued but does not authorize acceptance until terminal exact-head success and artifact review.",
+    "knownExactHeadFinding": "Legacy head is eight commits ahead of its merge base and 64 commits behind current main. The 64 newer main commits touch none of the original 19 Dashboard changed paths, so exact selective recovery onto current main remains structurally coherent. Independent review found and then cleared the public raw-scalar Simulator authority defect on recovery head 28c7e886; child #2833 carries the external-client compile regression that must be composed before final acceptance.",
     "recoveryPR": 2817,
-    "recoveryHeadSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01"
+    "recoveryHeadSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01",
+    "authorityTestPR": 2833,
+    "authorityTestHeadSHA": "f9250b38facff51e79e324934b3c6f2a936fd18a"
   },
   "tags": ["dashboard", "p1", "energy-rail", "app-visible", "accessibility", "performance", "legacy-import"]
 }
