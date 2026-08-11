@@ -1,0 +1,116 @@
+name: Capture Final GO Whole Tree Vnode Custody
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go_whole_tree.py
+      - scripts/ci/tests/test_es80_final_go_whole_tree_vnode_custody.py
+      - .github/workflows/capture-final-go-whole-tree-vnode-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-final-go-whole-tree-vnode-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PRODUCTION_PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
+  PRODUCTION_SUBJECT: scripts/ci/es80_authenticated_stationary_private_review_final_go_whole_tree.py
+  REGRESSION_SUBJECT: scripts/ci/tests/test_es80_final_go_whole_tree_vnode_custody.py
+  WORKFLOW_SUBJECT: .github/workflows/capture-final-go-whole-tree-vnode-custody.yml
+
+jobs:
+  portable-contract:
+    name: Portable whole-tree authority contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout immutable candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact parent and three-path successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git cat-file -e "$EXACT_PRODUCTION_PARENT^{commit}"
+          git merge-base --is-ancestor "$EXACT_PRODUCTION_PARENT" HEAD
+          mapfile -t changed < <(git diff --name-only "$EXACT_PRODUCTION_PARENT" HEAD | sort)
+          expected=(
+            "$WORKFLOW_SUBJECT"
+            "$PRODUCTION_SUBJECT"
+            "$REGRESSION_SUBJECT"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#changed[@]}" -eq "${#expected_sorted[@]}"
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+
+      - name: Compile authority implementation and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile "$PRODUCTION_SUBJECT" "$REGRESSION_SUBJECT"
+
+      - name: Replay portable whole-tree custody contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$REGRESSION_SUBJECT"
+
+      - name: Require clean successor diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PRODUCTION_PARENT" HEAD
+
+  macos-vnode:
+    name: Real macOS kqueue post-admission race replay
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout immutable candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact candidate head and parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git cat-file -e "$EXACT_PRODUCTION_PARENT^{commit}"
+          git merge-base --is-ancestor "$EXACT_PRODUCTION_PARENT" HEAD
+
+      - name: Compile exact subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile "$PRODUCTION_SUBJECT" "$REGRESSION_SUBJECT"
+
+      - name: Prove production kqueue rejects #3024 timing and suppresses build authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 "$REGRESSION_SUBJECT" \
+            FinalGoWholeTreeVnodeCustodyTests.test_real_kqueue_rejects_exact_3024_post_subject_replace_restore_race \
+            FinalGoWholeTreeVnodeCustodyTests.test_real_kqueue_suppresses_parent_build_result_after_transient_source_replacement
+
+      - name: Preserve portable controls on macOS implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 "$REGRESSION_SUBJECT" \
+            FinalGoWholeTreeVnodeCustodyTests.test_exact_parent_execution_is_bound_to_reviewed_2921_blob \
+            FinalGoWholeTreeVnodeCustodyTests.test_clean_candidate_is_accepted_with_test_backend \
+            FinalGoWholeTreeVnodeCustodyTests.test_persistent_post_subject_replacement_is_rejected \
+            FinalGoWholeTreeVnodeCustodyTests.test_queued_vnode_event_is_fail_closed_even_when_endpoint_bytes_are_clean
+
+      - name: Require clean successor diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PRODUCTION_PARENT" HEAD
