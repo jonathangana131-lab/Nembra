@@ -57,6 +57,7 @@ CHILD_AUTHORITY_PATHS = (
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py",
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py",
     "scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py",
+    "scripts/ci/tests/test_es80_generated_subject_parent_git_execution_custody.py",
 )
 PARENT_PINNED_PATHS = (
     PARENT_MODULE_PATH,
@@ -86,8 +87,8 @@ def _load_base_module():
     root = Path(__file__).resolve().parents[2]
     environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
     try:
-        source_blob = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"],
+        checked_out_blob = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", f"HEAD:{PARENT_MODULE_PATH}"],
             check=True,
             text=True,
             stdout=subprocess.PIPE,
@@ -104,8 +105,8 @@ def _load_base_module():
     except (OSError, subprocess.CalledProcessError) as error:
         raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git subject could not be read") from error
 
-    if source_blob != PARENT_MODULE_BLOB:
-        raise GeneratedSubjectGoError("pinned authenticated-stationary parent source does not own the accepted module blob")
+    if checked_out_blob != PARENT_MODULE_BLOB:
+        raise GeneratedSubjectGoError("exact checked-out R3 source does not own the pinned authenticated-stationary parent module blob")
     if not payload or len(payload) > 2 * 1024 * 1024:
         raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob has invalid bounded bytes")
     header = b"blob " + str(len(payload)).encode("ascii") + b"\0"
