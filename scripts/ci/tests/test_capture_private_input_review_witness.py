@@ -14,6 +14,7 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 BOOTSTRAP = REPOSITORY / "Scripts/bootstrap_capture_tuya_sdk.sh"
 PROVENANCE = REPOSITORY / "Scripts/capture_tuya_private_input_provenance.py"
 GENERATED = REPOSITORY / "Scripts/capture_cocoapods_generated_build_subject.py"
+PRIVATE_REVIEW = REPOSITORY / "Scripts/capture_tuya_private_review_commitment.py"
 
 
 class PrivateInputReviewWitnessTests(unittest.TestCase):
@@ -22,7 +23,7 @@ class PrivateInputReviewWitnessTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         scripts = self.root / "Scripts"
         scripts.mkdir()
-        for source in (BOOTSTRAP, PROVENANCE, GENERATED):
+        for source in (BOOTSTRAP, PROVENANCE, GENERATED, PRIVATE_REVIEW):
             shutil.copy2(source, scripts / source.name)
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
@@ -47,6 +48,9 @@ class PrivateInputReviewWitnessTests(unittest.TestCase):
             "enum NembraTuyaPrivateIdentity { static let generation = \"REVIEWED-A\" }\n",
             encoding="utf-8",
         )
+        self.private_review_key = self.identity_root / "PrivateReviewAuthority.key"
+        self.private_review_key.write_bytes(bytes(range(32)))
+        self.private_review_key.chmod(0o600)
 
         self.fake_bin = self.root / "fake-bin"
         self.fake_bin.mkdir()
@@ -80,7 +84,14 @@ class PrivateInputReviewWitnessTests(unittest.TestCase):
     def record(self) -> Path:
         return self.identity_root / "ResolvedTuyaDependencyProvenance.txt"
 
-    def run_bootstrap(self, *, review_only: bool, accepted_lock: str | None = None, accepted_generated: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run_bootstrap(
+        self,
+        *,
+        review_only: bool,
+        accepted_lock: str | None = None,
+        accepted_generated: str | None = None,
+        accepted_private_hmac: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         environment = {
             "PATH": f"{self.fake_bin}:/usr/bin:/bin",
             "HOME": str(self.root),
@@ -91,6 +102,8 @@ class PrivateInputReviewWitnessTests(unittest.TestCase):
             environment["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"] = accepted_lock
         if accepted_generated is not None:
             environment["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"] = accepted_generated
+        if accepted_private_hmac is not None:
+            environment["NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256"] = accepted_private_hmac
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review_only:
             command.append("--resolve-lock-for-review")
@@ -111,6 +124,7 @@ class PrivateInputReviewWitnessTests(unittest.TestCase):
         reviewed_lock = (self.root / "Podfile.lock").read_bytes()
         accepted_lock = hashlib.sha256(reviewed_lock).hexdigest()
         accepted_generated = self.digest_from_review(review.stdout, "CocoaPods generated build subject SHA-256")
+        accepted_private_hmac = self.digest_from_review(review.stdout, "Private Tuya review HMAC SHA-256")
         self.assertEqual(self.pod_counter.read_text(encoding="utf-8").splitlines(), ["pod"])
 
         self.security_binary.write_bytes(b"SUBSTITUTED-PRIVATE-SECURITY-B")
@@ -118,7 +132,12 @@ class PrivateInputReviewWitnessTests(unittest.TestCase):
             "enum NembraTuyaPrivateIdentity { static let generation = \"SUBSTITUTED-B\" }\n",
             encoding="utf-8",
         )
-        field = self.run_bootstrap(review_only=False, accepted_lock=accepted_lock, accepted_generated=accepted_generated)
+        field = self.run_bootstrap(
+            review_only=False,
+            accepted_lock=accepted_lock,
+            accepted_generated=accepted_generated,
+            accepted_private_hmac=accepted_private_hmac,
+        )
         self.assertNotEqual(field.returncode, 0, field.stdout)
         self.assertIn("do not match the reviewed pre-CocoaPods witness", field.stdout)
         self.assertEqual(
