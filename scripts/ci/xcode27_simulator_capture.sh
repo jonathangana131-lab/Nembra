@@ -274,9 +274,9 @@ xcodebuild \
 ACCESSIBILITY_TYPE_TEST_STATUS=${PIPESTATUS[0]}
 set -e
 
-# Restore the normal content-size category for the remaining generic screenshot
-# matrix. Failure to restore is non-authoritative for the already-preserved
-# accessibility xcresult, but is recorded for diagnosis instead of hidden.
+# Restore the normal content-size category before the ordinary screenshot matrix.
+# Preserve/export the accessibility xcresult either way, but never emit ordinary
+# baseline filenames while the Simulator content-size provenance is unknown.
 set +e
 xcrun simctl ui "$UDID" content_size large \
   >> "$ARTIFACTS_DIR/logs/simctl-content-size.log" 2>&1
@@ -306,6 +306,11 @@ fi
 if [[ "$ACCESSIBILITY_TYPE_TEST_STATUS" -ne 0 ]]; then
   echo "Accessibility Dynamic Type exact-head UI acceptance failed with status $ACCESSIBILITY_TYPE_TEST_STATUS." >&2
   exit "$ACCESSIBILITY_TYPE_TEST_STATUS"
+fi
+
+if [[ "$CONTENT_SIZE_RESET_STATUS" -ne 0 ]]; then
+  echo "Could not restore normal Simulator content size after accessibility QA; refusing the ordinary screenshot matrix because its Dynamic Type provenance would be ambiguous." >&2
+  exit 9
 fi
 
 APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/Nembra.app"
