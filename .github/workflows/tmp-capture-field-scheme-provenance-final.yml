@@ -1,0 +1,55 @@
+name: Temporary Capture shared-scheme provenance repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-live-main-visual-acceptance-sol
+    paths:
+      - .github/workflows/tmp-capture-field-scheme-provenance-final.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Add shared scheme to field provenance coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='5068cc088855fe97e7ecafe87d82ee432ece0c40'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          test "$(git diff --name-only "$expected_parent"..HEAD)" = '.github/workflows/tmp-capture-field-scheme-provenance-final.yml'
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/capture-field-build-provenance.yml')
+          workflow = workflow_path.read_text()
+          anchor = '      - NembraCapture.xcodeproj/project.pbxproj\n'
+          addition = '      - NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme\n'
+          if workflow.count(anchor) != 1 or addition in workflow:
+              raise SystemExit('shared-scheme provenance workflow seam changed')
+          workflow_path.write_text(workflow.replace(anchor, anchor + addition, 1))
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift')
+          test = test_path.read_text()
+          anchor = '            "NembraCapture.xcodeproj/project.pbxproj",\n'
+          addition = '            "NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme",\n'
+          if test.count(anchor) != 1 or addition in test:
+              raise SystemExit('shared-scheme provenance test seam changed')
+          test_path.write_text(test.replace(anchor, anchor + addition, 1))
+          PY
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' '.github/workflows/capture-field-build-provenance.yml' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift' | sort)"
+          grep -Fq -- '- NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq -- '"NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme",' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+          git config user.name 'nembra-v14-closure-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/capture-field-build-provenance.yml Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+          git commit -m 'fix(capture): admit shared scheme to field provenance'
+          git push origin HEAD:agent/v14-capture-live-main-visual-acceptance-sol
