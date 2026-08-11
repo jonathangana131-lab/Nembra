@@ -7,13 +7,13 @@
   "workerId": "sol-20260811-54c8idint",
   "leaseId": "capture-private-identity-integration-54c8idint-20260811-1217",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "NEEDS_CHANGES",
   "claimedAt": "2026-08-11T12:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:29:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:41:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
-  "sourceSHA": "b46bc52e5c6e9916953af253784918587bc41889",
+  "sourceSHA": "462d4d3862e48af8aa2582733a7c2cf011075b30",
   "intent": "Integrate/validate #2918 production repair descendants without modifying the active primary owner's production files. Bind only clean exact heads, verify publication/recovery/final-name custody and Build raw-tree composability, then prepare safe composition only after exact-head evidence and independent review. PHYSICAL NO-GO.",
-  "checkpoint": "Current b46bc52 is construction-only and integration-blocked: it carries temporary diagnostic/materializer workflows/helpers. R3 run 31491293788 self-test PASS but Publication Races FAILS exactly test_staging_substitution_after_name_check_cannot_be_left_at_destination; attacker bytes remain at credential destination when all pathname cleanup is removed. Descriptor-reuse core from df700 remains promising and normal successful hard-exit recovery leaves zero root stages, but no descendant is accepted until owner produces a clean head that closes post-publication wrong-destination sanitation without check-then-unlink or permanent root tombstones. Independent reviewer remains NEEDS_CHANGES. PHYSICAL NO-GO."
+  "checkpoint": "462d4d38 is a clean seven-file candidate and its Publication Races gate is green, but integration is blocked by new canonical expected-red #2961 run 31492270036/job 93781360990: after failed generated-Swift publication, attacker-controlled Swift remains at canonical LocalSecrets identity path and later bootstrap reaches CocoaPods admission. Production must close downstream failed-identity admission without restoring check-then-unlink or permanent root tombstones. Field/Main-Graft queued and Xcode pending/cancelled states do not override this blocker. PHYSICAL NO-GO."
 }
