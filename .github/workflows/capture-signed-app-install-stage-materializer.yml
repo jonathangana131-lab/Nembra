@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/_materialize_signed_app_install_stage.py
+          python3 scripts/ci/_materialize_signed_app_install_stage_v2.py
           bash -n scripts/field/install_one_time_capture.command
           python3 -m py_compile Scripts/capture_signed_app_install_stage.py scripts/ci/tests/test_capture_signed_app_install_stage.py
           python3 scripts/ci/tests/test_capture_signed_app_install_stage.py
