@@ -4,26 +4,31 @@ import Testing
 
 @Suite("Capture private Tuya checkout-root custody")
 struct TuyaPrivateIdentityCheckoutRootCustodySourceTests {
-    @Test("checkout root is admitted before credentials and inherited by the pinned writer")
-    func rootDescriptorPrecedesCredentialInput() throws {
+    @Test("checkout root is admitted before writer capture, credentials, and publication")
+    func rootDescriptorPrecedesWriterCaptureAndCredentialInput() throws {
         let shell = try readRepositoryFile("Scripts/provision_capture_tuya_identity.sh")
         let writer = try readRepositoryFile("Scripts/provision_capture_tuya_identity_writer.py")
 
         #expect(shell.contains("ROOT_FD=9"))
         #expect(shell.contains("exec 9<\"$ROOT\""))
+        #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
         #expect(!shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT\""))
 
         let admission = shell.range(of: "exec 9<\"$ROOT\"")
+        let writerCapture = shell.range(of: "WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\"")
         let digestFence = shell.range(of: "[[ \"$CAPTURED_WRITER_SHA256\" == \"$WRITER_SHA256\" ]]")
         let credentialRead = shell.range(of: "builtin read -r -s -p \"Tuya SmartLife SDK AppKey (input hidden): \" APP_KEY")
         #expect(admission != nil)
+        #expect(writerCapture != nil)
         #expect(digestFence != nil)
         #expect(credentialRead != nil)
-        if let admission, let credentialRead {
-            #expect(admission.lowerBound < credentialRead.lowerBound)
-        }
-        if let digestFence, let credentialRead {
+        if let admission, let writerCapture, let digestFence, let credentialRead {
+            #expect(
+                admission.lowerBound < writerCapture.lowerBound,
+                "the checkout destination must be admitted before mutable writer bytes are selected from beneath it"
+            )
+            #expect(writerCapture.lowerBound < digestFence.lowerBound)
             #expect(digestFence.lowerBound < credentialRead.lowerBound)
         }
 
