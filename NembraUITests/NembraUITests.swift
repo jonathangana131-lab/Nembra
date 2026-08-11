@@ -97,10 +97,18 @@ final class NembraUITests: XCTestCase {
             "The shipping Navigation sheet must expose a stable accessibility surface."
         )
         XCTAssertTrue(app.navigationBars["Navigation"].waitForExistence(timeout: 2))
+
+        // MapKit exposes the shipping SwiftUI Map as XCUI's semantic Map type on
+        // iOS 27. Require that real element rather than depending on the wrapper's
+        // accessibility identifier being flattened into a generic descendant.
+        let map = app.maps.firstMatch
         XCTAssertTrue(
-            app.descendants(matching: .any)["navigation.map"].waitForExistence(timeout: 2),
+            map.waitForExistence(timeout: 3),
             "Navigation must present its real MapKit surface rather than a placeholder."
         )
+        XCTAssertGreaterThan(map.frame.width, 200, "Navigation MapKit surface must be materially visible.")
+        XCTAssertGreaterThan(map.frame.height, 180, "Navigation MapKit surface must be materially visible.")
+
         XCTAssertTrue(
             app.descendants(matching: .any)["navigation.empty"].waitForExistence(timeout: 2),
             "A fresh Navigation session must truthfully present the empty destination state."
