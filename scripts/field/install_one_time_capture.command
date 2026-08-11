@@ -20,10 +20,311 @@ command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SD
 EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
 [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "Pass the exact software-accepted Capture source SHA as the first argument (40 hex characters)."
 EXPECTED_SOURCE_SHA="$(printf '%s' "$EXPECTED_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
-SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+verify_accepted_checkout() {
+    /usr/bin/python3 -I - "$ROOT" "$1" <<'PY_AUTHORITY'
+# BEGIN NEMBRA_FIELD_GIT_AUTHORITY_PY
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+import tempfile
+
+root = Path(sys.argv[1])
+expected = sys.argv[2].lower()
+if len(expected) != 40 or any(character not in "0123456789abcdef" for character in expected):
+    raise SystemExit("accepted Capture source must be exactly 40 lowercase hex characters")
+try:
+    root_metadata = root.lstat()
+except OSError as error:
+    raise SystemExit("accepted field checkout root is unavailable") from error
+if not stat.S_ISDIR(root_metadata.st_mode) or stat.S_ISLNK(root_metadata.st_mode):
+    raise SystemExit("accepted field checkout root must be one real directory")
+git_dir = root / ".git"
+try:
+    git_metadata = git_dir.lstat()
+except OSError as error:
+    raise SystemExit("field checkout requires one local .git directory") from error
+if not stat.S_ISDIR(git_metadata.st_mode) or stat.S_ISLNK(git_metadata.st_mode):
+    raise SystemExit("field checkout .git authority must be one real directory, not a worktree redirect")
+
+git_environment = {
+    "PATH": "/usr/bin:/bin",
+    "HOME": "/tmp",
+    "LC_ALL": "C",
+    "GIT_DIR": str(git_dir),
+    "GIT_WORK_TREE": str(root),
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_NO_REPLACE_OBJECTS": "1",
+    "GIT_CONFIG_COUNT": "5",
+    "GIT_CONFIG_KEY_0": "core.worktree",
+    "GIT_CONFIG_VALUE_0": str(root),
+    "GIT_CONFIG_KEY_1": "core.bare",
+    "GIT_CONFIG_VALUE_1": "false",
+    "GIT_CONFIG_KEY_2": "core.fsmonitor",
+    "GIT_CONFIG_VALUE_2": "false",
+    "GIT_CONFIG_KEY_3": "core.ignorestat",
+    "GIT_CONFIG_VALUE_3": "false",
+    "GIT_CONFIG_KEY_4": "core.filemode",
+    "GIT_CONFIG_VALUE_4": "true",
+}
+
+def git_output(*arguments: str, environment: dict[str, str] | None = None) -> bytes:
+    return subprocess.check_output(
+        ["/usr/bin/git", *arguments],
+        cwd=root,
+        env=git_environment if environment is None else environment,
+        stderr=subprocess.DEVNULL,
+    )
+
+try:
+    actual = git_output("rev-parse", "--verify", "HEAD^{commit}").decode("ascii").strip().lower()
+except (subprocess.CalledProcessError, UnicodeDecodeError) as error:
+    raise SystemExit("could not resolve HEAD from the explicitly admitted field checkout") from error
+if actual != expected:
+    raise SystemExit(f"field checkout HEAD {actual} does not match accepted Capture source {expected}")
+
+index_fd, trusted_index = tempfile.mkstemp(prefix="nembra-field-authority-index-")
+os.close(index_fd)
+os.unlink(trusted_index)
+index_environment = dict(git_environment)
+index_environment["GIT_INDEX_FILE"] = trusted_index
+try:
+    subprocess.run(
+        ["/usr/bin/git", "read-tree", expected],
+        cwd=root,
+        env=index_environment,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+    )
+    status_output = subprocess.check_output(
+        [
+            "/usr/bin/git",
+            "-c", "core.fsmonitor=false",
+            "-c", "core.ignorestat=false",
+            "-c", "core.filemode=true",
+            "status", "--porcelain=v1", "--untracked-files=all",
+        ],
+        cwd=root,
+        env=index_environment,
+        stderr=subprocess.DEVNULL,
+    )
+    if status_output:
+        raise SystemExit("resolver-bound field checkout has tracked or unignored worktree changes")
+except subprocess.CalledProcessError as error:
+    raise SystemExit("could not prove field checkout cleanliness from a fresh accepted-source index") from error
+finally:
+    try:
+        os.unlink(trusted_index)
+    except FileNotFoundError:
+        pass
+
+try:
+    tree = git_output("ls-tree", "-r", "-z", expected)
+except subprocess.CalledProcessError as error:
+    raise SystemExit("could not enumerate exact accepted tracked source") from error
+tracked_files: set[str] = set()
+tracked_directories: set[str] = set()
+checked = 0
+for record in tree.split(b"\0"):
+    if not record:
+        continue
+    metadata, relative_bytes = record.split(b"\t", 1)
+    mode, object_type, expected_oid = metadata.split(b" ", 2)
+    if object_type != b"blob" or mode not in {b"100644", b"100755", b"120000"}:
+        raise SystemExit("field raw workspace audit refuses unsupported tracked object")
+    relative_text = os.fsdecode(relative_bytes)
+    relative = Path(relative_text)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise SystemExit("field raw workspace audit rejected an unsafe tracked path")
+    tracked_files.add(relative_text)
+    for parent in relative.parents:
+        if str(parent) != ".":
+            tracked_directories.add(str(parent))
+    absolute = root / relative
+    try:
+        metadata_now = absolute.lstat()
+    except OSError as error:
+        raise SystemExit(f"raw workspace tracked path is unavailable: {relative_text}") from error
+    if mode == b"120000":
+        if not stat.S_ISLNK(metadata_now.st_mode):
+            raise SystemExit(f"raw workspace expected tracked symlink: {relative_text}")
+        payload = os.readlink(absolute)
+        if isinstance(payload, str):
+            payload = os.fsencode(payload)
+    else:
+        if not stat.S_ISREG(metadata_now.st_mode) or stat.S_ISLNK(metadata_now.st_mode):
+            raise SystemExit(f"raw workspace expected tracked regular file: {relative_text}")
+        expected_executable = mode == b"100755"
+        if bool(metadata_now.st_mode & 0o111) != expected_executable:
+            raise SystemExit(f"raw workspace executable mode mismatch: {relative_text}")
+        payload = absolute.read_bytes()
+    actual_oid = hashlib.sha1(
+        b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+    ).hexdigest().encode("ascii")
+    if actual_oid != expected_oid:
+        raise SystemExit(f"raw workspace blob mismatch: {relative_text}")
+    checked += 1
+if checked == 0:
+    raise SystemExit("field raw workspace audit found no tracked source")
+
+for relative_text in sorted(tracked_directories):
+    directory = root / relative_text
+    try:
+        metadata_now = directory.lstat()
+    except OSError as error:
+        raise SystemExit(f"raw workspace tracked directory is unavailable: {relative_text}") from error
+    if not stat.S_ISDIR(metadata_now.st_mode) or stat.S_ISLNK(metadata_now.st_mode):
+        raise SystemExit(f"raw workspace tracked directory ancestry is not real: {relative_text}")
+
+allowed_extra_directories = {"LocalSecrets", "Pods", "NembraCapture.xcworkspace"}
+allowed_extra_files = {"Podfile.lock"}
+for current_root, directories, files in os.walk(root, topdown=True, followlinks=False):
+    current = Path(current_root)
+    relative_current = current.relative_to(root)
+    retained_directories: list[str] = []
+    for name in directories:
+        relative = relative_current / name
+        relative_text = str(relative)
+        if relative_current == Path(".") and name == ".git":
+            continue
+        if relative_current == Path(".") and name in allowed_extra_directories:
+            candidate = root / relative
+            metadata_now = candidate.lstat()
+            if not stat.S_ISDIR(metadata_now.st_mode) or stat.S_ISLNK(metadata_now.st_mode):
+                raise SystemExit(f"allowed private/generated root must be one real directory: {name}")
+            continue
+        if relative_text in tracked_files:
+            continue
+        if relative_text not in tracked_directories:
+            raise SystemExit(
+                f"unexpected path outside accepted/private/generated roots: {relative_text}"
+            )
+        retained_directories.append(name)
+    directories[:] = retained_directories
+    for name in files:
+        relative = relative_current / name
+        relative_text = str(relative)
+        if relative_text in tracked_files:
+            continue
+        if relative_current == Path(".") and name in allowed_extra_files:
+            candidate = root / relative
+            metadata_now = candidate.lstat()
+            if not stat.S_ISREG(metadata_now.st_mode) or stat.S_ISLNK(metadata_now.st_mode):
+                raise SystemExit(f"allowed generated field file must be one regular file: {name}")
+            continue
+        raise SystemExit(
+            f"unexpected path outside accepted/private/generated roots: {relative_text}"
+        )
+
+sys.stdout.write(actual + "\n")
+# END NEMBRA_FIELD_GIT_AUTHORITY_PY
+PY_AUTHORITY
+}
+
+run_accepted_bootstrap() {
+    /usr/bin/python3 -I - "$ROOT" "$1" 'Scripts/bootstrap_capture_tuya_sdk.sh' <<'PY_BOOTSTRAP'
+# BEGIN NEMBRA_ACCEPTED_BOOTSTRAP_RUNNER_PY
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+import tempfile
+
+root = Path(sys.argv[1])
+source_sha = sys.argv[2].lower()
+relative = sys.argv[3]
+if len(source_sha) != 40 or any(character not in "0123456789abcdef" for character in source_sha):
+    raise SystemExit("accepted bootstrap source SHA is malformed")
+if relative != "Scripts/bootstrap_capture_tuya_sdk.sh":
+    raise SystemExit("accepted bootstrap runner refuses an unexpected execution subject")
+git_dir = root / ".git"
+try:
+    root_metadata = root.lstat()
+    git_metadata = git_dir.lstat()
+except OSError as error:
+    raise SystemExit("accepted bootstrap checkout authority is unavailable") from error
+if not stat.S_ISDIR(root_metadata.st_mode) or stat.S_ISLNK(root_metadata.st_mode):
+    raise SystemExit("accepted bootstrap root must be one real directory")
+if not stat.S_ISDIR(git_metadata.st_mode) or stat.S_ISLNK(git_metadata.st_mode):
+    raise SystemExit("accepted bootstrap Git authority must be one real directory")
+
+git_environment = {
+    "PATH": "/usr/bin:/bin",
+    "HOME": "/tmp",
+    "LC_ALL": "C",
+    "GIT_DIR": str(git_dir),
+    "GIT_WORK_TREE": str(root),
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_NO_REPLACE_OBJECTS": "1",
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "core.worktree",
+    "GIT_CONFIG_VALUE_0": str(root),
+    "GIT_CONFIG_KEY_1": "core.bare",
+    "GIT_CONFIG_VALUE_1": "false",
+}
+try:
+    expected_oid = subprocess.check_output(
+        ["/usr/bin/git", "rev-parse", "--verify", f"{source_sha}:{relative}"],
+        cwd=root,
+        env=git_environment,
+        stderr=subprocess.DEVNULL,
+    ).decode("ascii").strip().lower()
+    source = subprocess.check_output(
+        ["/usr/bin/git", "cat-file", "blob", expected_oid],
+        cwd=root,
+        env=git_environment,
+        stderr=subprocess.DEVNULL,
+    )
+except (subprocess.CalledProcessError, UnicodeDecodeError) as error:
+    raise SystemExit("accepted bootstrap bytes are unavailable from exact Git authority") from error
+actual_oid = hashlib.sha1(
+    b"blob " + str(len(source)).encode("ascii") + b"\0" + source
+).hexdigest()
+if actual_oid != expected_oid:
+    raise SystemExit("captured bootstrap bytes do not match the exact accepted Git blob")
+if not source or b"\0" in source:
+    raise SystemExit("accepted bootstrap is not a non-empty shell-text execution subject")
+
+environment = {
+    key: value
+    for key, value in os.environ.items()
+    if not key.startswith("GIT_") and not key.startswith("BASH_FUNC_")
+}
+for key in ("BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS", "CDPATH", "GLOBIGNORE"):
+    environment.pop(key, None)
+environment["NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT"] = str(root)
+
+with tempfile.TemporaryFile(prefix="nembra-accepted-bootstrap-") as accepted:
+    os.fchmod(accepted.fileno(), 0o600)
+    accepted.write(source)
+    accepted.flush()
+    accepted.seek(0)
+    os.dup2(accepted.fileno(), 0)
+    os.execve(
+        "/bin/bash",
+        ["/bin/bash", "--noprofile", "--norc", "-p", "-s", "--"],
+        environment,
+    )
+# END NEMBRA_ACCEPTED_BOOTSTRAP_RUNNER_PY
+PY_BOOTSTRAP
+}
+
+if ! SOURCE_SHA="$(verify_accepted_checkout "$EXPECTED_SOURCE_SHA")"; then
+    die "The field checkout failed resolver-bound Git/index/raw-byte authority validation."
+fi
 [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || die "Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA. Checkout the exact accepted SHA before building."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
-say "Exact requested Capture source matched: $SOURCE_SHA"
+say "Exact requested Capture source matched under resolver-bound authority: $SOURCE_SHA"
 
 # The intended-device identifier is private field-admission input, never product
 # evidence. Reuse the canonical descriptor-bound reader so the private file is
@@ -74,10 +375,13 @@ say "Private intended-device admission validated against Final GO digest"
 # CocoaPods. Building the public .xcodeproj here would intentionally compile the
 # fail-closed fallback and cannot authorize the ES80 experiment.
 say "Validating official Tuya SDK and private app-identity provisioning"
-"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"
+run_accepted_bootstrap "$SOURCE_SHA" || die "Accepted private workspace bootstrap failed."
 [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
-[[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs. Review and re-accept before building."
+if ! POST_BOOTSTRAP_SOURCE_SHA="$(verify_accepted_checkout "$SOURCE_SHA")"; then
+    die "Private workspace bootstrap changed resolver-bound accepted-source authority. Review and re-accept before building."
+fi
+[[ "$POST_BOOTSTRAP_SOURCE_SHA" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
+unset POST_BOOTSTRAP_SOURCE_SHA || true
 [[ -f "$ROOT/Podfile.lock" ]] || die "Private workspace bootstrap produced no Podfile.lock; reviewed Tuya dependency provenance is unavailable."
 TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
 [[ "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Could not compute a valid SHA-256 fingerprint for the resolved Tuya dependency lock."
@@ -281,8 +585,11 @@ run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \
     build || die "Private inputs changed while xcodebuild was running, vnode custody failed, or the signed build itself failed. No field artifact was admitted."
 
 verify_private_tuya_inputs
-[[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."
+if ! POST_BUILD_SOURCE_SHA="$(verify_accepted_checkout "$SOURCE_SHA")"; then
+    die "Accepted-source authority changed while the field build was compiling. Discard this candidate and restart."
+fi
+[[ "$POST_BUILD_SOURCE_SHA" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
+unset POST_BUILD_SOURCE_SHA || true
 APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"
 [[ -d "$APP" ]] || die "Build finished but the standalone Nembra Capture.app was not found at $APP"
 APP_INFO_PLIST="$APP/Info.plist"
