@@ -35,7 +35,7 @@ class CaptureFieldSelectedXcodeCustodyTests(unittest.TestCase):
 
     def test_system_selected_developer_tree_is_explicit_authority_subject(self) -> None:
         name, selection_index = self._selected_developer_dir()
-        device_discovery = self.source.find("xctrace list devices")
+        device_discovery = self.source.find("list devices")
         self.assertNotEqual(device_discovery, -1, "expected physical Xcode device-discovery boundary")
         self.assertLess(
             selection_index,
@@ -56,7 +56,7 @@ class CaptureFieldSelectedXcodeCustodyTests(unittest.TestCase):
 
     def test_selected_toolchain_is_admitted_as_xcode_27_before_device_or_build_use(self) -> None:
         _, selection_index = self._selected_developer_dir()
-        device_discovery = self.source.find("xctrace list devices")
+        device_discovery = self.source.find("list devices")
         preflight = self.source[selection_index:device_discovery]
         self.assertRegex(
             preflight,
@@ -77,16 +77,32 @@ class CaptureFieldSelectedXcodeCustodyTests(unittest.TestCase):
             "selected developer-directory authority must remain explicit after caller overrides are cleared",
         )
 
-    def test_same_selected_tree_drives_device_tools_and_guarded_xcodebuild(self) -> None:
+    def test_same_selected_tree_drives_exact_device_tools_and_guarded_xcodebuild(self) -> None:
         name, _ = self._selected_developer_dir()
-        self.assertRegex(
-            self.source,
-            re.compile(rf'DEVELOPER_DIR="?\${name}"?\s+/usr/bin/xcrun\s+(?:xctrace|devicectl)'),
-            "physical device tooling must be explicitly pinned to the admitted selected developer tree",
-        )
+        for tool, variable in (("xctrace", "SELECTED_XCTRACE"), ("devicectl", "SELECTED_DEVICECTL")):
+            self.assertIn(
+                f'{variable}="$(DEVELOPER_DIR="${name}" /usr/bin/xcrun --find {tool})"',
+                self.source,
+                f"{tool} must be resolved from the admitted selected developer tree",
+            )
+            self.assertIn(
+                f'validate_root_custodied_path "${variable}" file',
+                self.source,
+                f"{tool} must receive exact executable-file custody",
+            )
+            self.assertRegex(
+                self.source,
+                re.compile(rf'(?m)^.*"\${variable}"\s+(?:list|device|process)\b'),
+                f"physical {tool} must execute the exact admitted executable",
+            )
         self.assertIn(
             'SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)"',
             self.source,
+        )
+        self.assertIn(
+            'validate_root_custodied_path "$SELECTED_XCODEBUILD" file',
+            self.source,
+            "selected xcodebuild must receive exact executable-file custody",
         )
         self.assertIn(
             '-- "$SELECTED_XCODEBUILD"',
