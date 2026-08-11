@@ -1,0 +1,66 @@
+name: Temporary Capture Root Account Heading A11Y
+
+on:
+  push:
+    branches:
+      - product/v14-capture-root-xxxl-recompose-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact two-path accessibility semantic repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='e5125cef81558f180854976b4d43a80dc06e15ec'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app = app_path.read_text()
+          old = '''            Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
+                .font(.title3.bold())
+                .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+'''
+          new = '''            Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
+                .font(.title3.bold())
+                .accessibilityAddTraits(.isHeader)
+                .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+'''
+          if app.count(old) != 1:
+              raise SystemExit('account task heading source seam changed')
+          app_path.write_text(app.replace(old, new, 1))
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootAccessibilityXXXLRecompositionTests.swift')
+          test = test_path.read_text()
+          old_test = '''        let accessibilityBranch = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize"))
+'''
+          new_test = '''        #expect(panel.contains(".accessibilityAddTraits(.isHeader)"))
+        let accessibilityBranch = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize"))
+'''
+          if test.count(old_test) != 1:
+              raise SystemExit('focused root accessibility test seam changed')
+          test_path.write_text(test.replace(old_test, new_test, 1))
+          PY
+          git diff --check
+          grep -Fq '.accessibilityAddTraits(.isHeader)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '#expect(panel.contains(".accessibilityAddTraits(.isHeader)"))' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootAccessibilityXXXLRecompositionTests.swift
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootAccessibilityXXXLRecompositionTests.swift' | sort)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootAccessibilityXXXLRecompositionTests.swift
+          git commit -m 'Capture: mark account task as accessibility heading'
+          git rm .github/workflows/tmp-capture-root-heading-a11y.yml
+          git commit -m 'Remove temporary Capture heading materializer'
+          git push origin HEAD:${GITHUB_REF_NAME}
