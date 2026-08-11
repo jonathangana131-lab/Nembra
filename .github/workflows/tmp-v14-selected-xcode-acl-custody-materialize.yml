@@ -1,0 +1,273 @@
+name: TEMP V14 Selected Xcode ACL Custody Materialize
+
+on:
+  push:
+    branches:
+      - repair/v14-selected-xcode-acl-custody-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-selected-xcode-acl-custody-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-selected-xcode-acl-custody-sol-20260811
+          fetch-depth: 0
+
+      - name: Bind construction to clean selected-tool parent
+        shell: bash
+        env:
+          BASE: 0f23ebe4aec1f69a9102d2d242a30d66de2e931e
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASE}^{commit}"
+          changed="$(git diff --name-only "$BASE"...HEAD | LC_ALL=C sort)"
+          test "$changed" = '.github/workflows/tmp-v14-selected-xcode-acl-custody-materialize.yml'
+
+      - name: Materialize ACL-aware production and permanent regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          installer = Path('scripts/field/install_one_time_capture.command')
+          source = installer.read_text(encoding='utf-8')
+          old_imports = '''import os
+          from pathlib import Path
+          import stat
+          '''
+          new_imports = '''import os
+          from pathlib import Path
+          import stat
+          import subprocess
+          '''
+          if source.count(old_imports) != 1:
+              raise SystemExit('installer custody import precondition moved')
+          source = source.replace(old_imports, new_imports, 1)
+
+          old_mode = '''    if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+                  raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable metadata")
+          '''
+          new_mode = '''    if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+                  raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable metadata")
+              try:
+                  acl_probe = subprocess.run(
+                      ["/bin/ls", "-lde", os.fspath(current)],
+                      env={"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"},
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      check=False,
+                  )
+              except OSError as error:
+                  raise SystemExit("selected Xcode custody could not inspect POSIX ACL authority") from error
+              if acl_probe.returncode != 0:
+                  raise SystemExit("selected Xcode custody could not inspect POSIX ACL authority")
+              acl_lines = acl_probe.stdout.splitlines()
+              if not acl_lines:
+                  raise SystemExit("selected Xcode custody ACL inspection returned no subject metadata")
+              mode_field = acl_lines[0].split(None, 1)[0]
+              if len(acl_lines) != 1 or mode_field.endswith("+"):
+                  raise SystemExit("selected Xcode custody refuses extended ACL authority")
+          '''
+          if source.count(old_mode) != 1:
+              raise SystemExit('installer custody mode precondition moved')
+          source = source.replace(old_mode, new_mode, 1)
+          installer.write_text(source, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py')
+          test_source = test_path.read_text(encoding='utf-8')
+          old_test_imports = '''from pathlib import Path
+          import re
+          import unittest
+          '''
+          new_test_imports = '''from pathlib import Path
+          import os
+          import re
+          import shlex
+          import subprocess
+          import tempfile
+          import unittest
+          '''
+          if test_source.count(old_test_imports) != 1:
+              raise SystemExit('selected-tool test import precondition moved')
+          test_source = test_source.replace(old_test_imports, new_test_imports, 1)
+
+          anchor = '''    def test_selected_xcodebuild_itself_interrogates_version(self) -> None:
+          '''
+          addition = r'''    def _extract_custody_program(self) -> str:
+              match = re.search(
+                  r"validate_root_custodied_path\(\)\s*\{.*?<<'PY_CUSTODY'\n(?P<body>.*?)\nPY_CUSTODY\n\}",
+                  self.source,
+                  re.DOTALL,
+              )
+              self.assertIsNotNone(match, "selected-tool custody helper must remain extractable")
+              assert match is not None
+              return match.group("body")
+
+              def test_custody_helper_rejects_extended_posix_acl_authority(self) -> None:
+              body = self._extract_custody_program()
+              self.assertIn('["/bin/ls", "-lde", os.fspath(current)]', body)
+              self.assertIn("selected Xcode custody refuses extended ACL authority", body)
+              self.assertIn("acl_probe.returncode != 0", body)
+
+              @unittest.skipUnless(hasattr(os, "uname") and os.uname().sysname == "Darwin", "real ACL fixture requires macOS")
+              def test_real_macos_named_user_write_acl_is_rejected(self) -> None:
+              user = os.environ.get("USER", "").strip()
+              self.assertTrue(user, "macOS ACL witness requires the runner user identity")
+              fixture_dir = Path(f"/Applications/NembraSelectedToolACL-{os.getpid()}")
+              fixture = fixture_dir / "xcodebuild-fixture"
+
+              def run(argv: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+                  return subprocess.run(argv, text=True, capture_output=True, check=check)
+
+              try:
+                  run(["/usr/bin/sudo", "-n", "/bin/mkdir", "-p", str(fixture_dir)])
+                  run([
+                      "/usr/bin/sudo", "-n", "/bin/sh", "-c",
+                      f"printf '#!/bin/sh\\nexit 0\\n' > {shlex.quote(str(fixture))}",
+                  ])
+                  run(["/usr/bin/sudo", "-n", "/usr/sbin/chown", "root:wheel", str(fixture_dir), str(fixture)])
+                  run(["/usr/bin/sudo", "-n", "/bin/chmod", "0755", str(fixture_dir), str(fixture)])
+
+                  program = self._extract_custody_program()
+                  with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as handle:
+                      handle.write(program)
+                      validator_path = Path(handle.name)
+                  try:
+                      env = {
+                          "PATH": "/usr/bin:/bin",
+                          "HOME": "/tmp",
+                          "LANG": "C",
+                          "LC_ALL": "C",
+                          "NEMBRA_CUSTODY_PATH": str(fixture),
+                          "NEMBRA_CUSTODY_KIND": "file",
+                      }
+                      baseline = subprocess.run(
+                          ["/usr/bin/python3", "-I", str(validator_path)],
+                          env=env,
+                          text=True,
+                          capture_output=True,
+                      )
+                      self.assertEqual(
+                          baseline.returncode,
+                          0,
+                          f"fixture must be admissible before ACL injection: {baseline.stderr}",
+                      )
+
+                      run([
+                          "/usr/bin/sudo", "-n", "/bin/chmod", "+a",
+                          f"{user} allow write", str(fixture),
+                      ])
+                      acl = run(["/bin/ls", "-lde", str(fixture)]).stdout
+                      self.assertIn(user, acl)
+                      self.assertRegex(acl, re.compile(r"(?i)allow\s+write"))
+
+                      before = fixture.read_bytes()
+                      mutation = subprocess.run(
+                          ["/bin/sh", "-c", f"printf '# acl-attacker-write\\n' >> {shlex.quote(str(fixture))}"],
+                          text=True,
+                          capture_output=True,
+                      )
+                      self.assertEqual(
+                          mutation.returncode,
+                          0,
+                          f"fixture must mechanically prove ACL-granted same-user write authority: {mutation.stderr}",
+                      )
+                      self.assertNotEqual(before, fixture.read_bytes())
+
+                      admitted = subprocess.run(
+                          ["/usr/bin/python3", "-I", str(validator_path)],
+                          env=env,
+                          text=True,
+                          capture_output=True,
+                      )
+                      self.assertNotEqual(
+                          admitted.returncode,
+                          0,
+                          "root-owned 0755 physical tool with a write-granting ACL must be rejected",
+                      )
+                      self.assertIn("refuses extended ACL authority", admitted.stderr)
+                  finally:
+                      validator_path.unlink(missing_ok=True)
+              finally:
+                  subprocess.run(
+                      ["/usr/bin/sudo", "-n", "/bin/rm", "-rf", "--", str(fixture_dir)],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      check=False,
+                  )
+
+          '''
+          # Fix intentional raw-template indentation to class scope before insertion.
+          addition = addition.replace('\n            def ', '\n    def ').replace('\n            @unittest', '\n    @unittest')
+          addition = addition.replace('\n            body =', '\n        body =').replace('\n            user =', '\n        user =')
+          if test_source.count(anchor) != 1:
+              raise SystemExit('selected-tool test insertion anchor moved')
+          test_source = test_source.replace(anchor, addition + anchor, 1)
+          test_path.write_text(test_source, encoding='utf-8')
+
+          workflow = Path('.github/workflows/capture-field-selected-xcode-tool-file-custody.yml')
+          workflow_source = workflow.read_text(encoding='utf-8')
+          if 'real-macos-acl-custody:' in workflow_source:
+              raise SystemExit('permanent ACL job already exists')
+          workflow_source += r'''
+
+            real-macos-acl-custody:
+              name: Reject ACL-granted selected-tool mutation authority
+              if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+              runs-on: xcode-27
+              timeout-minutes: 12
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
+                    persist-credentials: false
+
+                - name: Bind ACL witness to exact checked-out head
+                  shell: bash
+                  env:
+                    EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+                  run: |
+                    set -euo pipefail
+                    test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+                - name: Prove real macOS ACL authority is rejected
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+                    /usr/bin/python3 -I scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+                    /bin/bash -n scripts/field/install_one_time_capture.command
+          '''
+          workflow.write_text(workflow_source, encoding='utf-8')
+          PY
+
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish durable repair and remove construction workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-swarm'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git add \
+            scripts/field/install_one_time_capture.command \
+            scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py \
+            .github/workflows/capture-field-selected-xcode-tool-file-custody.yml
+          git commit -m 'security(capture): reject selected Xcode ACL mutation authority'
+          git rm .github/workflows/tmp-v14-selected-xcode-acl-custody-materialize.yml
+          git commit -m 'chore(capture): remove ACL custody materializer'
+          git push origin HEAD:repair/v14-selected-xcode-acl-custody-sol-20260811
