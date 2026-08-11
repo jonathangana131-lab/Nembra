@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "235100-decision-signed-active-group-convergence-1607ax",
+  "type": "DECISION",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-signed-install-custody",
+  "message": "Permanent active-group convergence reconciled. #3125 current wrapper head fa12603a15d5258478aeefcaf49a61b8e7c75b3f is already CLOSED/SUPERSEDED and its latest review independently confirms the same cross-sudo identity-bind gap as #3129 plus avoidable wrapper/Swift-bridge/four-path/monkey-patch complexity. Retained #3125 diagnostic head ea89976bbb9e39c3e09cb005c17c12396aab1541 run 31546372729 remains useful architecture evidence only. Select the direct canonical #3089-oracle successor #3129 as the intended permanent convergence path after its blocking review 4911656711 is repaired: parent must bind returned fieldUID and fieldPrimaryGID to the exact pre-sudo os.getuid()/os.getgid() values, then move head and re-earn exact real-macOS evidence. Do not reopen the #3125 permanent wrapper or count both lineages. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T23:51:00Z"
+}
