@@ -1,0 +1,47 @@
+name: Capture 2709 Vnode Attribute Finalize
+on:
+  push:
+    branches:
+      - repair/v14-capture-2709-vnode-attrib-sol
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Apply and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('Scripts/capture_tuya_private_input_build_guard.py')
+          s=p.read_text()
+          old='            "KQ_NOTE_EXTEND",\n            "KQ_NOTE_LINK",\n'
+          new='            "KQ_NOTE_EXTEND",\n            "KQ_NOTE_ATTRIB",\n            "KQ_NOTE_LINK",\n'
+          if s.count(old) != 1:
+              raise SystemExit('required flag anchor drift')
+          s=s.replace(old,new,1)
+          old='            | select.KQ_NOTE_EXTEND\n            | select.KQ_NOTE_LINK\n'
+          new='            | select.KQ_NOTE_EXTEND\n            | select.KQ_NOTE_ATTRIB\n            | select.KQ_NOTE_LINK\n'
+          if s.count(old) != 1:
+              raise SystemExit('fflags anchor drift')
+          p.write_text(s.replace(old,new,1))
+          PY
+          python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          python3 scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
+          python3 scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
+          git diff --check
+      - name: Commit repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          git config user.name jonathangana131-lab
+          git config user.email jonathangana131@gmail.com
+          git commit -m 'fix(capture): watch generated vnode attribute mutations'
+          git push origin HEAD:repair/v14-capture-2709-vnode-attrib-sol
