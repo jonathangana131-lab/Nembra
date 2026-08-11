@@ -1,0 +1,99 @@
+name: Temporary V14 Capture Protected Install Materializer
+
+on:
+  push:
+    branches: [repair/v14-capture-signed-app-protected-install-sol]
+    paths: [.github/workflows/tmp-v14-capture-protected-install-materialize.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Recover staging delta and pin helper execution subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "61b3b769184d2771d56898bacf6347993ec994db"
+          test "$(git rev-parse HEAD:scripts/field/install_one_time_capture.command)" = "a7d0a0ab23d7dd9723476eb38f9f507bbc5d7672"
+          git fetch --no-tags origin repair/v14-capture-signed-app-install-custody-gpt56-sol
+          git show FETCH_HEAD:scripts/field/install_one_time_capture.command > /tmp/staged-installer
+          python3 - <<'PY'
+          from pathlib import Path
+
+          installer = Path("scripts/field/install_one_time_capture.command")
+          source = Path("/tmp/staged-installer").read_text(encoding="utf-8")
+          old = '''SIGNED_APP_CUSTODY_HELPER="$ROOT/scripts/ci/capture_signed_app_install_custody.py"
+[[ -f "$SIGNED_APP_CUSTODY_HELPER" ]] || die "Signed-app install custody helper is missing from the exact accepted source."
+SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" fingerprint --app "$APP")" || \\
+    die "Could not bind the exact post-build signed-app tree before protected staging."
+'''
+          new = '''SIGNED_APP_CUSTODY_HELPER_PATH="scripts/ci/capture_signed_app_install_custody.py"
+SIGNED_APP_CUSTODY_HELPER_BLOB="$(/usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_CUSTODY_HELPER_PATH" 2>/dev/null)" || \\
+    die "Signed-app custody helper is missing from the exact accepted Git tree."
+[[ "$SIGNED_APP_CUSTODY_HELPER_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Signed-app custody helper Git blob identity is malformed."
+SIGNED_APP_CUSTODY_HELPER_SOURCE="$(
+    /usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" || exit 1
+    printf '\036'
+)" || die "Could not capture signed-app custody helper from the accepted Git object."
+[[ "${SIGNED_APP_CUSTODY_HELPER_SOURCE: -1}" == $'\036' ]] || die "Signed-app custody helper capture sentinel is missing."
+SIGNED_APP_CUSTODY_HELPER_SOURCE="${SIGNED_APP_CUSTODY_HELPER_SOURCE%$'\036'}"
+[[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_SOURCE" | /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \\
+    die "Captured signed-app custody helper bytes do not match the accepted Git blob."
+SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I -c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" fingerprint --app "$APP")" || \\
+    die "Could not bind the exact post-build signed-app tree before protected staging."
+'''
+          if source.count(old) != 1:
+              raise SystemExit("staging helper admission marker drifted")
+          source = source.replace(old, new, 1)
+          old_verify = '''STAGED_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" verify-stage \\
+'''
+          new_verify = '''STAGED_APP_TREE_SHA256="$(/usr/bin/python3 -I -c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" verify-stage \\
+'''
+          if source.count(old_verify) != 1:
+              raise SystemExit("staging helper verification marker drifted")
+          source = source.replace(old_verify, new_verify, 1)
+          source = source.replace(
+              'unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER APP_INSTALL_STAGE\n',
+              'unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_SOURCE APP_INSTALL_STAGE\n',
+              1,
+          )
+          installer.write_text(source, encoding="utf-8")
+
+          test = Path("scripts/ci/tests/test_capture_signed_app_install_custody.py")
+          text = test.read_text(encoding="utf-8")
+          text = text.replace('capture_signed_app_install_custody.py" fingerprint --app "$APP"', '-c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" fingerprint --app "$APP"')
+          text = text.replace('capture_signed_app_install_custody.py" verify-stage', '-c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" verify-stage')
+          needle = '''        self.assertLess(indexes["app"], indexes["fingerprint"])
+'''
+          extra = '''        blob_marker = source.find('/usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"')
+        hash_marker = source.find('/usr/bin/git hash-object --stdin')
+        self.assertGreaterEqual(blob_marker, 0)
+        self.assertGreaterEqual(hash_marker, 0)
+        self.assertLess(blob_marker, indexes["fingerprint"])
+        self.assertLess(hash_marker, indexes["fingerprint"])
+        self.assertNotIn('/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py"', source)
+
+'''
+          if text.count(needle) != 1:
+              raise SystemExit("custody ordering assertion marker drifted")
+          test.write_text(text.replace(needle, extra + needle, 1), encoding="utf-8")
+          PY
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          python3 -B -c 'compile(open("scripts/ci/capture_signed_app_install_custody.py", encoding="utf-8").read(), "custody", "exec"); compile(open("scripts/ci/tests/test_capture_signed_app_install_custody.py", encoding="utf-8").read(), "tests", "exec")'
+          python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          git diff --check
+          test -z "$(find scripts -type d -name __pycache__ -print -quit)"
+          git rm .github/workflows/tmp-v14-capture-protected-install-materialize.yml
+          git add scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_signed_app_install_custody.py
+          git diff --cached --check
+          git config user.name "Nembra V14 Capture Closure"
+          git config user.email "nembra-v14@users.noreply.github.com"
+          git commit -m "fix(capture): protect exact signed app install subject"
+          git push origin HEAD:repair/v14-capture-signed-app-protected-install-sol
