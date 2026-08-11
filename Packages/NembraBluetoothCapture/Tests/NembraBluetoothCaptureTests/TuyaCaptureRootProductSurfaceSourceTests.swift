@@ -20,6 +20,8 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(body.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
         #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
         #expect(body.contains("Engineering details"))
+        #expect(body.contains("private func rootSection"))
+        #expect(!body.contains("private func rootPanel"))
         #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
         #expect(!body.contains("Prove the secure scooter link first."))
         #expect(!body.contains("Read-only control boundary"))
@@ -44,10 +46,12 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(body.contains("tuya.selectDevice(device)"))
         #expect(body.contains("SecureLinkView(device: device)"))
         #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
+        #expect(body.contains("private func scooterSelectionButton"))
+        #expect(body.contains("private func continueButton"))
         #expect(app.contains("No DP query or scooter command is authorized by this surface."))
     }
 
-    @Test("Accessibility XXXL recomposes the root instead of scaling marketing copy")
+    @Test("Accessibility XXXL recomposes the precision root around the real account action")
     func accessibilityRootIsDeliberatelyCompact() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
@@ -57,28 +61,37 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         ))
 
         #expect(root.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+        #expect(root.contains("private var isAccessibilityLayout: Bool"))
         #expect(root.contains("if !dynamicTypeSize.isAccessibilitySize"))
         #expect(root.contains("fieldBuildIsAuthoritative ? \"Prepare Capture\" : \"Capture locked\""))
         #expect(root.contains("Account setup only in this public build."))
         #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
+        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("Text(\"Tuya Smart user code\")"))
         #expect(root.contains("TextField(\"Paste user code\""))
-        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
-        #expect(root.contains("private var buildAuthorityDetail: String"))
-        #expect(root.contains("Build provenance ready"))
-        #expect(root.contains("private var accountMetadataPrimaryAction: some View"))
-        #expect(root.contains("private var accountMetadataSupportingCopy: some View"))
-        #expect(root.contains("nembra.capture.root.account-link-action"))
+        #expect(root.contains(".accessibilityLabel(\"Tuya Smart user code\")"))
+        #expect(root.contains(".accessibilityIdentifier(\"nembra.capture.root.account-link-action\")"))
+        #expect(root.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
+        #expect(root.contains(".tint(.cyan)"))
+        #expect(root.contains("Refresh scooters"))
 
         let panel = String(try section(
             in: root,
             from: "private var accountSetupPanel: some View",
-            to: "private var accountMetadataPrimaryAction: some View"
+            to: "private var statusText: some View"
         ))
-        let accessibilityBranch = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize"))
-        let primary = try #require(panel.range(of: "accountMetadataPrimaryAction", range: accessibilityBranch.upperBound..<panel.endIndex))
-        let supporting = try #require(panel.range(of: "accountMetadataSupportingCopy", range: primary.upperBound..<panel.endIndex))
-        #expect(primary.lowerBound < supporting.lowerBound)
+        let field = try #require(panel.range(of: "TextField(\"Paste user code\""))
+        let action = try #require(panel.range(of: "Label(\"Create approval QR\", systemImage: \"qrcode\")"))
+        let accessibilityBranch = try #require(panel.range(
+            of: "if isAccessibilityLayout {",
+            range: action.upperBound..<panel.endIndex
+        ))
+        let accessibilityStatus = try #require(panel.range(
+            of: "statusText",
+            range: accessibilityBranch.upperBound..<panel.endIndex
+        ))
+        #expect(field.lowerBound < action.lowerBound)
+        #expect(action.lowerBound < accessibilityStatus.lowerBound)
     }
 
     @Test("metadata preparation bridge remains cloud-only and command-free")
