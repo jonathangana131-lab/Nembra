@@ -51,6 +51,19 @@ jobs:
             mkdir -p "$(dirname "$path")"
             /usr/bin/git show "$RECOVERY_SHA:$path" > "$path"
           done
+      - name: Repair generated authority fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tests/test_capture_private_review_commitment.py')
+          text = path.read_text()
+          stale = '(scripts / SUBJECT_HELPER.name)'
+          if text.count(stale) != 1:
+              raise SystemExit(f'private-review generated-helper fixture changed unexpectedly: {text.count(stale)} matches')
+          path.write_text(text.replace(stale, '(scripts / GENERATED.name)', 1))
+          PY
       - name: Preserve replacement-blind accepted Git authority
         shell: bash
         run: |
