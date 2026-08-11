@@ -9,16 +9,13 @@ ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "Scripts/provision_capture_tuya_identity_writer.py"
 SHELL = ROOT / "Scripts/provision_capture_tuya_identity.sh"
 SWIFT = ROOT / "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift"
-WORKFLOW = ROOT / ".github/workflows/capture-private-identity-publication-races-redteam.yml"
 ATTACK = ROOT / "scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py"
 SELF = Path(__file__)
-TEMP_WORKFLOW = ROOT / ".github/workflows/tmp-v14-private-identity-final-name-binding-sol.yml"
 
 EXPECTED_BLOBS = {
     WRITER: "ed473ca81fed3a729c4618c65c2fcd0d272987a5",
     SHELL: "e8b2da09350ffb1e53ceb13bd69e3dcea33a7daf",
     SWIFT: "43d8c83d543efdfe7aafc219e6eb1f79d091cb4a",
-    WORKFLOW: "b4e3ca960b4dce46ce0d772b7e5909f756fe2dfe",
 }
 
 
@@ -49,8 +46,7 @@ old_success = '''            _require_descriptor_payload(\n                final
 new_success = '''            _require_descriptor_payload(\n                final_fd,\n                payload,\n                "published private identity payload changed before durable success",\n            )\n            os.fsync(checkout_fd)\n            _require_relative_name_matches_descriptor(\n                checkout_fd,\n                destination_relative,\n                final_fd,\n            )\n        except Exception:\n            compromised = os.fstat(final_fd)\n            _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, compromised)\n            raise\n'''
 if old_success not in writer:
     raise SystemExit("writer durable-success seam drifted")
-writer = writer.replace(old_success, new_success, 1)
-WRITER.write_text(writer, encoding="utf-8")
+WRITER.write_text(writer.replace(old_success, new_success, 1), encoding="utf-8")
 writer_digest = hashlib.sha256(WRITER.read_bytes()).hexdigest()
 
 shell = SHELL.read_text(encoding="utf-8")
@@ -76,32 +72,6 @@ swift = swift.replace(
 )
 SWIFT.write_text(swift, encoding="utf-8")
 
-workflow = WORKFLOW.read_text(encoding="utf-8")
-path_anchor = "      - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n"
-if workflow.count(path_anchor) != 2:
-    raise SystemExit("publication workflow path-filter contract drifted")
-workflow = workflow.replace(
-    path_anchor,
-    path_anchor + "      - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py\n",
-)
-compile_anchor = "          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n"
-if workflow.count(compile_anchor) != 1:
-    raise SystemExit("publication workflow compile contract drifted")
-workflow = workflow.replace(
-    compile_anchor,
-    compile_anchor + "          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py\n",
-    1,
-)
-run_anchor = "          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n"
-if workflow.count(run_anchor) != 1:
-    raise SystemExit("publication workflow execution contract drifted")
-workflow = workflow.replace(
-    run_anchor,
-    run_anchor + "          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py\n",
-    1,
-)
-WORKFLOW.write_text(workflow, encoding="utf-8")
-
 subprocess.run(["python3", "-m", "py_compile", str(WRITER), str(ATTACK)], cwd=ROOT, check=True)
 subprocess.run(["python3", str(WRITER), "--self-test"], cwd=ROOT, check=True)
 for test in (
@@ -113,25 +83,18 @@ for test in (
     subprocess.run(["python3", "-I", test], cwd=ROOT, check=True)
 subprocess.run(["bash", "-n", str(SHELL)], cwd=ROOT, check=True)
 subprocess.run(["git", "diff", "--check"], cwd=ROOT, check=True)
-
-shell_after = SHELL.read_text(encoding="utf-8")
-swift_after = SWIFT.read_text(encoding="utf-8")
-if new_digest not in shell_after or writer_digest not in swift_after:
+if new_digest not in SHELL.read_text(encoding="utf-8") or writer_digest not in SWIFT.read_text(encoding="utf-8"):
     raise SystemExit("writer digest was not carried through shell + package contract")
 
 SELF.unlink()
-TEMP_WORKFLOW.unlink()
 subprocess.run(
     [
-        "git",
-        "add",
+        "git", "add",
         "Scripts/provision_capture_tuya_identity_writer.py",
         "Scripts/provision_capture_tuya_identity.sh",
         "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift",
-        ".github/workflows/capture-private-identity-publication-races-redteam.yml",
         "scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py",
         str(SELF.relative_to(ROOT)),
-        str(TEMP_WORKFLOW.relative_to(ROOT)),
     ],
     cwd=ROOT,
     check=True,
@@ -139,14 +102,6 @@ subprocess.run(
 subprocess.run(["git", "diff", "--cached", "--check"], cwd=ROOT, check=True)
 subprocess.run(["git", "config", "user.name", "nembra-sol-bot"], cwd=ROOT, check=True)
 subprocess.run(["git", "config", "user.email", "nembra-sol-bot@users.noreply.github.com"], cwd=ROOT, check=True)
-subprocess.run(
-    ["git", "commit", "-m", "Bind private identity canonical destination name"],
-    cwd=ROOT,
-    check=True,
-)
-subprocess.run(
-    ["git", "push", "origin", "HEAD:repair/v14-private-identity-final-name-binding-sol-20260811"],
-    cwd=ROOT,
-    check=True,
-)
+subprocess.run(["git", "commit", "-m", "Bind private identity canonical destination name"], cwd=ROOT, check=True)
+subprocess.run(["git", "push", "origin", "HEAD:repair/v14-private-identity-final-name-binding-sol-20260811"], cwd=ROOT, check=True)
 print(f"published writer sha256 {writer_digest}")
