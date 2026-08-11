@@ -1,5 +1,6 @@
 name: Materialize R3 Generated Helper Execution Custody
 
+# Retry 2: isolate only the R3 subprocess reference in the swap/restore regression.
 on:
   push:
     branches:
