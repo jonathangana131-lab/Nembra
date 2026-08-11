@@ -9,6 +9,7 @@ import textwrap
 ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "Scripts" / "provision_capture_tuya_identity_writer.py"
 RACES = ROOT / "scripts" / "ci" / "tests" / "test_capture_private_identity_publication_races.py"
+CONTRACT = ROOT / "Packages" / "NembraBluetoothCapture" / "Tests" / "NembraBluetoothCaptureTests" / "TuyaPrivateIdentityProvisionerCustodyTests.swift"
 SELF = Path(__file__).resolve().relative_to(ROOT)
 OLD_DIGEST = "8a3bc75629a384f54d4c7dd4cf6f63e4bfc994dbde472683826dfb3acfa19d4f"
 
@@ -58,6 +59,15 @@ def patch_race_test() -> None:
     RACES.write_text(text)
 
 
+def patch_package_contract() -> None:
+    text = CONTRACT.read_text()
+    old = '''        #expect(writer.contains("O_NOFOLLOW"))\n        #expect(writer.contains("O_DIRECTORY"))\n        #expect(writer.contains("O_EXCL"))\n        #expect(writer.contains("dir_fd=parent_fd"))\n        #expect(writer.contains("src_dir_fd=parent_fd"))\n        #expect(writer.contains("dst_dir_fd=parent_fd"))\n'''
+    new = '''        #expect(writer.contains("O_NOFOLLOW"))\n        #expect(writer.contains("O_DIRECTORY"))\n        #expect(writer.contains("O_EXCL"))\n        #expect(writer.contains("dir_fd=checkout_fd"))\n        #expect(writer.contains("src_dir_fd=checkout_fd"))\n        #expect(writer.contains("dst_dir_fd=checkout_fd"))\n        #expect(writer.contains("_DARWIN_RENAME_NOFOLLOW_ANY"))\n        #expect(writer.contains("_DARWIN_RENAME_RESOLVE_BENEATH"))\n        #expect(writer.contains("_require_staging_name_matches_fd"))\n        #expect(writer.contains("published_payload = _read_exact_fd_payload"))\n        #expect(writer.contains("_scrub_fd_best_effort"))\n        #expect(writer.contains("_remove_final_if_same_inode_beneath"))\n'''
+    if '#expect(writer.contains("_scrub_fd_best_effort"))' not in text:
+        text = replace_once(text, old, new, "root-bound package custody contract")
+    CONTRACT.write_text(text)
+
+
 def repin() -> None:
     digest = hashlib.sha256(WRITER.read_bytes()).hexdigest()
     result = subprocess.run(
@@ -84,6 +94,7 @@ def repin() -> None:
 def main() -> None:
     patch_writer()
     patch_race_test()
+    patch_package_contract()
     repin()
 
 
