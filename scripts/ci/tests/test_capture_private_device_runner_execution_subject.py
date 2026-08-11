@@ -22,11 +22,13 @@ class PrivateDeviceRunnerExecutionSubjectTests(unittest.TestCase):
 
         accepted = 'PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git rev-parse "$SOURCE_SHA:$PRIVATE_DEVICE_RUNNER_RELATIVE"'
         materialize = 'GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git cat-file blob "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB"'
+        canonical_base64 = "/usr/bin/base64 | /usr/bin/tr -d '\\r\\n'"
         verify = '/usr/bin/git hash-object --stdin)" == "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB"'
         execute = 'runner_source = base64.b64decode(sys.argv[1], validate=True)'
         compile_marker = 'compile(runner_source, "<accepted-private-device-runner>", "exec", dont_inherit=True)'
         self.assertIn(accepted, source)
         self.assertIn(materialize, source)
+        self.assertIn(canonical_base64, source)
         self.assertIn(verify, source)
         self.assertIn(execute, source)
         self.assertIn(compile_marker, source)
