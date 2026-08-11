@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "082730-reconcile-remaining-3f7c-build-authority-refresh",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Refreshed stale capture-build-authority durable routing from imported #2805@4467bc07 to live GitHub. Current legacy #2805 is 4cc394a3...; clean successor #2825 is 008d8cb3... with QA child #2829 exact 16571ff9... queued for Field Provenance/Xcode; post-materialization closure #2830 exact 0d59c48a... has no current-head workflow evidence yet. Direct current-source inspection proves KQ_NOTE_ATTRIB remains absent from #2805 and #2830, so #2778 is explicitly retained as a live required repair. No ownership was fabricated and no product bytes changed. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:27:30Z",
+  "data": {
+    "laneUpdated": "capture-build-authority",
+    "legacyPrimaryPR": 2805,
+    "legacyPrimaryHeadSHA": "4cc394a3bba954e1458426100e97ca4c877ed925",
+    "cleanSuccessorPR": 2825,
+    "cleanSuccessorHeadSHA": "008d8cb3d782b6f112b476bca2a22aecfd7d62e5",
+    "qaChildPR": 2829,
+    "qaChildHeadSHA": "16571ff9a69a6da727d2f65d027a60b53c7c64d3",
+    "postMaterializationPR": 2830,
+    "postMaterializationHeadSHA": "0d59c48afc23d9109ce0f42caf53eb4d7a0e617b",
+    "retainedVnodeRepairPR": 2778,
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
