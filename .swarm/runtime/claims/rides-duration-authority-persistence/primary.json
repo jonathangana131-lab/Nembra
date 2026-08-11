@@ -7,14 +7,17 @@
   "workerId": "sol-20260811-1439r8",
   "leaseId": "rides-duration-primary-r8-20260811-2216",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:16:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:16:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:02:30Z",
+  "releasedAt": "2026-08-11T22:02:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-rides-duration-current-main-sol-r8-20260811",
-  "pr": null,
+  "pr": 3067,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "currentHeadSHA": "488f0e8480e7187fda312c6b6dcb0c1e0b6d3d13",
   "legacyParentPR": 1474,
   "legacyParentHeadSHA": "40fda83500f6c9830f69631bbe3d6a35c381825b",
-  "intent": "Reconcile legacy #1474's completed-ride monotonic-duration authority seal onto exact current main without replaying stale ancestry. Preserve non-Codable runtime authority, producer-access fences, and wall-clock non-authority. Keep archive child #1514 blocked until the current-main parent is independently accepted. SOFTWARE_ONLY."
+  "intent": "Reconcile legacy #1474's still-missing direct-source producer fence onto exact current main without replaying stale ancestry or overwriting newer completed-duration/archive provenance truth. SOFTWARE_ONLY.",
+  "checkpoint": "IMPLEMENTATION CHECKPOINT #3067@488f0e84. Fresh reconciliation proved current main already contains the non-Codable authoritative CompletedRideDurationEvidence/archive work and newer exact completed-ride provenance; only RideSessionDurationEvidence producer access remained stale, with current main blob 3961c8ae exactly matching #1474 pre-fix base. Ported only #1474 exact final source blob 171431b4. Added source-contract assertions inside lane-authorized CompletedRideDurationPersistenceInvariantTests.swift; an initially separate test file was deleted after catching that its path was outside adjacentWriteAreas, leaving the final tree at exactly two authorized paths. Compare main d8e38d0a -> head is ahead 4 / behind 0; PR mergeable true. Earlier /xcode27 run on stale 9eb212d7 is invalidated. Fresh exact-head run 31540497351 is QUEUED. Queued != green. Source is not currently selected in Nembra.xcodeproj direct app Sources, so this is PACKAGE/DOMAIN authority hardening, not app-visible completion. Independent review must use a different worker. Legacy #1514 requires fresh semantic reconciliation after parent acceptance; do not replay stale child blobs. SOFTWARE_ONLY."
 }
