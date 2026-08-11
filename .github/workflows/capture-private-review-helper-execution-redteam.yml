@@ -10,6 +10,7 @@ on:
       - Scripts/capture_tuya_private_input_review.py
       - Scripts/capture_tuya_private_input_provenance.py
       - Scripts/capture_cocoapods_generated_build_subject.py
+      - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_private_review_helper_execution_subject.py
       - .github/workflows/capture-private-review-helper-execution-redteam.yml
 
@@ -17,7 +18,28 @@ permissions:
   contents: read
 
 jobs:
-  helper-execution-subject:
+  bootstrap-helper-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind diagnostic to exact checked-out head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_helper_execution_subject.py
+      - name: Reject substituted bootstrap verifier execution
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_private_review_helper_execution_subject.PrivateReviewHelperExecutionSubjectTests.test_replaced_private_review_helper_cannot_admit_substituted_generation
+
+  build-guard-neighbor-execution:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -35,7 +57,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
-            Scripts/capture_tuya_private_input_review.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
             scripts/ci/tests/test_capture_private_review_helper_execution_subject.py
-      - name: Require protected private-review helper execution subject
-        run: python3 scripts/ci/tests/test_capture_private_review_helper_execution_subject.py
+      - name: Reject substituted build-guard neighbor verifier
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_private_review_helper_execution_subject.PrivateReviewHelperExecutionSubjectTests.test_build_guard_cannot_import_substituted_neighbor_review_helper
