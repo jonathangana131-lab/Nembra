@@ -2,11 +2,11 @@
 """Fingerprint CocoaPods-generated Capture build inputs without exposing their bytes.
 
 This helper binds the generated build graph that sits between an accepted
-Podfile.lock and xcodebuild.  It deliberately fingerprints ignored generated
-inputs (Pods/ and NembraCapture.xcworkspace/) as a finite pathname/metadata/byte
-snapshot.  Symlinks are fingerprinted as links and are not followed; the
-separate private-input provenance contract remains authority for local private
-Tuya targets.
+Podfile.lock and xcodebuild. It fingerprints ignored generated inputs (Pods/ and
+NembraCapture.xcworkspace/) as a finite pathname/metadata/byte snapshot.
+Generated symlinks are fingerprinted as link objects, never followed during the
+tree walk, and may resolve only inside the generated tree or the two separately
+provenanced local Tuya roots used by this Capture Podfile.
 """
 
 from __future__ import annotations
@@ -92,7 +92,54 @@ def _read_regular(path: Path, expected: tuple[int, ...]) -> bytes:
         os.close(descriptor)
 
 
-def _tree_entries(root: Path) -> tuple[tuple[str, str, int, bytes], ...]:
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _authorized_symlink_target(
+    path: Path,
+    *,
+    generated_root: Path,
+    repository_root: Path,
+) -> str:
+    try:
+        target_text = os.readlink(path)
+        resolved = path.resolve(strict=True)
+        generated_resolved = generated_root.resolve(strict=True)
+    except OSError as error:
+        raise GeneratedBuildSubjectError(
+            f"generated build contains a broken or unreadable symlink: {path}"
+        ) from error
+
+    allowed_roots = [generated_resolved]
+    # The only external local pods in the accepted Capture Podfile are these two
+    # ignored Tuya roots. Their build-relevant bytes are independently bound and
+    # watched by capture_tuya_private_input_provenance/build_guard. Reject any
+    # generated link that points somewhere else instead of silently trusting a
+    # mutable external pathname.
+    for relative in ("LocalSecrets/TuyaSDK", "LocalSecrets/TuyaRuntime"):
+        candidate = repository_root / relative
+        try:
+            allowed_roots.append(candidate.resolve(strict=True))
+        except OSError:
+            continue
+
+    if not any(_is_within(resolved, allowed) for allowed in allowed_roots):
+        raise GeneratedBuildSubjectError(
+            f"generated CocoaPods symlink escapes accepted generated/private roots: {path}"
+        )
+    return target_text
+
+
+def _tree_entries(
+    root: Path,
+    *,
+    repository_root: Path,
+) -> tuple[tuple[str, str, int, bytes], ...]:
     try:
         root_metadata = root.lstat()
     except OSError as error:
@@ -126,7 +173,11 @@ def _tree_entries(root: Path) -> tuple[tuple[str, str, int, bytes], ...]:
             identity = _identity(metadata)
             mode = stat.S_IMODE(metadata.st_mode)
             if stat.S_ISLNK(metadata.st_mode):
-                target = os.readlink(candidate)
+                target = _authorized_symlink_target(
+                    candidate,
+                    generated_root=root,
+                    repository_root=repository_root,
+                )
                 states.append((candidate, identity, "L", target))
                 entries.append(("L", relative, mode, os.fsencode(target)))
             elif stat.S_ISDIR(metadata.st_mode):
@@ -146,7 +197,11 @@ def _tree_entries(root: Path) -> tuple[tuple[str, str, int, bytes], ...]:
             identity = _identity(metadata)
             mode = stat.S_IMODE(metadata.st_mode)
             if stat.S_ISLNK(metadata.st_mode):
-                target = os.readlink(candidate)
+                target = _authorized_symlink_target(
+                    candidate,
+                    generated_root=root,
+                    repository_root=repository_root,
+                )
                 states.append((candidate, identity, "L", target))
                 entries.append(("L", relative, mode, os.fsencode(target)))
             elif stat.S_ISREG(metadata.st_mode):
@@ -176,6 +231,11 @@ def _tree_entries(root: Path) -> tuple[tuple[str, str, int, bytes], ...]:
         if kind == "L":
             if not stat.S_ISLNK(metadata.st_mode) or os.readlink(path) != target:
                 raise GeneratedBuildSubjectError(f"generated symlink changed: {path}")
+            _authorized_symlink_target(
+                path,
+                generated_root=root,
+                repository_root=repository_root,
+            )
 
     for directory, expected_members in directory_members.items():
         if _members(directory) != expected_members:
@@ -186,10 +246,14 @@ def _tree_entries(root: Path) -> tuple[tuple[str, str, int, bytes], ...]:
     return tuple(sorted(entries, key=lambda item: os.fsencode(item[1])))
 
 
-def _tree_fingerprint(root: Path) -> str:
+def _tree_fingerprint(root: Path, *, repository_root: Path | None = None) -> str:
+    effective_repository_root = repository_root if repository_root is not None else root.parent
     digest = hashlib.sha256()
     _feed(digest, b"nembra-cocoapods-generated-tree-v1")
-    for kind, relative, mode, payload in _tree_entries(root):
+    for kind, relative, mode, payload in _tree_entries(
+        root,
+        repository_root=effective_repository_root,
+    ):
         _feed(digest, kind.encode("ascii"))
         _feed(digest, os.fsencode(relative))
         _feed(digest, mode.to_bytes(4, "big"))
@@ -218,11 +282,18 @@ def _regular_fingerprint(path: Path) -> str:
 
 
 def build_subject(*, lockfile: Path, pods: Path, workspace: Path) -> str:
+    repository_root = lockfile.parent
     digest = hashlib.sha256()
     _feed(digest, SCHEMA)
     _feed(digest, bytes.fromhex(_regular_fingerprint(lockfile)))
-    _feed(digest, bytes.fromhex(_tree_fingerprint(pods)))
-    _feed(digest, bytes.fromhex(_tree_fingerprint(workspace)))
+    _feed(
+        digest,
+        bytes.fromhex(_tree_fingerprint(pods, repository_root=repository_root)),
+    )
+    _feed(
+        digest,
+        bytes.fromhex(_tree_fingerprint(workspace, repository_root=repository_root)),
+    )
     return digest.hexdigest()
 
 
