@@ -1,1 +1,2 @@
 Temporary same-repository trigger only. Never merge.
+Retry after narrowing runner checkpoint to product/test files only.
