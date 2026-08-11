@@ -1,0 +1,75 @@
+name: TEMP V14 Pin Final GO installer subject
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-pinned-installer-subject-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply pinned installer-subject repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/temp_v14_pin_final_go_installer_subject.py
+
+      - name: Validate complete Final-GO authority suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
+          tests=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').read_text()
+          for needle in (
+              'def canonical_private_path(',
+              'def installer_environment(',
+              '"BASH_ENV":"/dev/null"',
+              'git(root,"ls-files","-v","--",relative)',
+              'git(root,"hash-object","--no-filters","--",relative)',
+              'candidate authority worktree bytes differ from accepted Git blob',
+              'def accepted_installer_blob(',
+              '"cat-file","blob"',
+              'source /dev/fd/',
+              'stdin=subprocess.DEVNULL',
+              'pass_fds=(read_fd,)',
+              'threading.Thread',
+          ):
+              if needle not in source: raise SystemExit(f'missing composed authority invariant: {needle}')
+          if 'test_verified_installer_cannot_be_replaced_only_for_execution' not in tests:
+              raise SystemExit('missing installer execution-subject regression')
+          PY
+          git diff --check
+
+      - name: Publish clean two-file repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/temp_v14_pin_final_go_installer_subject.py
+          rm -f .github/workflows/temp-v14-pin-final-go-installer-subject.yml
+          git add -A
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'scripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py'
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'nembra-v14-sol@users.noreply.github.com'
+          git commit -m 'fix(capture): pin Final-GO installer execution bytes'
+          git push origin HEAD:repair/v14-final-go-pinned-installer-subject-sol
