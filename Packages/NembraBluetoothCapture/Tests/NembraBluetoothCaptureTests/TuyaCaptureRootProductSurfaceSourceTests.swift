@@ -16,7 +16,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
 
         #expect(body.contains("NEMBRA CAPTURE"))
         #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
+        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
         #expect(body.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
         #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
         #expect(body.contains("Engineering details"))
@@ -43,7 +43,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(body.contains("tuya.refreshDevices()"))
         #expect(body.contains("tuya.selectDevice(device)"))
         #expect(body.contains("SecureLinkView(device: device)"))
-        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to Capture\" : \"View locked preflight\")"))
+        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
         #expect(app.contains("No DP query or scooter command is authorized by this surface."))
     }
 
