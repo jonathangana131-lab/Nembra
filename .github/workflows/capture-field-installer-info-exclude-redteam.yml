@@ -1,0 +1,35 @@
+name: Capture Field Installer Info Exclude Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-field-installer-info-exclude-sol-20260811
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_installer_info_exclude_red_team.py
+      - .github/workflows/capture-field-installer-info-exclude-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  info-exclude-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact diagnostic head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile red team
+        run: python3 -m py_compile scripts/ci/tests/test_capture_field_installer_info_exclude_red_team.py
+      - name: Prove info-exclude hidden build-visible input and require closure
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_field_installer_info_exclude_red_team
