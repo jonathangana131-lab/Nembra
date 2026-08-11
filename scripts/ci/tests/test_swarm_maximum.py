@@ -63,6 +63,16 @@ def event(created_at: str, body: str, number: int = 9001):
     }
 
 
+def metadata_body():
+    return "\n".join([
+        "SWARM_SCHEMA: 1",
+        "SWARM_LANE: alpha",
+        "SWARM_SLOT: primary",
+        f"SWARM_WORKER: {WORKER}",
+        "SWARM_CLAIM_GENERATION: 1",
+    ])
+
+
 class MaximumControlPlaneTests(unittest.TestCase):
     def make_root(self, lane=None, claim=None, resource=None):
         td = tempfile.TemporaryDirectory()
@@ -138,17 +148,26 @@ class MaximumControlPlaneTests(unittest.TestCase):
         td, root = self.make_root(lane=lane, claim=claim)
         try:
             mx.render_projection(root, NOW)
-            body = "\n".join([
-                "SWARM_SCHEMA: 1",
-                "SWARM_LANE: alpha",
-                "SWARM_SLOT: primary",
-                f"SWARM_WORKER: {WORKER}",
-                "SWARM_CLAIM_GENERATION: 1",
-            ])
-            ev = write_json(root, "event.json", event("2026-08-11T08:04:00Z", body))
+            ev = write_json(root, "event.json", event("2026-08-11T08:04:00Z", metadata_body()))
             changed = root / "changed.txt"; changed.write_text("work/alpha/file.swift\n", encoding="utf-8")
             self.assertEqual(mx.enforce_pr(root, ev, changed, NOW)["status"], "PASS")
             changed.write_text("unrelated/escape.swift\n", encoding="utf-8")
+            with self.assertRaises(sc.ValidationError):
+                mx.enforce_pr(root, ev, changed, NOW)
+        finally:
+            td.cleanup()
+
+    def test_misplaced_claim_cannot_authorize_requested_subject(self):
+        lane = sc.sample_lane("alpha")
+        foreign = sc.sample_lane("foreign")
+        claim = sc.new_claim(foreign, "primary", WORKER, NOW, branch="agent/alpha")
+        td, root = self.make_root(lane=lane)
+        try:
+            # Deliberately place a valid foreign claim under alpha's deterministic path.
+            write_json(root, sc.claim_path("alpha", "primary"), claim)
+            mx.render_projection(root, NOW)
+            ev = write_json(root, "event.json", event("2026-08-11T08:04:00Z", metadata_body()))
+            changed = root / "changed.txt"; changed.write_text("work/alpha/file.swift\n", encoding="utf-8")
             with self.assertRaises(sc.ValidationError):
                 mx.enforce_pr(root, ev, changed, NOW)
         finally:
@@ -162,14 +181,26 @@ class MaximumControlPlaneTests(unittest.TestCase):
         td, root = self.make_root(lane=lane, claim=claim)
         try:
             mx.render_projection(root, NOW)
-            body = "\n".join([
-                "SWARM_SCHEMA: 1",
-                "SWARM_LANE: alpha",
-                "SWARM_SLOT: primary",
-                f"SWARM_WORKER: {WORKER}",
-                "SWARM_CLAIM_GENERATION: 1",
-            ])
-            ev = write_json(root, "event.json", event("2026-08-11T08:04:00Z", body))
+            ev = write_json(root, "event.json", event("2026-08-11T08:04:00Z", metadata_body()))
+            changed = root / "changed.txt"; changed.write_text("work/alpha/file.swift\n", encoding="utf-8")
+            with self.assertRaises(sc.ValidationError):
+                mx.enforce_pr(root, ev, changed, NOW)
+        finally:
+            td.cleanup()
+
+    def test_resource_path_subject_mismatch_is_rejected(self):
+        lane = sc.sample_lane("alpha")
+        lane["slots"][0]["resources"] = ["HIGH_CONTENTION_FILE"]
+        lane = sc.validate_lane(lane)
+        claim = sc.new_claim(lane, "primary", WORKER, NOW, branch="agent/alpha")
+        resource = dict(claim)
+        resource["resource"] = "RELEASE_INTEGRATION"
+        resource["slot"] = "high_contention_file"
+        td, root = self.make_root(lane=lane, claim=claim)
+        try:
+            write_json(root, sc.resource_path("HIGH_CONTENTION_FILE"), resource)
+            mx.render_projection(root, NOW)
+            ev = write_json(root, "event.json", event("2026-08-11T08:04:00Z", metadata_body()))
             changed = root / "changed.txt"; changed.write_text("work/alpha/file.swift\n", encoding="utf-8")
             with self.assertRaises(sc.ValidationError):
                 mx.enforce_pr(root, ev, changed, NOW)
