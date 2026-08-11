@@ -242,6 +242,10 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         watched = set(guard._watch_paths(inputs))
         generated_file = self.root / GENERATED_RELATIVE
         workspace_file = self.root / "NembraCapture.xcworkspace/contents.xcworkspacedata"
+        self.assertIn(self.root, watched)
+        self.assertIn(self.root / "LocalSecrets", watched)
+        self.assertIn(self.private_sdk, watched)
+        self.assertIn(self.private_identity, watched)
         self.assertIn(generated_file, watched)
         self.assertIn(workspace_file, watched)
 
@@ -257,6 +261,27 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             self.assertNotEqual(before, after)
             with self.assertRaises(guard.BuildGuardError):
                 guard._verify_accepted_generated_build_subject(inputs)
+
+    def test_generated_watch_fd_budget_raises_soft_limit_or_fails_closed(self) -> None:
+        guard = load_build_guard()
+        with (
+            mock.patch.object(guard, "_current_descriptor_count", return_value=10),
+            mock.patch.object(
+                guard.resource,
+                "getrlimit",
+                side_effect=[(64, 1024), (174, 1024)],
+            ),
+            mock.patch.object(guard.resource, "setrlimit") as setrlimit,
+        ):
+            guard._ensure_fd_budget(100)
+            setrlimit.assert_called_once_with(guard.resource.RLIMIT_NOFILE, (174, 1024))
+
+        with (
+            mock.patch.object(guard, "_current_descriptor_count", return_value=10),
+            mock.patch.object(guard.resource, "getrlimit", return_value=(64, 173)),
+        ):
+            with self.assertRaises(guard.BuildGuardError):
+                guard._ensure_fd_budget(100)
 
 
 if __name__ == "__main__":
