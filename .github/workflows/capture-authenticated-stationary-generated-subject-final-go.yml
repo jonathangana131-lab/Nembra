@@ -44,7 +44,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile and red-team recovered generated-subject authority
+      - name: Compile recovered core and selected adapter
         shell: bash
         run: |
           set -euo pipefail
@@ -53,5 +53,15 @@ jobs:
             scripts/ci/es80_authenticated_stationary_generated_subject_final_go_2709.py \
             scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
             scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go_2709.py
+
+      - name: Prove recovered sealed-parent Final-GO core
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+
+      - name: Prove selected 2709 generated-subject adapter
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go_2709.py
