@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import hashlib
 import importlib.util
-import json
+import os
 from pathlib import Path
+import shutil
+import stat
 import subprocess
-import sys
 import tempfile
+import types
 import unittest
-from types import SimpleNamespace
 
 SCRIPT = Path(__file__).resolve().parents[1] / "es80_authenticated_stationary_private_review_final_go.py"
 SPEC = importlib.util.spec_from_file_location("private_review_final_go_current", SCRIPT)
@@ -18,403 +18,197 @@ if SPEC is None or SPEC.loader is None:
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
-SOURCE = "1" * 40
-PARENT = "2" * 40
-MAIN = "3" * 40
-BLOB = "4" * 40
-GENERATED = "ab" * 32
-PRIVATE = "ef" * 32
-LOCK = "cd" * 32
-STANDARD = "5" * 64
-ACCESSIBILITY = "6" * 64
+REPOSITORY = Path(__file__).resolve().parents[3]
+PARENT_TEST_PATH = "scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py"
+PARENT_TEST_BLOB = "61c2a1bf4cc35203d763ed1b646a7a92358d84c3"
 
 
-def blob_oid(payload: bytes) -> str:
-    return hashlib.sha1(b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload).hexdigest()
+def _load_parent_tests() -> types.ModuleType:
+    entry = MODULE._tree_entries(REPOSITORY, MODULE.PARENT_SOURCE).get(PARENT_TEST_PATH)
+    if entry is None or entry[1] != PARENT_TEST_BLOB:
+        raise RuntimeError("accepted #2873 private-review test blob is unavailable")
+    payload = MODULE._object_git_bytes(REPOSITORY, "cat-file", "blob", PARENT_TEST_BLOB)
+    if MODULE._blob_oid(payload, PARENT_TEST_BLOB) != PARENT_TEST_BLOB:
+        raise RuntimeError("accepted #2873 private-review test bytes failed Git identity")
+    parent = types.ModuleType("nembra_private_review_final_go_parent_tests_2873")
+    parent.__file__ = str(Path(__file__).resolve())
+    exec(compile(payload, f"git:{MODULE.PARENT_SOURCE}:{PARENT_TEST_PATH}", "exec", dont_inherit=True), parent.__dict__)
+    return parent
 
 
-class TinyBase:
-    AUTH_WORKFLOW_NAME = "Capture Authenticated Stationary Final GO"
-    AUTH_WORKFLOW_PATH = ".github/workflows/capture-authenticated-stationary-final-go.yml"
-    VISUAL = "Capture Standalone Visual Evidence"
-
-    @staticmethod
-    def pos(value, label):
-        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-            raise RuntimeError(label)
-        return value
-
-    @staticmethod
-    def canon(value, label):
-        if not isinstance(value, str) or len(value) != 40 or any(c not in "0123456789abcdefABCDEF" for c in value):
-            raise RuntimeError(label)
-        return value.lower()
-
-    @staticmethod
-    def obj(raw, label):
-        del label
-        return json.loads(raw)
-
-    @staticmethod
-    def sha(raw):
-        return hashlib.sha256(raw).hexdigest()
+_PARENT_TESTS = _load_parent_tests()
 
 
-def visual():
-    return {
-        "runID": 123,
-        "artifactID": 456,
-        "screenshots": {
-            "unprovisioned-dark-standard": {"sha256": STANDARD},
-            "unprovisioned-dark-accessibility-xxxl": {"sha256": ACCESSIBILITY},
-        },
-    }
-
-
-def authority_values():
-    return {
-        MODULE.PRIVATE_REVIEW_COMMITMENT_KEY: PRIVATE,
-        MODULE.PRIVATE_REVIEW_HELPER_KEY: "a1" * 32,
-        MODULE.PROVENANCE_HELPER_KEY: "b2" * 32,
-        MODULE.GENERATED_HELPER_KEY: "c3" * 32,
-    }
-
-
-def review_get(*, owner=MODULE.OWNER, association="OWNER", overrides=None, extra=None):
-    body = {
-        "schemaVersion": 5,
-        "authority": MODULE.REVIEW_AUTHORITY,
-        "sourceCommitSHA": SOURCE,
-        "visualRunID": 123,
-        "visualArtifactID": 456,
-        "standardScreenshotSHA256": STANDARD,
-        "accessibilityScreenshotSHA256": ACCESSIBILITY,
-        "tuyaDependencyLockSHA256": LOCK,
-        MODULE.generated.GENERATED_KEY: GENERATED,
-        **authority_values(),
-        "verdict": "accepted",
-    }
-    if overrides:
-        body.update(overrides)
-    if extra:
-        body.update(extra)
-
-    def get(path):
-        if path != "/pulls/2612/reviews/77":
-            raise AssertionError(path)
-        return b"{}", {
-            "id": 77,
-            "state": "APPROVED",
-            "commit_id": SOURCE,
-            "user": {"login": owner},
-            "author_association": association,
-            "submitted_at": "2026-08-11T09:30:00Z",
-            "node_id": "PRR_v5",
-            "body": json.dumps(body, separators=(",", ":")),
-        }
-
-    return get
-
-
-class PrivateReviewFinalGoCurrentTests(unittest.TestCase):
+class ParentPrivateReviewContractTests(_PARENT_TESTS.PrivateReviewFinalGoCurrentTests):
+    @unittest.skip("#2890 replaces the parent worktree-loader shape with an exact #2873 blob loader; covered below")
     def test_parent_loader_uses_accepted_git_blob_and_ignores_hidden_worktree_replacement(self):
-        child_source = SCRIPT.read_text(encoding="utf-8")
-        with tempfile.TemporaryDirectory(prefix="nembra-private-parent-current-") as temporary:
+        pass
+
+
+class CandidateRawFilesystemAuthorityTests(unittest.TestCase):
+    def _initialize_candidate(self, root: Path):
+        base = MODULE.generated._load_base_module()
+        tracked = {
+            base.INSTALLER: (
+                "#!/bin/bash\n"
+                f'PROCEDURE_ID="{base.PROC}"\n'
+                f'BUNDLE_ID="{base.BUNDLE}"\n'
+                "NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256\n"
+                "hmac.compare_digest(actual_digest, expected_digest)\n"
+            ),
+            base.RUNBOOK: f"PROCEDURE_ID: `{base.PROC}`\n",
+            base.IDENTITY: f'static let requiredFieldProcedureIdentifier = "{base.PROC}"\n',
+            "NembraApp/App/NembraCaptureEntrypoint.swift": "// accepted app source\n",
+        }
+        subprocess.run(["/usr/bin/git", "-C", str(root), "init", "-q"], check=True)
+        subprocess.run(["/usr/bin/git", "-C", str(root), "config", "user.email", "capture@nembra.invalid"], check=True)
+        subprocess.run(["/usr/bin/git", "-C", str(root), "config", "user.name", "Nembra Capture QA"], check=True)
+        for relative, text in tracked.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            if relative == base.INSTALLER:
+                path.chmod(0o755)
+        subprocess.run(["/usr/bin/git", "-C", str(root), "add", "."], check=True)
+        subprocess.run(["/usr/bin/git", "-C", str(root), "commit", "-qm", "accepted candidate"], check=True)
+        source = subprocess.check_output(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", "HEAD"], text=True
+        ).strip().lower()
+
+        info = root / ".git" / "info"
+        info.mkdir(parents=True, exist_ok=True)
+        (info / "exclude").write_text(
+            "LocalSecrets/\nPods/\nNembraCapture.xcworkspace/\nPodfile.lock\n",
+            encoding="utf-8",
+        )
+        for relative in MODULE.FIELD_INPUT_DIRECTORIES:
+            (root / relative).mkdir(parents=True, exist_ok=True)
+        (root / "Podfile.lock").write_text("PODS:\n", encoding="utf-8")
+        return base, source, tracked
+
+    def _write_executable(self, path: Path, body: str) -> None:
+        path.write_text("#!/bin/sh\nset -eu\n" + body, encoding="utf-8")
+        path.chmod(0o755)
+        self.assertTrue(path.stat().st_mode & stat.S_IXUSR)
+
+    def test_child_executes_exact_2873_parent_blob(self):
+        self.assertEqual(MODULE._parent.__nembra_accepted_control_source__, MODULE.PARENT_SOURCE)
+        self.assertEqual(MODULE._parent.__nembra_accepted_control_blob__, MODULE.PARENT_MODULE_GIT_BLOB)
+        self.assertIs(MODULE.review_v5, MODULE._parent.review_v5)
+        self.assertIs(MODULE.candidate_private_authority, MODULE._parent.candidate_private_authority)
+
+    def test_inherited_parent_candidate_runs_through_raw_authority(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-raw-parent-") as temporary:
             root = Path(temporary).resolve(strict=True)
-            child = root / MODULE.CHILD_AUTHORITY_PATHS[0]
-            parent = root / MODULE.GENERATED_MODULE_PATH
-            sentinel = root / "attacker-parent-executed"
-            parent.parent.mkdir(parents=True, exist_ok=True)
-            parent.write_text(
-                "#!/usr/bin/env python3\n"
-                "def _current_generated_subject(_root, _source, _base):\n"
-                "    return 'a' * 64\n",
-                encoding="utf-8",
-            )
-            subprocess.run(["/usr/bin/git", "-C", str(root), "init", "-q"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "config", "user.email", "capture@nembra.invalid"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "config", "user.name", "Nembra Capture QA"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "add", MODULE.GENERATED_MODULE_PATH], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "commit", "-qm", "accepted generated parent"], check=True)
-            accepted_blob = subprocess.check_output(
-                ["/usr/bin/git", "-C", str(root), "rev-parse", f"HEAD:{MODULE.GENERATED_MODULE_PATH}"], text=True
-            ).strip()
-
-            patched_child = child_source.replace(
-                f'PARENT_GENERATED_MODULE_GIT_BLOB = "{MODULE.PARENT_GENERATED_MODULE_GIT_BLOB}"',
-                f'PARENT_GENERATED_MODULE_GIT_BLOB = "{accepted_blob}"',
-                1,
-            )
-            child.parent.mkdir(parents=True, exist_ok=True)
-            child.write_text(patched_child, encoding="utf-8")
-            subprocess.run(["/usr/bin/git", "-C", str(root), "add", MODULE.CHILD_AUTHORITY_PATHS[0]], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "commit", "-qm", "accepted private child"], check=True)
-            subprocess.run(
-                ["/usr/bin/git", "-C", str(root), "update-index", "--assume-unchanged", MODULE.GENERATED_MODULE_PATH],
-                check=True,
-            )
-            parent.write_text(
-                "#!/usr/bin/env python3\n"
-                "from pathlib import Path\n"
-                f"Path({str(sentinel)!r}).write_text('executed', encoding='utf-8')\n"
-                "def _current_generated_subject(_root, _source, _base):\n"
-                "    return 'b' * 64\n",
-                encoding="utf-8",
-            )
-            self.assertEqual(
-                subprocess.check_output(
-                    ["/usr/bin/git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"], text=True
-                ),
-                "",
-            )
-            previous = sys.dont_write_bytecode
-            sys.dont_write_bytecode = True
-            try:
-                spec = importlib.util.spec_from_file_location("private_review_current_fixture", child)
-                if spec is None or spec.loader is None:
-                    self.fail("could not load private-review fixture")
-                fixture = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(fixture)
-            finally:
-                sys.dont_write_bytecode = previous
-            self.assertFalse(sentinel.exists(), "mutable generated-parent worktree bytes executed")
-            self.assertEqual(fixture.generated.__nembra_accepted_control_blob__, accepted_blob)
-
-    def test_candidate_git_custody_ignores_repository_core_worktree_decoy(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-private-core-worktree-") as temporary:
-            root = Path(temporary).resolve(strict=True)
-            candidate = root / "candidate"
-            decoy = root / "decoy"
-            candidate.mkdir()
-            decoy.mkdir()
-            subprocess.run(["/usr/bin/git", "-C", str(candidate), "init", "-q"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(candidate), "config", "user.email", "capture@nembra.invalid"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(candidate), "config", "user.name", "Nembra Capture QA"], check=True)
-            authority = candidate / "authority.txt"
-            authority.write_text("accepted\n", encoding="utf-8")
-            subprocess.run(["/usr/bin/git", "-C", str(candidate), "add", "authority.txt"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(candidate), "commit", "-qm", "accepted candidate"], check=True)
-            accepted_blob = subprocess.check_output(
-                ["/usr/bin/git", "-C", str(candidate), "rev-parse", "HEAD:authority.txt"], text=True
-            ).strip()
-            (decoy / "authority.txt").write_text("accepted\n", encoding="utf-8")
-            authority.write_text("attacker\n", encoding="utf-8")
-            subprocess.run(
-                ["/usr/bin/git", "-C", str(candidate), "config", "core.worktree", str(decoy)], check=True
-            )
-            self.assertEqual(
-                subprocess.check_output(
-                    ["/usr/bin/git", "-C", str(candidate), "status", "--porcelain=v1", "--untracked-files=all"],
-                    text=True,
-                ),
-                "",
-                "fixture must prove ambient Git is looking at the decoy worktree",
-            )
-
-            original_git = lambda *_args: "ambient"
-            original_git_bytes = lambda *_args: b"ambient"
-            base = SimpleNamespace(git=original_git, git_bytes=original_git_bytes)
-            with MODULE._physical_worktree_git(base):
-                status = base.git(candidate, "status", "--porcelain=v1", "--untracked-files=all")
-                self.assertIn("authority.txt", status)
-                self.assertEqual(base.git(candidate, "rev-parse", "HEAD:authority.txt"), accepted_blob)
-                self.assertNotEqual(
-                    base.git(candidate, "hash-object", "--no-filters", "--", "authority.txt"), accepted_blob
-                )
-                self.assertEqual(base.git_bytes(candidate, "show", "HEAD:authority.txt"), b"accepted\n")
+            base, source, _ = self._initialize_candidate(root)
+            original_git = base.git
+            original_git_bytes = base.git_bytes
+            with MODULE._candidate_git_custody(base, root, source):
+                result = base.candidate(root, source)
+                self.assertEqual(result["sourceCommitSHA"], source)
+                self.assertEqual(base.git(root, "status", "--porcelain=v1", "--untracked-files=all"), "")
             self.assertIs(base.git, original_git)
             self.assertIs(base.git_bytes, original_git_bytes)
 
-        source = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn(
-            "with _generated_extensions(review=pre_review), _physical_worktree_git(base):",
-            source,
-            "Final-GO composition must keep inherited candidate Git calls inside physical worktree custody",
-        )
-
-    def test_v5_owner_review_binds_pixels_generated_private_hmac_and_all_helper_sources(self):
-        result = MODULE.review_v5(2612, 77, SOURCE, visual(), review_get(), base=TinyBase)
-        self.assertEqual(result["authority"], MODULE.REVIEW_AUTHORITY)
-        self.assertEqual(result[MODULE.generated.GENERATED_KEY], GENERATED)
-        self.assertEqual(result[MODULE.PRIVATE_REVIEW_COMMITMENT_KEY], PRIVATE)
-        for key, value in authority_values().items():
-            self.assertEqual(result[key], value)
-
-    def test_v5_review_rejects_noncanonical_nonowner_and_extra_authority(self):
-        with self.assertRaises(MODULE.PrivateReviewGoError):
-            MODULE.review_v5(
-                2612, 77, SOURCE, visual(), review_get(overrides={MODULE.PRIVATE_REVIEW_HELPER_KEY: ("a1" * 32).upper()}), base=TinyBase
+    def test_core_worktree_decoy_cannot_redirect_physical_candidate(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-core-worktree-") as temporary:
+            outer = Path(temporary).resolve(strict=True)
+            root = outer / "candidate"
+            decoy = outer / "decoy"
+            root.mkdir()
+            decoy.mkdir()
+            base, source, tracked = self._initialize_candidate(root)
+            for relative in tracked:
+                source_path = root / relative
+                target = decoy / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if source_path.is_symlink():
+                    os.symlink(os.readlink(source_path), target)
+                else:
+                    shutil.copy2(source_path, target)
+            subprocess.run(["/usr/bin/git", "-C", str(root), "config", "core.worktree", str(decoy)], check=True)
+            attacked = root / "NembraApp/App/NembraCaptureEntrypoint.swift"
+            attacked.write_text("// attacker-controlled physical source\n", encoding="utf-8")
+            self.assertEqual(
+                subprocess.check_output(
+                    ["/usr/bin/git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+                    text=True,
+                ),
+                "",
+                "fixture must prove ambient Git is describing the decoy worktree",
             )
-        with self.assertRaises(MODULE.PrivateReviewGoError):
-            MODULE.review_v5(2612, 77, SOURCE, visual(), review_get(owner="attacker", association="CONTRIBUTOR"), base=TinyBase)
-        with self.assertRaises(MODULE.PrivateReviewGoError):
-            MODULE.review_v5(2612, 77, SOURCE, visual(), review_get(extra={"secondPrivateAuthority": PRIVATE}), base=TinyBase)
+            with self.assertRaises(MODULE.PrivateReviewGoError):
+                with MODULE._candidate_git_custody(base, root, source):
+                    self.fail("modified physical candidate was accepted")
 
-    def test_private_environment_layers_all_current_authority_and_rejects_collision(self):
-        values = {MODULE.generated.GENERATED_KEY: GENERATED, **authority_values()}
-
-        class Base:
-            @staticmethod
-            def installer_environment(device, device_digest, accepted_lock_sha256):
-                del device, device_digest
-                return {"LOCK": accepted_lock_sha256}
-
-        adapter = MODULE._private_environment_adapter(MODULE.generated._environment_adapter, values)
-        extended = adapter(Base, GENERATED)
-        environment = extended(Path("/tmp/device"), "aa" * 32, LOCK)
-        self.assertEqual(environment[MODULE.generated.GENERATED_ENV], GENERATED)
-        self.assertEqual(environment[MODULE.PRIVATE_REVIEW_ENV], PRIVATE)
-        self.assertEqual(environment[MODULE.PRIVATE_REVIEW_HELPER_ENV], values[MODULE.PRIVATE_REVIEW_HELPER_KEY])
-        self.assertEqual(environment[MODULE.PROVENANCE_HELPER_ENV], values[MODULE.PROVENANCE_HELPER_KEY])
-        self.assertEqual(environment[MODULE.GENERATED_HELPER_ENV], values[MODULE.GENERATED_HELPER_KEY])
-        self.assertEqual(environment["LOCK"], LOCK)
-
-        class CollisionBase:
-            @staticmethod
-            def installer_environment(device, device_digest, accepted_lock_sha256):
-                del device, device_digest, accepted_lock_sha256
-                return {MODULE.PROVENANCE_HELPER_ENV: "attacker"}
-
-        collision = adapter(CollisionBase, GENERATED)
-        with self.assertRaises(MODULE.PrivateReviewGoError):
-            collision(Path("/tmp/device"), "aa" * 32, LOCK)
-
-    def test_candidate_private_authority_binds_exact_git_helper_bytes_to_review(self):
-        payloads = {
-            MODULE.PRIVATE_REVIEW_HELPER_PATH: (MODULE.PRIVATE_REVIEW_DOMAIN + "\n").encode(),
-            MODULE.PROVENANCE_HELPER_PATH: b"provenance helper\n",
-            MODULE.generated.GENERATED_HELPER_PATH: b"generated helper\n",
-            "Scripts/bootstrap_capture_tuya_sdk.sh": (
-                MODULE.PRIVATE_REVIEW_ENV + "\n" + MODULE.PRIVATE_REVIEW_HELPER_ENV + "\n" +
-                MODULE.PROVENANCE_HELPER_ENV + "\n" + MODULE.GENERATED_HELPER_ENV + "\nrun_accepted_python_helper() {\n"
-            ).encode(),
-            "Scripts/capture_tuya_private_input_build_guard.py": (
-                MODULE.PRIVATE_REVIEW_HELPER_ENV + "\n" + MODULE.PROVENANCE_HELPER_ENV + "\n" +
-                MODULE.GENERATED_HELPER_ENV + "\n_load_accepted_helper_module\n"
-            ).encode(),
-        }
-        review = {
-            MODULE.generated.GENERATED_KEY: GENERATED,
-            MODULE.PRIVATE_REVIEW_COMMITMENT_KEY: PRIVATE,
-            MODULE.PRIVATE_REVIEW_HELPER_KEY: hashlib.sha256(payloads[MODULE.PRIVATE_REVIEW_HELPER_PATH]).hexdigest(),
-            MODULE.PROVENANCE_HELPER_KEY: hashlib.sha256(payloads[MODULE.PROVENANCE_HELPER_PATH]).hexdigest(),
-            MODULE.GENERATED_HELPER_KEY: hashlib.sha256(payloads[MODULE.generated.GENERATED_HELPER_PATH]).hexdigest(),
-        }
-        oids = {path: blob_oid(payload) for path, payload in payloads.items()}
-
-        with tempfile.TemporaryDirectory(prefix="nembra-current-private-candidate-") as temporary:
+    def test_local_fsmonitor_executes_under_ambient_status_but_never_under_candidate_custody(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-fsmonitor-") as temporary:
             root = Path(temporary).resolve(strict=True)
+            base, source, _ = self._initialize_candidate(root)
+            sentinel = root.parent / "fsmonitor-executed"
+            hook = root / ".git" / "nembra-malicious-fsmonitor.sh"
+            self._write_executable(hook, f"printf hit > {str(sentinel)!r}\nprintf '\\n'\n")
+            subprocess.run(["/usr/bin/git", "-C", str(root), "config", "core.fsmonitor", str(hook)], check=True)
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertTrue(sentinel.exists(), "fixture must prove ambient git status executes local fsmonitor")
+            sentinel.unlink()
+            with MODULE._candidate_git_custody(base, root, source):
+                self.assertEqual(base.git(root, "status", "--porcelain=v1", "--untracked-files=all"), "")
+                result = base.candidate(root, source)
+                self.assertEqual(result["sourceCommitSHA"], source)
+            self.assertFalse(sentinel.exists(), "candidate custody executed repository-local fsmonitor")
 
-            def fake_git(repo, *args):
-                self.assertEqual(repo, root)
-                if args == ("rev-parse", "HEAD"):
-                    return SOURCE
-                if args == ("status", "--porcelain=v1", "--untracked-files=all"):
-                    return ""
-                if args[0] == "rev-parse" and args[1].startswith(f"{SOURCE}:"):
-                    return oids[args[1].split(":", 1)[1]]
-                raise AssertionError(args)
-
-            def fake_git_bytes(repo, *args):
-                self.assertEqual(repo, root)
-                if args[0] == "show" and args[1].startswith(f"{SOURCE}:"):
-                    return payloads[args[1].split(":", 1)[1]]
-                raise AssertionError(args)
-
-            base = SimpleNamespace(canon=TinyBase.canon, git=fake_git, git_bytes=fake_git_bytes)
-            original = MODULE.generated.candidate_generated_authority
-            MODULE.generated.candidate_generated_authority = lambda *args, **kwargs: {
-                MODULE.generated.GENERATED_KEY: GENERATED,
-                "authority": "fixture-generated",
-            }
-            try:
-                result = MODULE.candidate_private_authority(
-                    root, SOURCE, review, base=base, derive_subject=lambda *_args: GENERATED
-                )
-                self.assertEqual(result[MODULE.PRIVATE_REVIEW_COMMITMENT_KEY], PRIVATE)
-                self.assertEqual(result[MODULE.PRIVATE_REVIEW_HELPER_KEY], review[MODULE.PRIVATE_REVIEW_HELPER_KEY])
-                bad = dict(review)
-                bad[MODULE.PROVENANCE_HELPER_KEY] = "0" * 64
-                with self.assertRaises(MODULE.PrivateReviewGoError):
-                    MODULE.candidate_private_authority(root, SOURCE, bad, base=base, derive_subject=lambda *_args: GENERATED)
-            finally:
-                MODULE.generated.candidate_generated_authority = original
-
-    def test_extension_preserves_parent_sealed_installer_and_restores_parent_functions(self):
-        base = MODULE.generated._load_base_module()
-        installer_before = base.installer
-        review_before = MODULE.generated.review_v3
-        environment_before = MODULE.generated._environment_adapter
-        control_before = MODULE.generated.generated_control_plane
-        review = {MODULE.generated.GENERATED_KEY: GENERATED, **authority_values()}
-        with MODULE._generated_extensions(review=review):
-            self.assertIs(base.installer, installer_before)
-            self.assertIsNot(MODULE.generated.review_v3, review_before)
-            self.assertIsNot(MODULE.generated._environment_adapter, environment_before)
-            self.assertIs(MODULE.generated.generated_control_plane, MODULE.private_control_plane)
-        self.assertIs(base.installer, installer_before)
-        self.assertIs(MODULE.generated.review_v3, review_before)
-        self.assertIs(MODULE.generated._environment_adapter, environment_before)
-        self.assertIs(MODULE.generated.generated_control_plane, control_before)
-
-    def test_private_control_plane_is_exact_child_of_current_2775_and_pins_parent_modules(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-private-control-current-") as temporary:
+    def test_info_attributes_clean_filter_executes_ambiently_but_raw_audit_rejects_without_execution(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-filter-") as temporary:
             root = Path(temporary).resolve(strict=True)
-            for relative in MODULE.CHILD_AUTHORITY_PATHS:
-                path = root / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(relative + "\n", encoding="utf-8")
+            base, source, _ = self._initialize_candidate(root)
+            sentinel = root.parent / "clean-filter-executed"
+            helper = root / ".git" / "nembra-malicious-clean-filter.sh"
+            self._write_executable(helper, f"printf hit > {str(sentinel)!r}\n/bin/cat\n")
+            subprocess.run(["/usr/bin/git", "-C", str(root), "config", "filter.evil.clean", str(helper)], check=True)
+            attributes = root / ".git" / "info" / "attributes"
+            relative = "NembraApp/App/NembraCaptureEntrypoint.swift"
+            attributes.write_text(relative + " filter=evil\n", encoding="utf-8")
+            (root / relative).write_text("// attacker-controlled physical source\n", encoding="utf-8")
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertTrue(sentinel.exists(), "fixture must prove ambient status executes info/attributes clean filter")
+            sentinel.unlink()
+            with self.assertRaises(MODULE.PrivateReviewGoError):
+                with MODULE._candidate_git_custody(base, root, source):
+                    self.fail("filter-hidden physical mutation was accepted")
+            self.assertFalse(sentinel.exists(), "raw candidate audit executed clean filter")
 
-            def expected_blob(relative):
-                return MODULE.PARENT_GENERATED_MODULE_GIT_BLOB if relative == MODULE.GENERATED_MODULE_PATH else BLOB
-
-            def fake_git(repo, *args):
-                self.assertEqual(repo, root)
-                if args == ("rev-parse", "HEAD"):
-                    return SOURCE
-                if args == ("status", "--porcelain=v1", "--untracked-files=all"):
-                    return ""
-                if args[0] == "rev-parse" and ":" in args[1]:
-                    return expected_blob(args[1].split(":", 1)[1])
-                if args[:2] == ("ls-files", "-v"):
-                    return "H " + args[-1]
-                if args[:2] == ("ls-files", "-t"):
-                    return "H " + args[-1]
-                if args[:3] == ("hash-object", "--no-filters", "--"):
-                    return expected_blob(args[-1])
-                raise AssertionError(args)
-
-            base = SimpleNamespace(canon=TinyBase.canon, pos=TinyBase.pos, git=fake_git)
-
-            def get(path):
-                if path == "/pulls/4000":
-                    return b"{}", {"state": "open", "draft": False, "merged_at": None,
-                        "head": {"sha": SOURCE, "ref": "recovery/current-r4", "repo": {"full_name": MODULE.REPO}},
-                        "base": {"sha": PARENT, "ref": MODULE.PARENT_BRANCH}}
-                if path == "/pulls/2775":
-                    return b"{}", {"state": "open", "draft": False, "merged_at": None,
-                        "head": {"sha": PARENT, "ref": MODULE.PARENT_BRANCH, "repo": {"full_name": MODULE.REPO}},
-                        "base": {"ref": MODULE.generated.PARENT_BRANCH}}
-                if path == "/branches/main":
-                    return b"{}", {"commit": {"sha": MAIN}}
-                if path == f"/compare/{MAIN}...{PARENT}":
-                    return b"{}", {"status": "ahead", "merge_base_commit": {"sha": MAIN}}
-                if path == f"/compare/{PARENT}...{SOURCE}":
-                    return b"{}", {"status": "ahead", "merge_base_commit": {"sha": PARENT}}
-                if path == "/actions/runs/10":
-                    return b"{}", {"name": MODULE.generated.WORKFLOW_NAME, "path": MODULE.generated.WORKFLOW_PATH,
-                        "head_sha": PARENT, "status": "completed", "conclusion": "success", "event": "pull_request",
-                        "head_branch": MODULE.PARENT_BRANCH, "pull_requests": [{"number": 2775}]}
-                if path == "/actions/runs/20":
-                    return b"{}", {"name": MODULE.WORKFLOW_NAME, "path": MODULE.WORKFLOW_PATH,
-                        "head_sha": SOURCE, "status": "completed", "conclusion": "success", "event": "pull_request",
-                        "head_branch": "recovery/current-r4", "pull_requests": [{"number": 4000}]}
-                raise AssertionError(path)
-
-            record = MODULE.private_control_plane(root, 4000, 20, parent_pr=2775, parent_run_id=10, get=get, base=base)
-            self.assertEqual(record["privateReviewExtensionAuthority"], MODULE.PRIVATE_CONTROL_EXTENSION)
-            self.assertEqual(record["parentSourceCommitSHA"], PARENT)
-            self.assertEqual(record["gitBlobs"][MODULE.GENERATED_MODULE_PATH], MODULE.PARENT_GENERATED_MODULE_GIT_BLOB)
+    def test_info_exclude_cannot_hide_untracked_physical_input(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-exclude-") as temporary:
+            root = Path(temporary).resolve(strict=True)
+            base, source, _ = self._initialize_candidate(root)
+            hidden = root / "attacker-build-input.swift"
+            hidden.write_text("// untracked build-visible input\n", encoding="utf-8")
+            with (root / ".git" / "info" / "exclude").open("a", encoding="utf-8") as handle:
+                handle.write("attacker-build-input.swift\n")
+            self.assertEqual(
+                subprocess.check_output(
+                    ["/usr/bin/git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+                    text=True,
+                ),
+                "",
+                "fixture must prove mutable info/exclude hides the untracked path from ambient status",
+            )
+            with self.assertRaises(MODULE.PrivateReviewGoError):
+                with MODULE._candidate_git_custody(base, root, source):
+                    self.fail("info/exclude-hidden untracked input was accepted")
 
 
 if __name__ == "__main__":
