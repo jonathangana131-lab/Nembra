@@ -8,7 +8,7 @@ on:
       - .github/workflows/tmp-capture-field-guard-contract-fix2.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   repair:
@@ -19,7 +19,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: repair/v14-private-review-hmac-helper-execution-sol
-          fetch-depth: 0
       - name: Materialize permanent provenance contract
         shell: bash
         run: |
@@ -37,12 +36,10 @@ jobs:
           git diff --check
           grep -Fq 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \' .github/workflows/capture-field-build-provenance.yml
           ! grep -Fq '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \' .github/workflows/capture-field-build-provenance.yml
-      - name: Publish isolated materialized blob
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/capture-field-build-provenance.yml
-          git commit -m 'Capture: materialize field provenance accepted-source contract'
-          git push origin HEAD:scratch/v14-field-provenance-contract-go-20260811-0049
+      - name: Upload exact permanent workflow blob
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-field-provenance-accepted-source-contract
+          path: .github/workflows/capture-field-build-provenance.yml
+          if-no-files-found: error
+          retention-days: 1
