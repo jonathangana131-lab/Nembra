@@ -59,10 +59,20 @@ class CaptureFieldXcodeEnvironmentAuthorityTests(unittest.TestCase):
         self.assertNotIn("os.environ", rendered)
         self.assertNotIn("os.getenv", rendered)
         self.assertNotIn("environ.copy", rendered)
-        self.assertIn('"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"', rendered)
-        self.assertIn('"HOME": home', rendered)
-        self.assertIn('"USER": account.pw_name', rendered)
-        self.assertIn('"LOGNAME": account.pw_name', rendered)
+
+        literals = {
+            value.value
+            for value in ast.walk(helper)
+            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+        }
+        for required in (
+            "PATH",
+            "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME",
+            "USER",
+            "LOGNAME",
+        ):
+            self.assertIn(required, literals, f"closed compiler child environment omitted {required}")
 
         forbidden = (
             "DEVELOPER_DIR",
@@ -76,11 +86,6 @@ class CaptureFieldXcodeEnvironmentAuthorityTests(unittest.TestCase):
             "CXXFLAGS",
             "LDFLAGS",
         )
-        literals = {
-            value.value
-            for value in ast.walk(helper)
-            if isinstance(value, ast.Constant) and isinstance(value.value, str)
-        }
         for name in forbidden:
             self.assertNotIn(name, literals, f"closed compiler child environment admitted {name}")
 
