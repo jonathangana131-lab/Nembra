@@ -9,7 +9,7 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:20:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:29:35Z",
+  "lastHeartbeatAt": "2026-08-11T23:44:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-connection-sol-1611dn",
   "pr": 3117,
@@ -22,5 +22,5 @@
     "NembraApp/Features/Dashboard/DashboardView.swift",
     "NembraUITests/NembraUITests.swift"
   ],
-  "checkpoint": "PR #3117 exact e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1 remains frozen and mergeable, one file/+4/-0. Surviving exact Xcode 27 command run 31546215731 resolver is SUCCESS and build/test/capture job 93959225474 remains QUEUED; do not trigger another duplicate. Live P0 refresh shows Capture is genuinely saturated rather than open: selected Final-GO carrier #3082 exact 4a2c2002 has current focused software greens and current real-Darwin validator #3120 exact 5b9dab6 queued; private convergence #3086 and selected-Xcode/signed-install validators are separately active/pending. Therefore Dashboard remains the correct non-conflicting overflow feature. #3117 exact head is also a strict descendant of flagship #2817 current head 14eba29 (ahead 16/behind 0), so after AX5 pixel acceptance the flagship can converge forward rather than replay stale ancestry. Acceptance still requires fresh retained AX5 stopped+riding pixels proving Nembra Simulator and Connected fully readable, center speed/Energy Rail separation intact, 2x2 >=44pt stopped controls in-window, exact mode semantics. Simulator-only; ES80 PHYSICAL NO-GO."
+  "checkpoint": "PR #3117 exact e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1 remains frozen/mergeable at one file +4/-0. Independent review generation 11 posted exact-head source clearance as review 4911631877; source clearance does not replace pixels. Surviving exact Xcode 27 run 31546215731 resolver SUCCESS; build/test/capture job 93959225474 still QUEUED, so no runtime promotion yet and no duplicate trigger. Deferred dark-landscape #2963 was preflighted against e9c: current lineage is ahead-only but capture harness gained newer AX logic on same path, so regenerate that one-file evidence delta from the accepted AX head rather than merge stale ancestry; durable comment 5260060852. Performance #3118 independently moved to c300ed2 and received refreshed source/evidence-contract review 4911647412; its exact runtime remains separate/pending. P0 Capture remains saturated/NO-GO. If #3117 AX5 pixels pass, fast-forward the Dashboard stacked product lineage to the same accepted SHA before next dark-landscape/composition rung; if pixels fail, repair same primary lineage. Simulator-only; ES80 PHYSICAL NO-GO."
 }
