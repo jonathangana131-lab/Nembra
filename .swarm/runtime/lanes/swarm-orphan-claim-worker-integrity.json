@@ -6,7 +6,7 @@
   "title": "Reject live claims owned by unregistered workers",
   "objective": "Close the demonstrated scheduler-state integrity gap where a live claim can reference a workerId absent from the worker registry, causing orphan ownership to consume capacity until lease expiry. Add fail-closed snapshot validation and regressions without weakening lease, takeover, review-independence, or resource authority.",
   "priority": 0,
-  "state": "IMPLEMENTING",
+  "state": "REVIEW",
   "dependencies": ["swarm-control-plane-foundation"],
   "blockers": [],
   "mode": "exclusive",
@@ -25,7 +25,15 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOURCE_READY"},
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "sourceSHA": "beed2b8a564aa81521efff22b754cff73d39867b",
+  "evidence": {
+    "pr": 2822,
+    "exactHead": "beed2b8a564aa81521efff22b754cff73d39867b",
+    "controlPlaneRun": 31472009508,
+    "deterministicControlPlane": "SUCCESS",
+    "prMetadataShadow": "SUCCESS",
+    "xcode27": "SKIPPED_NOT_APPLICABLE"
+  },
   "finding": {
     "claimPath": ".swarm/runtime/claims/legacy-github-reconciliation/reconcile-controls-ui.json",
     "orphanWorkerId": "sol-20260811-ui0052",
