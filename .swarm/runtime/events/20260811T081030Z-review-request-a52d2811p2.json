@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "081030-review-request-a52d2811p2",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-a52d",
+  "laneId": "capture-package-test-runner-recovery",
+  "message": "Independent exact-head review requested for PR #2811 at 7728078452894ac327007ddab18a99d65c4ca3a1. Automated review correctly found the prior 'default scheduling' rerun was still serial on Swift 6.2; generation-2 primary repaired the workflow to run swift test --skip-build --parallel explicitly and renamed all evidence/report semantics to serial-vs-parallel. Prior serial/serial concurrency evidence is withdrawn. Source Range repair is unchanged. Fresh exact-head package/selective-graft/Xcode gates are running; physical remains NO-GO. Reviewer must be a different swarm worker.",
+  "createdAt": "2026-08-11T08:10:30Z"
+}
