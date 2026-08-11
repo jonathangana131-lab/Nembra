@@ -18,7 +18,7 @@ class F:
  def body(self,**x):
   d={'schemaVersion':1,'authority':'nembra-visual-human-review-github-v1','sourceCommitSHA':self.s,'visualRunID':self.ids[go.VISUAL],'visualArtifactID':self.aid,'standardScreenshotSHA256':H(self.std),'accessibilityScreenshotSHA256':H(self.ax),'verdict':'accepted'};d.update(x);return json.dumps(d,sort_keys=True)
  def lock_body(self,**x):
-  d={'schemaVersion':1,'authority':'nembra-tuya-dependency-lock-review-github-v1','sourceCommitSHA256':self.s,'podfileLockSHA256':self.lock,'verdict':'accepted'};d.update(x);return json.dumps(d,sort_keys=True)
+  d={'schemaVersion':1,'authority':'nembra-tuya-dependency-lock-review-github-v1','sourceCommitSHA':self.s,'podfileLockSHA256':self.lock,'verdict':'accepted'};d.update(x);return json.dumps(d,sort_keys=True)
  def write_review(self,**x):
   d={'id':self.rid,'node_id':'PRR_visual','state':'COMMENTED','commit_id':self.s,'user':{'login':go.OWNER},'author_association':'OWNER','submitted_at':'2026-08-11T02:00:00Z','body':self.body()};d.update(x);self.map[f'/pulls/{self.pr}/reviews/{self.rid}']=d
  def write_lock_review(self,**x):
