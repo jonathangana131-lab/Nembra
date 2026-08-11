@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Expected-red: the exact signed app verified for field authority must be the app installed.
+"""The exact signed app verified for field authority must be the app installed.
 
-The field installer verifies one signed Nembra Capture.app bundle and reads back its
-provenance/entitlements before installation. The install step later reopens the bundle by
-mutable pathname. This diagnostic executes the real post-verification install section with
-an adversarial same-UID pathname swap: a fake `open` replaces the already-reviewed app,
-`devicectl` observes the substituted bytes, and the fake tool restores the accepted bytes
-before the shell continues. A safe installer must fail closed rather than report success.
+This regression executes the real post-verification install section. A controlled
+same-UID `open` replacement mutates the reviewed app immediately before the install
+attempt. Production must reject that drift before fake `devicectl` can consume the
+substituted bytes.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-import os
 import subprocess
 import tempfile
 import textwrap
@@ -20,10 +17,11 @@ import unittest
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
+INSTALL_GUARD = REPOSITORY / "Scripts/capture_signed_app_install_guard.py"
 
 
 class CaptureSignedAppInstallSubjectTests(unittest.TestCase):
-    def test_verified_bundle_cannot_be_swapped_before_devicectl_install(self) -> None:
+    def test_verified_bundle_swap_is_rejected_before_devicectl_consumes_it(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
         verification_marker = '/usr/bin/codesign --verify --deep --strict "$APP"'
         install_start_marker = 'say "Installing SDK-integrated Capture on the intended iPhone"'
@@ -33,12 +31,13 @@ class CaptureSignedAppInstallSubjectTests(unittest.TestCase):
         verification_index = source.find(verification_marker)
         start_index = source.find(install_start_marker)
         launch_index = source.find(launch_marker)
-        self.assertGreaterEqual(verification_index, 0, "installer no longer exposes the signed-app verification boundary")
-        self.assertGreater(start_index, verification_index, "install must remain downstream of signed-app verification")
-        self.assertGreater(launch_index, start_index, "could not isolate the real install section")
+        self.assertGreaterEqual(verification_index, 0)
+        self.assertGreater(start_index, verification_index)
+        self.assertGreater(launch_index, start_index)
 
         install_section = source[start_index:launch_index]
-        self.assertIn(install_call_marker, install_section, "diagnostic must exercise the real devicectl install call")
+        self.assertIn(install_call_marker, install_section)
+        self.assertIn('--expected-sha256 "$SIGNED_APP_SUBJECT_SHA256"', install_section)
 
         with tempfile.TemporaryDirectory(prefix="nembra-signed-app-install-subject-") as temporary:
             root = Path(temporary)
@@ -55,8 +54,7 @@ class CaptureSignedAppInstallSubjectTests(unittest.TestCase):
             fake_open.write_text(
                 "#!/bin/bash\n"
                 "set -euo pipefail\n"
-                "printf 'SUBSTITUTED_AFTER_VERIFICATION\\n' > \"${NEMBRA_REDTEAM_APP:?}/subject.txt\"\n"
-                "exit 0\n",
+                "printf 'SUBSTITUTED_AFTER_VERIFICATION\\n' > \"${NEMBRA_REDTEAM_APP:?}/subject.txt\"\n",
                 encoding="utf-8",
             )
             fake_open.chmod(0o755)
@@ -67,7 +65,6 @@ class CaptureSignedAppInstallSubjectTests(unittest.TestCase):
                 "set -euo pipefail\n"
                 "if [[ ${1:-} == 'devicectl' && ${2:-} == 'device' && ${3:-} == 'install' && ${4:-} == 'app' ]]; then\n"
                 "  /bin/cat -- \"${NEMBRA_REDTEAM_APP:?}/subject.txt\" > \"${NEMBRA_REDTEAM_INSTALLED_SUBJECT:?}\"\n"
-                "  printf 'ACCEPTED_SIGNED_SUBJECT\\n' > \"${NEMBRA_REDTEAM_APP:?}/subject.txt\"\n"
                 "  exit 0\n"
                 "fi\n"
                 "exit 97\n",
@@ -84,6 +81,8 @@ class CaptureSignedAppInstallSubjectTests(unittest.TestCase):
                     ROOT={self._shell_quote(str(root))}
                     DERIVED="$ROOT/Derived"
                     APP={self._shell_quote(str(app))}
+                    SIGNED_APP_INSTALL_GUARD={self._shell_quote(str(INSTALL_GUARD))}
+                    SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" --digest-only --app "$APP")"
                     COREDEVICE_ID='redteam-coredevice'
                     DEVICE_UDID='redteam-private-udid'
                     TMPDIR="$ROOT/tmp"
@@ -116,23 +115,12 @@ class CaptureSignedAppInstallSubjectTests(unittest.TestCase):
                 check=False,
             )
 
-            self.assertTrue(installed_subject.is_file(), result.stdout)
-            self.assertEqual(
-                installed_subject.read_text(encoding="utf-8"),
-                "SUBSTITUTED_AFTER_VERIFICATION\n",
-                "red-team devicectl must observe bytes different from the earlier accepted subject",
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertFalse(
+                installed_subject.exists(),
+                "devicectl consumed substituted app bytes; detecting drift after the physical install side effect is too late",
             )
-            self.assertEqual(
-                payload.read_text(encoding="utf-8"),
-                "ACCEPTED_SIGNED_SUBJECT\n",
-                "red-team must restore the accepted pathname before later inspection can notice drift",
-            )
-            self.assertNotEqual(
-                result.returncode,
-                0,
-                "field installer accepted a different app bundle at the devicectl side-effect boundary after signed-app verification; "
-                "pin or revalidate the exact install subject so a pathname swap/restore cannot cross physical-build authority",
-            )
+            self.assertEqual(payload.read_text(encoding="utf-8"), "SUBSTITUTED_AFTER_VERIFICATION\n")
 
     @staticmethod
     def _shell_quote(value: str) -> str:
