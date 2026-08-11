@@ -353,7 +353,7 @@ final class TuyaAccountBridge: ObservableObject {
                   qrToken == token,
                   session == nil else { return }
             phase = .failed
-            statusMessage = "Tuya approval timed out. Tap Try again to make a fresh QR."
+            statusMessage = "Tuya approval timed out. Reset the account link, then create a fresh QR."
         }
     }
 
@@ -361,6 +361,7 @@ final class TuyaAccountBridge: ObservableObject {
         guard generation == operationGeneration,
               qrToken == token,
               session == nil else { return }
+        var approvalSucceeded = false
         do {
             var components = URLComponents(string: "\(loginBaseURL)/v1.0/m/life/home-assistant/qrcode/tokens/\(token)")!
             components.queryItems = [
@@ -376,11 +377,15 @@ final class TuyaAccountBridge: ObservableObject {
                   generation == operationGeneration,
                   qrToken == token,
                   session == nil else { return }
-            guard Self.bool(object["success"]), let result = object["result"] as? [String: Any] else {
+            guard Self.bool(object["success"]) else {
                 if phase == .waitingForApproval {
                     statusMessage = "Waiting for approval in Tuya Smart…"
                 }
                 return
+            }
+            approvalSucceeded = true
+            guard let result = object["result"] as? [String: Any] else {
+                throw BridgeError.malformed("Tuya approval succeeded but account-session data was missing.")
             }
 
             let issued = Self.int64(object["t"]) ?? Int64(Date().timeIntervalSince1970 * 1000)
@@ -421,7 +426,12 @@ final class TuyaAccountBridge: ObservableObject {
                   generation == operationGeneration,
                   qrToken == token,
                   session == nil else { return }
-            if phase == .waitingForApproval {
+            if approvalSucceeded {
+                phase = .failed
+                statusMessage = "Tuya approved, but the account session was rejected: \(Self.readable(error)) Reset the account link, then create a fresh QR."
+                pollTask?.cancel()
+                pollTask = nil
+            } else if phase == .waitingForApproval {
                 statusMessage = "Still waiting for Tuya approval…"
             }
         }
