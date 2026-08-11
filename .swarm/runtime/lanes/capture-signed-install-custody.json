@@ -4,11 +4,13 @@
   "laneId": "capture-signed-install-custody",
   "epic": "capture",
   "title": "Capture signed-app install custody",
-  "objective": "Close intended-device helper and protected signed-app install execution custody, then align exact acceptance contracts with the selected protected-stage and private-log lifecycle before flagship composition.",
+  "objective": "Close intended-device helper and protected signed-app install execution custody, including compiler-output origin through the first protected snapshot, before flagship composition.",
   "priority": 1,
-  "state": "VERIFYING",
+  "state": "NEEDS_CHANGES",
   "dependencies": [],
-  "blockers": [],
+  "blockers": [
+    "#2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b / Capture Signed App Install Custody run 31491053333 mechanically confirms that current #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2 first defines signed-app authority only after xcodebuild returns by fingerprinting a same-UID-mutable DerivedData pathname. A post-build substitute can therefore become the faithfully protected stage. Production must bind the accepted xcodebuild-produced bundle continuously through the first protected snapshot, replay #2955 green, and re-earn all moved-parent exact-head gates."
+  ],
   "mode": "exclusive",
   "allowedWriteAreas": [
     "scripts/field/install_one_time_capture.command",
@@ -36,8 +38,11 @@
     "currentQAChildLaneMetadata": "capture-signed-install-current-source-contracts",
     "currentQAHeadSHA": "83110a6af6220355092ed730cd28892a90c72fef",
     "currentQAChildState": "MERGED_INTO_SELECTED_SECURITY_PARENT",
-    "lineagePRs": [2688,2741,2754,2789,2863,2871,2911],
-    "exactHeadGateState": "MOVED_PARENT_ACCEPTANCE_RESET_ALL_REQUIRED_GATES_QUEUED",
+    "activeRedTeamPR": 2955,
+    "activeRedTeamHeadSHA": "afdd329d8041f909c4d77fc86d78f73953bba81b",
+    "activeRedTeamRun": 31491053333,
+    "lineagePRs": [2688,2741,2754,2789,2863,2871,2911,2955],
+    "exactHeadGateState": "BLOCKED_BY_CONFIRMED_COMPILER_OUTPUT_ORIGIN_RED_2955",
     "acceptedChildFieldRun": 31488849076,
     "acceptedChildMainGraftRun": 31488848988,
     "acceptedChildXcodeRun": 31488849061,
@@ -45,7 +50,7 @@
     "movedParentFieldRun": 31490454631,
     "movedParentMainGraftRun": 31490454719,
     "movedParentXcodeRun": 31490454623,
-    "knownExactHeadFinding": "Reconciled after deliberate #2911 composition. QA child #2911 exact 83110a6af6220355092ed730cd28892a90c72fef earned terminal SUCCESS on Field 31488849076, Main Graft 31488848988, and Xcode 27 31488849061, with independent source acceptance contingent on that Xcode success. It merged into selected signed-install parent #2871 at new exact f76e6ae54b4304df5b02db4f46a72f67daa276e2. Child greens are ingredient evidence only. The moved parent has fresh Signed App 31490454614, Field 31490454631, Main Graft 31490454719, and Xcode 31490454623 queued; queued is not green and exact-head acceptance is fully reset. PHYSICAL NO-GO."
+    "knownExactHeadFinding": "After #2911 composition, moved parent #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2 earned terminal SUCCESS on Signed App 31490454614, Field 31490454631, and Main Graft 31490454719 while Xcode 31490454623 remained pending at the time of this reconciliation. Those gates do not include the later-discovered origin invariant. Draft red-team #2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b then ran the permanent Signed App custody suite at 31491053333: inherited fingerprint mutation, external-symlink, protected-stage ordering/codesign boundary, and ACL contracts passed, while the new build-produced-origin invariant failed as intended after proving a substituted post-build DerivedData bundle can be fingerprinted and faithfully protected while differing from the actual xcodebuild output. Therefore f76e6ae is not acceptable regardless of its legacy gate results. Production must close compiler-output -> first protected snapshot origin without weakening protected staging, signatures, provenance, entitlements/profile, exact helper custody, or intended-device authority. PHYSICAL NO-GO."
   },
-  "tags": ["capture", "p0", "signed-app", "device-install", "git-authority", "legacy-import"]
+  "tags": ["capture", "p0", "signed-app", "device-install", "compiler-output-origin", "git-authority", "legacy-import"]
 }
