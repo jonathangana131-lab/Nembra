@@ -19,14 +19,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          fetch-depth: 3
 
-      - name: Bind exact construction parent
+      - name: Bind exact construction ancestry
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = '6b0c974d432205593f2d1157de06544a01145489'
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tmp-v14-field-verified-git-source-contract.yml'
+          test "$(git rev-parse HEAD^)" = 'c5b5df0857b1eb0db0b80e187b20fb3fcd366ce1'
+          test "$(git rev-parse HEAD^^)" = '6b0c974d432205593f2d1157de06544a01145489'
+          test "$(git diff --name-only 6b0c974d432205593f2d1157de06544a01145489 HEAD)" = '.github/workflows/tmp-v14-field-verified-git-source-contract.yml'
 
       - name: Converge Field source contract to verified Git payload authority
         shell: bash
@@ -45,10 +46,9 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
 
+          grep -Fq 'PRIVATE_DEVICE_RUNNER_RELATIVE="scripts/ci/es80_signed_field_artifact_private_runner.py"' .github/workflows/capture-field-build-provenance.yml
           grep -Fq 'read_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE" |' .github/workflows/capture-field-build-provenance.yml
-          if grep -Fq 'grep -Fq '\''run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py"'\'' "$installer"' .github/workflows/capture-field-build-provenance.yml; then
-            : # The only remaining occurrence is intentionally inside a negative if guard.
-          fi
+          grep -Fq 'private intended-device reader must use independently verified accepted Git payload bytes, not raw git show execution.' .github/workflows/capture-field-build-provenance.yml
           git diff --check
 
       - name: Remove construction workflow and publish durable test-only repair
@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -f .github/workflows/tmp-v14-field-verified-git-source-contract.yml
-          test "$(git diff --name-only)" = '.github/workflows/capture-field-build-provenance.yml
+          test "$(git diff --name-only)" = '.github/workflows/capture-field-build-provenance.yml'
           git config user.name 'nembra-swarm'
           git config user.email 'nembra-swarm@users.noreply.github.com'
           git add .github/workflows/capture-field-build-provenance.yml .github/workflows/tmp-v14-field-verified-git-source-contract.yml
