@@ -1,0 +1,92 @@
+name: TMP V14 Private Recovery Nlink Tighten
+
+on:
+  push:
+    branches:
+      - repair/v14-private-recovery-descriptor-sanitize-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-private-recovery-nlink-tighten.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tighten:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-recovery-descriptor-sanitize-sol-20260811
+          fetch-depth: 0
+
+      - name: Bind exact head and materialize tightening
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import re
+
+          writer_path = Path('Scripts/provision_capture_tuya_identity_writer.py')
+          shell_path = Path('Scripts/provision_capture_tuya_identity.sh')
+          package_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift')
+
+          writer = writer_path.read_text(encoding='utf-8')
+          old = '                or after_sanitize.st_nlink < 1\n'
+          new = '                or after_sanitize.st_nlink != held.st_nlink\n'
+          if writer.count(old) != 1:
+              raise SystemExit(f'expected one recovery nlink check, found {writer.count(old)}')
+          writer = writer.replace(old, new, 1)
+          writer_path.write_text(writer, encoding='utf-8')
+          digest = hashlib.sha256(writer.encode('utf-8')).hexdigest()
+
+          shell = shell_path.read_text(encoding='utf-8')
+          shell, count = re.subn(r'WRITER_SHA256="[0-9a-f]{64}"', f'WRITER_SHA256="{digest}"', shell, count=1)
+          if count != 1:
+              raise SystemExit('shell writer digest pin missing')
+          shell_path.write_text(shell, encoding='utf-8')
+
+          package = package_path.read_text(encoding='utf-8')
+          package, count = re.subn(
+              r'#expect\(shell\.contains\("WRITER_SHA256=\\"[0-9a-f]{64}\\""\)\)',
+              f'#expect(shell.contains("WRITER_SHA256=\\"{digest}\\""))',
+              package,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit('package writer digest assertion missing')
+          package_path.write_text(package, encoding='utf-8')
+          print(f'tightened recovery nlink identity; writer sha256={digest}')
+          PY
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+          /usr/bin/python3 Scripts/provision_capture_tuya_identity_writer.py --self-test
+          /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+          git diff --check
+
+      - name: Publish tested durable tightening
+        shell: bash
+        env:
+          BRANCH: repair/v14-private-recovery-descriptor-sanitize-sol-20260811
+        run: |
+          set -euo pipefail
+          git add Scripts/provision_capture_tuya_identity_writer.py
+          git add Scripts/provision_capture_tuya_identity.sh
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
+          git diff --cached --check
+          git config user.name "Nembra V14 Swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): keep recovery link identity exact"
+          git push origin "HEAD:$BRANCH"
