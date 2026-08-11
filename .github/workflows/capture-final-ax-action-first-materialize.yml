@@ -1,0 +1,118 @@
+name: Capture Final AX Action-First Materializer
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-final-ax-action-first-sol
+    paths:
+      - '.github/workflows/capture-final-ax-action-first-materialize.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact parent and one-shot scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "1bfdb77bd1bdeb97a434570e7c23c5dbefe72c82"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-final-ax-action-first-materialize.yml"
+
+      - name: Recompose Accessibility setup hierarchy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = app_path.read_text()
+
+          def replace_once(name: str, old: str, new: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{name}: expected exactly one source block, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "authority helper insertion",
+              '''    private var buildAuthorityStatus: some View {\n''',
+              '''    private var buildAuthorityDetail: String {\n        if dynamicTypeSize.isAccessibilitySize {\n            return fieldBuildIsAuthoritative\n                ? "Provenance is present. Account and scooter checks are still required."\n                : "Public build: account metadata only. Bluetooth and physical Capture stay locked."\n        }\n\n        return fieldBuildIsAuthoritative\n            ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."\n            : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."\n    }\n\n    private var buildAuthorityStatus: some View {\n'''
+          )
+
+          replace_once(
+              "authority detail",
+              '''                Text(\n                    fieldBuildIsAuthoritative\n                        ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."\n                        : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."\n                )\n                .font(.subheadline)\n                .foregroundStyle(.secondary)\n                .fixedSize(horizontal: false, vertical: true)\n''',
+              '''                Text(buildAuthorityDetail)\n                    .font(dynamicTypeSize.isAccessibilitySize ? .footnote : .subheadline)\n                    .foregroundStyle(.secondary)\n                    .fixedSize(horizontal: false, vertical: true)\n'''
+          )
+
+          replace_once(
+              "authority padding",
+              '''        .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 16)\n''',
+              '''        .padding(dynamicTypeSize.isAccessibilitySize ? 12 : 16)\n'''
+          )
+
+          replace_once(
+              "account panel action ordering",
+              '''            VStack(alignment: .leading, spacing: 14) {\n                Label(\n                    tuya.isLinked ? "Account metadata ready" : "Prepare account metadata",\n                    systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark"\n                )\n                .font(.title3.bold())\n                .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)\n\n                Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")\n                    .font(.footnote)\n                    .foregroundStyle(.secondary)\n                    .fixedSize(horizontal: false, vertical: true)\n\n                Text(tuya.statusMessage)\n                    .font(.footnote)\n                    .foregroundStyle(.secondary)\n                    .fixedSize(horizontal: false, vertical: true)\n\n                if !tuya.isLinked {\n                    VStack(alignment: .leading, spacing: 7) {\n                        Text("Tuya Smart user code")\n                            .font(.subheadline.weight(.semibold))\n                        TextField("Paste user code", text: $tuya.userCode)\n                            .textInputAutocapitalization(.never)\n                            .autocorrectionDisabled()\n                            .padding(12)\n                            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))\n                            .accessibilityLabel("Tuya Smart user code")\n                            .accessibilityHint("Used only to create the Tuya account approval QR for metadata setup.")\n                    }\n\n                    Button {\n                        tuya.requestApproval()\n                    } label: {\n                        Label("Create approval QR", systemImage: "qrcode")\n                            .frame(maxWidth: .infinity)\n                    }\n                    .buttonStyle(.borderedProminent)\n                    .controlSize(.large)\n                    .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")\n                }\n''',
+              '''            VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 10 : 14) {\n                Label(\n                    tuya.isLinked ? "Account metadata ready" : "Prepare account metadata",\n                    systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark"\n                )\n                .font(.title3.bold())\n                .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)\n\n                if dynamicTypeSize.isAccessibilitySize {\n                    accountMetadataPrimaryAction\n                    accountMetadataSupportingCopy\n                } else {\n                    accountMetadataSupportingCopy\n                    accountMetadataPrimaryAction\n                }\n'''
+          )
+
+          replace_once(
+              "account helper insertion",
+              '''    private var scooterChooserPanel: some View {\n''',
+              '''    @ViewBuilder\n    private var accountMetadataPrimaryAction: some View {\n        if !tuya.isLinked {\n            VStack(alignment: .leading, spacing: 7) {\n                Text("Tuya Smart user code")\n                    .font(.subheadline.weight(.semibold))\n                TextField("Paste user code", text: $tuya.userCode)\n                    .textInputAutocapitalization(.never)\n                    .autocorrectionDisabled()\n                    .padding(12)\n                    .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))\n                    .accessibilityLabel("Tuya Smart user code")\n                    .accessibilityHint("Used only to create the Tuya account approval QR for metadata setup.")\n            }\n\n            Button {\n                tuya.requestApproval()\n            } label: {\n                Label("Create approval QR", systemImage: "qrcode")\n                    .frame(maxWidth: .infinity)\n            }\n            .buttonStyle(.borderedProminent)\n            .controlSize(.large)\n            .accessibilityIdentifier("nembra.capture.root.account-link-action")\n            .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")\n        }\n    }\n\n    @ViewBuilder\n    private var accountMetadataSupportingCopy: some View {\n        Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")\n            .font(.footnote)\n            .foregroundStyle(.secondary)\n            .fixedSize(horizontal: false, vertical: true)\n\n        Text(tuya.statusMessage)\n            .font(.footnote)\n            .foregroundStyle(.secondary)\n            .fixedSize(horizontal: false, vertical: true)\n    }\n\n    private var scooterChooserPanel: some View {\n'''
+          )
+
+          # Preserve the semantic/VoiceOver correction already accepted on the exact parent.
+          for required in [
+              '.accessibilityAddTraits(.isHeader)',
+              'Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")',
+              'NavigationLink(fieldBuildIsAuthoritative ? "Continue to preflight" : "View locked preflight")',
+              'This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence.',
+          ]:
+              if required not in source:
+                  raise SystemExit(f"required current-head truth/semantics missing after edit: {required}")
+          if '.accessibilityElement(children: .combine)\n    }\n\n    private var buildAuthorityDetail' in source:
+              raise SystemExit("hero accessibility combine regression detected")
+
+          app_path.write_text(source)
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift")
+          tests = test_path.read_text()
+          marker = '''        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))\n'''
+          addition = marker + '''        #expect(root.contains("private var buildAuthorityDetail: String"))\n        #expect(root.contains("Public build: account metadata only. Bluetooth and physical Capture stay locked."))\n        #expect(root.contains("private var accountMetadataPrimaryAction: some View"))\n        #expect(root.contains("private var accountMetadataSupportingCopy: some View"))\n        #expect(root.contains("nembra.capture.root.account-link-action"))\n\n        let panel = String(try section(\n            in: root,\n            from: "private var accountSetupPanel: some View",\n            to: "private var accountMetadataPrimaryAction: some View"\n        ))\n        let accessibilityOrder = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize {\\n                    accountMetadataPrimaryAction\\n                    accountMetadataSupportingCopy"))\n        #expect(accessibilityOrder.lowerBound < panel.endIndex)\n\n        let primaryAction = String(try section(\n            in: root,\n            from: "private var accountMetadataPrimaryAction: some View",\n            to: "private var accountMetadataSupportingCopy: some View"\n        ))\n        let input = try #require(primaryAction.range(of: "TextField(\\\"Paste user code\\\""))\n        let action = try #require(primaryAction.range(of: "Label(\\\"Create approval QR\\\""))\n        #expect(input.lowerBound < action.lowerBound)\n'''
+          if tests.count(marker) != 1:
+              raise SystemExit("visual contract insertion marker missing or duplicated")
+          tests = tests.replace(marker, addition, 1)
+          test_path.write_text(tests)
+          PY
+
+          git diff --check
+          grep -Fq 'private var buildAuthorityDetail: String' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'accountMetadataPrimaryAction' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'nembra.capture.root.account-link-action' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '.accessibilityAddTraits(.isHeader)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Continue to preflight' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product and source-contract repair, then self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-final-ax-action-first-materialize.yml
+          git diff --check
+          git config user.name 'Nembra Capture Closure'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift
+          git commit -m 'ui(capture): expose AX setup action before support copy'
+          git push origin HEAD:fix/v14-capture-final-ax-action-first-sol
