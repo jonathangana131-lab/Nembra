@@ -92,7 +92,8 @@ class CaptureFieldInstallerGitAuthorityRedTeamTests(unittest.TestCase):
             'GIT_INDEX_FILE="$authority_index"', 'read-tree "$SOURCE_SHA"', 'status --porcelain=v1 --untracked-files=no',
             'ls-tree", "-r", "-z", source_sha', 'hashlib.sha1(', 'raw accepted checkout blob mismatch',
             'untracked accepted-source path outside field-input allowlist', 'field-input allowlist root must be one real directory',
-            'field-input allowlist lockfile must be one real regular file',
+            'field-input allowlist lockfile must be one real regular file', 'tracked_directories: set[str] = set()',
+            'tracked_directories.add(PurePosixPath(*parts[:depth]).as_posix())', 'relative not in tracked_directories',
         ):
             self.assertIn(marker, source, f"missing field Git-authority marker: {marker}")
         self.assertGreaterEqual(source.count("verify_accepted_checkout_source"), 4)

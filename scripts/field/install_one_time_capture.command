@@ -134,6 +134,7 @@ tree = subprocess.check_output(
     env=git_env,
 )
 tracked: set[str] = set()
+tracked_directories: set[str] = set()
 checked = 0
 for record in tree.split(b"\0"):
     if not record:
@@ -147,6 +148,8 @@ for record in tree.split(b"\0"):
     if not parts or any(part in {"", ".", ".."} for part in parts):
         raise SystemExit("raw accepted checkout contains an unsafe tracked path")
     tracked.add(relative)
+    for depth in range(1, len(parts)):
+        tracked_directories.add(PurePosixPath(*parts[:depth]).as_posix())
     current = root
     for component in parts[:-1]:
         current = current / component
@@ -216,6 +219,12 @@ for current_raw, directories, files in os.walk(root, topdown=True, followlinks=F
                 raise SystemExit(
                     "untracked accepted-source path outside field-input allowlist: " + relative
                 )
+            continue
+        if relative not in tracked_directories:
+            directories.remove(name)
+            raise SystemExit(
+                "untracked accepted-source path outside field-input allowlist: " + relative
+            )
     for name in files:
         candidate = current / name
         relative = candidate.relative_to(root).as_posix()
