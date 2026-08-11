@@ -1,0 +1,44 @@
+name: Capture Final GO Installer Execution Subject Diagnostic
+
+on:
+  push:
+    branches:
+      - adversarial/v14-final-go-installer-execution-subject-sol
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_execution_subject.py
+      - .github/workflows/capture-final-go-installer-execution-subject-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  installer-execution-subject:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Bind diagnostic to exact reviewed parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='36feddadc1b5bcfb28274b2e7e5f1d3d341e3335'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          expected="$({ printf '%s\n' \
+            '.github/workflows/capture-final-go-installer-execution-subject-diagnostic.yml' \
+            'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_execution_subject.py'; } | sort)"
+          actual="$(git diff --name-only "$parent" HEAD | sort)"
+          test "$actual" = "$expected"
+          git diff --check "$parent" HEAD
+
+      - name: Prove reviewed installer bytes remain the execution subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
+          python3 -m py_compile scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_execution_subject.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_execution_subject.py
