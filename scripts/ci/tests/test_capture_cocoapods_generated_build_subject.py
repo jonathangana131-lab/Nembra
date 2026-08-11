@@ -52,6 +52,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         for source in (BOOTSTRAP, PROVENANCE, PRIVATE_REVIEW, SUBJECT_HELPER):
             shutil.copy2(source, scripts / source.name)
         self.accepted_private_review_helper = hashlib.sha256((scripts / PRIVATE_REVIEW.name).read_bytes()).hexdigest()
+        self.accepted_provenance_helper = hashlib.sha256((scripts / PROVENANCE.name).read_bytes()).hexdigest()
+        self.accepted_generated_helper = hashlib.sha256((scripts / SUBJECT_HELPER.name).read_bytes()).hexdigest()
 
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
@@ -132,6 +134,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         if accepted_private is not None:
             environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256"] = accepted_private
             environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"] = self.accepted_private_review_helper
+            environment["NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"] = self.accepted_provenance_helper
+            environment["NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"] = self.accepted_generated_helper
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review_only:
             command.append("--resolve-lock-for-review")
