@@ -4,24 +4,32 @@
   "laneId": "capture-private-identity-custody",
   "epic": "capture",
   "title": "Capture private Tuya identity publication custody",
-  "objective": "Close credential-bearing private identity publication races while preserving admitted-root authority, exact writer digest fencing, secure cleanup, pathname identity, and package/field contracts before composition.",
+  "objective": "Close credential-bearing private identity publication races and interruption residue while preserving admitted-root authority, exact writer digest fencing, secure cleanup, destination-name identity, and package/field contracts before composition.",
   "priority": 1,
   "state": "BLOCKED_EXTERNAL",
   "dependencies": [],
   "blockers": [
     {
-      "id": "recovery-pr-active-terminal-red-byte-and-name-custody",
+      "id": "active-primary-publication-and-destination-name-custody",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Recovery #2858 exact cb72a47ee2489235febd40ac440bc9f8462ba432 correctly closes pre-check staging-name regular/directory/symlink substitution and its narrowed four-case Publication Races run 31475822468 is SUCCESS, but two distinct terminal-red threat classes remain. #2861 exact d29a3dc6e2d1c5db3e0661a415e619134c4a5587 has Same Inode Payload Current run 31476127075 FAILURE, proving equal-length attacker bytes can overwrite the already-sealed inode while dev/ino/link/size remain accepted because final bytes are never rebound to intended payload. Comprehensive pathname child #2868 exact d7c989d297856a5ae222a257120ee09d0ee27361 has Publication Name Binding run 31476481306 FAILURE and independently proves BOTH name re-resolution windows: source name can be swapped after the sealed-name check but before rename, and destination name can be swapped after verified final open but before success while the held descriptor still looks legitimate. A successful return therefore can coexist with attacker bytes at the credential pathname, and a rejected source substitution can leave attacker bytes there because cleanup targets the vanished temporary name. Production must bind payload bytes plus canonical destination-name identity through publication, and safely remove/quarantine only the exact inode published by this operation without blindly deleting unrelated prior/attacker state. Do not weaken either #2861 or #2868. #2858's green narrowed gate is ingredient evidence only.",
-      "pr": 2858,
-      "headSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432"
+      "reason": "Control-plane primary claim is actively owned by sol-20260811-a7e4 on canonical repair #2755 exact 2d8241c791d79ad04654fb1c90f7ac89ac5d5efc; #2858 is parallel recovery/evidence, not the selected implementation. #2755 is materially stronger: exact current writer re-reads final descriptor bytes with stable metadata and its Capture Private Identity Publication Races run 31476478832 is SUCCESS for staging substitution, same-inode equal-length mutation, and detached ancestry. Exact source still has destination-name authority debt: after opening/validating the sealed final descriptor, it never re-resolves the canonical destination immediately before success to require that pathname still names the held sealed inode. The destination-side invariant demonstrated by #2868 therefore still applies to this source shape even though #2868 itself hooks predecessor helpers and must be re-anchored rather than cherry-picked. Existing independent review on #2755 already records this exact live-head blocker. Preserve byte readback and current source-side defenses while closing destination-name substitution/cleanup without check-then-unlink races.",
+      "pr": 2755,
+      "headSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc"
+    },
+    {
+      "id": "hard-exit-stage-residue-terminal-red",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Tests slot is actively owned by sol-20260811-7f31c2 on #2870 exact 3d154de42cc879bd06128098771b06aa10e57b44, attacked directly from #2755 2d8241c. Capture Private Identity Crash Residue Red Team run 31476707690 is terminal FAILURE: forced os._exit(73) after credential bytes are fsynced but before publication leaves ignored checkout-root `.nembra-private-stage-*` bytes, and the next invocation does not reclaim/report them. This is orthogonal to caught-exception descriptor scrubbing. Final production needs a truthful next-start orphan-stage admission/recovery contract for exact writer-owned entries (or another design preventing retained hidden credential bytes), without claiming physical-media erasure.",
+      "pr": 2870,
+      "headSHA": "3d154de42cc879bd06128098771b06aa10e57b44"
     },
     {
       "id": "root-before-writer-regression-uncomposed",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Production shell order remains correct: checkout FD admission precedes writer-byte capture, digest fence, then hidden credential reads. Recovery #2858 has not yet absorbed #2733 exact 55d33a1be7b6e4ce692e316e61ee7bfa33d07376, whose unique source-contract assertion mechanically locks `root admission -> writer byte capture -> digest fence -> credentials`; the current weaker test only proves admission/digest each precede credentials. Preserve #2733 in the final recovery.",
+      "reason": "#2755 production shell still has the correct order, but exact current TuyaPrivateIdentityCheckoutRootCustodySourceTests.swift only proves root admission/digest each precede credential reads. It still lacks #2733's stronger mechanical contract `root admission -> writer byte capture -> digest fence -> credentials`. Preserve/absorb #2733 exact 55d33a1be7b6e4ce692e316e61ee7bfa33d07376 before closure.",
       "pr": 2733,
       "headSHA": "55d33a1be7b6e4ce692e316e61ee7bfa33d07376"
     },
@@ -29,22 +37,14 @@
       "id": "field-self-test-portability",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Inherited Field Build Provenance previously reached the private writer self-test on macOS and failed because trusted temporary `/var` ancestry can traverse the platform `/var -> /private/var` symlink while absolute no-follow root admission rejects it. Fix only the trusted self-test root/canonicalization path; do not weaken production admitted-checkout no-symlink custody. Revalidate on the eventual moved exact recovery after writer bytes, destination-name authority, digest, and package contracts stabilize.",
-      "pr": 2858,
-      "headSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432"
+      "reason": "Field Build Provenance previously reached writer self-test on macOS and failed because trusted temporary `/var` ancestry may traverse `/var -> /private/var` while production no-follow admission rejects symlinks. Fix only trusted self-test root/canonicalization; do not weaken production admitted-checkout no-symlink custody. Current #2755 Field and Selective Graft are queued and Xcode is skipped, so this remains non-accepted until exact rerun.",
+      "pr": 2755,
+      "headSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc"
     }
   ],
   "mode": "exclusive",
-  "allowedWriteAreas": [
-    "Scripts/provision_capture_tuya_identity.sh",
-    "Scripts/provision_capture_tuya_identity_writer.py",
-    ".gitignore"
-  ],
-  "adjacentWriteAreas": [
-    "scripts/ci/tests/test_capture_private_identity_publication_races.py",
-    "Packages/NembraBluetoothCapture/Tests",
-    ".github/workflows"
-  ],
+  "allowedWriteAreas": ["Scripts/provision_capture_tuya_identity.sh","Scripts/provision_capture_tuya_identity_writer.py",".gitignore"],
+  "adjacentWriteAreas": ["scripts/ci/tests/test_capture_private_identity_publication_races.py","Packages/NembraBluetoothCapture/Tests",".github/workflows"],
   "slots": [
     {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
     {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
@@ -52,17 +52,15 @@
     {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":[]}
   ],
   "acceptance": {"independentReview": true},
-  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
+  "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
-    "primaryPR": 2858,
-    "primaryHeadSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432",
-    "supersededPrimaryPR": 2755,
-    "lineagePRs": [2719,2733,2734,2755,2767,2858,2860,2861,2864,2868],
-    "selectedRedTeamPRs": [2861,2868],
-    "closedDuplicateRedTeamPR": 2864,
-    "exactHeadGateState": "NARROW_GREEN_BUT_SAME_INODE_AND_TWO_NAME_BINDING_ATTACKS_TERMINAL_RED",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:14Z. #2861 terminal-red is the selected same-inode equal-length payload attack. #2868 terminal-red consolidates and expands pathname re-resolution evidence to both source-after-check and destination-after-open swaps. #2864 is already closed duplicate PR soup; #2860 is fully subsumed by #2868's source-name case and may be retired once no active owner depends on it. #2733 root-before-writer regression remains uncomposed; macOS self-test canonical-path portability remains separate Field debt. Final accepted successor must close byte authority, source+destination name authority/cleanup, ordering regression, and self-test portability, settle writer digest/package source contracts, then rerun publication/Field/Graft/Xcode on one unchanged clean head. PHYSICAL NO-GO."
+    "primaryPR": 2755,
+    "primaryHeadSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc",
+    "parallelRecoveryPR": 2858,
+    "testsPR": 2870,
+    "lineagePRs": [2719,2733,2734,2755,2767,2858,2861,2868,2870],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:18Z from active claims. #2755 is selected primary and already closes same-inode payload authority with exact current publication-race green. Remaining blockers are destination-name authority/cleanup, terminal-red hard-exit stage residue #2870, uncomposed #2733 ordering regression, and macOS self-test portability. #2858/#2861/#2868 remain useful predecessor/adversarial evidence but are not the selected production spine. PHYSICAL NO-GO."
   },
-  "tags": ["capture", "p0", "private-identity", "publication-custody", "legacy-import"]
+  "tags": ["capture","p0","private-identity","publication-custody","lifecycle","legacy-import"]
 }
