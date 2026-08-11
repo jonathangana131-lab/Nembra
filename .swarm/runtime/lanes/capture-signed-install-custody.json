@@ -27,21 +27,25 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "83110a6af6220355092ed730cd28892a90c72fef",
+  "sourceSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
   "legacy": {
     "primaryPR": 2789,
     "selectedSecurityParentPR": 2871,
-    "selectedSecurityParentHeadSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e",
+    "selectedSecurityParentHeadSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
     "currentQAChildPR": 2911,
     "currentQAChildLaneMetadata": "capture-signed-install-current-source-contracts",
     "currentQAHeadSHA": "83110a6af6220355092ed730cd28892a90c72fef",
+    "currentQAChildState": "MERGED_INTO_SELECTED_SECURITY_PARENT",
     "lineagePRs": [2688,2741,2754,2789,2863,2871,2911],
-    "exactHeadGateState": "FIELD_AND_MAIN_GRAFT_GREEN_XCODE_IN_PROGRESS",
-    "fieldSuccessRun": 31488849076,
-    "mainGraftSuccessRun": 31488848988,
-    "xcodeRun": 31488849061,
-    "priorFieldFailureRun": 31484031852,
-    "knownExactHeadFinding": "Reconciled 2026-08-11T12:04Z. #2911 moved to exact 83110a6af6220355092ed730cd28892a90c72fef and now repairs the canonical Field source contract while leaving production installer custody unchanged. On this exact head, Capture Field Build Provenance 31488849076 and Main Selective Graft 31488848988 are terminal SUCCESS; fresh Xcode 27 run 31488849061 remains in progress, so acceptance is not yet earned. Active tests/review/production owners are already attached; do not duplicate. If Xcode succeeds unchanged, fresh independent review still gates composition into #2871 and moved-parent exact-head acceptance. PHYSICAL NO-GO."
+    "exactHeadGateState": "MOVED_PARENT_ACCEPTANCE_RESET_ALL_REQUIRED_GATES_QUEUED",
+    "acceptedChildFieldRun": 31488849076,
+    "acceptedChildMainGraftRun": 31488848988,
+    "acceptedChildXcodeRun": 31488849061,
+    "movedParentSignedAppRun": 31490454614,
+    "movedParentFieldRun": 31490454631,
+    "movedParentMainGraftRun": 31490454719,
+    "movedParentXcodeRun": 31490454623,
+    "knownExactHeadFinding": "Reconciled after deliberate #2911 composition. QA child #2911 exact 83110a6af6220355092ed730cd28892a90c72fef earned terminal SUCCESS on Field 31488849076, Main Graft 31488848988, and Xcode 27 31488849061, with independent source acceptance contingent on that Xcode success. It merged into selected signed-install parent #2871 at new exact f76e6ae54b4304df5b02db4f46a72f67daa276e2. Child greens are ingredient evidence only. The moved parent has fresh Signed App 31490454614, Field 31490454631, Main Graft 31490454719, and Xcode 31490454623 queued; queued is not green and exact-head acceptance is fully reset. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "git-authority", "legacy-import"]
 }
