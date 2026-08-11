@@ -1,0 +1,393 @@
+name: tmp V14 Signed Origin Mac GID Signing Prereq Probe v3
+
+on:
+  push:
+    branches:
+      - test/capture-signed-origin-prereq-sol-1312t8-20260811
+    paths:
+      - .github/workflows/tmp-v14-signed-origin-mac-gid-signing-prereq-probe-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact research ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor f76e6ae54b4304df5b02db4f46a72f67daa276e2 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run phase-reporting transient-GID prerequisite probe
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          resolve_required() {
+            local name="$1" path
+            path="$(command -v "$name" 2>/dev/null || true)"
+            if [[ -z "$path" || ! -x "$path" ]]; then
+              echo "::error title=Probe harness blocker::$name is unavailable; no isolation conclusion is permitted."
+              exit 78
+            fi
+            printf '%s' "$path"
+          }
+
+          python3_bin="$(resolve_required python3)"
+          xcodebuild_bin="$(resolve_required xcodebuild)"
+          codesign_bin="$(resolve_required codesign)"
+          security_bin="$(command -v security 2>/dev/null || true)"
+          security_available=true
+          if [[ -z "$security_bin" || ! -x "$security_bin" ]]; then
+            security_available=false
+            security_bin='-'
+          fi
+
+          normal_security_status=-1
+          normal_identity_count=-1
+          normal_keychain_count=-1
+          if [[ "$security_available" == true ]]; then
+            set +e
+            normal_identity_output="$("$security_bin" find-identity -v -p codesigning 2>&1)"
+            normal_security_status="$?"
+            set -e
+            normal_identity_count="$(printf '%s\n' "$normal_identity_output" | /usr/bin/grep -c '^ *[0-9][0-9]*) ' || true)"
+            normal_keychain_count="$("$security_bin" list-keychains -d user 2>/dev/null | /usr/bin/grep -c '"' || true)"
+            unset normal_identity_output
+          fi
+
+          root="/private/tmp/nembra-v14-signed-origin-v3-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          report="$RUNNER_TEMP/nembra-v14-signed-origin-v3-report.json"
+          build_log="$RUNNER_TEMP/nembra-v14-signed-origin-v3-xcodebuild.log"
+          sudo -n rm -rf -- "$root"
+          rm -f -- "$report" "$build_log"
+
+          ephemeral_gid=61000
+          while id -G | tr ' ' '\n' | grep -Fxq "$ephemeral_gid"; do
+            ephemeral_gid=$((ephemeral_gid + 1))
+          done
+
+          set +e
+          sudo -n "$python3_bin" - \
+            "$GITHUB_WORKSPACE" "$root" "$(id -u)" "$(id -g)" "$ephemeral_gid" \
+            "$(id -un)" "$HOME" "${TMPDIR:-/tmp}" "$build_log" "$report" \
+            "$GITHUB_SHA" "$python3_bin" "$xcodebuild_bin" "$codesign_bin" \
+            "$security_available" "$security_bin" "$normal_security_status" \
+            "$normal_identity_count" "$normal_keychain_count" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import signal
+          import stat
+          import subprocess
+          import sys
+          import traceback
+
+          repo = Path(sys.argv[1]).resolve()
+          root = Path(sys.argv[2])
+          uid = int(sys.argv[3])
+          normal_gid = int(sys.argv[4])
+          ephemeral_gid = int(sys.argv[5])
+          user = sys.argv[6]
+          home = sys.argv[7]
+          tmpdir = sys.argv[8]
+          build_log = Path(sys.argv[9])
+          report_path = Path(sys.argv[10])
+          probe_head = sys.argv[11]
+          python3_bin = sys.argv[12]
+          xcodebuild_bin = sys.argv[13]
+          codesign_bin = sys.argv[14]
+          security_available = sys.argv[15] == "true"
+          security_bin = sys.argv[16]
+          normal_security_status = int(sys.argv[17])
+          normal_identity_count = int(sys.argv[18])
+          normal_keychain_count = int(sys.argv[19])
+
+          result = {
+              "probe_head": probe_head,
+              "scope": "Simulator-only transient-GID signing/process prerequisite research; not #2955 acceptance and not physical-device provisioning",
+              "phase_reached": "bootstrap",
+              "probe_complete": False,
+              "security_cli_available": security_available,
+              "normal_security_status": normal_security_status if security_available else None,
+              "normal_identity_count": normal_identity_count if security_available else None,
+              "normal_user_keychain_lines": normal_keychain_count if security_available else None,
+              "transient_security_status": None,
+              "transient_identity_count": None,
+              "transient_user_keychain_lines": None,
+              "identity_status_equivalent": None,
+              "identity_count_not_regressed": None,
+              "keychain_count_not_regressed": None,
+              "same_uid_normal_gid_output_access_denied": None,
+              "xcodebuild_exit": None,
+              "app_exists": None,
+              "process_group_drained": None,
+              "codesign_verify_exit": None,
+              "protected_mode_after_root_lock": None,
+              "failure_class": None,
+              "failure_detail": None,
+          }
+
+          def publish() -> None:
+              report_path.write_text(json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
+              os.chown(report_path, uid, normal_gid)
+              os.chmod(report_path, 0o600)
+
+          def fail(classification: str, detail: str) -> None:
+              result["failure_class"] = classification
+              result["failure_detail"] = detail[:600]
+              publish()
+              raise SystemExit(1)
+
+          def dropped_capture(argv):
+              read_fd, write_fd = os.pipe()
+              pid = os.fork()
+              if pid == 0:
+                  try:
+                      os.close(read_fd)
+                      os.setgroups([])
+                      os.setgid(ephemeral_gid)
+                      os.setuid(uid)
+                      completed = subprocess.run(
+                          argv,
+                          env=base_env,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT,
+                          check=False,
+                      )
+                      payload = {
+                          "status": completed.returncode,
+                          "stdout": completed.stdout.decode("utf-8", "replace")[:8192],
+                      }
+                      os.write(write_fd, json.dumps(payload).encode("utf-8"))
+                  except BaseException as exc:
+                      os.write(
+                          write_fd,
+                          json.dumps({"error": type(exc).__name__ + ":" + str(exc)}).encode("utf-8", "replace"),
+                      )
+                  finally:
+                      os._exit(0)
+              os.close(write_fd)
+              chunks = []
+              while True:
+                  chunk = os.read(read_fd, 65536)
+                  if not chunk:
+                      break
+                  chunks.append(chunk)
+              os.close(read_fd)
+              os.waitpid(pid, 0)
+              return json.loads(b"".join(chunks).decode("utf-8"))
+
+          try:
+              if os.geteuid() != 0:
+                  fail("harness", "supervisor did not enter root custody")
+
+              base_env = dict(os.environ)
+              base_env.update({"HOME": home, "USER": user, "LOGNAME": user, "TMPDIR": tmpdir})
+
+              root.mkdir(mode=0o711)
+              os.chown(root, 0, 0)
+              os.chmod(root, 0o711)
+              protected = root / "protected-derived"
+              protected.mkdir(mode=0o770)
+              os.chown(protected, 0, ephemeral_gid)
+              os.chmod(protected, 0o770)
+              result["phase_reached"] = "protected_output_created"
+
+              if security_available:
+                  identity = dropped_capture([security_bin, "find-identity", "-v", "-p", "codesigning"])
+                  keychains = dropped_capture([security_bin, "list-keychains", "-d", "user"])
+                  if "error" in identity or "error" in keychains:
+                      fail("security_probe_execution", f"identity_error={identity.get('error')} keychain_error={keychains.get('error')}")
+                  transient_identity_count = sum(
+                      1 for line in identity["stdout"].splitlines()
+                      if line.lstrip()[:1].isdigit() and ") " in line
+                  )
+                  transient_keychain_count = sum(1 for line in keychains["stdout"].splitlines() if '"' in line)
+                  result["transient_security_status"] = identity["status"]
+                  result["transient_identity_count"] = transient_identity_count
+                  result["transient_user_keychain_lines"] = transient_keychain_count
+                  result["identity_status_equivalent"] = identity["status"] == normal_security_status
+                  result["identity_count_not_regressed"] = normal_identity_count <= 0 or transient_identity_count >= normal_identity_count
+                  result["keychain_count_not_regressed"] = normal_keychain_count <= 0 or transient_keychain_count >= normal_keychain_count
+                  if not result["identity_status_equivalent"]:
+                      fail("signing_identity_status_regression", f"normal={normal_security_status} transient={identity['status']}")
+                  if not result["identity_count_not_regressed"]:
+                      fail("signing_identity_visibility_regression", f"normal={normal_identity_count} transient={transient_identity_count}")
+                  if not result["keychain_count_not_regressed"]:
+                      fail("user_keychain_visibility_regression", f"normal={normal_keychain_count} transient={transient_keychain_count}")
+                  result["phase_reached"] = "security_equivalence_verified"
+              else:
+                  result["phase_reached"] = "security_cli_unavailable"
+
+              denied = dropped_capture([python3_bin, "-I", "-c", f"import os; os.listdir({str(protected)!r})"])
+              if "error" in denied:
+                  fail("normal_gid_denial_probe_execution", str(denied["error"]))
+              result["same_uid_normal_gid_output_access_denied"] = denied["status"] != 0
+              if not result["same_uid_normal_gid_output_access_denied"]:
+                  fail("output_isolation_failure", "same-UID normal-GID process traversed protected output")
+              result["phase_reached"] = "normal_gid_denied"
+
+              log_fd = os.open(build_log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+              os.fchown(log_fd, uid, normal_gid)
+              build_pid = os.fork()
+              if build_pid == 0:
+                  try:
+                      os.setsid()
+                      os.chdir(repo)
+                      os.setgroups([])
+                      os.setgid(ephemeral_gid)
+                      os.setuid(uid)
+                      os.dup2(log_fd, 1)
+                      os.dup2(log_fd, 2)
+                      if log_fd not in (1, 2):
+                          os.close(log_fd)
+                      argv = [
+                          xcodebuild_bin,
+                          "-project", "NembraCapture.xcodeproj",
+                          "-scheme", "Nembra Capture",
+                          "-configuration", "Debug",
+                          "-sdk", "iphonesimulator",
+                          "-destination", "generic/platform=iOS Simulator",
+                          "-derivedDataPath", str(protected),
+                          "CODE_SIGNING_ALLOWED=YES",
+                          "build",
+                      ]
+                      os.execve(xcodebuild_bin, argv, base_env)
+                  except BaseException as exc:
+                      os.write(2, ("probe child setup failed: " + type(exc).__name__ + ":" + str(exc) + "\n").encode())
+                      os._exit(127)
+              os.close(log_fd)
+              _, wait_status = os.waitpid(build_pid, 0)
+              build_status = os.WEXITSTATUS(wait_status) if os.WIFEXITED(wait_status) else 128 + os.WTERMSIG(wait_status)
+              result["xcodebuild_exit"] = build_status
+              result["phase_reached"] = "xcodebuild_returned"
+
+              leftover_group = False
+              try:
+                  os.killpg(build_pid, 0)
+              except ProcessLookupError:
+                  pass
+              else:
+                  leftover_group = True
+                  try:
+                      os.killpg(build_pid, signal.SIGKILL)
+                  except ProcessLookupError:
+                      pass
+              result["process_group_drained"] = not leftover_group
+
+              os.chmod(protected, 0o700)
+              result["protected_mode_after_root_lock"] = oct(stat.S_IMODE(protected.stat().st_mode))
+              app = protected / "Build" / "Products" / "Debug-iphonesimulator" / "Nembra Capture.app"
+              result["app_exists"] = app.is_dir()
+              result["phase_reached"] = "root_locked"
+
+              if build_status != 0:
+                  fail("xcodebuild_failure", f"exit={build_status}; inspect private runner log for build diagnostics")
+              if not app.is_dir():
+                  fail("built_app_missing", "xcodebuild returned success but expected Simulator .app does not exist")
+              if leftover_group:
+                  fail("builder_process_group_not_drained", "xcodebuild direct child returned while its process group remained live; descendants were killed by the probe")
+
+              verify = subprocess.run(
+                  [codesign_bin, "--verify", "--deep", "--strict", str(app)],
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  check=False,
+              )
+              result["codesign_verify_exit"] = verify.returncode
+              result["phase_reached"] = "codesign_verified"
+              if verify.returncode != 0:
+                  fail("codesign_verify_failure", f"codesign verify exit={verify.returncode}; output intentionally not published")
+
+              if not security_available:
+                  fail("security_cli_unavailable", "isolated build/process/codesign phases may have passed, but signing identity/keychain equivalence was not measured")
+
+              result["probe_complete"] = True
+              result["phase_reached"] = "complete"
+              publish()
+          except SystemExit:
+              raise
+          except BaseException as exc:
+              result["failure_class"] = "unexpected_probe_exception"
+              result["failure_detail"] = type(exc).__name__ + ":" + str(exc)[:500]
+              result["phase_reached"] = result.get("phase_reached") or "unexpected"
+              publish()
+              traceback.print_exc()
+              raise
+          PY
+          probe_status="$?"
+          set -e
+
+          sudo -n rm -rf -- "$root" || true
+          if [[ ! -f "$report" ]]; then
+            echo '::error title=Probe produced no structured report::This is a harness failure; no isolation conclusion is permitted.'
+            exit 78
+          fi
+
+          cat "$report"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+          echo "probe_status=$probe_status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish safe structured result
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.probe.outputs.report }}
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+        run: |
+          set -euo pipefail
+          classification="$(python3 - "$REPORT" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          if data.get('probe_complete'):
+              print('COMPLETE for this Simulator-only prerequisite slice.')
+          else:
+              print('NOT COMPLETE: ' + str(data.get('failure_class')) + ' — ' + str(data.get('failure_detail')))
+          PY
+          )"
+          {
+            echo '### Signed-origin Mac transient-GID prerequisite probe v3'
+            echo
+            echo 'Research only; no production source, app acceptance, or physical authority moved.'
+            echo
+            echo "$classification"
+            echo
+            echo 'Safe structured phase report (counts/statuses only; no signing identity names or keychain paths):'
+            echo '```json'
+            cat "$REPORT"
+            echo '```'
+            echo
+            echo 'This probe covers Simulator-only identity/keychain visibility, same-UID normal-GID denial, isolated xcodebuild, process-group drain, root lock, and codesign verification. Physical iOS provisioning, selected-Xcode child environment, private-input custody, actual compiler-origin first protected snapshot, #2955 replay, and final exact-head composition remain mandatory.'
+            echo
+            echo '**PHYSICAL NO-GO.**'
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment 2871 --body-file "$RUNNER_TEMP/comment.md"
+
+      - name: Require prerequisite success
+        shell: bash
+        env:
+          REPORT: ${{ steps.probe.outputs.report }}
+        run: |
+          set -euo pipefail
+          python3 - "$REPORT" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          if not data.get('probe_complete'):
+              raise SystemExit('Mac transient-GID prerequisite not cleared: ' + str(data.get('failure_class')))
+          print('Mac transient-GID Simulator prerequisite slice cleared at exact probe head:', data['probe_head'])
+          PY
