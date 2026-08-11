@@ -50,7 +50,8 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         app_marker = 'APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"'
         fingerprint_marker = '/usr/bin/python3 -I - fingerprint --app "$APP"'
         stage_marker = '/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX'
-        copy_marker = '/usr/bin/sudo /usr/bin/ditto "$APP" "$APP_INSTALL_STAGE"'
+        copy_marker = '/usr/bin/sudo /usr/bin/ditto --noacl "$APP" "$APP_INSTALL_STAGE"'
+        acl_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -acl -print -quit'
         owner_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -exec /usr/sbin/chown -h root:wheel {} +'
         verify_stage_marker = '/usr/bin/python3 -I - verify-stage'
         revoke_marker = '/usr/bin/sudo -K'
@@ -65,6 +66,7 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
             ("fingerprint", fingerprint_marker),
             ("stage", stage_marker),
             ("copy", copy_marker),
+            ("acl", acl_marker),
             ("owner", owner_marker),
             ("verify_stage", verify_stage_marker),
             ("revoke", revoke_marker),
@@ -90,11 +92,13 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         self.assertIn('SIGNED_APP_CUSTODY_HELPER_BASE64=', source)
         self.assertIn("/usr/bin/base64 -D | /usr/bin/python3 -I - fingerprint", source)
         self.assertIn("/usr/bin/base64 -D | /usr/bin/python3 -I - verify-stage", source)
+        self.assertIn('Protected signed-app install stage retained an ACL', source)
 
         self.assertLess(indexes["app"], indexes["fingerprint"])
         self.assertLess(indexes["fingerprint"], indexes["stage"])
         self.assertLess(indexes["stage"], indexes["copy"])
-        self.assertLess(indexes["copy"], indexes["owner"])
+        self.assertLess(indexes["copy"], indexes["acl"])
+        self.assertLess(indexes["acl"], indexes["owner"])
         self.assertLess(indexes["owner"], indexes["verify_stage"])
         self.assertLess(indexes["verify_stage"], indexes["revoke"])
         self.assertLess(indexes["revoke"], indexes["no_sudo"])
