@@ -8,7 +8,12 @@
   "priority": 0,
   "state": "VERIFYING",
   "dependencies": [],
-  "blockers": [],
+  "blockers": [
+    "#2913 current exact expected-red: post-audit/pre-vnode SwiftPM auto-discovered untracked source admission",
+    "active primary repair head 2c8d768d contains accidental tracked __pycache__/*.pyc host artifacts and is not composable",
+    "#2915 exact expected-red: caller DEVELOPER_DIR is not fenced before field Xcode tools",
+    "#2917 current exact expected-red: guarded xcodebuild inherits residual caller build/toolchain environment"
+  ],
   "mode": "exclusive",
   "allowedWriteAreas": ["Scripts/bootstrap_capture_tuya_sdk.sh","Scripts/capture_private_review_commitment.py","Scripts/capture_tuya_private_input_build_guard.py","Scripts/capture_tuya_private_input_provenance.py","Scripts/capture_cocoapods_generated_build_subject.py","scripts/field/install_one_time_capture.command"],
   "adjacentWriteAreas": ["scripts/ci/tests",".github/workflows","Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift","Podfile","Podfile.lock"],
@@ -28,9 +33,9 @@
     "selectedBaseHeadSHA": "47740b53736f0dd277420693fa15e1de94075c27",
     "absorbedIngredients": [2867,2876,2878,2892,2898,2910],
     "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856,2859,2867,2869,2875,2876,2878,2892,2898,2907,2910],
-    "exactHeadGateState": "BLOCKED_EXPECTED_RED_2913_AND_XCODE_ENVIRONMENT_AUTHORITY",
+    "exactHeadGateState": "BLOCKED_EXPECTED_RED_2913_2915_2917_AND_DIRTY_PRIMARY_SUCCESSOR",
     "xcodeRun": 31488213467,
-    "knownExactHeadFinding": "Reconciled 2026-08-11T11:58Z. #2907 exact d0b134ca remains the selected build-authority parent but is NOT acceptable even though its earlier CocoaPods, installer-Git, tracked compiler-window, private-review, vnode, Field and Main-Graft gates are green. Canonical expected-red #2913 exact a57816cca mechanically proves an untracked build-visible source can be inserted after endpoint audit but before vnode registration and consumed while both endpoint audits later look clean; active primary generation-2 repair owns that blocker. Independently, #2915 exact bb5f2b22 is terminal expected-red for inherited caller DEVELOPER_DIR, and stronger real-macOS child-environment witness #2917 exact b9369844 is queued; do not promote an absolute /usr/bin/xcodebuild path as closed toolchain authority. Integration slot sol-20260811-g56si is active to compose only a descendant that closes these findings without weakening tracked/private/generated vnode custody. Any old/queued Xcode result on d0b134ca cannot override these newer blockers. PHYSICAL NO-GO."
+    "knownExactHeadFinding": "Reconciled 2026-08-11T12:02Z. #2907 exact d0b134ca remains the selected build-authority parent but is NOT acceptable despite earlier green authority/Field/Main-Graft evidence. #2913 was corrected to the real SwiftPM auto-discovery surface and current exact 8b676737 has terminal expected-red run 31488986888, proving the audit-to-vnode-arm untracked-source seam still reproduces. Active primary repair materialized a directionally coherent post-arm raw inventory scan, but current head 2c8d768d is not composable because exact parent compare also contains two tracked __pycache__/*.pyc artifacts; integration blocker comment 5252885787 records required cleanup. #2915 exact bb5f2b22 remains terminal expected-red for caller DEVELOPER_DIR. #2917 collision-reconciled into the complementary residual child-environment contract; current exact 3249ae2c has terminal expected-red run 31489042280 and no longer consumes a macOS runner. Integration slot sol-20260811-g56si must compose only a clean descendant that closes these findings without weakening tracked/private/generated vnode/source custody. Old/queued Xcode on d0b134ca cannot override newer expected-red evidence. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","security","build-authority","field-installer","filesystem-authority","vnode","legacy-import"]
 }
