@@ -1,0 +1,70 @@
+name: Capture Final GO Snapshot Rebind Race Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_es80_final_go_snapshot_rebind_race_red_team.py
+      - .github/workflows/capture-final-go-snapshot-rebind-race-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot-rebind-race:
+    name: Snapshot namespace rebind expected-red witness
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: bf541121cde85bad271ce6c6ab0e6a2047dd4e4f
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact snapshot-custody parent and two-path diagnostic scope
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(
+            printf '%s\n' \
+              '.github/workflows/capture-final-go-snapshot-rebind-race-redteam.yml' \
+              'scripts/ci/tests/test_es80_final_go_snapshot_rebind_race_red_team.py' \
+            | LC_ALL=C sort
+          )"
+          test "$changed_paths" = "$expected_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_es80_final_go_snapshot_rebind_race_red_team.py
+
+      - name: Reproduce finite identity-rebind ancestor swap
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 \
+              scripts/ci/tests/test_es80_final_go_snapshot_rebind_race_red_team.py
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          find scripts -type d -name '__pycache__' -prune -exec rm -rf {} +
+          printf 'Expected-red parent: %s\n' "$EXACT_PARENT"
+          printf 'SUCCESS means the parent admits a divergent checkout after finite namespace identity rebinds.\n'
+          printf 'This diagnostic performs no device, Bluetooth, Tuya, credential, signing, install, launch, or physical operation.\n'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
