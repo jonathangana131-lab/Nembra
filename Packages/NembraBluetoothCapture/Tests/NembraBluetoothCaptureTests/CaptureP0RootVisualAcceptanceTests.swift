@@ -43,6 +43,28 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(root.contains(".accessibilityLabel(\"Tuya Smart user code\")"))
         #expect(root.contains(".accessibilityIdentifier(\"capture.p0-root\")"))
         #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
+        #expect(root.contains("private var buildAuthorityDetail: String"))
+        #expect(root.contains("Public build: account metadata only. Bluetooth and physical Capture stay locked."))
+        #expect(root.contains("private var accountMetadataPrimaryAction: some View"))
+        #expect(root.contains("private var accountMetadataSupportingCopy: some View"))
+        #expect(root.contains("nembra.capture.root.account-link-action"))
+
+        let panel = String(try section(
+            in: root,
+            from: "private var accountSetupPanel: some View",
+            to: "private var accountMetadataPrimaryAction: some View"
+        ))
+        let accessibilityOrder = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize {\n                    accountMetadataPrimaryAction\n                    accountMetadataSupportingCopy"))
+        #expect(accessibilityOrder.lowerBound < panel.endIndex)
+
+        let primaryAction = String(try section(
+            in: root,
+            from: "private var accountMetadataPrimaryAction: some View",
+            to: "private var accountMetadataSupportingCopy: some View"
+        ))
+        let input = try #require(primaryAction.range(of: "TextField(\"Paste user code\""))
+        let action = try #require(primaryAction.range(of: "Label(\"Create approval QR\""))
+        #expect(input.lowerBound < action.lowerBound)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
