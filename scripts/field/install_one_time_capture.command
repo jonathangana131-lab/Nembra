@@ -176,7 +176,23 @@ for record in tree.split(b"\0"):
 if checked == 0:
     raise SystemExit("raw accepted checkout audit found no tracked blobs")
 
-allowed_roots = {"LocalSecrets", "Pods", "NembraCapture.xcworkspace"}
+field_input_directories = ("LocalSecrets", "Pods", "NembraCapture.xcworkspace")
+for relative in field_input_directories:
+    candidate = root / relative
+    try:
+        metadata = os.lstat(candidate)
+    except OSError:
+        raise SystemExit("required field-input directory is unavailable: " + relative)
+    if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        raise SystemExit("field-input allowlist root must be one real directory: " + relative)
+try:
+    lock_metadata = os.lstat(root / "Podfile.lock")
+except OSError:
+    raise SystemExit("required field-input lockfile is unavailable: Podfile.lock")
+if not stat.S_ISREG(lock_metadata.st_mode) or stat.S_ISLNK(lock_metadata.st_mode):
+    raise SystemExit("field-input allowlist lockfile must be one real regular file: Podfile.lock")
+
+allowed_roots = set(field_input_directories)
 for current_raw, directories, files in os.walk(root, topdown=True, followlinks=False):
     current = Path(current_raw)
     current_relative = current.relative_to(root)

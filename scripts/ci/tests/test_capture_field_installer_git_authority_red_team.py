@@ -111,6 +111,8 @@ class CaptureFieldInstallerGitAuthorityRedTeamTests(unittest.TestCase):
             'hashlib.sha1(',
             'raw accepted checkout blob mismatch',
             'untracked accepted-source path outside field-input allowlist',
+            'field-input allowlist root must be one real directory',
+            'field-input allowlist lockfile must be one real regular file',
         ):
             self.assertIn(marker, source, f"missing field Git-authority marker: {marker}")
         self.assertGreaterEqual(
