@@ -1,0 +1,194 @@
+name: Capture Tuya HTTPS transport materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-tuya-https-transport-sol
+    paths:
+      - .github/workflows/capture-tuya-https-transport-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: repair/v14-capture-tuya-https-transport-sol
+
+      - name: Verify exact frozen parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='98fd627972a788731d206aac4abdee9660f171ca'
+          workflow='.github/workflows/capture-tuya-https-transport-materialize.yml'
+          test "$(git rev-parse HEAD^)" = "$expected"
+          test "$(git diff --name-only "$expected"..HEAD)" = "$workflow"
+          git diff --quiet
+
+      - name: Materialize HTTPS-only credential transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
+          source = source_path.read_text()
+
+          old_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\\(rawEndpoint)"
+          '''.replace('                      ', '            ', 1)
+          new_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      guard let endpoint = Self.canonicalHTTPSAPIEndpoint(rawEndpoint) else {
+                          throw BridgeError.malformed("Tuya approval returned an invalid or non-HTTPS API endpoint.")
+                      }
+          '''.replace('                      ', '            ', 1).replace('                          ', '                ', 1).replace('                      }', '            }', 1)
+          if old_endpoint not in source:
+              raise SystemExit('endpoint normalization anchor missing or changed')
+          source = source.replace(old_endpoint, new_endpoint, 1)
+
+          old_transport = '''    private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
+              let (data, response) = try await URLSession.shared.data(for: request)
+              guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                  throw BridgeError.remote("HTTP request failed.")
+              }
+              guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                  throw BridgeError.malformed("Server response was not a JSON object.")
+              }
+              return object
+          }
+          '''.replace('              ', '        ')
+
+          new_transport = '''    private final class RejectRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+              func urlSession(
+                  _ session: URLSession,
+                  task: URLSessionTask,
+                  willPerformHTTPRedirection response: HTTPURLResponse,
+                  newRequest request: URLRequest,
+                  completionHandler: @escaping (URLRequest?) -> Void
+              ) {
+                  completionHandler(nil)
+              }
+          }
+
+          private static func canonicalHTTPSAPIEndpoint(_ rawEndpoint: String) -> String? {
+              let trimmed = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+              guard !trimmed.isEmpty else { return nil }
+
+              let candidate = trimmed.contains("://") ? trimmed : "https://\\(trimmed)"
+              guard var components = URLComponents(string: candidate),
+                    components.scheme?.lowercased() == "https",
+                    let host = components.host,
+                    !host.isEmpty,
+                    components.user == nil,
+                    components.password == nil,
+                    components.query == nil,
+                    components.fragment == nil else {
+                  return nil
+              }
+
+              components.scheme = "https"
+              if components.path == "/" { components.path = "" }
+              guard let url = components.url else { return nil }
+              var endpoint = url.absoluteString
+              while endpoint.hasSuffix("/") { endpoint.removeLast() }
+              return endpoint.isEmpty ? nil : endpoint
+          }
+
+          private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
+              guard request.url?.scheme?.lowercased() == "https" else {
+                  throw BridgeError.malformed("Tuya network requests require HTTPS.")
+              }
+
+              let (data, response) = try await URLSession.shared.data(
+                  for: request,
+                  delegate: RejectRedirectDelegate()
+              )
+              guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                  throw BridgeError.remote("HTTP request failed.")
+              }
+              guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                  throw BridgeError.malformed("Server response was not a JSON object.")
+              }
+              return object
+          }
+          '''.replace('              ', '        ')
+
+          if old_transport not in source:
+              raise SystemExit('requestJSON anchor missing or changed')
+          source = source.replace(old_transport, new_transport, 1)
+          source_path.write_text(source)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountBridgeHTTPSContractTests.swift')
+          test_path.write_text(r'''import Foundation
+          import XCTest
+
+          final class TuyaAccountBridgeHTTPSContractTests: XCTestCase {
+              func testCredentialBearingTuyaTransportIsHTTPSOnlyAndRejectsRedirects() throws {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  let sourceURL = repositoryRoot
+                      .appendingPathComponent("NembraApp")
+                      .appendingPathComponent("Features")
+                      .appendingPathComponent("Research")
+                      .appendingPathComponent("TuyaAccountBridge.swift")
+                  let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+                  XCTAssertFalse(source.contains("rawEndpoint.hasPrefix(\"http\")"))
+                  XCTAssertTrue(source.contains("canonicalHTTPSAPIEndpoint(rawEndpoint)"))
+                  XCTAssertTrue(source.contains("components.scheme?.lowercased() == \"https\""))
+                  XCTAssertTrue(source.contains("request.url?.scheme?.lowercased() == \"https\""))
+                  XCTAssertTrue(source.contains("delegate: RejectRedirectDelegate()"))
+                  XCTAssertTrue(source.contains("willPerformHTTPRedirection"))
+                  XCTAssertTrue(source.contains("completionHandler(nil)"))
+              }
+          }
+          '''.replace('\n          ', '\n').lstrip())
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/Features/Research/TuyaAccountBridge.swift').read_text()
+          required = [
+              'canonicalHTTPSAPIEndpoint(rawEndpoint)',
+              'components.scheme?.lowercased() == "https"',
+              'request.url?.scheme?.lowercased() == "https"',
+              'delegate: RejectRedirectDelegate()',
+              'willPerformHTTPRedirection',
+              'completionHandler(nil)',
+          ]
+          for needle in required:
+              if needle not in source:
+                  raise SystemExit(f'missing transport invariant: {needle}')
+          if 'rawEndpoint.hasPrefix("http")' in source:
+              raise SystemExit('legacy HTTP-prefix acceptance remains')
+          PY
+
+          swiftc -parse NembraApp/Features/Research/TuyaAccountBridge.swift
+          swiftc -parse Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountBridgeHTTPSContractTests.swift
+
+      - name: Publish one clean repair commit
+        shell: bash
+        env:
+          BRANCH: repair/v14-capture-tuya-https-transport-sol
+        run: |
+          set -euo pipefail
+          expected='98fd627972a788731d206aac4abdee9660f171ca'
+          workflow='.github/workflows/capture-tuya-https-transport-materialize.yml'
+          rm "$workflow"
+          git reset --soft "$expected"
+          git add -A
+          test "$(git diff --cached --name-only | sort)" = $'NembraApp/Features/Research/TuyaAccountBridge.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountBridgeHTTPSContractTests.swift'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): pin Tuya account transport to HTTPS'
+          git push --force-with-lease origin "HEAD:$BRANCH"
