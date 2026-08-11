@@ -9,12 +9,12 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:02:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:25:30Z",
+  "lastHeartbeatAt": "2026-08-11T12:42:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-private-identity-recovery-neutralization-sol-4c47a9-20260811",
   "pr": 2943,
   "sourceSHA": "3f662b7a3f3da667ce3f916ee3f0a65629269c8a",
-  "currentHeadSHA": "81fa014bd3db1e7a34cc9bebfc227db8bbb38f98",
+  "currentHeadSHA": "c3cfdda7519024029da3dd36e95de2697362deb3",
   "takeoverFromWorkerId": "sol-20260811-a7e4",
-  "takeoverReason": "Generation-1 primary lease expired after 2026-08-11T09:56:30Z. Live selected convergence #2899 is exact 3f662b7a and independent review produced machine-demonstrated expected-red #2918 for the crash-residue check-to-unlink name race. Recover current production from #2899 and replace raceable pathname deletion with exact-descriptor credential neutralization while preserving fail-closed namespace authority. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-1 primary lease expired after 2026-08-11T09:56:30Z. Live selected convergence #2899 is exact 3f662b7a and independent review produced machine-demonstrated expected-red #2918 for the crash-residue check-to-unlink name race. Recover current production from #2899 and replace raceable pathname deletion with exact-descriptor credential neutralization while preserving fail-closed namespace authority. Crash staging now remains inside held LocalSecrets custody so #2924 raw-tree admission stays closed without allowing root tombstones. PHYSICAL NO-GO."
 }
