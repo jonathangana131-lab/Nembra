@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-1435vr",
   "leaseId": "capture-build-review-1435vr-20260811-2150",
   "generation": 16,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:50:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:50:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:55:00Z",
+  "releasedAt": "2026-08-11T21:55:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3028,
   "sourceSHA": "0807fc75a7edb51597d9e926c747cd5e6c400771",
   "currentHeadSHA": "4689d621a79430a570eb6d5466d3fa767155ff5a",
   "takeoverFromWorkerId": "sol-20260811-1435vr",
-  "takeoverReason": "Generation-15 review completed and released. Reclaim free review slot for #3028's moved exact head after the prior generation-14 scope-gate rejection; current head is a clean two-file validation branch with its dedicated ACL custody run queued. Read-only source/adversarial review only; no production writes.",
-  "intent": "Verify #3028 exact 4689d621 mechanically tests both leaf write ACL and ancestor add_file/delete_child replacement authority against current selected-Xcode validator without fixture/scope false positives; classify Main/Xcode as non-acceptance for this validation-only slice and preserve PHYSICAL NO-GO."
+  "takeoverReason": "Generation-15 review completed and released. Reclaimed free review slot for #3028's moved exact head.",
+  "intent": "Verify #3028 exact 4689d621 ACL witness without fixture/scope false positives; read-only review.",
+  "releaseReason": "BLOCKING_REVIEW_COMMENT_4910997055: workflow exact-scope gate requires four paths while exact PR diff is only two validation paths, so ACL witness cannot execute. Python witness otherwise directionally sound. Dedicated run must be re-earned after gate repair. PHYSICAL NO-GO."
 }
