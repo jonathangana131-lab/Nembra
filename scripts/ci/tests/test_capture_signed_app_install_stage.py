@@ -52,14 +52,25 @@ class SignedAppInstallStageTests(unittest.TestCase):
 
         for marker in (git_blob, stage_call, app_info, codesign, open_xcode, verify_call, install_call, cleanup_call, launch):
             self.assertIn(marker, source, marker)
-        self.assertLess(source.index(git_blob), source.index(stage_call))
-        self.assertLess(source.index(stage_call), source.index(app_info))
-        self.assertLess(source.index(app_info), source.index(codesign))
-        self.assertLess(source.index(codesign), source.index(open_xcode))
-        self.assertLess(source.index(open_xcode), source.index(verify_call, source.index(open_xcode)))
-        self.assertLess(source.index(verify_call, source.index(open_xcode)), source.index(install_call))
-        self.assertLess(source.index(install_call), source.index(cleanup_call, source.index(install_call)))
-        self.assertLess(source.index(cleanup_call, source.index(install_call)), source.index(launch))
+
+        git_blob_index = source.index(git_blob)
+        stage_index = source.index(stage_call)
+        app_info_index = source.index(app_info)
+        codesign_index = source.index(codesign)
+        open_index = source.index(open_xcode)
+        verify_index = source.index(verify_call, open_index)
+        install_index = source.index(install_call, open_index)
+        cleanup_index = source.index(cleanup_call, install_index)
+        launch_index = source.index(launch)
+
+        self.assertLess(git_blob_index, stage_index)
+        self.assertLess(stage_index, app_info_index)
+        self.assertLess(app_info_index, codesign_index)
+        self.assertLess(codesign_index, open_index)
+        self.assertLess(open_index, verify_index)
+        self.assertLess(verify_index, install_index)
+        self.assertLess(install_index, cleanup_index)
+        self.assertLess(cleanup_index, launch_index)
 
         self.assertNotIn('sudo /usr/bin/python3 -I "$ROOT/Scripts/capture_signed_app_install_stage.py"', source)
         self.assertIn('/usr/bin/sudo /usr/bin/python3 -I -c "$INSTALL_STAGE_HELPER_SOURCE"', source)
