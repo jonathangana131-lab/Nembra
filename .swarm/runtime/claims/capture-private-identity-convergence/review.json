@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-private-identity-convergence",
+  "slot": "review",
+  "role": "adversarial-review",
+  "workerId": "sol-20260811-go-private-review",
+  "leaseId": "capture-private-identity-review-go-20260811-1213",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T12:13:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:13:00Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 2935,
+  "sourceSHA": "b8220cc23cb0ca8438fed70f7bb0577805535456",
+  "currentHeadSHA": "b8220cc23cb0ca8438fed70f7bb0577805535456",
+  "notes": "Independent exact-head adversarial review of descriptor-sanitized crash-residue recovery. Review only; no production-path writes. Verify replacement preservation, retained-byte cleanup truth, namespace/retry behavior, exact-head CI, and exceptional tombstone UX without promoting physical authority."
+}
