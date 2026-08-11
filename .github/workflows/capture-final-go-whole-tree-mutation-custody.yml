@@ -1,0 +1,72 @@
+name: Capture Final GO Whole Tree Mutation Custody
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_whole_tree_final_go.py
+      - scripts/ci/tests/test_es80_final_go_whole_tree_mutation_custody.py
+      - .github/workflows/capture-final-go-whole-tree-mutation-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  whole-tree-custody:
+    name: Whole-tree custody (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact successor to defeated Final-GO parent
+        shell: bash
+        env:
+          PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${PARENT}^{commit}"
+          changed_paths="$(git diff --name-only "$PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-final-go-whole-tree-mutation-custody.yml' \
+            'scripts/ci/es80_authenticated_stationary_private_review_whole_tree_final_go.py' \
+            'scripts/ci/tests/test_es80_final_go_whole_tree_mutation_custody.py')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Whole-tree successor must remain exactly three-path. Changed:\n' >&2
+            printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile successor and custody tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_whole_tree_final_go.py \
+            scripts/ci/tests/test_es80_final_go_whole_tree_mutation_custody.py
+
+      - name: Prove clean admission and reject post-read and restore races
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_es80_final_go_whole_tree_mutation_custody.py
+
+      - name: Preserve truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Accepted semantic parent: 471cc025b332f4df8b43a98d709710aeb4e0698f\n'
+          printf 'Pinned parent blob: 48ce4bd8f933ae062eaaadd0d017d13c781a8c02\n'
+          printf 'This job performs no credential provisioning, Xcode device operation, Bluetooth/Tuya action, install, launch, or physical experiment.\n'
