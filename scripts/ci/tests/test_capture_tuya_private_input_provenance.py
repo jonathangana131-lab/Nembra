@@ -89,7 +89,7 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
         bootstrap_call = 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"'
         retired_bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
-        build_call = "-- xcodebuild"
+        build_call = "-- /usr/bin/xcodebuild"
 
         for required in (
             review_mode,
