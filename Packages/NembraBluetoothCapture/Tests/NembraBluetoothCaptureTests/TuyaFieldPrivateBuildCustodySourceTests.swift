@@ -33,6 +33,16 @@ struct TuyaFieldPrivateBuildCustodySourceTests {
         #expect(installer.contains("shasum -a 256 \"$ROOT/Podfile.lock\""))
     }
 
+    @Test("field provenance reruns when private custody inputs change")
+    func provenanceAdmitsCustodyBoundaryChanges() throws {
+        let workflow = try readRepositoryFile(".github/workflows/capture-field-build-provenance.yml")
+
+        #expect(workflow.contains("- .gitignore"))
+        #expect(workflow.contains("- scripts/ci/es80_signed_field_artifact_private_runner.py"))
+        #expect(workflow.contains("- Packages/NembraCore/**"))
+        #expect(workflow.contains("github.event.pull_request.head.repo.full_name == github.repository"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
