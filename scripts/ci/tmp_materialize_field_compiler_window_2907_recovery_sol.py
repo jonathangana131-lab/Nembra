@@ -16,6 +16,7 @@ CANONICAL_RED = ROOT / "scripts/ci/tests/test_capture_field_tracked_source_compi
 VNODE_TEST = ROOT / "scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py"
 PROVENANCE_TEST = ROOT / "scripts/ci/tests/test_capture_tuya_private_input_provenance.py"
 SELF = Path(__file__)
+TEMP_WORKFLOW = ROOT / ".github/workflows/tmp-v14-field-compiler-window-2907-recovery-sol.yml"
 BYTECODE = (
     "Scripts/__pycache__/capture_tuya_private_input_provenance.cpython-312.pyc",
     "scripts/ci/__pycache__/es80_signed_field_artifact_private_runner.cpython-312.pyc",
@@ -28,8 +29,23 @@ def run(*argv: str) -> str:
     return subprocess.check_output(argv, cwd=ROOT, text=True).strip()
 
 
-if run("git", "rev-parse", "HEAD") != PARENT_HEAD:
-    raise SystemExit("refusing materialization from anything except exact #2907 recovery parent")
+subprocess.run(
+    ["/usr/bin/git", "merge-base", "--is-ancestor", PARENT_HEAD, "HEAD"],
+    cwd=ROOT,
+    check=True,
+)
+construction_delta = {
+    line for line in run("git", "diff", "--name-only", f"{PARENT_HEAD}..HEAD").splitlines() if line
+}
+allowed_construction = {
+    SELF.relative_to(ROOT).as_posix(),
+    TEMP_WORKFLOW.relative_to(ROOT).as_posix(),
+}
+if not construction_delta or not construction_delta.issubset(allowed_construction):
+    raise SystemExit(
+        "recovery construction ancestry contains non-temporary drift before materialization: "
+        + ", ".join(sorted(construction_delta))
+    )
 if run("git", "status", "--porcelain=v1", "--untracked-files=all"):
     raise SystemExit("construction checkout is not clean")
 
@@ -69,6 +85,8 @@ for relative in BYTECODE:
         raise SystemExit(f"expected accidental bytecode is missing: {relative}")
     subprocess.run(["/usr/bin/git", "rm", "--", relative], cwd=ROOT, check=True)
 
+# Compile/run the exact portable contracts. Some Python imports may recreate ignored
+# bytecode; remove the four accidentally tracked paths again before staging.
 subprocess.run(["/usr/bin/python3", "-m", "py_compile", str(GUARD), str(AUTH_TEST), str(CANONICAL_RED), str(VNODE_TEST), str(PROVENANCE_TEST)], cwd=ROOT, check=True)
 subprocess.run(["/usr/bin/python3", str(AUTH_TEST)], cwd=ROOT, check=True)
 subprocess.run(["/usr/bin/python3", str(CANONICAL_RED)], cwd=ROOT, check=True)
@@ -91,6 +109,9 @@ installer = INSTALLER.read_text(encoding="utf-8")
 for marker in ('--accepted-source-root "$ROOT"', '--accepted-source-sha "$SOURCE_SHA"'):
     if marker not in installer:
         raise SystemExit(f"missing accepted tracked-source CLI marker: {marker}")
+
+for relative in BYTECODE:
+    subprocess.run(["/usr/bin/git", "rm", "-f", "--ignore-unmatch", "--", relative], cwd=ROOT, check=True)
 
 SELF.unlink()
 subprocess.run(
