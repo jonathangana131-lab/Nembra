@@ -42,6 +42,7 @@ struct TuyaFieldDependencyProvenanceSourceTests {
             "NembraApp/Features/Research/TuyaAccountBridge.swift",
             "NembraApp/Features/Research/ES80CaptureShellView.swift",
             "NembraCapture.xcodeproj/project.pbxproj",
+            "NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme",
             "NembraCapture-Info.plist",
             "Packages/NembraBluetoothCapture/**",
             "Packages/NembraCore/**",
