@@ -1,6 +1,12 @@
 name: Capture Authenticated Stationary Final GO
 
 on:
+  push:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_today_final_go_publication.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+      - .github/workflows/capture-authenticated-stationary-final-go.yml
   pull_request:
     paths:
       - scripts/ci/es80_authenticated_stationary_final_go.py
