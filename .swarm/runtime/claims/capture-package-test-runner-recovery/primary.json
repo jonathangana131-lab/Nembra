@@ -9,7 +9,7 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T07:16:00Z",
-  "lastHeartbeatAt": "2026-08-11T07:17:45Z",
+  "lastHeartbeatAt": "2026-08-11T07:22:30Z",
   "leaseSeconds": 1800,
   "branch": "repair/v15-capture-package-runner-range-sol-9c42",
   "pr": 2808,
