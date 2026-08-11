@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import base64
 import ctypes
+import hashlib
+import hmac
 import os
 import secrets
 import stat
@@ -47,7 +49,7 @@ def _file_flags() -> int:
     required = ("O_CLOEXEC", "O_NOFOLLOW")
     if any(not hasattr(os, name) for name in required):
         raise ProvisionError("platform cannot enforce descriptor-bound no-follow file custody")
-    return os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW
+    return os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW
 
 
 def _open_absolute_directory(path: Path) -> int:
@@ -250,6 +252,59 @@ def _unlink_owned_inode_if_named(checkout_fd: int, name: str, sealed: os.stat_re
             pass
 
 
+class _SealedStaging:
+    def __init__(self, metadata: os.stat_result, descriptor: int, payload: bytes) -> None:
+        self.metadata = metadata
+        self.descriptor = descriptor
+        self.payload = payload
+
+    def __getattr__(self, name: str):
+        return getattr(self.metadata, name)
+
+
+def _payload_stat_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _require_descriptor_payload(descriptor: int, payload: bytes, label: str) -> None:
+    before = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(before.st_mode)
+        or before.st_uid != os.geteuid()
+        or before.st_nlink != 1
+        or before.st_size != len(payload)
+    ):
+        raise ProvisionError(f"{label}: descriptor metadata no longer matches accepted payload custody")
+
+    chunks: list[bytes] = []
+    offset = 0
+    while offset < before.st_size:
+        chunk = os.pread(descriptor, min(65_536, before.st_size - offset), offset)
+        if not chunk:
+            raise ProvisionError(f"{label}: descriptor bytes changed during accepted payload read")
+        chunks.append(chunk)
+        offset += len(chunk)
+    if os.pread(descriptor, 1, before.st_size):
+        raise ProvisionError(f"{label}: descriptor grew during accepted payload read")
+
+    after = os.fstat(descriptor)
+    if _payload_stat_identity(before) != _payload_stat_identity(after):
+        raise ProvisionError(f"{label}: descriptor metadata changed during accepted payload read")
+    actual = hashlib.sha256(b"".join(chunks)).digest()
+    expected = hashlib.sha256(payload).digest()
+    if not hmac.compare_digest(actual, expected):
+        raise ProvisionError(f"{label}: descriptor bytes do not match the accepted payload")
+
+
 def _secure_replace_beneath(
     checkout_fd: int,
     source_name: str,
@@ -259,6 +314,12 @@ def _secure_replace_beneath(
     _relative_components(source_name)
     _relative_components(destination_relative)
     _require_sealed_staging_name(checkout_fd, source_name, sealed)
+    if isinstance(sealed, _SealedStaging):
+        _require_descriptor_payload(
+            sealed.descriptor,
+            sealed.payload,
+            "private identity staging payload changed immediately before publication",
+        )
     if sys.platform == "darwin":
         libc = ctypes.CDLL(None, use_errno=True)
         try:
@@ -337,7 +398,18 @@ def _write_staged(
         if sealed.st_size != len(payload) or sealed.st_nlink != 1:
             raise ProvisionError("private identity staging file changed before publication")
 
-        _secure_replace_beneath(checkout_fd, temporary_name, destination_relative, sealed)
+        _require_descriptor_payload(
+            staging_fd,
+            payload,
+            "private identity staging payload changed before publication",
+        )
+        sealed_authority = _SealedStaging(sealed, staging_fd, payload)
+        _secure_replace_beneath(
+            checkout_fd,
+            temporary_name,
+            destination_relative,
+            sealed_authority,
+        )
 
         final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
         final = os.fstat(final_fd)
@@ -349,9 +421,25 @@ def _write_staged(
             or final.st_dev != sealed.st_dev
             or final.st_ino != sealed.st_ino
         ):
+            _unlink_owned_inode_if_named(destination_parent_fd, final_name, final)
             raise ProvisionError("published private identity output is not the sealed staging inode")
-        os.fchmod(final_fd, 0o600)
-        os.fsync(final_fd)
+        try:
+            _require_descriptor_payload(
+                final_fd,
+                payload,
+                "published private identity payload failed post-publication authority",
+            )
+            os.fchmod(final_fd, 0o600)
+            os.fsync(final_fd)
+            _require_descriptor_payload(
+                final_fd,
+                payload,
+                "published private identity payload changed before durable success",
+            )
+        except Exception:
+            compromised = os.fstat(final_fd)
+            _unlink_owned_inode_if_named(destination_parent_fd, final_name, compromised)
+            raise
         os.fsync(checkout_fd)
     except Exception:
         _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)

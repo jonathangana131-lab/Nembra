@@ -179,7 +179,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34\""))
+        #expect(shell.contains("WRITER_SHA256=\"6c1e2b66ebf570b6f6a34bc3498f726398c2345c4a23161f2f17c32b077ad9b4\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
@@ -197,9 +197,11 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("O_NOFOLLOW"))
         #expect(writer.contains("O_DIRECTORY"))
         #expect(writer.contains("O_EXCL"))
-        #expect(writer.contains("dir_fd=parent_fd"))
-        #expect(writer.contains("src_dir_fd=parent_fd"))
-        #expect(writer.contains("dst_dir_fd=parent_fd"))
+        #expect(writer.contains("_require_descriptor_payload"))
+        #expect(writer.contains("hashlib.sha256"))
+        #expect(writer.contains("dir_fd=checkout_fd"))
+        #expect(writer.contains("src_dir_fd=checkout_fd"))
+        #expect(writer.contains("dst_dir_fd=checkout_fd"))
     }
 
     private func makeFixture() throws -> (root: URL, script: URL) {
