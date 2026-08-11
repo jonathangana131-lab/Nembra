@@ -93,16 +93,12 @@ private struct CaptureP0Root: View {
             .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
             .fixedSize(horizontal: false, vertical: true)
 
-            Text(
-                isAccessibilityLayout
-                    ? (fieldBuildIsAuthoritative
-                        ? "Link the account that owns this scooter before discovery."
-                        : "Account setup only in this public build.")
-                    : "Link the account that owns this scooter. Physical Capture still depends on the field-build gate and fresh scooter authority below."
-            )
-            .font(isAccessibilityLayout ? .callout : .body)
-            .foregroundStyle(Color.white.opacity(0.78))
-            .fixedSize(horizontal: false, vertical: true)
+            if !isAccessibilityLayout {
+                Text("Link the account that owns this scooter. Physical Capture still depends on the field-build gate and fresh scooter authority below.")
+                    .font(.body)
+                    .foregroundStyle(Color.white.opacity(0.78))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -120,18 +116,16 @@ private struct CaptureP0Root: View {
                     .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(
-                    isAccessibilityLayout
-                        ? (fieldBuildIsAuthoritative
-                            ? "Account and scooter authority are still required before Bluetooth starts."
-                            : "Public build: account metadata only. Bluetooth and physical evidence stay locked.")
-                        : (fieldBuildIsAuthoritative
+                if !isAccessibilityLayout {
+                    Text(
+                        fieldBuildIsAuthoritative
                             ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
-                            : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture.")
-                )
-                .font(isAccessibilityLayout ? .callout : .subheadline)
-                .foregroundStyle(Color.white.opacity(0.76))
-                .fixedSize(horizontal: false, vertical: true)
+                            : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.76))
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(.vertical, isAccessibilityLayout ? 8 : 12)
@@ -169,17 +163,24 @@ private struct CaptureP0Root: View {
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(tuya.isLinked ? "Account metadata ready" : "Prepare account metadata")
-                            .font(.title3.bold())
-                            .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
                         Text(
                             tuya.isLinked
-                                ? "Account context is ready for scooter selection."
-                                : "Use the Tuya Smart user code for the account that owns this scooter."
+                                ? "Account metadata ready"
+                                : (isAccessibilityLayout ? "Account metadata" : "Prepare account metadata")
                         )
-                        .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.74))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .font(isAccessibilityLayout ? .headline : .title3.bold())
+                        .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+
+                        if !isAccessibilityLayout || tuya.isLinked {
+                            Text(
+                                tuya.isLinked
+                                    ? "Account context is ready for scooter selection."
+                                    : "Use the Tuya Smart user code for the account that owns this scooter."
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(Color.white.opacity(0.74))
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
 
@@ -224,6 +225,10 @@ private struct CaptureP0Root: View {
                     .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
 
                     if isAccessibilityLayout {
+                        Text("Account setup only in this public build.")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Color.white.opacity(0.78))
+                            .fixedSize(horizontal: false, vertical: true)
                         Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
                             .font(.footnote)
                             .foregroundStyle(Color.white.opacity(0.72))
