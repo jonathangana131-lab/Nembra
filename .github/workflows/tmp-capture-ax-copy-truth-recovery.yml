@@ -1,0 +1,25 @@
+name: Temporary Capture AX Copy Truth Recovery
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-final-ax-copy-truth-sol
+    paths:
+      - .github/workflows/tmp-capture-ax-copy-truth-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Materialize clean two-file AX truth repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_capture_ax_copy_truth_recovery.py
