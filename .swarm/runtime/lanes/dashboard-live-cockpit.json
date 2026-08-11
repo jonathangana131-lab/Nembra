@@ -10,28 +10,20 @@
   "dependencies": [],
   "blockers": [
     {
-      "id": "authority-external-regression-uncomposed",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Independent re-review on PR #2817 exact head 28c7e886f1152ab92a673029b4a1e966f2610e01 clears the original public raw-scalar authority defect: positive admission is source-sealed and raw chronology methods are no longer public. Child test PR #2833 exact head f9250b38facff51e79e324934b3c6f2a936fd18a supplies the requested real external-package compile proof. Compose that one-file regression into the flagship Dashboard head before final acceptance; do not count the child as accepted app product independently.",
-      "pr": 2833,
-      "headSHA": "f9250b38facff51e79e324934b3c6f2a936fd18a"
-    },
-    {
-      "id": "accessibility-landscape-screenshot-missing",
-      "state": "ACTIVE",
+      "id": "accessibility-landscape-evidence-pending",
+      "state": "REPAIR_CANDIDATE",
       "scope": "visual-acceptance",
-      "reason": "Visual review 4904233235 confirms the dedicated landscape cockpit is intentionally dark-only, so a separate light-mode cockpit capture is not required; however no real accessibility-size / large-Dynamic-Type landscape cockpit screenshot exists even though DashboardCockpitComposition and NembraEnergyRailView switch to materially different accessibility geometry. Exact-descendant-head real SwiftUI evidence must exercise at least one accessibility Dynamic Type size and be inspected for clipping, hierarchy, Energy Rail/watts integration and control crowding.",
+      "reason": "Visual review requires a real accessibility-size / large-Dynamic-Type landscape cockpit image because DashboardCockpitComposition and NembraEnergyRailView switch to materially different geometry. Exact head f3c166edffd385103d64ae02651d9acea6e67304 now extends the Xcode 27 capture harness with a mandatory real CoreSimulator `content_size` accessibility-category rerun of the riding landscape UI test, its own xcresult, attachment export, accepted-setting log, and fail-closed exit if no accessibility category is accepted. This is a repair candidate only until exact-head runner evidence is collected and the image is independently inspected for clipping, hierarchy, Energy Rail/watts integration and crowding.",
       "pr": 2817,
-      "headSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01"
+      "headSHA": "f3c166edffd385103d64ae02651d9acea6e67304"
     },
     {
       "id": "exact-head-xcode-performance-pending",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "On 28c7e886 the Xcode exact-head workflow jobs are skipped, not green. Source review confirms 60 Hz rendering is localized to DashboardSpeedInstrumentView, continuous frames quiesce after canonical interpolation settles, and the Energy Rail uses simple shapes rather than per-frame materials; that is structural evidence only. Final composed head still requires Xcode 27/iPhone 12 Simulator execution, required screenshots, accessibility/Reduce Motion verification, empirical high-frequency performance evidence, and exact-head recheck before integration.",
+      "reason": "Final composed head f3c166edffd385103d64ae02651d9acea6e67304 includes the independently requested external-consumer authority compile regression from child #2833 and the accessibility-size capture gate. Ancestor Xcode/review evidence is not final-head acceptance. Require fresh immutable-head Xcode 27/iPhone 12 Simulator execution, exported live/retained/unavailable plus accessibility-size screenshots, Reduce Motion verification where supported, empirical performance evidence, independent exact-head review, and final main-head overlap recheck before integration.",
       "pr": 2817,
-      "headSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01"
+      "headSHA": "f3c166edffd385103d64ae02651d9acea6e67304"
     }
   ],
   "mode": "exclusive",
@@ -74,11 +66,12 @@
     "mergeBaseSHA": "7f29b468a869f4e1534665f8c46c4188e0398850",
     "mainAheadBy": 64,
     "changedFileOverlapWithNewMain": 0,
-    "knownExactHeadFinding": "Legacy head is eight commits ahead of its merge base and 64 commits behind current main. The 64 newer main commits touch none of the original 19 Dashboard changed paths, so exact selective recovery onto current main remains structurally coherent. Independent review found and then cleared the public raw-scalar Simulator authority defect on recovery head 28c7e886; child #2833 carries the external-client compile regression that must be composed before final acceptance. Visual review narrowed its remaining screenshot blocker to the accessibility-size landscape composition.",
+    "knownExactHeadFinding": "Legacy head is eight commits ahead of its merge base and 64 commits behind current main. The 64 newer main commits touch none of the original 19 Dashboard changed paths, so exact selective recovery onto current main remains structurally coherent. Independent authority re-review cleared the original public raw-scalar Simulator admission defect on 28c7e886. The unique external-package compile proof from child #2833 head f9250b38 is now composed into flagship head f3c166ed, and the visual Dynamic Type blocker has a mandatory real-system capture gate on the same flagship head. Physical ES80 power/current authority remains absent.",
     "recoveryPR": 2817,
-    "recoveryHeadSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01",
+    "recoveryHeadSHA": "f3c166edffd385103d64ae02651d9acea6e67304",
     "authorityTestPR": 2833,
-    "authorityTestHeadSHA": "f9250b38facff51e79e324934b3c6f2a936fd18a"
+    "authorityTestHeadSHA": "f9250b38facff51e79e324934b3c6f2a936fd18a",
+    "authorityTestComposed": true
   },
   "tags": ["dashboard", "p1", "energy-rail", "app-visible", "accessibility", "performance", "legacy-import"]
 }
