@@ -18,6 +18,7 @@ artifacts/
 
 # Private Capture field-build inputs / generated CocoaPods workspace
 LocalSecrets/
+.nembra-private-stage-*
 Pods/
 NembraCapture.xcworkspace/
 Podfile.lock
