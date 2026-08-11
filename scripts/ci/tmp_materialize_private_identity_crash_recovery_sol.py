@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "Scripts/provision_capture_tuya_identity_writer.py"
 SHELL = ROOT / "Scripts/provision_capture_tuya_identity.sh"
 SWIFT = ROOT / "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift"
-WORKFLOW = ROOT / ".github/workflows/capture-private-identity-publication-races-redteam.yml"
 CRASH_TEST = ROOT / "scripts/ci/tests/test_capture_private_identity_crash_residue.py"
 TEMP_SCRIPT = ROOT / "scripts/ci/tmp_materialize_private_identity_crash_recovery_sol.py"
 TEMP_WORKFLOW = ROOT / ".github/workflows/tmp-v14-private-identity-crash-recovery-sol.yml"
@@ -19,7 +18,6 @@ EXPECTED_BLOBS = {
     WRITER: "ed473ca81fed3a729c4618c65c2fcd0d272987a5",
     SHELL: "e8b2da09350ffb1e53ceb13bd69e3dcea33a7daf",
     SWIFT: "43d8c83d543efdfe7aafc219e6eb1f79d091cb4a",
-    WORKFLOW: "b4e3ca960b4dce46ce0d772b7e5909f756fe2dfe",
 }
 
 
@@ -101,35 +99,6 @@ crash_source = replace_once(
     "current four-argument publication seam adapter",
 )
 CRASH_TEST.write_text(crash_source, encoding="utf-8")
-
-workflow = WORKFLOW.read_text(encoding="utf-8")
-path_marker = '      - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n'
-if workflow.count(path_marker) != 2:
-    raise SystemExit("publication workflow path contract moved")
-workflow = workflow.replace(
-    path_marker,
-    path_marker + '      - scripts/ci/tests/test_capture_private_identity_crash_residue.py\n',
-)
-workflow = replace_once(
-    workflow,
-    '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n'
-    '          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py\n',
-    '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n'
-    '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py\n'
-    '          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py\n',
-    "publication workflow compile",
-)
-workflow = replace_once(
-    workflow,
-    '          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n',
-    '          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n'
-    '          NEMBRA_CRASH_RESIDUE_CASE=hard-exit /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py\n'
-    '          NEMBRA_CRASH_RESIDUE_CASE=symlink /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py\n'
-    '          NEMBRA_CRASH_RESIDUE_CASE=hardlink /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py\n'
-    '          NEMBRA_CRASH_RESIDUE_CASE=directory /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py\n',
-    "publication workflow crash cases",
-)
-WORKFLOW.write_text(workflow, encoding="utf-8")
 
 TEMP_SCRIPT.unlink()
 TEMP_WORKFLOW.unlink()
