@@ -9,12 +9,14 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T10:13:00Z",
-  "lastHeartbeatAt": "2026-08-11T10:16:00Z",
+  "lastHeartbeatAt": "2026-08-11T10:18:00Z",
   "leaseSeconds": 1800,
   "branch": "redteam/v14-final-go-raw-candidate-tree-solr4-20260811",
   "pr": 2903,
   "sourceSHA": "778630c979cfd19fee9b8549f79eccbb58876a24",
   "currentHeadSHA": "a19b9c389f76c3838436b13b5b87b33def258d5c",
   "parentPR": 2890,
-  "checkpoint": "Test-only #2903 now mechanically targets the remaining status-based Final-GO candidate authority gap on exact #2890. It requires rejection of build-visible product source hidden by repository-local exclude metadata and requires candidate truth not to delegate whole-tree authority to git status. Production remains owned by #2890. PHYSICAL NO-GO."
+  "outcome": "EXPECTED_RED_CONFIRMED",
+  "workflowRunID": 31481047426,
+  "checkpoint": "Exact #2903 bind and compile pass; raw candidate-authority regression step is terminal red on exact #2890 parent. Final-GO still accepts/delegates candidate truth through repository-local status metadata instead of raw accepted-tree vs physical-filesystem authority. Keep witness unchanged and replay green on production successor. PHYSICAL NO-GO."
 }
