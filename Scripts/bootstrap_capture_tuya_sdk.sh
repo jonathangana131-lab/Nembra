@@ -26,6 +26,8 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
   : "${NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 to the preaccepted 64-hex generated CocoaPods build-subject SHA-256 before field bootstrap.}"
   : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 to the preaccepted 64-hex opaque private review commitment before field bootstrap.}"
   : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 to the preaccepted 64-hex private-review verifier source SHA-256 before field bootstrap.}"
+  : "${NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256 to the preaccepted 64-hex private-input provenance helper source SHA-256 before field bootstrap.}"
+  : "${NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 to the preaccepted 64-hex generated-build-subject helper source SHA-256 before field bootstrap.}"
   [[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
     echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 must be exactly 64 hex characters." >&2
     exit 1
@@ -42,19 +44,33 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
     echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 must be exactly 64 hex characters." >&2
     exit 1
   }
+  [[ "$NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256 must be exactly 64 hex characters." >&2
+    exit 1
+  }
+  [[ "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 must be exactly 64 hex characters." >&2
+    exit 1
+  }
   ACCEPTED_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
   ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" | tr '[:upper:]' '[:lower:]')"
   ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" | tr '[:upper:]' '[:lower:]')"
   ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" | tr '[:upper:]' '[:lower:]')"
+  ACCEPTED_PROVENANCE_HELPER_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256" | tr '[:upper:]' '[:lower:]')"
+  ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256" | tr '[:upper:]' '[:lower:]')"
 else
   unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \
     NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \
     NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \
-    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 || true
+    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 \
+    NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256 \
+    NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 || true
   ACCEPTED_LOCK_SHA256=""
   ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256=""
   ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256=""
   ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256=""
+  ACCEPTED_PROVENANCE_HELPER_SHA256=""
+  ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256=""
 fi
 
 [[ -x /usr/bin/python3 ]] || {
@@ -71,10 +87,12 @@ done
 unset required_source
 
 
-run_accepted_private_review_helper() {
+run_accepted_python_helper() {
+  local helper_path="$1"
+  shift
   local expected_sha256="$1"
   shift
-  /usr/bin/python3 -I - "$PRIVATE_REVIEW_HELPER" "$expected_sha256" "$@" <<'PY'
+  /usr/bin/python3 -I - "$helper_path" "$expected_sha256" "$@" <<'PY'
 import hashlib
 import hmac
 import os
@@ -198,7 +216,10 @@ do
 done
 
 if [[ "$REVIEW_ONLY" == "1" ]]; then
-  /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
+  PROVENANCE_HELPER_SHA256="$(shasum -a 256 "$PROVENANCE_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+  PRIVATE_REVIEW_HELPER_SHA256="$(shasum -a 256 "$PRIVATE_REVIEW_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+  GENERATED_BUILD_SUBJECT_HELPER_SHA256="$(shasum -a 256 "$GENERATED_BUILD_SUBJECT_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+  run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" snapshot \
     --lockfile "$REPO_ROOT/Podfile.lock" \
     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
     --security-build "$TUYA_PRIVATE_SDK/Build" \
@@ -209,24 +230,24 @@ if [[ "$REVIEW_ONLY" == "1" ]]; then
       exit 12
     }
 
-  PRIVATE_REVIEW_COMMITMENT_SHA256="$(/usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" create \
+  PRIVATE_REVIEW_COMMITMENT_SHA256="$(run_accepted_python_helper "$PRIVATE_REVIEW_HELPER" "$PRIVATE_REVIEW_HELPER_SHA256" create \
     --witness "$DEPENDENCY_PROVENANCE" \
     --key "$PRIVATE_REVIEW_KEY")" || {
       echo "ERROR: opaque private-input review commitment could not be created." >&2
       exit 18
     }
-  PRIVATE_REVIEW_HELPER_SHA256="$(shasum -a 256 "$PRIVATE_REVIEW_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
 else
-  run_accepted_private_review_helper "$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" verify \
+  PRIVATE_REVIEW_HELPER_SHA256="$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
+  PROVENANCE_HELPER_SHA256="$ACCEPTED_PROVENANCE_HELPER_SHA256"
+  GENERATED_BUILD_SUBJECT_HELPER_SHA256="$ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"
+  run_accepted_python_helper "$PRIVATE_REVIEW_HELPER" "$PRIVATE_REVIEW_HELPER_SHA256" verify \
     --witness "$DEPENDENCY_PROVENANCE" \
     --key "$PRIVATE_REVIEW_KEY" \
     --expected "$ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" >/dev/null || {
       echo "ERROR: local private-input witness/key do not match the externally accepted private review commitment, or verifier source does not match the externally accepted private review authority." >&2
       exit 18
     }
-  PRIVATE_REVIEW_HELPER_SHA256="$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
-
-  /usr/bin/python3 -I "$PROVENANCE_HELPER" verify \
+  run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" verify \
     --lockfile "$REPO_ROOT/Podfile.lock" \
     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
     --security-build "$TUYA_PRIVATE_SDK/Build" \
@@ -257,7 +278,7 @@ fi
   exit 15
 }
 
-GENERATED_BUILD_SUBJECT_SHA256="$(/usr/bin/python3 -I "$GENERATED_BUILD_SUBJECT_HELPER" \
+GENERATED_BUILD_SUBJECT_SHA256="$(run_accepted_python_helper "$GENERATED_BUILD_SUBJECT_HELPER" "$GENERATED_BUILD_SUBJECT_HELPER_SHA256" \
   --lockfile "$REPO_ROOT/Podfile.lock" \
   --pods "$REPO_ROOT/Pods" \
   --workspace "$REPO_ROOT/NembraCapture.xcworkspace")" || {
@@ -278,10 +299,12 @@ DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
   Private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256
   Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256
+  Private-input provenance helper source SHA-256: $PROVENANCE_HELPER_SHA256
+  Generated-build-subject helper source SHA-256: $GENERATED_BUILD_SUBJECT_HELPER_SHA256
   Local private-input fingerprint record (review witness): $DEPENDENCY_PROVENANCE
   Local private commitment key: retained privately; never publish or export
 
-Review and bind all FOUR public authority values to the exact accepted Capture
+Review and bind all SIX public authority values to the exact accepted Capture
 source through Final GO. Keep the witness/key/generated workspace unchanged.
 Normal field bootstrap requires those accepted values, never reruns CocoaPods,
 never rewrites the witness/key, and verifies private bytes against the committed
@@ -301,11 +324,15 @@ printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
 printf 'Preaccepted CocoaPods generated build subject matched: %s\n' "$GENERATED_BUILD_SUBJECT_SHA256"
 printf 'Externally accepted opaque private review commitment matched: %s\n' "$PRIVATE_REVIEW_COMMITMENT_SHA256"
 printf 'Externally accepted private review verifier source matched: %s\n' "$PRIVATE_REVIEW_HELPER_SHA256"
-unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 \
+printf 'Externally accepted private-input provenance helper source matched: %s\n' "$PROVENANCE_HELPER_SHA256"
+printf 'Externally accepted generated-build-subject helper source matched: %s\n' "$GENERATED_BUILD_SUBJECT_HELPER_SHA256"
+unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 ACCEPTED_PROVENANCE_HELPER_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 \
   NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \
   NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \
   NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \
-  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 || true
+  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 \
+  NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256 \
+  NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 || true
 
 cat <<EOF
 
@@ -318,6 +345,8 @@ Verified public authority:
   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
   Opaque private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256
   Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256
+  Private-input provenance helper source SHA-256: $PROVENANCE_HELPER_SHA256
+  Generated-build-subject helper source SHA-256: $GENERATED_BUILD_SUBJECT_HELPER_SHA256
 
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
