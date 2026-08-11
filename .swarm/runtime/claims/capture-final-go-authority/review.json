@@ -7,12 +7,17 @@
   "workerId": "sol-20260811-finalgo-r4",
   "leaseId": "capture-final-go-review-sol-20260811-0928",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T09:28:00Z",
-  "lastHeartbeatAt": "2026-08-11T10:04:00Z",
+  "lastHeartbeatAt": "2026-08-11T10:20:00Z",
+  "releasedAt": "2026-08-11T10:20:00Z",
   "leaseSeconds": 1800,
   "branch": "recovery/v14-auth-stationary-private-review-r4-current-sol-20260811",
   "pr": 2890,
   "sourceSHA": "778630c979cfd19fee9b8549f79eccbb58876a24",
-  "checkpoint": "Independent BLOCK on #2890 exact 778630c: physical core.worktree pinning still relies on repository-local config-sensitive git status. Reproduced local-config execution surfaces; #2889 tests owner asked to cover defensive classes. Production/test slots remain separately owned. PHYSICAL NO-GO."
+  "outcome": "NEEDS_CHANGES",
+  "reviewId": 4905013881,
+  "evidencePR": 2903,
+  "evidenceRunID": 31481047426,
+  "checkpoint": "#2890 core.worktree fix is blocked on remaining status-based candidate authority. Test-only #2903 exact a19b9c3 mechanically confirms expected red after exact bind/compile. Production owner remains active; re-review only a moved exact head that makes #2903 invariants green without weakening #2873 parent/v5 authority. PHYSICAL NO-GO."
 }
