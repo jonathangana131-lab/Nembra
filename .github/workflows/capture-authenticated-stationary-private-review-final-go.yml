@@ -12,6 +12,7 @@ on:
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+      - scripts/ci/tests/test_es80_final_go_descriptor_ancestry_race_red_team.py
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+      - scripts/ci/tests/test_es80_final_go_descriptor_ancestry_race_red_team.py
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
   workflow_dispatch:
 
@@ -58,7 +60,8 @@ jobs:
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
             scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
-            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py \
+            scripts/ci/tests/test_es80_final_go_descriptor_ancestry_race_red_team.py
 
       - name: Red-team current private review Final-GO carriage
         shell: bash
@@ -66,3 +69,9 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
           python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Require descriptor ancestry to remain rooted to live checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_descriptor_ancestry_race_red_team.py
