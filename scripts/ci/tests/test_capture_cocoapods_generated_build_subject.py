@@ -3,26 +3,42 @@
 
 A reviewed Podfile.lock is necessary but not sufficient authority: a different
 CocoaPods implementation can preserve that lock while emitting different ignored
-workspace/Pods bytes that xcodebuild will consume.  Review-only bootstrap must
-therefore expose an exact generated-build digest, and normal field bootstrap must
-reject any lock-preserving generated substitution before xcodebuild can run.
+workspace/Pods bytes that xcodebuild will consume. Review-only bootstrap must
+therefore expose an exact generated-build digest, normal field bootstrap must
+reject lock-preserving generated substitution, and the build guard must keep the
+accepted generated graph under custody through xcodebuild.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 BOOTSTRAP = REPOSITORY / "Scripts" / "bootstrap_capture_tuya_sdk.sh"
 PROVENANCE = REPOSITORY / "Scripts" / "capture_tuya_private_input_provenance.py"
 SUBJECT_HELPER = REPOSITORY / "Scripts" / "capture_cocoapods_generated_build_subject.py"
+BUILD_GUARD = REPOSITORY / "Scripts" / "capture_tuya_private_input_build_guard.py"
 GENERATED_RELATIVE = Path("Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig")
+
+
+def load_build_guard():
+    module_name = "nembra_capture_build_guard_test_subject"
+    spec = importlib.util.spec_from_file_location(module_name, BUILD_GUARD)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load Capture build guard")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
@@ -38,16 +54,16 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
 
-        private_sdk = self.root / "LocalSecrets/TuyaSDK"
-        (private_sdk / "Build").mkdir(parents=True)
-        (private_sdk / "ThingSmartCryption.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
-        (private_sdk / "Build/libThingSmartCryption.a").write_bytes(b"private-security-sdk")
+        self.private_sdk = self.root / "LocalSecrets/TuyaSDK"
+        (self.private_sdk / "Build").mkdir(parents=True)
+        (self.private_sdk / "ThingSmartCryption.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+        (self.private_sdk / "Build/libThingSmartCryption.a").write_bytes(b"private-security-sdk")
 
-        private_identity = self.root / "LocalSecrets/TuyaRuntime"
-        identity_sources = private_identity / "Sources/NembraTuyaPrivateConfig"
-        identity_sources.mkdir(parents=True)
-        (private_identity / "NembraTuyaPrivateConfig.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
-        (identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+        self.private_identity = self.root / "LocalSecrets/TuyaRuntime"
+        self.identity_sources = self.private_identity / "Sources/NembraTuyaPrivateConfig"
+        self.identity_sources.mkdir(parents=True)
+        (self.private_identity / "NembraTuyaPrivateConfig.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+        (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
             "enum NembraTuyaPrivateIdentity { static let configured = true }\n",
             encoding="utf-8",
         )
@@ -206,6 +222,41 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             "field bootstrap admitted different CocoaPods-generated build bytes under the exact same accepted Podfile.lock",
         )
         self.assertIn("generated CocoaPods build inputs do not match", field.stdout)
+
+    def test_build_window_snapshot_and_watch_set_cover_generated_graph(self) -> None:
+        review = self.run_bootstrap("REVIEWED_GRAPH", review_only=True)
+        self.assertEqual(review.returncode, 0, review.stdout)
+        accepted_subject = self.generated_subject()
+
+        guard = load_build_guard()
+        inputs = guard.PrivateInputs(
+            lockfile=self.root / "Podfile.lock",
+            security_podspec=self.private_sdk / "ThingSmartCryption.podspec",
+            security_build=self.private_sdk / "Build",
+            identity_podspec=self.private_identity / "NembraTuyaPrivateConfig.podspec",
+            identity_sources=self.identity_sources,
+            generated_pods=self.root / "Pods",
+            generated_workspace=self.root / "NembraCapture.xcworkspace",
+        )
+
+        watched = set(guard._watch_paths(inputs))
+        generated_file = self.root / GENERATED_RELATIVE
+        workspace_file = self.root / "NembraCapture.xcworkspace/contents.xcworkspacedata"
+        self.assertIn(generated_file, watched)
+        self.assertIn(workspace_file, watched)
+
+        before = inputs.generation_snapshot()
+        with mock.patch.dict(
+            os.environ,
+            {"NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": accepted_subject},
+            clear=False,
+        ):
+            guard._verify_accepted_generated_build_subject(inputs)
+            generated_file.write_text("SUBSTITUTED_DURING_BUILD\n", encoding="utf-8")
+            after = inputs.generation_snapshot()
+            self.assertNotEqual(before, after)
+            with self.assertRaises(guard.BuildGuardError):
+                guard._verify_accepted_generated_build_subject(inputs)
 
 
 if __name__ == "__main__":
