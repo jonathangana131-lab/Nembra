@@ -1,0 +1,38 @@
+name: Capture CocoaPods Build Window Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-capture-cocoapods-build-window-r2-sol
+  pull_request:
+    paths:
+      - Scripts/capture_cocoapods_build_subject.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_cocoapods_build_window_custody.py
+      - .github/workflows/capture-cocoapods-build-window-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  cross-tree-generation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile diagnostic
+        run: python3 -m py_compile Scripts/capture_cocoapods_build_subject.py scripts/ci/tests/test_capture_cocoapods_build_window_custody.py
+      - name: Require one coherent Pods plus workspace witness
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_cocoapods_build_window_custody.CocoaPodsBuildWindowCustodyTests.test_subject_rejects_cross_tree_generation_change
+
+  compiler-window-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile diagnostic
+        run: python3 -m py_compile Scripts/capture_cocoapods_build_subject.py scripts/ci/tests/test_capture_cocoapods_build_window_custody.py
+      - name: Require generated subject custody across xcodebuild
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_cocoapods_build_window_custody.CocoaPodsBuildWindowCustodyTests.test_xcodebuild_window_custodies_generated_subject
