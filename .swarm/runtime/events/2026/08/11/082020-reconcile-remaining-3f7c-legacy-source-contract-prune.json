@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "082020-reconcile-remaining-3f7c-legacy-source-contract-prune",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Retired four additional old Capture test/source-contract convergence PRs (#2535, #2539, #2548, #2562) that were explicitly scoped to the obsolete #2525 923-test / 82-issue baseline. Their contracts were diagnostic/test-only and instructed later composition plus a current full package rerun. Modern recovery lineage #2811 has since completed the larger full Capture package successfully; current authority/flagship descendants continue exact-head acceptance separately. Historical commits remain recoverable. No product bytes or physical authority changed; PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:20:20Z",
+  "data": {
+    "closedPRs": [2535,2539,2548,2562],
+    "obsoleteBaselineTests": 923,
+    "obsoleteBaselineIssues": 82,
+    "currentPackageRecoveryPR": 2811,
+    "currentPackageRecoveryHeadSHA": "7728078452894ac327007ddab18a99d65c4ca3a1",
+    "currentPackageRun": 31471913296,
+    "currentPackageConclusion": "SUCCESS",
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
