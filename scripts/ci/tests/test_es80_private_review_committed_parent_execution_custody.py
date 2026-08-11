@@ -32,6 +32,25 @@ class PrivateReviewCommittedParentExecutionCustodyTests(unittest.TestCase):
             "fixture must track the current immediate Final-GO parent blob pin",
         )
 
+        # The two reviewed constants are one provenance claim, not independent
+        # labels. Bind the accepted commit -> canonical module path -> exact blob
+        # before using the blob pin in the descendant-execution attack below.
+        current_parent_blob = subprocess.check_output(
+            [
+                "/usr/bin/git",
+                "-C",
+                str(REPOSITORY),
+                "rev-parse",
+                f"{CURRENT_DIRECT_PARENT_SOURCE}:{DIRECT_PARENT_RELATIVE}",
+            ],
+            text=True,
+        ).strip().lower()
+        self.assertEqual(
+            current_parent_blob,
+            CURRENT_DIRECT_PARENT_BLOB,
+            "direct Final-GO parent source/path does not resolve to the pinned execution blob",
+        )
+
         with tempfile.TemporaryDirectory(prefix="nembra-private-direct-parent-descendant-") as temporary:
             root = Path(temporary).resolve(strict=True)
             direct_parent = root / DIRECT_PARENT_RELATIVE
