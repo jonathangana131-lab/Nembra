@@ -134,6 +134,25 @@ def _codesign_identity(
     return team, identifier
 
 
+def _signed_entitlements(
+    app: Path,
+    runner: Callable[[list[str]], subprocess.CompletedProcess[bytes]] = _run,
+) -> dict[str, Any]:
+    payload = runner(["/usr/bin/codesign", "-d", "--entitlements", ":-", "--xml", str(app)])
+    raw = payload.stdout + b"\n" + payload.stderr
+    start = raw.find(b"<?xml")
+    end = raw.rfind(b"</plist>")
+    if start < 0 or end < start:
+        raise SignedArtifactError("signed Capture entitlements are not a plist")
+    try:
+        value = plistlib.loads(raw[start : end + len(b"</plist>")])
+    except Exception as error:
+        raise SignedArtifactError("signed Capture entitlements are invalid") from error
+    if not isinstance(value, dict):
+        raise SignedArtifactError("signed Capture entitlements are not a dictionary")
+    return value
+
+
 def _profile(
     app: Path,
     intended_device: str,
@@ -182,6 +201,9 @@ def _app_evidence(
         raise SignedArtifactError("signed Capture Info.plist provenance mismatch")
 
     team, identifier = _codesign_identity(app, runner)
+    signed_entitlements = _signed_entitlements(app, runner)
+    if signed_entitlements.get("com.apple.developer.applesignin") != ["Default"] or signed_entitlements.get("application-identifier") != f"{team}.{BUNDLE}" or signed_entitlements.get("com.apple.developer.team-identifier") != team:
+        raise SignedArtifactError("effective signed Capture entitlements do not match current application authority")
     profile, profile_sha = _profile(app, intended_device, runner)
     team_ids = profile.get("TeamIdentifier")
     entitlements = profile.get("Entitlements")
@@ -343,6 +365,45 @@ def _publish_no_replace(staging: Path, output: Path) -> None:
         os.fsync(directory)
     finally:
         os.close(directory)
+
+
+def reinspect_retained(
+    ipa: Path,
+    candidate_repo: Path,
+    source: str,
+    device_file: Path,
+    install: dict[str, Any],
+    *,
+    runner: Callable[[list[str]], subprocess.CompletedProcess[bytes]] = _run,
+) -> dict[str, Any]:
+    repository = candidate_repo.expanduser().resolve(strict=True)
+    intended_device = _read_intended_device(device_file, repository)
+    dependency_sha = _sha_file(repository / "Podfile.lock")
+    if install.get("sourceCommitSHA") != source or install.get("bundleIdentifier") != BUNDLE:
+        raise SignedArtifactError("private installer subject does not match retained artifact subject")
+    ipa = ipa.expanduser().resolve(strict=True)
+    metadata=ipa.lstat()
+    if ipa.name != IPA_NAME or ipa.is_symlink() or not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid() or metadata.st_nlink != 1:
+        raise SignedArtifactError("retained IPA custody is invalid")
+    with tempfile.TemporaryDirectory(prefix="nembra-auth-stationary-reinspect-") as temporary:
+        app = _extract_safe(ipa, Path(temporary))
+        evidence = _app_evidence(app, source=source, dependency_sha=dependency_sha, intended_device=intended_device, runner=runner)
+    return {
+        "authority":"nembra-authenticated-stationary-retained-signed-artifact-v1",
+        "sourceCommitSHA":source,
+        "buildIdentifier":f"capture-v14-{source[:12]}",
+        "bundleIdentifier":BUNDLE,
+        "procedureIdentifier":PROC,
+        "tuyaDependencyLockSHA256":dependency_sha,
+        "retainedIPASHA256":_sha_file(ipa),
+        "retainedAppTreeSHA256":evidence["treeSHA256"],
+        "embeddedProvisioningProfileSHA256":evidence["embeddedProvisioningProfileSHA256"],
+        "signingTeamIdentifier":evidence["signingTeamIdentifier"],
+        "applicationIdentifier":evidence["applicationIdentifier"],
+        "codesignVerified":True,
+        "intendedDeviceIncluded":True,
+        "physicalAuthorityCreated":False,
+    }
 
 
 def _read_intended_device(path: Path, repository_root: Path) -> str:

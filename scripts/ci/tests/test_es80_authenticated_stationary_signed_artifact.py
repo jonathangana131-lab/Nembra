@@ -85,6 +85,8 @@ class SignedArtifactTests(unittest.TestCase):
                 b"",
                 f"Identifier={signed.BUNDLE}\nTeamIdentifier={TEAM}\n".encode(),
             )
+        if command[:3] == ["/usr/bin/codesign", "-d", "--entitlements"]:
+            return subprocess.CompletedProcess(command, 0, plistlib.dumps(self.profile_payload["Entitlements"]), b"")
         if command[:4] == ["/usr/bin/security", "cms", "-D", "-i"]:
             return subprocess.CompletedProcess(
                 command, 0, plistlib.dumps(self.profile_payload), b""
@@ -119,6 +121,13 @@ class SignedArtifactTests(unittest.TestCase):
         self.assertFalse(result["physicalAuthorityCreated"])
         with zipfile.ZipFile(output) as archive:
             self.assertIn(f"Payload/{signed.APP_NAME}/Info.plist", archive.namelist())
+
+    def test_published_ipa_can_be_independently_reinspected(self) -> None:
+        output=self.root / signed.IPA_NAME
+        with mock.patch.dict(os.environ,{"TMPDIR":str(self.root / "tmp")},clear=False):
+            first=signed.retain_and_reinspect(self.repo,SOURCE,self.device,self.install_subject(),output,runner=self.runner)
+        second=signed.reinspect_retained(output,self.repo,SOURCE,self.device,self.install_subject(),runner=self.runner)
+        self.assertEqual(first,second)
 
     def test_output_is_no_replace_and_canonical_filename_only(self) -> None:
         output = self.root / signed.IPA_NAME
@@ -160,6 +169,15 @@ class SignedArtifactTests(unittest.TestCase):
                         runner=self.runner,
                     )
                 self.write_app()
+
+    def test_effective_signed_entitlements_are_independently_required(self) -> None:
+        def missing_apple(command: list[str]) -> subprocess.CompletedProcess[bytes]:
+            if command[:3] == ["/usr/bin/codesign", "-d", "--entitlements"]:
+                entitlements = dict(self.profile_payload["Entitlements"]); entitlements.pop("com.apple.developer.applesignin", None)
+                return subprocess.CompletedProcess(command, 0, plistlib.dumps(entitlements), b"")
+            return self.runner(command)
+        with self.assertRaises(signed.SignedArtifactError):
+            signed._app_evidence(self.app, source=SOURCE, dependency_sha=self.dependency, intended_device=DEVICE, runner=missing_apple)
 
     def test_profile_wrong_team_application_or_missing_device_is_rejected(self) -> None:
         original = self.profile_payload
