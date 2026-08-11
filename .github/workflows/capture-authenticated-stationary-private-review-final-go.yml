@@ -11,6 +11,7 @@ on:
       - scripts/ci/es80_authenticated_stationary_signed_artifact.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - scripts/ci/es80_authenticated_stationary_signed_artifact.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
   workflow_dispatch:
 
@@ -55,10 +57,12 @@ jobs:
           python3 -m py_compile \
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
 
       - name: Red-team current private review Final-GO carriage
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+          python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
