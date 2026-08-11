@@ -10,6 +10,7 @@ on:
       - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
       - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
       - scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+      - scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
       - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
       - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
       - scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+      - scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
       - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
   workflow_dispatch:
 
@@ -55,7 +57,8 @@ jobs:
             scripts/ci/es80_authenticated_stationary_final_go.py \
             scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
             scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py \
-            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py \
+            scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
 
       - name: Red-team exact parent, review, build, and publication custody
         shell: bash
@@ -74,3 +77,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+
+      - name: Prove authenticated-stationary base executes from accepted Git bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
