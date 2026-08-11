@@ -6,7 +6,7 @@ on:
       - diag/v14-authority-materializer-c596-sol
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   diagnose:
@@ -48,23 +48,16 @@ jobs:
               raise
           PY
           then
-            printf '%s\n' 'MATERIALIZER_OK' > /tmp/diag-authority-materializer-result.txt
+            bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+            python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+            git diff --check
+            echo '::notice title=Capture authority materializer::MATERIALIZER_OK'
           else
-            git reset --hard HEAD
-            cp /tmp/diag-authority-materializer-error.txt .github/diag-authority-materializer-error.txt
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add .github/diag-authority-materializer-error.txt
-            git commit -m 'Capture: record exact authority materializer failure'
-            git push origin HEAD:diag/v14-authority-materializer-c596-sol
+            python3 - <<'PY'
+          from pathlib import Path
+          message = Path('/tmp/diag-authority-materializer-error.txt').read_text(encoding='utf-8')
+          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=Capture authority materializer::{message}')
+          PY
             exit 1
           fi
-          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
-          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
-          git diff --check
-          printf '%s\n' 'MATERIALIZER_OK' > .github/diag-authority-materializer-result.txt
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/diag-authority-materializer-result.txt
-          git commit -m 'Capture: record authority materializer success'
-          git push origin HEAD:diag/v14-authority-materializer-c596-sol
