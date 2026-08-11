@@ -1,0 +1,79 @@
+name: TEMP V14 Final GO main index forwardport
+
+on:
+  push:
+    branches:
+      - repair/v14-auth-final-go-main-index-custody-sol
+
+permissions:
+  contents: write
+
+jobs:
+  forwardport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply focused forward-port
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/temp_v14_final_go_main_index_forwardport.py
+
+      - name: Validate composed control-plane authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
+          tests=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py').read_text()
+          for needle in (
+              'def canonical_private_path(',
+              'canonical_private_path(path,"private intended-device identifier")',
+              'def installer_environment(',
+              '"BASH_ENV":"/dev/null"',
+              '["/bin/bash","--noprofile","--norc","-p",str(root/INSTALLER),source]',
+              '"headBranch":branch,"state":state,"merged":merged,"draft":draft',
+              'mainSHA',
+              'def _tracked_worktree_bytes(',
+              'git(root,"ls-files","-v","--",relative)',
+              'candidate worktree bytes differ from accepted Git blob',
+              'stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")',
+          ):
+              if needle not in source: raise SystemExit(f'missing composed source invariant: {needle}')
+          for needle in (
+              'test_private_device_path_rejects_symlinked_parent_and_noncanonical_paths',
+              'test_post_install_revalidation_rejects_control_plane_pr_state_drift',
+              'test_installer_environment_custody_is_closed_and_bash_startup_is_disabled',
+              'test_current_main_is_bound_and_must_be_candidate_ancestor',
+              'test_post_install_current_main_drift_is_rejected',
+              'test_candidate_rejects_hidden_index_flags_and_worktree_byte_drift',
+          ):
+              if needle not in tests: raise SystemExit(f'missing composed regression: {needle}')
+          PY
+          git diff --check
+
+      - name: Publish clean focused recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/temp_v14_final_go_main_index_forwardport.py
+          rm -f .github/workflows/temp-v14-auth-final-go-main-index-forwardport.yml
+          git add -A
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'scripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go.py'
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'nembra-v14-sol@users.noreply.github.com'
+          git commit -m 'fix(capture): bind Final-GO main and worktree custody'
+          git push origin HEAD:repair/v14-auth-final-go-main-index-custody-sol
