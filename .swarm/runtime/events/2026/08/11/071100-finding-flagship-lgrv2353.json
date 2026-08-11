@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "071100-finding-flagship-lgrv2353",
+  "type": "FINDING",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Flagship reconciliation: #2612 remains the canonical Capture software/product lineage at exact head 9e7c65cde7d33b731ea04e11cfe43a792743ed5d, but it is not current-main authority. Fresh compare against main@3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc is DIVERGED: #2612 is 112 commits ahead of merge-base e17238c2df0f1ce331a6924da79ff137e0f15b2e and 44 commits behind current main, with 334 changed paths. Fresh exact-head evidence on 9e7c65c is mixed: Field Build Provenance SUCCESS and Standalone Visual Evidence SUCCESS, but Main Selective Graft FAILURE and Xcode 27 PR Exact-Head QA FAILURE; Xcode failed at Validate Capture authority package before Simulator capture while core validation passed. Therefore old body QUEUED/PENDING text is stale and #2612 cannot be imported as accepted/current product head. Reconcile it as the one flagship integration/product lane, after selected security/build/control ingredients converge, then bring it onto exact current main and rerun all software/package/Xcode/visual/accessibility/field gates on the unchanged final composition. Physical remains NO-GO.",
+  "createdAt": "2026-08-11T07:11:00Z"
+}
