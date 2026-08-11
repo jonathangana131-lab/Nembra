@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldPythonIsolationSourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
       - scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py
       - .github/workflows/capture-private-dependency-helper-execution-closure.yml
@@ -25,7 +26,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Bind exact current parent and five-path delta
+      - name: Bind exact current parent and six-path delta
         shell: bash
         env:
           PARENT: 2fe097af9c625ea0abbdb89372f95c8b8acc78fb
@@ -39,11 +40,12 @@ jobs:
           expected_paths="$(printf '%s\n' \
             '.github/workflows/capture-private-current-convergence.yml' \
             '.github/workflows/capture-private-dependency-helper-execution-closure.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldPythonIsolationSourceTests.swift' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift' \
             'Scripts/bootstrap_capture_tuya_sdk.sh' \
             'scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py' | LC_ALL=C sort)"
           if [[ "$changed_paths" != "$expected_paths" ]]; then
-            printf 'Current private convergence must remain exactly five-path. Changed:\n' >&2
+            printf 'Current private convergence must remain exactly six-path. Changed:\n' >&2
             printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
             exit 20
           fi
