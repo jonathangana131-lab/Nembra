@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -20,6 +22,20 @@ GENERATED = Path("Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCaptur
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_guard():
+    module_name = "nembra_capture_generated_build_guard_test"
+    spec = importlib.util.spec_from_file_location(module_name, GUARD)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not import {GUARD}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(module_name, None)
+    return module
 
 
 class GeneratedBuildSubjectClosureTests(unittest.TestCase):
@@ -111,6 +127,16 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
             "--workspace", str(self.root / "NembraCapture.xcworkspace"),
         )
 
+    def private_inputs(self, guard, expected_lock_sha256: str):
+        return guard.PrivateInputs(
+            lockfile=(self.root / "Podfile.lock").resolve(),
+            security_podspec=(self.root / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec").resolve(),
+            security_build=(self.root / "LocalSecrets/TuyaSDK/Build").resolve(),
+            identity_podspec=(self.root / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec").resolve(),
+            identity_sources=(self.root / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig").resolve(),
+            expected_lock_sha256=expected_lock_sha256,
+        )
+
     def test_same_graph_reproduces_reviewed_attested_lock_and_manifest(self) -> None:
         review = self.bootstrap("GRAPH_A", review=True)
         self.assertEqual(review.returncode, 0, review.stdout)
@@ -162,6 +188,24 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         self.assertNotEqual(before, (self.root / GENERATED).read_bytes())
         self.assertIn("generated different build-affecting bytes", field.stdout)
 
+    def test_build_guard_rejects_self_consistent_graph_under_unaccepted_lock(self) -> None:
+        review = self.bootstrap("GRAPH_A", review=True)
+        self.assertEqual(review.returncode, 0, review.stdout)
+        lock = self.root / "Podfile.lock"
+        accepted = digest(lock)
+        guard = load_guard()
+
+        accepted_inputs = self.private_inputs(guard, accepted)
+        snapshot = accepted_inputs.generation_snapshot()
+        self.assertEqual(snapshot[1], (accepted, accepted))
+
+        substituted_inputs = self.private_inputs(guard, "0" * 64)
+        with self.assertRaisesRegex(
+            guard.BuildGuardError,
+            "does not match the preaccepted field-build lock digest",
+        ):
+            substituted_inputs.generation_snapshot()
+
     def test_attestation_rewrite_is_deterministic_and_single(self) -> None:
         review = self.bootstrap("GRAPH_A", review=True)
         self.assertEqual(review.returncode, 0, review.stdout)
@@ -184,7 +228,7 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         self.assertEqual(after.returncode, 0, after.stdout)
         self.assertEqual(before.stdout.strip(), after.stdout.strip())
 
-    def test_existing_build_guard_includes_generated_subject_manifest_and_capacity(self) -> None:
+    def test_existing_build_guard_includes_generated_subject_manifest_capacity_and_final_go_lock(self) -> None:
         source = GUARD.read_text(encoding="utf-8")
         for marker in (
             '"capture_cocoapods_build_subject.py"',
@@ -198,6 +242,9 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
             "inputs.generated_workspace",
             "resource.RLIMIT_NOFILE",
             "_ensure_watch_descriptor_budget(len(watch_paths))",
+            'os.environ.get("NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256", "")',
+            "expected_lock_sha256",
+            "current attested Podfile.lock does not match the preaccepted field-build lock digest",
         ):
             self.assertIn(marker, source)
 
