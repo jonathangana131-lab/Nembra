@@ -9,9 +9,9 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:41:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:41:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:43:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-field-installer-git-authority-sol-20260811",
   "pr": 2876,
-  "sourceSHA": "c83f047f9812a5c2f3c01f304b4ce9eb9793dacc"
+  "sourceSHA": "50f774ddbc92215bd8ecd5006cd728f71019aad4"
 }
