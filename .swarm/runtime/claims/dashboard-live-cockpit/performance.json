@@ -9,18 +9,18 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:21:55Z",
-  "lastHeartbeatAt": "2026-08-11T23:21:55Z",
+  "lastHeartbeatAt": "2026-08-11T23:23:10Z",
   "leaseSeconds": 1800,
   "branch": "repair/v15-dashboard-sustained-perf-fresh-xcui-sol-r4",
-  "pr": 2980,
+  "pr": 3118,
   "sourceSHA": "55e13388a20d0445513d1d7083c41ed421e00195",
-  "currentHeadSHA": "55e13388a20d0445513d1d7083c41ed421e00195",
+  "currentHeadSHA": "f11956e0bedf69ac4108cf44a2a0641a10700e16",
   "takeoverFromWorkerId": "sol-20260811-current-perf-recovery",
-  "takeoverReason": "The current performance PR declares generation 2 but no live swarm claim exists. Exact run 31535264357 failed before metrics because the retained XCUI debug attachment proves a stale element-handle witness: the captured dashboard.speed handle remained 11 mph while a fresh hierarchy query already exposed 14 mph and Energy Rail 410 W. Recover performance on a clean successor branch, touching only performance fixture/witness/workflow paths and leaving active DashboardView/UITest product repair to primary generation 4.",
+  "takeoverReason": "The current performance PR declared generation 2 but no live swarm claim existed. Exact parent run 31535264357 failed before metrics because retained XCUI evidence proves a stale element-handle witness while fresh hierarchy semantics were already moving.",
   "ownedPaths": [
     ".github/workflows/dashboard-sustained-performance.yml",
     "NembraApp/App/AppBootstrap.swift",
     "scripts/ci/dashboard_sustained_performance_xcuitest.swift"
   ],
-  "checkpoint": "Claimed from exact #2980 head 55e13388 after retained failure analysis. Immediate repair target: re-query dashboard.speed and dashboard.energy-rail at each pre/post semantic observation rather than using stale XCUIElement handles, preserving fail-closed requirement that both accepted Simulator-owned source values move before and after the measured interval. No DashboardView or NembraUITests production edits. Simulator-only; ES80 PHYSICAL NO-GO."
+  "checkpoint": "Opened stacked draft #3118 exact f11956e0 on #2980 exact 55e13388. One-file witness repair only: fresh-query dashboard.speed and dashboard.energy-rail on every pre/post observation, retaining fail-closed proof both Simulator-owned semantic values move before and after the 3-second XCTHitchMetric/XCTCPUMetric/XCTMemoryMetric interval. Parent artifact 9119538827 proved stale handle: captured speed handle 11 mph while fresh hierarchy already showed 14 mph and power 410 W. No DashboardView/NembraUITests product bytes changed. Await exact child workflow; metric-family presence gate remains mandatory. Simulator-only; ES80 PHYSICAL NO-GO."
 }
