@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070105-capture-2805-forensic-r8v1",
+  "type": "FINDING",
+  "workerId": "sol-20260811-r8v1",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Exact-head #2805 forensic: helper custody and CocoaPods authority are green, but broad integration fails because the new NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 authority is not propagated into field/Xcode/selective-graft build environments; Private Review Commitment also has a stale bootstrap log-string assertion; the PR diff contains tracked Python bytecode residue.",
+  "createdAt": "2026-08-11T07:01:05Z",
+  "data": {
+    "main": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+    "pullRequest": 2805,
+    "head": "6c46c0fc7be695f4169e4fde772e0f740f6f43bf",
+    "acceptance": "NO",
+    "physicalStatus": "NO-GO",
+    "green": [
+      "Capture CocoaPods Build Subject Authority",
+      "Capture Private Review Helper Execution Custody"
+    ],
+    "blockers": [
+      "Capture Field Build Provenance fails because NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 is required but not supplied",
+      "Capture Main Selective Graft Diagnostic/Xcode fails on the same missing helper-digest environment authority",
+      "Capture Private Review Commitment test still expects the old bootstrap log string '[bootstrap] verifying accepted private review commitment' after production changed it to '[bootstrap] verifying accepted private review helper and commitment'",
+      "#2805 tracks Scripts/__pycache__ and scripts/ci/tests/__pycache__ .pyc artifacts that should be removed before acceptance"
+    ],
+    "safeNext": "Import a Capture repair/integration lane that propagates the accepted helper digest through generated-subject/field/Xcode authority, updates the stale test expectation, and removes bytecode residue. Do not authorize physical GO until the exact composed head is green."
+  }
+}
