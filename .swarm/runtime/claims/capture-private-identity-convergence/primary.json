@@ -9,12 +9,12 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:38:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:23:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:26:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-private-resolution-adapter-api-sol-1316vk",
   "pr": 2993,
   "sourceSHA": "3b8e2182de2275a1c8b858ff8b3b614061582457",
-  "currentHeadSHA": "c20484aec3c003143c9ebf034a40166a6d0ff94f",
+  "currentHeadSHA": "34091153f8bb4f9b024553ca628145bdec873e1e",
   "takeoverFromWorkerId": "sol-20260811-4f57unlink",
   "takeoverReason": "Generation-1 convergence lease expired hours ago. Fresh review proved #2944 current 3b8e2182 fails its dependency-resolution adapter before guarded child execution. Recover parent convergence; #2977 separately owns writer/recovery sanitation and must later recompose. PHYSICAL NO-GO.",
   "ownedPaths": [
@@ -25,6 +25,6 @@
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityCheckoutRootCustodySourceTests.swift"
   ],
-  "checkpoint": "Exact c204 Main Selective Graft run 31536891353 retained artifact 9119234285. Standalone Xcode BUILD SUCCEEDED. Package failed exactly two source-contract expectations: TuyaFieldSDKDependencyProvenanceSourceTests still expects literal `pod install --repo-update` instead of guarded `\"$POD_BIN\" install --repo-update`; TuyaPrivateIdentityCheckoutRootCustodySourceTests expects the writer's provision(...) call on one line, while current writer duplicates the inherited checkout descriptor and invokes the same descriptor-bound provision across a multiline call. No runtime/domain test failures. Expand ownership to those two source tests only; production writer/bootstrap remain unchanged. After repair, all exact-head gates/review must rerun. PHYSICAL NO-GO.",
-  "intent": "Converge the two stale package source contracts without weakening descriptor or guarded-CocoaPods authority, then hold the moved head for exact Private/Field/Main and independent review before selective composition."
+  "checkpoint": "PR #2993 exact 34091153f8bb4f9b024553ca628145bdec873e1e now has six changed paths relative to #2944. Main artifact from c204 proved standalone Xcode build green and only two stale package source assertions. Both are repaired without production changes: Swift dependency test requires accepted digest < dependency guard < exact guarded POD_BIN install and forbids raw unguarded pod install; checkout-root source test requires inherited descriptor duplication + descriptor-bound provision call independent of line formatting and explicitly forbids reopening sys.argv[2] as publication authority. All c204 evidence is ancestor-only after move. Fresh exact Private/Field/Main + independent review required. PHYSICAL NO-GO.",
+  "intent": "Hold 34091153 immutable, classify fresh exact Private/Field/Main gates, obtain independent review on unchanged head, then hand the accepted six-path delta into selective private-identity composition onto newest build-authority lineage before layering #2977 sanitation."
 }
