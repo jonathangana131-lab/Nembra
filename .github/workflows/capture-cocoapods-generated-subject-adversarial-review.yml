@@ -1,0 +1,24 @@
+name: Capture CocoaPods Generated Subject Adversarial Review
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/capture_cocoapods_build_subject.py'
+      - 'Scripts/capture_tuya_private_input_build_guard.py'
+      - 'scripts/ci/tests/test_capture_cocoapods_generated_subject_adversarial_review.py'
+      - '.github/workflows/capture-cocoapods-generated-subject-adversarial-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  adversarial-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile review harness
+        run: python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_subject_adversarial_review.py
+      - name: Require coherent generation and generated xcodebuild custody
+        run: python3 scripts/ci/tests/test_capture_cocoapods_generated_subject_adversarial_review.py
