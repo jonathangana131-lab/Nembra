@@ -9,14 +9,14 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:17:47Z",
-  "lastHeartbeatAt": "2026-08-11T20:17:47Z",
+  "lastHeartbeatAt": "2026-08-11T20:23:31Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2871,
   "sourceSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
   "currentHeadSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
   "takeoverFromWorkerId": "sol-20260811-4f50qa",
-  "takeoverReason": "Generation-4 adversarial-review lease expired many hours ago. Primary generation 4 has just recovered the implementation lane against confirmed expected-red #2955. Independently attack the compiler-output origin repair boundary, preserve all downstream protected-stage/signature/intended-device custody, and publish constraints/findings without touching implementation paths. PHYSICAL NO-GO.",
-  "durableEvidence": "Inherited review evidence: #2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b mechanically confirms the compiler-output origin gap against #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2. Protected-stage downstream custody remains useful but cannot establish which bundle accepted xcodebuild produced when the first expected digest is minted after the mutable DerivedData substitution window.",
-  "acceptance": "BLOCKED_BY_CONFIRMED_COMPILER_OUTPUT_ORIGIN_GAP until a production repair binds/isolation-protects the exact xcodebuild-produced bundle through first protected snapshot, replays #2955 green, and re-earns applicable exact-head gates. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-4 adversarial-review lease expired many hours ago. Primary generation 4 has recovered the implementation lane against confirmed expected-red #2955. Independently attack the compiler-output origin repair boundary, preserve all downstream protected-stage/signature/intended-device custody, and publish constraints/findings without touching implementation paths. PHYSICAL NO-GO.",
+  "durableEvidence": "Inherited #2955 exact afdd329d confirms #2871 exact f76e6ae compiler-output origin gap. Cross-read of active build-authority #2968 confirms it explicitly does not close #2955. Review 4910430989 finds the transient-GID architecture materially promising because root-owned output can be group-writable only to a capability GID granted to trusted xcodebuild while ordinary same-UID siblings lack it; however research v2 head 518ebaa contains a deterministic fixture bug: dropped_capture unconditionally sets ephemeral_gid even for the supposed normal_gid attacker denial check. Run 31532586227 was queued at finding time and must not classify the architecture unless the harness is corrected. Required correction: parameterize child GID; negative witness under normal_gid plus positive capability control under ephemeral_gid, then selected/private-workspace signing/process-drain/root-lock/#2955 replay.",
+  "acceptance": "BLOCKED_BY_CONFIRMED_COMPILER_OUTPUT_ORIGIN_GAP. No post-build self-derived hash is acceptable. Transient-GID stronger-principal approach is research-promising but UNACCEPTED until corrected prerequisite evidence and real production #2955 replay. PHYSICAL NO-GO."
 }
