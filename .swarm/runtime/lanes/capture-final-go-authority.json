@@ -6,24 +6,24 @@
   "title": "Capture Final-GO control authority",
   "objective": "Converge authenticated-stationary Final-GO so reviewed generated/private build authority, candidate worktree authority, and all parent-module execution subjects are bound to one exact accepted Git/physical candidate without regressing sealed installer or signed-artifact custody.",
   "priority": 0,
-  "state": "BLOCKED_EXTERNAL",
+  "state": "NEEDS_CHANGES",
   "dependencies": ["capture-build-authority"],
   "blockers": [
     {
-      "id": "generated-control-current",
+      "id": "final-go-exact-head-self-test-red",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Selected generated-subject parent #2775 exact b4a2172cd799d363cb503a1ecb3d15bc7382e36f remains control-green: canonical Generated Subject Final GO run 31471815137 and R3 Base Loader Custody Current 31471815121 are terminal SUCCESS. It closed the former mutable base-parent execution seam; Xcode there is skipped and is not product acceptance. Build authority remains a dependency.",
-      "pr": 2775,
-      "headSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f"
+      "reason": "Current Final-GO production head #2890 exact fc662c996ad4551e3bd7bba6e225e3bee9aa620c is not accepted. Capture Final GO production self-test run 31481279993 is terminal FAILURE. The new raw physical-tree scanner correctly rejects divergent accepted-root helper bytes in several fixtures, but three authority witnesses still return READY when they must BLOCK: an untracked build-visible file, checkout bytes differing from the accepted Git tree despite commit==tree, and a missing build-visible tracked file. Several snapshot-race tests are also currently masked by the fixture's divergent Scripts/capture_private_review_downstream_exec.py bytes, so fixture/source-contract alignment is required without weakening raw-tree authority.",
+      "pr": 2890,
+      "headSHA": "fc662c996ad4551e3bd7bba6e225e3bee9aa620c"
     },
     {
-      "id": "current-r4-recovery-parent-loader-green-candidate-worktree-authority-open",
+      "id": "build-authority-exact-head-not-yet-accepted",
       "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Current-parent R4 recovery #2873 exact 65e9aadc8797c7b8ff33c73616892fcac6ff217b is a clean three-file direct child of #2775. Its exact-parent loader consumes accepted generated-parent Git blob 13720f81... under a closed/replacement-blind environment, re-hashes before execution, and exact-head Private Review Final GO run 31477579857 is terminal SUCCESS including the #2798 assume-unchanged parent attack. This closes stale #2791's mutable parent-module execution seam and correctly upgrades the owner review/helper authority contract to v5. However #2873 still delegates candidate worktree acceptance to the parent `base.git` / `generated.candidate_generated_authority`; parent base.git uses `git -C <root>` with GIT_NO_REPLACE_OBJECTS only and honors repository-local worktree selection. #2869 machine-proves the same core.worktree selection primitive can make Git status/hash authority describe different bytes from the physical candidate. Before R4 promotion, add a current-R4 core.worktree decoy regression and bind candidate Git/worktree checks explicitly to the physical candidate/repository under closed config/replacement authority. Preserve exact Git-object helper execution. Rerun the moved exact R4 gate. Xcode skipped is not acceptance; this remains control ingredient work and PHYSICAL NO-GO.",
-      "pr": 2873,
-      "headSHA": "65e9aadc8797c7b8ff33c73616892fcac6ff217b"
+      "scope": "dependency",
+      "reason": "Selected build-authority convergence #2907 exact d0b134ca2a49edc029f114660dfb8e216ece682e has all current field/security/graft gates terminal green, but its fresh exact-head Xcode run 31488213467 was still in progress at reconciliation time. Queued/running is not accepted, and Final-GO cannot outrun that dependency.",
+      "pr": 2907,
+      "headSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e"
     }
   ],
   "mode": "exclusive",
@@ -37,16 +37,20 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "sourceSHA": "fc662c996ad4551e3bd7bba6e225e3bee9aa620c",
   "legacy": {
     "selectedGeneratedPR": 2775,
     "selectedGeneratedHeadSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f",
     "selectedPrivateReviewRecoveryPR": 2873,
     "selectedPrivateReviewRecoveryHeadSHA": "65e9aadc8797c7b8ff33c73616892fcac6ff217b",
-    "stalePrivateReviewPR": 2791,
-    "redTeamInputs": [2798,2869],
-    "lineagePRs": [2638,2775,2791,2798,2803,2873],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:27Z. #2873 is the correct current-#2775 R4 recovery and its parent-loader seam is exact-head green. Independent review found candidate worktree authority still inherits parent base.git/core.worktree selection semantics now machine-proven unsafe by #2869. Harden/retest that candidate path before R4 promotion; build-side #2869 remains a separate dependency. PHYSICAL NO-GO."
+    "selectedProductionPR": 2890,
+    "selectedProductionHeadSHA": "fc662c996ad4551e3bd7bba6e225e3bee9aa620c",
+    "rawTreeRedTeamPR": 2903,
+    "rawTreeRedTeamHeadSHA": "a19b9c389f76c3838436b13b5b87b33def258d5c",
+    "finalGoFailureRun": 31481279993,
+    "redTeamInputs": [2798,2869,2903],
+    "lineagePRs": [2638,2775,2791,2798,2803,2873,2890,2903],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T11:56Z. Live production #2890 moved beyond the stale #2873 blocker to exact fc662c99 and now contains a raw physical candidate-tree scanner, but exact-head Final GO self-test 31481279993 is red. It catches divergent accepted-root helper bytes yet still admits at least three adversarial states that must block: untracked build-visible source, accepted commit/tree with differing checkout bytes, and missing build-visible tracked source. Snapshot-race expectations are partly masked by divergent helper fixture bytes. Fresh primary/tests/review claims are all active on this exact head, so reconciliation did not seize product ownership. #2903 remains the expected-red raw-tree diagnostic against the prior #2890 head. Build authority #2907 exact Xcode is also still pending acceptance. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","physical-go","control-authority","git-authority","legacy-import"]
 }
