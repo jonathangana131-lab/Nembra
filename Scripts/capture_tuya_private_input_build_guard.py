@@ -37,6 +37,10 @@ generated_build = _load_neighbor_module(
     "capture_cocoapods_generated_build_subject.py",
     "capture_cocoapods_generated_build_subject",
 )
+private_review = _load_neighbor_module(
+    "capture_private_review_commitment.py",
+    "capture_private_review_commitment",
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,14 @@ class PrivateInputs:
     identity_sources: Path
     generated_pods: Path | None = None
     generated_workspace: Path | None = None
+
+    @property
+    def private_provenance_record(self) -> Path:
+        return self.identity_podspec.parent / "ResolvedTuyaDependencyProvenance.txt"
+
+    @property
+    def private_review_key(self) -> Path:
+        return self.identity_podspec.parent / "PrivateReviewCommitment.key"
 
     def generated_build_subject(self) -> str:
         if self.generated_pods is None or self.generated_workspace is None:
@@ -215,9 +227,9 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     _add_tree_watch_paths(paths, inputs.security_build, label="private security build input tree")
     _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")
 
-    # Preserve the original private-only API for isolated callers. The production
-    # field CLI always supplies both generated roots and receives the stronger
-    # lexical ancestry + parent-directory custody below.
+    # Preserve the original private-only API for isolated callers. Production
+    # field CLI supplies generated roots and receives checkout ancestry plus the
+    # externally committed private witness/key custody below.
     if inputs.generated_pods is not None and inputs.generated_workspace is not None:
         repository_root = _lexical_absolute(inputs.lockfile.parent)
         field_paths = (
@@ -226,6 +238,8 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
             (inputs.security_build, "private security build tree"),
             (inputs.identity_podspec, "private identity podspec"),
             (inputs.identity_sources, "private identity source tree"),
+            (inputs.private_provenance_record, "private review provenance witness"),
+            (inputs.private_review_key, "private review commitment key"),
             (inputs.generated_pods, "generated CocoaPods Pods tree"),
             (inputs.generated_workspace, "generated CocoaPods workspace tree"),
         )
@@ -234,6 +248,8 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
             admitted.append(_require_real_checkout_ancestry(path, repository_root, label=label))
 
         paths.add(repository_root)
+        paths.add(inputs.private_provenance_record)
+        paths.add(inputs.private_review_key)
         for path in admitted:
             _add_parent_watch_chain(paths, path, repository_root=repository_root)
 
@@ -351,6 +367,37 @@ def _verify_accepted_generated_build_subject(inputs: PrivateInputs) -> None:
         )
 
 
+def _accepted_private_review_commitment_from_environment() -> str:
+    value = os.environ.get("NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256", "")
+    if len(value) != 64 or any(character not in "0123456789abcdefABCDEF" for character in value):
+        raise BuildGuardError(
+            "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 must remain available as exactly 64 hex characters through build-window admission"
+        )
+    return value.lower()
+
+
+def _verify_accepted_private_review_commitment(inputs: PrivateInputs) -> None:
+    accepted = _accepted_private_review_commitment_from_environment()
+    try:
+        private_review.verify_commitment(
+            witness=inputs.private_provenance_record,
+            key_path=inputs.private_review_key,
+            expected_tag=accepted,
+        )
+        provenance.verify_record(
+            lockfile=inputs.lockfile,
+            security_podspec=inputs.security_podspec,
+            security_build=inputs.security_build,
+            identity_podspec=inputs.identity_podspec,
+            identity_sources=inputs.identity_sources,
+            record_path=inputs.private_provenance_record,
+        )
+    except (private_review.PrivateReviewCommitmentError, provenance.ProvenanceError) as error:
+        raise BuildGuardError(
+            f"private build inputs no longer match the externally accepted review commitment: {error}"
+        ) from error
+
+
 def run_guarded_build(
     inputs: PrivateInputs,
     command: Sequence[str],
@@ -359,12 +406,15 @@ def run_guarded_build(
     popen_factory: Callable[..., subprocess.Popen] = subprocess.Popen,
     poll_interval: float = 0.10,
     require_accepted_generated_subject: bool = False,
+    require_accepted_private_review_commitment: bool = False,
 ) -> int:
     if not command:
         raise BuildGuardError("no build command was supplied")
 
     if require_accepted_generated_subject:
         _verify_accepted_generated_build_subject(inputs)
+    if require_accepted_private_review_commitment:
+        _verify_accepted_private_review_commitment(inputs)
     initial_snapshot = inputs.generation_snapshot()
     watch_paths = _watch_paths(inputs)
     _ensure_fd_budget(len(watch_paths))
@@ -379,6 +429,8 @@ def run_guarded_build(
             raise BuildGuardError("build inputs changed while build-window monitoring was armed")
         if require_accepted_generated_subject:
             _verify_accepted_generated_build_subject(inputs)
+        if require_accepted_private_review_commitment:
+            _verify_accepted_private_review_commitment(inputs)
         queued = backend.events(0)
         if queued:
             raise BuildGuardError(
@@ -408,6 +460,8 @@ def run_guarded_build(
             raise BuildGuardError("build inputs changed across the guarded xcodebuild window")
         if require_accepted_generated_subject:
             _verify_accepted_generated_build_subject(inputs)
+        if require_accepted_private_review_commitment:
+            _verify_accepted_private_review_commitment(inputs)
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
@@ -430,7 +484,7 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     parser = argparse.ArgumentParser(
         description=(
             "Run the Capture field build while macOS vnode custody watches every admitted "
-            "private and CocoaPods-generated build input."
+            "private, review-commitment, and CocoaPods-generated build input."
         )
     )
     parser.add_argument("--lockfile", required=True, type=Path)
@@ -481,6 +535,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             inputs,
             command,
             require_accepted_generated_subject=True,
+            require_accepted_private_review_commitment=True,
         )
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
@@ -491,6 +546,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except generated_build.GeneratedBuildSubjectError as error:
         print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)
         return 76
+    except private_review.PrivateReviewCommitmentError as error:
+        print(f"ERROR: private review commitment rejected build-window custody: {error}", file=sys.stderr)
+        return 77
 
 
 if __name__ == "__main__":
