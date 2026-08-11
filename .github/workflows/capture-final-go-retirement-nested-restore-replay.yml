@@ -1,0 +1,65 @@
+name: Capture Final GO Retirement Nested Restore Replay
+
+on:
+  push:
+    branches:
+      - test/v14-final-go-retirement-nested-restore-replay-r2-sol-20260811
+    paths:
+      - scripts/ci/tests/test_es80_final_go_retirement_nested_restore_replay.py
+      - .github/workflows/capture-final-go-retirement-nested-restore-replay.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_es80_final_go_retirement_nested_restore_replay.py
+      - .github/workflows/capture-final-go-retirement-nested-restore-replay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nested-restore-replay:
+    name: Prove inherited restore stays retired
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      REPAIRED_PARENT_SHA: 36b531b2e7d0c07bb8a63766e5b9fb5779d0a022
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-nested-replay-pycache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind exact repaired parent and two-path replay
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$REPAIRED_PARENT_SHA" HEAD)" = "$REPAIRED_PARENT_SHA"
+          git diff --name-only "$REPAIRED_PARENT_SHA" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-final-go-retirement-nested-restore-replay.yml \
+            scripts/ci/tests/test_es80_final_go_retirement_nested_restore_replay.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Replay exact nested-restore schedule
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_retirement_nested_restore_replay.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_retirement_nested_restore_replay.py
+
+      - name: Hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$REPAIRED_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
