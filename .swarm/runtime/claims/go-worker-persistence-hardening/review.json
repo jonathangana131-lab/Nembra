@@ -7,11 +7,12 @@
   "workerId": "sol-20260811-gorev1",
   "leaseId": "gorev1-20260811-0721",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T07:21:00Z",
-  "lastHeartbeatAt": "2026-08-11T07:21:00Z",
+  "lastHeartbeatAt": "2026-08-11T07:24:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2806,
-  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc"
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "releasedAt": "2026-08-11T07:24:00Z"
 }
