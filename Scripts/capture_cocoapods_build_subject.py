@@ -5,6 +5,12 @@ The accepted Podfile.lock digest is already reviewed by Final GO. This helper
 binds the generated Pods/workspace bytes into that same reviewed digest through
 one canonical comment attestation. It never follows symlinks while hashing;
 external local-pod targets remain independently covered by private-input custody.
+
+Pods/Manifest.lock is deliberately excluded from the generated-tree digest. It
+is CocoaPods' mirrored copy of Podfile.lock and is consumed only by the standard
+manifest consistency build phase. Bootstrap and the build-window guard require
+that mirror to be byte-for-byte equal to the attested Podfile.lock, avoiding a
+self-referential digest while preserving its build-time authority.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from typing import Iterable
 
 ATTESTATION_PREFIX = b"# NEMBRA_CAPTURE_GENERATED_BUILD_SUBJECT_SHA256="
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_PODS_EXCLUDED_FROM_GRAPH = frozenset({"Manifest.lock"})
 
 
 class BuildSubjectError(RuntimeError):
@@ -73,7 +80,21 @@ def _stable_file(path: Path, expected: tuple[int, ...]) -> tuple[int, str]:
         os.close(descriptor)
 
 
-def tree_fingerprint(root: Path) -> str:
+def stable_file_sha256(path: Path) -> str:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise BuildSubjectError(f"required build file is unavailable: {path}") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise BuildSubjectError(f"required build file is not one regular file: {path}")
+    return _stable_file(path, _identity(metadata))[1]
+
+
+def tree_fingerprint(
+    root: Path,
+    *,
+    excluded_relative_paths: frozenset[str] = frozenset(),
+) -> str:
     try:
         root_metadata = root.lstat()
     except OSError as error:
@@ -95,6 +116,8 @@ def tree_fingerprint(root: Path) -> str:
             metadata = path.lstat()
             identity = _identity(metadata)
             mode = stat.S_IMODE(metadata.st_mode)
+            if relative in excluded_relative_paths:
+                raise BuildSubjectError("generated-build exclusion unexpectedly names a directory")
             if stat.S_ISLNK(metadata.st_mode):
                 target = os.readlink(path)
                 states.append((path, identity, "L"))
@@ -113,6 +136,14 @@ def tree_fingerprint(root: Path) -> str:
             metadata = path.lstat()
             identity = _identity(metadata)
             mode = stat.S_IMODE(metadata.st_mode)
+            if relative in excluded_relative_paths:
+                if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                    raise BuildSubjectError("excluded generated lock mirror is not one regular file")
+                # Keep the mirror under traversal-stability checks but do not feed
+                # its bytes into the graph digest. Its exact bytes are instead
+                # required to equal the attested Podfile.lock.
+                states.append((path, identity, "F"))
+                continue
             if stat.S_ISLNK(metadata.st_mode):
                 target = os.readlink(path)
                 states.append((path, identity, "L"))
@@ -139,7 +170,7 @@ def tree_fingerprint(root: Path) -> str:
             raise BuildSubjectError("generated build tree membership changed while fingerprinting")
 
     digest = hashlib.sha256()
-    _feed(digest, b"nembra-cocoapods-generated-tree-v1")
+    _feed(digest, b"nembra-cocoapods-generated-tree-v2")
     _feed(digest, stat.S_IMODE(root_metadata.st_mode).to_bytes(4, "big"))
     for kind, relative, mode, payload in sorted(entries, key=lambda item: os.fsencode(item[1])):
         _feed(digest, kind.encode("ascii"))
@@ -151,9 +182,17 @@ def tree_fingerprint(root: Path) -> str:
 
 def build_subject_fingerprint(*, pods: Path, workspace: Path) -> str:
     digest = hashlib.sha256()
-    _feed(digest, b"nembra-cocoapods-build-subject-v1")
+    _feed(digest, b"nembra-cocoapods-build-subject-v2")
     _feed(digest, b"Pods")
-    _feed(digest, bytes.fromhex(tree_fingerprint(pods)))
+    _feed(
+        digest,
+        bytes.fromhex(
+            tree_fingerprint(
+                pods,
+                excluded_relative_paths=_PODS_EXCLUDED_FROM_GRAPH,
+            )
+        ),
+    )
     _feed(digest, b"NembraCapture.xcworkspace")
     _feed(digest, bytes.fromhex(tree_fingerprint(workspace)))
     return digest.hexdigest()
@@ -180,10 +219,10 @@ def attest_lock(lockfile: Path, digest: str) -> None:
     try:
         metadata = lockfile.lstat()
         if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-            raise BuildSubjectError("Podfile.lock attestation subject must be a regular file")
+            raise BuildSubjectError("lock attestation subject must be one regular file")
         data = lockfile.read_bytes()
     except OSError as error:
-        raise BuildSubjectError("Podfile.lock attestation subject is unavailable") from error
+        raise BuildSubjectError("lock attestation subject is unavailable") from error
 
     kept = [line for line in data.splitlines(keepends=True) if not line.startswith(ATTESTATION_PREFIX)]
     base = b"".join(kept)
