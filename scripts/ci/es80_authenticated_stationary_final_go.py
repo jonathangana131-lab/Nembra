@@ -61,6 +61,17 @@ def regular(path:Path,label:str,mode600=False)->bytes:
     if stat.S_ISLNK(s.st_mode) or (s.st_dev,s.st_ino)!=(b.st_dev,b.st_ino): raise GoError(f"{label} path identity changed")
     return raw
 
+def canonical_private_path(path:Path,label:str)->Path:
+    p=path.expanduser()
+    if not p.is_absolute() or p.anchor!=os.sep or any(x in ("", ".", "..") for x in p.parts[1:]): raise GoError(f"{label} path must be canonical absolute")
+    cur=Path(os.sep)
+    for part in p.parts[1:]:
+        cur/=part
+        try:s=cur.lstat()
+        except OSError as e: raise GoError(f"{label} path component unavailable") from e
+        if stat.S_ISLNK(s.st_mode): raise GoError(f"{label} path contains symlink component")
+    return p
+
 def canon(v,label):
     if not isinstance(v,str) or not HEX40.fullmatch(v.lower()): raise GoError(f"{label} not canonical 40-hex")
     return v.lower()
@@ -148,14 +159,15 @@ def candidate(repo:Path,source:str):
     return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
 
 def device_hash(path:Path):
-    raw=regular(path,"private intended-device identifier",True)
+    p=canonical_private_path(path,"private intended-device identifier")
+    raw=regular(p,"private intended-device identifier",True)
     try:t=raw.decode().strip()
     except UnicodeDecodeError as e: raise GoError("private device identifier invalid") from e
     if not t or any(c.isspace() for c in t): raise GoError("private device identifier must be one token")
     return sha(t.encode())
 
 def installer(repo:Path,source:str,device:Path):
-    root=repo.expanduser().resolve(strict=True); env=os.environ.copy(); env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device.expanduser().resolve(strict=True))
+    root=repo.expanduser().resolve(strict=True); device_path=canonical_private_path(device,"private intended-device identifier"); env=os.environ.copy(); env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device_path)
     try:p=subprocess.run(["/bin/bash",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     except OSError as e: raise GoError("private installer execution failed") from e
     if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
