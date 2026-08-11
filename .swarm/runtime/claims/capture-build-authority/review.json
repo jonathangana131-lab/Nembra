@@ -9,9 +9,9 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:41:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:43:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:51:00Z",
   "leaseSeconds": 1800,
-  "branch": "repair/v14-capture-field-installer-git-authority-sol-20260811",
+  "branch": "redteam/v14-capture-tracked-source-build-window-sol-d4c8",
   "pr": 2876,
   "sourceSHA": "50f774ddbc92215bd8ecd5006cd728f71019aad4"
 }
