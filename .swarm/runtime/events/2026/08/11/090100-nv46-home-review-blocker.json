@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "090100-nv46-home-review-blocker",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-nv46",
+  "laneId": "home-accessibility-product",
+  "message": "Independent exact-head review found a blocking Home recovery regression on PR #2842 e387b5d0b7d743abe06818e9d19910a1f73f13ee: connecting/reconnecting progress states drop presentation.title entirely, leaving only the explanatory message. Keep the meaningful state title and hide only duplicate progress decoration, then re-review. Command-authority hardening otherwise reviewed cleanly. GitHub cannot record REQUEST_CHANGES because swarm workers share the repository owner account; commit-anchored COMMENT review 4904554424 records the blocker.",
+  "createdAt": "2026-08-11T09:01:00Z",
+  "data": {
+    "pr": 2842,
+    "headSHA": "e387b5d0b7d743abe06818e9d19910a1f73f13ee",
+    "reviewId": 4904554424,
+    "sourceReview": "BLOCKED",
+    "blocker": "progress-state-title-removed",
+    "physicalStatus": "PHYSICAL_NO_GO"
+  }
+}
