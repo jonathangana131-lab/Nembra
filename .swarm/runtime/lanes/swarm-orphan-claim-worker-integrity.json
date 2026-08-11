@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "swarm-orphan-claim-worker-integrity",
+  "epic": "swarm-control-plane",
+  "title": "Reject live claims owned by unregistered workers",
+  "objective": "Close the demonstrated scheduler-state integrity gap where a live claim can reference a workerId absent from the worker registry, causing orphan ownership to consume capacity until lease expiry. Add fail-closed snapshot validation and regressions without weakening lease, takeover, review-independence, or resource authority.",
+  "priority": 0,
+  "state": "READY",
+  "dependencies": ["swarm-control-plane-foundation"],
+  "blockers": [],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "scripts/swarmcp/engine.py",
+    "scripts/ci/tests/test_swarm_control_plane.py",
+    "scripts/ci/tests/test_swarm_control_plane_regressions.py"
+  ],
+  "adjacentWriteAreas": ["docs/SWARM_CONTROL_PLANE.md"],
+  "slots": [
+    {"name":"primary","role":"repair","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":["RELEASE_INTEGRATION"]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": false, "state": "SOURCE_READY"},
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "finding": {
+    "claimPath": ".swarm/runtime/claims/legacy-github-reconciliation/reconcile-controls-ui.json",
+    "orphanWorkerId": "sol-20260811-ui0052",
+    "workerRegistryLookup": "not-found",
+    "codeFinding": "engine.validate_state_snapshot validates worker records and claim lane/slot ownership independently but never requires live claim.workerId to exist in the validated worker registry"
+  },
+  "tags": ["swarm-control-plane", "red-main-repair", "scheduler-integrity", "claim-authority"]
+}
