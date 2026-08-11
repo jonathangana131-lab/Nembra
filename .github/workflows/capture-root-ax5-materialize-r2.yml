@@ -1,0 +1,158 @@
+name: Capture Root AX5 Materializer R2
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-root-ax5-recompose-r2
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Verify exact current parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "b4ba45d095a6c125c18f4dbc556e0717232ed4a8"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-root-ax5-materialize-r2.yml"
+
+      - name: Apply narrow Accessibility Dynamic Type recompose
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          start = source.index('@MainActor\nprivate struct CaptureP0Root: View {')
+          end = source.index('\n@MainActor\nprivate final class SecureLinkController', start)
+          root = source[start:end]
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          root = replace_once(
+              root,
+              '    @State private var showEngineeringDetails = false\n',
+              '    @State private var showEngineeringDetails = false\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n',
+              'dynamic type environment',
+          )
+          root = replace_once(
+              root,
+              '                    VStack(alignment: .leading, spacing: 22) {\n',
+              '                    VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 16 : 22) {\n',
+              'root spacing',
+          )
+
+          old_header = '''                        VStack(alignment: .leading, spacing: 8) {
+                            Text("NEMBRA CAPTURE")
+                                .font(.caption2.bold())
+                                .tracking(1.5)
+                                .foregroundStyle(.cyan)
+                            Text("Prepare the scooter link")
+                                .font(.largeTitle.bold())
+                            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+'''
+          new_header = '''                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("NEMBRA CAPTURE")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.cyan)
+                                Text("Link the scooter account")
+                                    .font(.title2.bold())
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .accessibilityElement(children: .combine)
+                        } else {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("NEMBRA CAPTURE")
+                                    .font(.caption2.bold())
+                                    .tracking(1.5)
+                                    .foregroundStyle(.cyan)
+                                Text("Prepare the scooter link")
+                                    .font(.largeTitle.bold())
+                                Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+'''
+          root = replace_once(root, old_header, new_header, 'header')
+
+          account_end = '''                        }
+
+                        if tuya.isLinked {
+'''
+          account_with_context = '''                        }
+
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Text("One guided setup establishes the account and bound-device context before passive target correlation. No scooter setting is changed here.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityLabel("Setup context. One guided setup establishes the account and bound-device context before passive target correlation. No scooter setting is changed here.")
+                        }
+
+                        if tuya.isLinked {
+'''
+          root = replace_once(root, account_end, account_with_context, 'post-account context')
+          root = replace_once(
+              root,
+              '                    .padding(.top, 22)\n',
+              '                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 10 : 22)\n',
+              'top padding',
+          )
+          root = replace_once(
+              root,
+              '            .padding(18)\n',
+              '            .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 18)\n',
+              'panel padding',
+          )
+          if root.count('RoundedRectangle(cornerRadius: 24, style: .continuous)') != 2:
+              raise SystemExit('panel corner-radius contract moved')
+          root = root.replace(
+              'RoundedRectangle(cornerRadius: 24, style: .continuous)',
+              'RoundedRectangle(cornerRadius: dynamicTypeSize.isAccessibilitySize ? 20 : 24, style: .continuous)',
+          )
+
+          source = source[:start] + root + source[end:]
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          grep -Fq '@Environment(\.dynamicTypeSize) private var dynamicTypeSize' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Text("Link the scooter account")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'No scooter setting is changed here.' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '.padding(.top, dynamicTypeSize.isAccessibilitySize ? 10 : 22)' NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(grep -Fc 'Button("Create approval QR") { tuya.requestApproval() }' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
+          git diff --check
+
+      - name: Publish product-only descendant
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-root-ax5-materialize-r2.yml
+          git config user.name 'nembra-v14-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-root-ax5-materialize-r2.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): prioritize account setup at Accessibility sizes'
+          test "$(git diff --name-only HEAD^^ HEAD)" = "NembraApp/App/NembraCaptureEntrypoint.swift"
+          git push origin HEAD:agent/v14-capture-root-ax5-recompose-r2
