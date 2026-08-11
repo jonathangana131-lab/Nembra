@@ -9,9 +9,9 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T08:03:20Z",
-  "lastHeartbeatAt": "2026-08-11T08:03:20Z",
+  "lastHeartbeatAt": "2026-08-11T08:10:43Z",
   "leaseSeconds": 1800,
   "branch": "",
-  "pr": null,
+  "pr": 2823,
   "resource": "HIGH_CONTENTION_FILE"
 }
