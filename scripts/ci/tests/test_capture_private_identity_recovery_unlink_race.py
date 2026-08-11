@@ -22,6 +22,25 @@ def load_writer():
     return module
 
 
+def install_replacement(writer, checkout_fd: int, stage_name: str, escaped_name: str, payload: bytes) -> None:
+    writer.os.rename(stage_name, escaped_name, src_dir_fd=checkout_fd, dst_dir_fd=checkout_fd)
+    replacement_fd = writer.os.open(
+        stage_name,
+        writer.os.O_WRONLY
+        | writer.os.O_CREAT
+        | writer.os.O_EXCL
+        | writer.os.O_CLOEXEC
+        | writer.os.O_NOFOLLOW,
+        0o600,
+        dir_fd=checkout_fd,
+    )
+    try:
+        writer.os.write(replacement_fd, payload)
+        writer.os.fsync(replacement_fd)
+    finally:
+        writer.os.close(replacement_fd)
+
+
 class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
     def test_post_admission_name_swap_preserves_replacement_and_admitted_inode(self) -> None:
         writer = load_writer()
@@ -48,18 +67,7 @@ class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
                 recovered = writer._recover_private_stage_residue(checkout_fd)
                 self.assertIsNotNone(recovered, "fixture did not admit the writer-shaped crash residue")
 
-                os.rename(stage_name, escaped_name, src_dir_fd=checkout_fd, dst_dir_fd=checkout_fd)
-                replacement_fd = os.open(
-                    stage_name,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
-                    0o600,
-                    dir_fd=checkout_fd,
-                )
-                try:
-                    os.write(replacement_fd, replacement_payload)
-                    os.fsync(replacement_fd)
-                finally:
-                    os.close(replacement_fd)
+                install_replacement(writer, checkout_fd, stage_name, escaped_name, replacement_payload)
 
                 with self.assertRaises(writer.ProvisionError):
                     writer._write_staged(
@@ -81,6 +89,72 @@ class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
             self.assertTrue(stage.is_file(), "recovery deleted the replacement pathname subject")
             self.assertEqual(stage.read_bytes(), replacement_payload)
             self.assertFalse(destination.exists(), "failed recovery published a private output")
+
+    def test_name_swap_after_rebind_mutates_only_held_inode(self) -> None:
+        writer = load_writer()
+        admitted_payload = b"dummy-admitted-crash-residue-after-rebind"
+        replacement_payload = b"late-replacement-must-survive"
+        new_payload = b"new-private-output-after-rebind"
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-recovery-late-swap-") as temporary:
+            checkout = Path(temporary) / "repo"
+            destination_parent = checkout / "private"
+            destination_parent.mkdir(parents=True, mode=0o700)
+            stage_name = f"{PREFIX}{os.getpid()}-{'e' * 24}"
+            escaped_name = "attacker-late-renamed-admitted-residue"
+            stage = checkout / stage_name
+            escaped = checkout / escaped_name
+            destination = destination_parent / "identity.swift"
+            stage.write_bytes(admitted_payload)
+            stage.chmod(0o600)
+
+            checkout_fd = os.open(checkout, writer._directory_flags())
+            destination_fd = os.open(destination_parent, writer._directory_flags())
+            recovered = None
+            real_ftruncate = writer.os.ftruncate
+            attack_fired = False
+
+            try:
+                recovered = writer._recover_private_stage_residue(checkout_fd)
+                self.assertIsNotNone(recovered, "fixture did not admit the writer-shaped crash residue")
+                admitted_dev = recovered.metadata.st_dev
+                admitted_ino = recovered.metadata.st_ino
+
+                def interpose_after_rebind(descriptor: int, length: int) -> None:
+                    nonlocal attack_fired
+                    held = writer.os.fstat(descriptor)
+                    if not attack_fired and held.st_dev == admitted_dev and held.st_ino == admitted_ino:
+                        attack_fired = True
+                        install_replacement(writer, checkout_fd, stage_name, escaped_name, replacement_payload)
+                    real_ftruncate(descriptor, length)
+
+                writer.os.ftruncate = interpose_after_rebind
+                with self.assertRaises(writer.ProvisionError):
+                    writer._write_staged(
+                        checkout_fd,
+                        destination_fd,
+                        "identity.swift",
+                        "private/identity.swift",
+                        new_payload,
+                        recovered_stage=recovered,
+                    )
+            finally:
+                writer.os.ftruncate = real_ftruncate
+                if recovered is not None:
+                    recovered.close()
+                os.close(destination_fd)
+                os.close(checkout_fd)
+
+            self.assertTrue(attack_fired, "fixture did not swap the recovered name after final re-bind")
+            self.assertTrue(stage.is_file(), "late replacement pathname subject was deleted")
+            self.assertEqual(stage.read_bytes(), replacement_payload)
+            self.assertTrue(escaped.is_file(), "held admitted inode disappeared during late swap failure")
+            self.assertEqual(
+                escaped.read_bytes(),
+                b"",
+                "failure sanitation did not stay on the exact held inode after the late name swap",
+            )
+            self.assertFalse(destination.exists(), "late-swap failure published a private output")
 
     def test_recovery_source_never_pathname_unlinks_admitted_residue(self) -> None:
         source = WRITER_PATH.read_text(encoding="utf-8")
