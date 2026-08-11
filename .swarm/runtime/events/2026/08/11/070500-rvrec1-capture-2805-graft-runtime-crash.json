@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070500-rvrec1-capture-2805-graft-runtime-crash",
+  "type": "FINDING",
+  "workerId": "sol-20260811-rvrec1",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Exact-head artifact inspection for Capture P0 PR #2805 at f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf: focused helper custody, private-review commitment, CocoaPods authority, and Field Build Provenance are terminal SUCCESS. Main Selective Graft is RED even though its standalone Capture target build succeeds. The retained full-package log terminates with Swift Testing helper signal 5 and Swift/arm64e-apple-macos.swiftinterface fatal error 'Range requires lowerBound <= upperBound'; the workflow then correctly fails Enforce integration truth because package acceptance was incomplete. Treat this as an exact-head package/runtime acceptance blocker requiring reproduction/triage, not as an app-build failure. Xcode exact-head remains skipped while #2805 is draft. PHYSICAL remains NO-GO.",
+  "createdAt": "2026-08-11T07:05:00Z",
+  "data": {
+    "pr": 2805,
+    "exactHead": "f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf",
+    "selectiveGraftRun": 31467236296,
+    "fieldProvenanceRun": 31467236246,
+    "packageProcessSignal": 5,
+    "standaloneCaptureBuild": "SUCCESS",
+    "integrationTruth": "FAILURE",
+    "xcodeExactHead": "SKIPPED_DRAFT",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
