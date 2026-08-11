@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "094600-review-result-private-identity-c4d2",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-c4d2",
+  "laneId": "capture-private-identity-custody",
+  "message": "NEEDS_CHANGES on PR #2755 exact 2d8241c791d79ad04654fb1c90f7ac89ac5d5efc. Fresh review found a descendant-ancestry substitution credential-leak seam distinct from the existing missing-ancestry test: after held runtime/module chain proof and held-parent leaf validation, publication and final reopen re-resolve the full destination from checkout_fd. RENAME_NOFOLLOW_ANY|RENAME_RESOLVE_BENEATH prevents symlink/escape but does not bind intermediate names to the held admitted descendant descriptors. A same-UID actor can rename the admitted ancestry aside, install ordinary replacement directories inside the checkout, let the sealed staging inode publish into that replacement tree, and pass final inode/payload checks; only the later _require_private_chain rejects, after credential bytes have been deposited, with no cleanup for that already-successful _write_staged. Add exact-current adversarial coverage for replacement real directories and close with identity-bound parent publication or equivalent exact-chain binding plus owned-inode cleanup on later chain rejection. Existing destination-leaf post-open and hard-exit stage-residue blockers remain. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T09:46:00Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "activePR": 2755,
+    "activeHeadSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc",
+    "reviewId": 4904874799,
+    "finding": "descendant-ancestry-substitution-credential-leak",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
