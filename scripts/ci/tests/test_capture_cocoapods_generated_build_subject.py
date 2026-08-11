@@ -53,19 +53,27 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.assertIn("--resolve-lock-for-review", source)
         self.assertIn("CocoaPods build subject SHA-256", source)
 
-    def test_existing_xcodebuild_guard_owns_generated_subject(self) -> None:
+    def test_existing_xcodebuild_guard_owns_exact_preaccepted_generated_subject(self) -> None:
         source = BUILD_GUARD.read_text(encoding="utf-8")
         loader = source.index("capture_cocoapods_generated_build_subject.py")
         generated_snapshot = source.index("generated_build_subject.fingerprint_subject")
+        expected_environment = source.index(
+            'os.environ.get("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256")'
+        )
+        prebuild_match = source.index(
+            "generated CocoaPods build subject no longer matches the preaccepted SHA-256 before xcodebuild"
+        )
         watcher = source.index("inputs.generated_pods")
         xcodebuild = source.index("process = popen_factory(list(command))")
         final_snapshot = source.rindex("final_snapshot = inputs.generation_snapshot()")
         self.assertLess(loader, generated_snapshot)
         self.assertLess(generated_snapshot, watcher)
-        self.assertLess(watcher, xcodebuild)
+        self.assertLess(prebuild_match, xcodebuild)
         self.assertLess(xcodebuild, final_snapshot)
+        self.assertLess(final_snapshot, expected_environment)
         self.assertIn("inputs.generated_workspace", source)
         self.assertIn("field build inputs changed across the guarded xcodebuild window", source)
+        self.assertIn("generated CocoaPods build subject lost preaccepted authority across xcodebuild", source)
 
     def test_generated_helper_keeps_independent_mac_guard_available(self) -> None:
         source = HELPER.read_text(encoding="utf-8")
