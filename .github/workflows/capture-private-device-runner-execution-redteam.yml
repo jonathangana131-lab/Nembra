@@ -1,0 +1,41 @@
+name: Capture Private Device Runner Execution Red Team
+
+on:
+  pull_request:
+    paths:
+      - "scripts/field/install_one_time_capture.command"
+      - "scripts/ci/es80_signed_field_artifact_private_runner.py"
+      - "scripts/ci/tests/test_capture_private_device_runner_execution_subject.py"
+      - ".github/workflows/capture-private-device-runner-execution-redteam.yml"
+  push:
+    branches:
+      - "adversarial/v14-capture-private-device-runner-execution-subject-sol"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-device-runner-execution-subject:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bind checked-out diagnostic head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Compile diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -m py_compile scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
+      - name: Require immutable private-device runner execution subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
