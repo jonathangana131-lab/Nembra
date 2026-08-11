@@ -13,25 +13,25 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy authority owner #2805 is still moving outside a swarm claim and is now exact 9e0fa4210a022256f5c5d918413e244e5394ddd9. On that exact head the private-review verifier, downstream-helper red-team, private-review commitment, and CocoaPods build-subject gates are terminal SUCCESS; Field Build Provenance and Main Selective Graft are queued and Xcode QA is pending. Do not duplicate product edits or promote its stale body/head text over the live SHA.",
+      "reason": "Legacy authority owner #2805 is still moving outside a swarm claim at exact 9e0fa4210a022256f5c5d918413e244e5394ddd9. Focused private-review/downstream/commitment/CocoaPods gates are green there, while broader Field/Graft/Xcode are not terminal accepted. The cleaner convergence family is now #2825 -> #2838 -> #2840; do not duplicate either active family or promote stale PR-body heads.",
       "pr": 2805,
       "headSHA": "9e0fa4210a022256f5c5d918413e244e5394ddd9"
     },
     {
-      "id": "field-provenance-contract",
+      "id": "selected-successor-acceptance",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Clean authority successor #2825 remains the convergence target family, but its Field Provenance source contract required accepted-helper invocation updates. Consolidated one-file child #2838 exact 668009b364b08ca5aa9cc245556cc32879df9df8 updates both stale assertions directly on #2825 and currently has Field Provenance and Xcode exact-head gates queued. The longer #2829 -> #2834 -> #2836 chain carries the same QA progression plus an additional exact-Git guard-presence semantic improvement; #2836 exact 0e43f89172a67dd55c9dfea2ec2956e455b45a29 has downstream red-team green but Field Provenance and Selective Graft red, so it is not accepted. Reconcile whichever descendant earns complete terminal exact-head evidence without losing the #2836 semantic guard improvement.",
-      "pr": 2838,
-      "headSHA": "668009b364b08ca5aa9cc245556cc32879df9df8"
+      "reason": "Selected clean successor #2840 exact f3b3c31150e29699172b208dab59c2d3724a5f62 is based on #2838 and now carries KQ_NOTE_ATTRIB on the clean #2825 authority line. Exact private-review commitment, helper execution, downstream red-team, CocoaPods build-subject, and dedicated portable+real-macOS vnode gates are terminal SUCCESS. Field Provenance is in progress, Xcode queued, and Selective Graft is red at its final integration-truth step. #2840 is not accepted until the red is classified/closed and all required exact-head gates are terminal green on one unchanged composition.",
+      "pr": 2840,
+      "headSHA": "f3b3c31150e29699172b208dab59c2d3724a5f62"
     },
     {
-      "id": "vnode-attribute-custody",
+      "id": "remaining-gate-and-semantic-debt",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Current #2805 exact 9e0fa421... still omits KQ_NOTE_ATTRIB from the macOS vnode fence. Recovery #2837 exact b3aa17f136e632fbe757c0af5de2c1f738b7021f replays the already-proven #2778 two-line production fix plus portable/real-macOS regression on the live #2805 family. Its surrounding private-review/downstream/CocoaPods gates are terminal SUCCESS; vnode-current, Field Provenance, Selective Graft, and Xcode gates are queued. Old #2778 remains historical proof until #2837 or an equivalent exact descendant is terminal accepted and composed.",
-      "pr": 2837,
-      "headSHA": "b3aa17f136e632fbe757c0af5de2c1f738b7021f"
+      "reason": "Independent review found two non-duplicated debts that must be carried onto the selected #2840 lineage before build-authority closure: (1) #2834 gate hardening that wires/runs scripts/ci/tests/test_capture_field_accepted_source_path_contract.py and explicitly rejects the obsolete direct build-window-guard invocation, and (2) #2836 semantic guard-presence authority that replaces mutable-worktree -f admission with replacement-blind, ambient-config-isolated exact-Git cat-file presence proof. Even terminal-green #2840 gates would remain ingredient evidence until both are composed and the moved exact head reruns impacted gates.",
+      "pr": 2840,
+      "headSHA": "f3b3c31150e29699172b208dab59c2d3724a5f62"
     }
   ],
   "mode": "exclusive",
@@ -62,8 +62,8 @@
   "legacy": {
     "primaryPR": 2805,
     "primaryHeadSHA": "9e0fa4210a022256f5c5d918413e244e5394ddd9",
-    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T08:40Z. #2805 is live at 9e0fa421 with four focused authority/security gates green but Field/Graft queued and Xcode pending. Direct source still omits KQ_NOTE_ATTRIB. #2837 is the live current-lineage vnode recovery and must earn exact portable+real-macOS/current consumer gates; old #2778 remains ingredient proof only. #2838 is the clean direct-#2825 Field Provenance contract repair with Field/Xcode queued. #2836 carries the non-duplicated exact-Git guard-presence semantic improvement but its current Field/Graft gates are red. No descendant is accepted until one unchanged composition earns all required terminal exact-head gates; queued/pending/old-head green is not acceptance."
+    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T08:45Z. #2840 supersedes the stale-#2805 vnode sibling #2837 by carrying the vnode repair onto clean #2838/#2825. Its focused authority/security/vnode gates are green, but Selective Graft is red and Field/Xcode are non-terminal. Independent review also proves #2840 still lacks #2834's canonical path-contract gate wiring/rejection and #2836's exact-Git guard-presence authority. The next valid build-authority candidate must compose those two debts onto the selected successor, then rerun all impacted exact-head gates. PHYSICAL remains NO-GO."
   },
   "tags": ["capture","p0","security","build-authority","legacy-import"]
 }
