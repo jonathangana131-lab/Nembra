@@ -21,6 +21,7 @@ jobs:
       - name: Materialize repaired authority chain
         shell: bash
         run: |
+          set +e
           set -uo pipefail
           rm -f .nembra-authority-recovery-error
           (
