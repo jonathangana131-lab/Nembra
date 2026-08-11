@@ -1,0 +1,124 @@
+name: TEMP V14 Final-GO Lock ccab Finalizer
+on:
+  push:
+    branches: [recovery/v14-final-go-reviewed-lock-current-ccab-sol]
+permissions:
+  contents: write
+jobs:
+  finalize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: recovery/v14-final-go-reviewed-lock-current-ccab-sol, fetch-depth: 0}
+      - name: Verify exact evidence parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "6806886d1e8e7c8eebcfda14854f4b7bc09cc292"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-v14-final-go-lock-ccab-finalize.yml"
+      - name: Resolve exact semantic conflicts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          pat=re.compile(r'<<<<<<< current-ccab\n(.*?)=======\n(.*?)>>>>>>> reviewed-lock-d841\n',re.S)
+
+          p=Path('recovery-debug-ccab/es80_authenticated_stationary_final_go.py'); s=p.read_text(); ms=list(pat.finditer(s))
+          if len(ms)!=2: raise SystemExit(f'issuer conflicts {len(ms)}')
+          r1='''def installer_environment(device:Path,device_digest:str,accepted_lock_sha256:str)->dict[str,str]:
+          account=pwd.getpwuid(os.getuid()); device_path=canonical_private_path(device,"private intended-device identifier")
+          digest=device_digest.lower()
+          if not HEX64.fullmatch(digest): raise GoError("private intended-device digest invalid")
+          if not isinstance(accepted_lock_sha256,str) or not HEX64.fullmatch(accepted_lock_sha256) or accepted_lock_sha256!=accepted_lock_sha256.lower(): raise GoError("accepted Tuya dependency-lock digest is not canonical lowercase SHA-256")
+          return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":digest,"NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256":accepted_lock_sha256}
+
+          def installer(repo:Path,source:str,device:Path,device_digest:str,accepted_lock_sha256:str):
+          root=repo.expanduser().resolve(strict=True); env=installer_environment(device,device_digest,accepted_lock_sha256)
+          '''.replace('          ','')
+          r2='''    if run_installer is installer:
+          got=run_installer(candidate_repo,source,device_file,dh,rv["tuyaDependencyLockSHA256"])
+          else:
+          got=run_installer(candidate_repo,source,device_file,dh)
+          expected={"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
+          '''.replace('          ','')
+          out=s[:ms[0].start()]+r1+s[ms[0].end():ms[1].start()]+r2+s[ms[1].end():]
+          if any(x in out for x in ('<<<<<<<','=======','>>>>>>>')): raise SystemExit('issuer markers remain')
+          Path('scripts/ci/es80_authenticated_stationary_final_go.py').write_text(out)
+
+          p=Path('recovery-debug-ccab/test_es80_authenticated_stationary_final_go_installer_environment_custody.py'); s=p.read_text(); ms=list(pat.finditer(s))
+          if len(ms)!=4: raise SystemExit(f'custody conflicts {len(ms)}')
+          reps=[
+          '''                result = GO.installer(repository, source, private_device, GO.device_hash(private_device), accepted_lock)\n''',
+          '''            digest = GO.device_hash(device)\n            accepted_lock = "c" * 64\n            env = GO.installer_environment(device, digest, accepted_lock)\n''',
+          '''            self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"], digest)\n            self.assertEqual(env["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"], accepted_lock)\n''',
+          '''    def test_installer_environment_rejects_symlinked_private_device_parent(self) -> None:
+              with tempfile.TemporaryDirectory(prefix="nembra-final-go-env-symlink-") as temporary:
+              root = Path(temporary).resolve(strict=True)
+              real_parent = root / "private"
+              real_parent.mkdir()
+              device = real_parent / "device"
+              device.write_text("device", encoding="utf-8")
+              device.chmod(0o600)
+              alias = root / "alias"
+              alias.symlink_to(real_parent, target_is_directory=True)
+              with self.assertRaises(GO.GoError):
+              GO.installer_environment(alias / "device", "d" * 64, "a" * 64)
+
+              def test_noncanonical_tuya_lock_digest_is_rejected_before_installer(self) -> None:
+              with tempfile.TemporaryDirectory(prefix="nembra-final-go-lock-shape-") as temporary:
+              device = Path(temporary).resolve(strict=True) / "device"
+              device.write_text("device", encoding="utf-8")
+              device.chmod(0o600)
+              device_digest = GO.device_hash(device)
+              for lock_digest in ("A" * 64, "a" * 63, "not-a-digest"):
+              with self.assertRaises(GO.GoError):
+              GO.installer_environment(device, device_digest, lock_digest)
+          '''.replace('              ','    ')]
+          out=[]; pos=0
+          for m,r in zip(ms,reps): out.extend((s[pos:m.start()],r)); pos=m.end()
+          out.append(s[pos:]); out=''.join(out)
+          if any(x in out for x in ('<<<<<<<','=======','>>>>>>>')): raise SystemExit('custody markers remain')
+          Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').write_text(out)
+
+          p=Path('recovery-debug-ccab/test_es80_authenticated_stationary_final_go.py'); s=p.read_text(); ms=list(pat.finditer(s))
+          if len(ms)!=2: raise SystemExit(f'main-test conflicts {len(ms)}')
+          ours0,theirs0=ms[0].group(1),ms[0].group(2)
+          if 'self.rid=88' not in ours0: raise SystemExit('fixture anchor drifted')
+          rr0=ours0.replace('self.rid=88','self.rid=88;self.lock=\'a\'*64',1)
+          ours1,theirs1=ms[1].group(1),ms[1].group(2)
+          signed_line=[line for line in theirs1.splitlines(True) if 'def signed(' in line]
+          if len(signed_line)!=1: raise SystemExit('signed fixture drifted')
+          rr1=ours1.split(' def signed(',1)[0]+signed_line[0]
+          out=s[:ms[0].start()]+rr0+s[ms[0].end():ms[1].start()]+rr1+s[ms[1].end():]
+          if any(x in out for x in ('<<<<<<<','=======','>>>>>>>')): raise SystemExit('main test markers remain')
+          Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py').write_text(out)
+          PY
+          rm -rf recovery-debug-ccab
+          git diff --check
+      - name: Validate full composed control plane
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+      - name: Prove dual accepted custody
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
+          for x in ('nembra-capture-human-review-github-v2','tuyaDependencyLockSHA256','acceptedTuyaDependencyLockSHA256','NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256','NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256'):
+              if x not in s: raise SystemExit(f'missing {x}')
+          if 'run_installer(candidate_repo,source,device_file,dh,rv["tuyaDependencyLockSHA256"])' not in s: raise SystemExit('dual handoff absent')
+          PY
+      - name: Commit clean recovery and self-delete
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-final-go-lock-ccab-finalize.yml
+          git config user.name jonathangana131-lab; git config user.email jonathangana131@gmail.com
+          git add -A; git commit -m "fix(capture): bind reviewed Tuya lock on exact Final-GO"
+          test "$(git diff --name-only ccab1d76b2cfe7448f012d5df8e622cbaf8d371d...HEAD | sort)" = "$(printf '%s\n' 'scripts/ci/es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py' | sort)"
+          git push origin HEAD:recovery/v14-final-go-reviewed-lock-current-ccab-sol
