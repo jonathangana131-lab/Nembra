@@ -15,6 +15,7 @@ import hashlib
 import importlib.util
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,7 @@ from unittest import mock
 REPOSITORY = Path(__file__).resolve().parents[3]
 BOOTSTRAP = REPOSITORY / "Scripts" / "bootstrap_capture_tuya_sdk.sh"
 PROVENANCE = REPOSITORY / "Scripts" / "capture_tuya_private_input_provenance.py"
+PRIVATE_REVIEW = REPOSITORY / "Scripts" / "capture_private_review_commitment.py"
 SUBJECT_HELPER = REPOSITORY / "Scripts" / "capture_cocoapods_generated_build_subject.py"
 BUILD_GUARD = REPOSITORY / "Scripts" / "capture_tuya_private_input_build_guard.py"
 GENERATED_RELATIVE = Path("Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig")
@@ -47,9 +49,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         scripts = self.root / "Scripts"
         scripts.mkdir()
-        shutil.copy2(BOOTSTRAP, scripts / BOOTSTRAP.name)
-        shutil.copy2(PROVENANCE, scripts / PROVENANCE.name)
-        shutil.copy2(SUBJECT_HELPER, scripts / SUBJECT_HELPER.name)
+        for source in (BOOTSTRAP, PROVENANCE, PRIVATE_REVIEW, SUBJECT_HELPER):
+            shutil.copy2(source, scripts / source.name)
 
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
@@ -70,10 +71,12 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
 
         self.fake_bin = self.root / "fake-bin"
         self.fake_bin.mkdir()
+        self.pod_counter = self.root / "pod-invocations.txt"
         pod = self.fake_bin / "pod"
         pod.write_text(
             "#!/bin/bash\n"
             "set -euo pipefail\n"
+            f"printf 'pod\\n' >> {self.pod_counter!s}\n"
             "mkdir -p 'NembraCapture.xcworkspace' 'Pods/Target Support Files/Pods-NembraCapture'\n"
             "cat > Podfile.lock <<'EOF'\n"
             "PODS:\n"
@@ -112,6 +115,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         review_only: bool,
         accepted_lock: str | None = None,
         accepted_subject: str | None = None,
+        accepted_private: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = {
             "PATH": f"{self.fake_bin}:/usr/bin:/bin",
@@ -124,6 +128,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             environment["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"] = accepted_lock
         if accepted_subject is not None:
             environment["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"] = accepted_subject
+        if accepted_private is not None:
+            environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256"] = accepted_private
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review_only:
             command.append("--resolve-lock-for-review")
@@ -136,6 +142,13 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             stderr=subprocess.STDOUT,
             check=False,
         )
+
+    @staticmethod
+    def review_digest(output: str, label: str) -> str:
+        match = re.search(rf"{re.escape(label)}: ([0-9a-f]{{64}})", output)
+        if match is None:
+            raise AssertionError(f"missing {label} in review output:\n{output}")
+        return match.group(1)
 
     def generated_subject(self) -> str:
         result = subprocess.run(
@@ -167,11 +180,13 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
 
         accepted_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
         accepted_subject = self.generated_subject()
+        accepted_private = self.review_digest(review.stdout, "Private review commitment SHA-256")
         self.assertIn(f"Podfile.lock SHA-256: {accepted_lock}", review.stdout)
         self.assertIn(
             f"CocoaPods generated build subject SHA-256: {accepted_subject}",
             review.stdout,
         )
+        self.assertEqual(self.pod_counter.read_text(encoding="utf-8").splitlines(), ["pod"])
 
         missing_subject = self.run_bootstrap(
             "REVIEWED_GRAPH",
@@ -186,9 +201,15 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             review_only=False,
             accepted_lock=accepted_lock,
             accepted_subject=accepted_subject,
+            accepted_private=accepted_private,
         )
         self.assertEqual(accepted.returncode, 0, accepted.stdout)
         self.assertIn("Preaccepted CocoaPods generated build subject matched", accepted.stdout)
+        self.assertEqual(
+            self.pod_counter.read_text(encoding="utf-8").splitlines(),
+            ["pod"],
+            "normal field bootstrap must not rerun CocoaPods after review",
+        )
 
     def test_same_accepted_lock_rejects_changed_generated_build_graph(self) -> None:
         review = self.run_bootstrap("REVIEWED_GRAPH", review_only=True)
@@ -196,21 +217,40 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
 
         accepted_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
         accepted_subject = self.generated_subject()
+        accepted_private = self.review_digest(review.stdout, "Private review commitment SHA-256")
         reviewed_generated = (self.root / GENERATED_RELATIVE).read_bytes()
 
+        # Verification-only field bootstrap intentionally never gives CocoaPods a
+        # chance to regenerate ignored inputs. Model the attacker substitution
+        # directly while preserving the exact reviewed lock and private witness.
+        (self.root / GENERATED_RELATIVE).write_text(
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) SUBSTITUTED_GRAPH\n",
+            encoding="utf-8",
+        )
+        (self.root / "NembraCapture.xcworkspace/contents.xcworkspacedata").write_text(
+            "SUBSTITUTED_GRAPH\n",
+            encoding="utf-8",
+        )
+
         field = self.run_bootstrap(
-            "SUBSTITUTED_GRAPH",
+            "IGNORED_IN_NORMAL_MODE",
             review_only=False,
             accepted_lock=accepted_lock,
             accepted_subject=accepted_subject,
+            accepted_private=accepted_private,
         )
         field_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
         substituted_generated = (self.root / GENERATED_RELATIVE).read_bytes()
 
-        self.assertEqual(field_lock, accepted_lock, "fake pod must preserve the exact preaccepted Podfile.lock")
+        self.assertEqual(field_lock, accepted_lock)
         self.assertNotEqual(reviewed_generated, substituted_generated)
         self.assertNotEqual(field.returncode, 0, field.stdout)
-        self.assertIn("generated CocoaPods build inputs do not match", field.stdout)
+        self.assertIn("generated build inputs do not match", field.stdout)
+        self.assertEqual(
+            self.pod_counter.read_text(encoding="utf-8").splitlines(),
+            ["pod"],
+            "generated substitution must be rejected without a second CocoaPods execution",
+        )
 
     def test_build_window_snapshot_and_watch_set_cover_generated_graph(self) -> None:
         review = self.run_bootstrap("REVIEWED_GRAPH", review_only=True)
@@ -235,6 +275,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.assertIn(self.root / "LocalSecrets", watched)
         self.assertIn(self.private_sdk, watched)
         self.assertIn(self.private_identity, watched)
+        self.assertIn(inputs.private_provenance_record, watched)
+        self.assertIn(inputs.private_review_key, watched)
         self.assertIn(generated_file, watched)
         self.assertIn(workspace_file, watched)
 
