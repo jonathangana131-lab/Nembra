@@ -1,0 +1,51 @@
+name: Temporary V14 Private Review Test Name Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-generated-helper-test-name-sol
+    paths:
+      - .github/workflows/tmp-v14-private-review-test-name-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply exact stale test identifier repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            scripts/ci/tests/test_capture_private_review_commitment.py
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          )
+          for file in "${files[@]}"; do
+            test "$(grep -o 'SUBJECT_HELPER\.name' "$file" | wc -l | tr -d ' ')" = "1"
+            sed -i 's/SUBJECT_HELPER\.name/GENERATED.name/g' "$file"
+            ! grep -q 'SUBJECT_HELPER\.name' "$file"
+          done
+      - name: Prove repaired authority suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_private_review_commitment.py
+          python3 scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+      - name: Commit proven test repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/ci/tests/test_capture_private_review_commitment.py \
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          git diff --cached --check
+          git commit -m 'Capture: repair stale generated-helper test identifier'
+          git push origin HEAD:repair/v14-private-review-generated-helper-test-name-sol
