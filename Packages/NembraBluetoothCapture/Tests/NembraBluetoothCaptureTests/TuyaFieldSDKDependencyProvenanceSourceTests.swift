@@ -20,7 +20,7 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
 
         #expect(script.contains("pod install --repo-update"))
         #expect(!script.contains("\npod update\n"))
-        #expect(script.contains("[[ -f Podfile.lock ]] || {"))
+        #expect(script.contains("[[ ! -f Podfile.lock ]]"))
         #expect(script.contains("ThingSmartHomeKit (7.8.0)"))
         #expect(script.contains("ThingSmartBusinessExtensionKit (7.8.0)"))
     }
