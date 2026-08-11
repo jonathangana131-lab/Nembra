@@ -1,0 +1,172 @@
+name: Capture Signed Origin APFS Mmap Freeze
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py
+      - scripts/ci/tests/test_capture_signed_app_unmount_freeze_structured_credentials.py
+      - scripts/ci/tests/test_capture_signed_app_unmount_freeze_minimal_groups.py
+      - scripts/ci/tests/test_capture_signed_app_apfs_mmap_freeze.py
+      - .github/workflows/capture-signed-origin-apfs-mmap-freeze.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-signed-origin-apfs-mmap-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apfs-mmap-freeze:
+    name: Prove APFS freeze against escaped shared mmap
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind exact validation child to structured-credential APFS parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          APFS_PARENT_SHA: 8519b1ec4fd0ab0de7bd77ef24eb4ee494c8ed71
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$APFS_PARENT_SHA" HEAD
+
+          actual_paths="$RUNNER_TEMP/nembra-apfs-mmap-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-apfs-mmap-expected.txt"
+          git diff --name-only "$APFS_PARENT_SHA"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-signed-origin-apfs-mmap-freeze.yml
+          scripts/ci/tests/test_capture_signed_app_apfs_mmap_freeze.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and inspect mmap witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-apfs-mmap-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
+            scripts/ci/tests/test_capture_signed_app_apfs_mmap_freeze.py
+          /usr/bin/python3 - <<'PY'
+          import inspect
+          from pathlib import Path
+          import subprocess
+
+          parameters = inspect.signature(subprocess.Popen).parameters
+          required = {"user", "group", "extra_groups"}
+          missing = sorted(required.difference(parameters))
+          if missing:
+              raise SystemExit(f"runner Python lacks structured POSIX credential arguments: {missing}")
+
+          source = Path("scripts/ci/tests/test_capture_signed_app_apfs_mmap_freeze.py").read_text()
+          required_markers = (
+              "mmap.ACCESS_WRITE",
+              "os.close(fd)",
+              "writerRetainedFileDescriptor\": False",
+              "writerRetainedSharedWritableMapping\": True",
+              '["/usr/bin/hdiutil", "info", "-plist"]',
+              'first_classification == "AMBIGUOUS"',
+              'helper.hdiutil_attach(image, mountpoint, readonly=True)',
+          )
+          for marker in required_markers:
+              if marker not in source:
+                  raise SystemExit(f"mmap witness missing required contract marker: {marker}")
+          if "preexec_fn=" in source:
+              raise SystemExit("mmap witness reintroduced custom Python preexec credentials")
+          print("NEMBRA_APFS_MMAP_SOURCE_CONTRACT=1")
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Exercise escaped mapping across non-forced detach
+        shell: bash
+        run: |
+          set -uo pipefail
+          output_file="$RUNNER_TEMP/nembra-apfs-mmap-output.txt"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_apfs_mmap_freeze.py \
+            >"$output_file" 2>&1
+          rc=$?
+          set -e
+          cat "$output_file"
+          if [[ "$rc" != 0 ]]; then
+            diagnostic="$(tail -n 200 "$output_file" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=APFS mmap freeze validation failed::%s\n' "$diagnostic"
+            exit "$rc"
+          fi
+
+          /usr/bin/python3 - "$output_file" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          marker = "NEMBRA_APFS_MMAP_FREEZE_JSON="
+          records = [
+              line[len(marker):]
+              for line in Path(sys.argv[1]).read_text().splitlines()
+              if line.startswith(marker)
+          ]
+          if len(records) != 1:
+              raise SystemExit(f"expected one APFS mmap evidence record, found {len(records)}")
+          e = json.loads(records[0])
+          classification = e.get("firstDetachClassification")
+          post = str(e.get("postDetachResult", ""))
+          detached_post = (
+              classification == "DETACHED"
+              and (
+                  post == "POSTDETACH_OK"
+                  or post.startswith("POSTDETACH_ERR:")
+                  or post.startswith("POSTDETACH_SIGNAL:")
+              )
+          )
+          required = (
+              e.get("normalGroupsContainCapability") is False
+              and e.get("writerRetainedFileDescriptor") is False
+              and e.get("writerRetainedSharedWritableMapping") is True
+              and e.get("writerSupplementaryGroups") == [e.get("capabilityGID")]
+              and e.get("ordinaryAttackSupplementaryGroups") == []
+              and e.get("freshPathAttackReturnCode") != 0
+              and e.get("postDetachPersisted") is False
+              and isinstance(e.get("rootReadonlyWriteErrno"), int)
+              and e.get("rootReadonlyWriteErrno") != 0
+              and e.get("formerCapabilityReadonlyReturnCode") != 0
+              and e.get("physicalAuthorityCreated") is False
+              and (classification == "BUSY" or detached_post)
+          )
+          if not required:
+              raise SystemExit(f"APFS mmap evidence failed semantic checks: {e}")
+          print("NEMBRA_APFS_MMAP_FREEZE_ACCEPTED=1")
+          PY
+
+      - name: Retain APFS mmap diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-apfs-mmap-${{ github.event.pull_request.number || github.run_id }}
+          path: ${{ runner.temp }}/nembra-apfs-mmap-output.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          APFS_PARENT_SHA: 8519b1ec4fd0ab0de7bd77ef24eb4ee494c8ed71
+        run: |
+          set -euo pipefail
+          git diff --check "$APFS_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
