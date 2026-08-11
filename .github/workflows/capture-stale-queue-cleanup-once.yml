@@ -1,0 +1,139 @@
+name: Capture Stale Queue Cleanup Once
+
+on:
+  push:
+    branches:
+      - ops/v14-capture-stale-queue-cleanup-sol
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FINAL_BRANCH: agent/v14-capture-live-main-visual-acceptance-sol
+      FINAL_SHA: fd1ba71c3f3df0f2a0a78b445138c85cb05c1181
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Cancel only mechanically stale queued acceptance runs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          owner="${GITHUB_REPOSITORY%%/*}"
+          accept='Accept: application/vnd.github+json'
+          version='X-GitHub-Api-Version: 2022-11-28'
+          auth="Authorization: Bearer ${GH_TOKEN}"
+
+          is_target_workflow() {
+            case "$1" in
+              'Capture Main Selective Graft Diagnostic'|'Capture Standalone Visual Evidence'|'Capture Field Build Provenance'|'Xcode 27 PR Exact-Head QA') return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          cancel_run() {
+            local id="$1" reason="$2"
+            echo "Cancelling stale queued run ${id}: ${reason}"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "$accept" \
+              --header "$version" \
+              --header "$auth" \
+              "${api}/actions/runs/${id}/cancel" >/dev/null
+          }
+
+          queued_before="$(curl --fail --silent --show-error \
+            --header "$accept" --header "$version" --header "$auth" \
+            "${api}/actions/runs?status=queued&per_page=100")"
+          echo "Queued runs before cleanup: $(jq -r '.total_count' <<<"$queued_before")"
+
+          cancelled=0
+          preserved=0
+          while IFS=$'\t' read -r id sha branch pr_number workflow_name; do
+            [[ -n "$id" ]] || continue
+            is_target_workflow "$workflow_name" || continue
+
+            if [[ "$sha" == "$FINAL_SHA" ]]; then
+              echo "Preserving final exact-head run ${id} (${workflow_name})"
+              preserved=$((preserved + 1))
+              continue
+            fi
+
+            if [[ "$branch" == "$FINAL_BRANCH" ]]; then
+              cancel_run "$id" "obsolete ancestor of final ${FINAL_SHA}"
+              cancelled=$((cancelled + 1))
+              continue
+            fi
+
+            if [[ -n "$pr_number" ]]; then
+              pr="$(curl --fail --silent --show-error \
+                --header "$accept" --header "$version" --header "$auth" \
+                "${api}/pulls/${pr_number}")"
+              pr_state="$(jq -r '.state' <<<"$pr")"
+              pr_head="$(jq -r '.head.sha' <<<"$pr")"
+              if [[ "$pr_state" == 'closed' ]]; then
+                cancel_run "$id" "PR #${pr_number} is closed"
+                cancelled=$((cancelled + 1))
+              elif [[ "$pr_state" == 'open' && "$pr_head" != "$sha" ]]; then
+                cancel_run "$id" "PR #${pr_number} advanced to ${pr_head}"
+                cancelled=$((cancelled + 1))
+              else
+                echo "Preserving current open-PR run ${id} for #${pr_number}"
+                preserved=$((preserved + 1))
+              fi
+              continue
+            fi
+
+            prs="$(curl --fail --silent --show-error --get \
+              --header "$accept" --header "$version" --header "$auth" \
+              --data-urlencode 'state=all' \
+              --data-urlencode "head=${owner}:${branch}" \
+              "${api}/pulls")"
+            pr_count="$(jq 'length' <<<"$prs")"
+            if (( pr_count == 0 )); then
+              echo "Preserving unassociated run ${id}; no PR evidence makes cancellation unsafe"
+              preserved=$((preserved + 1))
+              continue
+            fi
+
+            current_open_count="$(jq --arg sha "$sha" '[.[] | select(.state == "open" and .head.sha == $sha)] | length' <<<"$prs")"
+            open_count="$(jq '[.[] | select(.state == "open")] | length' <<<"$prs")"
+            if (( current_open_count > 0 )); then
+              echo "Preserving current open-PR run ${id} on ${branch}"
+              preserved=$((preserved + 1))
+            elif (( open_count > 0 )); then
+              cancel_run "$id" "open PR on ${branch} has advanced beyond ${sha}"
+              cancelled=$((cancelled + 1))
+            else
+              cancel_run "$id" "all PRs for ${branch} are closed"
+              cancelled=$((cancelled + 1))
+            fi
+          done < <(jq -r '.workflow_runs[] | [.id, .head_sha, .head_branch, (.pull_requests[0].number // ""), .name] | @tsv' <<<"$queued_before")
+
+          echo "Cancelled stale runs: ${cancelled}"
+          echo "Preserved target-workflow runs: ${preserved}"
+          sleep 3
+          queued_after="$(curl --fail --silent --show-error \
+            --header "$accept" --header "$version" --header "$auth" \
+            "${api}/actions/runs?status=queued&per_page=100")"
+          echo "Queued runs after cleanup request: $(jq -r '.total_count' <<<"$queued_after")"
+
+          # Final acceptance must remain queued/running/completed, never cancelled by this job.
+          for run_id in 31451423317 31451423323 31451423338 31451423322; do
+            state="$(curl --fail --silent --show-error \
+              --header "$accept" --header "$version" --header "$auth" \
+              "${api}/actions/runs/${run_id}" | jq -r '.status + "/" + (.conclusion // "none")')"
+            case "$state" in
+              cancelled/*|completed/cancelled)
+                echo "ERROR: final exact-head run ${run_id} was cancelled" >&2
+                exit 1
+                ;;
+            esac
+            echo "Final exact-head run ${run_id}: ${state}"
+          done
