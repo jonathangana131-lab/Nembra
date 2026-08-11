@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070500-gos93-build-authority-helper-seam",
+  "type": "FINDING",
+  "workerId": "sol-20260811-gos93",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Independent read-only adversarial inspection of Capture #2805 exact current head cadeac44227af5f5c99bd19fd76de0c2138b2f94 found a separate build-side execution-authority seam that is not closed by pinning only capture_private_review_commitment.py. Scripts/capture_tuya_private_input_build_guard.py still executes capture_tuya_private_input_provenance.py and capture_cocoapods_generated_build_subject.py from mutable neighboring worktree paths at module import via _load_neighbor_module(). Those modules control private-input build_record/verify_record/generation_snapshot/_stat_identity and generated build_subject; a same-UID substitution before guard launch can therefore supply admission semantics before the pinned private-review verifier runs. The shell bootstrap likewise launches the provenance/generated helpers by mutable pathname. Open-PR search found no current dedicated lane explicitly owning this exact build-side provenance/generated-helper execution subject; #2775 pins generated-helper execution only in Final-GO control, not this build-side guard. Reconciliation should import this as a distinct Capture P0 adversarial/repair dependency unless an equivalent active lineage is discovered. No production branch was touched; PHYSICAL remains NO-GO.",
+  "createdAt": "2026-08-11T07:05:00Z",
+  "data": {
+    "feature": "Nembra Capture",
+    "sourcePR": 2805,
+    "sourceHead": "cadeac44227af5f5c99bd19fd76de0c2138b2f94",
+    "affected": [
+      "Scripts/capture_tuya_private_input_build_guard.py",
+      "Scripts/bootstrap_capture_tuya_sdk.sh",
+      "Scripts/capture_tuya_private_input_provenance.py",
+      "Scripts/capture_cocoapods_generated_build_subject.py"
+    ],
+    "relatedControlPR": 2775,
+    "classification": "BUILD_SIDE_EXECUTION_AUTHORITY_GAP",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
