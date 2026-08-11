@@ -12,8 +12,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
-import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -43,6 +43,7 @@ GENERATED_ACCEPTANCE_WORKFLOWS = (
     (VNODE_WORKFLOW, VNODE_WORKFLOW_PATH),
 )
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+BASE_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"
 
 # These child paths are part of the external physical-authorization control plane.
 CHILD_AUTHORITY_PATHS = (
@@ -54,6 +55,7 @@ CHILD_AUTHORITY_PATHS = (
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py",
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py",
     "scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py",
+    "scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py",
 )
 PARENT_PINNED_PATHS = (
     "scripts/ci/es80_authenticated_stationary_final_go.py",
@@ -76,12 +78,41 @@ class GeneratedSubjectGoError(RuntimeError):
 
 
 def _load_base_module():
-    path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")
-    spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)
-    if spec is None or spec.loader is None:
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    root = Path(__file__).resolve().parents[2]
+    environment = dict(os.environ)
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    try:
+        accepted_oid = subprocess.check_output(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", f"HEAD:{BASE_MODULE_PATH}"],
+            env=environment,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip().lower()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git identity unavailable") from error
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_oid):
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob identity is invalid")
+    try:
+        payload = subprocess.check_output(
+            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", accepted_oid],
+            env=environment,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob unavailable") from error
+    if not payload or len(payload) > 2 * 1024 * 1024:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob has invalid bounded bytes")
+    if _git_blob_oid(payload, accepted_oid) != accepted_oid:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent execution bytes do not match accepted Git blob")
+
+    module = types.ModuleType("nembra_authenticated_stationary_final_go")
+    module.__file__ = f"HEAD:{BASE_MODULE_PATH}"
+    module.__package__ = ""
+    try:
+        code = compile(payload, module.__file__, "exec", dont_inherit=True)
+        exec(code, module.__dict__)
+    except Exception as error:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob could not be evaluated") from error
     return module
 
 
