@@ -16,10 +16,10 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(body.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
         #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
         #expect(body.contains("buildIdentity.isAuthoritativeFieldBuild"))
-        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
+        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
         #expect(body.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
         #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
-        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to Capture\" : \"View locked preflight\")"))
+        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
 
         let heroUse = try #require(body.range(of: "rootHero\n                        buildAuthorityStatus\n                        accountSetupPanel"))
         #expect(heroUse.lowerBound < body.endIndex)
