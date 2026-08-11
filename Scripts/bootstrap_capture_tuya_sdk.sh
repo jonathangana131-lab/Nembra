@@ -112,6 +112,32 @@ EOF
   exit 8
 fi
 
+# Review mode is the only authority allowed to create the local private-input
+# witness. A normal field bootstrap must prove that the exact already-reviewed
+# lock + private inputs still match before CocoaPods is allowed to execute any
+# local podspec, and it must never overwrite that witness with then-current bytes.
+if [[ "$REVIEW_ONLY" == "0" ]]; then
+  [[ -f "$REPO_ROOT/Podfile.lock" ]] || {
+    echo "ERROR: reviewed Podfile.lock is missing; create a new review candidate before field bootstrap." >&2
+    exit 10
+  }
+  [[ -f "$DEPENDENCY_PROVENANCE" ]] || {
+    echo "ERROR: reviewed private Tuya dependency provenance record is missing; create a new review candidate before field bootstrap." >&2
+    exit 12
+  }
+  if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" verify \
+    --lockfile "$REPO_ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    --record "$DEPENDENCY_PROVENANCE"
+  then
+    echo "ERROR: current private Tuya inputs do not match the reviewed pre-CocoaPods witness. Stop and create a new review candidate." >&2
+    exit 12
+  fi
+fi
+
 printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
 # `pod install` preserves an existing Podfile.lock instead of silently upgrading
 # resolved transitive SDK inputs. `--repo-update` refreshes specs only; the two
@@ -143,19 +169,34 @@ do
   fi
 done
 
-# Snapshot every ignored private input that can materially change the field
-# build. The helper writes only SHA-256 fingerprints + public reviewed versions;
-# it never serializes credentials, SDK bytes, or device identifiers.
-if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
-  --lockfile "$REPO_ROOT/Podfile.lock" \
-  --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
-  --security-build "$TUYA_PRIVATE_SDK/Build" \
-  --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
-  --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-  --record "$DEPENDENCY_PROVENANCE"
-then
-  echo "ERROR: exact private Tuya build-input provenance could not be snapshotted." >&2
-  exit 12
+# Review mode creates the private witness exactly once for the candidate under
+# review. Normal field admission may only verify that immutable witness, both
+# before and after CocoaPods, so a stable substituted private generation cannot
+# make itself authoritative by rewriting the record.
+if [[ "$REVIEW_ONLY" == "1" ]]; then
+  if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
+    --lockfile "$REPO_ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    --record "$DEPENDENCY_PROVENANCE"
+  then
+    echo "ERROR: exact private Tuya build-input provenance could not be snapshotted for review." >&2
+    exit 12
+  fi
+else
+  if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" verify \
+    --lockfile "$REPO_ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    --record "$DEPENDENCY_PROVENANCE"
+  then
+    echo "ERROR: private Tuya inputs changed across CocoaPods resolution; stop before xcodebuild/install and create a new review candidate." >&2
+    exit 12
+  fi
 fi
 
 LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
