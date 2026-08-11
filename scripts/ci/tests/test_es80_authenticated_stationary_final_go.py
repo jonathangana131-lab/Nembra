@@ -71,6 +71,11 @@ class T(unittest.TestCase):
   calls=[]
   def run(r,s,d):calls.append(s);return self.f.inst(r,s,d)
   i=self.f.ids['Capture Field Build Provenance'];self.f.map[f'/actions/runs/{i}']['conclusion']='cancelled';self.no(lambda:self.f.build(run_installer=run));self.assertEqual(calls,[])
+ def test_post_install_revalidation_rejects_control_plane_drift(self):
+  calls=0
+  def moving(repo,pr,run,get):
+   nonlocal calls;calls+=1;x=self.f.control(repo,pr,run,get);return x if calls==1 else {**x,"sourceCommitSHA":"f"*40}
+  self.no(lambda:self.f.build(control_authority=moving))
  def test_post_install_revalidation_rejects_pr_artifact_review_or_device_drift(self):
   pull=f'/pulls/{self.f.pr}';review=f'/pulls/{self.f.pr}/reviews/{self.f.rid}';artifact=f'/actions/artifacts/{self.f.aid}'
   def move_pr(r,s,d):x=self.f.inst(r,s,d);self.f.map[pull]['head']['sha']='1'*40;return x

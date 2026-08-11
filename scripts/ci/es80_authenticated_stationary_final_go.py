@@ -210,9 +210,9 @@ def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_rep
         if not isinstance(value,str) or not value: raise GoError(f"retained signed artifact missing {key}")
     if not HEX64.fullmatch(signed["tuyaDependencyLockSHA256"]) or not HEX64.fullmatch(signed["retainedIPASHA256"]) or not HEX64.fullmatch(signed["retainedAppTreeSHA256"]) or not HEX64.fullmatch(signed["embeddedProvisioningProfileSHA256"]): raise GoError("retained signed artifact digest invalid")
 
-    post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file); post_signed=reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
+    post_control=control_authority(authority_repo,authority_pr,authority_run,get); post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file); post_signed=reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
     stable_pr=("number","headSHA","headBranch","base")
-    if any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh or post_signed!=signed:
+    if post_control!=control or any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh or post_signed!=signed:
         raise GoError("GO authority changed during private install; re-run from fresh exact evidence")
     ps,ws,vs,rv,cs,dh=post_ps,post_ws,post_vs,post_rv,post_cs,post_dh
 
