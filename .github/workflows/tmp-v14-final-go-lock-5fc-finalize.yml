@@ -1,0 +1,90 @@
+name: TEMP V14 Final-GO Lock 5fc Finalizer
+on:
+  push:
+    branches: [recovery/v14-final-go-reviewed-lock-current-5fc-sol]
+permissions:
+  contents: write
+jobs:
+  finalize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-final-go-reviewed-lock-current-5fc-sol
+          fetch-depth: 0
+      - name: Verify exact evidence parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "c52d5c510b99862b2c94c6a3b62610a34ece2f4e"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-v14-final-go-lock-5fc-finalize.yml"
+      - name: Materialize semantic composition
+        run: |
+          set -euo pipefail
+          cp recovery-debug-5fc/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          issuer=Path('recovery-debug-5fc/es80_authenticated_stationary_final_go.py').read_text()
+          pattern=re.compile(r'<<<<<<< current-5fc\n(.*?)=======\n(.*?)>>>>>>> reviewed-lock-d841\n',re.S)
+          ms=list(pattern.finditer(issuer))
+          if len(ms)!=1: raise SystemExit(f'issuer conflicts={len(ms)}')
+          resolved='''    intended_device_digest=device_hash(device_path)
+              if not isinstance(accepted_lock_sha256,str) or not HEX64.fullmatch(accepted_lock_sha256) or accepted_lock_sha256!=accepted_lock_sha256.lower(): raise GoError("accepted Tuya dependency-lock digest is not canonical lowercase SHA-256")
+              return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":intended_device_digest,"NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256":accepted_lock_sha256}
+          '''.replace('              ','')
+          issuer=issuer[:ms[0].start()]+resolved+issuer[ms[0].end():]
+          if any(x in issuer for x in ('<<<<<<<','=======','>>>>>>>')): raise SystemExit('issuer marker remains')
+          Path('scripts/ci/es80_authenticated_stationary_final_go.py').write_text(issuer)
+
+          tests=Path('recovery-debug-5fc/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').read_text()
+          ms=list(pattern.finditer(tests))
+          if len(ms)!=2: raise SystemExit(f'custody conflicts={len(ms)}')
+          out=[]; pos=0
+          for i,m in enumerate(ms):
+              out.append(tests[pos:m.start()])
+              ours,theirs=m.group(1),m.group(2)
+              if i==0:
+                  out.append(ours+theirs)
+              else:
+                  old='GO.installer_environment(alias / "device")'
+                  if ours.count(old)!=1: raise SystemExit('symlink regression call drifted')
+                  out.append(ours.replace(old,'GO.installer_environment(alias / "device", "d" * 64)',1)+theirs)
+              pos=m.end()
+          out.append(tests[pos:]); tests=''.join(out)
+          if any(x in tests for x in ('<<<<<<<','=======','>>>>>>>')): raise SystemExit('custody marker remains')
+          Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').write_text(tests)
+          PY
+          rm -rf recovery-debug-5fc
+          git diff --check
+      - name: Validate composed control plane
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+      - name: Prove dual custody handoff
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
+          for marker in ('nembra-capture-human-review-github-v2','tuyaDependencyLockSHA256','acceptedTuyaDependencyLockSHA256','NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256','NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256','mainSHA'):
+              if marker not in s: raise SystemExit(f'missing marker: {marker}')
+          t=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').read_text()
+          for marker in ('NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256','NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256','test_installer_environment_rejects_symlinked_private_device_parent','test_noncanonical_tuya_lock_digest_is_rejected_before_installer'):
+              if marker not in t: raise SystemExit(f'missing regression: {marker}')
+          PY
+      - name: Commit clean three-file recovery and self-delete
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-final-go-lock-5fc-finalize.yml
+          git config user.name jonathangana131-lab
+          git config user.email jonathangana131@gmail.com
+          git add -A
+          git commit -m "fix(capture): compose reviewed Tuya lock on current Final-GO"
+          test "$(git diff --name-only 5fc7eb8f0eb08ae309e021ed4c8c3c62d543300c...HEAD | sort)" = "$(printf '%s\n' 'scripts/ci/es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py' | sort)"
+          git push origin HEAD:recovery/v14-final-go-reviewed-lock-current-5fc-sol
