@@ -8,7 +8,9 @@ struct TuyaCapturePrimaryLanguageSourceTests {
     func primaryLanguageBoundary() throws {
         let app = try read("NembraApp/App/NembraCaptureEntrypoint.swift")
         let primaryStart = try #require(app.range(of: "private var preflightPanel"))
-        let detailsStart = try #require(app.range(of: "private var engineeringDisclosure"))
+        let detailsStart = try #require(
+            app[primaryStart.upperBound...].range(of: "private var engineeringDisclosure")
+        )
         let primary = String(app[primaryStart.lowerBound..<detailsStart.lowerBound])
         let details = String(app[detailsStart.lowerBound...])
 
