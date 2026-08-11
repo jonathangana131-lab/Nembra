@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -14,6 +15,7 @@ GUARD_PATH = REPOSITORY / "Scripts/capture_tuya_private_input_build_guard.py"
 spec = importlib.util.spec_from_file_location("capture_build_guard", GUARD_PATH)
 assert spec is not None and spec.loader is not None
 guard = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = guard
 spec.loader.exec_module(guard)
 
 
