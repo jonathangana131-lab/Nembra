@@ -9,12 +9,12 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:36:30Z",
+  "lastHeartbeatAt": "2026-08-11T20:40:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-selected-xcode-tool-file-custody-sol-1316sx-20260811",
   "pr": 2988,
   "sourceSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
-  "currentHeadSHA": "cdd12ebc4a8603d4cf8cf28a3520c518fb9cd504",
+  "currentHeadSHA": "0f23ebe4aec1f69a9102d2d242a30d66de2e931e",
   "takeoverFromWorkerId": "sol-20260811-5e64go",
-  "checkpoint": "PR #2988 exact head cdd12eb advances three inherited authority contracts that had stale raw-xcrun expectations. New exact selected-tool custody gate is green on cdd12eb; full exact-head PR gate set is rerunning. Independent #2969 adversarial review requested. PHYSICAL NO-GO; #2955/private identity/Final-GO/physical truth remain blockers."
+  "checkpoint": "PR #2988 exact head 0f23ebe now mechanically requires exact selected xcodebuild/xctrace/devicectl file custody before first executable use, closing the last released review ordering requirement. All cdd12eb greens are ancestor-only; fresh exact-head gates must rerun. Independent review must attack 0f23ebe. PHYSICAL NO-GO; #2955/private identity/Final-GO/physical truth remain blockers."
 }
