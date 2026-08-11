@@ -324,6 +324,65 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardAccessibilityStoppedControlsUseTwoRows() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
+
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 4))
+
+        let walk = app.buttons["dashboard.mode.walk"]
+        let eco = app.buttons["dashboard.mode.eco"]
+        let drive = app.buttons["dashboard.mode.drive"]
+        let sport = app.buttons["dashboard.mode.sport"]
+        let light = app.buttons["dashboard.control.light"]
+        let lock = app.buttons["dashboard.control.lock"]
+        let modeButtons = [walk, eco, drive, sport]
+
+        for (index, button) in modeButtons.enumerated() {
+            assertMinimumTouchTarget(button, named: "AX mode \(index)")
+            assertContainedInAppWindow(button, in: app, named: "AX mode \(index)")
+        }
+        assertMinimumTouchTarget(light, named: "AX light")
+        assertMinimumTouchTarget(lock, named: "AX lock")
+        assertContainedInAppWindow(light, in: app, named: "AX light")
+        assertContainedInAppWindow(lock, in: app, named: "AX lock")
+
+        XCTAssertLessThan(
+            abs(walk.frame.midY - eco.frame.midY),
+            2,
+            "Walk and Eco must form the first AX mode row."
+        )
+        XCTAssertLessThan(
+            abs(drive.frame.midY - sport.frame.midY),
+            2,
+            "Drive and Sport must form the second AX mode row."
+        )
+        XCTAssertGreaterThan(
+            drive.frame.midY - walk.frame.midY,
+            20,
+            "The second AX mode row must be vertically distinct from the first."
+        )
+
+        let modeUnion = modeButtons.dropFirst().reduce(walk.frame) { partial, button in
+            partial.union(button.frame)
+        }
+        XCTAssertLessThanOrEqual(
+            modeUnion.width,
+            188,
+            "The AX mode-control composition must fit the 188 pt context rail. frame=\(modeUnion)"
+        )
+
+        let lowerControls = light.frame.union(lock.frame)
+        XCTAssertGreaterThan(
+            lowerControls.minY,
+            modeUnion.maxY,
+            "Light and lock must remain a separate lower stopped-control row at AX sizes."
+        )
+
+        keepScreenshot(named: "Dashboard AX Mode Grid Landscape")
+    }
+
+    @MainActor
     func testLandscapeDashboardLaunchPerformance() {
         // XCTest measures one warm-up plus five responsive launches. Hosted
         // CoreSimulator can spend about 60s resolving the first orientation idle
