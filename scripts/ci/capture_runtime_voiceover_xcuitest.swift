@@ -74,8 +74,9 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
 
         // Retain whatever VoiceOver actually spoke even when a strict
         // moveForward() call throws. The throw stays fail-closed. The same
-        // bounded transcript is also mirrored to the XCTest/job log so an
-        // artifact-service outage cannot erase the only useful red diagnostic.
+        // transcript is mirrored to the XCTest/job log with a true 16 KiB
+        // UTF-8 byte ceiling so non-ASCII speech cannot silently exceed the
+        // evidence bound advertised by this runtime contract.
         defer {
             let retainedTranscript = utterances.enumerated()
                 .map { "\($0.offset): \($0.element)" }
@@ -85,10 +86,25 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
 
-            let retainedLogPrefix = retainedTranscript.prefix(16_384)
+            let retainedLogByteLimit = 16 * 1024
+            let retainedTranscriptByteCount = retainedTranscript.utf8.count
+            var retainedLogPrefix = ""
+            retainedLogPrefix.reserveCapacity(
+                min(retainedTranscript.count, retainedLogByteLimit)
+            )
+            var retainedLogByteCount = 0
+            for character in retainedTranscript {
+                let characterByteCount = String(character).utf8.count
+                guard retainedLogByteCount + characterByteCount <= retainedLogByteLimit else {
+                    break
+                }
+                retainedLogPrefix.append(character)
+                retainedLogByteCount += characterByteCount
+            }
+
             print("NEMBRA_CAPTURE_VOICEOVER_TRANSCRIPT_BEGIN")
             print(retainedLogPrefix)
-            if retainedLogPrefix.count < retainedTranscript.count {
+            if retainedLogByteCount < retainedTranscriptByteCount {
                 print("NEMBRA_CAPTURE_VOICEOVER_TRANSCRIPT_TRUNCATED")
             }
             print("NEMBRA_CAPTURE_VOICEOVER_TRANSCRIPT_END")
