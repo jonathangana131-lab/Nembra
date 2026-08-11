@@ -27,6 +27,7 @@ OWNER = "jonathangana131-lab"
 PARENT_BRANCH = "control/v14-auth-stationary-final-go-sol"
 PARENT_SOURCE_COMMIT = "3fdd32551831c3469e0853ddcee8fa828d38b87b"
 PARENT_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"
+PARENT_MODULE_BLOB_OID = "b0664c734004c2265b05d23ec58756806ff62f2c"
 WORKFLOW_NAME = "Capture Authenticated Stationary Generated Subject Final GO"
 WORKFLOW_PATH = ".github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml"
 REVIEW_AUTHORITY = "nembra-capture-human-review-github-v3"
@@ -82,20 +83,12 @@ def _parent_git_environment() -> dict[str, str]:
     return {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
 
 
-def _accepted_parent_module_bytes(root: Path, source: str) -> bytes:
-    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source):
-        raise GeneratedSubjectGoError("accepted parent source identity is invalid")
+def _accepted_parent_module_bytes(root: Path, blob_oid: str) -> bytes:
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", blob_oid):
+        raise GeneratedSubjectGoError("accepted parent module Git blob identity is invalid")
     try:
-        accepted_oid = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{source}:{PARENT_MODULE_PATH}"],
-            check=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=_parent_git_environment(),
-        ).stdout.strip().lower()
         payload = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", accepted_oid],
+            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", blob_oid],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -112,11 +105,10 @@ def _accepted_parent_module_bytes(root: Path, source: str) -> bytes:
     except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
         raise GeneratedSubjectGoError("accepted parent Final-GO Git custody failed") from error
     if (
-        not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_oid)
-        or not payload
+        not payload
         or len(payload) > 4 * 1024 * 1024
-        or verified != accepted_oid
-        or _git_blob_oid(payload, accepted_oid) != accepted_oid
+        or verified != blob_oid
+        or _git_blob_oid(payload, blob_oid) != blob_oid
     ):
         raise GeneratedSubjectGoError("accepted parent Final-GO execution bytes failed Git identity verification")
     return payload
@@ -124,8 +116,8 @@ def _accepted_parent_module_bytes(root: Path, source: str) -> bytes:
 
 def _load_base_module():
     root = Path(__file__).resolve().parents[2]
-    payload = _accepted_parent_module_bytes(root, PARENT_SOURCE_COMMIT)
-    filename = f"git:{PARENT_SOURCE_COMMIT}:{PARENT_MODULE_PATH}"
+    payload = _accepted_parent_module_bytes(root, PARENT_MODULE_BLOB_OID)
+    filename = f"git-blob:{PARENT_MODULE_BLOB_OID}:{PARENT_MODULE_PATH}"
     module = types.ModuleType("nembra_authenticated_stationary_final_go")
     module.__file__ = str(root / PARENT_MODULE_PATH)
     module.__package__ = ""

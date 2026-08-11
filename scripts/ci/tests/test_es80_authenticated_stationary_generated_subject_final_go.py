@@ -19,7 +19,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 SOURCE = "1" * 40
-PARENT = "2" * 40
+PARENT = MODULE.PARENT_SOURCE_COMMIT
 MAIN = "3" * 40
 BLOB = "4" * 40
 DIGEST = "ab" * 32

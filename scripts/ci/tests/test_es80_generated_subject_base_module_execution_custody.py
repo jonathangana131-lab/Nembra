@@ -49,7 +49,7 @@ class GeneratedSubjectBaseModuleExecutionCustodyTests(unittest.TestCase):
                     self.fail("could not load R3 fixture")
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                module.PARENT_SOURCE_COMMIT = accepted_source
+                module.PARENT_MODULE_BLOB_OID = accepted_blob
                 loaded = module._load_base_module()
             finally:
                 sys.dont_write_bytecode = previous
