@@ -8,10 +8,10 @@ publication. The next writer invocation must not silently proceed while those
 hidden ``.nembra-private-stage-*`` bytes remain behind.
 
 Recovery itself is also an authority boundary. A same-UID adversary can create
-entries under the reserved ignored prefix. A safe recovery may remove a
-reserved non-directory path or fail closed, but it must not silently accept an
-unresolved reserved entry, follow a symlink, truncate a hard-linked unrelated
-file, or recursively delete an attacker-controlled directory tree.
+entries under the reserved ignored prefix. A safe recovery may remove only a
+narrow exact writer-shaped crash artifact; it must fail closed on ambiguous or
+unsafe reserved entries without following aliases, widening deletion authority,
+or recursively deleting attacker-controlled content.
 
 These tests use only dummy payloads and define logical retained-byte handling;
 they make no claim of secure physical-media erasure.
@@ -226,12 +226,68 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
             self.assertTrue(marker.is_file(), "recovery recursively deleted attacker-controlled reserved directory content")
             self.assertEqual(marker.read_bytes(), marker_payload)
 
+    def test_recovery_must_not_delete_malformed_reserved_regular_file(self) -> None:
+        writer = load_writer()
+        payload = b"same-uid-malformed-reserved-entry-must-survive"
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-malformed-orphan-") as temporary:
+            checkout = Path(temporary) / "repo"
+            checkout.mkdir(mode=0o700)
+            stage = checkout / f"{RESERVED_PREFIX}not-a-writer-name"
+            stage.write_bytes(payload)
+            stage.chmod(0o600)
+
+            failed_closed = run_recovery_invocation(writer, checkout)
+
+            self.assertTrue(failed_closed, "writer accepted a malformed reserved staging name")
+            self.assertTrue(stage.is_file(), "recovery deleted a malformed same-UID reserved regular file")
+            self.assertEqual(stage.read_bytes(), payload)
+
+    def test_recovery_must_not_delete_wrong_mode_reserved_regular_file(self) -> None:
+        writer = load_writer()
+        payload = b"same-uid-wrong-mode-reserved-entry-must-survive"
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-wrong-mode-orphan-") as temporary:
+            checkout = Path(temporary) / "repo"
+            checkout.mkdir(mode=0o700)
+            stage = checkout / canonical_spoof_name("d")
+            stage.write_bytes(payload)
+            stage.chmod(0o640)
+
+            failed_closed = run_recovery_invocation(writer, checkout)
+
+            self.assertTrue(failed_closed, "writer accepted reserved crash residue that was not mode 0600")
+            self.assertTrue(stage.is_file(), "recovery deleted a wrong-mode same-UID reserved regular file")
+            self.assertEqual(stage.read_bytes(), payload)
+            self.assertEqual(stat.S_IMODE(stage.stat().st_mode), 0o640)
+
+    def test_recovery_must_not_delete_oversized_reserved_regular_file(self) -> None:
+        writer = load_writer()
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-oversized-orphan-") as temporary:
+            checkout = Path(temporary) / "repo"
+            checkout.mkdir(mode=0o700)
+            stage = checkout / canonical_spoof_name("e")
+            oversized_length = writer._PRIVATE_STAGE_MAX_BYTES + 1
+            with stage.open("wb") as handle:
+                handle.truncate(oversized_length)
+            stage.chmod(0o600)
+
+            failed_closed = run_recovery_invocation(writer, checkout)
+
+            self.assertTrue(failed_closed, "writer accepted oversized reserved crash residue")
+            self.assertTrue(stage.is_file(), "recovery deleted an oversized same-UID reserved regular file")
+            self.assertEqual(stage.stat().st_size, oversized_length)
+
 
 _CASES = {
     "hard-exit": "test_next_invocation_cannot_leave_hard_exit_stage_credentials_hidden",
     "symlink": "test_recovery_cannot_follow_or_silently_ignore_reserved_symlink",
     "hardlink": "test_recovery_cannot_truncate_or_silently_ignore_reserved_hardlink",
     "directory": "test_recovery_must_fail_closed_on_reserved_nonempty_directory",
+    "malformed-name": "test_recovery_must_not_delete_malformed_reserved_regular_file",
+    "wrong-mode": "test_recovery_must_not_delete_wrong_mode_reserved_regular_file",
+    "oversized": "test_recovery_must_not_delete_oversized_reserved_regular_file",
 }
 
 
