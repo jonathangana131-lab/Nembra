@@ -14,8 +14,14 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         )
         let body = String(root)
 
+        #expect(body.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+        #expect(body.contains("dynamicTypeSize.isAccessibilitySize"))
         #expect(body.contains("NEMBRA CAPTURE"))
-        #expect(body.contains("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins."))
+        #expect(body.contains("Set up Capture"))
+        #expect(body.contains("Prepare the scooter link"))
+        #expect(body.contains("Bluetooth stays off until account and device checks are complete."))
+        #expect(body.contains("Nembra verifies the account and device again before any passive Bluetooth correlation begins."))
+        #expect(!body.contains("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins."))
         #expect(!body.contains("proves the account and scooter"))
         #expect(body.contains("Engineering details"))
         #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
@@ -24,6 +30,35 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(!body.contains("local_key"))
         #expect(!body.contains("No DP query"))
         #expect(!body.contains(".card()"))
+    }
+
+    @Test("Accessibility layout keeps account action ahead of verbose provider status")
+    func accessibilityLayoutPrioritizesPrimaryAction() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let account = String(
+            try section(
+                in: app,
+                from: "private var accountSection: some View",
+                to: "private var statusText: some View"
+            )
+        )
+
+        #expect(account.contains("if !isAccessibilityLayout"))
+        #expect(account.contains("TextField(\"Tuya Smart User Code\""))
+        #expect(account.contains("tuya.requestApproval()"))
+        #expect(account.contains("Label(\"Create approval QR\", systemImage: \"qrcode\")"))
+        #expect(account.contains("frame(maxWidth: .infinity, minHeight: 50)"))
+        #expect(account.contains("Bluetooth remains off."))
+        #expect(account.contains("if isAccessibilityLayout"))
+
+        let actionRange = try #require(account.range(of: "tuya.requestApproval()"))
+        let accessibilityStatusRange = try #require(
+            account.range(
+                of: "if isAccessibilityLayout {\n                        statusText",
+                range: actionRange.upperBound..<account.endIndex
+            )
+        )
+        #expect(actionRange.lowerBound < accessibilityStatusRange.lowerBound)
     }
 
     @Test("premium root preserves the real account and device authority path")
@@ -41,6 +76,9 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(body.contains("tuya.refreshDevices()"))
         #expect(body.contains("tuya.selectDevice(device)"))
         #expect(body.contains("SecureLinkView(device: device)"))
+        #expect(body.contains("if isAccessibilityLayout"))
+        #expect(body.contains("scooterSelectionButton(for: device)"))
+        #expect(body.contains("continueButton(for: device)"))
         #expect(app.contains("No DP query or scooter command is authorized by this surface."))
     }
 
