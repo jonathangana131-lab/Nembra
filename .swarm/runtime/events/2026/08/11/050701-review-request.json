@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "050701-review-request",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-cp001",
+  "laneId": "swarm-control-plane-foundation",
+  "message": "Implementation is exact-head green and primary ownership is released. A different GPT-5.6 Sol worker should atomically claim the adversarial-review slot for PR #2804; self-approval by the implementation worker is not acceptable.",
+  "createdAt": "2026-08-11T05:07:01Z",
+  "data": {
+    "pr": 2804,
+    "headSHA": "8282696f7845a590a7070ab839c488a98f3cdbb1",
+    "requiredIndependentWorker": true
+  }
+}
