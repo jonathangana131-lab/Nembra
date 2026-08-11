@@ -21,26 +21,52 @@ def load_helper():
     return module
 
 
+def make_subject(root: Path) -> tuple[Path, Path, Path, Path]:
+    pods = root / "Pods"
+    support = pods / "Target Support Files/Pods-NembraCapture"
+    workspace = root / "NembraCapture.xcworkspace"
+    support.mkdir(parents=True)
+    workspace.mkdir()
+    config = support / "Pods-NembraCapture.debug.xcconfig"
+    data = workspace / "contents.xcworkspacedata"
+    config.write_text("GRAPH=A\n", encoding="utf-8")
+    data.write_text("A\n", encoding="utf-8")
+    return pods, workspace, config, data
+
+
 class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
     def test_generated_build_bytes_change_subject_digest(self) -> None:
         module = load_helper()
         with tempfile.TemporaryDirectory(prefix="nembra-cocoapods-subject-") as temporary:
             root = Path(temporary)
-            pods = root / "Pods/Target Support Files/Pods-NembraCapture"
-            workspace = root / "NembraCapture.xcworkspace"
-            pods.mkdir(parents=True)
-            workspace.mkdir()
-            config = pods / "Pods-NembraCapture.debug.xcconfig"
-            data = workspace / "contents.xcworkspacedata"
-            config.write_text("GRAPH=A\n", encoding="utf-8")
-            data.write_text("A\n", encoding="utf-8")
-            reviewed = module.fingerprint_subject(root / "Pods", workspace)
+            pods, workspace, config, data = make_subject(root)
+            reviewed = module.fingerprint_subject(pods, workspace)
             config.write_text("GRAPH=B\n", encoding="utf-8")
             data.write_text("B\n", encoding="utf-8")
-            substituted = module.fingerprint_subject(root / "Pods", workspace)
+            substituted = module.fingerprint_subject(pods, workspace)
             self.assertRegex(reviewed, r"^[0-9a-f]{64}$")
             self.assertRegex(substituted, r"^[0-9a-f]{64}$")
             self.assertNotEqual(reviewed, substituted)
+
+    def test_external_symlink_requires_explicit_separately_guarded_root(self) -> None:
+        module = load_helper()
+        with tempfile.TemporaryDirectory(prefix="nembra-cocoapods-symlink-") as temporary:
+            root = Path(temporary)
+            pods, workspace, _, _ = make_subject(root)
+            private_root = root / "LocalSecrets/TuyaSDK"
+            private_root.mkdir(parents=True)
+            (private_root / "private.a").write_bytes(b"private")
+            (pods / "DevelopmentPod").symlink_to(private_root, target_is_directory=True)
+
+            with self.assertRaises(module.SubjectError):
+                module.fingerprint_subject(pods, workspace)
+
+            admitted = module.fingerprint_subject(
+                pods,
+                workspace,
+                separately_guarded_external_roots=(private_root,),
+            )
+            self.assertRegex(admitted, r"^[0-9a-f]{64}$")
 
     def test_bootstrap_binds_reviewed_generated_subject_before_field_build(self) -> None:
         source = BOOTSTRAP.read_text(encoding="utf-8")
@@ -52,6 +78,9 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.assertIn("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256", source)
         self.assertIn("--resolve-lock-for-review", source)
         self.assertIn("CocoaPods build subject SHA-256", source)
+        self.assertEqual(source.count("--separately-guarded-external-root"), 2)
+        self.assertIn('"$TUYA_PRIVATE_SDK"', source)
+        self.assertIn('"$TUYA_PRIVATE_IDENTITY"', source)
 
     def test_existing_xcodebuild_guard_owns_exact_preaccepted_generated_subject(self) -> None:
         source = BUILD_GUARD.read_text(encoding="utf-8")
@@ -72,15 +101,18 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.assertLess(xcodebuild, final_snapshot)
         self.assertLess(final_snapshot, expected_environment)
         self.assertIn("inputs.generated_workspace", source)
+        self.assertIn("separately_guarded_external_roots", source)
+        self.assertIn("self.security_podspec.parent", source)
+        self.assertIn("self.identity_podspec.parent", source)
         self.assertIn("field build inputs changed across the guarded xcodebuild window", source)
         self.assertIn("generated CocoaPods build subject lost preaccepted authority across xcodebuild", source)
 
-    def test_generated_helper_keeps_independent_mac_guard_available(self) -> None:
+    def test_helper_has_no_second_build_window_authority(self) -> None:
         source = HELPER.read_text(encoding="utf-8")
-        self.assertIn("kqueue", source)
-        self.assertIn("KQ_NOTE_WRITE", source)
-        self.assertIn("generated CocoaPods build subject changed while xcodebuild was running", source)
-        self.assertIn("subparsers.add_parser(\"guard\")", source)
+        self.assertNotIn("subprocess.Popen", source)
+        self.assertNotIn("select.kqueue", source)
+        self.assertIn("separately_guarded_external_roots", source)
+        self.assertIn("generated build symlink escapes", source)
 
 
 if __name__ == "__main__":
