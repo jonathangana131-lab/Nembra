@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "resource-claim",
+  "laneId": "dashboard-live-cockpit",
+  "slot": "ios_simulator",
+  "role": "resource",
+  "workerId": "sol-20260811-c7f1",
+  "leaseId": "iossim-c7f1-080700",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T08:07:00Z",
+  "lastHeartbeatAt": "2026-08-11T08:07:00Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 1995,
+  "resource": "IOS_SIMULATOR"
+}
