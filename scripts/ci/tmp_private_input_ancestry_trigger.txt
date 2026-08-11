@@ -1,2 +1,3 @@
 Temporary same-repository trigger only. Never merge.
 Retry after narrowing runner checkpoint to product/test files only.
+Retry again after base branch advanced to the narrowed checkpoint workflow.
