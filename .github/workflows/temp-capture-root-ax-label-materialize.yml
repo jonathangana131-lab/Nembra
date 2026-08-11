@@ -19,49 +19,68 @@ jobs:
           ref: repair/v14-capture-root-two-file-closure-sol-20260811
           fetch-depth: 1
 
-      - name: Make AX labels unambiguous and compact
+      - name: Materialize compact AX labels
+        shell: bash
         run: |
-          python3 - <<'PY'
+          set -euo pipefail
+          app='NembraApp/App/NembraCaptureEntrypoint.swift'
+          hierarchy='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift'
+          visual='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift'
+          surface='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift'
+
+          python3 - "$app" "$hierarchy" "$visual" "$surface" <<'PY'
           from pathlib import Path
+          import sys
 
-          paths = [
-              Path("NembraApp/App/NembraCaptureEntrypoint.swift"),
-              Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift"),
-              Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift"),
-              Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"),
-          ]
-          total = 0
-          for path in paths:
+          app, hierarchy, visual, surface = map(Path, sys.argv[1:])
+
+          app_text = app.read_text(encoding="utf-8")
+          old_lock = 'isAccessibilityLayout ? "Physical lock" : "Physical capture locked"'
+          new_lock = 'isAccessibilityLayout ? "Capture locked" : "Physical capture locked"'
+          if app_text.count(old_lock) != 1:
+              raise SystemExit(f"app AX lock marker count={app_text.count(old_lock)}")
+          app_text = app_text.replace(old_lock, new_lock, 1)
+
+          old_label = 'Label("Engineering details", systemImage: "wrench.and.screwdriver")'
+          new_label = 'Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")'
+          if app_text.count(old_label) != 1:
+              raise SystemExit(f"engineering label marker count={app_text.count(old_label)}")
+          app_text = app_text.replace(old_label, new_label, 1)
+
+          font_marker = new_label + '\n                .font(.subheadline.weight(.semibold))'
+          semantic_marker = font_marker + '\n                .accessibilityLabel("Engineering details")'
+          if app_text.count(font_marker) != 1:
+              raise SystemExit(f"engineering font marker count={app_text.count(font_marker)}")
+          app_text = app_text.replace(font_marker, semantic_marker, 1)
+          app.write_text(app_text, encoding="utf-8")
+
+          for path in (hierarchy, visual, surface):
               text = path.read_text(encoding="utf-8")
-              count = text.count("Physical lock")
-              if count < 1:
-                  raise SystemExit(f"{path}: Physical lock marker missing")
-              total += count
-              path.write_text(text.replace("Physical lock", "Capture locked"), encoding="utf-8")
-          if total < 4:
-              raise SystemExit(f"expected at least four Physical lock markers across app/contracts, found {total}")
-
-          app = paths[0]
-          text = app.read_text(encoding="utf-8")
-          old = '''            Label("Engineering details", systemImage: "wrench.and.screwdriver")
-                .font(.subheadline.weight(.semibold))'''
-          new = '''            Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")
-                .font(.subheadline.weight(.semibold))
-                .accessibilityLabel("Engineering details")'''
-          if text.count(old) != 1:
-              raise SystemExit("engineering disclosure label marker missing or ambiguous")
-          app.write_text(text.replace(old, new, 1), encoding="utf-8")
+              old = '\\"Physical lock\\"'
+              new = '\\"Capture locked\\"'
+              if old not in text:
+                  raise SystemExit(f"{path}: escaped AX lock contract marker missing")
+              path.write_text(text.replace(old, new), encoding="utf-8")
           PY
+
+          grep -F 'isAccessibilityLayout ? "Capture locked" : "Physical capture locked"' "$app"
+          grep -F '.accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")' "$app"
+          grep -F 'This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked.' "$app"
+          grep -F 'Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")' "$app"
+          grep -F '.accessibilityLabel("Engineering details")' "$app"
           git diff --check
 
-      - name: Commit exact AX repair and retire materializer
+      - name: Commit product bytes and retire materializer
+        shell: bash
         run: |
+          set -euo pipefail
           git rm .github/workflows/temp-capture-root-ax-label-materialize.yml
           git add NembraApp/App/NembraCaptureEntrypoint.swift \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
           git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 5
           git config user.name "nembra-capture-bot"
           git config user.email "capture@nembra.invalid"
           git commit -m "Capture: polish AX action-first labels"
