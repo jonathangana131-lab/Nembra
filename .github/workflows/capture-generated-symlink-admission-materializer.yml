@@ -1,0 +1,250 @@
+name: Capture Generated Symlink Admission Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-generated-build-symlink-admission-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact current #2708 parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=a2d77e179488cd5f0fb72f99eddc0af8faf4b04c
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          test "$(git diff --name-only "$parent" HEAD)" = '.github/workflows/capture-generated-symlink-admission-materializer.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize fail-closed generated symlink admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show 4126d5c16c1eca3c94c9a16db6b1988d58671aab:scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py > scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          helper=Path('Scripts/capture_cocoapods_build_subject.py')
+          s=helper.read_text()
+          marker='def tree_fingerprint(\n'
+          support='''def _stable_real_directory(path: Path, label: str) -> Path:
+              try:
+                  metadata = path.lstat()
+                  resolved = path.resolve(strict=True)
+                  resolved_metadata = resolved.lstat()
+              except OSError as error:
+                  raise BuildSubjectError(f"{label} is unavailable") from error
+              if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                  raise BuildSubjectError(f"{label} must be a real directory")
+              if not stat.S_ISDIR(resolved_metadata.st_mode):
+                  raise BuildSubjectError(f"{label} must resolve to a directory")
+              return resolved
+
+
+          def _is_within(candidate: Path, roots: tuple[Path, ...]) -> bool:
+              for root in roots:
+                  try:
+                      candidate.relative_to(root)
+                      return True
+                  except ValueError:
+                      continue
+              return False
+
+
+          def _admit_symlink(path: Path, trusted_roots: tuple[Path, ...]) -> str:
+              try:
+                  target = os.readlink(path)
+                  resolved = path.resolve(strict=True)
+              except OSError as error:
+                  raise BuildSubjectError("generated build symlink is broken or unavailable") from error
+              if not _is_within(resolved, trusted_roots):
+                  raise BuildSubjectError(
+                      "generated build symlink escapes the generated subject and externally-custodied roots"
+                  )
+              return target
+
+
+          '''
+          if s.count(marker)!=1 or 'def _admit_symlink(' in s: raise SystemExit('helper insertion anchor drift')
+          s=s.replace(marker,support+marker,1)
+          old='''def tree_fingerprint(
+              root: Path,
+              *,
+              excluded_relative_paths: frozenset[str] = frozenset(),
+          ) -> str:
+          '''
+          new='''def tree_fingerprint(
+              root: Path,
+              *,
+              excluded_relative_paths: frozenset[str] = frozenset(),
+              trusted_roots: tuple[Path, ...] = (),
+          ) -> str:
+          '''
+          if s.count(old)!=1: raise SystemExit('tree signature drift')
+          s=s.replace(old,new,1)
+          if s.count('                target = os.readlink(path)')!=2: raise SystemExit('symlink read anchors drift')
+          s=s.replace('                target = os.readlink(path)','                target = _admit_symlink(path, trusted_roots)')
+          old='''        if kind == "L" and not stat.S_ISLNK(current.st_mode):
+              raise BuildSubjectError("generated build tree type changed while fingerprinting")
+          '''
+          new='''        if kind == "L":
+              if not stat.S_ISLNK(current.st_mode):
+                  raise BuildSubjectError("generated build tree type changed while fingerprinting")
+              _admit_symlink(path, trusted_roots)
+          '''
+          if s.count(old)!=1: raise SystemExit('symlink revalidation anchor drift')
+          s=s.replace(old,new,1)
+          old='def build_subject_fingerprint(*, pods: Path, workspace: Path) -> str:\n    digest = hashlib.sha256()\n'
+          new='''def build_subject_fingerprint(
+              *,
+              pods: Path,
+              workspace: Path,
+              externally_custodied_roots: Iterable[Path] = (),
+          ) -> str:
+              pods_resolved = _stable_real_directory(pods, "Pods generated root")
+              workspace_resolved = _stable_real_directory(workspace, "workspace generated root")
+              external_resolved = tuple(
+                  _stable_real_directory(path, "externally-custodied build root")
+                  for path in externally_custodied_roots
+              )
+              trusted_roots = (pods_resolved, workspace_resolved, *external_resolved)
+              digest = hashlib.sha256()
+          '''
+          if s.count(old)!=1: raise SystemExit('subject signature drift')
+          s=s.replace(old,new,1)
+          old='''                excluded_relative_paths=_PODS_EXCLUDED_FROM_GRAPH,
+              )
+          '''
+          new='''                excluded_relative_paths=_PODS_EXCLUDED_FROM_GRAPH,
+                  trusted_roots=trusted_roots,
+              )
+          '''
+          if s.count(old)!=1: raise SystemExit('Pods fingerprint call drift')
+          s=s.replace(old,new,1)
+          old='    _feed(digest, bytes.fromhex(tree_fingerprint(workspace)))\n'
+          new='    _feed(digest, bytes.fromhex(tree_fingerprint(workspace, trusted_roots=trusted_roots)))\n'
+          if s.count(old)!=1: raise SystemExit('workspace fingerprint call drift')
+          s=s.replace(old,new,1)
+          old='''    fingerprint.add_argument("--workspace", required=True, type=Path)
+              read = sub.add_parser("read-attestation")
+          '''
+          new='''    fingerprint.add_argument("--workspace", required=True, type=Path)
+              fingerprint.add_argument(
+                  "--externally-custodied-root",
+                  action="append",
+                  default=[],
+                  type=Path,
+              )
+              read = sub.add_parser("read-attestation")
+          '''
+          if s.count(old)!=1: raise SystemExit('parser anchor drift')
+          s=s.replace(old,new,1)
+          old='            print(build_subject_fingerprint(pods=args.pods, workspace=args.workspace))\n'
+          new='''            print(
+                  build_subject_fingerprint(
+                      pods=args.pods,
+                      workspace=args.workspace,
+                      externally_custodied_roots=tuple(args.externally_custodied_root),
+                  )
+              )
+          '''
+          if s.count(old)!=1: raise SystemExit('main fingerprint call drift')
+          s=s.replace(old,new,1)
+          helper.write_text(s)
+
+          bootstrap=Path('Scripts/bootstrap_capture_tuya_sdk.sh')
+          b=bootstrap.read_text()
+          needle='''    --pods "$REPO_ROOT/Pods" \\
+              --workspace "$REPO_ROOT/NembraCapture.xcworkspace")"\n'''
+          replacement='''    --pods "$REPO_ROOT/Pods" \\
+              --workspace "$REPO_ROOT/NembraCapture.xcworkspace" \\
+              --externally-custodied-root "$TUYA_PRIVATE_SDK" \\
+              --externally-custodied-root "$TUYA_PRIVATE_IDENTITY")"\n'''
+          if b.count(needle)!=2: raise SystemExit(f'bootstrap fingerprint call count drift: {b.count(needle)}')
+          bootstrap.write_text(b.replace(needle,replacement))
+
+          guard=Path('Scripts/capture_tuya_private_input_build_guard.py')
+          g=guard.read_text()
+          old='''            observed_generated_sha256 = build_subject.build_subject_fingerprint(
+                  pods=self.generated_pods,
+                  workspace=self.generated_workspace,
+              )
+          '''
+          new='''            observed_generated_sha256 = build_subject.build_subject_fingerprint(
+                  pods=self.generated_pods,
+                  workspace=self.generated_workspace,
+                  externally_custodied_roots=(
+                      self.security_podspec.parent,
+                      self.identity_podspec.parent,
+                  ),
+              )
+          '''
+          if g.count(old)!=1: raise SystemExit('build guard fingerprint call drift')
+          guard.write_text(g.replace(old,new,1))
+
+          workflow=Path('.github/workflows/capture-cocoapods-build-subject-closure.yml')
+          w=workflow.read_text()
+          path_anchor='      - scripts/ci/tests/test_capture_cocoapods_generated_build_subject_closure.py\n'
+          if w.count(path_anchor)!=1: raise SystemExit('workflow path anchor drift')
+          w=w.replace(path_anchor,path_anchor+'      - scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py\n',1)
+          compile_anchor='            scripts/ci/tests/test_capture_cocoapods_generated_build_subject_closure.py\n'
+          if w.count(compile_anchor)!=1: raise SystemExit('workflow compile anchor drift')
+          w=w.replace(compile_anchor,compile_anchor+'            scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py\n',1)
+          run_anchor='          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject_closure.py\n'
+          if w.count(run_anchor)!=1: raise SystemExit('workflow run anchor drift')
+          w=w.replace(run_anchor,run_anchor+'          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py\n',1)
+          workflow.write_text(w)
+          PY
+
+      - name: Validate composed build-subject custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            Scripts/capture_cocoapods_build_subject.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_cocoapods_generated_build_subject_closure.py \
+            scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject_closure.py
+          python3 scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py
+          grep -Fq -- '--externally-custodied-root "$TUYA_PRIVATE_SDK"' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'self.security_podspec.parent' Scripts/capture_tuya_private_input_build_guard.py
+          grep -Fq 'generated build symlink escapes the generated subject and externally-custodied roots' Scripts/capture_cocoapods_build_subject.py
+          git diff --check
+
+      - name: Publish clean symlink-admission repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=a2d77e179488cd5f0fb72f99eddc0af8faf4b04c
+          git rm .github/workflows/capture-generated-symlink-admission-materializer.yml
+          git add \
+            .github/workflows/capture-cocoapods-build-subject-closure.yml \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            Scripts/capture_cocoapods_build_subject.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py
+          expected="$({ printf '%s\n' \
+            '.github/workflows/capture-cocoapods-build-subject-closure.yml' \
+            'Scripts/bootstrap_capture_tuya_sdk.sh' \
+            'Scripts/capture_cocoapods_build_subject.py' \
+            'Scripts/capture_tuya_private_input_build_guard.py' \
+            'scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py'; } | sort)"
+          actual="$(git diff --cached --name-only "$parent" | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name 'jonathangana131-lab'
+          git config user.email 'jonathangana131@gmail.com'
+          git commit -m 'fix(capture): close generated symlink target custody'
+          git push origin HEAD:repair/v14-capture-generated-build-symlink-admission-sol
