@@ -1,0 +1,27 @@
+name: Capture Accepted Git Source Authority QA
+
+on:
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_accepted_git_source_replace_ref.py
+      - .github/workflows/capture-accepted-git-source-replace-ref-qa.yml
+  push:
+    branches:
+      - redteam/v14-capture-accepted-git-replace-ref-sol
+
+permissions:
+  contents: read
+
+jobs:
+  accepted-git-source-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify accepted Git source authority
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_accepted_git_source_replace_ref.AcceptedGitSourceReplaceRefTests
