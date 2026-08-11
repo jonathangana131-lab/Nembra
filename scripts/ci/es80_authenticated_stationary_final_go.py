@@ -184,10 +184,16 @@ def git(repo:Path,*args):
 def candidate(repo:Path,source:str):
     root=repo.expanduser().resolve(strict=True)
     if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
-    bindings=(("installer",INSTALLER),("bootstrap",BOOTSTRAP),("runbook",RUNBOOK),("buildIdentity",IDENTITY)); blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in bindings}
+    authority_paths={"installer":INSTALLER,"bootstrap":BOOTSTRAP,"runbook":RUNBOOK,"buildIdentity":IDENTITY}
+    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in authority_paths.items()}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
-    paths={k:root/p for k,p in bindings}
+    paths={k:root/p for k,p in authority_paths.items()}
     if any(not p.is_file() or p.is_symlink() for p in paths.values()): raise GoError("candidate authority path is not a regular non-symlink file")
+    for key,relative in authority_paths.items():
+        verbose=git(root,"ls-files","-v","--",relative); tagged=git(root,"ls-files","-t","--",relative)
+        if not verbose or verbose[:1].islower() or tagged.startswith("S "): raise GoError("candidate authority path has suppressed index worktree tracking")
+        actual_blob=git(root,"hash-object","--no-filters","--",relative).lower()
+        if actual_blob!=blobs[key]: raise GoError("candidate authority worktree bytes differ from accepted Git blob")
     ins=paths["installer"].read_text(); boot=paths["bootstrap"].read_text(); rb=paths["runbook"].read_text(); ident=paths["buildIdentity"].read_text()
     lock_contract=("NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" in boot and "--resolve-lock-for-review" in boot and '[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]]' in boot and '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' in ins and "-- xcodebuild" in ins and ins.index('"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"')<ins.index("-- xcodebuild"))
     if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins or not lock_contract: raise GoError("candidate carries wrong/retired/incomplete field authority")
