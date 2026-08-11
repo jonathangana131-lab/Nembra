@@ -1,0 +1,95 @@
+name: TMP V14 Field Authority Convergence R2
+
+on:
+  push:
+    branches:
+      - integration/v14-field-authority-convergence-r2-sol-20260811
+    paths:
+      - scripts/ci/tmp_materialize_field_authority_convergence_r2.py
+      - .github/workflows/tmp-v14-field-authority-convergence-r2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/v14-field-authority-convergence-r2-sol-20260811
+          fetch-depth: 0
+
+      - name: Bind exact construction head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_field_authority_convergence_r2.py
+
+      - name: Compose reviewed build-authority ingredients
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_materialize_field_authority_convergence_r2.py
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_field_verified_git_payload.py \
+            scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py \
+            scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Replay verified Git execution-byte attack
+        shell: bash
+        run: /usr/bin/python3 scripts/ci/tests/test_capture_field_verified_git_payload.py
+
+      - name: Replay pre-arm raw-tree admission attack
+        shell: bash
+        run: /usr/bin/python3 scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+
+      - name: Preserve environment and compiler-window authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcode_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcrun_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_developer_dir_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+
+      - name: Preserve Git, provenance, and accepted-source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish durable convergence bytes
+        shell: bash
+        env:
+          BRANCH: integration/v14-field-authority-convergence-r2-sol-20260811
+        run: |
+          set -euo pipefail
+          git add Scripts/capture_tuya_private_input_build_guard.py
+          git add scripts/field/install_one_time_capture.command
+          git add scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+          git add .github/workflows/capture-field-untracked-prearm-injection-red-team.yml
+          git add scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          git add scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          git diff --cached --check
+          git config user.name "Nembra V14 Swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): converge current field build authority"
+          git push origin "HEAD:$BRANCH"
