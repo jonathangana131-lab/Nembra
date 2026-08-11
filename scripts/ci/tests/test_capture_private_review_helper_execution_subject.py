@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+import os
 from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 BOOTSTRAP = REPOSITORY / "Scripts/bootstrap_capture_tuya_sdk.sh"
 PROVENANCE = REPOSITORY / "Scripts/capture_tuya_private_input_provenance.py"
 PRIVATE_REVIEW = REPOSITORY / "Scripts/capture_tuya_private_input_review.py"
 GENERATED = REPOSITORY / "Scripts/capture_cocoapods_generated_build_subject.py"
+GUARD = REPOSITORY / "Scripts/capture_tuya_private_input_build_guard.py"
+AUTHORITY_ENV = "NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_INPUT_COMMITMENT"
 
 
 class PrivateReviewHelperExecutionSubjectTests(unittest.TestCase):
@@ -107,7 +113,7 @@ class PrivateReviewHelperExecutionSubjectTests(unittest.TestCase):
         if accepted_generated is not None:
             environment["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"] = accepted_generated
         if accepted_private is not None:
-            environment["NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_INPUT_COMMITMENT"] = accepted_private
+            environment[AUTHORITY_ENV] = accepted_private
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review_only:
             command.append("--resolve-lock-for-review")
@@ -173,6 +179,44 @@ class PrivateReviewHelperExecutionSubjectTests(unittest.TestCase):
             ["pod"],
             "unreviewed private generation reached a second CocoaPods execution before helper execution-subject rejection",
         )
+
+    def test_build_guard_cannot_import_substituted_neighbor_review_helper(self) -> None:
+        """Accepted build-guard code must not delegate private authority to mutable neighbor bytes."""
+        with tempfile.TemporaryDirectory(prefix="nembra-private-review-guard-neighbor-") as temporary:
+            root = Path(temporary)
+            scripts = root / "Scripts"
+            scripts.mkdir()
+            for source in (GUARD, PROVENANCE, GENERATED):
+                shutil.copy2(source, scripts / source.name)
+            (scripts / "capture_tuya_private_input_review.py").write_text(
+                "class PrivateReviewError(RuntimeError): pass\n"
+                "def verify_review_paths(**kwargs): return kwargs['accepted']\n",
+                encoding="utf-8",
+            )
+
+            module_path = scripts / GUARD.name
+            module_name = "nembra_private_review_guard_neighbor_redteam"
+            spec = importlib.util.spec_from_file_location(module_name, module_path)
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader if spec is not None else None)
+            guard = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = guard
+            assert spec is not None and spec.loader is not None
+            spec.loader.exec_module(guard)
+
+            inputs = guard.PrivateInputs(
+                lockfile=Path("/tmp/reviewed-lock"),
+                security_podspec=Path("/tmp/reviewed-security.podspec"),
+                security_build=Path("/tmp/reviewed-security-build"),
+                identity_podspec=Path("/tmp/runtime/NembraTuyaPrivateConfig.podspec"),
+                identity_sources=Path("/tmp/runtime/Sources/NembraTuyaPrivateConfig"),
+            )
+            with mock.patch.dict(os.environ, {AUTHORITY_ENV: "a" * 64}, clear=False):
+                with self.assertRaises(
+                    guard.BuildGuardError,
+                    msg="build guard imported a same-UID substituted private-review neighbor as authority",
+                ):
+                    guard._verify_accepted_private_input_subject(inputs)
 
 
 if __name__ == "__main__":
