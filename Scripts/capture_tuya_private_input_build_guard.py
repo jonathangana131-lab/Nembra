@@ -94,6 +94,7 @@ class KqueueVnodeBackend:
             "KQ_NOTE_DELETE",
             "KQ_NOTE_WRITE",
             "KQ_NOTE_EXTEND",
+            "KQ_NOTE_ATTRIB",
             "KQ_NOTE_LINK",
             "KQ_NOTE_RENAME",
             "KQ_NOTE_REVOKE",
@@ -108,6 +109,7 @@ class KqueueVnodeBackend:
             select.KQ_NOTE_DELETE
             | select.KQ_NOTE_WRITE
             | select.KQ_NOTE_EXTEND
+            | select.KQ_NOTE_ATTRIB
             | select.KQ_NOTE_LINK
             | select.KQ_NOTE_RENAME
             | select.KQ_NOTE_REVOKE
