@@ -4,14 +4,6 @@ on:
   push:
     branches:
       - redteam/v14-private-identity-failed-bootstrap-admission-sol-54c8boot
-  pull_request:
-    paths:
-      - Scripts/provision_capture_tuya_identity_writer.py
-      - Scripts/provision_capture_tuya_identity.sh
-      - Scripts/bootstrap_capture_tuya_sdk.sh
-      - scripts/field/install_one_time_capture.command
-      - scripts/ci/tests/test_capture_private_identity_failed_bootstrap_admission_red_team.py
-      - .github/workflows/capture-private-identity-failed-bootstrap-admission-redteam.yml
 
 permissions:
   contents: read
@@ -20,27 +12,40 @@ jobs:
   reject-failed-private-identity-bootstrap-admission:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      REDTEAM_BASE_SHA: 462d4d3862e48af8aa2582733a7c2cf011075b30
+      TARGET_SHA: 1834a39ac44e09cf12426cf28cb95ed3c008e9a2
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 40
+          ref: ${{ github.sha }}
+          fetch-depth: 80
 
-      - name: Bind diagnostic to exact clean #2944 candidate lineage
+      - name: Bind diagnostic branch and capture witness
         shell: bash
         run: |
           set -euo pipefail
-          base='462d4d3862e48af8aa2582733a7c2cf011075b30'
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          git merge-base --is-ancestor "$base" HEAD
-          changed="$(git diff --name-only "$base"...HEAD | sort)"
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          git merge-base --is-ancestor "$REDTEAM_BASE_SHA" HEAD
+          changed="$(git diff --name-only "$REDTEAM_BASE_SHA"...HEAD | sort)"
           expected="$(printf '%s\n' \
             '.github/workflows/capture-private-identity-failed-bootstrap-admission-redteam.yml' \
-            'scripts/ci/tests/test_capture_private_identity_failed_bootstrap_admission_red_team.py' | sort)"
+            'scripts/ci/tests/test_capture_private_identity_failed-bootstrap-admission-red_team.py' | sort)"
           test "$changed" = "$expected"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          cp scripts/ci/tests/test_capture_private_identity_failed_bootstrap_admission_red_team.py "$RUNNER_TEMP/failed-bootstrap-witness.py"
 
-      - name: Compile downstream admission diagnostic
+      - name: Re-anchor to exact production descendant
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$TARGET_SHA"
+          git checkout --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          mkdir -p scripts/ci/tests
+          cp "$RUNNER_TEMP/failed-bootstrap-witness.py" scripts/ci/tests/test_capture_private_identity_failed_bootstrap_admission_red_team.py
+
+      - name: Compile exact-target downstream admission diagnostic
         shell: bash
         run: |
           set -euo pipefail
