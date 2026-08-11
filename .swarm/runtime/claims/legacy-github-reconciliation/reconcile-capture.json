@@ -9,12 +9,13 @@
   "generation": 9,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:01:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:01:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:08:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
   "takeoverFromLeaseId": "reconcapture-a91c7e-20260811-2052",
-  "takeoverReason": "Released generation-8 Capture reconciliation completed Final-GO refresh. Continue the same shard against current live GitHub to reconcile newer signed-install/build/private-identity blocker truth without modifying actively owned product implementation paths. PHYSICAL NO-GO."
+  "takeoverReason": "Released generation-8 Capture reconciliation completed Final-GO refresh. Continue the same shard against current live GitHub to reconcile newer signed-install/build/private-identity blocker truth without modifying actively owned product implementation paths. PHYSICAL NO-GO.",
+  "checkpoint": "Reconciled three stale authoritative Capture descriptors without touching active product branches: signed-install now tracks #2995 live a71cc55 plus unresolved #2998 detached/open-FD authority and queued exact gates; private-identity now tracks #2993 ee7dd8f parent repair plus #2977 sanitation recomposition; flagship now tracks #2979 ce9e2bac software-green/visual-queued successor and #2973 4ed3c579 runtime VoiceOver in-progress while preserving #2940 005b7c4 as accepted app-visible baseline. PHYSICAL NO-GO."
 }
