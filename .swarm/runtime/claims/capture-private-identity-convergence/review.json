@@ -5,15 +5,15 @@
   "slot": "review",
   "role": "adversarial-review",
   "workerId": "sol-20260811-0458-go-axcompile",
-  "leaseId": "capture-private-identity-review-0458-20260811-1229",
-  "generation": 2,
-  "status": "RELEASED",
-  "claimedAt": "2026-08-11T12:29:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:34:00Z",
+  "leaseId": "capture-private-identity-review-0458-20260811-1238",
+  "generation": 3,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T12:38:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:38:00Z",
   "leaseSeconds": 1200,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
-  "currentHeadSHA": "2d51cc41f8d1dd2f5e7384bcc92476861f3baf0d",
-  "notes": "Review checkpoint: exact b46bc52 run 31491297927 proved post-publication replacement canonical deletion; exact f4d6c0b run 31491591470 and exact 4c8498a run 31491621270 proved the inherited post-check substitution still deleted an attacker replacement. Blocking PR comment 5253200900 identified the authority flaw: final/compromised newly opened inode must never authorize pathname cleanup, and fresh staging also requires descriptor-bound sanitation after private-byte mutation. Current bot-authored 2d51cc4 source implements that architecture: _sanitize_held_private_descriptor, no final/compromised pathname cleanup, and descriptor sanitation for both fresh/recovered staged payload failures; shell writer SHA pin is updated. However every required 2d51cc4 workflow is action_required because the head is bot-authored, so 2d51cc4 is source-review evidence only, NOT acceptance. Primary owner remains active and must publish a clean user-authored exact head and re-earn Publication Races, Field Provenance, Main Selective Graft, and Xcode 27. No production edits were made by this review worker. PHYSICAL NO-GO."
+  "currentHeadSHA": "462d4d3862e48af8aa2582733a7c2cf011075b30",
+  "notes": "Reclaimed released review slot only after primary published clean user-authored successor. Review binds exact 462d4d3862e48af8aa2582733a7c2cf011075b30. Canonical Private Identity Publication Races run 31492000964 is terminal SUCCESS; Field 31492001005, Main Graft 31492001010, and Xcode 31492001009 are queued and are not acceptance. Verify the seven-path durable cleanup-authority repair, test reconciliation, digest/source-contract pins, and absence of temporary construction residue. No production edits. Any head move resets review. PHYSICAL NO-GO."
 }
