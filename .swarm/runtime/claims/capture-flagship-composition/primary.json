@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-flagship-composition",
+  "slot": "primary",
+  "role": "integration-closer",
+  "workerId": "sol-20260811-root-closure",
+  "leaseId": "capture-flagship-primary-root-closure-20260811-0956",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T09:56:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:56:00Z",
+  "leaseSeconds": 1800,
+  "branch": "repair/v14-capture-root-two-file-closure-sol-20260811",
+  "sourceSHA": "899e0bf4de07401e2e036895aaf684373142253a",
+  "ownedPaths": [
+    ".github/workflows/capture-root-ax-action-first-materialize.yml"
+  ],
+  "intent": "Remove only stale materializer workflow residue from Capture visual child #2841 so its live compare matches the claimed two-file app/test delta; do not modify app source or accessibility regression test."
+}
