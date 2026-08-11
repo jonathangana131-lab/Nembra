@@ -2,8 +2,13 @@ name: Capture CocoaPods Build Subject QA
 
 on:
   push:
-    branches:
-      - repair/v14-capture-cocoapods-generated-subject-sol-r2
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_cocoapods_build_subject.py
+      - Scripts/capture_tuya_private_input_provenance.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - .github/workflows/capture-cocoapods-build-subject-qa.yml
   pull_request:
     paths:
       - Scripts/bootstrap_capture_tuya_sdk.sh
