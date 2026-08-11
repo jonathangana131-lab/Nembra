@@ -25,16 +25,40 @@ if actual != EXPECTED_BLOB:
     raise SystemExit(f"workflow moved: expected {EXPECTED_BLOB}, got {actual}")
 
 source = payload.decode("utf-8")
+
 source = replace_once(
     source,
-    '''          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"\n          grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"\n          grep -Fq 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA' "$installer"\n          grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' "$installer"\n''',
-    '''          grep -Fq 'AUTHORITY_GIT_DIR="$ROOT/.git"' "$installer"\n          grep -Fq 'run_authority_git() {' "$installer"\n          grep -Fq 'GIT_NO_REPLACE_OBJECTS=1' "$installer"\n          grep -Fq 'SOURCE_SHA="$(run_authority_git rev-parse --verify' "$installer"\n          grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"\n          grep -Fq 'verify_accepted_checkout_source() {' "$installer"\n          grep -Fq 'status --porcelain=v1 --untracked-files=no' "$installer"\n          grep -Fq 'Raw accepted-source byte audit failed.' "$installer"\n          grep -Fq 'verify_accepted_checkout_source "Current checkout is not the exact accepted Capture source."' "$installer"\n          grep -Fq 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA' "$installer"\n          grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' "$installer"\n          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' "$installer"\n          if grep -Fq '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' "$installer"; then\n            echo 'ERROR: bootstrap must execute from accepted Git-object bytes, not mutable checkout bytes.' >&2\n            exit 1\n          fi\n''',
-    "source authority contract",
+    "          grep -Fq 'SOURCE_SHA=\"$(git rev-parse HEAD | tr ' \"$installer\"\n",
+    """          grep -Fq 'AUTHORITY_GIT_DIR=\"$ROOT/.git\"' \"$installer\"
+          grep -Fq 'run_authority_git() {' \"$installer\"
+          grep -Fq 'GIT_NO_REPLACE_OBJECTS=1' \"$installer\"
+          grep -Fq 'SOURCE_SHA=\"$(run_authority_git rev-parse --verify' \"$installer\"
+          grep -Fq 'verify_accepted_checkout_source() {' \"$installer\"
+          grep -Fq 'status --porcelain=v1 --untracked-files=no' \"$installer\"
+          grep -Fq 'Raw accepted-source byte audit failed.' \"$installer\"
+          grep -Fq 'verify_accepted_checkout_source \"Current checkout is not the exact accepted Capture source.\"' \"$installer\"
+""",
+    "ambient source authority line",
 )
+
 source = replace_once(
     source,
-    '''          build_line="$(grep -nF -- '-- xcodebuild \\' "$installer" | sed -n '1s/:.*//p')"\n''',
-    '''          build_line="$(grep -nF -- '-- /usr/bin/xcodebuild \\' "$installer" | sed -n '1s/:.*//p')"\n''',
+    "          grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' \"$installer\"\n",
+    """          grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' \"$installer\"
+          grep -Fq 'run_accepted_source_bash \"Scripts/bootstrap_capture_tuya_sdk.sh\"' \"$installer\"
+          if grep -Fq '\"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh\"' \"$installer\"; then
+            echo 'ERROR: bootstrap must execute from accepted Git-object bytes, not mutable checkout bytes.' >&2
+            exit 1
+          fi
+""",
+    "requested-source authority wording",
+)
+
+source = replace_once(
+    source,
+    "          build_line=\"$(grep -nF -- '-- xcodebuild \\\' \"$installer\" | sed -n '1s/:.*//p')\"\n",
+    "          build_line=\"$(grep -nF -- '-- /usr/bin/xcodebuild \\\' \"$installer\" | sed -n '1s/:.*//p')\"\n",
     "absolute xcodebuild ordering contract",
 )
+
 TARGET.write_text(source, encoding="utf-8")
