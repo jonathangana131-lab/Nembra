@@ -13,9 +13,17 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy publication-custody repair PR #2755 remains active. Exact head 4f4249ab is red in Private Identity Publication Races, Field Build Provenance, and Main Selective Graft; Xcode is skipped. Its PR body also records unresolved cleanup, writer-digest, package-contract, and staging-residue blockers.",
+      "reason": "Legacy publication-custody repair PR #2755 remains actively owned at exact 4f4249ab729e587a347a93f84e66917ccafc391f. Capture Private Identity Publication Races, Field Build Provenance, and Main Selective Graft are red and Xcode is skipped; do not duplicate production edits on this active branch. Exact current source/review confirms two publication invariants are still open together: same-inode same-size staging payload mutation is accepted because final validation binds dev/ino/link/size but never final bytes to the intended payload (#2767), and a post-publication validation failure can leave substituted attacker bytes at the credential-bearing final path because cleanup only unlinks the now-absent temporary name. The final writer repair must bind final descriptor bytes with stable metadata around the read, clean/reject contaminated final state safely, then update the privileged shell writer SHA and package custody contract only after writer bytes settle. Field acceptance also retains the macOS self-test portability blocker where trusted temporary `/var` ancestry can traverse a platform symlink; fix the trusted self-test path without weakening production no-symlink root custody.",
       "pr": 2755,
       "headSHA": "4f4249ab729e587a347a93f84e66917ccafc391f"
+    },
+    {
+      "id": "root-before-writer-regression-uncomposed",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Production shell on #2755 already has the correct security order: checkout FD 9 is admitted before `/bin/cat` captures writer bytes, writer digest is fenced, then hidden credentials are read. But its current `TuyaPrivateIdentityCheckoutRootCustodySourceTests.swift` only proves root admission and digest fence each precede credentials; it does NOT prove root admission precedes writer-byte capture. Review child #2733 exact 55d33a1be7b6e4ce692e316e61ee7bfa33d07376 carries the unique source-contract assertion `root admission -> writer byte capture -> digest fence -> credentials`. Preserve/absorb that regression into the final #2755 successor so later refactors cannot reopen the checkout-replacement interval while still satisfying the weaker before-credentials test.",
+      "pr": 2733,
+      "headSHA": "55d33a1be7b6e4ce692e316e61ee7bfa33d07376"
     }
   ],
   "mode": "exclusive",
@@ -37,12 +45,13 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "primaryPR": 2755,
     "primaryHeadSHA": "4f4249ab729e587a347a93f84e66917ccafc391f",
-    "lineagePRs": [2719, 2734, 2755, 2767],
-    "exactHeadGateState": "RED_PUBLICATION_FIELD_GRAFT_XCODE_SKIPPED"
+    "lineagePRs": [2719,2733,2734,2755,2767],
+    "exactHeadGateState": "RED_PUBLICATION_FIELD_GRAFT_XCODE_SKIPPED",
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:00Z. #2755 remains an active red production repair. #2767 same-inode payload mutation and contaminated-final cleanup remain real product defects in exact source; macOS self-test canonical-path portability remains a Field blocker. #2733 is a separate uncomposed regression hardening production's already-correct root-before-writer order. Final accepted successor must preserve admitted-root and Darwin secure-publication semantics, close both publication byte/cleanup invariants, update exact writer digest/package contract after bytes stabilize, absorb #2733 ordering regression, and rerun publication/Field/Graft/Xcode on one unchanged head. PHYSICAL NO-GO remains."
   },
   "tags": ["capture", "p0", "private-identity", "publication-custody", "legacy-import"]
 }
