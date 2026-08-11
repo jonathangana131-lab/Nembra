@@ -4,7 +4,12 @@ test_build_guard_does_not_execute_mutable_generated_subject_neighbor (__main__.D
 test_build_guard_does_not_execute_mutable_provenance_neighbor (__main__.DownstreamBuildGuardHelperExecutionCustodyTests.test_build_guard_does_not_execute_mutable_provenance_neighbor) ... ok
 
 ----------------------------------------------------------------------
-Ran 4 tests in 0.560s
+Ran 4 tests in 0.948s
+
+OK
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.118s
 
 OK
 test_bootstrap_rejects_substituted_verifier_execution_subject (__main__.PrivateReviewHelperExecutionCustodyTests.test_bootstrap_rejects_substituted_verifier_execution_subject) ... ERROR
@@ -29,6 +34,6 @@ Traceback (most recent call last):
 NameError: name 'SUBJECT_HELPER' is not defined
 
 ----------------------------------------------------------------------
-Ran 2 tests in 0.008s
+Ran 2 tests in 0.005s
 
 FAILED (errors=2)
