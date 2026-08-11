@@ -25,6 +25,8 @@ from typing import Any, Callable, Iterator
 REPO = "jonathangana131-lab/Nembra"
 OWNER = "jonathangana131-lab"
 PARENT_BRANCH = "control/v14-auth-stationary-final-go-sol"
+PARENT_SOURCE_SHA = "3fdd32551831c3469e0853ddcee8fa828d38b87b"
+PARENT_BASE_BLOB_OID = "b0664c734004c2265b05d23ec58756806ff62f2c"
 WORKFLOW_NAME = "Capture Authenticated Stationary Generated Subject Final GO"
 WORKFLOW_PATH = ".github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml"
 REVIEW_AUTHORITY = "nembra-capture-human-review-github-v3"
@@ -82,19 +84,19 @@ def _load_base_module():
     environment = dict(os.environ)
     environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
-        accepted_oid = subprocess.check_output(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", f"HEAD:{BASE_MODULE_PATH}"],
+        owned_oid = subprocess.check_output(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{PARENT_SOURCE_SHA}:{BASE_MODULE_PATH}"],
             env=environment,
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip().lower()
     except (OSError, subprocess.CalledProcessError) as error:
         raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git identity unavailable") from error
-    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_oid):
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob identity is invalid")
+    if owned_oid != PARENT_BASE_BLOB_OID:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob ownership mismatch")
     try:
         payload = subprocess.check_output(
-            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", accepted_oid],
+            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", PARENT_BASE_BLOB_OID],
             env=environment,
             stderr=subprocess.DEVNULL,
         )
@@ -102,11 +104,11 @@ def _load_base_module():
         raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob unavailable") from error
     if not payload or len(payload) > 2 * 1024 * 1024:
         raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob has invalid bounded bytes")
-    if _git_blob_oid(payload, accepted_oid) != accepted_oid:
+    if _git_blob_oid(payload, PARENT_BASE_BLOB_OID) != PARENT_BASE_BLOB_OID:
         raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent execution bytes do not match accepted Git blob")
 
     module = types.ModuleType("nembra_authenticated_stationary_final_go")
-    module.__file__ = f"HEAD:{BASE_MODULE_PATH}"
+    module.__file__ = f"{PARENT_SOURCE_SHA}:{BASE_MODULE_PATH}"
     module.__package__ = ""
     try:
         code = compile(payload, module.__file__, "exec", dont_inherit=True)
@@ -184,6 +186,8 @@ def generated_control_plane(
     parent_base = parent.get("base", {})
     child_branch = child_head.get("ref")
     parent_sha = base.canon(parent_head.get("sha"), "parent Final-GO PR head")
+    if parent_sha != PARENT_SOURCE_SHA:
+        raise GeneratedSubjectGoError("generated-subject control plane exact parent moved")
     if (
         base.canon(child_head.get("sha"), "generated-subject PR head") != source
         or child_head.get("repo", {}).get("full_name") != REPO
@@ -209,7 +213,7 @@ def generated_control_plane(
         parent_compare.get("status") not in {"ahead", "identical"}
         or base.canon(parent_compare.get("merge_base_commit", {}).get("sha"), "parent/main merge base") != main_sha
     ):
-        raise GeneratedSubjectGoError("parent Final-GO control plane does not contain exact current main")
+        raise GeneratedSubjectGoError("parent Final-GO control plane does not contain the exact current main authority")
     _, child_compare = get(f"/compare/{parent_sha}...{source}")
     if (
         child_compare.get("status") not in {"ahead", "identical"}
