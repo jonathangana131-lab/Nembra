@@ -9,7 +9,7 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:07:09Z",
-  "lastHeartbeatAt": "2026-08-11T12:15:30Z",
+  "lastHeartbeatAt": "2026-08-11T12:25:10Z",
   "leaseSeconds": 1800,
   "branch": "test/v15-dashboard-exact-head-gate-sol-4f50x",
   "pr": 2942,
@@ -17,5 +17,5 @@
   "currentHeadSHA": "53abb0a1f6331e9a59dea7bd6300bec8c3a050f6",
   "takeoverFromWorkerId": "sol-20260811-hl6k",
   "takeoverReason": "Generation-3 tests claim was explicitly released after moving Dashboard to exact 14eba29. The only Xcode 27 PR Exact-Head QA attached to that candidate was skipped, so recover tests to obtain a terminal exact-head package/Simulator result and close visual-evidence provenance. Capture P0 useful lanes are saturated; this is V14 overflow only and does not promote Simulator evidence to physical ES80 truth.",
-  "checkpoint": "Parent #2817 trusted /xcode27 run 31489923609 has resolver SUCCESS and Mac job pending. Source audit confirmed the prior Dynamic Type reset fail-open remained on exact parent 14eba29. Child #2942 exact 53abb0a repairs that one-file harness seam and has its own /xcode27 run 31490274180 queued. PHYSICAL NO-GO."
+  "checkpoint": "Child #2942 exact 53abb0a remains one-file Dynamic Type reset fail-closed repair. Parent trusted /xcode27 run 31489923609 and child run 31490274180 both resolved exact heads successfully and Mac jobs are queued. Historical Dashboard Mac failures are being classified so only still-live blockers are carried forward. PHYSICAL NO-GO."
 }
