@@ -6,13 +6,14 @@ installer on the intended iPhone, then publishes authorization for one stationar
 Runtime account/membership/correlation/observation/seal remain app-enforced experiment gates.
 """
 from __future__ import annotations
-import argparse, hashlib, importlib.util, json, os, re, stat, subprocess, sys, urllib.request, zipfile
+import argparse, hashlib, importlib.util, json, os, pwd, re, stat, subprocess, sys, urllib.request, zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 REPO="jonathangana131-lab/Nembra"; OWNER="jonathangana131-lab"; PROC="ES80-AUTHENTICATED-STATIONARY-v1"
 BUNDLE="com.jonathangana131.nembra.capturelearn"; DEVICE="iPhone 12"; PRODUCT="iPhone13,2"
+TRUSTED_INSTALLER_PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
 WORKFLOWS=("Capture Main Selective Graft Diagnostic","Capture Field Build Provenance","Xcode 27 PR Exact-Head QA","Capture Standalone Visual Evidence")
 WORKFLOW_PATHS={
     "Capture Main Selective Graft Diagnostic":".github/workflows/capture-main-selective-graft-diagnostic.yml",
@@ -185,9 +186,13 @@ def device_hash(path:Path):
     if not t or any(c.isspace() for c in t): raise GoError("private device identifier must be one token")
     return sha(t.encode())
 
+def installer_environment(device:Path)->dict[str,str]:
+    account=pwd.getpwuid(os.getuid()); device_path=canonical_private_path(device,"private intended-device identifier")
+    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path)}
+
 def installer(repo:Path,source:str,device:Path):
-    root=repo.expanduser().resolve(strict=True); device_path=canonical_private_path(device,"private intended-device identifier"); env=os.environ.copy(); env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device_path)
-    try:p=subprocess.run(["/bin/bash",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    root=repo.expanduser().resolve(strict=True); env=installer_environment(device)
+    try:p=subprocess.run(["/bin/bash","--noprofile","--norc","-p",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     except OSError as e: raise GoError("private installer execution failed") from e
     if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
     return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
