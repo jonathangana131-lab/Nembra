@@ -26,9 +26,11 @@ public struct PropulsionEnergyRailDisplaySchedule: Equatable, Sendable {
 
 /// Simulator-only source/runtime owner for Energy Rail product QA.
 ///
-/// Positive authority enters only through an immutable source-owned Simulator power
-/// receipt tuple. Aggregate vehicle state, speed chronology, mode callbacks, SwiftUI
-/// lifecycle, and display clocks have no API capable of minting or refreshing watts.
+/// Positive authority enters only through `SimulatorPowerEvidenceAvailability`, whose
+/// positive states and receipt construction are source-file sealed by the Simulator
+/// source actor. Aggregate vehicle state, speed chronology, mode callbacks, SwiftUI
+/// lifecycle, display clocks, and arbitrary NembraCore importers have no public API
+/// capable of minting or refreshing watts from caller-provided receipt fields.
 /// The display scheduler is downstream presentation state only.
 public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
     public static let defaultPresentationCeilingWatts: Double = 650
@@ -98,12 +100,87 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         self.scale = scale
     }
 
-    /// Admits one exact source-owned LIVE Simulator power observation.
+    /// The sole public positive-admission boundary.
     ///
-    /// There is intentionally no overload without source receipt identity. A genuine
-    /// equal-watt observation refreshes currentness only when its source tuple is newer.
+    /// Callers may inspect `SimulatorPowerEvidenceAvailability`, but they cannot
+    /// construct `.live` / `.retained` values or their observations. Therefore every
+    /// positive admission below is mechanically bound to genuine Simulator source
+    /// custody instead of caller-supplied watts, sequence, uptime, or generation.
     @discardableResult
-    public mutating func acceptLiveSource(
+    public mutating func synchronizeSource(
+        _ availability: SimulatorPowerEvidenceAvailability
+    ) -> Bool {
+        switch availability.currentness {
+        case .unavailable:
+            guard availability.observation == nil else {
+                markUnavailable()
+                return false
+            }
+            markUnavailable()
+            return true
+
+        case .retained:
+            guard let observation = availability.observation else {
+                markUnavailable()
+                return false
+            }
+            return retainSource(
+                watts: observation.watts,
+                receiptSequenceNumber: observation.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                continuityGeneration: observation.continuityGeneration
+            )
+
+        case .live:
+            guard let observation = availability.observation else {
+                markUnavailable()
+                return false
+            }
+            return acceptLiveSource(
+                watts: observation.watts,
+                receiptSequenceNumber: observation.receiptSequenceNumber,
+                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                continuityGeneration: observation.continuityGeneration
+            )
+        }
+    }
+
+    /// Negative-only app lifecycle veto for the already-admitted exact source receipt.
+    ///
+    /// This cannot cold-admit a receipt, invent watts, or promote retained/unavailable
+    /// authority. It exists so Store transport fencing can immediately lower a genuine
+    /// source LIVE receipt before the Simulator source actor publishes its own retained
+    /// state, without creating a second positive-authority construction API.
+    @discardableResult
+    public mutating func retainCurrentSource() -> Bool {
+        guard let observation = newestAcceptedSourceObservation else {
+            markUnavailable()
+            return false
+        }
+
+        switch disposition {
+        case let .live(current) where current == observation:
+            _ = session.markUnavailable(
+                authority: .simulator,
+                continuityGeneration: observation.continuityGeneration
+            )
+            disposition = .retained(observation)
+            resetPresentationSchedule()
+            return true
+
+        case let .retained(current) where current == observation:
+            return true
+
+        case .unavailable, .live, .retained:
+            return false
+        }
+    }
+
+    /// Package-only chronology primitive used by focused package tests and by the
+    /// sealed public source adapter above. It is intentionally absent from the public
+    /// NembraCore API so an importer cannot mint Simulator authority from raw fields.
+    @discardableResult
+    package mutating func acceptLiveSource(
         watts: Double,
         receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
@@ -166,14 +243,10 @@ public struct PropulsionEnergyRailSimulatorRuntime: Sendable {
         return true
     }
 
-    /// Immediately lowers one exact source-owned receipt to RETAINED.
-    ///
-    /// If the runtime already accepted this receipt live, its sealed projection is
-    /// authority-lowered without changing measurement identity. On a cold remount,
-    /// the complete source tuple may be admitted once as already-retained evidence;
-    /// no render timestamp is used to manufacture staleness.
+    /// Package-only chronology primitive for focused tests and the sealed adapter.
+    /// Arbitrary NembraCore importers cannot cold-admit retained raw tuples.
     @discardableResult
-    public mutating func retainSource(
+    package mutating func retainSource(
         watts: Double,
         receiptSequenceNumber: UInt64,
         receivedAtUptimeNanoseconds: UInt64,
