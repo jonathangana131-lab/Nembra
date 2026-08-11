@@ -1,0 +1,59 @@
+name: Capture Private Review Commitment Helper Execution Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-private-review-commitment-helper-execution-r2-sol
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - Scripts/capture_tuya_private_review_commitment.py
+      - scripts/ci/tests/test_capture_private_review_commitment_helper_execution.py
+      - .github/workflows/capture-private-review-commitment-helper-execution-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-helper-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind diagnostic to exact checked-out head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_commitment_helper_execution.py
+      - name: Reject substituted bootstrap HMAC verifier
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_private_review_commitment_helper_execution.BootstrapCommitmentHelperExecutionTests.test_substituted_commitment_helper_cannot_admit_generation_b
+
+  build-guard-neighbor-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind diagnostic to exact checked-out head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_commitment_helper_execution.py
+      - name: Reject substituted build-guard HMAC neighbor
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_private_review_commitment_helper_execution.BuildGuardCommitmentHelperExecutionTests.test_substituted_neighbor_commitment_helper_is_not_build_authority
