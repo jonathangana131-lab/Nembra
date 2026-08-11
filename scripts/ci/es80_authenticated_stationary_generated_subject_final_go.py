@@ -32,6 +32,14 @@ GENERATED_ENV = "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"
 GENERATED_KEY = "cocoaPodsGeneratedBuildSubjectSHA256"
 GENERATED_HELPER_PATH = "Scripts/capture_cocoapods_generated_build_subject.py"
 GENERATED_SCHEMA = "nembra-capture-cocoapods-generated-build-subject-v1"
+GENERATED_BUILD_WORKFLOW = "Capture CocoaPods Build Subject Authority"
+GENERATED_BUILD_WORKFLOW_PATH = ".github/workflows/capture-cocoapods-build-subject-redteam.yml"
+VNODE_WORKFLOW = "Capture CocoaPods Vnode Attribute Convergence"
+VNODE_WORKFLOW_PATH = ".github/workflows/capture-cocoapods-vnode-attribute-convergence.yml"
+GENERATED_ACCEPTANCE_WORKFLOWS = (
+    (GENERATED_BUILD_WORKFLOW, GENERATED_BUILD_WORKFLOW_PATH),
+    (VNODE_WORKFLOW, VNODE_WORKFLOW_PATH),
+)
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 # These child paths are part of the external physical-authorization control plane.
@@ -42,6 +50,7 @@ CHILD_AUTHORITY_PATHS = (
     "scripts/ci/es80_today_final_go_publication.py",
     WORKFLOW_PATH,
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py",
+    "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py",
 )
 PARENT_PINNED_PATHS = (
     "scripts/ci/es80_authenticated_stationary_final_go.py",
@@ -54,6 +63,8 @@ GENERATED_AUTHORITY_PATHS = (
     "Scripts/capture_tuya_private_input_provenance.py",
     "Scripts/capture_tuya_private_input_build_guard.py",
     "scripts/field/install_one_time_capture.command",
+    GENERATED_BUILD_WORKFLOW_PATH,
+    VNODE_WORKFLOW_PATH,
 )
 
 
@@ -219,6 +230,7 @@ def generated_control_plane(
         "workflowName": WORKFLOW_NAME,
         "workflowPath": WORKFLOW_PATH,
         "parentWorkflowRunID": parent_run_id,
+        "requiredCandidateWorkflows": [name for name, _ in GENERATED_ACCEPTANCE_WORKFLOWS],
         "gitBlobs": blobs,
     }
 
@@ -374,6 +386,8 @@ def candidate_generated_authority(
     helper = texts[GENERATED_HELPER_PATH]
     guard = texts["Scripts/capture_tuya_private_input_build_guard.py"]
     installer = texts["scripts/field/install_one_time_capture.command"]
+    generated_workflow = texts[GENERATED_BUILD_WORKFLOW_PATH]
+    vnode_workflow = texts[VNODE_WORKFLOW_PATH]
     required_fragments = (
         (bootstrap, GENERATED_ENV),
         (bootstrap, "capture_cocoapods_generated_build_subject.py"),
@@ -381,20 +395,30 @@ def candidate_generated_authority(
         (guard, "capture_cocoapods_generated_build_subject.py"),
         (guard, "_verify_accepted_generated_build_subject"),
         (guard, "require_accepted_generated_subject=True"),
+        (guard, "_require_real_checkout_ancestry"),
+        (guard, "_ensure_fd_budget"),
+        (guard, "KQ_NOTE_ATTRIB"),
         (installer, "bootstrap_capture_tuya_sdk.sh"),
         (installer, "capture_tuya_private_input_build_guard.py"),
+        (generated_workflow, "name: Capture CocoaPods Build Subject Authority"),
+        (generated_workflow, "Require exact generated CocoaPods build authority"),
+        (generated_workflow, "test_capture_private_input_ancestor_retarget.py"),
+        (vnode_workflow, "name: Capture CocoaPods Vnode Attribute Convergence"),
+        (vnode_workflow, "Real macOS chmod vnode evidence"),
+        (vnode_workflow, "macos-15"),
     )
     if any(fragment not in text for text, fragment in required_fragments):
-        raise GeneratedSubjectGoError("candidate source lacks selected generated-build authority enforcement")
+        raise GeneratedSubjectGoError("candidate source lacks converged generated-build authority enforcement")
 
     current = derive_subject(root)
     if current != accepted_digest:
         raise GeneratedSubjectGoError("candidate generated CocoaPods subject does not match reviewed authority")
     return {
-        "authority": "nembra-cocoapods-generated-build-subject-candidate-v2",
+        "authority": "nembra-cocoapods-generated-build-subject-candidate-v3",
         "implementation": GENERATED_HELPER_PATH,
         "sourceCommitSHA": source,
         GENERATED_KEY: current,
+        "requiredCandidateWorkflows": [name for name, _ in GENERATED_ACCEPTANCE_WORKFLOWS],
         "gitBlobs": blobs,
     }
 
@@ -413,6 +437,33 @@ def _environment_adapter(base: Any, accepted_generated_digest: str):
         return environment
 
     return extended
+
+
+@contextlib.contextmanager
+def _candidate_workflow_requirements(base: Any) -> Iterator[None]:
+    original_workflows = base.WORKFLOWS
+    original_paths = base.WORKFLOW_PATHS
+    if not isinstance(original_workflows, tuple) or not isinstance(original_paths, dict):
+        raise GeneratedSubjectGoError("parent Final-GO software workflow authority is not patchable")
+
+    workflows = list(original_workflows)
+    paths = dict(original_paths)
+    for name, path in GENERATED_ACCEPTANCE_WORKFLOWS:
+        if name in paths and paths[name] != path:
+            raise GeneratedSubjectGoError(
+                f"parent Final-GO workflow path conflicts with required generated authority: {name}"
+            )
+        if name not in workflows:
+            workflows.append(name)
+        paths[name] = path
+
+    base.WORKFLOWS = tuple(workflows)
+    base.WORKFLOW_PATHS = paths
+    try:
+        yield
+    finally:
+        base.WORKFLOWS = original_workflows
+        base.WORKFLOW_PATHS = original_paths
 
 
 @contextlib.contextmanager
@@ -494,7 +545,7 @@ def build(
     ):
         return review_v3(item_pr, item_review_id, item_source, item_visual, callback_get, base=base)
 
-    with _parent_extensions(
+    with _candidate_workflow_requirements(base), _parent_extensions(
         base,
         accepted_generated_digest=accepted_generated,
         review_adapter=review_adapter,
@@ -541,12 +592,25 @@ def build(
     ):
         raise GeneratedSubjectGoError("parent Final-GO record lost generated-subject control authority")
 
+    software = record.get("softwareAcceptance")
+    accepted_names = {
+        item.get("name")
+        for item in software
+        if isinstance(software, list) and isinstance(item, dict)
+    } if isinstance(software, list) else set()
+    required_names = {name for name, _ in GENERATED_ACCEPTANCE_WORKFLOWS}
+    if not required_names.issubset(accepted_names):
+        raise GeneratedSubjectGoError(
+            "Final-GO record did not retain exact generated-build workflow acceptance"
+        )
+
     return {
         **record,
         "schemaVersion": 2,
         "authority": FINAL_AUTHORITY,
         "acceptedCocoaPodsGeneratedBuildSubjectSHA256": accepted_generated,
         "generatedBuildSubjectCandidate": pre_candidate,
+        "requiredGeneratedBuildWorkflowAcceptance": sorted(required_names),
     }
 
 
