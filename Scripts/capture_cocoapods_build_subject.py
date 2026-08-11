@@ -2,8 +2,11 @@
 """Fingerprint the exact CocoaPods-generated build subject consumed by Nembra Capture.
 
 The digest covers relative path, node kind, mode, regular-file bytes, and symlink
-target text for both Pods/ and NembraCapture.xcworkspace/. It is descriptive
-build provenance only; it never grants physical authority.
+target text for both Pods/ and NembraCapture.xcworkspace/. Symlinks must resolve
+inside one of those generated roots or an explicitly named externally-custodied
+root whose bytes are bound by a separate accepted provenance contract. Broken or
+unadmitted targets fail closed. This is descriptive build provenance only; it
+never grants physical authority.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ import os
 import stat
 import tempfile
 from pathlib import Path
+from typing import Iterable
 
 SCHEMA = b"nembra-cocoapods-build-subject-v1"
 
@@ -38,6 +42,43 @@ def _identity(metadata: os.stat_result) -> tuple[int, ...]:
         metadata.st_mtime_ns,
         metadata.st_ctime_ns,
     )
+
+
+def _stable_real_directory(path: Path, label: str) -> Path:
+    try:
+        metadata = path.lstat()
+        resolved = path.resolve(strict=True)
+        resolved_metadata = resolved.lstat()
+    except OSError as error:
+        raise BuildSubjectError(f"{label} is unavailable") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise BuildSubjectError(f"{label} must be a real directory")
+    if not stat.S_ISDIR(resolved_metadata.st_mode):
+        raise BuildSubjectError(f"{label} must resolve to a directory")
+    return resolved
+
+
+def _is_within(candidate: Path, roots: tuple[Path, ...]) -> bool:
+    for root in roots:
+        try:
+            candidate.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _admit_symlink(path: Path, trusted_roots: tuple[Path, ...]) -> str:
+    try:
+        target = os.readlink(path)
+        resolved = path.resolve(strict=True)
+    except OSError as error:
+        raise BuildSubjectError("generated build symlink is broken or unavailable") from error
+    if not _is_within(resolved, trusted_roots):
+        raise BuildSubjectError(
+            "generated build symlink escapes the generated subject and externally-custodied roots"
+        )
+    return target
 
 
 def _stable_file(path: Path, expected: tuple[int, ...]) -> tuple[int, int, bytes]:
@@ -68,7 +109,7 @@ def _stable_file(path: Path, expected: tuple[int, ...]) -> tuple[int, int, bytes
         os.close(descriptor)
 
 
-def _tree_digest(root: Path, label: bytes) -> bytes:
+def _tree_digest(root: Path, label: bytes, trusted_roots: tuple[Path, ...]) -> bytes:
     try:
         root_meta = root.lstat()
     except OSError as error:
@@ -95,7 +136,7 @@ def _tree_digest(root: Path, label: bytes) -> bytes:
             identity = _identity(meta)
             mode = stat.S_IMODE(meta.st_mode)
             if stat.S_ISLNK(meta.st_mode):
-                target = os.readlink(path)
+                target = _admit_symlink(path, trusted_roots)
                 observed.append((path, identity, "L", target))
                 entries.append((b"L", os.fsencode(relative), mode, 0, os.fsencode(target)))
             elif stat.S_ISDIR(meta.st_mode):
@@ -113,7 +154,7 @@ def _tree_digest(root: Path, label: bytes) -> bytes:
             identity = _identity(meta)
             mode = stat.S_IMODE(meta.st_mode)
             if stat.S_ISLNK(meta.st_mode):
-                target = os.readlink(path)
+                target = _admit_symlink(path, trusted_roots)
                 observed.append((path, identity, "L", target))
                 entries.append((b"L", os.fsencode(relative), mode, 0, os.fsencode(target)))
             elif stat.S_ISREG(meta.st_mode):
@@ -130,8 +171,10 @@ def _tree_digest(root: Path, label: bytes) -> bytes:
             raise BuildSubjectError("generated build tree changed during fingerprint") from error
         if _identity(current) != expected:
             raise BuildSubjectError("generated build tree changed during fingerprint")
-        if kind == "L" and os.readlink(path) != target:
-            raise BuildSubjectError("generated build symlink changed during fingerprint")
+        if kind == "L":
+            current_target = _admit_symlink(path, trusted_roots)
+            if current_target != target:
+                raise BuildSubjectError("generated build symlink changed during fingerprint")
     for directory, expected_members in members.items():
         try:
             current_members = tuple(sorted(os.listdir(directory), key=os.fsencode))
@@ -153,13 +196,25 @@ def _tree_digest(root: Path, label: bytes) -> bytes:
     return digest.digest()
 
 
-def build_subject_digest(pods: Path, workspace: Path) -> str:
+def build_subject_digest(
+    pods: Path,
+    workspace: Path,
+    externally_custodied_roots: Iterable[Path] = (),
+) -> str:
+    pods_resolved = _stable_real_directory(pods, "Pods generated root")
+    workspace_resolved = _stable_real_directory(workspace, "workspace generated root")
+    external_resolved = tuple(
+        _stable_real_directory(path, "externally-custodied build root")
+        for path in externally_custodied_roots
+    )
+    trusted_roots = (pods_resolved, workspace_resolved, *external_resolved)
+
     digest = hashlib.sha256()
     _feed(digest, SCHEMA)
     _feed(digest, b"Pods")
-    _feed(digest, _tree_digest(pods, b"Pods"))
+    _feed(digest, _tree_digest(pods, b"Pods", trusted_roots))
     _feed(digest, b"NembraCapture.xcworkspace")
-    _feed(digest, _tree_digest(workspace, b"NembraCapture.xcworkspace"))
+    _feed(digest, _tree_digest(workspace, b"NembraCapture.xcworkspace", trusted_roots))
     return digest.hexdigest()
 
 
@@ -180,11 +235,31 @@ def _self_test() -> None:
         if build_subject_digest(pods, workspace) == first:
             raise BuildSubjectError("generated build subject did not change with file bytes")
 
+        outside = root / "outside"
+        outside.mkdir()
+        external_file = outside / "external.xcconfig"
+        external_file.write_text("external\n", encoding="utf-8")
+        link = pods / "external.xcconfig"
+        link.symlink_to(external_file)
+        try:
+            build_subject_digest(pods, workspace)
+        except BuildSubjectError:
+            pass
+        else:
+            raise BuildSubjectError("unadmitted external generated symlink was accepted")
+        build_subject_digest(pods, workspace, (outside,))
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Nembra CocoaPods generated build-subject fingerprint")
     parser.add_argument("--pods")
     parser.add_argument("--workspace")
+    parser.add_argument(
+        "--externally-custodied-root",
+        action="append",
+        default=[],
+        help="real directory whose bytes are bound by a separate accepted provenance contract",
+    )
     parser.add_argument("--self-test", action="store_true")
     arguments = parser.parse_args()
     try:
@@ -193,7 +268,13 @@ def main() -> int:
             return 0
         if not arguments.pods or not arguments.workspace:
             parser.error("--pods and --workspace are required unless --self-test is used")
-        print(build_subject_digest(Path(arguments.pods), Path(arguments.workspace)))
+        print(
+            build_subject_digest(
+                Path(arguments.pods),
+                Path(arguments.workspace),
+                tuple(Path(value) for value in arguments.externally_custodied_root),
+            )
+        )
     except (BuildSubjectError, OSError) as error:
         print(f"ERROR: {error}", file=os.sys.stderr)
         return 2
