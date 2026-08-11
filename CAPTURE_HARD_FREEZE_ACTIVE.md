@@ -12,16 +12,20 @@ Do not restore #833's old “first artifact not yet collected” or retained-IPA
 
 ## Current flagship authority
 
-At this file's update, the live P0 software-acceptance subject is PR #2178:
+The live P0 final software/visual acceptance owner is **PR #2612**:
 
 - feature: Nembra Capture / authenticated stationary ES80 physical truth;
-- branch: `integration/v14-capture-final-stationary-convergence-sol`;
-- observed exact head: `df30de17a95c6df3e6bd2fda14b0de9ddb1d0d25`;
-- exact-head `Capture Field Build Provenance` run: `31366062131` — QUEUED at last observation;
-- exact-head `Xcode 27 PR Exact-Head QA` run: `31366062142` — QUEUED at last observation;
+- branch: `agent/v14-capture-live-main-visual-acceptance-sol`;
+- base: current shipping `main`;
+- direct-main candidate: complete standalone Capture vertical + demonstrated live-main support + standalone iPhone 12 visual evidence + passive-evidence Core regression coverage;
+- the parent immediately before this pointer repair was `b4ba45d095a6c125c18f4dbc556e0717232ed4a8`;
+- this pointer repair itself moves #2612 again, so **the exact current SHA must always be read from live PR #2612 rather than copied from this document**;
+- every exact-head workflow result from an older #2612 SHA is supporting history only after any head movement;
 - physical status: **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
 
-**Always re-read live PR #2178 before acting.** If its head differs from the SHA above, this recorded SHA and every ancestor workflow result are stale for product acceptance. Queued/running/skipped/cancelled/ancestor results are non-evidence.
+**Always re-read live PR #2612, its current head SHA, and the workflows attached to that exact SHA before acting.** Queued/running/skipped/cancelled/ancestor results are non-evidence. A fresh worker must never route back to historical Capture ancestry merely because an older document, PR body, or comment names it.
+
+PR #2602 / `integration/v14-capture-main-selective-graft-sol` is the immediately preceding live-main integration spine and useful supporting history, not the current final acceptance owner. PR #2606 was consumed into that spine. PRs #2607/#2608/#2609 and other duplicate visual children are superseded. PR #2178 / `integration/v14-capture-final-stationary-convergence-sol` and its recorded `df30de17…` head are historical/superseded integration state.
 
 The canonical current physical procedure is:
 `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
@@ -45,9 +49,20 @@ The current accepted direction is an authenticated, stationary, read-only path:
 
 ## Current critical path
 
-Do not churn the flagship for non-blocking docs/tests/cleanup while an unchanged exact head is undergoing final acceptance. Move it only for a demonstrated product/truth/build blocker.
+Freeze the current #2612 head unless a demonstrated truth/product/build/visual/accessibility blocker requires a correction. Do not move it for ceremonial cleanup after exact-head acceptance begins.
 
-After terminal exact-head software acceptance on the unchanged current flagship head, the next legal rung is the private field candidate on the intended iPhone 12 / iOS 27:
+The exact current #2612 SHA must independently earn all applicable final gates on that unchanged head:
+
+1. `Capture Main Selective Graft Diagnostic` — complete Capture package + standalone target + integration truth checks;
+2. `Capture Field Build Provenance` — exact source/procedure/private-input build rendezvous;
+3. `Xcode 27 PR Exact-Head QA` — modern main app/packages/iOS 27 Simulator and final live-head check;
+4. `Capture Standalone Visual Evidence` — real standalone iPhone 12 / iOS 27 standard-dark + Accessibility XXXL evidence;
+5. retained visual PNG human critique for hierarchy, clipping, truthful fail-closed copy, Dynamic Type, outdoor readability, accessibility, and obvious performance regressions;
+6. final truth/adversarial/simplification review with no stale required dependency.
+
+CI green alone is not visual acceptance. Simulator evidence is not physical evidence. Any head movement invalidates exact-head acceptance and requires rerunning every affected gate.
+
+After terminal exact-head software and visual acceptance on the unchanged final flagship head, the next legal private-device rung is:
 
 1. invoke the private Capture installer against the **exact software-accepted 40-hex source SHA**;
 2. require a clean checkout whose HEAD exactly equals that SHA;
