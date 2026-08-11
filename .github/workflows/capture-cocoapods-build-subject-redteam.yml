@@ -1,0 +1,62 @@
+name: Capture CocoaPods Build Subject Authority
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_cocoapods_build_subject.py
+      - Scripts/capture_tuya_private_input_provenance.py
+      - Podfile
+      - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - .github/workflows/capture-cocoapods-build-subject-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-build-subject:
+    name: Bind reviewed CocoaPods build subject
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind authority check to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Validate build-subject tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -m py_compile Scripts/capture_cocoapods_build_subject.py
+          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          /usr/bin/python3 -I Scripts/capture_cocoapods_build_subject.py --self-test
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Require reviewed lock and generated subject authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Lock authority source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'capture_cocoapods_build_subject.py' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'Preaccepted Tuya dependency lock matched before CocoaPods' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'generated CocoaPods build subject does not match the preaccepted' Scripts/bootstrap_capture_tuya_sdk.sh
