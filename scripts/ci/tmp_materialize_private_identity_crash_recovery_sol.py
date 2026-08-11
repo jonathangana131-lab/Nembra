@@ -93,7 +93,14 @@ crash_bytes = subprocess.check_output(
     ["git", "show", f"{REDTEAM_HEAD}:scripts/ci/tests/test_capture_private_identity_crash_residue.py"],
     cwd=ROOT,
 )
-CRASH_TEST.write_bytes(crash_bytes)
+crash_source = crash_bytes.decode("utf-8")
+crash_source = replace_once(
+    crash_source,
+    '                    def hard_exit_after_seal(_root_fd: int, _src: str, _dst: str) -> None:\n',
+    '                    def hard_exit_after_seal(_root_fd: int, _src: str, _dst: str, _sealed) -> None:\n',
+    "current four-argument publication seam adapter",
+)
+CRASH_TEST.write_text(crash_source, encoding="utf-8")
 
 workflow = WORKFLOW.read_text(encoding="utf-8")
 path_marker = '      - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py\n'
