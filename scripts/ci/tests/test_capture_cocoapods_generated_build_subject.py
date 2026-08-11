@@ -245,7 +245,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.assertEqual(field_lock, accepted_lock)
         self.assertNotEqual(reviewed_generated, substituted_generated)
         self.assertNotEqual(field.returncode, 0, field.stdout)
-        self.assertIn("generated CocoaPods build inputs do not match", field.stdout)
+        self.assertIn("generated build inputs do not match", field.stdout)
         self.assertEqual(
             self.pod_counter.read_text(encoding="utf-8").splitlines(),
             ["pod"],
