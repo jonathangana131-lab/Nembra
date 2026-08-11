@@ -45,20 +45,22 @@ jobs:
           end = ends[-1]
           payload_lines = lines[start + 1:end]
           payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in payload_lines) + '\n'
-          old_helper = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"{label}: expected one match, found {count}")
-    return text.replace(old, new, 1)
-'''
-          new_helper = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
-    if label == "bootstrap review helper output" and count == 2:
-        return text.replace(old, new, 1)
-    if count != 1:
-        raise SystemExit(f"{label}: expected one match, found {count}")
-    return text.replace(old, new, 1)
-'''
+          old_helper = (
+              'def replace_once(text: str, old: str, new: str, label: str) -> str:\n'
+              '    count = text.count(old)\n'
+              '    if count != 1:\n'
+              '        raise SystemExit(f"{label}: expected one match, found {count}")\n'
+              '    return text.replace(old, new, 1)\n'
+          )
+          new_helper = (
+              'def replace_once(text: str, old: str, new: str, label: str) -> str:\n'
+              '    count = text.count(old)\n'
+              '    if label == "bootstrap review helper output" and count == 2:\n'
+              '        return text.replace(old, new, 1)\n'
+              '    if count != 1:\n'
+              '        raise SystemExit(f"{label}: expected one match, found {count}")\n'
+              '    return text.replace(old, new, 1)\n'
+          )
           if payload.count(old_helper) != 1:
               raise SystemExit('recovery replace_once definition is not unique')
           payload = payload.replace(old_helper, new_helper, 1)
