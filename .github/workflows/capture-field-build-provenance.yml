@@ -35,6 +35,7 @@ on:
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
       - scripts/ci/tests/test_tuya_account_transport_source.py
+      - scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
@@ -74,6 +75,8 @@ jobs:
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
           /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 -I scripts/ci/tests/test_tuya_account_transport_source.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n Scripts/provision_capture_tuya_identity.sh
           /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
@@ -123,6 +126,9 @@ jobs:
           grep -Fq 'O_DIRECTORY' "$private_identity_writer"
           grep -Fq 'O_EXCL' "$private_identity_writer"
           grep -Fq 'dir_fd=parent_fd' "$private_identity_writer"
+          grep -Fq 'ROOT_FD=9' "$private_identity_provisioner"
+          grep -Fq '_duplicate_inherited_checkout' "$private_identity_writer"
+          grep -Fq '_require_checkout_path_identity' "$private_identity_writer"
           grep -Fq 'read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET' "$private_identity_provisioner"
           grep -Fq 'def read_private_identifier(' "$private_device_runner"
           grep -Fq 'O_NOFOLLOW' "$private_device_runner"
