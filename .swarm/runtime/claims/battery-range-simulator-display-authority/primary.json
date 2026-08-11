@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "battery-range-simulator-display-authority",
+  "slot": "primary",
+  "role": "primary",
+  "workerId": "sol-20260811-f3a8",
+  "leaseId": "brsim-f3a8-20260811-0802",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T08:02:00Z",
+  "lastHeartbeatAt": "2026-08-11T08:02:00Z",
+  "leaseSeconds": 1800,
+  "branch": "recovery/v15-battery-range-simulator-display/sol-f3a8",
+  "pr": null,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+}
