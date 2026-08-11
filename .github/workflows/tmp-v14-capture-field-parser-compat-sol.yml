@@ -1,0 +1,73 @@
+name: TEMP V14 Capture Field Parser Compatibility Sol
+
+on:
+  push:
+    branches:
+      - tmp/v14-capture-field-compiler-window-parser-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-capture-field-parser-compat-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Patch physical-only parser enforcement
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Scripts/capture_tuya_private_input_build_guard.py')
+          source = path.read_text(encoding='utf-8')
+
+          old = '''    parser.add_argument("--accepted-source-root", required=True, type=Path)\n    parser.add_argument("--accepted-source-sha", required=True)\n'''
+          new = '''    parser.add_argument("--accepted-source-root", type=Path)\n    parser.add_argument("--accepted-source-sha")\n'''
+          if source.count(old) != 1:
+              raise SystemExit('unexpected accepted-source parser anchor')
+          source = source.replace(old, new, 1)
+
+          old = '''            accepted_source_root=_lexical_absolute(args.accepted_source_root),\n            accepted_source_sha=args.accepted_source_sha,\n'''
+          new = '''            accepted_source_root=(\n                _lexical_absolute(args.accepted_source_root)\n                if args.accepted_source_root is not None\n                else None\n            ),\n            accepted_source_sha=args.accepted_source_sha,\n'''
+          if source.count(old) != 1:
+              raise SystemExit('unexpected accepted-source construction anchor')
+          source = source.replace(old, new, 1)
+
+          old = '''    try:\n        return run_guarded_build(\n'''
+          new = '''    try:\n        if inputs.accepted_source_root is None or inputs.accepted_source_sha is None:\n            raise BuildGuardError(\n                "physical field build requires exact accepted checkout root and source SHA custody"\n            )\n        return run_guarded_build(\n'''
+          if source.count(old) != 1:
+              raise SystemExit('unexpected main enforcement anchor')
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Verify focused compatibility and physical authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_compiler_window_authority.py
+          git diff --check
+
+      - name: Commit validated guard object
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add Scripts/capture_tuya_private_input_build_guard.py
+          git diff --cached --check
+          blob="$(git hash-object Scripts/capture_tuya_private_input_build_guard.py)"
+          echo "::notice title=Validated field guard blob::$blob"
+          git config user.name "Nembra V14 Sol"
+          git config user.email "nembra-v14-sol@users.noreply.github.com"
+          git commit -m "Capture: preserve parser compatibility under physical source custody"
+          git push origin HEAD:tmp/v14-capture-field-compiler-window-parser-sol-20260811
