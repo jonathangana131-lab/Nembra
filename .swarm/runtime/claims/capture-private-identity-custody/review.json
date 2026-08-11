@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "capture-private-identity-review-1607ax-20260811-2342",
   "generation": 13,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:42:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:42:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:43:00Z",
+  "releasedAt": "2026-08-11T23:43:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3086,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-private-identity-review-1607ax-20260811-2331",
-  "takeoverReason": "Generation-12 released after review while exact Main/Field/Xcode were queued. Fresh sweep shows Main Selective Graft 31546075878 has now reached terminal SUCCESS while Field 31546075937 and Xcode 31546075785 remain queued. Reclaim briefly to consume that exact evidence and update the durable blocker set; no source mutation. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-12 released after review; generation-13 consumed exact Main success and refreshed the blocker set without source mutation.",
+  "outcome": "MAIN_ACCEPTED_FIELD_XCODE_QUEUED_BUILD_CONSUMER_MISSING",
+  "checkpoint": "Review 4911637306 records exact Main Selective Graft 31546075878 SUCCESS on unchanged #3086@e454b1e9. Current Convergence, Publication Races, and Dependency Helper Execution remain green. Field 31546075937 and Xcode 31546075785 remain queued and block acceptance. Private->build NEMBRA_ACCEPTED_SOURCE_ROOT consumer seam remains future composition debt. PHYSICAL NO-GO."
 }
