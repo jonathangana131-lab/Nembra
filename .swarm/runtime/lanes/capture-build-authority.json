@@ -6,13 +6,12 @@
   "title": "Capture build and private-review execution authority",
   "objective": "Converge the selected field-build authority lineage onto one exact descendant that binds accepted Git/source bytes, build-visible inputs, private helpers, tracked compiler-window custody, and Xcode execution authority before flagship composition.",
   "priority": 0,
-  "state": "IMPLEMENTING",
+  "state": "NEEDS_CHANGES",
   "dependencies": [],
   "blockers": [
-    "#2924@0f07d8d6 is canonical pre-arm production repair; #2913 focused witness and Main-Graft are green, but Xcode is skipped on draft and remaining exact authority gates are not all terminal green",
-    "#2922 packed Git-object execution payload identity remains expected-red; #2933@b197c2d3 construction materializer fails before production publication and #2937 remains a temporary construction alternative",
-    "#2941@9f15b582 closes caller DEVELOPER_DIR narrowly, but #2917 residual xcodebuild child-environment authority remains expected-red",
-    "#2939 requires custody and Xcode-27 admission of the system-selected developer tree; test-only expected-red until production closure"
+    "Current selected convergence #2968 exact 3c2244ed599d2d0cc557132ef89ea043b68697b3 is not accepted: Capture Private Review Downstream Helper Execution Red Team run 31495035480 is terminal FAILURE. The failing regression extracts run_accepted_source_python without its read_verified_accepted_git_blob dependency and errors command-not-found; repair the exact-current test harness without weakening replacement-blind Git payload authority, then rerun the exact head.",
+    "#2969 exact ded098b74f409492867e4ce69f8650cb253878e5 independently demonstrates a newer selected-Xcode executable-file custody gap on #2966 ancestry: parent-directory custody plus -f/-x/non-symlink is not exact xcodebuild/xctrace/devicectl file ownership/mode authority. Production must prove exact tool-file custody or equal/stronger descriptor/object authority before execution.",
+    "On #2968 exact 3c2244ed, Field Build Provenance 31495035454 and Main Selective Graft 31495035434 are cancelled and Xcode 27 31495035452 is skipped; those are non-evidence. Exact current composition must re-earn all required terminal gates after repairs."
   ],
   "mode": "exclusive",
   "allowedWriteAreas": ["Scripts/bootstrap_capture_tuya_sdk.sh","Scripts/capture_private_review_commitment.py","Scripts/capture_tuya_private_input_build_guard.py","Scripts/capture_tuya_private_input_provenance.py","Scripts/capture_cocoapods_generated_build_subject.py","scripts/field/install_one_time_capture.command"],
@@ -25,17 +24,20 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
+  "sourceSHA": "3c2244ed599d2d0cc557132ef89ea043b68697b3",
   "legacy": {
-    "primaryPR": 2907,
-    "primaryHeadSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
-    "selectedBasePR": 2805,
-    "selectedBaseHeadSHA": "47740b53736f0dd277420693fa15e1de94075c27",
-    "absorbedIngredients": [2867,2876,2878,2892,2898,2910],
-    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856,2859,2867,2869,2875,2876,2878,2892,2898,2907,2910],
-    "exactHeadGateState": "PARENT_GREEN_BUT_NONPROMOTABLE_PENDING_CURRENT_AUTHORITY_REPAIRS",
-    "xcodeRun": 31488213467,
-    "knownExactHeadFinding": "Reconciled 2026-08-11T12:18Z by integration worker sol-20260811-g56si. #2907 exact d0b134ca has Xcode 27 terminal SUCCESS plus earlier authority gates, but is ancestor evidence only. Duplicate #2934 is closed; canonical pre-arm repair is #2924@0f07d8d6. Packed-object execution authority #2922 remains open; #2933 materialization fails because its workflow rewrites correct #2907 blob preconditions before require_blob, documented in PR comment 5253035182. #2941@9f15b582 is the clean focused DEVELOPER_DIR repair. #2917 residual child environment and #2939 selected-Xcode-tree custody remain distinct open contracts. Integration must compose only clean selected descendants and then re-earn exact-head Xcode, Field, Main-Graft, vnode/private/generated and adversarial gates. PHYSICAL NO-GO."
+    "primaryPR": 2968,
+    "primaryHeadSHA": "3c2244ed599d2d0cc557132ef89ea043b68697b3",
+    "selectedBasePR": 2966,
+    "selectedBaseHeadSHA": "ffba4e252b1be3bbe50c881538a02f0b4b9e6786",
+    "absorbedIngredients": [2867,2876,2878,2892,2898,2910,2924,2937,2941,2949,2960,2966],
+    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856,2859,2867,2869,2875,2876,2878,2892,2898,2907,2910,2913,2915,2917,2922,2924,2933,2937,2939,2941,2949,2960,2966,2968,2969],
+    "exactHeadGateState": "CURRENT_CONVERGENCE_RED_TEST_HARNESS_PLUS_NEW_TOOL_FILE_CUSTODY_BLOCKER",
+    "currentFailedRun": 31495035480,
+    "currentFailedJob": 93790491398,
+    "selectedXcodeToolFileRedTeamPR": 2969,
+    "selectedXcodeToolFileRedTeamHeadSHA": "ded098b74f409492867e4ce69f8650cb253878e5",
+    "knownExactHeadFinding": "Reconciled 2026-08-11T20:14Z by sol-20260811-b7c1a2. Live selected convergence is #2968 exact 3c2244ed, combining the clean current selected-Xcode spine with raw pre-arm and verified Git execution payload authority. Focused tracked-source, vnode/current, private helper/commitment, Git payload, xcrun/Xcode-environment and selected-Xcode gates are green, but the downstream-helper workflow is terminal red because its replacement-blind Git fixture extracts run_accepted_source_python alone after that function acquired a dependency on read_verified_accepted_git_blob. This is test-harness composition debt unless source review shows otherwise; do not weaken the production verified-payload primitive. Separately #2969 is a valid expected-red exact tool-file custody finding against #2966 ancestry and remains a production blocker. Field/Graft cancelled and Xcode skipped on #2968 are not acceptance. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","security","build-authority","field-installer","filesystem-authority","vnode","xcode-authority","legacy-import"]
 }
