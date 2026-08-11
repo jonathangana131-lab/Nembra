@@ -1,0 +1,52 @@
+name: Capture R4 Current Parent Recovery Run
+
+on:
+  push:
+    branches:
+      - repair/v14-r4-private-review-current-parent-exec-sol-20260811
+    paths:
+      - .github/r4_current_parent_recovery.py
+      - .github/workflows/capture-r4-current-parent-recovery-run.yml
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-r4-private-review-current-parent-exec-sol-20260811
+          fetch-depth: 0
+      - name: Materialize current-parent R4 product patch
+        run: python3 .github/r4_current_parent_recovery.py
+      - name: Compile recovered authority
+        run: |
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py
+      - name: Replay parent execution red team
+        run: |
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py
+      - name: Replay R4 authority suite
+        run: |
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+          git diff --check
+      - name: Publish validated product patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py \
+            .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+          git commit -m 'Capture: re-anchor R4 and pin generated parent execution'
+          git push origin HEAD:repair/v14-r4-private-review-current-parent-exec-sol-20260811
