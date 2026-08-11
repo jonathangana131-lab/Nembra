@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "074230-review-result-build-authority-eb3a-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-build-authority",
+  "message": "EXPECTED_RED_VALID / exact head moved again. #2805 is now eb3ad1d7f147ed9ec115b020303729193f170322, one commit after f4cc31eb, adding only the #2809 downstream-helper red-team workflow/test. No production custody repair is present. All f4cc greens are ancestor evidence after this move. On eb3ad exact: Private Review Helper Execution Custody SUCCESS, Private Review Commitment SUCCESS, CocoaPods Build Subject Authority SUCCESS, Field Build Provenance SUCCESS, downstream-helper red-team run 31469956678 terminal FAILURE at its authority assertion, Main Selective Graft still IN_PROGRESS at observation, and Xcode is SKIPPED. Fresh eb3ad production source still executes provenance/generated-subject helpers by mutable checkout pathname and eagerly imports both build-guard neighbors before accepted private-review verifier custody. Keep #2805 as the one production build-authority chain, with the red-team now co-located; next required rung is production helper-execution repair, then replay the new exact red-team green and rerun all broader gates on the moved exact head. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:42:30Z",
+  "data": {
+    "result": "EXPECTED_RED_VALID",
+    "pr": 2805,
+    "headSHA": "eb3ad1d7f147ed9ec115b020303729193f170322",
+    "parentHead": "f4cc31eb7ed2886587b1cf839a640e359ff4492c",
+    "productionFilesChangedFromParent": false,
+    "redTeamRun": 31469956678,
+    "redTeamConclusion": "FAILURE_EXPECTED",
+    "xcode": "SKIPPED",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
