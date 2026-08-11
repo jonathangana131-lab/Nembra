@@ -6,14 +6,15 @@
   "title": "Reject live claims owned by unregistered workers",
   "objective": "Close the demonstrated scheduler-state integrity gap where a live claim can reference a workerId absent from the worker registry, causing orphan ownership to consume capacity until lease expiry. Add fail-closed snapshot validation and regressions without weakening lease, takeover, review-independence, or resource authority.",
   "priority": 0,
-  "state": "READY",
+  "state": "IMPLEMENTING",
   "dependencies": ["swarm-control-plane-foundation"],
   "blockers": [],
   "mode": "exclusive",
   "allowedWriteAreas": [
     "scripts/swarmcp/engine.py",
     "scripts/ci/tests/test_swarm_control_plane.py",
-    "scripts/ci/tests/test_swarm_control_plane_regressions.py"
+    "scripts/ci/tests/test_swarm_control_plane_regressions.py",
+    "scripts/ci/tests/test_swarm_orphan_claim_worker_integrity.py"
   ],
   "adjacentWriteAreas": ["docs/SWARM_CONTROL_PLANE.md"],
   "slots": [
