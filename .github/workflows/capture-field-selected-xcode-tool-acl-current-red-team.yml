@@ -1,0 +1,64 @@
+name: Capture Field Selected Xcode Tool ACL Current Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_current_red_team.py
+      - .github/workflows/capture-field-selected-xcode-tool-acl-current-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selected-tool-acl-authority-current:
+    name: Reject ACL-granted mutation authority on current selected-tool head
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact validation head to current build-authority parent
+        shell: bash
+        env:
+          ATTACKED_PARENT: 1f8d13ceaffbc48eccf851090a24508f84c19581
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$source_sha" = "$expected"
+          git cat-file -e "${ATTACKED_PARENT}^{commit}"
+          changed_paths="$(git diff --name-only "$ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-field-selected-xcode-tool-acl-current-red-team.yml' \
+            'scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_current_red_team.py')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Current ACL red-team child must remain exactly two-path validation-only. Changed paths:\n' >&2
+            printf '%s\n' "$changed_paths" | /usr/bin/sed 's/^/  /' >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'NEMBRA_ACL_CURRENT_VALIDATION_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+
+      - name: Prove macOS ACL defeats current BSD-mode-only tool custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_current_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_current_red_team.py
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Validation head: %s\n' "${NEMBRA_ACL_CURRENT_VALIDATION_SOURCE_SHA:-unavailable}"
+          printf 'Attacked current build-authority parent: 1f8d13ceaffbc48eccf851090a24508f84c19581\n'
+          printf 'This workflow performs no Xcode device operation, Bluetooth action, Tuya action, install, launch, or physical experiment.\n'
