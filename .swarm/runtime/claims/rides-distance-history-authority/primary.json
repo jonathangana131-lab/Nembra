@@ -7,16 +7,17 @@
   "workerId": "sol-20260811-1439r8",
   "leaseId": "rides-distance-primary-r8-20260811-2208",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:08:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:11:30Z",
+  "lastHeartbeatAt": "2026-08-11T22:15:00Z",
+  "releasedAt": "2026-08-11T22:15:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-rides-distance-current-main-sol-r8-20260811-r1",
-  "pr": null,
+  "pr": 3058,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "currentHeadSHA": "92512a5c90be846ddab3521015a26419a8498865",
   "legacyParentPR": 438,
   "legacyParentHeadSHA": "f23407fd3f66881e95da8097b389510cc741b593",
   "intent": "Reconcile the selected-source distance coverage authority and direct-source access fence from legacy #438 onto exact current main without replaying stale ancestry. Preserve coverage truth and authority boundaries, keep history attachment child #443 blocked until the parent is accepted, and require fresh current-head validation. Software-only lane; no physical authority.",
-  "checkpoint": "Current main still carried exact legacy-vulnerable source blob 76e3bf31. Reused #438's exact reviewed source blob 7245b17b and focused-test blob fef85b75 on current main tree, producing one-commit successor 92512a5c. Direct ref move was connector-blocked, so published the exact commit on fresh successor branch repair/v15-rides-distance-current-main-sol-r8-20260811-r1; the earlier empty branch remains at main with no delta."
+  "checkpoint": "IMPLEMENTATION CHECKPOINT #3058@92512a5c. Current main d8e38d0a still carried exact vulnerable source blob 76e3bf31. Reused #438's exact reviewed source blob 7245b17b and focused-test blob fef85b75 on current main, producing one commit ahead / zero behind and exactly two paths. Current-main call-site search found the completedRide convenience bridge only in its defining source, docs, and package tests—no direct Nembra.app consumer surfaced. Trusted /xcode27 run 31539934088 resolver job 93939799747 SUCCESS; exact-head build/test/capture job 93939856353 QUEUED on xcode-27 at release. Workflow itself runs swift test before app build/capture. Queued != green. Lane updated to VERIFYING; independent review must use a different worker. Legacy child #443 remains blocked pending parent acceptance. SOFTWARE_ONLY."
 }
