@@ -9,14 +9,15 @@
   "generation": 8,
   "status": "CLAIMED",
   "claimedAt": "2026-08-11T23:26:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:26:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:27:00Z",
   "releasedAt": null,
   "leaseSeconds": 1800,
-  "branch": "",
-  "pr": null,
+  "branch": "test/v15-final-go-darwin-current-sol-1606dg-20260811",
+  "pr": 3124,
   "sourceSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1",
+  "currentHeadSHA": "c39c9fb089f6245db7d56c416c65f56872ff428b",
   "takeoverFromWorkerId": "sol-20260811-1606dg",
   "takeoverFromLeaseId": "capture-final-go-tests-1606dg-20260811-2316",
-  "takeoverReason": "Generation-7 was explicitly RELEASED after duplicate fixture repair convergence. Selected #3082 has since moved twice, now exact 4a2c2002 with the permanent Darwin fixture correction and reconciled five-path Retirement Dispatch workflow. All applicable Linux Final-GO exact gates are terminal green; prior Darwin evidence is ancestor-only. Reclaim tests to create a one-path exact-descendant macOS/kqueue validator on current production.",
-  "checkpoint": "CLAIMED for one-path Darwin exact descendant from #3082@4a2c2002. Current exact production evidence: Final GO 31546213562 SUCCESS; Retirement Dispatch 31546213542 SUCCESS; Sealed Candidate Handoff 31546213399 SUCCESS; Xcode 31546213293 SKIPPED/not counted. No production edit planned. Validation child will add only the Darwin workflow and replay the now-permanent whole-tree test plus sealed/retirement/committed-parent custody on real macOS kqueue. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-7 was explicitly RELEASED after duplicate fixture repair convergence. Reclaimed to re-anchor real Darwin evidence on current selected Final-GO after two production-head moves.",
+  "checkpoint": "PR #3124 exact c39c9fb089f6245db7d56c416c65f56872ff428b created directly from #3082@4a2c2002e872b294a86c4a2feecbff43b80505a1. Compare is ahead-only one commit, exactly one added path: .github/workflows/capture-final-go-retirement-dispatch-darwin.yml. Workflow exact-binds current production parent + one-path delta, requires real _KqueueMutationBackend on macOS-15, replays permanent whole-tree attacks with bounded diagnostics, then sealed/retirement/committed-parent custody and hygiene. Validation only. PHYSICAL NO-GO."
 }
