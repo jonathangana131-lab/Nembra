@@ -161,8 +161,6 @@ def _add_tree_watch_paths(paths: set[Path], root: Path, *, label: str) -> None:
         paths.add(current)
         for name in directories:
             candidate = current / name
-            # Symlink object changes alter the containing directory and are also
-            # rechecked by the generated/private snapshot. Do not follow it here.
             if candidate.is_symlink():
                 continue
             paths.add(candidate)
@@ -176,30 +174,38 @@ def _add_tree_watch_paths(paths: set[Path], root: Path, *, label: str) -> None:
 def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     """Return every real file/directory whose mutation can change admitted build inputs."""
 
-    repository_root = inputs.lockfile.parent
+    if (inputs.generated_pods is None) != (inputs.generated_workspace is None):
+        raise BuildGuardError("generated CocoaPods custody requires both Pods and workspace roots")
+
     paths: set[Path] = {
-        repository_root,
         inputs.lockfile,
         inputs.security_podspec,
         inputs.identity_podspec,
     }
-    for path in (
-        inputs.lockfile,
-        inputs.security_podspec,
-        inputs.security_build,
-        inputs.identity_podspec,
-        inputs.identity_sources,
-    ):
-        _add_parent_watch_chain(paths, path, repository_root=repository_root)
-
     _add_tree_watch_paths(paths, inputs.security_build, label="private security build input tree")
     _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")
-    if inputs.generated_pods is not None:
-        _add_parent_watch_chain(paths, inputs.generated_pods, repository_root=repository_root)
+
+    # The parent-chain contract is a new field-build guarantee. Preserve the
+    # pre-existing private-only API for isolated tests/tools that may stage the
+    # five original inputs in separate temporary roots; the production CLI below
+    # always supplies both generated roots and therefore always receives strict
+    # checkout-parent custody.
+    if inputs.generated_pods is not None and inputs.generated_workspace is not None:
+        repository_root = inputs.lockfile.parent
+        paths.add(repository_root)
+        for path in (
+            inputs.lockfile,
+            inputs.security_podspec,
+            inputs.security_build,
+            inputs.identity_podspec,
+            inputs.identity_sources,
+            inputs.generated_pods,
+            inputs.generated_workspace,
+        ):
+            _add_parent_watch_chain(paths, path, repository_root=repository_root)
         _add_tree_watch_paths(paths, inputs.generated_pods, label="generated CocoaPods Pods tree")
-    if inputs.generated_workspace is not None:
-        _add_parent_watch_chain(paths, inputs.generated_workspace, repository_root=repository_root)
         _add_tree_watch_paths(paths, inputs.generated_workspace, label="generated CocoaPods workspace tree")
+
     return tuple(sorted(paths, key=lambda item: str(item)))
 
 
@@ -207,8 +213,6 @@ def _current_descriptor_count() -> int:
     try:
         return len(os.listdir("/dev/fd"))
     except OSError:
-        # Field authority is macOS where /dev/fd exists; retain conservative
-        # portability for unit tests and fail later if the OS cannot admit FDs.
         return 64
 
 
@@ -228,9 +232,8 @@ def _ensure_fd_budget(watcher_count: int) -> None:
             f"generated build custody needs at least {required} open descriptors, but the hard limit is {hard}"
         )
 
-    target = required
     try:
-        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+        resource.setrlimit(resource.RLIMIT_NOFILE, (required, hard))
         updated_soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
     except (OSError, ValueError) as error:
         raise BuildGuardError(
@@ -337,9 +340,6 @@ def run_guarded_build(
     try:
         watched = _open_watched_inputs(watch_paths, backend)
 
-        # Registration itself has a race boundary. Reprove the entire admitted
-        # generation after every vnode watch is armed, then reject any queued
-        # mutation before the child build is allowed to start.
         armed_snapshot = inputs.generation_snapshot()
         if armed_snapshot != initial_snapshot:
             raise BuildGuardError("build inputs changed while build-window monitoring was armed")
@@ -369,9 +369,6 @@ def run_guarded_build(
                 + _describe_events(trailing, watched)
             )
 
-        # Keep every vnode watcher live while the final generation is sampled.
-        # A mutation after this point cannot have affected the already-finished
-        # child build; the installer retains independent private/source checks.
         final_snapshot = inputs.generation_snapshot()
         if final_snapshot != initial_snapshot:
             raise BuildGuardError("build inputs changed across the guarded xcodebuild window")
