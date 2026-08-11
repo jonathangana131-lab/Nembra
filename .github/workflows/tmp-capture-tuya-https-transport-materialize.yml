@@ -1,0 +1,155 @@
+name: TEMP Capture Tuya HTTPS Transport Materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-tuya-https-transport-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-tuya-https-transport-sol
+          fetch-depth: 2
+      - name: Verify exact parent and materializer-only trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "7c47df903588fa17eca36eac3fa755e9a5e2090f"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-capture-tuya-https-transport-materialize.yml"
+      - name: Apply fail-closed HTTPS transport repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          bridge = Path("NembraApp/Features/Research/TuyaAccountBridge.swift")
+          text = bridge.read_text(encoding="utf-8")
+
+          marker = "@MainActor\nfinal class TuyaAccountBridge: ObservableObject {"
+          delegate = '''private final class TuyaAccountBridgeNoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+              func urlSession(
+                  _ session: URLSession,
+                  task: URLSessionTask,
+                  willPerformHTTPRedirection response: HTTPURLResponse,
+                  newRequest request: URLRequest,
+                  completionHandler: @escaping (URLRequest?) -> Void
+              ) {
+                  // Authenticated Tuya headers are never replayed across redirects. A redirect is
+                  // returned to requestJSON as the original 3xx response and therefore fails closed.
+                  completionHandler(nil)
+              }
+          }
+
+          @MainActor
+          final class TuyaAccountBridge: ObservableObject {'''
+          if text.count(marker) != 1:
+              raise SystemExit("TuyaAccountBridge class marker drifted")
+          text = text.replace(marker, delegate, 1)
+
+          old_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\\(rawEndpoint)"
+                      guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
+                          throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
+                      }'''
+          new_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpoint = try Self.normalizedHTTPSAPIEndpoint(rawEndpoint)
+                      guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty else {
+                          throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
+                      }'''
+          if text.count(old_endpoint) != 1:
+              raise SystemExit("Tuya endpoint admission block drifted")
+          text = text.replace(old_endpoint, new_endpoint, 1)
+
+          request_marker = '''    private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
+                  let (data, response) = try await URLSession.shared.data(for: request)'''
+          request_replacement = '''    static func normalizedHTTPSAPIEndpoint(_ rawEndpoint: String) throws -> String {
+                  let trimmed = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+                  guard !trimmed.isEmpty else { throw BridgeError.invalidURL }
+
+                  let parsed = URLComponents(string: trimmed)
+                  let candidate = parsed?.scheme == nil ? "https://\\(trimmed)" : trimmed
+                  guard var components = URLComponents(string: candidate),
+                        components.scheme?.lowercased() == "https",
+                        let host = components.host,
+                        !host.isEmpty,
+                        components.user == nil,
+                        components.password == nil,
+                        components.query == nil,
+                        components.fragment == nil,
+                        components.path.isEmpty || components.path == "/" else {
+                      throw BridgeError.invalidURL
+                  }
+                  components.scheme = "https"
+                  components.path = ""
+                  guard let url = components.url,
+                        url.scheme?.lowercased() == "https",
+                        let normalizedHost = url.host,
+                        !normalizedHost.isEmpty else {
+                      throw BridgeError.invalidURL
+                  }
+                  var normalized = url.absoluteString
+                  while normalized.hasSuffix("/") { normalized.removeLast() }
+                  return normalized
+              }
+
+              private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
+                  guard let requestURL = request.url,
+                        requestURL.scheme?.lowercased() == "https",
+                        let host = requestURL.host,
+                        !host.isEmpty else {
+                      throw BridgeError.invalidURL
+                  }
+                  let redirectDelegate = TuyaAccountBridgeNoRedirectDelegate()
+                  let (data, response) = try await URLSession.shared.data(for: request, delegate: redirectDelegate)'''
+          if text.count(request_marker) != 1:
+              raise SystemExit("requestJSON transport block drifted")
+          text = text.replace(request_marker, request_replacement, 1)
+          bridge.write_text(text, encoding="utf-8")
+
+          test = Path("scripts/ci/tests/test_tuya_account_transport_source.py")
+          test.write_text('''#!/usr/bin/env python3
+          import pathlib
+          import unittest
+
+          ROOT = pathlib.Path(__file__).resolve().parents[3]
+          SOURCE = (ROOT / "NembraApp/Features/Research/TuyaAccountBridge.swift").read_text(encoding="utf-8")
+
+          class TuyaAccountTransportSourceTests(unittest.TestCase):
+              def test_plaintext_server_endpoint_is_not_admitted(self):
+                  self.assertNotIn('rawEndpoint.hasPrefix("http")', SOURCE)
+                  self.assertIn('components.scheme?.lowercased() == "https"', SOURCE)
+                  self.assertIn('let endpoint = try Self.normalizedHTTPSAPIEndpoint(rawEndpoint)', SOURCE)
+
+              def test_authenticated_requests_reject_redirect_replay(self):
+                  self.assertIn('TuyaAccountBridgeNoRedirectDelegate', SOURCE)
+                  self.assertIn('completionHandler(nil)', SOURCE)
+                  self.assertIn('URLSession.shared.data(for: request, delegate: redirectDelegate)', SOURCE)
+
+              def test_every_json_request_fails_closed_before_non_https_transport(self):
+                  self.assertIn('requestURL.scheme?.lowercased() == "https"', SOURCE)
+                  self.assertIn('throw BridgeError.invalidURL', SOURCE)
+
+          if __name__ == "__main__":
+              unittest.main()
+          ''', encoding="utf-8")
+          PY
+          python3 scripts/ci/tests/test_tuya_account_transport_source.py
+      - name: Commit product repair and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-capture-tuya-https-transport-materialize.yml
+          git config user.name "jonathangana131-lab"
+          git config user.email "jonathangana131@gmail.com"
+          git add NembraApp/Features/Research/TuyaAccountBridge.swift scripts/ci/tests/test_tuya_account_transport_source.py .github/workflows/tmp-capture-tuya-https-transport-materialize.yml
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' '.github/workflows/tmp-capture-tuya-https-transport-materialize.yml' 'NembraApp/Features/Research/TuyaAccountBridge.swift' 'scripts/ci/tests/test_tuya_account_transport_source.py' | sort)"
+          git commit -m "fix(capture): require HTTPS for Tuya auth transport"
+          git push origin HEAD:agent/v14-capture-tuya-https-transport-sol
