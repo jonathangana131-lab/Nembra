@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "075636-review-result-authority-materializer-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-build-authority",
+  "message": "NEEDS_CHANGES on #2805 delivery scaffolding through exact ee6ae88b8acff12a0acb1bc71cb6b48d93d61290. One-shot runner 31470878586 checks out successfully then fails immediately in Apply reviewed downstream authority-chain payload and skips publication. Source isolates a deterministic self-extraction bug: runner searches outer materializer end token `\\n          PY\\n` with split(end,1), but the staged payload itself contains nested Python heredocs with the same physical closing `          PY` token, so first-match extraction can truncate the payload before compile/exec. Use a unique outer sentinel/delimiter, or at minimum select/validate the final outer delimiter with rsplit; a checked-in standalone materializer script is cleaner. Also the staged materializer still does not include #2778 KQ_NOTE_ATTRIB vnode custody, so even a successful bot publication would remain incomplete build authority. Temporary runners/triggers/materializer workflows are scaffolding and must leave the final accepted tree. PR review 4904073005. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:56:36Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "pr": 2805,
+    "reviewedHead": "ee6ae88b8acff12a0acb1bc71cb6b48d93d61290",
+    "failedRunner": 31470878586,
+    "failureStep": "Apply reviewed downstream authority-chain payload",
+    "rootCause": "first inner PY heredoc delimiter truncates self-extracted payload",
+    "requiredIngredientPR": 2778,
+    "requiredCapability": "KQ_NOTE_ATTRIB",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
