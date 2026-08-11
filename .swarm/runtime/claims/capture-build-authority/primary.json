@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-build-authority",
+  "slot": "primary",
+  "role": "implementation",
+  "workerId": "sol-20260811-8b61c9",
+  "leaseId": "capture-build-primary-8b61c9-20260811-0941",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T09:41:45Z",
+  "lastHeartbeatAt": "2026-08-11T09:41:45Z",
+  "leaseSeconds": 2700,
+  "branch": "repair/v14-field-installer-ignore-independent-sol-8b61c9-20260811",
+  "pr": null,
+  "sourceSHA": "b9311fb105981c2a098f682fb4a95f1b7fdff9e5",
+  "currentHeadSHA": "b9311fb105981c2a098f682fb4a95f1b7fdff9e5"
+}
