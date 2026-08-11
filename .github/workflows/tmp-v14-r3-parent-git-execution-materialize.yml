@@ -52,64 +52,66 @@ jobs:
               "parent pinned path constant",
           )
 
-          old_loader = '''def _load_base_module():
-    path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")
-    spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)
-    if spec is None or spec.loader is None:
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-'''
-          new_loader = '''def _load_base_module():
-    # The parent is executable authority. Never reopen its mutable worktree path.
-    # R3 is cut from one exact parent, so the parent commit + Git blob are pinned
-    # in this reviewed child source. generated_control_plane() independently
-    # requires the live parent PR head to remain this same PARENT_SOURCE_SHA.
-    root = Path(__file__).resolve().parents[2]
-    environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
-    try:
-        source_blob = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"],
-            check=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        ).stdout.strip().lower()
-        payload = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", PARENT_MODULE_BLOB],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError) as error:
-        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git subject could not be read") from error
-
-    if source_blob != PARENT_MODULE_BLOB:
-        raise GeneratedSubjectGoError("pinned authenticated-stationary parent source does not own the accepted module blob")
-    if not payload or len(payload) > 2 * 1024 * 1024:
-        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob has invalid bounded bytes")
-    header = b"blob " + str(len(payload)).encode("ascii") + b"\\0"
-    if len(PARENT_MODULE_BLOB) == 40:
-        actual_blob = hashlib.sha1(header + payload).hexdigest()
-    elif len(PARENT_MODULE_BLOB) == 64:
-        actual_blob = hashlib.sha256(header + payload).hexdigest()
-    else:
-        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob identity has unsupported width")
-    if actual_blob != PARENT_MODULE_BLOB:
-        raise GeneratedSubjectGoError("accepted authenticated-stationary parent execution bytes failed Git identity verification")
-
-    module = types.ModuleType("nembra_authenticated_stationary_final_go")
-    module.__file__ = f"git:{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"
-    module.__package__ = ""
-    try:
-        exec(compile(payload, module.__file__, "exec", dont_inherit=True), module.__dict__)
-    except Exception as error:
-        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob could not execute") from error
-    return module
-'''
+          old_loader = (
+              'def _load_base_module():\n'
+              '    path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")\n'
+              '    spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)\n'
+              '    if spec is None or spec.loader is None:\n'
+              '        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")\n'
+              '    module = importlib.util.module_from_spec(spec)\n'
+              '    spec.loader.exec_module(module)\n'
+              '    return module\n'
+          )
+          new_loader = (
+              'def _load_base_module():\n'
+              '    # The parent is executable authority. Never reopen its mutable worktree path.\n'
+              '    # R3 is cut from one exact parent, so the parent commit + Git blob are pinned\n'
+              '    # in this reviewed child source. generated_control_plane() independently\n'
+              '    # requires the live parent PR head to remain this same PARENT_SOURCE_SHA.\n'
+              '    root = Path(__file__).resolve().parents[2]\n'
+              '    environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}\n'
+              '    try:\n'
+              '        source_blob = subprocess.run(\n'
+              '            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"],\n'
+              '            check=True,\n'
+              '            text=True,\n'
+              '            stdout=subprocess.PIPE,\n'
+              '            stderr=subprocess.PIPE,\n'
+              '            env=environment,\n'
+              '        ).stdout.strip().lower()\n'
+              '        payload = subprocess.run(\n'
+              '            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", PARENT_MODULE_BLOB],\n'
+              '            check=True,\n'
+              '            stdout=subprocess.PIPE,\n'
+              '            stderr=subprocess.PIPE,\n'
+              '            env=environment,\n'
+              '        ).stdout\n'
+              '    except (OSError, subprocess.CalledProcessError) as error:\n'
+              '        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git subject could not be read") from error\n'
+              '\n'
+              '    if source_blob != PARENT_MODULE_BLOB:\n'
+              '        raise GeneratedSubjectGoError("pinned authenticated-stationary parent source does not own the accepted module blob")\n'
+              '    if not payload or len(payload) > 2 * 1024 * 1024:\n'
+              '        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob has invalid bounded bytes")\n'
+              '    header = b"blob " + str(len(payload)).encode("ascii") + b"\\0"\n'
+              '    if len(PARENT_MODULE_BLOB) == 40:\n'
+              '        actual_blob = hashlib.sha1(header + payload).hexdigest()\n'
+              '    elif len(PARENT_MODULE_BLOB) == 64:\n'
+              '        actual_blob = hashlib.sha256(header + payload).hexdigest()\n'
+              '    else:\n'
+              '        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob identity has unsupported width")\n'
+              '    if actual_blob != PARENT_MODULE_BLOB:\n'
+              '        raise GeneratedSubjectGoError("accepted authenticated-stationary parent execution bytes failed Git identity verification")\n'
+              '\n'
+              '    module = types.ModuleType("nembra_authenticated_stationary_final_go")\n'
+              '    module.__file__ = f"git:{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"\n'
+              '    module.__package__ = ""\n'
+              '    try:\n'
+              '        exec(compile(payload, module.__file__, "exec", dont_inherit=True), module.__dict__)\n'
+              '    except Exception as error:\n'
+              '        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob could not execute") from error\n'
+              '    return module\n'
+          )
           replace_once(old_loader, new_loader, "base loader")
 
           replace_once(
@@ -127,8 +129,7 @@ jobs:
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
-                  scripts/ci/tests/test_es80_generated_subject_parent_git_execution_custody.py
+          git add scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
           git commit -m "Capture: pin R3 parent execution to accepted Git blob"
 
       - name: Validate exact repair
