@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "20260811T121735Z-review-request-dashboard-2942-4f50x",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-4f50x",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent review requested for Dashboard QA child #2942 exact 53abb0a1f6331e9a59dea7bd6300bec8c3a050f6 on #2817 exact parent 14eba29ee2f43b9f1a41ef88566fb2922f1e34df. One-file scripts/ci/xcode27_simulator_capture.sh repair closes the known accessibility content_size reset fail-open: accessibility xcresult/attachments and specific test failure remain preserved, but a failed reset now exits before ordinary baseline screenshot filenames can be emitted under ambiguous Dynamic Type provenance. Exact compare ahead 1/behind 0, one file +9/-4. Child trusted /xcode27 run 31490274180 resolver SUCCESS, Mac job queued. Parent run 31489923609 is ingredient evidence only. Compose only after independent review and rerun final exact head. Simulator only; PHYSICAL NO-GO."
+  ,"createdAt": "2026-08-11T12:17:35Z"
+}
