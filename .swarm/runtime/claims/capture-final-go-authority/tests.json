@@ -7,16 +7,16 @@
   "workerId": "sol-20260811-1606dg",
   "leaseId": "capture-final-go-tests-1606dg-20260811-2316",
   "generation": 7,
-  "status": "CLAIMED",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:16:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:16:00Z",
-  "releasedAt": null,
+  "lastHeartbeatAt": "2026-08-11T23:20:00Z",
+  "releasedAt": "2026-08-11T23:20:00Z",
   "leaseSeconds": 1800,
-  "branch": "",
-  "pr": null,
+  "branch": "validation/v15-final-go-darwin-root-alias-fixture-sol-1606dg-20260811",
+  "pr": 3108,
   "sourceSHA": "d4a44db4ad69947dede5b20e91e506297514a0bb",
   "takeoverFromWorkerId": "sol-20260811-1608n7",
   "takeoverFromLeaseId": "capture-final-go-tests-1608n7-20260811-2311",
-  "takeoverReason": "Generation-6 test lease was explicitly RELEASED. Current exact Darwin #3100 reproduced a macOS temporary-path aliasing error in the permanent direct _tree_entries fixture setup; claim repairs only that validation portability defect and re-proves unchanged kqueue custody.",
-  "checkpoint": "CLAIMED after exact #3100@8eec90d4559f9f8f42ad75ff609f9139557c9bc7 run 31545488271 retained the failure: 3/4 permanent whole-tree cases pass on real Darwin; test_post_subject_replacement_is_rejected_before_whole_audit_returns errors before attack because _tree_entries receives unresolved TemporaryDirectory root while _real_git_dir compares .git.resolve().parent to lexical root. Production _audit_candidate_tree resolves root first. Scope: permanent test portability + exact Darwin validation harness only. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-6 test lease was explicitly RELEASED. Claimed to classify and repair the current exact Darwin fixture red without colliding with production.",
+  "checkpoint": "RELEASED AFTER CONVERGENCE. #3100 moved concurrently to exact eb14d21d459bd5db5e580e37eedd87acc5f117ac and independently implemented the same classified macOS TemporaryDirectory canonical-root repair, more consistently across all four fixture sandboxes, while keeping production Final-GO bytes and attack semantics unchanged. Duplicate #3108@121e33c was closed SUPERSEDED without merge. Independent exact-head review was posted on #3100. #3100 canonical sealed-handoff run 31545888684 is scope-only red at the eight-path production-delta guard before tests, because the validation child carries the extra Darwin workflow; do not weaken that production scope oracle. Current exact Darwin run 31545888214 is queued and remains the acceptance hinge. PHYSICAL NO-GO."
 }
