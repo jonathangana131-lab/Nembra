@@ -41,14 +41,20 @@ jobs:
           diff -u /tmp/expected-paths /tmp/actual-paths
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile handoff contract
+      - name: Compile handoff contract without mutating checkout
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ci/tests/test_es80_final_go_signed_artifact_handoff_contract.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/ci/tests/test_es80_final_go_signed_artifact_handoff_contract.py")
+          compile(path.read_text(encoding="utf-8"), str(path), "exec", dont_inherit=True)
+          PY
 
       - name: Prove signed-artifact handoff premise
         shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_signed_artifact_handoff_contract.py
