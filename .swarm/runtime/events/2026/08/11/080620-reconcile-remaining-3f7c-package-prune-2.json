@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "080620-reconcile-remaining-3f7c-package-prune-2",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Retired the remaining old 110/82-issue Capture package source-contract ingredients after the modern #2811 recovery lineage proved complete package execution succeeds in serial and default scheduling. These branches explicitly existed as test-only convergence inputs and remain recoverable as historical Git evidence; they no longer represent active product work. Current package repair, field/security authority, red-team, visual, and physical-NO-GO lanes remain untouched.",
+  "createdAt": "2026-08-11T08:06:20Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "closedPRs": [2517, 2524, 2525, 2529, 2530, 2532, 2542, 2545, 2549, 2553],
+    "currentPackageRepairPR": 2811,
+    "currentPackageRepairHeadSHA": "c5eba1be5fb4a73118d24e2eb936a0a785760713",
+    "packageDiagnosticRun": 31471128989,
+    "packageDiagnosticConclusion": "SUCCESS",
+    "selectiveGraftRun": 31471128988,
+    "selectiveGraftConclusion": "SUCCESS",
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
