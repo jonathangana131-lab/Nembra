@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
-import types
 import unittest
 
 REPOSITORY = Path(__file__).resolve().parents[3]
@@ -110,12 +110,41 @@ class CaptureSignedAppInstallGuardTests(unittest.TestCase):
                 app,
                 ["fake-verify-install"],
                 backend_factory=lambda: backend,
-                popen_factory=lambda command: process,
+                popen_factory=lambda command, **kwargs: process,
                 poll_interval=0,
             )
             self.assertEqual(result, 0)
             self.assertTrue(backend.closed)
             self.assertGreater(len(backend.registered), 4)
+
+    def test_pass_fds_are_forwarded_to_guarded_verifier(self) -> None:
+        temporary, app = self.make_app()
+        read_fd, write_fd = os.pipe()
+        try:
+            with temporary:
+                backend = FakeBackend()
+                process = FakeProcess(polls_before_exit=0, returncode=0)
+                captured: dict[str, object] = {}
+
+                def launch(command, **kwargs):
+                    captured["command"] = command
+                    captured["pass_fds"] = kwargs.get("pass_fds")
+                    return process
+
+                result = module.run_guarded_command(
+                    app,
+                    ["fake-verify-install"],
+                    pass_fds=(read_fd,),
+                    backend_factory=lambda: backend,
+                    popen_factory=launch,
+                    poll_interval=0,
+                )
+                self.assertEqual(result, 0)
+                self.assertEqual(captured["pass_fds"], (read_fd,))
+                self.assertEqual(captured["command"], ["fake-verify-install"])
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
 
     def test_nonrestored_mutation_fails_even_when_event_backend_is_silent(self) -> None:
         temporary, app = self.make_app()
@@ -123,7 +152,7 @@ class CaptureSignedAppInstallGuardTests(unittest.TestCase):
             backend = FakeBackend()
             process = FakeProcess(polls_before_exit=0, returncode=0)
 
-            def launch(command):
+            def launch(command, **kwargs):
                 (app / "Info.plist").write_bytes(b"mutated-after-arming")
                 return process
 
@@ -140,12 +169,10 @@ class CaptureSignedAppInstallGuardTests(unittest.TestCase):
         temporary, app = self.make_app()
         with temporary:
             original = (app / "Info.plist").read_bytes()
-            # First events(0) is the pre-admission drain. The second call is the
-            # running-window poll and represents a kqueue vnode mutation event.
             backend = FakeBackend(event_batches=[[], [FakeEvent()]])
             process = FakeProcess(polls_before_exit=5, returncode=0)
 
-            def launch(command):
+            def launch(command, **kwargs):
                 target = app / "Info.plist"
                 target.write_bytes(b"substituted")
                 target.write_bytes(original)
@@ -168,7 +195,7 @@ class CaptureSignedAppInstallGuardTests(unittest.TestCase):
             backend = FakeBackend(event_batches=[[FakeEvent()]])
             launched = False
 
-            def launch(command):
+            def launch(command, **kwargs):
                 nonlocal launched
                 launched = True
                 return FakeProcess()
