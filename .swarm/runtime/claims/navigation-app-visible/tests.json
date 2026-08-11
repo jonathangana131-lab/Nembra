@@ -9,10 +9,11 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:59:56Z",
-  "lastHeartbeatAt": "2026-08-11T11:59:56Z",
+  "lastHeartbeatAt": "2026-08-11T12:05:00Z",
   "leaseSeconds": 1800,
-  "branch": "validation/v14-navigation-runtime-sol-5e64go-20260811",
-  "pr": 2865,
+  "branch": "test/v14-navigation-current-accessibility-contract-sol-5e64go",
+  "pr": 2929,
   "sourceSHA": "82c3e17896600a4f15c02ce675cc39bcb398fca4",
+  "currentHeadSHA": "b7d1ef4165d193826fad4c797c8e2a61943dc6b3",
   "takeoverFromWorkerId": "sol-20260811-nv46"
 }
