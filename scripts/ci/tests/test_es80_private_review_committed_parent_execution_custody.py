@@ -25,12 +25,31 @@ class PrivateReviewCommittedParentExecutionCustodyTests(unittest.TestCase):
             sentinel = root / "committed-attacker-parent-executed"
             parent.parent.mkdir(parents=True, exist_ok=True)
 
-            # The accepted historical parent only needs to expose the symbols the
-            # child aliases at import time. It deliberately has no side effects.
+            # The accepted historical parent exposes the metadata/symbol shape
+            # the current child reads while importing, but performs no side
+            # effects. The current vnode adapter may inspect the historical
+            # generated-parent contract without ever executing descendant bytes.
             parent.write_text(
                 "#!/usr/bin/env python3\n"
                 "import types\n"
-                "generated = types.SimpleNamespace()\n"
+                "def fixture_candidate(*args, **kwargs): return {}\n"
+                "generated = types.SimpleNamespace(\n"
+                "    GENERATED_BUILD_WORKFLOW='Capture CocoaPods Build Subject Authority',\n"
+                "    GENERATED_BUILD_WORKFLOW_PATH='.github/workflows/capture-cocoapods-build-subject-redteam.yml',\n"
+                "    VNODE_WORKFLOW='Capture CocoaPods Vnode Attribute Convergence',\n"
+                "    VNODE_WORKFLOW_PATH='.github/workflows/capture-cocoapods-vnode-attribute-convergence.yml',\n"
+                "    GENERATED_ACCEPTANCE_WORKFLOWS=((\n"
+                "        'Capture CocoaPods Build Subject Authority',\n"
+                "        '.github/workflows/capture-cocoapods-build-subject-redteam.yml'\n"
+                "    ), (\n"
+                "        'Capture CocoaPods Vnode Attribute Convergence',\n"
+                "        '.github/workflows/capture-cocoapods-vnode-attribute-convergence.yml'\n"
+                "    )),\n"
+                "    GENERATED_AUTHORITY_PATHS=(\n"
+                "        '.github/workflows/capture-cocoapods-vnode-attribute-convergence.yml',\n"
+                "    ),\n"
+                "    candidate_generated_authority=fixture_candidate,\n"
+                ")\n"
                 "class PrivateReviewGoError(RuntimeError): pass\n"
                 "REPO='fixture/repo'\nOWNER='fixture'\nPARENT_BRANCH='fixture-parent'\n"
                 "WORKFLOW_NAME='fixture-workflow'\nWORKFLOW_PATH='fixture.yml'\n"
