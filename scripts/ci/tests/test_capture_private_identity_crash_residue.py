@@ -3,7 +3,7 @@
 
 A hard process exit does not execute Python ``except``/``finally`` cleanup. The
 first regression kills the writer exactly when its credential-bearing
-checkout-root stage has already been written, chmod'd and fsync'd but before
+LocalSecrets stage has already been written, chmod'd and fsync'd but before
 publication. The next writer invocation must not silently proceed while those
 hidden ``.nembra-private-stage-*`` bytes remain behind.
 
@@ -42,6 +42,13 @@ def load_writer():
     return module
 
 
+def staging_root(checkout: Path) -> Path:
+    root = checkout / "LocalSecrets"
+    root.mkdir(mode=0o700, exist_ok=True)
+    root.chmod(0o700)
+    return root
+
+
 def run_recovery_invocation(writer, checkout: Path) -> bool:
     """Run the next writer invocation; return True only for a fail-closed result."""
     checkout_fd = os.open(checkout, writer._directory_flags())
@@ -76,15 +83,18 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="nembra-private-crash-residue-") as temporary:
             checkout = Path(temporary) / "repo"
+            checkout.mkdir(mode=0o700)
+            local_secrets = staging_root(checkout)
             destination_parent = checkout / "private"
             destination_parent.mkdir(parents=True, mode=0o700)
 
             pid = os.fork()
             if pid == 0:
-                checkout_fd = destination_parent_fd = -1
+                checkout_fd = local_secrets_fd = destination_parent_fd = -1
                 try:
                     child_writer = load_writer()
                     checkout_fd = os.open(checkout, child_writer._directory_flags())
+                    local_secrets_fd = os.open(local_secrets, child_writer._directory_flags())
                     destination_parent_fd = os.open(destination_parent, child_writer._directory_flags())
 
                     def hard_exit_after_seal(_root_fd: int, _src: str, _dst: str, _sealed) -> None:
@@ -99,6 +109,7 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
                         "identity.swift",
                         "private/identity.swift",
                         crashed_payload,
+                        staging_parent_fd=local_secrets_fd,
                     )
                     os._exit(74)
                 except BaseException:
@@ -107,6 +118,8 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
                     # os._exit() intentionally bypasses this path in the attack.
                     if destination_parent_fd >= 0:
                         os.close(destination_parent_fd)
+                    if local_secrets_fd >= 0:
+                        os.close(local_secrets_fd)
                     if checkout_fd >= 0:
                         os.close(checkout_fd)
 
@@ -119,7 +132,12 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
                 "crash fixture did not reach the post-fsync/pre-publication seam",
             )
 
-            orphaned = sorted(checkout.glob(f"{RESERVED_PREFIX}*"))
+            self.assertEqual(
+                sorted(checkout.glob(f"{RESERVED_PREFIX}*")),
+                [],
+                "production staging escaped LocalSecrets into the raw checkout root",
+            )
+            orphaned = sorted(local_secrets.glob(f"{RESERVED_PREFIX}*"))
             self.assertEqual(len(orphaned), 1, "fixture did not reproduce one writer-owned crash residue stage")
             orphan = orphaned[0]
             orphan_metadata = orphan.lstat()
@@ -131,10 +149,15 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
             # A later writer invocation is the first deterministic recovery
             # opportunity after SIGKILL/power-loss. It may recover or fail
             # closed, but it must not leave the prior known writer-shaped
-            # credential bytes hidden under the ignored reserved prefix.
+            # credential bytes hidden in LocalSecrets.
             run_recovery_invocation(writer, checkout)
 
-            residual_entries = sorted(checkout.glob(f"{RESERVED_PREFIX}*"))
+            self.assertEqual(
+                sorted(checkout.glob(f"{RESERVED_PREFIX}*")),
+                [],
+                "recovery introduced a raw-root staging subject outside LocalSecrets",
+            )
+            residual_entries = sorted(local_secrets.glob(f"{RESERVED_PREFIX}*"))
             residual_payloads = []
             for candidate in residual_entries:
                 try:
@@ -146,11 +169,12 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
             self.assertNotIn(
                 crashed_payload,
                 residual_payloads,
-                "recovery left credential-bearing hard-exit staging bytes hidden under the ignored root pattern",
+                "recovery left credential-bearing hard-exit staging bytes inside LocalSecrets",
             )
             # A same-UID actor can swap a pathname after identity admission and
             # before unlink, so recovery does not claim race-free exact-inode
-            # deletion. It may retain only inert zero-length canonical tombstones.
+            # deletion. It may retain only inert zero-length canonical tombstones
+            # inside the authenticated LocalSecrets field-input root.
             for candidate in residual_entries:
                 metadata = candidate.lstat()
                 self.assertTrue(stat.S_ISREG(metadata.st_mode))
@@ -167,10 +191,11 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-private-symlink-orphan-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
+            stage_root = staging_root(checkout)
             victim = checkout / "unrelated.txt"
             victim.write_bytes(victim_payload)
-            stage = checkout / canonical_spoof_name("a")
-            stage.symlink_to(victim.name)
+            stage = stage_root / canonical_spoof_name("a")
+            stage.symlink_to(victim)
 
             failed_closed = run_recovery_invocation(writer, checkout)
 
@@ -192,9 +217,10 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-private-hardlink-orphan-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
+            stage_root = staging_root(checkout)
             victim = checkout / "unrelated.txt"
             victim.write_bytes(victim_payload)
-            stage = checkout / canonical_spoof_name("b")
+            stage = stage_root / canonical_spoof_name("b")
             os.link(victim, stage)
             self.assertGreaterEqual(victim.stat().st_nlink, 2)
 
@@ -217,7 +243,8 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-private-directory-orphan-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
-            stage = checkout / canonical_spoof_name("c")
+            stage_root = staging_root(checkout)
+            stage = stage_root / canonical_spoof_name("c")
             stage.mkdir(mode=0o700)
             marker = stage / "do-not-delete.txt"
             marker_payload = b"attacker-controlled-directory-content"
@@ -239,7 +266,8 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-private-malformed-orphan-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
-            stage = checkout / f"{RESERVED_PREFIX}not-a-writer-name"
+            stage_root = staging_root(checkout)
+            stage = stage_root / f"{RESERVED_PREFIX}not-a-writer-name"
             stage.write_bytes(payload)
             stage.chmod(0o600)
 
@@ -256,7 +284,8 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-private-wrong-mode-orphan-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
-            stage = checkout / canonical_spoof_name("d")
+            stage_root = staging_root(checkout)
+            stage = stage_root / canonical_spoof_name("d")
             stage.write_bytes(payload)
             stage.chmod(0o640)
 
@@ -273,7 +302,8 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-private-oversized-orphan-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
-            stage = checkout / canonical_spoof_name("e")
+            stage_root = staging_root(checkout)
+            stage = stage_root / canonical_spoof_name("e")
             oversized_length = writer._PRIVATE_STAGE_MAX_BYTES + 1
             with stage.open("wb") as handle:
                 handle.truncate(oversized_length)
