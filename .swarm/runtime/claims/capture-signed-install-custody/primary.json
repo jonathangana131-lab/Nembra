@@ -9,11 +9,11 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:03:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:08:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:20:00Z",
   "leaseSeconds": 2700,
-  "branch": "recovery/v14-capture-signed-install-clean-050cf-c7e19a",
-  "pr": 2863,
-  "sourceSHA": "02d6cb648e2506aee1ea69096c1e6a0b7038d9c1",
+  "branch": "repair/v14-capture-signed-helper-replace-blind-c7e19a",
+  "pr": 2871,
+  "sourceSHA": "ad5e83d2ac6c6a44678d4da5e9580f7d09ed5a9c",
   "takeoverFromWorkerId": null,
-  "takeoverReason": "No prior swarm claim existed. Recovery #2863 cleanly removed only worker-only ACL materializer residue from #2789 and merged back through a trusted owner action; canonical #2789 is now exact 02d6cb648e2506aee1ea69096c1e6a0b7038d9c1 with Signed Install, Field, Graft, and Xcode exact-head revalidation queued."
+  "takeoverReason": "No prior swarm claim existed. Clean recovery #2863 made canonical #2789 runnable; adversarial review then found replacement-ref authority in signed-helper Git reads. Active child #2871 fixes that seam and is promoting the previously one-off real-macOS ACL proof into the permanent exact-head Signed App gate before composition."
 }
