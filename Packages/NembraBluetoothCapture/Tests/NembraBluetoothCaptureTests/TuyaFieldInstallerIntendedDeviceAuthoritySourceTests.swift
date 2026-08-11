@@ -35,6 +35,16 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(helper.contains("value in os.fspath(path)"))
     }
 
+    @Test("field provenance executes the hardened private reader self-test")
+    func fieldProvenanceExercisesPrivateDeviceCustody() throws {
+        let workflow = try readRepositoryFile(".github/workflows/capture-field-build-provenance.yml")
+
+        #expect(workflow.contains("- scripts/ci/es80_signed_field_artifact_private_runner.py"))
+        #expect(workflow.contains("/usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py"))
+        #expect(workflow.contains("/usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test"))
+        #expect(workflow.contains("github.event.pull_request.head.repo.full_name == github.repository"))
+    }
+
     @Test("private build outputs are narrowly ignored while arbitrary untracked state remains rejected")
     func generatedPrivateWorkspaceDoesNotTripAcceptedSourceGuard() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
