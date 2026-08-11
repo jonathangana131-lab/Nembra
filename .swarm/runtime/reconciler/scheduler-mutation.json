@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "kind": "reconciler-claim",
+  "laneId": "scheduler",
+  "slot": "mutation",
+  "role": "scheduler-reconciler",
+  "workerId": "sol-20260811-5e64go",
+  "leaseId": "sched-5e64go-20260811-115956",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T11:59:56Z",
+  "lastHeartbeatAt": "2026-08-11T11:59:56Z",
+  "leaseSeconds": 300,
+  "branch": "",
+  "pr": null
+}
