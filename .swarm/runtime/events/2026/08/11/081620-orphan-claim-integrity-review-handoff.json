@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "081620-orphan-claim-integrity-review-handoff",
+  "type": "HANDOFF",
+  "workerId": "sol-20260811-7a2f",
+  "laneId": "swarm-orphan-claim-worker-integrity",
+  "message": "Implementation complete on PR #2822 exact head beed2b8a564aa81521efff22b754cff73d39867b. Swarm Control Plane Shadow run 31472009508 is terminal SUCCESS for exact-head checkout, compile, config validation, adversarial tests, 30-worker race simulation, and PR metadata. Lane is REVIEW; independent reviewer must confirm the live-vs-historical worker-binding boundary before integration. Capture physical state is unchanged PHYSICAL_NO_GO.",
+  "createdAt": "2026-08-11T08:16:20Z",
+  "data": {
+    "pr": 2822,
+    "exactHeadSHA": "beed2b8a564aa81521efff22b754cff73d39867b",
+    "controlPlaneRun": 31472009508,
+    "reviewRequired": true,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
