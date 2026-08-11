@@ -1,0 +1,88 @@
+name: Capture Final GO Whole Tree Atomicity
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go_whole_tree.py
+      - scripts/ci/tests/test_es80_final_go_whole_tree_atomicity.py
+      - .github/workflows/capture-final-go-whole-tree-atomicity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  whole-tree-atomicity:
+    name: Hold whole-tree mutation custody through Final-GO authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact checked-out head and exact parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXACT_PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile production successor and closure replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go_whole_tree.py \
+            scripts/ci/tests/test_es80_final_go_whole_tree_atomicity.py
+
+      - name: Close whole-tree post-admission mutation authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_whole_tree_atomicity.py
+
+      - name: Preserve exact parent Final-GO regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            ParentPrivateReviewContractTests
+          python3 scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+          python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+          python3 scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
+
+      - name: Require narrow durable successor scope
+        shell: bash
+        env:
+          EXACT_PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+
+          parent = "471cc025b332f4df8b43a98d709710aeb4e0698f"
+          expected = {
+              ".github/workflows/capture-final-go-whole-tree-atomicity.yml",
+              "scripts/ci/es80_authenticated_stationary_private_review_final_go_whole_tree.py",
+              "scripts/ci/tests/test_es80_final_go_whole_tree_atomicity.py",
+          }
+          actual = set(
+              subprocess.check_output(
+                  ["git", "diff", "--name-only", f"{parent}...HEAD"],
+                  text=True,
+              ).splitlines()
+          )
+          if actual != expected:
+              raise SystemExit(
+                  "unexpected Final-GO whole-tree successor scope: "
+                  + repr(sorted(actual))
+              )
+          PY
+          git diff --check "$EXACT_PARENT"...HEAD
