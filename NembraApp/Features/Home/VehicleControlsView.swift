@@ -4,56 +4,62 @@ import UIKit
 struct VehicleControlsView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    private var controlColumns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible(), spacing: 10)]
+        }
+        return [GridItem(.adaptive(minimum: 116), spacing: 10)]
+    }
 
     var body: some View {
-        Form {
-            batteryRangeSection
-            connectionSection
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: NembraMetrics.section) {
+                vehicleStatusField
+                batteryRangeLink
 
-            if vehicle.profile.capabilities.supportsHeadlight {
-                headlightSection
+                if vehicle.profile.capabilities.supportsHeadlight {
+                    headlightSection
+                }
+
+                if vehicle.profile.capabilities.supportsLock {
+                    lockSection
+                }
+
+                if !supportedModes.isEmpty {
+                    modeSection
+                }
+
+                if !userFacingSpeedLimitControls.isEmpty {
+                    speedLimitSection
+                }
+
+                if vehicle.profile.capabilities.supportsCruise {
+                    cruiseSection
+                }
+
+                if vehicle.profile.capabilities.supportsStartMode {
+                    startModeSection
+                }
+
+                confirmationNote
             }
-
-            if vehicle.profile.capabilities.supportsLock {
-                lockSection
-            }
-
-            if !supportedModes.isEmpty {
-                modeSection
-            }
-
-            if !userFacingSpeedLimitControls.isEmpty {
-                speedLimitSection
-            }
-
-            if vehicle.profile.capabilities.supportsCruise {
-                cruiseSection
-            }
-
-            if vehicle.profile.capabilities.supportsStartMode {
-                startModeSection
-            }
-
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .safeAreaPadding(.bottom, 32)
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Vehicle Controls")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .accessibilityIdentifier("vehicle-controls.surface")
         .alert("Command not confirmed", isPresented: errorPresented) {
             Button("OK", role: .cancel) { vehicle.lastErrorMessage = nil }
         } message: {
             Text(vehicle.lastErrorMessage ?? "The scooter did not confirm the change.")
-        }
-    }
-
-    private var batteryRangeSection: some View {
-        Section {
-            NavigationLink {
-                BatteryRangeView()
-            } label: {
-                Label("Battery & Range", systemImage: "battery.75percent")
-            }
-            .accessibilityHint("Shows authority-gated battery state and range availability.")
-            .accessibilityIdentifier("vehicle-controls.battery-range")
         }
     }
 
@@ -64,242 +70,444 @@ struct VehicleControlsView: View {
         )
     }
 
-    private var connectionSection: some View {
-        Section {
-            LabeledContent("Scooter", value: vehicle.profile.identity.displayName)
-            LabeledContent("Connection", value: connectionText)
+    private var vehicleStatusField: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 16) {
+                    vehicleIdentity
+                    Spacer(minLength: 12)
+                    connectionBadge
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    vehicleIdentity
+                    connectionBadge
+                }
+            }
 
             if vehicle.state.connection != .connected {
-                switch vehicle.state.connectionIssue {
-                case .bluetoothPermissionDenied:
-                    Button {
-                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                        openURL(url)
-                    } label: {
-                        Label("Open Settings", systemImage: "gear")
-                    }
-                case .bluetoothPoweredOff, .unsupportedConfiguration:
-                    EmptyView()
-                case .scooterUnavailable, .none:
-                    Button {
-                        Task { await vehicle.connect() }
-                    } label: {
-                        if vehicle.pendingCommands.contains(.connect) {
-                            Label("Connecting…", systemImage: "antenna.radiowaves.left.and.right")
-                        } else {
-                            Label("Reconnect", systemImage: "arrow.clockwise")
-                        }
-                    }
-                    .disabled(vehicle.pendingCommands.contains(.connect) || vehicle.isVehicleCommandPending)
+                Divider()
+                connectionIssueField
+
+                if vehicle.state.dataAvailability == .retained {
+                    Label("Last confirmed settings shown below", systemImage: "clock.arrow.circlepath")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("vehicle-controls.retained-state")
                 }
+            }
+        }
+        .padding(16)
+        .background(surfaceBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay { surfaceBorder(cornerRadius: 22) }
+    }
+
+    private var batteryRangeLink: some View {
+        NavigationLink {
+            BatteryRangeView()
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "battery.75percent")
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 38, height: 38)
+                    .background(Color.primary.opacity(0.06), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Battery & Range")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("Authority-gated battery state and learned-range availability")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .background(surfaceBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay { surfaceBorder(cornerRadius: 20) }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows authority-gated battery state and range availability.")
+        .accessibilityIdentifier("vehicle-controls.battery-range")
+    }
+
+    @ViewBuilder
+    private var connectionIssueField: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 12) {
+                connectionIssueSummary
+                connectionAction
+            }
+        } else {
+            HStack(alignment: .center, spacing: 12) {
+                connectionIssueSummary
+                Spacer(minLength: 8)
+                connectionAction
             }
         }
     }
 
-    private var headlightSection: some View {
-        Section {
-            confirmedChoiceRow(
-                title: "Off",
-                selected: vehicle.state.isHeadlightOn == false,
-                pending: vehicle.pendingCommands.contains(.headlight)
-            ) {
-                await vehicle.setHeadlight(false)
-            }
+    private var connectionIssueSummary: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: connectionIssuePresentation.icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26)
+                .accessibilityHidden(true)
 
-            confirmedChoiceRow(
-                title: "On",
-                selected: vehicle.state.isHeadlightOn == true,
-                pending: vehicle.pendingCommands.contains(.headlight)
-            ) {
-                await vehicle.setHeadlight(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connectionIssuePresentation.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(connectionIssuePresentation.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        } header: {
-            Text("Headlight")
-        } footer: {
-            Text("Nembra updates the light state only after the scooter service confirms the command.")
+        }
+    }
+
+    private var vehicleIdentity: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(vehicle.profile.identity.displayName)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
+
+            Text("Vehicle configuration")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var connectionBadge: some View {
+        Label(connectionText, systemImage: connectionSymbol)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(connectionStyle)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.primary.opacity(0.055), in: Capsule())
+            .accessibilityLabel("Connection")
+            .accessibilityValue(connectionText)
+    }
+
+    @ViewBuilder
+    private var connectionAction: some View {
+        if let issue = vehicle.state.connectionIssue {
+            switch issue {
+            case .bluetoothPermissionDenied:
+                Button {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(url)
+                } label: {
+                    Label("Open Settings", systemImage: "gear")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+            case .bluetoothPoweredOff, .unsupportedConfiguration:
+                EmptyView()
+            case .scooterUnavailable:
+                reconnectButton
+            }
+        } else {
+            switch vehicle.state.connection {
+            case .connecting, .reconnecting:
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel(connectionText)
+            case .disconnected:
+                reconnectButton
+            case .connected:
+                EmptyView()
+            }
+        }
+    }
+
+    private var reconnectButton: some View {
+        Button {
+            Task { await vehicle.connect() }
+        } label: {
+            Label(
+                vehicle.pendingCommands.contains(.connect) ? "Connecting…" : "Reconnect",
+                systemImage: vehicle.pendingCommands.contains(.connect) ? "antenna.radiowaves.left.and.right" : "arrow.clockwise"
+            )
+            .font(.subheadline.weight(.semibold))
+            .frame(minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .disabled(vehicle.pendingCommands.contains(.connect) || vehicle.isVehicleCommandPending)
+    }
+
+    private var headlightSection: some View {
+        controlSection(
+            title: "Headlight",
+            subtitle: "Displayed light state changes only after vehicle confirmation."
+        ) {
+            LazyVGrid(columns: controlColumns, spacing: 10) {
+                choiceControl(
+                    title: "Off",
+                    subtitle: "Light off",
+                    icon: "lightbulb.slash",
+                    selected: vehicle.state.isHeadlightOn == false,
+                    pending: vehicle.pendingCommands.contains(.headlight)
+                ) {
+                    await vehicle.setHeadlight(false)
+                }
+                .accessibilityIdentifier("vehicle-controls.headlight.off")
+
+                choiceControl(
+                    title: "On",
+                    subtitle: "Light on",
+                    icon: "lightbulb.fill",
+                    selected: vehicle.state.isHeadlightOn == true,
+                    pending: vehicle.pendingCommands.contains(.headlight)
+                ) {
+                    await vehicle.setHeadlight(true)
+                }
+                .accessibilityIdentifier("vehicle-controls.headlight.on")
+            }
         }
     }
 
     private var lockSection: some View {
-        Section {
-            confirmedChoiceRow(
-                title: "Unlocked",
-                selected: vehicle.state.isLocked == false,
-                pending: vehicle.pendingCommands.contains(.lock)
-            ) {
-                await vehicle.setLocked(false)
-            }
+        controlSection(
+            title: "Vehicle Lock",
+            subtitle: lockSectionSubtitle
+        ) {
+            LazyVGrid(columns: controlColumns, spacing: 10) {
+                choiceControl(
+                    title: "Unlocked",
+                    subtitle: "Vehicle unlocked",
+                    icon: "lock.open",
+                    selected: vehicle.state.isLocked == false,
+                    pending: vehicle.pendingCommands.contains(.lock)
+                ) {
+                    await vehicle.setLocked(false)
+                }
+                .accessibilityIdentifier("vehicle-controls.lock.unlocked")
 
-            confirmedChoiceRow(
-                title: "Locked",
-                selected: vehicle.state.isLocked == true,
-                pending: vehicle.pendingCommands.contains(.lock),
-                enabled: vehicle.canLockFromCurrentSpeedEvidence
-            ) {
-                await vehicle.setLocked(true)
-            }
-        } header: {
-            Text("Vehicle Lock")
-        } footer: {
-            if vehicle.state.isLocked == true {
-                Text("Unlocking does not require Nembra to claim that the scooter is stopped. Lock state changes appear only after the scooter service confirms them.")
-            } else if vehicle.simulatorQualifiedLiveSpeedKilometersPerHour == nil {
-                Text("Live stopped-speed evidence is required before Nembra can lock the scooter. Unlock remains available when the scooter is connected.")
-            } else if !vehicle.canLockFromCurrentSpeedEvidence {
-                Text("Stop the scooter before locking it. Unlock remains available when the scooter is connected.")
-            } else {
-                Text("Current stopped-speed evidence is available. Nembra changes lock state only after the scooter service confirms the command.")
+                choiceControl(
+                    title: "Locked",
+                    subtitle: "Requires stopped-speed evidence",
+                    icon: "lock.fill",
+                    selected: vehicle.state.isLocked == true,
+                    pending: vehicle.pendingCommands.contains(.lock),
+                    enabled: vehicle.canLockFromCurrentSpeedEvidence
+                ) {
+                    await vehicle.setLocked(true)
+                }
+                .accessibilityIdentifier("vehicle-controls.lock.locked")
             }
         }
     }
 
     private var modeSection: some View {
-        Section {
-            ForEach(supportedModes, id: \.self) { mode in
-                let isSelected = vehicle.state.rideMode == mode
-                let isPending = vehicle.pendingRideMode == mode
-
-                Button {
-                    Task { await vehicle.setMode(mode) }
-                } label: {
-                    HStack {
-                        Text(mode.displayName)
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if isPending {
-                            ProgressView().controlSize(.small)
-                        } else if isSelected {
-                            Image(systemName: "checkmark")
-                                .fontWeight(.semibold)
-                        }
+        controlSection(
+            title: "Ride Mode",
+            subtitle: "Choose only from modes verified by the active vehicle profile."
+        ) {
+            LazyVGrid(columns: controlColumns, spacing: 10) {
+                ForEach(supportedModes, id: \.self) { mode in
+                    choiceControl(
+                        title: mode.displayName,
+                        subtitle: "Ride profile",
+                        icon: modeIcon(mode),
+                        selected: vehicle.state.rideMode == mode,
+                        pending: vehicle.pendingRideMode == mode
+                    ) {
+                        await vehicle.setMode(mode)
                     }
+                    .accessibilityIdentifier("vehicle-controls.mode.\(mode.rawValue)")
                 }
-                .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || isSelected)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .accessibilityValue(choiceAccessibilityValue(selected: isSelected, pending: isPending))
             }
-        } header: {
-            Text("Ride Mode")
-        } footer: {
-            Text("Nembra changes the displayed mode only after the scooter service confirms the command.")
         }
     }
 
     private var speedLimitSection: some View {
-        Section {
-            ForEach(userFacingSpeedLimitControls) { control in
-                let currentValue = vehicle.state.speedLimitsKilometersPerHour[control.slot]
-                let isPending = vehicle.pendingSpeedLimit?.slot == control.slot
-
-                Menu {
-                    ForEach(
-                        control.range.minimumKilometersPerHour...control.range.maximumKilometersPerHour,
-                        id: \.self
-                    ) { value in
-                        Button {
-                            Task {
-                                await vehicle.setSpeedLimit(
-                                    kilometersPerHour: value,
-                                    slot: control.slot
-                                )
-                            }
-                        } label: {
-                            if currentValue == value {
-                                Label("\(value) km/h", systemImage: "checkmark")
-                            } else {
-                                Text("\(value) km/h")
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(control.mode.displayName)
-                                .foregroundStyle(.primary)
-                            Text(
-                                "\(control.range.minimumKilometersPerHour)–\(control.range.maximumKilometersPerHour) km/h verified range"
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        if isPending {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text(currentValue.map { "\($0) km/h" } ?? "Unavailable")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(Rectangle())
+        controlSection(
+            title: "Speed Limits",
+            subtitle: "Only verified ride-mode mappings and ranges appear here."
+        ) {
+            VStack(spacing: 10) {
+                ForEach(userFacingSpeedLimitControls) { control in
+                    speedLimitControl(control)
                 }
-                .disabled(!commandsAvailable || vehicle.isVehicleCommandPending)
-                .accessibilityLabel("\(control.mode.displayName) speed limit")
-                .accessibilityValue(
-                    isPending
-                        ? "Updating"
-                        : currentValue.map { "\($0) kilometers per hour" } ?? "Current value unavailable"
-                )
             }
-        } header: {
-            Text("Speed Limits")
-        } footer: {
-            Text("Only ride-mode mappings and ranges verified by the active scooter profile appear here. Nembra does not infer or guess ES80 limiter slots.")
         }
     }
 
-    private var cruiseSection: some View {
-        Section {
-            confirmedChoiceRow(
-                title: "Off",
-                selected: vehicle.state.isCruiseEnabled == false,
-                pending: vehicle.pendingCruiseValue == false
-            ) {
-                await vehicle.setCruise(false)
-            }
+    private func speedLimitControl(_ control: UserFacingSpeedLimitControl) -> some View {
+        let currentValue = vehicle.state.speedLimitsKilometersPerHour[control.slot]
+        let isPending = vehicle.pendingSpeedLimit?.slot == control.slot
 
-            confirmedChoiceRow(
-                title: "On",
-                selected: vehicle.state.isCruiseEnabled == true,
-                pending: vehicle.pendingCruiseValue == true
-            ) {
-                await vehicle.setCruise(true)
+        return Menu {
+            ForEach(
+                control.range.minimumKilometersPerHour...control.range.maximumKilometersPerHour,
+                id: \.self
+            ) { value in
+                Button {
+                    Task {
+                        await vehicle.setSpeedLimit(
+                            kilometersPerHour: value,
+                            slot: control.slot
+                        )
+                    }
+                } label: {
+                    if currentValue == value {
+                        Label("\(value) km/h", systemImage: "checkmark")
+                    } else {
+                        Text("\(value) km/h")
+                    }
+                }
             }
-        } header: {
-            Text("Cruise Control")
-        } footer: {
-            Text("Cruise availability and behavior remain governed by the scooter firmware.")
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "gauge.with.dots.needle.50percent")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 36, height: 36)
+                    .background(Color.primary.opacity(0.055), in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(control.mode.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("\(control.range.minimumKilometersPerHour)–\(control.range.maximumKilometersPerHour) km/h verified range")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                if isPending {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(currentValue.map { "\($0) km/h" } ?? "Unavailable")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+            .background(surfaceBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay { surfaceBorder(cornerRadius: 18) }
+        }
+        .disabled(!commandsAvailable || vehicle.isVehicleCommandPending)
+        .accessibilityLabel("\(control.mode.displayName) speed limit")
+        .accessibilityValue(
+            isPending
+                ? "Updating"
+                : currentValue.map { "\($0) kilometers per hour" } ?? "Current value unavailable"
+        )
+    }
+
+    private var cruiseSection: some View {
+        controlSection(
+            title: "Cruise Control",
+            subtitle: "Availability and behavior remain governed by the scooter firmware."
+        ) {
+            LazyVGrid(columns: controlColumns, spacing: 10) {
+                choiceControl(
+                    title: "Off",
+                    subtitle: "Manual speed",
+                    icon: "pause.circle",
+                    selected: vehicle.state.isCruiseEnabled == false,
+                    pending: vehicle.pendingCruiseValue == false
+                ) {
+                    await vehicle.setCruise(false)
+                }
+                .accessibilityIdentifier("vehicle-controls.cruise.off")
+
+                choiceControl(
+                    title: "On",
+                    subtitle: "Firmware cruise",
+                    icon: "speedometer",
+                    selected: vehicle.state.isCruiseEnabled == true,
+                    pending: vehicle.pendingCruiseValue == true
+                ) {
+                    await vehicle.setCruise(true)
+                }
+                .accessibilityIdentifier("vehicle-controls.cruise.on")
+            }
         }
     }
 
     private var startModeSection: some View {
-        Section {
-            ForEach(StartMode.allCases, id: \.self) { mode in
-                confirmedChoiceRow(
-                    title: mode.displayName,
-                    selected: vehicle.state.startMode == mode,
-                    pending: vehicle.pendingStartMode == mode
-                ) {
-                    await vehicle.setStartMode(mode)
+        controlSection(
+            title: "Start Behavior",
+            subtitle: "Physical behavior is shown only for options verified by the active profile."
+        ) {
+            LazyVGrid(columns: controlColumns, spacing: 10) {
+                ForEach(StartMode.allCases, id: \.self) { mode in
+                    choiceControl(
+                        title: mode.displayName,
+                        subtitle: startModeSubtitle(mode),
+                        icon: startModeIcon(mode),
+                        selected: vehicle.state.startMode == mode,
+                        pending: vehicle.pendingStartMode == mode
+                    ) {
+                        await vehicle.setStartMode(mode)
+                    }
+                    .accessibilityIdentifier("vehicle-controls.start.\(mode.rawValue)")
                 }
             }
-        } header: {
-            Text("Start Behavior")
-        } footer: {
-            Text("Nembra does not assign physical behavior to these options until the active scooter profile has verified evidence. Changes appear only after the scooter service confirms them.")
         }
     }
 
-    @ViewBuilder
-    private func confirmedChoiceRow(
+    private var confirmationNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: vehicle.state.dataAvailability == .retained ? "clock.arrow.circlepath" : "checkmark.shield")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+
+            Text(confirmationNoteText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func controlSection<Content: View>(
         title: String,
+        subtitle: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            content()
+        }
+    }
+
+    private func choiceControl(
+        title: String,
+        subtitle: String,
+        icon: String,
         selected: Bool,
         pending: Bool,
         enabled: Bool = true,
@@ -308,28 +516,56 @@ struct VehicleControlsView: View {
         Button {
             Task { await action() }
         } label: {
-            HStack {
-                Text(title)
-                    .foregroundStyle(.primary)
-                Spacer()
-                if pending {
-                    ProgressView().controlSize(.small)
-                } else if selected {
-                    Image(systemName: "checkmark")
-                        .fontWeight(.semibold)
+            HStack(spacing: 11) {
+                ZStack {
+                    Circle()
+                        .fill(selected ? Color.primary.opacity(0.11) : Color.primary.opacity(0.055))
+                        .frame(width: 36, height: 36)
+
+                    if pending {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                }
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(pending ? "Confirming…" : subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+
+                if selected && !pending {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .accessibilityHidden(true)
                 }
             }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                selected ? Color.primary.opacity(0.075) : surfaceBackground,
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+            .overlay { surfaceBorder(cornerRadius: 18, selected: selected) }
         }
+        .buttonStyle(.plain)
         .disabled(!commandsAvailable || vehicle.isVehicleCommandPending || selected || !enabled)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityValue(choiceAccessibilityValue(selected: selected, pending: pending))
-    }
-
-    private func choiceAccessibilityValue(selected: Bool, pending: Bool) -> String {
-        if pending {
-            return "Updating"
-        }
-        return selected ? "Selected" : "Not selected"
+        .accessibilityLabel(title)
+        .accessibilityValue(controlAccessibilityValue(selected: selected, pending: pending))
+        .accessibilityHint(controlAccessibilityHint)
     }
 
     private struct UserFacingSpeedLimitControl: Identifiable {
@@ -369,6 +605,26 @@ struct VehicleControlsView: View {
         vehicle.state.connection == .connected
     }
 
+    private var confirmationNoteText: String {
+        if vehicle.state.dataAvailability == .retained {
+            return "Selected settings are retained from the last confirmed vehicle session. Reconnect for fresh state or changes."
+        }
+        return "Nembra shows a new control state only after the scooter service confirms the command."
+    }
+
+    private func controlAccessibilityValue(selected: Bool, pending: Bool) -> String {
+        if pending { return "Confirming" }
+        guard selected else { return "Not selected" }
+        return vehicle.state.dataAvailability == .retained ? "Last confirmed selection" : "Selected"
+    }
+
+    private var controlAccessibilityHint: String {
+        if vehicle.state.dataAvailability == .retained {
+            return "This value is retained from the last confirmed vehicle session. Reconnect for a current state or to make changes."
+        }
+        return "The displayed state changes only after vehicle confirmation."
+    }
+
     private var connectionText: String {
         if let issue = vehicle.state.connectionIssue {
             switch issue {
@@ -387,6 +643,114 @@ struct VehicleControlsView: View {
         }
     }
 
+    private var connectionSymbol: String {
+        if let issue = vehicle.state.connectionIssue {
+            switch issue {
+            case .bluetoothPoweredOff: return "wifi.slash"
+            case .bluetoothPermissionDenied: return "exclamationmark.triangle"
+            case .scooterUnavailable: return "antenna.radiowaves.left.and.right"
+            case .unsupportedConfiguration: return "exclamationmark.triangle.fill"
+            }
+        }
+
+        switch vehicle.state.connection {
+        case .connected: return "checkmark.circle.fill"
+        case .connecting: return "antenna.radiowaves.left.and.right"
+        case .reconnecting: return "arrow.triangle.2.circlepath"
+        case .disconnected: return "circle.dashed"
+        }
+    }
+
+    private var connectionStyle: Color {
+        if let issue = vehicle.state.connectionIssue {
+            switch issue {
+            case .unsupportedConfiguration:
+                return .red
+            case .bluetoothPermissionDenied, .bluetoothPoweredOff, .scooterUnavailable:
+                return .orange
+            }
+        }
+
+        return vehicle.state.connection == .connected ? .green : .secondary
+    }
+
+    private var connectionIssuePresentation: (icon: String, title: String, message: String) {
+        if let issue = vehicle.state.connectionIssue {
+            switch issue {
+            case .bluetoothPoweredOff:
+                return ("wifi.slash", "Bluetooth is off", "Turn on Bluetooth to restore vehicle controls.")
+            case .bluetoothPermissionDenied:
+                return ("hand.raised", "Bluetooth permission needed", "Allow Bluetooth access in Settings to connect to the scooter.")
+            case .scooterUnavailable:
+                return ("antenna.radiowaves.left.and.right", "Scooter not found", "Keep the scooter powered on and nearby, then try again.")
+            case .unsupportedConfiguration:
+                return ("exclamationmark.triangle.fill", "Controls unavailable", "This vehicle configuration is not verified for control commands.")
+            }
+        }
+
+        switch vehicle.state.connection {
+        case .connecting:
+            return ("antenna.radiowaves.left.and.right", "Connecting", "Nembra is establishing a vehicle session.")
+        case .reconnecting:
+            return ("arrow.triangle.2.circlepath", "Reconnecting", "Controls stay unavailable until the scooter reconnects.")
+        case .disconnected:
+            return ("circle.dashed", "Vehicle offline", "Reconnect before changing vehicle settings.")
+        case .connected:
+            return ("checkmark.circle", "Connected", "Vehicle controls are available.")
+        }
+    }
+
+    private var lockSectionSubtitle: String {
+        if vehicle.state.isLocked == true {
+            return "Unlock remains available without manufacturing stopped-speed evidence."
+        }
+        if vehicle.simulatorQualifiedLiveSpeedKilometersPerHour == nil {
+            return "Live stopped-speed evidence is required before Nembra can lock the scooter."
+        }
+        if !vehicle.canLockFromCurrentSpeedEvidence {
+            return "Stop the scooter before locking it."
+        }
+        return "Current stopped-speed evidence is available for a confirmed lock request."
+    }
+
+    private var surfaceBackground: Color {
+        reduceTransparency
+            ? Color(uiColor: .secondarySystemGroupedBackground)
+            : Color(uiColor: .secondarySystemGroupedBackground).opacity(0.96)
+    }
+
+    private func surfaceBorder(cornerRadius: CGFloat, selected: Bool = false) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .strokeBorder(
+                Color.primary.opacity(
+                    selected ? 0.14 : (colorSchemeContrast == .increased ? 0.18 : 0.055)
+                ),
+                lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
+            )
+    }
+
+    private func modeIcon(_ mode: RideMode) -> String {
+        switch mode {
+        case .walk: return "figure.walk"
+        case .eco: return "leaf"
+        case .drive: return "gauge.with.dots.needle.67percent"
+        case .sport: return "bolt.fill"
+        }
+    }
+
+    private func startModeIcon(_ mode: StartMode) -> String {
+        switch mode {
+        case .kickStart: return "figure.walk"
+        case .zeroStart: return "bolt.circle"
+        }
+    }
+
+    private func startModeSubtitle(_ mode: StartMode) -> String {
+        switch mode {
+        case .kickStart: return "Roll before throttle"
+        case .zeroStart: return "Throttle from stop"
+        }
+    }
 }
 
 /// Product-facing Battery/Range surface.
@@ -561,21 +925,34 @@ private struct BatteryRangeView: View {
     }
 
     private func evidenceRow(title: String, value: String, symbol: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: symbol)
-                .frame(width: 22)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(title, systemImage: symbol)
+                        .font(.subheadline.weight(.semibold))
+                    Text(value)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Image(systemName: symbol)
+                        .frame(width: 22)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
 
-            Text(title)
-                .font(.subheadline.weight(.semibold))
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
 
-            Spacer(minLength: 12)
+                    Spacer(minLength: 12)
 
-            Text(value)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
+                    Text(value)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
