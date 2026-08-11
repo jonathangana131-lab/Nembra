@@ -56,9 +56,9 @@ jobs:
           set -euo pipefail
           rm -f scripts/ci/tmp_align_field_build_provenance_contract_gpt56.py
           rm -f .github/workflows/tmp-align-field-build-provenance-contract-gpt56.yml
-          git add .github/workflows/capture-field-build-provenance.yml
-          git add -u scripts/ci/tmp_align_field_build_provenance_contract_gpt56.py .github/workflows/tmp-align-field-build-provenance-contract-gpt56.yml
+          git add -A
           git diff --cached --check
+          git diff --cached --name-only | grep -Fx '.github/workflows/capture-field-build-provenance.yml'
           git config user.name "Nembra V14 GPT56"
           git config user.email "nembra-v14-gpt56@users.noreply.github.com"
           git commit -m "Capture: align provenance workflow source authority"
