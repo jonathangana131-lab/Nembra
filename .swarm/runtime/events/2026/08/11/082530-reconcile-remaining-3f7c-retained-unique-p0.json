@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "082530-reconcile-remaining-3f7c-retained-unique-p0",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Reconciliation intentionally RETAINS legacy-looking Capture P0 PRs #2030 and #2166. #2030 carries a unique launch-secret argv regression test (TuyaFieldLaunchSecretCustodySourceTests.swift) that is absent from canonical #2612 exact 9e7c65c..., so it is not proven composed despite safer current installer behavior. #2166 carries docs/ES80_TUYA_IOS_APPLICATION_EVIDENCE_BOUNDARY.md, which is absent from current main and preserves the structured-SDK-vs-raw-FD50 authority boundary. Do not prune either merely by age. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:25:30Z",
+  "data": {
+    "retainedPRs": [2030,2166],
+    "canonicalFlagshipPR": 2612,
+    "canonicalFlagshipSHA": "9e7c65cde7d33b731ea04e11cfe43a792743ed5d",
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "reasons": {
+      "2030": "unique regression test absent from canonical flagship",
+      "2166": "unique research authority document absent from main"
+    },
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
