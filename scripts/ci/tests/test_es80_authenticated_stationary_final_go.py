@@ -26,7 +26,7 @@ class F:
  def control(self,repo,pr,run,get):return {'authority':'nembra-authenticated-stationary-go-control-plane-v1','sourceCommitSHA':'e'*40,'prNumber':2638,'headBranch':'control/final','state':'open','merged':False,'draft':False,'workflowRunID':900,'workflowName':go.AUTH_WORKFLOW_NAME,'workflowPath':go.AUTH_WORKFLOW_PATH,'gitBlobs':{}}
  def inst(self,repo,s,dev,h,lock):
   assert h==H(b'device-token');assert lock==self.lock
-  return {'authority':'accepted-candidate-private-installer-execution-v1','result':'success','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'baselineDevice':go.DEVICE,'baselineProductType':go.PRODUCT,'baselineOS':'iOS 27'}
+  return {'authority':'accepted-candidate-private-installer-execution-v2','result':'success','sourceCommitSHA':s,'installerGitBlob':go.git(self.repo,'rev-parse',f'{s}:{go.INSTALLER}').lower(),'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'baselineDevice':go.DEVICE,'baselineProductType':go.PRODUCT,'baselineOS':'iOS 27'}
  def signed(self,repo,s,dev,install,output):return {'authority':'nembra-authenticated-stationary-retained-signed-artifact-v1','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'tuyaDependencyLockSHA256':self.lock,'retainedIPASHA256':'b'*64,'retainedAppTreeSHA256':'c'*64,'embeddedProvisioningProfileSHA256':'d'*64,'signingTeamIdentifier':'TEAM','applicationIdentifier':'TEAM.'+go.BUNDLE,'codesignVerified':True,'intendedDeviceIncluded':True,'physicalAuthorityCreated':False}
  def build(self,**x):
   a=dict(authority_repo=self.repo,authority_pr=2638,authority_run=900,candidate_repo=self.repo,source=self.s,pr=self.pr,runs=self.ids,artifact_id=self.aid,review_id=self.rid,archive=self.arc,device_file=self.dev,retained_ipa=self.r/'retained.ipa',get=self.get,control_authority=self.control,run_installer=self.inst,inspect_signed_artifact=self.signed,reinspect_signed_artifact=self.signed);a.update(x);return go.build(**a)
@@ -78,6 +78,17 @@ class T(unittest.TestCase):
   r['body']='{"schemaVersion":2,"schemaVersion":2}';self.no(self.f.build)
   r['body']=self.f.body(verdict='rejected');self.no(self.f.build)
   r['body']=self.f.body(standardScreenshotSHA256='0'*64);self.no(self.f.build)
+ def test_git_replace_refs_cannot_redefine_accepted_candidate_objects(self):
+  original=self.f.s;installer=self.f.repo/go.INSTALLER
+  installer.write_text(installer.read_text()+'# attacker replacement bytes\n')
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'add',go.INSTALLER],check=True)
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'commit','-qm','attacker replacement'],check=True)
+  attacker=subprocess.check_output(['/usr/bin/git','-C',str(self.f.repo),'rev-parse','HEAD'],text=True).strip()
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'replace',original,attacker],check=True)
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'reset','--hard',original],check=True,stdout=subprocess.DEVNULL)
+  self.assertEqual(subprocess.check_output(['/usr/bin/git','-C',str(self.f.repo),'rev-parse','HEAD'],text=True).strip(),original)
+  self.no(lambda:go.candidate(self.f.repo,original))
+
  def test_candidate_dirty_and_retired_authority_rejected(self):
   (self.f.repo/'dirty').write_text('x');self.no(self.f.build);(self.f.repo/'dirty').unlink();p=self.f.repo/go.INSTALLER;p.write_text(p.read_text()+'ES80-FINGERPRINT-v1\n');subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'add','.'],check=True);subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'commit','-qm','old'],check=True);s=subprocess.check_output(['/usr/bin/git','-C',str(self.f.repo),'rev-parse','HEAD'],text=True).strip();self.no(lambda:go.candidate(self.f.repo,s))
  def test_prechecked_device_digest_is_passed_to_installer(self):

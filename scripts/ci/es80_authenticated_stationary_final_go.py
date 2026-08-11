@@ -6,7 +6,7 @@ installer on the intended iPhone, then publishes authorization for one stationar
 Runtime account/membership/correlation/observation/seal remain app-enforced experiment gates.
 """
 from __future__ import annotations
-import argparse, hashlib, importlib.util, json, os, pwd, re, stat, subprocess, sys, urllib.request, zipfile
+import argparse, hashlib, importlib.util, json, os, pwd, re, stat, subprocess, sys, tempfile, urllib.request, zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -170,9 +170,16 @@ def review(pr:int,review_id:int,source:str,v:dict[str,Any],get=api):
     if b["standardScreenshotSHA256"]!=std or b["accessibilityScreenshotSHA256"]!=ax: raise GoError("GitHub candidate review screenshot mismatch")
     return {"authority":b["authority"],"reviewID":review_id,"reviewNodeID":r.get("node_id"),"reviewBodySHA256":sha(body.encode()),"reviewedAtUTC":stamp,"reviewer":OWNER,"state":r["state"],"verdict":"accepted","standardScreenshotSHA256":std,"accessibilityScreenshotSHA256":ax,"tuyaDependencyLockSHA256":lock}
 
+def _git_environment()->dict[str,str]:
+    return {"PATH":"/usr/bin:/bin","GIT_NO_REPLACE_OBJECTS":"1"}
+
 def git(repo:Path,*args):
-    try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={"PATH":"/usr/bin:/bin"}).stdout.strip()
+    try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=_git_environment()).stdout.strip()
     except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate Git custody failed") from e
+
+def git_bytes(repo:Path,*args)->bytes:
+    try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=_git_environment()).stdout
+    except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate Git byte custody failed") from e
 
 def candidate(repo:Path,source:str):
     root=repo.expanduser().resolve(strict=True)
@@ -234,14 +241,42 @@ def installer_environment(device:Path,device_digest:str,accepted_lock_sha256:str
     digest=device_digest.lower()
     if not HEX64.fullmatch(digest): raise GoError("private intended-device digest invalid")
     if not isinstance(accepted_lock_sha256,str) or not HEX64.fullmatch(accepted_lock_sha256) or accepted_lock_sha256!=accepted_lock_sha256.lower(): raise GoError("accepted Tuya dependency-lock digest is not canonical lowercase SHA-256")
-    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":digest,"NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256":accepted_lock_sha256}
+    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","GIT_NO_REPLACE_OBJECTS":"1","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":digest,"NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256":accepted_lock_sha256}
+
+def _accepted_installer_bytes(root:Path,source:str)->tuple[bytes,str]:
+    accepted_blob=git(root,"rev-parse",f"{source}:{INSTALLER}").lower()
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",accepted_blob): raise GoError("accepted installer Git blob invalid")
+    raw=git_bytes(root,"cat-file","blob",accepted_blob)
+    if not raw: raise GoError("accepted installer Git blob is empty")
+    current=regular(root/INSTALLER,"candidate installer at execution boundary")
+    if current!=raw: raise GoError("candidate installer bytes changed before private side effect")
+    actual_blob=git(root,"hash-object","--no-filters","--",INSTALLER).lower()
+    if actual_blob!=accepted_blob: raise GoError("candidate installer execution bytes differ from accepted Git blob")
+    return raw,accepted_blob
 
 def installer(repo:Path,source:str,device:Path,device_digest:str,accepted_lock_sha256:str):
     root=repo.expanduser().resolve(strict=True); env=installer_environment(device,device_digest,accepted_lock_sha256)
-    try:p=subprocess.run(["/bin/bash","--noprofile","--norc","-p",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    raw,accepted_blob=_accepted_installer_bytes(root,source)
+    pinned=None
+    try:
+        pinned=tempfile.TemporaryFile(mode="w+b",prefix="nembra-final-go-installer-")
+        fd=pinned.fileno(); os.fchmod(fd,0o600)
+        pinned.write(raw); pinned.flush(); os.fsync(fd); pinned.seek(0)
+        pinned_bytes=pinned.read()
+        if pinned_bytes!=raw: raise GoError("sealed installer bytes changed before execution")
+        pinned.seek(0)
+        st=os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid!=os.geteuid() or stat.S_IMODE(st.st_mode)!=0o600 or st.st_size!=len(raw): raise GoError("sealed installer descriptor custody invalid")
+        fd_path=f"/dev/fd/{fd}"
+        p=subprocess.run(
+            ["/bin/bash","--noprofile","--norc","-p","-c",'source "$1" "$2"',str(root/INSTALLER),fd_path,source],
+            cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,pass_fds=(fd,),
+        )
     except OSError as e: raise GoError("private installer execution failed") from e
+    finally:
+        if pinned is not None: pinned.close()
     if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
-    return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
+    return {"authority":"accepted-candidate-private-installer-execution-v2","result":"success","sourceCommitSHA":source,"installerGitBlob":accepted_blob,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
 
 def retained_signed_artifact(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path)->dict[str,Any]:
     module_path=Path(__file__).with_name("es80_authenticated_stationary_signed_artifact.py")
@@ -263,7 +298,7 @@ def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_rep
     control=control_authority(authority_repo,authority_pr,authority_run,get)
     source=canon(source,"source"); pr=pos(pr,"PR")
     ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(pr,review_id,source,vs,get); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
-    got=run_installer(candidate_repo,source,device_file,dh,rv["tuyaDependencyLockSHA256"]); expected={"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
+    got=run_installer(candidate_repo,source,device_file,dh,rv["tuyaDependencyLockSHA256"]); expected={"authority":"accepted-candidate-private-installer-execution-v2","result":"success","sourceCommitSHA":source,"installerGitBlob":cs["installerGitBlob"],"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
     if got!=expected: raise GoError("private installer result drifted")
     signed=inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
     required_signed={"authority":"nembra-authenticated-stationary-retained-signed-artifact-v1","sourceCommitSHA":source,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"codesignVerified":True,"intendedDeviceIncluded":True,"physicalAuthorityCreated":False}

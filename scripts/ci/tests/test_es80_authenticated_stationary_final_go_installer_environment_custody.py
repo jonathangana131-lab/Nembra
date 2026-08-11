@@ -55,6 +55,8 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
                 "[[ \"${NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256:-}\" =~ ^[0-9a-f]{64}$ ]] || exit 47\n"
                 f"[[ \"${{PATH:-}}\" == {GO.TRUSTED_INSTALLER_PATH!r} ]] || exit 46\n"
                 f"[[ \"${{NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:-}}\" == {accepted_lock!r} ]] || exit 48\n"
+                "[[ \"${GIT_NO_REPLACE_OBJECTS:-}\" == 1 ]] || exit 49\n"
+                f"[[ \"$0\" == {str(installer)!r} ]] || exit 50\n"
                 "printf '%s\\n' 'SDK-INTEGRATED CAPTURE LAUNCHED'\n",
                 encoding="utf-8",
             )
@@ -100,6 +102,37 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
                 "Final GO must launch the installer from a closed startup environment",
             )
 
+    def test_checkout_path_swap_before_bash_launch_cannot_change_executed_bytes(self) -> None:
+        from unittest import mock
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-execution-subject-") as temporary:
+            root = Path(temporary).resolve(strict=True)
+            repository = root / "candidate"
+            repository.mkdir()
+            subprocess.run(["/usr/bin/git", "-C", str(repository), "init", "-q"], check=True)
+            subprocess.run(["/usr/bin/git", "-C", str(repository), "config", "user.email", "capture@nembra.invalid"], check=True)
+            subprocess.run(["/usr/bin/git", "-C", str(repository), "config", "user.name", "Nembra Capture QA"], check=True)
+            installer = repository / GO.INSTALLER
+            installer.parent.mkdir(parents=True, exist_ok=True)
+            installer.write_text("#!/bin/bash\nset -euo pipefail\nprintf '%s\n' 'SDK-INTEGRATED CAPTURE LAUNCHED'\n", encoding="utf-8")
+            subprocess.run(["/usr/bin/git", "-C", str(repository), "add", "."], check=True)
+            subprocess.run(["/usr/bin/git", "-C", str(repository), "commit", "-qm", "fixture"], check=True)
+            source = subprocess.check_output(["/usr/bin/git", "-C", str(repository), "rev-parse", "HEAD"], text=True).strip()
+            device = root / "device"; device.write_text("device-token", encoding="utf-8"); device.chmod(0o600)
+            sentinel = root / "attacker-ran"
+            real_run = subprocess.run
+            swapped = False
+            def intercept(args, **kwargs):
+                nonlocal swapped
+                if args and args[0] == "/bin/bash" and not swapped:
+                    swapped = True
+                    installer.write_text(f"#!/bin/bash\ntouch {str(sentinel)!r}\nprintf '%s\n' 'SDK-INTEGRATED CAPTURE LAUNCHED'\n", encoding="utf-8")
+                return real_run(args, **kwargs)
+            with mock.patch.object(GO.subprocess, "run", side_effect=intercept):
+                with self.assertRaises(GO.GoError):
+                    GO.installer(repository, source, device, GO.device_hash(device), "e" * 64)
+            self.assertTrue(swapped, "test did not reach the private Bash side-effect boundary")
+            self.assertFalse(sentinel.exists(), "mutable checkout pathname bytes executed instead of the sealed accepted installer")
+
     def test_installer_environment_is_explicit_allowlist(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-final-go-env-shape-") as temporary:
             device = Path(temporary).resolve(strict=True) / "device"
@@ -111,6 +144,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             self.assertEqual(env["PATH"], GO.TRUSTED_INSTALLER_PATH)
             self.assertEqual(env["BASH_ENV"], "/dev/null")
             self.assertEqual(env["ENV"], "/dev/null")
+            self.assertEqual(env["GIT_NO_REPLACE_OBJECTS"], "1")
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"], str(device))
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"], digest)
             self.assertEqual(env["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"], accepted_lock)
