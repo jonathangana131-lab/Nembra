@@ -9,12 +9,13 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:24:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:24:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:27:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
   "takeoverFromWorkerId": "sol-20260811-54c8buildtest",
   "takeoverReason": "generation-5 tests lease expired hours ago; current #2968 moved to exact 947f5922 and has fresh stale source-contract failures after the downstream-helper repair landed",
-  "intent": "Repair only current #2968 exact-head test/workflow source contracts that still demand retired direct git-show execution, preserving the stronger verified accepted Git payload boundary. Validate exact-head workflows; do not change production authority or collide with active composition. PHYSICAL NO-GO."
+  "intent": "Repair only current #2968 exact-head test/workflow source contracts that still demand retired direct git-show execution, preserving the stronger verified accepted Git payload boundary. Validate exact-head workflows; do not change production authority or collide with active composition. PHYSICAL NO-GO.",
+  "checkpoint": "Heartbeat 20:27Z. Field Build Provenance stale direct-git-show source contract identified; Main Selective Graft trusted-source failure still under exact diagnosis. No production authority changes."
 }
