@@ -7,14 +7,17 @@
   "workerId": "sol-20260811-1439r8",
   "leaseId": "capture-build-integration-r8-20260811-2231",
   "generation": 5,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:31:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:31:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:35:30Z",
+  "releasedAt": "2026-08-11T22:35:30Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-selected-xcode-acl-field-source-contract-sol-r8-20260811",
-  "pr": null,
+  "pr": 3088,
   "sourceSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
+  "currentHeadSHA": "31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4",
   "takeoverFromWorkerId": "sol-20260811-brv7",
   "takeoverFromLeaseId": "capture-build-integration-brv7-20260811-2146",
-  "takeoverReason": "Generation-4 integration explicitly released after identifying the minimal selected-tool Field source-oracle delta. Exact production ACL successor #3072@3e41ecd0 is live and leaves capture-field-build-provenance.yml unchanged from clean parent, where stale ambient devicectl/xcodebuild assertions remain. Compose only #3016's already-proven SELECTED_XCTRACE/SELECTED_DEVICECTL/SELECTED_XCODEBUILD source-contract correction onto exact #3072 without touching installer ACL production or tests-owned paths. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-4 integration explicitly released after identifying the minimal selected-tool Field source-oracle delta. Exact production ACL successor #3072@3e41ecd0 is live and leaves capture-field-build-provenance.yml unchanged from clean parent, where stale ambient devicectl/xcodebuild assertions remain. Compose only #3016's already-proven SELECTED_XCTRACE/SELECTED_DEVICECTL/SELECTED_XCODEBUILD source-contract correction onto exact #3072 without touching installer ACL production or tests-owned paths. PHYSICAL NO-GO.",
+  "checkpoint": "INTEGRATION CHECKPOINT #3088@31cca94c. Built from #3072 exact workflow blob 63884d4f, not stale #3016 wholesale, so #3008's stronger read_verified_accepted_git_blob() assertion and verified private-runner negative direct-git-show contract remain intact. Exact parent->child compare: ahead 1 / behind 0, exactly .github/workflows/capture-field-build-provenance.yml, +5/-3. Final patch only replaces ambient devicectl list/install with selected xctrace/devicectl list/install/launch assertions and changes guarded build ordering probe from /usr/bin/xcodebuild to $SELECTED_XCODEBUILD. No installer/ACL/test/product bytes changed. PR mergeable true. Exact-head Field Build Provenance run 31542271509 QUEUED; Xcode path-policy 31542271777 SKIPPED and not counted. Parent/legacy greens do not accept child. Independent review required. PHYSICAL NO-GO."
 }
