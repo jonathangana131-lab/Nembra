@@ -1,0 +1,24 @@
+name: Capture Final Package Linux Fastcheck
+
+on:
+  push:
+    branches:
+      - ci/capture-final-package-linux-fastcheck-gpt56
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Show Swift version
+        run: swift --version
+      - name: Run NembraCore tests
+        run: swift test --package-path Packages/NembraCore
+      - name: Run complete Capture package tests
+        run: swift test --package-path Packages/NembraBluetoothCapture
