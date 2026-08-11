@@ -9,9 +9,38 @@
   "state": "NEEDS_CHANGES",
   "dependencies": [],
   "blockers": [
-    "#2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b mechanically confirmed that #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2 could first define signed-app authority only after xcodebuild returned from same-UID-mutable DerivedData. #2995 is the active production repair and has moved beyond its PR-body checkpoint to live head a71cc55dbc2281791e327888cf89ce0db6cf6193.",
-    "#2995 live a71cc55 adds real-Xcode supplementary-GID isolation evidence, but the production helper remains byte-identical to ccaa93c for the capability-retirement path: after root-locking DerivedData it calls _terminate_remaining_process_group(process.pid). That mechanically drains only the original process group, not an escaped setsid descendant or an already-open writable output FD. #2998 exact 678bf8a9aa09068b2b9e674578d83e55fabac553 is the validation-only detached-FD attack against that unchanged production boundary; its Capture Signed Origin Detached FD Red Team run 31535483234 is queued, so queued is not evidence. Until this authority question is resolved on the production exact head, signed-origin custody remains NEEDS_CHANGES.",
-    "#2995 current exact a71cc55 acceptance is not earned: Capture Main Selective Graft 31535634310, Field Build Provenance 31535634319, and Signed App Install Custody 31535634324 are queued; Xcode 27 run 31535634318 is skipped because the PR remains draft. If the head moves, all exact-head acceptance resets again."
+    {
+      "id": "current-production-credential-custody-not-output-freeze",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Current production successor #3056 exact 51b8e6b35bbe065c0a1d6b0b7605201f8c02239f hardens structured credential launch, root/ambient-group rejection and sudo-policy/timestamp custody, but it explicitly does not close detached regular-file FD, directory-FD or shared-mmap writer authority after compiler return. Pathname lock/process-group retirement is not descriptor revocation. On this exact head Signed App Install Custody run 31542155759 is QUEUED, Field Build Provenance 31542155737 and Main Selective Graft 31542155743 are terminal FAILURE on inherited private-Tuya baseline debt, and Xcode 31542155751 is SKIPPED. None of that promotes compiler-output freeze authority.",
+      "pr": 3056,
+      "headSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f"
+    },
+    {
+      "id": "dedicated-build-uid-real-xcode-freeze-pending",
+      "state": "ACTIVE",
+      "scope": "architecture-validation",
+      "reason": "Validation-only #3089 exact ecca5b2925c336269b400f1d65de7224d36607b5 tests the current dedicated temporary build-UID architecture: real Xcode must build under that isolated identity, the field identity must lack live output authority, normal non-forced APFS detach must succeed, a byte-identical read-only remount must result, and root/former build UID mutation must fail. At last exact refresh its dedicated-UID run 31543061748, Field run 31543061639 and Main Graft 31543061821 were QUEUED; Xcode PR path-policy was skipped. Queued is not architecture evidence and even a green remains validation-only until deliberately consumed by a production successor.",
+      "pr": 3089,
+      "headSHA": "ecca5b2925c336269b400f1d65de7224d36607b5"
+    },
+    {
+      "id": "retained-writer-class-matrix-still-active",
+      "state": "ACTIVE",
+      "scope": "adversarial-validation",
+      "reason": "The compiler-output freeze decision still depends on exact retained-authority evidence across regular-file FD, nested directory-FD and shared writable mmap classes. Active validation lineages include #3027/#3103 for the structured-writer READY/kernel path, #3094 for the corrected post-detach directory-FD oracle, and #3064 for shared mmap. These are architecture tests, not product branches; do not duplicate or merge them as product work. Production composition must wait for the mechanically supported boundary and then replay these authority classes on the new exact implementation.",
+      "pr": null,
+      "headSHA": null
+    },
+    {
+      "id": "signed-install-final-composition-pending",
+      "state": "ACTIVE",
+      "scope": "flagship",
+      "reason": "After a compiler-output freeze architecture is mechanically accepted and implemented, signed-install must still converge with current build authority, private identity, Final-GO and app/runtime lineages and re-earn protected-stage, signature/profile/CoreDevice, Field/Main/Xcode and adversarial exact-head gates. No validation green alone authorizes installation or scooter interaction.",
+      "pr": 3056,
+      "headSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f"
+    }
   ],
   "mode": "exclusive",
   "allowedWriteAreas": [
@@ -32,27 +61,21 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
+  "sourceSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f",
   "legacy": {
-    "primaryPR": 2789,
-    "selectedSecurityParentPR": 2871,
-    "selectedSecurityParentHeadSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
-    "confirmedOriginRedTeamPR": 2955,
-    "confirmedOriginRedTeamHeadSHA": "afdd329d8041f909c4d77fc86d78f73953bba81b",
-    "activeRepairPR": 2995,
-    "activeRepairHeadSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
-    "activeRepairPreviousCheckpointSHA": "ccaa93c5019797697144f8f7613b9e64c123ef53",
-    "activeDetachedFDRedTeamPR": 2998,
-    "activeDetachedFDRedTeamHeadSHA": "678bf8a9aa09068b2b9e674578d83e55fabac553",
-    "activeDetachedFDRun": 31535483234,
-    "exactHeadGateState": "BLOCKED_BY_DETACHED_WRITER_AUTHORITY_QUESTION_AND_QUEUED_EXACT_HEAD_GATES",
-    "currentRepairRuns": {
-      "mainGraft": 31535634310,
-      "field": 31535634319,
-      "signedApp": 31535634324,
-      "xcode": 31535634318
-    },
-    "knownExactHeadFinding": "Reconciled 2026-08-11T21:03Z by sol-20260811-1400q7. Live GitHub outranks #2995's stale PR-body exact-head text: the repair branch is now a71cc55dbc2281791e327888cf89ce0db6cf6193, two commits ahead of ccaa93c and differing only by the permanent Signed App workflow plus a new real-Xcode group-isolation test. The real-Xcode witness proves the intended supplementary-GID capability can produce a product while a same-UID sibling without the capability cannot mutate it, but it does not prove all writers/capability holders are gone after the direct xcodebuild process returns. The production build-origin helper on a71cc55 still root-locks DerivedData then retires only process.pid's original process group. #2998 is an exact validation child of ccaa93c that attacks an escaped setsid descendant retaining an already-open writable product FD; the production helper is unchanged across ccaa93c -> a71cc55, so the authority question remains materially applicable, but its queued run is not yet mechanical evidence. Preserve PHYSICAL NO-GO until the final composed exact build earns all authority gates."
+    "reconciledAt": "2026-08-11T23:17:38Z",
+    "activeProductionPR": 3056,
+    "activeProductionHeadSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f",
+    "activeProductionSignedAppRun": 31542155759,
+    "activeProductionFieldFailureRun": 31542155737,
+    "activeProductionMainFailureRun": 31542155743,
+    "activeProductionSkippedXcodeRun": 31542155751,
+    "dedicatedUIDValidationPR": 3089,
+    "dedicatedUIDValidationHeadSHA": "ecca5b2925c336269b400f1d65de7224d36607b5",
+    "dedicatedUIDRun": 31543061748,
+    "dedicatedUIDFieldRun": 31543061639,
+    "dedicatedUIDMainRun": 31543061821,
+    "knownExactHeadFinding": "Reconciled generation 10 on 2026-08-11. The old #2995 detached-FD snapshot is obsolete as a selected production head. #3056 exact 51b8e6b is current credential/sudo custody production, but it intentionally does not solve retained writer authority. #3089 exact ecca5b2 is the current real-Xcode dedicated-build-UID/APFS-freeze architecture probe and remains unaccepted while its exact Mac gates are queued. Regular-file FD, directory-FD and mmap classes remain an active validation matrix. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "compiler-output-origin", "open-fd", "git-authority", "legacy-import"]
 }
