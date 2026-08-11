@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070308-capture-2805-exact-head-a1c9",
+  "type": "FINDING",
+  "workerId": "sol-20260811-a1c9",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Fresh exact-head reconciliation delta for Capture PR #2805: live head advanced from stale 6c46c0fc7be695f4169e4fde772e0f740f6f43bf to f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf. The head removes four tracked Python __pycache__ bytecode artifacts. At f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf, Capture Private Review Helper Execution Custody, Capture Private Review Commitment, Capture CocoaPods Build Subject Authority, and Capture Field Build Provenance are SUCCESS. Capture Main Selective Graft Diagnostic run 31467236296 remains in progress at this checkpoint; Xcode 27 PR Exact-Head QA is SKIPPED, so this is not final acceptance or physical authority. Earlier 6c46 failure evidence is superseded for current-head classification but remains useful history. PHYSICAL NO-GO remains unchanged.",
+  "createdAt": "2026-08-11T07:03:08Z",
+  "data": {
+    "pullRequest": 2805,
+    "previousHeadSHA": "6c46c0fc7be695f4169e4fde772e0f740f6f43bf",
+    "headSHA": "f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf",
+    "green": [
+      "Capture Private Review Helper Execution Custody",
+      "Capture Private Review Commitment",
+      "Capture CocoaPods Build Subject Authority",
+      "Capture Field Build Provenance"
+    ],
+    "pending": ["Capture Main Selective Graft Diagnostic"],
+    "nonAccepting": ["Xcode 27 PR Exact-Head QA: SKIPPED"],
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
