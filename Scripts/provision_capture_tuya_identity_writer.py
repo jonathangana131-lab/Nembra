@@ -130,7 +130,15 @@ def _is_canonical_private_stage_name(name: str) -> bool:
 
 
 def _recover_private_stage_residue(checkout_fd: int) -> None:
-    """Remove only exact writer-owned crash residue; reject every ambiguous alias."""
+    """Neutralize exact writer-shaped crash residue without pathname deletion authority.
+
+    The checkout is writable by the same UID as this process, so a pathname can be
+    renamed/replaced between an identity check and unlink(2). Recovery therefore never
+    deletes a reserved staging pathname. Credential-bearing bytes are truncated through
+    the already-admitted file descriptor, fsync'd, and then the name is re-bound to that
+    exact neutralized inode. Zero-length canonical 0600 entries are inert tombstones and
+    may remain; they contain no logical credential bytes.
+    """
     try:
         entries = os.listdir(checkout_fd)
     except OSError as exc:
@@ -157,11 +165,14 @@ def _recover_private_stage_residue(checkout_fd: int) -> None:
         ):
             raise ProvisionError("reserved private identity staging entry is not safe writer-owned crash residue")
 
+        if named.st_size == 0:
+            continue
+
         descriptor = -1
         try:
             descriptor = os.open(
                 name,
-                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
                 dir_fd=checkout_fd,
             )
             held = os.fstat(descriptor)
@@ -171,6 +182,7 @@ def _recover_private_stage_residue(checkout_fd: int) -> None:
                 or held.st_uid != os.geteuid()
                 or held.st_nlink != 1
                 or stat.S_IMODE(held.st_mode) != 0o600
+                or held.st_size <= 0
                 or held.st_size > _PRIVATE_STAGE_MAX_BYTES
                 or current.st_dev != held.st_dev
                 or current.st_ino != held.st_ino
@@ -181,15 +193,40 @@ def _recover_private_stage_residue(checkout_fd: int) -> None:
             ):
                 raise ProvisionError("reserved private identity staging entry changed during recovery admission")
 
-            os.unlink(name, dir_fd=checkout_fd)
-            after_unlink = os.fstat(descriptor)
-            if after_unlink.st_dev != held.st_dev or after_unlink.st_ino != held.st_ino or after_unlink.st_nlink != 0:
-                raise ProvisionError("reserved private identity staging name changed during recovery removal")
-            os.fsync(checkout_fd)
+            # Logical byte neutralization is descriptor-bound. If a same-UID actor
+            # renames the admitted inode and installs a replacement at the reserved
+            # name here, ftruncate still targets only the admitted inode. This does
+            # not make a secure physical-media erasure claim.
+            os.ftruncate(descriptor, 0)
+            os.fsync(descriptor)
+            neutralized = os.fstat(descriptor)
+            if (
+                neutralized.st_dev != held.st_dev
+                or neutralized.st_ino != held.st_ino
+                or neutralized.st_uid != held.st_uid
+                or neutralized.st_nlink != held.st_nlink
+                or neutralized.st_mode != held.st_mode
+                or neutralized.st_size != 0
+            ):
+                raise ProvisionError("private identity crash residue failed exact-inode neutralization")
+
+            try:
+                rebound = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+            except OSError as exc:
+                raise ProvisionError("reserved private identity staging name changed during recovery neutralization") from exc
+            if (
+                rebound.st_dev != neutralized.st_dev
+                or rebound.st_ino != neutralized.st_ino
+                or rebound.st_uid != neutralized.st_uid
+                or rebound.st_nlink != neutralized.st_nlink
+                or rebound.st_mode != neutralized.st_mode
+                or rebound.st_size != 0
+            ):
+                raise ProvisionError("reserved private identity staging name changed during recovery neutralization")
         except ProvisionError:
             raise
         except OSError as exc:
-            raise ProvisionError("could not safely remove writer-owned private identity crash residue") from exc
+            raise ProvisionError("could not safely neutralize writer-owned private identity crash residue") from exc
         finally:
             if descriptor >= 0:
                 os.close(descriptor)
@@ -200,8 +237,22 @@ def _recover_private_stage_residue(checkout_fd: int) -> None:
         )
     except OSError as exc:
         raise ProvisionError("could not re-inspect private identity staging namespace") from exc
-    if leftovers:
-        raise ProvisionError("private identity staging namespace is not clean after recovery")
+    for name in leftovers:
+        if not _is_canonical_private_stage_name(name):
+            raise ProvisionError("private identity staging namespace contains a non-writer entry after recovery")
+        try:
+            metadata = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise ProvisionError("could not verify private identity recovery tombstone") from exc
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_nlink != 1
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_size != 0
+        ):
+            raise ProvisionError("private identity staging namespace is not credential-neutral after recovery")
+
 
 def _ensure_private_directory(parent_fd: int, name: str) -> int:
     if not name or name in (".", "..") or "/" in name:
