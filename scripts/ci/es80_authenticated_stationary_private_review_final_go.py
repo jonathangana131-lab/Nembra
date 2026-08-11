@@ -447,12 +447,17 @@ def _current_generated_candidate_authority(
             raise generated.GeneratedSubjectGoError(
                 f"generated build authority Git/worktree identity drifted: {relative}"
             )
+        payload = base.git_bytes(root, "show", f"{source}:{relative}")
+        if not isinstance(payload, bytes) or not payload or _blob_oid(payload, blob) != blob:
+            raise generated.GeneratedSubjectGoError(
+                f"generated build authority accepted Git bytes failed identity: {relative}"
+            )
         blobs[relative] = blob
         try:
-            texts[relative] = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as error:
+            texts[relative] = payload.decode("utf-8")
+        except UnicodeDecodeError as error:
             raise generated.GeneratedSubjectGoError(
-                f"generated build authority source is not readable UTF-8: {relative}"
+                f"generated build authority accepted Git bytes are not UTF-8: {relative}"
             ) from error
 
     bootstrap = texts["Scripts/bootstrap_capture_tuya_sdk.sh"]
@@ -553,7 +558,6 @@ def _candidate_git_text(root: Path, source: str, *args: str) -> str:
         _audit_candidate_tree(root, source)
         return ""
     if len(args) == 5 and args[:4] == ("hash-object", "--no-filters", "--", args[3]):
-        # Kept only for defensive compatibility with unusual tuple construction.
         relative = args[4]
         mode, accepted_oid = _candidate_relative_oid(root, source, relative)
         return _physical_blob_oid(root, relative, mode, accepted_oid)
