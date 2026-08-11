@@ -11,6 +11,20 @@ import UniformTypeIdentifiers
 /// This deliberately does NOT send scooter commands. It uses Tuya's QR account authorization
 /// and read-only Device Sharing endpoints to collect the device's cloud metadata, current status,
 /// and specifications before the next Bluetooth experiment.
+private final class TuyaAccountBridgeNoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        // Authenticated Tuya headers are never replayed across redirects. A redirect is
+        // returned to requestJSON as the original 3xx response and therefore fails closed.
+        completionHandler(nil)
+    }
+}
+
 @MainActor
 final class TuyaAccountBridge: ObservableObject {
     struct LinkedDevice: Identifiable, Equatable {
@@ -376,8 +390,8 @@ final class TuyaAccountBridge: ObservableObject {
             let terminal = result["terminal_id"] as? String ?? ""
             let expire = Self.int64(result["expire_time"]) ?? 0
             let rawEndpoint = result["endpoint"] as? String ?? ""
-            let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\(rawEndpoint)"
-            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
+            let endpoint = try Self.normalizedHTTPSAPIEndpoint(rawEndpoint)
+            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty else {
                 throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
             }
             guard !Task.isCancelled,
@@ -583,8 +597,45 @@ final class TuyaAccountBridge: ObservableObject {
         )
     }
 
+    static func normalizedHTTPSAPIEndpoint(_ rawEndpoint: String) throws -> String {
+        let trimmed = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw BridgeError.invalidURL }
+
+        let parsed = URLComponents(string: trimmed)
+        let candidate = parsed?.scheme == nil ? "https://\(trimmed)" : trimmed
+        guard var components = URLComponents(string: candidate),
+              components.scheme?.lowercased() == "https",
+              let host = components.host,
+              !host.isEmpty,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              components.path.isEmpty || components.path == "/" else {
+            throw BridgeError.invalidURL
+        }
+        components.scheme = "https"
+        components.path = ""
+        guard let url = components.url,
+              url.scheme?.lowercased() == "https",
+              let normalizedHost = url.host,
+              !normalizedHost.isEmpty else {
+            throw BridgeError.invalidURL
+        }
+        var normalized = url.absoluteString
+        while normalized.hasSuffix("/") { normalized.removeLast() }
+        return normalized
+    }
+
     private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let requestURL = request.url,
+              requestURL.scheme?.lowercased() == "https",
+              let host = requestURL.host,
+              !host.isEmpty else {
+            throw BridgeError.invalidURL
+        }
+        let redirectDelegate = TuyaAccountBridgeNoRedirectDelegate()
+        let (data, response) = try await URLSession.shared.data(for: request, delegate: redirectDelegate)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw BridgeError.remote("HTTP request failed.")
         }
