@@ -193,7 +193,7 @@ jobs:
             echo 'ERROR: build-window guard must execute from the exact accepted Git source subject, not a mutable worktree pathname.' >&2
             exit 1
           fi
-          build_line="$(grep -nF -- '-- xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
+          build_line="$(grep -nF -- '-- /usr/bin/xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
           second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
           test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
           test "$first_private_verify_line" -lt "$guard_line"
