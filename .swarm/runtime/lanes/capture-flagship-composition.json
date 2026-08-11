@@ -15,14 +15,6 @@
   ],
   "blockers": [
     {
-      "id": "ax-successor-xcode-exact-head-pending",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "App-visible successor #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 has terminal exact-head Main Selective Graft, Field Build Provenance, and Standalone Visual Evidence success plus human standard/AX5 pixel acceptance. Xcode 27 run 31490540888 has bound the immutable exact PR head and started job 93775787237; checkout/head/project-structure steps are green and core-package validation is running. Until the whole Xcode job is terminal SUCCESS on unchanged 005b7c4, #2612 remains the last fully accepted app-visible baseline.",
-      "pr": 2940,
-      "headSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27"
-    },
-    {
       "id": "physical-security-lineages-uncomposed",
       "state": "ACTIVE",
       "scope": "dependency",
@@ -34,7 +26,7 @@
       "id": "standard-first-fold-copy-density",
       "state": "ACTIVE",
       "scope": "product-quality",
-      "reason": "Retained exact #2940 standard screenshot is truthful and passes the targeted AX repair, but repeated account/read-only/lock guidance pushes the Create approval QR control to y=2300 of a 2532 px viewport (~90.8%). AX5 already begins the same primary control at y=1101 (~43.5%). After exact #2940 acceptance, simplify redundant sighted standard prose while preserving semantic lock/account/CTA truth and rerun retained standard + AX pixels; do not mutate the current acceptance head mid-gate.",
+      "reason": "Retained exact #2940 standard screenshot is truthful and passes the targeted AX repair, but repeated account/read-only/lock guidance pushes the Create approval QR control to y=2300 of a 2532 px viewport (~90.8%). #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 has now earned terminal exact-head Xcode 27 success in run 31490540888, so simplify redundant sighted standard prose on a successor while preserving semantic lock/account/CTA truth and rerun retained standard + AX pixels.",
       "pr": 2940,
       "headSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27"
     }
@@ -52,35 +44,84 @@
     ".github/workflows"
   ],
   "slots": [
-    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
-    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":["XCODE_BUILD","IOS_SIMULATOR"]},
-    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
-    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":["RELEASE_INTEGRATION"]}
+    {
+      "name": "primary",
+      "role": "implementation",
+      "exclusive": true,
+      "leaseSeconds": 2700,
+      "resources": []
+    },
+    {
+      "name": "tests",
+      "role": "tests",
+      "exclusive": true,
+      "leaseSeconds": 1800,
+      "resources": [
+        "XCODE_BUILD",
+        "IOS_SIMULATOR"
+      ]
+    },
+    {
+      "name": "review",
+      "role": "adversarial-review",
+      "exclusive": true,
+      "leaseSeconds": 1800,
+      "resources": []
+    },
+    {
+      "name": "integration",
+      "role": "integration",
+      "exclusive": true,
+      "leaseSeconds": 1800,
+      "resources": [
+        "RELEASE_INTEGRATION"
+      ]
+    }
   ],
-  "acceptance": {"independentReview": true},
-  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
+  "acceptance": {
+    "independentReview": true
+  },
+  "physical": {
+    "required": true,
+    "state": "PHYSICAL_NO_GO"
+  },
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "legacy": {
-    "acceptedAppVisibleBaselinePR": 2612,
-    "acceptedAppVisibleBaselineHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
+    "acceptedAppVisibleBaselinePR": 2940,
+    "acceptedAppVisibleBaselineHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+    "previousAcceptedAppVisibleBaselinePR": 2612,
+    "previousAcceptedAppVisibleBaselineHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
     "candidateAppVisibleSuccessorPR": 2940,
     "candidateAppVisibleSuccessorHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-    "supersededVisualPRs": [2841,2891],
+    "supersededVisualPRs": [
+      2841,
+      2891
+    ],
     "exactCandidateRuns": {
       "mainGraft": 31490540822,
       "field": 31490540890,
       "standaloneVisual": 31490540910,
       "xcode": 31490540888
     },
+    "xcodeExactHeadStatus": "SUCCESS",
+    "xcodeExactHeadCompletedAt": "2026-08-11T12:56:18Z",
+    "xcodeExactHeadJob": 93775787237,
     "visualArtifact": {
       "id": 9101029285,
       "digest": "sha256:129c0836ebf8d0274d3f250530da9674730425e879233fbacbed2976f7fe1f5c",
       "standardPixelReview": "PASS_TARGETED_AX_REPAIR",
       "accessibilityXXXLReview": "PASS"
     },
-    "branchConvergence": "Do not fast-forward the #2612 head branch: open authority children including #2709, #2754, and #2719 still target that ref as their PR base. If #2940 Xcode turns terminal green unchanged, prefer PR-level supersession/canonical designation while leaving the historical base ref untouched.",
+    "branchConvergence": "Do not fast-forward the historical #2612 head branch: open authority children including #2709, #2754, and #2719 still target that ref as their PR base. #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 is now the accepted app-visible Capture ingredient after terminal exact-head Main Graft, Field, Standalone Visual and Xcode 27 success plus retained-pixel review; keep historical base refs untouched and compose later by exact accepted lineage.",
     "baseMainAtObservation": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-    "note": "Reconciled 2026-08-11T12:57Z. #2940 exact 005b7c4 is a strict descendant of accepted #2612 513ebea and has no temporary materializer residue. Main Graft + Field + Standalone Visual are terminal green; retained iPhone 12/iOS 27 standard and AX5 pixels were human-inspected. Xcode exact-head job is currently running and is the final declared app-visible acceptance gate. Broader standard copy-density remains a later product-quality rung. Security/control composition and physical proof remain explicitly separate; PHYSICAL NO-GO."
+    "note": "CI/Xcode reconciliation 2026-08-11T20:16Z: live Actions run 31490540888 is completed SUCCESS on exact #2940 head 005b7c4aaf27fabb442a65599b4538ebcc09ae27. Both trusted-head resolution job 93775734812 and Xcode 27 build/test/Simulator-capture job 93775787237 completed SUCCESS; project structure, NembraCore, Capture authority package, Simulator build/tests/state capture, and evidence upload all passed. The stale ax-successor-xcode-exact-head-pending blocker is removed and #2940 is promoted only to accepted app-visible ingredient/baseline. Broader standard copy-density remains active. Build/private-identity/signed-install/Final-GO composition and physical proof remain explicitly separate; PHYSICAL NO-GO."
   },
-  "tags": ["capture", "p0", "flagship", "app-visible", "composition", "accessibility"]
+  "tags": [
+    "capture",
+    "p0",
+    "flagship",
+    "app-visible",
+    "composition",
+    "accessibility"
+  ]
 }
