@@ -297,10 +297,43 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     )
 
 
+def _generated_build_guard_command(command: Sequence[str]) -> list[str]:
+    """Nest generated-workspace custody inside the existing private-input guard.
+
+    The private-input guard remains the outer process so its vnode watches stay
+    armed for the complete lifetime of the generated-build guard and xcodebuild.
+    The inner guard independently binds the ignored CocoaPods build graph to the
+    exact digest reviewed before field authorization.
+    """
+    expected = os.environ.get("NEMBRA_CAPTURE_ACCEPTED_TUYA_GENERATED_BUILD_SHA256", "").lower()
+    if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
+        raise BuildGuardError(
+            "NEMBRA_CAPTURE_ACCEPTED_TUYA_GENERATED_BUILD_SHA256 must carry the exact reviewed 64-hex CocoaPods generated-build subject"
+        )
+    helper = Path(__file__).with_name("capture_cocoapods_generated_build_guard.py")
+    if not helper.is_file():
+        raise BuildGuardError("CocoaPods generated-build window guard is missing from accepted source")
+    repository = Path(__file__).resolve().parent.parent
+    return [
+        "/usr/bin/python3",
+        "-I",
+        str(helper),
+        "--pods",
+        str(repository / "Pods"),
+        "--workspace",
+        str(repository / "NembraCapture.xcworkspace"),
+        "--expected-sha256",
+        expected,
+        "--",
+        *command,
+    ]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     inputs, command = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        return run_guarded_build(inputs, command)
+        guarded_command = _generated_build_guard_command(command)
+        return run_guarded_build(inputs, guarded_command)
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
