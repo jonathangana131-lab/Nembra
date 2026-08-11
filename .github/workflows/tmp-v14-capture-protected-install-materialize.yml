@@ -2,8 +2,10 @@ name: Temporary V14 Capture Protected Install Materializer
 
 on:
   push:
-    branches: [repair/v14-capture-signed-app-protected-install-sol]
-    paths: [.github/workflows/tmp-v14-capture-protected-install-materialize.yml]
+    branches:
+      - repair/v14-capture-signed-app-protected-install-sol
+    paths:
+      - .github/workflows/tmp-v14-capture-protected-install-materialize.yml
 
 permissions:
   contents: write
@@ -20,7 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "61b3b769184d2771d56898bacf6347993ec994db"
+          test "$(git rev-parse HEAD^^)" = "61b3b769184d2771d56898bacf6347993ec994db"
+          test "$(git diff --name-only 61b3b769184d2771d56898bacf6347993ec994db...HEAD)" = ".github/workflows/tmp-v14-capture-protected-install-materialize.yml"
           test "$(git rev-parse HEAD:scripts/field/install_one_time_capture.command)" = "a7d0a0ab23d7dd9723476eb38f9f507bbc5d7672"
           git fetch --no-tags origin repair/v14-capture-signed-app-install-custody-gpt56-sol
           git show FETCH_HEAD:scripts/field/install_one_time_capture.command > /tmp/staged-installer
@@ -59,11 +62,11 @@ SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I -c "$SIGNED_APP_CUSTODY_HELPER_SOU
           if source.count(old_verify) != 1:
               raise SystemExit("staging helper verification marker drifted")
           source = source.replace(old_verify, new_verify, 1)
-          source = source.replace(
-              'unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER APP_INSTALL_STAGE\n',
-              'unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_SOURCE APP_INSTALL_STAGE\n',
-              1,
-          )
+          cleanup_old = 'unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER APP_INSTALL_STAGE\n'
+          cleanup_new = 'unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_SOURCE APP_INSTALL_STAGE\n'
+          if source.count(cleanup_old) != 1:
+              raise SystemExit("custody cleanup marker drifted")
+          source = source.replace(cleanup_old, cleanup_new, 1)
           installer.write_text(source, encoding="utf-8")
 
           test = Path("scripts/ci/tests/test_capture_signed_app_install_custody.py")
