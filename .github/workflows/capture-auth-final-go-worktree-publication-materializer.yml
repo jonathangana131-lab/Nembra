@@ -76,15 +76,14 @@ jobs:
           git diff --check
           grep -Fq 'hash-object","--no-filters' scripts/ci/es80_authenticated_stationary_final_go.py
           grep -Fq 'd=publish_go_record(a.output,raw)' scripts/ci/es80_authenticated_stationary_final_go.py
-      - name: Commit clean source repair
+      - name: Commit product source repair
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/capture-auth-final-go-worktree-publication-materializer.yml
-          git diff --check
-          test "$(git status --short | wc -l | tr -d ' ')" = '2'
+          test "$(git status --short | wc -l | tr -d ' ')" = '1'
+          test "$(git status --short | sed 's/^...//')" = 'scripts/ci/es80_authenticated_stationary_final_go.py'
           git config user.name 'nembra-sol'
           git config user.email 'actions@users.noreply.github.com'
-          git add -A
+          git add scripts/ci/es80_authenticated_stationary_final_go.py
           git commit -m 'fix(capture): bind Final-GO working authority bytes'
           git push origin HEAD:repair/v14-auth-final-go-worktree-publication-sol
