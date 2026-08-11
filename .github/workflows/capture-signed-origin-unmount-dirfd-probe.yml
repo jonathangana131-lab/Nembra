@@ -1,0 +1,89 @@
+name: Capture Signed Origin Unmount Directory FD Probe
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py
+      - scripts/ci/tests/test_capture_signed_app_unmount_dirfd_freeze.py
+      - .github/workflows/capture-signed-origin-unmount-freeze-probe.yml
+      - .github/workflows/capture-signed-origin-unmount-dirfd-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-signed-origin-unmount-dirfd-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retained-directory-fd:
+    name: Require non-forced detach to reject retained nested directory authority
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind exact child to corrected unmount parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          UNMOUNT_PARENT_SHA: 3f404ab80c3c4029c3df2e1ce664504af9339362
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$UNMOUNT_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          actual_paths="$RUNNER_TEMP/nembra-unmount-dirfd-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-unmount-dirfd-expected.txt"
+          git diff --name-only "$UNMOUNT_PARENT_SHA"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-signed-origin-unmount-dirfd-probe.yml
+          scripts/ci/tests/test_capture_signed_app_unmount_dirfd_freeze.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+
+      - name: Compile exact directory-FD witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-unmount-dirfd-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
+            scripts/ci/tests/test_capture_signed_app_unmount_dirfd_freeze.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove retained nested directory authority blocks normal detach
+        shell: bash
+        run: |
+          set -uo pipefail
+          output_file="$RUNNER_TEMP/nembra-unmount-dirfd-output.txt"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_unmount_dirfd_freeze.py >"$output_file" 2>&1
+          rc=$?
+          set -e
+          cat "$output_file"
+          if [[ "$rc" != 0 ]]; then
+            diagnostic="$(tail -n 120 "$output_file" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=Directory-FD unmount-freeze validation failed::%s\n' "$diagnostic"
+            exit "$rc"
+          fi
+          grep -q '^NEMBRA_UNMOUNT_DIRFD_JSON=' "$output_file"
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$UNMOUNT_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+        env:
+          UNMOUNT_PARENT_SHA: 3f404ab80c3c4029c3df2e1ce664504af9339362
