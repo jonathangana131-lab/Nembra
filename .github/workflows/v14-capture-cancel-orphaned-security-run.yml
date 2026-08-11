@@ -1,0 +1,59 @@
+name: V14 Capture Cancel Superseded Orphaned Security Run
+
+on:
+  push:
+    branches:
+      - ops/v14-capture-prune-stale-canonical-runs-sol
+    paths:
+      - '.github/workflows/v14-capture-cancel-orphaned-security-run.yml'
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: read
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      CANONICAL_BRANCH: agent/v14-capture-live-main-visual-acceptance-sol
+      CANONICAL_HEAD: 89843dcaf63a0c3c48a0dc605878df2e4362f0fd
+      ORPHAN_RUN_ID: '31450256025'
+      ORPHAN_BRANCH: security/v14-capture-selfhosted-admission-sol
+      ORPHAN_HEAD: 7481323707f3f05cb80ba85215c274056f684fe6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify superseded orphan and cancel exact run
+        shell: bash
+        run: |
+          set -euo pipefail
+          live="$(gh api "/repos/$REPO/git/ref/heads/$CANONICAL_BRANCH" --jq '.object.sha')"
+          test "$live" = "$CANONICAL_HEAD"
+
+          run="$(gh api "/repos/$REPO/actions/runs/$ORPHAN_RUN_ID")"
+          test "$(jq -r '.head_branch' <<<"$run")" = "$ORPHAN_BRANCH"
+          test "$(jq -r '.head_sha' <<<"$run")" = "$ORPHAN_HEAD"
+          status="$(jq -r '.status' <<<"$run")"
+          case "$status" in queued|in_progress|pending) ;; *) echo "Run already terminal: $status"; exit 0 ;; esac
+
+          open_count="$(gh api "/repos/$REPO/pulls?state=open&head=jonathangana131-lab:$ORPHAN_BRANCH&per_page=10" --jq 'length')"
+          test "$open_count" = '0'
+
+          gh api -X POST "/repos/$REPO/actions/runs/$ORPHAN_RUN_ID/cancel" >/dev/null
+          echo "Cancelled superseded orphan run $ORPHAN_RUN_ID at $ORPHAN_HEAD; canonical $CANONICAL_HEAD preserved."
+
+      - name: Self-delete helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/v14-capture-cancel-orphaned-security-run.yml
+          git config user.name 'Nembra Capture Closure'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'ci(capture): remove orphan-run cancellation helper'
+          git push origin HEAD:ops/v14-capture-prune-stale-canonical-runs-sol
