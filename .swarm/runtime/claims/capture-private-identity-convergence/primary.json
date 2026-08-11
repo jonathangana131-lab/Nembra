@@ -9,19 +9,20 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:38:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:03:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:15:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-private-resolution-adapter-api-sol-1316vk",
   "pr": 2993,
   "sourceSHA": "3b8e2182de2275a1c8b858ff8b3b614061582457",
-  "currentHeadSHA": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
+  "currentHeadSHA": "c20484aec3c003143c9ebf034a40166a6d0ff94f",
   "takeoverFromWorkerId": "sol-20260811-4f57unlink",
-  "takeoverReason": "Generation-1 convergence lease expired hours ago. Fresh review proved #2944 current 3b8e2182 fails its dependency-resolution adapter before guarded child execution. Recover parent convergence on disjoint adapter/test paths only; #2977 separately owns writer/recovery sanitation and must later recompose. PHYSICAL NO-GO.",
+  "takeoverReason": "Generation-1 convergence lease expired hours ago. Fresh review proved #2944 current 3b8e2182 fails its dependency-resolution adapter before guarded child execution. Recover parent convergence; #2977 separately owns writer/recovery sanitation and must later recompose. PHYSICAL NO-GO.",
   "ownedPaths": [
     "Scripts/capture_tuya_private_dependency_resolution_guard.py",
     "scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py",
-    "scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py"
+    "scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py",
+    "scripts/ci/tests/test_capture_tuya_private_input_provenance.py"
   ],
-  "checkpoint": "Draft PR #2993 exact ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab remains frozen. Independent review 4910650978 source-accepts the live ancestry-custody repair. Exact Private Identity Publication Races run 31534679538 is terminal SUCCESS; Field 31534679589 and Main Selective Graft 31534679570 remain QUEUED and are not acceptance; Xcode 31534679571 is policy-SKIPPED. Integration archaeology found #2944 still contains one-shot .github/workflows/tmp-v14-bootstrap-resolution-adapter.yml despite stale PR prose saying no construction files; final convergence must explicitly EXCLUDE that publisher. Current build-authority #2988 head 6b0c974d lacks capture_tuya_private_dependency_resolution_guard.py and capture_tuya_private_identity_authority.py, so final composition cannot merge #2993 alone or replace the newer build lineage: it must selectively compose the durable private-identity authority set plus #2993/#2977 accepted deltas onto the newest build-authority head while preserving newer installer/bootstrap semantics. PHYSICAL NO-GO.",
-  "intent": "Keep ee7dd8f5 immutable until real-macOS Field and Main terminate. If accepted, durably hand the reviewed three-file repair into selective private-identity convergence onto the newest build-authority lineage, explicitly excluding temporary construction workflow(s), then recompose #2977 sanitation and re-earn all final exact-head gates."
+  "checkpoint": "PR #2993 moved to exact c20484aec3c003143c9ebf034a40166a6d0ff94f after exact prior-head Field run 31534679589 failed before new Mac ancestry witnesses on stale inherited test text: test_capture_tuya_private_input_provenance.py searched literal `pod install --repo-update`, while bootstrap truthfully runs `\"$POD_BIN\" install --repo-update` as the child of PRIVATE_INPUT_RESOLUTION_GUARD after accepted-lock admission and receipt re-verification. Test-only +6/-1 correction now requires preaccepted digest < resolution guard < exact guarded POD_BIN child. Exact compare from #2944 is four paths total; writer/recovery and installer paths untouched. Prior review 4910650978 and private green 31534679538 are now ancestor evidence only. Fresh exact-head Private/Field/Main and independent review required. Selective-composition manifest remains valid with this test path already in candidate whitelist; tmp-v14-bootstrap-resolution-adapter.yml remains excluded. PHYSICAL NO-GO.",
+  "intent": "Hold c20484ae immutable, classify fresh exact Private/Field/Main gates, obtain independent review on unchanged head, then hand the accepted four-path delta into selective private-identity composition onto newest build-authority lineage before layering #2977 sanitation."
 }
