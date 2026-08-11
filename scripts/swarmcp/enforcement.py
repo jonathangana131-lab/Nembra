@@ -3,19 +3,27 @@ from __future__ import annotations
 from . import engine as _engine
 from . import model as _model
 from . import policy as _policy
+from . import resources as _resources
 from .model import *
 from .store import *
 
 _BASE_VALIDATE_LANE = _model.validate_lane
 _BASE_VALIDATE_CLAIM = _model.validate_claim
+_BASE_VALIDATE_CONFIG = _model.validate_config
 _BASE_VALIDATE_SNAPSHOT = _engine.validate_state_snapshot
 _BASE_RECOMMEND = _policy.recommend_slots
 
 _REVIEW_ROLES = {"review", "adversarial-review", "architecture-review"}
+_PRIMARY_WORK_ROLES = {"implementation", "repair"}
+_WIP_KEYS = (
+    "maxPrimaryLanes",
+    "maxPrimaryPerEpic",
+    "reviewBacklogThreshold",
+    "integrationBacklogThreshold",
+)
 
 
 def validate_lane(raw):
-    # Preflight slot resources before the base validator performs set membership.
     if isinstance(raw, dict):
         slots = raw.get("slots", [])
         if not isinstance(slots, list):
@@ -52,12 +60,46 @@ def validate_claim(raw):
     return claim
 
 
+def validate_config(raw):
+    if isinstance(raw, dict):
+        wip = raw.get("wipLimits")
+        if isinstance(wip, dict):
+            for key in _WIP_KEYS:
+                if key in wip and type(wip[key]) is not int:
+                    raise ValidationError(f"invalid wip {key}")
+    return _BASE_VALIDATE_CONFIG(raw)
+
+
 _model.validate_lane = validate_lane
 _model.validate_claim = validate_claim
+_model.validate_config = validate_config
 _engine.validate_lane = validate_lane
 _engine.validate_claim = validate_claim
+_engine.validate_config = validate_config
 _policy.validate_lane = validate_lane
 _policy.validate_claim = validate_claim
+_policy.validate_config = validate_config
+
+
+def work_claim_counts(lanes, claims, now):
+    lane_map = {validate_lane(lane)["laneId"]: validate_lane(lane) for lane in lanes}
+    total = 0
+    by_epic = {}
+    for raw in claims:
+        claim = validate_claim(raw)
+        if not _engine.claim_is_live(claim, now) or claim["laneId"] not in lane_map:
+            continue
+        lane = lane_map[claim["laneId"]]
+        slots = {slot["name"]: slot for slot in lane["slots"]}
+        if slots.get(claim["slot"], {}).get("role") in _PRIMARY_WORK_ROLES:
+            total += 1
+            epic = lane["epic"]
+            by_epic[epic] = by_epic.get(epic, 0) + 1
+    return total, by_epic
+
+
+_engine.primary_claim_counts = work_claim_counts
+_engine.primary_claims = lambda lanes, claims, now: work_claim_counts(lanes, claims, now)[0]
 
 
 def _review_history_workers(subject):
@@ -82,8 +124,20 @@ def _enforce_full_review_independence(store: Store, lane, reviewer: str):
             raise ValidationError("independent review requires a worker with no implementation ownership history")
 
 
+def _enforce_repair_wip(store: Store, lane, slot_def, now, config):
+    if slot_def["role"] != "repair":
+        return
+    lanes = _policy._runtime_lanes(store, lane)
+    claims = _policy._runtime_claims(store)
+    total, by_epic = work_claim_counts(lanes, claims, now)
+    limits = validate_config(config)["wipLimits"]
+    if total >= limits["maxPrimaryLanes"]:
+        raise ValidationError("project primary WIP limit reached")
+    if by_epic.get(lane["epic"], 0) >= limits["maxPrimaryPerEpic"]:
+        raise ValidationError("epic primary WIP limit reached")
+
+
 def _renew_scheduler_guard_before_write(store: Store, held: StoredValue, worker: str):
-    """CAS-verify and renew scheduler ownership immediately before target mutation."""
     current = store.get(_policy.SCHEDULER_GUARD_PATH)
     guard = validate_claim(current.value)
     expected = validate_claim(held.value)
@@ -108,6 +162,7 @@ def claim_slot(store, lane, slot, worker, now, branch="", pr=None, source_sha=No
     held = _policy._acquire_scheduler_guard(store, worker, now)
     try:
         lane, slot_def = _policy._enforce_claim_policy(store, lane, slot, worker, now, config)
+        _enforce_repair_wip(store, lane, slot_def, now, config)
         if slot_def["role"] in _REVIEW_ROLES:
             _enforce_full_review_independence(store, lane, worker)
         claim = _engine.new_claim(lane, slot, worker, now, branch, pr, source_sha)
@@ -126,6 +181,7 @@ def takeover_claim(store, lane, slot, worker, now, branch="", pr=None, source_sh
     held = _policy._acquire_scheduler_guard(store, worker, now)
     try:
         lane, slot_def = _policy._enforce_claim_policy(store, lane, slot, worker, now, config)
+        _enforce_repair_wip(store, lane, slot_def, now, config)
         if slot_def["role"] in _REVIEW_ROLES:
             _enforce_full_review_independence(store, lane, worker)
         path = claim_path(lane["laneId"], slot)
@@ -189,13 +245,24 @@ def acquire_resources_for_claim(store: Store, resources, worker: str, lane: str,
     return _engine.acquire_resources(store, requested, worker, lane, now, resource_order)
 
 
+def heartbeat_resource_for_claim(store: Store, resource: str, worker: str, lease_id: str, generation: int, now):
+    current = store.get(resource_path(resource))
+    resource_claim = validate_claim(current.value)
+    if resource_claim["workerId"] != worker:
+        raise LeaseLostError("resource ownership changed")
+    allowed = _live_owned_resources(store, worker, resource_claim["laneId"], now)
+    if resource not in allowed:
+        raise LeaseLostError("resource owning slot is no longer live or no longer declares this resource")
+    return _resources.heartbeat_resource(store, resource, worker, lease_id, generation, now)
+
+
 def _resource_is_authorized(raw_resource, lane_map, claims, now):
     resource_claim = validate_claim(raw_resource)
     resource = raw_resource.get("resource")
     if resource not in RESOURCE_CLASSES or not _engine.claim_is_live(resource_claim, now):
         return False
     lane = lane_map.get(resource_claim["laneId"])
-    if lane is None:
+    if lane is None or lane["state"] in TERMINAL_LANE_STATES | {"BLOCKED", "BLOCKED_EXTERNAL"}:
         return False
     for raw_claim in claims:
         claim = validate_claim(raw_claim)
@@ -210,12 +277,30 @@ def _resource_is_authorized(raw_resource, lane_map, claims, now):
 
 
 def safe_recommend_slots(lanes, claims, resources, config, now, red_main=False):
+    config = validate_config(config)
     lanes = [validate_lane(lane) for lane in lanes]
     lane_map = {lane["laneId"]: lane for lane in lanes}
     authorized_resources = [
         resource for resource in resources if _resource_is_authorized(resource, lane_map, claims, now)
     ]
-    return _BASE_RECOMMEND(lanes, claims, authorized_resources, config, now, red_main)
+    recommendations = _BASE_RECOMMEND(lanes, claims, authorized_resources, config, now, red_main)
+    total, by_epic = work_claim_counts(lanes, claims, now)
+    limits = config["wipLimits"]
+    project_remaining = max(0, limits["maxPrimaryLanes"] - total)
+    epic_remaining = {
+        epic: max(0, limits["maxPrimaryPerEpic"] - by_epic.get(epic, 0))
+        for epic in {lane["epic"] for lane in lanes}
+    }
+    filtered = []
+    for recommendation in recommendations:
+        if recommendation.role in _PRIMARY_WORK_ROLES:
+            epic = lane_map[recommendation.lane_id]["epic"]
+            if project_remaining <= 0 or epic_remaining.get(epic, 0) <= 0:
+                continue
+            project_remaining -= 1
+            epic_remaining[epic] = epic_remaining.get(epic, 0) - 1
+        filtered.append(recommendation)
+    return filtered
 
 
 def validate_state_snapshot(lanes, claims, workers, events, resources, now):
