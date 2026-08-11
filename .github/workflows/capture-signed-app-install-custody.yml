@@ -9,6 +9,8 @@ on:
     paths:
       - scripts/field/install_one_time_capture.command
       - scripts/ci/capture_signed_app_install_custody.py
+      - scripts/ci/capture_signed_app_build_origin_custody.py
+      - scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
       - scripts/ci/tests/test_capture_signed_app_install_custody.py
       - scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
       - .github/workflows/capture-signed-app-install-custody.yml
@@ -47,9 +49,12 @@ jobs:
           export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-capture-install-pycache"
           /usr/bin/python3 -m py_compile \
             scripts/ci/capture_signed_app_install_custody.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
             scripts/ci/tests/test_capture_signed_app_install_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
             scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
@@ -135,6 +140,37 @@ jobs:
           sudo /usr/bin/ditto --noacl "$source_app" "$stage_root/Nembra Capture.app"
           staged_acl="$(sudo /usr/bin/find "$stage_root" -acl -print -quit)"
           test -z "$staged_acl"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+  macos-build-origin-isolation:
+    name: Prove compiler-output capability isolation on real macOS
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind build-origin evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove one-run group capability and root lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
   accepted-runner-transport:
