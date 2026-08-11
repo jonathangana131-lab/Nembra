@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "132600-review-request-dashboard-2971-hl6k",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-hl6k",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent exact-head review requested for AX5 product repair PR #2971 at c150a8287463231ee9af174c38564738bab576a3, direct child of combined QA head 616746f18c63801a484aa6d394fc6770c8b22cce. Exact inherited runs proved the module-identity repair and ordinary app/UI runtime, then reproduced a real iPhone 12 accessibility-extra-extra-extra-large landscape overflow. Review the one-file DashboardView.swift recomposition for truthful unchanged telemetry/source authority, large-Dynamic-Type hierarchy, child accessibility semantics after removal of the nested root identifier, side-rail geometry including stopped-control fit, and no promotion of Simulator evidence to physical ES80 truth. Exact Xcode run 31495882291 is resolved to this immutable head and the Mac job is queued; no ancestor result accepts it.",
+  "createdAt": "2026-08-11T13:26:00Z"
+}
