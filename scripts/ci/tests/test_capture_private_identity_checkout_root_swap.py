@@ -24,6 +24,7 @@ import unittest
 REPOSITORY = Path(__file__).resolve().parents[3]
 PROVISIONER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity.sh"
 WRITER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity_writer.py"
+AUTHORITY_HELPER = REPOSITORY / "Scripts" / "capture_tuya_private_identity_authority.py"
 DEPENDENCY_ADAPTER = REPOSITORY / "Scripts" / "capture_tuya_private_dependency_resolution_guard.py"
 CANONICAL_BUILD_GUARD = REPOSITORY / "Scripts" / "capture_tuya_private_input_build_guard.py"
 PROVENANCE_HELPER = REPOSITORY / "Scripts" / "capture_tuya_private_input_provenance.py"
@@ -43,15 +44,26 @@ def load_dependency_adapter():
 
 class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(prefix="nembra-private-root-swap-")
+        real_temporary_root = Path(tempfile.gettempdir()).resolve()
+        self.temporary = tempfile.TemporaryDirectory(
+            prefix="nembra-private-root-swap-",
+            dir=real_temporary_root,
+        )
         self.sandbox = Path(self.temporary.name)
         self.checkout = self.sandbox / "repo"
         scripts = self.checkout / "Scripts"
         scripts.mkdir(parents=True)
-        for source in (PROVISIONER, WRITER, CANONICAL_BUILD_GUARD, PROVENANCE_HELPER):
+        for source in (
+            PROVISIONER,
+            WRITER,
+            AUTHORITY_HELPER,
+            CANONICAL_BUILD_GUARD,
+            PROVENANCE_HELPER,
+        ):
             shutil.copy2(source, scripts / source.name)
         (scripts / PROVISIONER.name).chmod(0o700)
         (scripts / WRITER.name).chmod(0o600)
+        (scripts / AUTHORITY_HELPER.name).chmod(0o600)
         (scripts / CANONICAL_BUILD_GUARD.name).chmod(0o600)
         (scripts / PROVENANCE_HELPER.name).chmod(0o600)
         self.fixture_build_guard = scripts / CANONICAL_BUILD_GUARD.name
