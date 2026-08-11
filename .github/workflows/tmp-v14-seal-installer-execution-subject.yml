@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 10
+          fetch-depth: 11
       - name: Correct fixture and validate repair
         shell: bash
         run: |
