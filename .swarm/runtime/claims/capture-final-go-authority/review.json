@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "capture-final-go-review-1607ax-20260811-2314",
   "generation": 15,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:14:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:14:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:16:00Z",
+  "releasedAt": "2026-08-11T23:16:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3100,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "8eec90d4559f9f8f42ad75ff609f9139557c9bc7",
   "takeoverFromWorkerId": "sol-20260811-1607q4",
   "takeoverFromLeaseId": "capture-final-go-review-sol-1607q4-20260811",
-  "takeoverReason": "Generation-14 review released after accepting current production source. Claim generation-15 to independently review validation-only current-parent real-Darwin successor #3100 exact 8eec90d455, preserving NO-GO and avoiding duplicate implementation."
+  "takeoverReason": "Generation-14 review released after accepting current production source; generation-15 independently reviewed the current-parent Darwin successor.",
+  "outcome": "DARWIN_VALIDATOR_SOURCE_ACCEPTABLE_RUNTIME_QUEUED",
+  "checkpoint": "GitHub review 4911551852 posted on #3100 exact 8eec90d455. Parent #3082 remains exact d4a44db4. One workflow path only; Darwin/kqueue validator source accepted. Run 31545488271 queued, Xcode skipped; no acceptance or physical authority promoted."
 }
