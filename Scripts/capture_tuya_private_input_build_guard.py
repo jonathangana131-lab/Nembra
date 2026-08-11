@@ -5,6 +5,7 @@ import argparse
 import hmac
 import importlib.util
 import os
+import resource
 import select
 import stat
 import subprocess
@@ -136,6 +137,21 @@ def _lstat_identity(path: Path) -> tuple[int, ...]:
     return provenance._stat_identity(metadata)
 
 
+def _add_parent_watch_chain(paths: set[Path], path: Path, *, repository_root: Path) -> None:
+    """Watch lexical parents so a whole admitted subtree cannot be swapped by rename."""
+
+    current = path.parent
+    while True:
+        paths.add(current)
+        if current == repository_root:
+            return
+        if current == current.parent or repository_root not in current.parents:
+            raise BuildGuardError(
+                f"build input escapes the accepted checkout parent chain: {path}"
+            )
+        current = current.parent
+
+
 def _add_tree_watch_paths(paths: set[Path], root: Path, *, label: str) -> None:
     if not root.is_dir() or root.is_symlink():
         raise BuildGuardError(f"{label} is not one real directory: {root}")
@@ -160,18 +176,70 @@ def _add_tree_watch_paths(paths: set[Path], root: Path, *, label: str) -> None:
 def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     """Return every real file/directory whose mutation can change admitted build inputs."""
 
+    repository_root = inputs.lockfile.parent
     paths: set[Path] = {
+        repository_root,
         inputs.lockfile,
         inputs.security_podspec,
         inputs.identity_podspec,
     }
+    for path in (
+        inputs.lockfile,
+        inputs.security_podspec,
+        inputs.security_build,
+        inputs.identity_podspec,
+        inputs.identity_sources,
+    ):
+        _add_parent_watch_chain(paths, path, repository_root=repository_root)
+
     _add_tree_watch_paths(paths, inputs.security_build, label="private security build input tree")
     _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")
     if inputs.generated_pods is not None:
+        _add_parent_watch_chain(paths, inputs.generated_pods, repository_root=repository_root)
         _add_tree_watch_paths(paths, inputs.generated_pods, label="generated CocoaPods Pods tree")
     if inputs.generated_workspace is not None:
+        _add_parent_watch_chain(paths, inputs.generated_workspace, repository_root=repository_root)
         _add_tree_watch_paths(paths, inputs.generated_workspace, label="generated CocoaPods workspace tree")
     return tuple(sorted(paths, key=lambda item: str(item)))
+
+
+def _current_descriptor_count() -> int:
+    try:
+        return len(os.listdir("/dev/fd"))
+    except OSError:
+        # Field authority is macOS where /dev/fd exists; retain conservative
+        # portability for unit tests and fail later if the OS cannot admit FDs.
+        return 64
+
+
+def _ensure_fd_budget(watcher_count: int) -> None:
+    """Raise the soft descriptor ceiling for a finite generated Pods watch set."""
+
+    required = _current_descriptor_count() + watcher_count + 64
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (OSError, ValueError) as error:
+        raise BuildGuardError("could not read the file-descriptor limit for build custody") from error
+
+    if soft >= required:
+        return
+    if hard != resource.RLIM_INFINITY and hard < required:
+        raise BuildGuardError(
+            f"generated build custody needs at least {required} open descriptors, but the hard limit is {hard}"
+        )
+
+    target = required
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+        updated_soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (OSError, ValueError) as error:
+        raise BuildGuardError(
+            f"could not raise the file-descriptor limit to {required} for generated build custody"
+        ) from error
+    if updated_soft < required:
+        raise BuildGuardError(
+            f"file-descriptor limit remained {updated_soft}; generated build custody requires {required}"
+        )
 
 
 def _open_watched_inputs(paths: Iterable[Path], backend: EventBackend) -> tuple[tuple[int, Path], ...]:
@@ -261,11 +329,13 @@ def run_guarded_build(
     if require_accepted_generated_subject:
         _verify_accepted_generated_build_subject(inputs)
     initial_snapshot = inputs.generation_snapshot()
+    watch_paths = _watch_paths(inputs)
+    _ensure_fd_budget(len(watch_paths))
     backend = backend_factory()
     watched: tuple[tuple[int, Path], ...] = ()
     process: subprocess.Popen | None = None
     try:
-        watched = _open_watched_inputs(_watch_paths(inputs), backend)
+        watched = _open_watched_inputs(watch_paths, backend)
 
         # Registration itself has a race boundary. Reprove the entire admitted
         # generation after every vnode watch is armed, then reject any queued
