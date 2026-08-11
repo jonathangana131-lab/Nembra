@@ -7,14 +7,15 @@
   "workerId": "sol-20260811-a91c7e",
   "leaseId": "reconcapture-a91c7e-20260811-2052",
   "generation": 8,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:52:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:52:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:54:10Z",
+  "releasedAt": "2026-08-11T20:54:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "takeoverFromWorkerId": "sol-20260811-b7c1a2",
-  "takeoverReason": "Generation-7 reconciliation released at a now-obsolete Capture snapshot. Live Final-GO #2921 has moved from red 8242722c to accepted software-ingredient 471cc025 with canonical Final-GO 31532784360 and Xcode 31532784381 terminal green; lane descriptor still reports the old fixture red. Reconcile only stale Capture lane metadata that is not actively product-owned. Do not alter active flagship/build/private/signed implementation state. PHYSICAL NO-GO remains authoritative.",
-  "intent": "Update capture-final-go-authority descriptor to live exact accepted-child truth and current dependency blockers; leave active product branches untouched, then release."
+  "outcome": "FINAL_GO_LANE_RECONCILED_TO_ACCEPTED_471CC025_INGREDIENT",
+  "releaseReason": "Updated capture-final-go-authority lane from obsolete NEEDS_CHANGES/8242722c fixture-red truth to VERIFYING with own canonical regression RESOLVED at #2921 exact 471cc025. Descriptor now records Final-GO 31532784360 and Xcode 31532784381 terminal success plus independent review 4910583605 acceptance as a software ingredient, while live build-authority #2988 0f23ebe4 and final composed product remain active blockers. No active flagship/build/private/signed implementation state was modified. PHYSICAL NO-GO."
 }
