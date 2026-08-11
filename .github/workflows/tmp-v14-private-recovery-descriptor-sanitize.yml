@@ -56,7 +56,6 @@ jobs:
           git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
           git add scripts/ci/tests/test_capture_private_identity_crash_residue.py
           git add scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
-          git add .github/workflows/capture-private-identity-publication-races-redteam.yml
           git diff --cached --check
           git config user.name "Nembra V14 Swarm"
           git config user.email "actions@users.noreply.github.com"
