@@ -38,7 +38,7 @@ struct TuyaMetadataSecretRedactionSourceTests {
         #expect(!body.contains("normalized.contains(\"session_key\")"))
     }
 
-    @Test("final metadata export re-sanitizes every opaque payload at custody")
+    @Test("final metadata export re-sanitizes every retained opaque payload at custody")
     func finalExportReSanitizesOpaquePayloads() throws {
         let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
         let export = try section(
@@ -50,10 +50,14 @@ struct TuyaMetadataSecretRedactionSourceTests {
 
         #expect(body.contains("\"status\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
         #expect(body.contains("\"specifications\": Self.redactSecrets(selectedDeviceSpecifications ?? [:])"))
-        #expect(body.contains("\"localStrategy\": Self.redactSecrets(selectedDeviceLocalStrategy ?? [:])"))
         #expect(body.contains("envelope[\"deviceDetailRedacted\"] = Self.redactSecrets(selectedDeviceMetadata)"))
         #expect(!body.contains("\"specifications\": selectedDeviceSpecifications ?? [:]"))
-        #expect(!body.contains("\"localStrategy\": selectedDeviceLocalStrategy ?? [:]"))
+
+        // The current truth contract deliberately removed the separately fetched
+        // `/status` response that had been mislabeled as a local strategy. Do not
+        // make the redaction regression resurrect that false provenance or field.
+        #expect(!body.contains("\"localStrategy\":"))
+        #expect(!body.contains("selectedDeviceLocalStrategy"))
     }
 
     @Test("linked device UI state does not retain raw device dictionaries or local key")
