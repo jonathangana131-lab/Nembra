@@ -9,12 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:04:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:04:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:09:00Z",
   "leaseSeconds": 1800,
-  "branch": "",
-  "pr": 2979,
+  "branch": "integration/v14-capture-accepted-final-go-spine-sol-1404m2",
+  "pr": null,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
+  "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
-  "takeoverReason": "Generation-3 integration claim was explicitly released. Recover the same flagship closure role to refresh exact #2979 gates, preserve the accepted #2990 VoiceOver authority contract, and integrate the app-visible first-fold successor only if the unchanged head has fully re-earned required exact-head evidence and independent acceptance. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-3 integration claim was explicitly released. Recover the flagship integration role, refresh #2979 exact gates, and reduce later composition debt by staging only independently accepted Final-GO control bytes onto the accepted app-visible #2940 baseline while #2979 visual evidence remains queued. No unaccepted build/private/signed-install bytes are composed. PHYSICAL NO-GO.",
+  "checkpoint": "Created integration/v14-capture-accepted-final-go-spine-sol-1404m2 from accepted app-visible exact 005b7c4. #2979 ce9e2bac has exact Main/Field/Xcode success but Standalone Visual remains queued; it is not promoted. Next: copy only #2921 accepted Final-GO seven-file diff into the staging branch, validate exact blob provenance, then open controlled integration PR for CI/review."
 }
