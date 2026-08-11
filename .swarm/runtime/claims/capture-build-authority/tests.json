@@ -7,13 +7,15 @@
   "workerId": "sol-20260811-4f51fg",
   "leaseId": "capture-build-tests-4f51fg-20260811-1221",
   "generation": 4,
-  "status": "NEEDS_CHANGES",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T12:21:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:24:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:32:30Z",
+  "releasedAt": "2026-08-11T12:32:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2924,
   "sourceSHA": "0f07d8d673f1b2472dc1439af2413258573ddb0a",
   "currentHeadSHA": "0f07d8d673f1b2472dc1439af2413258573ddb0a",
-  "finding": "PR body declares clean a13bdc4 and self-deleted temp materializer, but live exact 0f07d8d is three commits ahead and still has two temp materializer paths in final tree. Temp publish step contains pathspec typo test_capture_field_untracked-prearm-injection-red-team.py vs actual test_capture_field_untracked_prearm_injection_red_team.py, which can prevent self-clean publication. Xcode exact run 31489853099 is terminal SKIPPED because draft; skipped != green. Main Graft 31489853190 and Prearm Red Team 31489853087 green are partial only. Durable PR comment 5253109136 requests clean exact materialization + reacceptance. PHYSICAL NO-GO."
+  "outcome": "NEEDS_CHANGES_DURABLE_COMMENT_5253109136",
+  "finding": "PR body declares clean a13bdc4 and self-deleted temp materializer, but live exact 0f07d8d is three commits ahead and still has two temp materializer paths in final tree. Temp publish step contains pathspec typo test_capture_field_untracked-prearm-injection-red-team.py vs actual test_capture_field_untracked_prearm_injection_red_team.py, which can prevent self-clean publication. Xcode exact run 31489853099 is terminal SKIPPED because draft; skipped != green. Main Graft 31489853190 and Prearm Red Team 31489853087 green are partial only. Durable PR comment 5253109136 requests clean exact materialization + reacceptance. Slot released so another worker can revalidate the eventual clean head. PHYSICAL NO-GO."
 }
