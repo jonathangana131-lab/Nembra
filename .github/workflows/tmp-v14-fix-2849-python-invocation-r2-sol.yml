@@ -1,0 +1,63 @@
+name: TEMP V14 Fix 2849 Python Invocation R2 (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-field-gate-negative-contract-2840-r2-sol
+    paths:
+      - .github/workflows/tmp-v14-fix-2849-python-invocation-r2-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-capture-field-gate-negative-contract-2840-r2-sol
+          fetch-depth: 0
+
+      - name: Materialize direct Mac-safe invocation and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/capture-field-build-provenance.yml'
+          old='/usr/bin/python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract'
+          new='/usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py'
+          if grep -Fq "$old" "$workflow"; then
+            python3 - "$workflow" "$old" "$new" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          old = sys.argv[2]
+          new = sys.argv[3]
+          text = path.read_text(encoding='utf-8')
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one stale invocation, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          fi
+          grep -Fq "$new" "$workflow"
+          if grep -Fq "$old" "$workflow"; then
+            echo 'ERROR: stale module invocation remains.' >&2
+            exit 1
+          fi
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-v14-fix-2849-python-invocation-r2-sol.yml
+          git add "$workflow"
+          git commit -m 'Capture: run field source contract directly on Mac runner'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin repair/v14-capture-field-gate-negative-contract-2840-r2-sol
+            if git push origin HEAD:repair/v14-capture-field-gate-negative-contract-2840-r2-sol; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'ERROR: could not publish #2849 repair after safe rebase retries.' >&2
+          exit 1
