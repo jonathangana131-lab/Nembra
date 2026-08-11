@@ -1,0 +1,54 @@
+name: Capture Field Compiler Window Authority
+
+on:
+  pull_request:
+    paths:
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_compiler_window_authority.py
+      - scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+      - .github/workflows/capture-field-build-provenance.yml
+      - .github/workflows/capture-field-compiler-window-authority.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authority:
+    name: Hold accepted source through compiler window
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact candidate
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Verify compiler-window authority closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_field_compiler_window_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_compiler_window_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          rm -rf Scripts/__pycache__ scripts/ci/tests/__pycache__
+          git diff --check
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
