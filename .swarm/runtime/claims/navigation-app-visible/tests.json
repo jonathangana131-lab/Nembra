@@ -9,9 +9,9 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T08:46:42Z",
-  "lastHeartbeatAt": "2026-08-11T08:49:15Z",
+  "lastHeartbeatAt": "2026-08-11T08:53:05Z",
   "leaseSeconds": 1800,
   "branch": "test/v15-navigation-runtime-a11y-sol-nv46",
   "pr": 2848,
-  "sourceSHA": "e3b08e3ac9bc2f6ffe614411001e76b9ab83fc21"
+  "sourceSHA": "e3ee50a5637f6d8b67262856aef3fb1a8ad08d8a"
 }
