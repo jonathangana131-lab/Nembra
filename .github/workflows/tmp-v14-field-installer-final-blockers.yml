@@ -1,0 +1,97 @@
+name: Temporary V14 field installer blocker repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-field-installer-final-blockers
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+
+      - name: Patch and validate current authenticated field installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='98fd627972a788731d206aac4abdee9660f171ca'
+          git merge-base --is-ancestor "$base" HEAD
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/tmp-v14-field-installer-final-blockers.yml' \
+            'Scripts/provision_capture_tuya_identity.py' \
+            'Scripts/provision_capture_tuya_identity.sh' \
+            'scripts/ci/tests/test_capture_tuya_private_identity_provisioner.py' | sort)"
+          test "$actual" = "$expected"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          installer = Path('scripts/field/install_one_time_capture.command')
+          source = installer.read_text()
+          old = '/usr/bin/python3 -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          new = '/usr/bin/python3 -B -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          if source.count(old) != 1:
+              raise SystemExit('reinspect installer private-reader invocation seam changed')
+          installer.write_text(source.replace(old, new, 1))
+
+          workflow = Path('.github/workflows/capture-field-build-provenance.yml')
+          body = workflow.read_text()
+          replacements = [
+              (
+                  '      - Scripts/bootstrap_capture_tuya_sdk.sh\n',
+                  '      - Scripts/bootstrap_capture_tuya_sdk.sh\n'
+                  '      - Scripts/provision_capture_tuya_identity.sh\n'
+                  '      - Scripts/provision_capture_tuya_identity.py\n',
+              ),
+              (
+                  '      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py\n',
+                  '      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py\n'
+                  '      - scripts/ci/tests/test_capture_tuya_private_identity_provisioner.py\n',
+              ),
+              (
+                  '          bash -n Scripts/bootstrap_capture_tuya_sdk.sh\n',
+                  '          bash -n Scripts/bootstrap_capture_tuya_sdk.sh\n'
+                  '          bash -n Scripts/provision_capture_tuya_identity.sh\n'
+                  '          /usr/bin/python3 -B -I Scripts/provision_capture_tuya_identity.py --self-test\n'
+                  '          /usr/bin/python3 -B scripts/ci/tests/test_capture_tuya_private_identity_provisioner.py\n',
+              ),
+          ]
+          for old, new in replacements:
+              if body.count(old) != 1:
+                  raise SystemExit(f'field provenance anchor changed: {old!r}')
+              body = body.replace(old, new, 1)
+          workflow.write_text(body)
+          PY
+
+          chmod 755 Scripts/provision_capture_tuya_identity.sh
+          bash -n scripts/field/install_one_time_capture.command
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          /usr/bin/python3 -B -I Scripts/provision_capture_tuya_identity.py --self-test
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_tuya_private_identity_provisioner.py
+          git diff --check
+
+      - name: Commit repair and self-delete materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-closure-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/tmp-v14-field-installer-final-blockers.yml
+          git add \
+            scripts/field/install_one_time_capture.command \
+            Scripts/provision_capture_tuya_identity.sh \
+            Scripts/provision_capture_tuya_identity.py \
+            scripts/ci/tests/test_capture_tuya_private_identity_provisioner.py \
+            .github/workflows/capture-field-build-provenance.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): close authenticated field installer blockers'
+          git push origin HEAD:agent/v14-capture-field-installer-final-blockers
