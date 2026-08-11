@@ -446,7 +446,8 @@ def parent_probe() -> int:
     if sys.platform != "darwin":
         emit_error("environment", "dedicated-UID real-Xcode freeze probe requires macOS")
         return 80
-    if os.getuid() <= 0 or os.geteuid() != os.getuid() or os.getegid() != os.getgid():
+    field_uid = os.getuid()
+    if field_uid <= 0 or os.geteuid() != field_uid or os.getegid() != os.getgid():
         emit_error("identity", "field probe requires one stable non-root invoking identity before sudo")
         return 80
     field_primary_gid = os.getgid()
@@ -504,7 +505,9 @@ def parent_probe() -> int:
             return 81
         evidence = json.loads(records[0])
         required = (
-            evidence.get("xcodebuildReturnCode") == 0
+            evidence.get("fieldUID") == field_uid
+            and evidence.get("fieldPrimaryGID") == field_primary_gid
+            and evidence.get("xcodebuildReturnCode") == 0
             and evidence.get("fieldAttackReturnCode") != 0
             and evidence.get("fieldGroupsContainBuildGID") is False
             and evidence.get("fieldActiveGroupsContainBuildGID") is False
