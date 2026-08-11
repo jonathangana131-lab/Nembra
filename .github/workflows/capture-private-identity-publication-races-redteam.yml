@@ -1,0 +1,45 @@
+name: Capture Private Identity Publication Races Red Team
+
+on:
+  pull_request:
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - scripts/ci/tests/test_capture_private_identity_publication_races.py
+      - .github/workflows/capture-private-identity-publication-races-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publication-custody:
+    name: Reject staging substitution and detached ancestry
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind diagnostic to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile adversarial diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+
+      - name: Reject staging substitution and detached ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
