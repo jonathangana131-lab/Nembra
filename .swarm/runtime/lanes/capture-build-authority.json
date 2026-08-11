@@ -4,7 +4,7 @@
   "laneId": "capture-build-authority",
   "epic": "capture",
   "title": "Capture build and private-review execution authority",
-  "objective": "Converge the selected CocoaPods/private-input field-build authority lineage onto one exact descendant, preserving reviewed lock/generated/private subjects and closing verifier execution custody before flagship composition.",
+  "objective": "Converge the selected CocoaPods/private-input field-build authority lineage onto one exact descendant, preserving reviewed lock/generated/private subjects and closing every authority-helper execution subject plus macOS vnode-attribute custody before flagship composition.",
   "priority": 0,
   "state": "BLOCKED_EXTERNAL",
   "dependencies": [],
@@ -13,20 +13,40 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy Capture implementation is actively moving on PR #2805; V15 workers must not duplicate product edits until it hands off or becomes stale.",
+      "reason": "Legacy Capture implementation is actively moving on PR #2805. Current head 4467bc07 only stages/triggers an authority-chain materializer; the materializer run failed before creating any job, so no production helper-custody repair is accepted yet. V15 workers must not duplicate product edits until the legacy owner hands off or becomes stale.",
       "pr": 2805,
-      "headSHA": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab"
+      "headSHA": "4467bc0717d58be2b7e7780ed02527748325f582"
+    },
+    {
+      "id": "downstream-helper-execution",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "The co-located downstream-helper red team remains exact-head red: normal field provenance/generated-subject helper execution and build-guard neighbor execution are not yet bound to accepted captured bytes. Production repair must make those invariants green before promotion.",
+      "pr": 2805,
+      "headSHA": "4467bc0717d58be2b7e7780ed02527748325f582"
+    },
+    {
+      "id": "vnode-attribute-custody",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Selected #2805 still omits KQ_NOTE_ATTRIB from the macOS vnode build-window fence. Replay the focused #2778 repair and require its portable plus real-macOS chmod/kqueue evidence green on the moved exact head.",
+      "pr": 2778,
+      "headSHA": "c6c611b340e3f9a30f995a5f0ee356fe6600bc48"
     }
   ],
   "mode": "exclusive",
   "allowedWriteAreas": [
     "Scripts/bootstrap_capture_tuya_sdk.sh",
     "Scripts/capture_private_review_commitment.py",
-    "Scripts/capture_tuya_private_input_build_guard.py"
+    "Scripts/capture_tuya_private_input_build_guard.py",
+    "Scripts/capture_tuya_private_input_provenance.py",
+    "Scripts/capture_cocoapods_generated_build_subject.py",
+    "scripts/field/install_one_time_capture.command"
   ],
   "adjacentWriteAreas": [
     "scripts/ci/tests",
     ".github/workflows",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift",
     "Podfile",
     "Podfile.lock"
   ],
@@ -38,12 +58,12 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "primaryPR": 2805,
-    "primaryHeadSHA": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab",
-    "lineagePRs": [2709, 2778, 2799, 2794, 2805],
-    "knownExactHeadFinding": "At 76d2ed50, build-guard main still carries an undefined private_review exception handler. Focused helper-execution, private-review commitment, and CocoaPods build-subject gates are green; field provenance and main selective-graft are still in progress; Xcode exact-head is skipped while draft. Re-evaluate all exact-head gates after every move."
+    "primaryHeadSHA": "4467bc0717d58be2b7e7780ed02527748325f582",
+    "lineagePRs": [2709, 2778, 2799, 2794, 2805, 2809],
+    "knownExactHeadFinding": "At 4467bc07, focused private-review/CocoaPods gates are green, downstream-helper execution red team is FAILURE as expected, Field and Main Selective Graft are in progress, and Xcode is skipped. Commit 3020f39 staged only a materializer workflow; 4467bc07 triggered it, but workflow run 31470428052 failed with zero jobs, so the proposed production repair did not materialize. Separately #2778 KQ_NOTE_ATTRIB remains missing from current #2805 production source. Re-evaluate all exact-head gates after every move."
   },
   "tags": ["capture", "p0", "security", "build-authority", "legacy-import"]
 }
