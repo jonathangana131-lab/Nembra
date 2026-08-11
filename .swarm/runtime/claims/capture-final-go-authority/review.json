@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "capture-final-go-review-1607ax-20260811-2321",
   "generation": 16,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:21:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:27:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:29:00Z",
+  "releasedAt": "2026-08-11T23:29:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3120,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "5b9dab6d9ab5fb456222e955fd20a144c230d2d6",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-final-go-review-1607ax-20260811-2314",
-  "takeoverReason": "Generation-16 first classified #3100 Darwin red as fixture-only canonicalization failure. The fixture repair and five-path workflow were absorbed into selected #3082, which moved to exact 4a2c2002. Continue same review slot on current one-path Darwin descendant #3120 rather than stale #3100; PHYSICAL NO-GO."
+  "takeoverReason": "Generation-16 consumed #3100 red, followed exact product head moves, and reviewed current Darwin descendant #3120.",
+  "outcome": "CURRENT_DARWIN_SOURCE_ACCEPTABLE_RUNTIME_QUEUED",
+  "checkpoint": "#3100 red classified as fixture-only macOS temp-root canonicalization before attack seam. Correct fix already absorbed; selected #3082 moved to 4a2c2002 with Final-GO/Retirement/Sealed exact greens. Review 4911600676 accepts preferred #3120 source at 5b9dab6d; Darwin run 31546285366 queued. Duplicate #3122 exists and must not be double-counted. PHYSICAL NO-GO."
 }
