@@ -25,6 +25,8 @@ from typing import Any, Callable, Iterator
 REPO = "jonathangana131-lab/Nembra"
 OWNER = "jonathangana131-lab"
 PARENT_BRANCH = "control/v14-auth-stationary-final-go-sol"
+PARENT_SOURCE_COMMIT = "3fdd32551831c3469e0853ddcee8fa828d38b87b"
+PARENT_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"
 WORKFLOW_NAME = "Capture Authenticated Stationary Generated Subject Final GO"
 WORKFLOW_PATH = ".github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml"
 REVIEW_AUTHORITY = "nembra-capture-human-review-github-v3"
@@ -54,6 +56,7 @@ CHILD_AUTHORITY_PATHS = (
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py",
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py",
     "scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py",
+    "scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py",
 )
 PARENT_PINNED_PATHS = (
     "scripts/ci/es80_authenticated_stationary_final_go.py",
@@ -75,13 +78,61 @@ class GeneratedSubjectGoError(RuntimeError):
     pass
 
 
+def _parent_git_environment() -> dict[str, str]:
+    return {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
+
+
+def _accepted_parent_module_bytes(root: Path, source: str) -> bytes:
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source):
+        raise GeneratedSubjectGoError("accepted parent source identity is invalid")
+    try:
+        accepted_oid = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{source}:{PARENT_MODULE_PATH}"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_parent_git_environment(),
+        ).stdout.strip().lower()
+        payload = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", accepted_oid],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_parent_git_environment(),
+        ).stdout
+        verified = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "hash-object", "--stdin"],
+            input=payload,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_parent_git_environment(),
+        ).stdout.decode("ascii").strip().lower()
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
+        raise GeneratedSubjectGoError("accepted parent Final-GO Git custody failed") from error
+    if (
+        not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_oid)
+        or not payload
+        or len(payload) > 4 * 1024 * 1024
+        or verified != accepted_oid
+        or _git_blob_oid(payload, accepted_oid) != accepted_oid
+    ):
+        raise GeneratedSubjectGoError("accepted parent Final-GO execution bytes failed Git identity verification")
+    return payload
+
+
 def _load_base_module():
-    path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")
-    spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)
-    if spec is None or spec.loader is None:
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    root = Path(__file__).resolve().parents[2]
+    payload = _accepted_parent_module_bytes(root, PARENT_SOURCE_COMMIT)
+    filename = f"git:{PARENT_SOURCE_COMMIT}:{PARENT_MODULE_PATH}"
+    module = types.ModuleType("nembra_authenticated_stationary_final_go")
+    module.__file__ = str(root / PARENT_MODULE_PATH)
+    module.__package__ = ""
+    try:
+        exec(compile(payload, filename, "exec", dont_inherit=True), module.__dict__)
+    except Exception as error:
+        raise GeneratedSubjectGoError("accepted parent Final-GO Git blob could not execute") from error
     return module
 
 
@@ -153,6 +204,8 @@ def generated_control_plane(
     parent_base = parent.get("base", {})
     child_branch = child_head.get("ref")
     parent_sha = base.canon(parent_head.get("sha"), "parent Final-GO PR head")
+    if parent_sha != PARENT_SOURCE_COMMIT:
+        raise GeneratedSubjectGoError("generated-subject control plane parent moved beyond pinned execution authority")
     if (
         base.canon(child_head.get("sha"), "generated-subject PR head") != source
         or child_head.get("repo", {}).get("full_name") != REPO
