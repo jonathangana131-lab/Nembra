@@ -1,0 +1,152 @@
+name: Temporary Capture Final Field Tooling Repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-live-main-visual-acceptance-sol
+    paths:
+      - .github/workflows/tmp-capture-final-field-tooling-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact repair trigger
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-live-main-visual-acceptance-sol
+          fetch-depth: 0
+
+      - name: Materialize reviewed field-tooling repair
+        shell: bash
+        env:
+          EXPECTED_PARENT: 98fd627972a788731d206aac4abdee9660f171ca
+          INSPECTOR_BLOB: 57ec5f42b23ade83f1367fa86fe8f60f2144f241
+          PROVISIONER_BLOB: 93c7644ccd2580702c095420610fedd8342e4d90
+          BRANCH: agent/v14-capture-live-main-visual-acceptance-sol
+        run: |
+          set -euo pipefail
+
+          actual="$(git rev-parse HEAD)"
+          parent="$(git rev-parse HEAD^)"
+          test "$parent" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only "$EXPECTED_PARENT" "$actual" | sort)" = '.github/workflows/tmp-capture-final-field-tooling-repair.yml'
+
+          git fetch --no-tags origin \
+            refs/pull/1635/head:refs/remotes/origin/nembra-reviewed-inspector \
+            refs/pull/2064/head:refs/remotes/origin/nembra-reviewed-private-identity
+
+          git show refs/remotes/origin/nembra-reviewed-inspector:scripts/ci/es80_signed_field_artifact_evidence.py > scripts/ci/es80_signed_field_artifact_evidence.py
+          test "$(git hash-object scripts/ci/es80_signed_field_artifact_evidence.py)" = "$INSPECTOR_BLOB"
+          chmod 755 scripts/ci/es80_signed_field_artifact_evidence.py
+
+          git show refs/remotes/origin/nembra-reviewed-private-identity:Scripts/provision_capture_tuya_identity.sh > Scripts/provision_capture_tuya_identity.sh
+          test "$(git hash-object Scripts/provision_capture_tuya_identity.sh)" = "$PROVISIONER_BLOB"
+          chmod 755 Scripts/provision_capture_tuya_identity.sh
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          installer = Path('scripts/field/install_one_time_capture.command')
+          text = installer.read_text()
+          old = '/usr/bin/python3 -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          new = '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          if text.count(old) != 1 or new in text:
+              raise SystemExit('installer private-reader invocation did not match the exact expected pre-repair form')
+          installer.write_text(text.replace(old, new, 1))
+
+          workflow = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = workflow.read_text()
+          replacements = [
+              (
+                  '      - scripts/ci/es80_signed_field_artifact_private_runner.py\n',
+                  '      - scripts/ci/es80_signed_field_artifact_private_runner.py\n      - scripts/ci/es80_signed_field_artifact_evidence.py\n',
+              ),
+              (
+                  '      - Scripts/bootstrap_capture_tuya_sdk.sh\n',
+                  '      - Scripts/bootstrap_capture_tuya_sdk.sh\n      - Scripts/provision_capture_tuya_identity.sh\n',
+              ),
+              (
+                  '          bash -n Scripts/bootstrap_capture_tuya_sdk.sh\n',
+                  '          bash -n Scripts/bootstrap_capture_tuya_sdk.sh\n          bash -n Scripts/provision_capture_tuya_identity.sh\n',
+              ),
+              (
+                  '          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test\n          bash -n scripts/field/install_one_time_capture.command\n',
+                  '          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test\n          /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py\n          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test\n          bash -n scripts/field/install_one_time_capture.command\n',
+              ),
+              (
+                  "          private_device_runner='scripts/ci/es80_signed_field_artifact_private_runner.py'\n          ignore='.gitignore'\n",
+                  "          private_device_runner='scripts/ci/es80_signed_field_artifact_private_runner.py'\n          signed_field_inspector='scripts/ci/es80_signed_field_artifact_evidence.py'\n          private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'\n          ignore='.gitignore'\n",
+              ),
+              (
+                  '          test -f "$private_device_runner"\n          grep -Fq \'def read_private_identifier(\' "$private_device_runner"\n',
+                  '          test -f "$private_device_runner"\n          test -f "$signed_field_inspector"\n          test -f "$private_identity_provisioner"\n          grep -Fq \'RECIPE_ID = "ES80-FINGERPRINT-v1"\' "$signed_field_inspector"\n          grep -Fq \'INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"\' "$signed_field_inspector"\n          grep -Fq \'NEMBRA_TUYA_RUNTIME_DIR\' "$private_identity_provisioner"\n          grep -Fq \'read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET\' "$private_identity_provisioner"\n          grep -Fq \'def read_private_identifier(\' "$private_device_runner"\n',
+              ),
+              (
+                  '          grep -Fq \'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE\' "$installer"\n          grep -Fq \'read_private_identifier\' "$installer"\n',
+                  '          grep -Fq \'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE\' "$installer"\n          grep -Fq \'/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"\' "$installer"\n          grep -Fq \'read_private_identifier\' "$installer"\n',
+              ),
+          ]
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'field provenance workflow transform expected exactly one match: {old!r}')
+              text = text.replace(old, new, 1)
+          workflow.write_text(text)
+          PY
+
+          bash -n scripts/field/install_one_time_capture.command
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_source.py
+          python3 -m py_compile scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_xcode27_signed_field_candidate_intended_device.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          provision_output="$(printf 'dummy-app-key\ndummy-app-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime" bash Scripts/provision_capture_tuya_identity.sh 2>&1)"
+          test -f "$tmp/runtime/NembraTuyaPrivateConfig.podspec"
+          test -f "$tmp/runtime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift"
+          test "$(stat -c '%a' "$tmp/runtime/NembraTuyaPrivateConfig.podspec")" = 600
+          test "$(stat -c '%a' "$tmp/runtime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")" = 600
+          ! grep -R -Fq 'dummy-app-secret' "$tmp/runtime"
+          ! grep -Fq 'dummy-app-secret' <<< "$provision_output"
+          rm -rf "$tmp"
+          trap - EXIT
+
+          python3 - <<'PY'
+          import yaml
+          from pathlib import Path
+          yaml.safe_load(Path('.github/workflows/capture-field-build-provenance.yml').read_text())
+          PY
+
+          rm .github/workflows/tmp-capture-final-field-tooling-repair.yml
+
+          expected="$(cat <<'EOF' | sort
+.github/workflows/capture-field-build-provenance.yml
+Scripts/provision_capture_tuya_identity.sh
+scripts/ci/es80_signed_field_artifact_evidence.py
+scripts/field/install_one_time_capture.command
+EOF
+)"
+          actual_paths="$(git status --porcelain=v1 | sed -E 's/^...//' | sort)"
+          test "$actual_paths" = "$expected"
+          git diff --check
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): restore final field tooling'
+
+          git fetch origin "$BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$actual"
+          git push origin HEAD:"$BRANCH"
