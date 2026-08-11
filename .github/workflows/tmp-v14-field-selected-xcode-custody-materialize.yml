@@ -57,7 +57,17 @@ jobs:
           status=$?
           printf '%s\n' "$output"
           if [[ "$status" != "0" ]]; then
-            escaped="$(printf '%s' "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')"
+            context="$(/usr/bin/python3 - <<'PY'
+from pathlib import Path
+for number, line in enumerate(Path('scripts/field/install_one_time_capture.command').read_text(encoding='utf-8').splitlines(), 1):
+    if 'xcode-select' in line or 'SELECTED_DEVELOPER_DIR' in line or 'SELECTED_XCODEBUILD' in line:
+        print(f'{number}: {line!r}')
+PY
+)"
+            combined="$output
+--- generated installer custody lines ---
+$context"
+            escaped="$(printf '%s' "$combined" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')"
             printf '::error title=Selected Xcode custody regression::%s\n' "$escaped"
             exit "$status"
           fi
