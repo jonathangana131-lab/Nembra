@@ -253,6 +253,9 @@ if ! set_accessibility_content_size; then
   exit 8
 fi
 
+# Accessibility acceptance must cover both riding and connected-stopped landscape.
+# The stopped rerun exercises all four 44-pt mode targets plus light/lock controls
+# under the same real system AX content size, retaining screenshots for inspection.
 set +e
 set -o pipefail
 xcodebuild \
@@ -267,6 +270,7 @@ xcodebuild \
   -maximum-test-execution-time-allowance 120 \
   -collect-test-diagnostics never \
   -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardStoppedControlsConfirmEveryModePersonality \
   CODE_SIGNING_ALLOWED=NO \
   ONLY_ACTIVE_ARCH=YES \
   test \
