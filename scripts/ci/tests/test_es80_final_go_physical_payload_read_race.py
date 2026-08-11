@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Expected-red regression for Final-GO lstat-to-read pathname replacement."""
+"""Expected-red regressions for Final-GO lstat-to-read pathname replacement."""
 from __future__ import annotations
 
 import importlib.util
@@ -70,9 +70,50 @@ class FinalGoPhysicalPayloadReadRaceTests(unittest.TestCase):
             finally:
                 Path.read_bytes = original_read_bytes
 
-            self.assertTrue(attack_fired, "fixture did not interpose at the pathname reopen boundary")
+            self.assertTrue(attack_fired, "fixture did not interpose at the regular-file pathname reopen boundary")
             self.assertEqual(escaped.read_bytes(), accepted_payload)
             self.assertEqual(path.read_bytes(), replacement_payload)
+
+    def test_symlink_replacement_between_lstat_and_readlink_is_rejected(self) -> None:
+        module = load_module()
+        accepted_target = "../Resources/accepted.json"
+        replacement_target = "../Resources/replacement.json"
+
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-symlink-read-race-") as temporary:
+            root = Path(temporary)
+            relative = "NembraApp/App/CurrentConfig"
+            path = root / relative
+            escaped = root / "NembraApp/App/CurrentConfig.accepted"
+            path.parent.mkdir(parents=True)
+            os.symlink(accepted_target, path)
+
+            admitted = os.lstat(path)
+            self.assertTrue(stat.S_ISLNK(admitted.st_mode))
+
+            original_readlink = module.os.readlink
+            attack_fired = False
+
+            def interpose_readlink(subject, *args, **kwargs):
+                nonlocal attack_fired
+                if Path(subject) == path and not attack_fired:
+                    attack_fired = True
+                    os.rename(path, escaped)
+                    os.symlink(replacement_target, path)
+                return original_readlink(subject, *args, **kwargs)
+
+            module.os.readlink = interpose_readlink
+            try:
+                with self.assertRaises(
+                    RuntimeError,
+                    msg="Final-GO admitted a replacement symlink target reopened after lstat",
+                ):
+                    module._read_physical_payload(root, relative, b"120000")
+            finally:
+                module.os.readlink = original_readlink
+
+            self.assertTrue(attack_fired, "fixture did not interpose at the symlink pathname reopen boundary")
+            self.assertEqual(os.readlink(escaped), accepted_target)
+            self.assertEqual(os.readlink(path), replacement_target)
 
 
 if __name__ == "__main__":
