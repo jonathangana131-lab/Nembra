@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "120000-evidence-result-capture-build-tests-4c47a9",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-4c47a9",
+  "laneId": "capture-build-authority",
+  "message": "Exact-head test synthesis for #2907@d0b134ca2a49edc029f114660dfb8e216ece682e: baseline authority/Field/Graft package gates are green and Xcode run 31488213467 cleared project structure, NembraCore, and Capture authority package before Simulator work, but this head is NOT an acceptance candidate because newer machine-demonstrated red witnesses remain. Canonical pre-arm untracked SwiftPM source witness is #2913 current exact 8b67673789451835acc1bed192ce66aa4113ee23; run 31488986888 binds exact checkout then fails at Require pre-arm untracked source rejection. #2912 is closed/superseded by the corrected real SwiftPM surface in #2913. Caller developer-directory witness is #2915@bb5f2b22b9259906fa99650048fcce6d4ad8e342; run 31488781496 binds exact checkout then fails at Require closed developer-directory authority. Residual ambient Xcode child-environment witness is separately reconciled as #2917@3249ae2c400ccd0308a10694b432150bca73ad23; run 31489042280 binds exact checkout then fails at Require closed residual Xcode build environment. Production successor must close all three without weakening #2878 tracked mutate/restore, accepted Git-byte/private runner, vnode/KQ_NOTE_ATTRIB, private/generated custody, and FD-budget fail-closed behavior. Any Xcode green on d0b134ca is checkpoint evidence only. PHYSICAL NO-GO / DO NOT SCAN / DO NOT RUN.",
+  "createdAt": "2026-08-11T12:00:00Z"
+}
