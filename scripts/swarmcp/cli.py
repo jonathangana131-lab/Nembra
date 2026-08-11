@@ -4,8 +4,15 @@ from .model import *
 from .model import _dict
 from .store import *
 from .engine import *
-from .policy import claim_slot, takeover_claim, recommend_slots
 from .resources import heartbeat_resource, release_resource
+from .enforcement import (
+    acquire_resources_for_claim,
+    claim_slot,
+    safe_recommend_slots,
+    takeover_claim,
+    validate_lane,
+    validate_state_snapshot,
+)
 
 CONFIG_PATH='.swarm/config.json'
 
@@ -48,11 +55,11 @@ def main(argv=None):
         elif a.cmd=='release':x=release_claim(s,a.lane,a.slot,a.worker,a.lease_id,a.generation,utc_now())
         elif a.cmd=='event':x=publish_event(s,a.type,a.worker,a.message,utc_now(),a.lane,_dict(json.loads(a.data),'data') if a.data else None)
         elif a.cmd=='recommend':
-            l,c,_,_,r=snapshot(s);print(pretty_json([asdict(x) for x in recommend_slots(l,c,r,config,utc_now(),a.red_main)[:a.limit]]),end='');return 0
+            l,c,_,_,r=snapshot(s);print(pretty_json([asdict(x) for x in safe_recommend_slots(l,c,r,config,utc_now(),a.red_main)[:a.limit]]),end='');return 0
         elif a.cmd=='board':
             l,c,w,e,r=snapshot(s);print(render_dashboard(l,c,w,r,e,utc_now(),a.red_main),end='');return 0
         elif a.cmd=='resource-acquire':
-            values=acquire_resources(s,a.resource,a.worker,a.lane,utc_now(),config['resourceOrder']);print(pretty_json([value.value for value in values]),end='');return 0
+            values=acquire_resources_for_claim(s,a.resource,a.worker,a.lane,utc_now(),config['resourceOrder']);print(pretty_json([value.value for value in values]),end='');return 0
         elif a.cmd=='resource-heartbeat':x=heartbeat_resource(s,a.resource,a.worker,a.lease_id,a.generation,utc_now())
         elif a.cmd=='resource-release':x=release_resource(s,a.resource,a.worker,a.lease_id,a.generation,utc_now())
         else:raise ValidationError('unknown command')
