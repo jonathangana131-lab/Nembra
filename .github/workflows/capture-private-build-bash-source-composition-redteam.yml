@@ -1,0 +1,62 @@
+name: Capture Private Build Bash Source Composition Red Team
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_private_build_bash_source_composition_red_team.py
+      - .github/workflows/capture-private-build-bash-source-composition-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bash-source-identity:
+    name: Demonstrate verified-stdin bootstrap source mismatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact cross-lineage subjects
+        shell: bash
+        env:
+          PRIVATE_PARENT: ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab
+          BUILD_AUTHORITY_SHA: 947f592239a800f636e0626b2a0b9233ccbac38d
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${PRIVATE_PARENT}^{commit}"
+          git cat-file -e "${BUILD_AUTHORITY_SHA}^{commit}"
+          changed="$(git diff --name-only "$PRIVATE_PARENT"...HEAD | LC_ALL=C sort)"
+          wanted="$(printf '%s\n' \
+            '.github/workflows/capture-private-build-bash-source-composition-redteam.yml' \
+            'scripts/ci/tests/test_capture_private_build_bash_source_composition_red_team.py')"
+          test "$changed" = "$wanted"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile composition witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_private_build_bash_source_composition_red_team.py
+
+      - name: Demonstrate BASH_SOURCE /dev/stdin incompatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_private_build_bash_source_composition_red_team.py
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab HEAD
