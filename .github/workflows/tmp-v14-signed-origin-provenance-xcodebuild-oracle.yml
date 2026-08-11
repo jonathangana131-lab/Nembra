@@ -1,0 +1,49 @@
+name: TEMP V14 Signed Origin Provenance Xcodebuild Oracle
+
+on:
+  push:
+    branches:
+      - fix/v14-signed-origin-provenance-xcodebuild-oracle-sol-20260811
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/v14-signed-origin-provenance-xcodebuild-oracle-sol-20260811
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Align exact xcodebuild source oracle
+        shell: bash
+        env:
+          SOURCE: scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I - "$SOURCE" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          old = '        build_call = "-- xcodebuild"\n'
+          new = '        build_call = "-- /usr/bin/xcodebuild"\n'
+          if source.count(old) != 1:
+              raise SystemExit(f"stale xcodebuild oracle site missing/ambiguous: {source.count(old)}")
+          source = source.replace(old, new)
+          if source.count(new) != 1:
+              raise SystemExit("corrected absolute xcodebuild oracle is not unique")
+          path.write_text(source, encoding="utf-8")
+          PY
+          /usr/bin/python3 -m py_compile "$SOURCE"
+          /usr/bin/python3 "$SOURCE"
+          git diff --check -- "$SOURCE"
+          git config user.name 'Nembra Swarm Constructor'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git add -- "$SOURCE"
+          git commit -m 'Align provenance test with absolute guarded xcodebuild'
+          git push origin HEAD:refs/heads/fix/v14-signed-origin-provenance-xcodebuild-oracle-sol-20260811
