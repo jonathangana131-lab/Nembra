@@ -9,17 +9,18 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:38:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:38:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:41:00Z",
   "leaseSeconds": 2700,
-  "branch": "",
+  "branch": "repair/v14-private-resolution-adapter-api-sol-1316vk",
   "pr": 2944,
   "sourceSHA": "3b8e2182de2275a1c8b858ff8b3b614061582457",
-  "currentHeadSHA": "3b8e2182de2275a1c8b858ff8b3b614061582457",
+  "currentHeadSHA": "8318dbec1601992d3ddf96917778dac41259ec49",
   "takeoverFromWorkerId": "sol-20260811-4f57unlink",
   "takeoverReason": "Generation-1 convergence lease expired hours ago. Fresh review proved #2944 current 3b8e2182 fails its new dependency-resolution adapter before guarded child execution because the adapter passes four unsupported require_accepted_* kwargs to canonical run_guarded_build. Recover parent convergence on disjoint adapter/test paths only; #2977 separately owns writer/recovery sanitation and must later recompose. PHYSICAL NO-GO.",
   "ownedPaths": [
     "Scripts/capture_tuya_private_dependency_resolution_guard.py",
     "scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py"
   ],
+  "checkpoint": "Exact child 8318dbec1601992d3ddf96917778dac41259ec49 is ahead 2/behind 0 from #2944 current 3b8e2182 and changes only the two owned paths. Adapter now invokes canonical run_guarded_build(inputs, command) using its actual narrow API; permanent AST regression mechanically rejects unsupported adapter keywords and fabricated require_accepted_* toggles. Canonical build guard and #2977 writer/recovery paths untouched. Exact-head CI/review still required. PHYSICAL NO-GO.",
   "intent": "Restore the adapter/canonical-guard API contract without weakening vnode custody or promoting dependency-resolution work to xcodebuild/physical authority; add a regression that mechanically catches unsupported adapter kwargs. Then re-earn exact private/Field/Main/Xcode gates on the repaired #2944 lineage."
 }
