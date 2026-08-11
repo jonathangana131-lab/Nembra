@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "100400-review-result-finalgo-localgit-solr4",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-finalgo-r4",
+  "laneId": "capture-final-go-authority",
+  "message": "Independent review BLOCK for PR #2890 exact 778630c979cfd19fee9b8549f79eccbb58876a24. Physical worktree pinning closes core.worktree redirection but candidate cleanliness still relies on repository-local configuration-sensitive Git status. Defensive local reproduction showed repository metadata can still trigger configured comparison facilities before candidate authority and can influence visibility. Required direction is exact object/tree authority plus direct physical-filesystem verification that does not trust repository-local status, excludes, attributes, or filters. Test slot #2889 was asked to add defensive coverage. Primary #2890 and tests #2889 remain separately owned. PHYSICAL_NO_GO.",
+  "createdAt": "2026-08-11T10:04:00Z"
+}
