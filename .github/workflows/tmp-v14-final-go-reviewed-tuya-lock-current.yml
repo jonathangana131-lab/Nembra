@@ -1,0 +1,68 @@
+name: TEMP V14 Final-GO reviewed Tuya lock convergence
+
+on:
+  push:
+    branches:
+      - repair/v14-auth-final-go-reviewed-tuya-lock-current-sol
+    paths:
+      - .github/workflows/tmp-v14-final-go-reviewed-tuya-lock-current.yml
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Verify exact convergence parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "bccdab041235982ee95a9a4bd366d7b1ec50ccda"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-v14-final-go-reviewed-tuya-lock-current.yml"
+      - name: Apply accepted lock-authority ingredient only
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            da86226ba36bb2d4f441cc3cb876244af17853cb \
+            d8416aeba19b826cfb50bde9e0b3e2778766a286
+          git diff --binary \
+            da86226ba36bb2d4f441cc3cb876244af17853cb \
+            d8416aeba19b826cfb50bde9e0b3e2778766a286 -- \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py \
+            > /tmp/reviewed-lock.patch
+          test -s /tmp/reviewed-lock.patch
+          git apply --3way /tmp/reviewed-lock.patch
+          test -z "$(git diff --name-only --diff-filter=U)"
+          grep -Fq 'stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq '"mainSHA":main_sha' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'nembra-capture-human-review-github-v2' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'retained signed artifact Tuya dependency lock does not match prebuild GitHub review' scripts/ci/es80_authenticated_stationary_final_go.py
+          python3 -B -c 'compile(open("scripts/ci/es80_authenticated_stationary_final_go.py").read(),"issuer","exec"); compile(open("scripts/ci/tests/test_es80_authenticated_stationary_final_go.py").read(),"tests","exec"); compile(open("scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py").read(),"envtests","exec")'
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          test -z "$(find scripts/ci -type d -name __pycache__ -print -quit)"
+      - name: Self-delete and checkpoint clean convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-final-go-reviewed-tuya-lock-current.yml
+          expected=$'.github/workflows/tmp-v14-final-go-reviewed-tuya-lock-current.yml\nscripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py'
+          actual="$(git diff --name-only HEAD^ | sort)"
+          test "$actual" = "$expected"
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): bind Final-GO to reviewed Tuya lock"
+          git push origin HEAD:repair/v14-auth-final-go-reviewed-tuya-lock-current-sol
