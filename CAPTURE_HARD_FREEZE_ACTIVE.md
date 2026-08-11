@@ -12,18 +12,22 @@ Do not restore #833's old “first artifact not yet collected” or retained-IPA
 
 ## Current flagship authority
 
-At this pointer update, the live P0 software-integration spine is PR #2602:
+The live P0 integration spine is PR #2602, but the current direct-main final visual/runtime acceptance subject at this checkpoint is PR #2612:
 
 - feature: Nembra Capture / authenticated stationary ES80 physical truth;
-- branch: `integration/v14-capture-main-selective-graft-sol`;
-- exact head at this checkpoint: `1434b27087a6c68c9de25f61ef8638aeba21acb9`;
-- exact-head `Capture Main Selective Graft Diagnostic` run `31449544886`: **SUCCESS**;
-- exact-head `Capture Field Build Provenance` run `31449544895`: **SUCCESS**;
-- exact-head `Xcode 27 PR Exact-Head QA` run `31449581249`: **CANCELLED** during full Capture-package validation, so it is **not acceptance evidence** and must be rerun successfully on the unchanged final composed head;
-- standalone visual/accessibility evidence is being recovered on stacked PR #2607 and is not inherited until its exact head is terminal green and retained PNGs receive human review;
+- final-candidate branch: `agent/v14-capture-live-main-visual-acceptance-sol`;
+- exact final-candidate head at this checkpoint: `e27218e7bdc04c2c37ba8460d10c7848e82bbf66`;
+- exact parent product: #2606 head `5ce3603707389eb6578fcf31f3a868feb9297539`;
+- exact compare from that product parent to #2612: two ancestry commits and exactly three QA-only visual-evidence paths, with no production/runtime byte changes;
+- exact-head `Capture Field Build Provenance` run `31449652562`: **SUCCESS**;
+- exact-head `Capture Standalone Visual Evidence` run `31449652538`: **RUNNING** at this checkpoint; no visual acceptance exists until terminal success plus human review of the retained standard and Accessibility XXXL PNGs;
+- exact-head `Capture Main Selective Graft Diagnostic` run `31449652553`: **QUEUED** at this checkpoint;
+- exact-head `Xcode 27 PR Exact-Head QA` run `31449652571`: **QUEUED** at this checkpoint;
 - physical status: **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
 
-**Always re-read live PR #2602 and current GitHub workflow state before acting.** If its head differs from the SHA above, this recorded SHA and every ancestor workflow result are stale for product acceptance. Queued/running/skipped/cancelled/ancestor results are non-evidence.
+PR #2602 / `integration/v14-capture-main-selective-graft-sol@1434b27087a6c68c9de25f61ef8638aeba21acb9` remains the current integration spine/source composition. Its exact diagnostic and provenance runs were green, but its Xcode attempt was cancelled and is not inherited by #2612. PRs #2607, #2610, #2611, and #2613 are superseded duplicate visual children; fresh workers must not route back to them merely because older descriptions mention them.
+
+**Always re-read live PR #2612, PR #2602, and current GitHub workflow state before acting.** If #2612's head differs from the SHA above, this recorded SHA and every ancestor workflow result are stale for final product acceptance. Queued/running/skipped/cancelled/ancestor results are non-evidence.
 
 PR #2178 / `integration/v14-capture-final-stationary-convergence-sol` and its recorded `df30de17…` head are historical/superseded integration state. Fresh GO workers must not route back to #2178 merely because older documents or comments name it.
 
@@ -49,14 +53,14 @@ The current accepted direction is an authenticated, stationary, read-only path:
 
 ## Current critical path
 
-Do not churn the #2602 product head for non-blocking docs/tests/cleanup while an unchanged exact head is undergoing acceptance. Use stacked, non-conflicting children for review/support work and compose only accepted deltas when the integration closer is ready.
+Do not churn the #2612 final-candidate head for non-blocking docs/tests/cleanup while its unchanged exact head is undergoing final acceptance. Use stacked, non-conflicting children for review/support work and compose only accepted deltas when the integration closer is ready.
 
 Current closure order:
 
-1. obtain terminal exact-head Xcode 27 package/app/Simulator success on the unchanged final composed candidate;
-2. obtain exact iPhone 12 / iOS 27 standalone Capture visual evidence and human-review the retained standard and Accessibility XXXL screenshots;
+1. obtain terminal exact-head diagnostic, provenance, Xcode 27 package/app/Simulator, and standalone visual-evidence success on one unchanged final composed candidate;
+2. human-review the exact retained standalone iPhone 12 standard and Accessibility XXXL screenshots for fail-closed truth, hierarchy, clipping, Dynamic Type, outdoor readability, and generic-Tuya/prototype seams;
 3. complete visual/accessibility/performance and simplification review;
-4. compose accepted QA/support deltas, then rerun every gate invalidated by the final SHA;
+4. compose accepted QA/support deltas such as regression tests and this routing repair, then rerun every gate invalidated by the final SHA;
 5. only after terminal final software acceptance, produce and inspect the private signed field candidate on the intended iPhone 12 / iOS 27;
 6. only an explicit repository GO on that exact accepted build may authorize the smallest stationary authenticated read-only physical attempt.
 
