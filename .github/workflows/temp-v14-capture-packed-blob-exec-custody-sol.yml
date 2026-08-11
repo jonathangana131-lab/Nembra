@@ -27,7 +27,7 @@ jobs:
             .github/workflows/capture-field-git-packed-blob-execution-red-team.yml \
             scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
 
-      - name: Materialize verified accepted-Git payload execution
+      - name: Patch installer with verified accepted-Git payload execution
         shell: bash
         run: |
           set -euo pipefail
@@ -100,8 +100,6 @@ jobs:
           }
 
           '''
-          # The helper string is raw on purpose: its one trailing shell backslash
-          # and embedded Python escape sequences must arrive byte-for-byte.
           helper = helper.replace('\\"', '"').replace('\\\\\n', '\\\n')
           if text.count(anchor) != 1:
               raise SystemExit(f'expected one run_accepted_source_bash anchor, found {text.count(anchor)}')
@@ -122,11 +120,40 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
 
+      - name: Validate installer shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
           /bin/bash -n scripts/field/install_one_time_capture.command
+
+      - name: Run packed Git blob execution witness
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+
+      - name: Run pre-arm injection regression
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+
+      - name: Run tracked source-window regression
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+
+      - name: Run private input provenance regression
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+
+      - name: Check patch whitespace
+        shell: bash
+        run: |
+          set -euo pipefail
           git diff --check
 
       - name: Publish clean repair and retire materializer
