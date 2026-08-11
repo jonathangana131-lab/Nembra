@@ -7,14 +7,15 @@
   "workerId": "sol-20260811-4f51fg",
   "leaseId": "capture-signed-install-tests-4f51fg-20260811-1152",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T11:52:15Z",
-  "lastHeartbeatAt": "2026-08-11T11:58:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:14:30Z",
+  "releasedAt": "2026-08-11T12:14:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2911,
   "sourceSHA": "83110a6af6220355092ed730cd28892a90c72fef",
   "currentHeadSHA": "83110a6af6220355092ed730cd28892a90c72fef",
-  "takeoverFromWorkerId": "sol-20260811-9b7e",
-  "takeoverReason": "Generation-1 tests lease expired without heartbeat. Ancestor 8dbc Field failure was isolated to a stale install-log contract; duplicate repair PR #2919 was closed when #2911 independently moved to stronger exact head 83110a6. Continue tests-only exact-head validation on that moved current candidate. PHYSICAL NO-GO."
+  "outcome": "EXACT_HEAD_QA_GREEN",
+  "evidence": "Unchanged #2911 exact 83110a6: Capture Field Build Provenance 31488849076 terminal SUCCESS; Capture Main Selective Graft Diagnostic 31488848988 terminal SUCCESS; Xcode 27 PR Exact-Head QA 31488849061 terminal SUCCESS. Independent review worker sol-20260811-4f50qa already source-accepted this exact five-path QA delta contingent on that Xcode terminal success. Duplicate #2919 closed unmerged. No child green creates physical authority; moved #2871 parent must re-earn exact-head gates after composition. PHYSICAL NO-GO."
 }
