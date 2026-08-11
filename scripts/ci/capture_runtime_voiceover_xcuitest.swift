@@ -43,16 +43,18 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             "Public/unprovisioned runtime hierarchy must not expose Bluetooth scan authority anywhere, including offscreen or under a non-button element type."
         )
 
+        // Keep this list platform-correct for the exact iOS Simulator target.
+        // Apple's audit contract classifies Parent/Child and Action as macOS-only;
+        // iOS supports these seven domains. Contrast was previously omitted.
         try app.performAccessibilityAudit(
             for: [
                 .sufficientElementDescription,
                 .hitRegion,
-                .dynamicType,
+                .contrast,
+                .elementDetection,
                 .textClipped,
                 .trait,
-                .parentChild,
-                .elementDetection,
-                .action
+                .dynamicType
             ]
         )
 
