@@ -8,12 +8,13 @@ checkout pathname for publication. The pathname is re-opened only as a drift
 check: its descriptor identity must still equal the inherited admitted root
 before any private descendant is created.
 
-Credential-bearing staging files are created directly under the admitted root,
-not under long-lived descendant directory descriptors. On Darwin, publication
-uses renameatx_np with no-follow-any + resolve-beneath semantics so every path
-component is resolved beneath that admitted root in the publication syscall.
-The sealed staging descriptor remains open through publication and the final
-named inode must match it exactly before success.
+Credential-bearing staging files are created under the held checkout-owned
+LocalSecrets directory so crash-recovery tombstones stay inside the authenticated
+private field-input root rather than becoming raw checkout subjects. On Darwin,
+publication uses renameatx_np with no-follow-any + resolve-beneath semantics from
+that held source-parent descriptor into the admitted checkout root. The sealed
+staging descriptor remains open through publication and the final named inode
+must match it exactly before success.
 """
 
 from __future__ import annotations
@@ -132,8 +133,8 @@ def _is_canonical_private_stage_name(name: str) -> bool:
 def _recover_private_stage_residue(checkout_fd: int) -> None:
     """Neutralize exact writer-shaped crash residue without pathname deletion authority.
 
-    The checkout is writable by the same UID as this process, so a pathname can be
-    renamed/replaced between an identity check and unlink(2). Recovery therefore never
+    The staging directory is writable by the same UID as this process, so a pathname
+    can be renamed/replaced between an identity check and unlink(2). Recovery never
     deletes a reserved staging pathname. Credential-bearing bytes are truncated through
     the already-admitted file descriptor, fsync'd, and then the name is re-bound to that
     exact neutralized inode. Zero-length canonical 0600 entries are inert tombstones and
@@ -361,9 +362,9 @@ def _validate_existing_output(parent_fd: int, name: str) -> None:
         )
 
 
-def _require_sealed_staging_name(checkout_fd: int, source_name: str, sealed: os.stat_result) -> None:
+def _require_sealed_staging_name(parent_fd: int, source_name: str, sealed: os.stat_result) -> None:
     try:
-        current = os.stat(source_name, dir_fd=checkout_fd, follow_symlinks=False)
+        current = os.stat(source_name, dir_fd=parent_fd, follow_symlinks=False)
     except OSError as exc:
         raise ProvisionError("sealed private identity staging name disappeared before publication") from exc
     if (
@@ -454,10 +455,18 @@ def _require_final_relative_name_binding(
 
 
 class _SealedStaging:
-    def __init__(self, metadata: os.stat_result, descriptor: int, payload: bytes) -> None:
+    def __init__(
+        self,
+        metadata: os.stat_result,
+        descriptor: int,
+        payload: bytes,
+        *,
+        source_parent_fd: int | None = None,
+    ) -> None:
         self.metadata = metadata
         self.descriptor = descriptor
         self.payload = payload
+        self.source_parent_fd = source_parent_fd
 
     def __getattr__(self, name: str):
         return getattr(self.metadata, name)
@@ -514,13 +523,16 @@ def _secure_replace_beneath(
 ) -> None:
     _relative_components(source_name)
     _relative_components(destination_relative)
-    _require_sealed_staging_name(checkout_fd, source_name, sealed)
+    source_parent_fd = checkout_fd
     if isinstance(sealed, _SealedStaging):
+        if sealed.source_parent_fd is not None:
+            source_parent_fd = sealed.source_parent_fd
         _require_descriptor_payload(
             sealed.descriptor,
             sealed.payload,
             "private identity staging payload changed immediately before publication",
         )
+    _require_sealed_staging_name(source_parent_fd, source_name, sealed)
     if sys.platform == "darwin":
         libc = ctypes.CDLL(None, use_errno=True)
         try:
@@ -537,7 +549,7 @@ def _secure_replace_beneath(
         renameatx_np.restype = ctypes.c_int
         flags = _DARWIN_RENAME_NOFOLLOW_ANY | _DARWIN_RENAME_RESOLVE_BENEATH
         result = renameatx_np(
-            checkout_fd,
+            source_parent_fd,
             os.fsencode(source_name),
             checkout_fd,
             os.fsencode(destination_relative),
@@ -551,12 +563,12 @@ def _secure_replace_beneath(
             )
         return
 
-    # Linux CI fallback exercises the same root-relative custody shape. Physical
-    # field publication is macOS-only and is required to take the Darwin path.
+    # Linux CI fallback exercises the same descriptor-relative custody shape.
+    # Physical field publication is macOS-only and must take the Darwin path.
     os.replace(
         source_name,
         destination_relative,
-        src_dir_fd=checkout_fd,
+        src_dir_fd=source_parent_fd,
         dst_dir_fd=checkout_fd,
     )
 
@@ -567,6 +579,8 @@ def _write_staged(
     final_name: str,
     destination_relative: str,
     payload: bytes,
+    *,
+    staging_parent_fd: int | None = None,
 ) -> None:
     components = _relative_components(destination_relative)
     if components[-1] != final_name:
@@ -574,10 +588,11 @@ def _write_staged(
     _validate_existing_output(destination_parent_fd, final_name)
 
     temporary_name = f"{_PRIVATE_STAGE_PREFIX}{os.getpid()}-{secrets.token_hex(12)}"
+    source_parent_fd = checkout_fd if staging_parent_fd is None else staging_parent_fd
     staging_fd = final_fd = -1
     sealed: os.stat_result | None = None
     try:
-        staging_fd = os.open(temporary_name, _file_flags(), 0o600, dir_fd=checkout_fd)
+        staging_fd = os.open(temporary_name, _file_flags(), 0o600, dir_fd=source_parent_fd)
         metadata = os.fstat(staging_fd)
         if (
             not stat.S_ISREG(metadata.st_mode)
@@ -604,7 +619,12 @@ def _write_staged(
             payload,
             "private identity staging payload changed before publication",
         )
-        sealed_authority = _SealedStaging(sealed, staging_fd, payload)
+        sealed_authority = _SealedStaging(
+            sealed,
+            staging_fd,
+            payload,
+            source_parent_fd=source_parent_fd,
+        )
         _secure_replace_beneath(
             checkout_fd,
             temporary_name,
@@ -654,7 +674,7 @@ def _write_staged(
             os.fsync(checkout_fd)
             raise
     except Exception:
-        _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
+        _unlink_owned_inode_if_named(source_parent_fd, temporary_name, sealed)
         raise
     finally:
         if final_fd >= 0:
@@ -706,9 +726,10 @@ public enum NembraTuyaPrivateIdentity {{
     local_secrets_fd = runtime_fd = sources_fd = module_fd = -1
     try:
         _require_checkout_path_identity(checkout_fd, checkout_root)
-        _recover_private_stage_residue(checkout_fd)
-        _require_checkout_path_identity(checkout_fd, checkout_root)
         local_secrets_fd = _ensure_private_directory(checkout_fd, "LocalSecrets")
+        _recover_private_stage_residue(local_secrets_fd)
+        _require_checkout_path_identity(checkout_fd, checkout_root)
+        _require_named_child(checkout_fd, "LocalSecrets", local_secrets_fd)
         runtime_fd = _ensure_private_directory(local_secrets_fd, "TuyaRuntime")
         sources_fd = _ensure_private_directory(runtime_fd, "Sources")
         module_fd = _ensure_private_directory(sources_fd, "NembraTuyaPrivateConfig")
@@ -726,6 +747,7 @@ public enum NembraTuyaPrivateIdentity {{
             "NembraTuyaPrivateConfig.podspec",
             podspec_relative,
             podspec,
+            staging_parent_fd=local_secrets_fd,
         )
         _require_checkout_path_identity(checkout_fd, checkout_root)
         _require_private_chain(checkout_fd, local_secrets_fd, runtime_fd, sources_fd, module_fd)
@@ -736,6 +758,7 @@ public enum NembraTuyaPrivateIdentity {{
             "NembraTuyaPrivateIdentity.swift",
             identity_relative,
             swift,
+            staging_parent_fd=local_secrets_fd,
         )
         _require_checkout_path_identity(checkout_fd, checkout_root)
         _require_private_chain(checkout_fd, local_secrets_fd, runtime_fd, sources_fd, module_fd)
