@@ -35,10 +35,9 @@ jobs:
               if workflow.count(start) != 1:
                   raise RuntimeError(f'expected one payload start, found {workflow.count(start)}')
               payload = workflow.split(start, 1)[1].split(end, 1)[0]
-              # The payload is nested beneath a YAML run block. A global dedent is
-              # incorrect because intentional triple-quoted fixture text contains
-              # zero-indented lines. Remove only the run-block's exact ten-space
-              # prefix where it exists, preserving fixture indentation verbatim.
+              # A global dedent is wrong here: the payload intentionally contains
+              # zero-indented lines inside triple-quoted fixture text. Strip only
+              # the YAML run-block prefix from lines that actually carry it.
               prefix = ' ' * 10
               payload = '\n'.join(
                   line[len(prefix):] if line.startswith(prefix) else line
