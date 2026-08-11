@@ -56,34 +56,95 @@ def _identity(metadata: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def _canonical_nosymlink_path(path: Path, label: str) -> Path:
+def _directory_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+    )
+
+
+def _canonical_absolute_path(path: Path, label: str) -> Path:
     path = path.expanduser()
     if not path.is_absolute() or path.anchor != os.sep:
         raise CommitmentError(f"{label} path must be absolute")
     if any(component in ("", ".", "..") for component in path.parts[1:]):
         raise CommitmentError(f"{label} path must be canonical")
-    current = Path(os.sep)
-    for component in path.parts[1:]:
-        current /= component
-        try:
-            metadata = current.lstat()
-        except OSError as error:
-            raise CommitmentError(f"{label} path component is unavailable") from error
-        if stat.S_ISLNK(metadata.st_mode):
-            raise CommitmentError(f"{label} path contains a symlink component")
+    if len(path.parts) < 2:
+        raise CommitmentError(f"{label} path must name a file")
     return path
 
 
-def _read_review_key(path: Path) -> bytes:
-    path = _canonical_nosymlink_path(path, "private review key")
+def _open_nosymlink_chain(path: Path) -> tuple[list[int], int, tuple[tuple[int, ...], ...]]:
     nofollow = getattr(os, "O_NOFOLLOW", None)
-    if nofollow is None:
-        raise CommitmentError("private review authority requires O_NOFOLLOW support")
-    flags = os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0)
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    if nofollow is None or directory_flag is None:
+        raise CommitmentError("private review authority requires O_NOFOLLOW and O_DIRECTORY support")
+
+    directory_flags = os.O_RDONLY | directory_flag | nofollow | getattr(os, "O_CLOEXEC", 0)
+    file_flags = os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0)
+    directories: list[int] = []
+    identities: list[tuple[int, ...]] = []
     try:
-        descriptor = os.open(path, flags)
-    except OSError as error:
-        raise CommitmentError("private review key is unavailable or unsafe") from error
+        root_descriptor = os.open(os.sep, directory_flags)
+        directories.append(root_descriptor)
+        root_metadata = os.fstat(root_descriptor)
+        if not stat.S_ISDIR(root_metadata.st_mode):
+            raise CommitmentError("filesystem root is not a directory")
+        identities.append(_directory_identity(root_metadata))
+
+        parent_descriptor = root_descriptor
+        for component in path.parts[1:-1]:
+            try:
+                descriptor = os.open(component, directory_flags, dir_fd=parent_descriptor)
+            except OSError as error:
+                raise CommitmentError(
+                    "private review key path contains an unavailable or symlinked directory component"
+                ) from error
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISDIR(metadata.st_mode):
+                os.close(descriptor)
+                raise CommitmentError("private review key path component is not a directory")
+            directories.append(descriptor)
+            identities.append(_directory_identity(metadata))
+            parent_descriptor = descriptor
+
+        try:
+            key_descriptor = os.open(path.name, file_flags, dir_fd=parent_descriptor)
+        except OSError as error:
+            raise CommitmentError("private review key is unavailable, unsafe, or symlinked") from error
+        return directories, key_descriptor, tuple(identities)
+    except Exception:
+        for descriptor in reversed(directories):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        raise
+
+
+def _close_descriptors(descriptors: Sequence[int]) -> None:
+    for descriptor in reversed(tuple(descriptors)):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _current_chain_identity(path: Path) -> tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]:
+    directories, key_descriptor, identities = _open_nosymlink_chain(path)
+    try:
+        return identities, _identity(os.fstat(key_descriptor))
+    finally:
+        os.close(key_descriptor)
+        _close_descriptors(directories)
+
+
+def _read_review_key(path: Path) -> bytes:
+    path = _canonical_absolute_path(path, "private review key")
+    directories, descriptor, directory_identities = _open_nosymlink_chain(path)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode):
@@ -104,15 +165,19 @@ def _read_review_key(path: Path) -> bytes:
         after = os.fstat(descriptor)
         if len(raw) != KEY_BYTES or extra or _identity(before) != _identity(after):
             raise CommitmentError("private review key changed while it was read")
-        try:
-            current = path.lstat()
-        except OSError as error:
-            raise CommitmentError("private review key pathname changed while it was read") from error
-        if stat.S_ISLNK(current.st_mode) or _identity(current) != _identity(after):
-            raise CommitmentError("private review key pathname changed while it was read")
-        return bytes(raw)
+        final_identity = _identity(after)
     finally:
         os.close(descriptor)
+        _close_descriptors(directories)
+
+    # Rewalk from the filesystem root after the descriptor read. Holding the
+    # original directory chain makes the read itself symlink-safe; this second
+    # independent walk proves the lexical field path still names that same chain
+    # and key generation after the read completes.
+    current_directories, current_key = _current_chain_identity(path)
+    if current_directories != directory_identities or current_key != final_identity:
+        raise CommitmentError("private review key pathname changed while it was read")
+    return bytes(raw)
 
 
 def commitment(
