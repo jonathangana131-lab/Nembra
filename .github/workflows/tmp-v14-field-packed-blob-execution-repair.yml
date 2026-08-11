@@ -1,0 +1,185 @@
+name: Temporary V14 Field Packed Blob Execution Repair
+
+on:
+  push:
+    branches:
+      - materialize/v14-field-packed-blob-execution-repair-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-field-packed-blob-execution-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact red-team parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "85349b6e9586d7d0cb076d6eb24be17f026fc5ee"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize accepted-blob payload verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/field/install_one_time_capture.command")
+          source = path.read_text(encoding="utf-8")
+
+          marker = '''SOURCE_SHA="$(run_authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')" || die "Could not resolve HEAD from the accepted field checkout."\n'''
+          if source.count(marker) != 1:
+              raise SystemExit("SOURCE_SHA insertion marker drifted")
+
+          helpers = r'''accepted_source_blob_oid() {
+              local relative_path="$1"
+              [[ -n "$relative_path" && "$relative_path" != /* && "$relative_path" != *".."* ]] || {
+                  printf 'invalid accepted source path\n' >&2
+                  return 1
+              }
+              run_authority_git ls-tree -z "$SOURCE_SHA" -- "$relative_path" |
+                  /usr/bin/python3 -I -c '
+          import os
+          import re
+          import sys
+
+          expected_path = os.fsencode(sys.argv[1])
+          records = [record for record in sys.stdin.buffer.read().split(b"\0") if record]
+          if len(records) != 1:
+              raise SystemExit("accepted source path did not resolve to exactly one tree entry")
+          try:
+              metadata, observed_path = records[0].split(b"\t", 1)
+              mode, object_type, oid = metadata.split(b" ", 2)
+          except ValueError as error:
+              raise SystemExit("accepted source tree entry is malformed") from error
+          if observed_path != expected_path:
+              raise SystemExit("accepted source tree path mismatch")
+          if object_type != b"blob" or mode not in {b"100644", b"100755"}:
+              raise SystemExit("accepted executable source must be one regular Git blob")
+          if re.fullmatch(rb"[0-9a-f]{40}", oid) is None:
+              raise SystemExit("accepted source blob identity is malformed")
+          sys.stdout.write(oid.decode("ascii"))
+          ' "$relative_path"
+          }
+
+          stream_verified_accepted_source() {
+              local relative_path="$1"
+              local expected_blob_oid
+              expected_blob_oid="$(accepted_source_blob_oid "$relative_path")" || return 1
+              [[ "$expected_blob_oid" =~ ^[0-9a-f]{40}$ ]] || return 1
+              run_authority_git show "$SOURCE_SHA:$relative_path" |
+                  /usr/bin/python3 -I -c '
+          import hashlib
+          import hmac
+          import sys
+
+          expected_oid = sys.argv[1]
+          relative_path = sys.argv[2]
+          maximum = 8 * 1024 * 1024
+          payload = sys.stdin.buffer.read(maximum + 1)
+          if not payload or len(payload) > maximum:
+              raise SystemExit(f"accepted source payload has invalid bounded size: {relative_path}")
+          actual_oid = hashlib.sha1(
+              b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+          ).hexdigest()
+          if not hmac.compare_digest(actual_oid, expected_oid):
+              raise SystemExit(f"accepted source payload failed Git blob identity: {relative_path}")
+          sys.stdout.buffer.write(payload)
+          ' "$expected_blob_oid" "$relative_path"
+          }
+
+          '''
+          source = source.replace(marker, helpers + marker)
+
+          old_bash = '''    if ! run_authority_git show "$SOURCE_SHA:$relative_path" |\n        /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$ROOT/$relative_path"; then\n'''
+          new_bash = '''    if ! stream_verified_accepted_source "$relative_path" |\n        /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$ROOT/$relative_path"; then\n'''
+          if source.count(old_bash) != 1:
+              raise SystemExit("accepted Bash direct-stream marker drifted")
+          source = source.replace(old_bash, new_bash)
+
+          old_runner = '''    run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py" |\n        /usr/bin/env -i \\\n'''
+          new_runner = '''    stream_verified_accepted_source "$PRIVATE_DEVICE_RUNNER_RELATIVE" |\n        /usr/bin/env -i \\\n'''
+          if source.count(old_runner) != 1:
+              raise SystemExit("private-runner direct-stream marker drifted")
+          source = source.replace(old_runner, new_runner)
+
+          start = source.index("run_accepted_source_python() {\n")
+          end_marker = "GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e \"$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE\""
+          end = source.index(end_marker, start)
+          old_python = source[start:end]
+          new_python = r'''run_accepted_source_python() {
+              local relative_path="$1"
+              shift
+              if ! stream_verified_accepted_source "$relative_path" |
+                  /usr/bin/env -i \
+                      PATH=/usr/bin:/bin \
+                      HOME=/tmp \
+                      LANG=C \
+                      LC_ALL=C \
+                      /usr/bin/python3 -I -B -c '
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          source_sha = sys.argv[2]
+          relative_path = sys.argv[3]
+          helper_argv = sys.argv[4:]
+          source = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
+          if not source or len(source) > 8 * 1024 * 1024:
+              raise RuntimeError("verified accepted Python helper has an invalid bounded size")
+          namespace = {"__name__": "__main__", "__file__": str(root / relative_path)}
+          sys.argv = [str(root / relative_path), *helper_argv]
+          exec(compile(source, f"<accepted-{source_sha}:{relative_path}>", "exec"), namespace)
+          ' "$ROOT" "$SOURCE_SHA" "$relative_path" "$@"; then
+                  die "Accepted Python source failed or could not be executed from verified Git blob authority: $relative_path"
+              fi
+          }
+          '''
+          source = source[:start] + new_python + source[end:]
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Prove packed-blob witness and retained authority suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          for test in \
+            scripts/ci/tests/test_capture_field_accepted_source_path_contract.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_field_private_runner_execution_authority.py \
+            scripts/ci/tests/test_capture_field_private_runner_toctou_red_team.py; do
+            if [[ -f "$test" ]]; then
+              /usr/bin/python3 "$test"
+            fi
+          done
+          grep -F 'stream_verified_accepted_source "$relative_path"' scripts/field/install_one_time_capture.command
+          grep -F 'accepted source payload failed Git blob identity' scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish clean repair branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-materializer'
+          git config user.email 'nembra-v14-materializer@users.noreply.github.com'
+          git rm .github/workflows/tmp-v14-field-packed-blob-execution-repair.yml
+          find . -name '__pycache__' -type d -prune -exec rm -rf {} +
+          git add -A
+          git diff --cached --check
+          git commit -m 'Bind field Git execution payloads to accepted blob identity'
+          git push origin HEAD:refs/heads/repair/v14-field-packed-blob-execution-sol-20260811
