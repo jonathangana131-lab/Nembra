@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "<stdin>", line 17, in <module>
-  File "<capture-authority-chain-materializer>", line 48, in <module>
-  File "<capture-authority-chain-materializer>", line 9, in replace_once
-SystemExit: bootstrap review unset env: expected one match, found 0
