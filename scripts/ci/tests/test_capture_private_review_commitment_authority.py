@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -25,6 +26,7 @@ def load_module(path: Path, name: str):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load {path.name}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -129,15 +131,7 @@ class PrivateReviewAuthorityTests(unittest.TestCase):
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review:
             command.append("--resolve-lock-for-review")
-        return subprocess.run(
-            command,
-            cwd=self.root,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+        return subprocess.run(command, cwd=self.root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
 
     @staticmethod
     def subject(output: str, label: str) -> str:
@@ -157,20 +151,12 @@ class PrivateReviewAuthorityTests(unittest.TestCase):
                 "--identity-sources", str(self.identity_sources),
                 "--record", str(self.witness),
             ],
-            cwd=self.root,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
+            cwd=self.root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout)
 
     def rotate_commitment(self) -> str:
-        return commitment.create_commitment(
-            witness=self.witness,
-            key_file=self.key,
-            repository_root=self.root,
-        )
+        return commitment.create_commitment(witness=self.witness, key_file=self.key, repository_root=self.root)
 
     def test_review_tag_blocks_coherent_private_generation_witness_and_key_replacement(self) -> None:
         review = self.run_bootstrap(review=True)
@@ -200,11 +186,7 @@ class PrivateReviewAuthorityTests(unittest.TestCase):
         rejected = self.run_bootstrap(review=False, lock=lock_a, generated=generated_a, private_tag=tag_a)
         self.assertNotEqual(rejected.returncode, 0, rejected.stdout)
         self.assertIn("owner-reviewed opaque commitment", rejected.stdout)
-        self.assertEqual(
-            self.pod_counter.read_text(encoding="utf-8").splitlines(),
-            ["pod"],
-            "normal field admission executed CocoaPods after review",
-        )
+        self.assertEqual(self.pod_counter.read_text(encoding="utf-8").splitlines(), ["pod"])
 
     def test_build_guard_rejects_private_witness_mutation_across_child_window(self) -> None:
         review = self.run_bootstrap(review=True)
@@ -224,8 +206,7 @@ class PrivateReviewAuthorityTests(unittest.TestCase):
 
             def mutate_on_spawn(command):
                 self.assertEqual(command, ["fake-xcodebuild"])
-                replacement = self.witness.read_bytes() + b"\n# mutated after admission\n"
-                self.witness.write_bytes(replacement)
+                self.witness.write_bytes(self.witness.read_bytes() + b"\n# mutated after admission\n")
                 self.witness.chmod(0o600)
                 return FinishedProcess()
 
