@@ -101,16 +101,34 @@ class AdapterTests(unittest.TestCase):
                 )
 
     def test_adapter_keeps_current_parent_sealed_installer_identity(self):
-        sealed_installer = MODULE.core.installer
+        parent = MODULE.core._load_base_module()
+        sealed_installer = parent.installer
+        original_environment = parent.installer_environment
         saved_candidate = MODULE.core.candidate_generated_authority
         saved_control = MODULE.core.generated_control_plane
         saved_build = MODULE.core.build
-        with MODULE._install_adapter():
-            self.assertIs(MODULE.core.installer, sealed_installer)
-            self.assertIs(MODULE.core.candidate_generated_authority, MODULE.candidate_generated_authority)
-            self.assertIs(MODULE.core.generated_control_plane, MODULE.generated_control_plane)
-            self.assertIs(MODULE.core.build, MODULE.build)
-        self.assertIs(MODULE.core.installer, sealed_installer)
+
+        def review_adapter(*args, **kwargs):
+            del args, kwargs
+            return {"authority": MODULE.core.REVIEW_AUTHORITY}
+
+        with MODULE.core._parent_extensions(
+            parent,
+            accepted_generated_digest=DIGEST,
+            review_adapter=review_adapter,
+        ):
+            self.assertIs(parent.installer, sealed_installer)
+            self.assertIs(parent.installer.__globals__["installer_environment"], parent.installer_environment)
+            self.assertIsNot(parent.installer_environment, original_environment)
+            with MODULE._install_adapter():
+                self.assertIs(parent.installer, sealed_installer)
+                self.assertIs(MODULE.core.candidate_generated_authority, MODULE.candidate_generated_authority)
+                self.assertIs(MODULE.core.generated_control_plane, MODULE.generated_control_plane)
+                self.assertIs(MODULE.core.build, MODULE.build)
+                self.assertIs(parent.installer.__globals__["installer_environment"], parent.installer_environment)
+
+        self.assertIs(parent.installer, sealed_installer)
+        self.assertIs(parent.installer_environment, original_environment)
         self.assertIs(MODULE.core.candidate_generated_authority, saved_candidate)
         self.assertIs(MODULE.core.generated_control_plane, saved_control)
         self.assertIs(MODULE.core.build, saved_build)
