@@ -1,0 +1,51 @@
+name: Capture CocoaPods build subject authority
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/bootstrap_capture_tuya_sdk.sh'
+      - 'Scripts/capture_cocoapods_build_subject.py'
+      - 'Scripts/capture_tuya_private_input_build_guard.py'
+      - 'scripts/ci/tests/test_capture_cocoapods_build_subject_authority.py'
+      - 'scripts/ci/tests/test_capture_cocoapods_build_window_custody.py'
+      - '.github/workflows/capture-cocoapods-build-subject-authority.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolver-authority:
+    name: Resolver authority / generated graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static syntax
+        run: |
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          python3 -m py_compile \
+            Scripts/capture_cocoapods_build_subject.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_cocoapods_build_subject_authority.py \
+            scripts/ci/tests/test_capture_cocoapods_build_window_custody.py
+      - name: Prove reviewed generated build authority
+        run: python3 scripts/ci/tests/test_capture_cocoapods_build_subject_authority.py
+      - name: Red-team build-window custody model
+        run: python3 scripts/ci/tests/test_capture_cocoapods_build_window_custody.py
+
+  macos-vnode-custody:
+    name: macOS vnode custody / generated graph
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static syntax
+        run: |
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_cocoapods_build_subject.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_cocoapods_build_window_custody.py
+      - name: Exercise real kqueue generated-input mutation gate
+        run: /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_build_window_custody.py
