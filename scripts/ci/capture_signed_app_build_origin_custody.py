@@ -64,10 +64,14 @@ def _invoking_identity() -> tuple[str, int, int, str, tuple[int, ...]]:
     gid = int(raw_gid)
     if uid <= 0:
         raise BuildOriginCustodyError("root may not be the field-build invoking identity")
+    if gid <= 0:
+        raise BuildOriginCustodyError("root group may not be the field-build invoking primary group")
     account = pwd.getpwuid(uid)
     if account.pw_name != sudo_user or account.pw_gid != gid:
         raise BuildOriginCustodyError("sudo invoking identity does not match the local account database")
     groups = tuple(sorted(set(os.getgrouplist(account.pw_name, gid))))
+    if any(value <= 0 for value in groups):
+        raise BuildOriginCustodyError("invoking-user supplementary groups contain root or invalid authority")
     return account.pw_name, uid, gid, account.pw_dir, groups
 
 
@@ -97,8 +101,8 @@ def _structured_credentials(
 ) -> dict[str, object]:
     """Describe one explicit POSIX child identity without Python pre-exec code."""
 
-    if uid <= 0 or gid < 0:
-        raise BuildOriginCustodyError("structured child credentials require a non-root invoking identity")
+    if uid <= 0 or gid <= 0:
+        raise BuildOriginCustodyError("structured child credentials require non-root user and group identity")
     normalized = tuple(
         sorted(
             {
