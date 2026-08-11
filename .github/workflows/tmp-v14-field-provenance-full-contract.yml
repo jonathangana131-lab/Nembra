@@ -31,17 +31,14 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           workflow = Path('.github/workflows/capture-field-build-provenance.yml')
           text = workflow.read_text()
-
           path_anchor = '      - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py\n'
           path_line = '      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py\n'
           if path_line not in text:
               if text.count(path_anchor) != 1:
                   raise SystemExit(f'workflow path anchor changed: {text.count(path_anchor)} matches')
               text = text.replace(path_anchor, path_anchor + path_line, 1)
-
           validation_anchor = '          bash -n scripts/field/install_one_time_capture.command\n'
           validation = (
               '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py\n'
@@ -51,7 +48,6 @@ jobs:
               if text.count(validation_anchor) != 1:
                   raise SystemExit(f'installer validation anchor changed: {text.count(validation_anchor)} matches')
               text = text.replace(validation_anchor, validation_anchor + validation, 1)
-
           old_guard = (
               '          guard_line="$(grep -nF \'/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \\\' "$installer" | sed -n \'1s/:.*//p\')"\n'
           )
@@ -64,8 +60,7 @@ jobs:
           )
           if text.count(old_guard) != 1:
               raise SystemExit(f'stale guard source-contract anchor changed: {text.count(old_guard)} matches')
-          text = text.replace(old_guard, new_guard, 1)
-          workflow.write_text(text)
+          workflow.write_text(text.replace(old_guard, new_guard, 1))
           PY
       - name: Validate portable contract repair
         shell: bash
@@ -73,16 +68,15 @@ jobs:
           set -euo pipefail
           python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract
           bash -n scripts/field/install_one_time_capture.command
-          grep -Fq 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"' scripts/field/install_one_time_capture.command
-          grep -Fq 'scripts/ci/tests/test_capture_field_accepted_source_path_contract.py' .github/workflows/capture-field-build-provenance.yml
           python3 - <<'PY'
           from pathlib import Path
           text = Path('.github/workflows/capture-field-build-provenance.yml').read_text()
+          assert 'scripts/ci/tests/test_capture_field_accepted_source_path_contract.py' in text
           assert 'guard_line="$(grep -nF \'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\\' "$installer"' in text
           assert 'guard_line="$(grep -nF \'/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"' not in text
           PY
           git diff --check
-      - name: Publish clean QA successor
+      - name: Publish clean QA successor object
         shell: bash
         run: |
           set -euo pipefail
@@ -94,4 +88,7 @@ jobs:
           git add -A
           git diff --cached --quiet && { echo 'ERROR: no Field Provenance contract repair to publish' >&2; exit 1; }
           git commit -m 'Capture: complete accepted-source Field Provenance contract'
+          candidate="$(git rev-parse HEAD)"
+          tree="$(git rev-parse HEAD^{tree})"
+          echo "::notice title=Field Provenance clean candidate::$candidate tree=$tree"
           git push origin HEAD:repair/v14-field-provenance-full-contract-sol-20260811
