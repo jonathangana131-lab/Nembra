@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "capture-package-test-runner-recovery",
+  "epic": "nembra-capture-es80",
+  "title": "Recover exact-head Capture package acceptance from Swift Testing Range abort",
+  "objective": "Isolate and remove the deterministic-or-flaky Swift Testing signal-5 / 'Range requires lowerBound <= upperBound' blocker seen on the canonical #2612 lineage and descendant #2799/#2805 package gates, without weakening truth assertions or treating standalone Xcode build success as package acceptance. Start from #2799 exact head ff70b15cd770fcfa11c37635ebf528fcf554fda0 because it already repairs the two stale localStrategy metadata assertions; diagnose the residual abort with retained exact-head evidence, then make only the narrow source-test/runner repair actually proven necessary. Preserve all production Capture behavior and PHYSICAL NO-GO.",
+  "priority": 0,
+  "state": "IMPLEMENTING",
+  "dependencies": [],
+  "blockers": [],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    ".github/workflows/capture-package-test-runner-diagnostic.yml",
+    "scripts/ci/capture_package_test_runner_diagnostic.py",
+    "scripts/ci/tests/test_capture_package_test_runner_diagnostic.py"
+  ],
+  "adjacentWriteAreas": [
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataAccountUIDCustodySourceTests.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataSecretRedactionSourceTests.swift"
+  ],
+  "slots": [
+    {"name": "primary", "role": "repair", "exclusive": true, "leaseSeconds": 1800, "resources": ["XCODE_27_RUNNER"]},
+    {"name": "review", "role": "adversarial-review", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "integration", "role": "integration", "exclusive": true, "leaseSeconds": 1800, "resources": ["RELEASE_INTEGRATION"]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": false, "state": "PHYSICAL_NO_GO"},
+  "sourceSHA": "ff70b15cd770fcfa11c37635ebf528fcf554fda0",
+  "tags": ["capture", "p0", "xcode27", "swift-testing", "test-runner", "exact-head", "physical-no-go"]
+}
