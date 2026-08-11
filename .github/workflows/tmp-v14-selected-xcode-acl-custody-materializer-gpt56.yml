@@ -1,0 +1,106 @@
+name: TEMP Materialize selected Xcode ACL custody repair
+
+on:
+  push:
+    branches:
+      - repair/v14-selected-xcode-acl-custody-sol-gpt56-20260811
+    paths:
+      - .github/workflows/tmp-v14-selected-xcode-acl-custody-materializer-gpt56.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-selected-xcode-acl-custody-sol-gpt56-20260811
+          fetch-depth: 0
+
+      - name: Bind construction head and exact parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+          PARENT_SHA: 6b0c974d432205593f2d1157de06544a01145489
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git merge-base --is-ancestor "$PARENT_SHA" HEAD
+          changed="$RUNNER_TEMP/nembra-acl-materializer-paths.txt"
+          expected="$RUNNER_TEMP/nembra-acl-materializer-expected.txt"
+          git diff --name-only "$PARENT_SHA"...HEAD | LC_ALL=C sort > "$changed"
+          cat > "$expected" <<'EOF'
+          .github/workflows/capture-field-selected-xcode-tool-acl-custody-current.yml
+          .github/workflows/tmp-v14-selected-xcode-acl-custody-materializer-gpt56.yml
+          scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody_current.py
+          EOF
+          LC_ALL=C sort -o "$expected" "$expected"
+          diff -u "$expected" "$changed"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize fail-closed extended ACL custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/field/install_one_time_capture.command')
+          source = path.read_text(encoding='utf-8')
+
+          import_anchor = """PY_CUSTODY'\nimport os\nfrom pathlib import Path\nimport stat\n\nraw = os.environ.get(\"NEMBRA_CUSTODY_PATH\", \"\")"""
+          import_replacement = """PY_CUSTODY'\nimport os\nfrom pathlib import Path\nimport stat\nimport subprocess\n\nraw = os.environ.get(\"NEMBRA_CUSTODY_PATH\", \"\")"""
+          if source.count(import_anchor) != 1:
+              raise SystemExit('selected-Xcode custody import anchor is not exact')
+          source = source.replace(import_anchor, import_replacement, 1)
+
+          metadata_anchor = '''    if metadata.st_uid != 0 or metadata.st_mode & 0o022:\n        raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable metadata")\n'''
+          acl_block = metadata_anchor + '''    acl_check = subprocess.run(\n        ["/usr/bin/find", str(current), "-prune", "-acl", "-print", "-quit"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.PIPE,\n        stderr=subprocess.PIPE,\n        env={"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"},\n        check=False,\n    )\n    if acl_check.returncode != 0:\n        raise SystemExit("selected Xcode custody could not inspect extended ACL authority")\n    if acl_check.stdout:\n        raise SystemExit("selected Xcode custody refuses extended ACL authority")\n    confirmed = os.lstat(current)\n    before_identity = (\n        metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid, metadata.st_gid,\n        metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns,\n    )\n    after_identity = (\n        confirmed.st_dev, confirmed.st_ino, confirmed.st_mode, confirmed.st_uid, confirmed.st_gid,\n        confirmed.st_size, confirmed.st_mtime_ns, confirmed.st_ctime_ns,\n    )\n    if after_identity != before_identity:\n        raise SystemExit("selected Xcode custody metadata changed during extended ACL inspection")\n'''
+          if source.count(metadata_anchor) != 1:
+              raise SystemExit('selected-Xcode custody metadata anchor is not exact')
+          source = source.replace(metadata_anchor, acl_block, 1)
+
+          required = (
+              'import subprocess',
+              '["/usr/bin/find", str(current), "-prune", "-acl", "-print", "-quit"]',
+              'selected Xcode custody could not inspect extended ACL authority',
+              'selected Xcode custody refuses extended ACL authority',
+              'selected Xcode custody metadata changed during extended ACL inspection',
+          )
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit(f'ACL custody repair marker missing: {marker}')
+          if source.count('selected Xcode custody refuses extended ACL authority') != 1:
+              raise SystemExit('ACL custody repair must have exactly one canonical rejection point')
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-selected-xcode-acl-materializer-pycache"
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody_current.py
+          git diff --check
+
+      - name: Prove repaired ACL boundary on real macOS before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/xcodebuild -version
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody_current.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all | grep -v '^ M scripts/field/install_one_time_capture.command$' || true)"
+
+      - name: Publish repair and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/tmp-v14-selected-xcode-acl-custody-materializer-gpt56.yml
+          git add scripts/field/install_one_time_capture.command
+          git diff --cached --check
+          git config user.name "nembra-swarm-materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Capture: reject selected Xcode ACL authority"
+          git push origin HEAD:repair/v14-selected-xcode-acl-custody-sol-gpt56-20260811
