@@ -43,22 +43,16 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          mkdir -p .swarm
-          diagnostic='.swarm/tmp_origin_patch_error.txt'
+          diagnostic='/tmp/nembra-origin-patch-error.txt'
           if /usr/bin/python3 -B scripts/ci/tmp_patch_signed_app_origin_existing.py 2>"$diagnostic"; then
-            rm -f "$diagnostic"
             git diff --check
             exit 0
           fi
           git reset --hard HEAD
           git clean -fd
           mkdir -p .swarm
-          /usr/bin/python3 -B scripts/ci/tmp_patch_signed_app_origin_existing.py 2>"$diagnostic" || true
-          git reset --hard HEAD
-          git clean -fd
-          mkdir -p .swarm
-          printf '%s\n' "$(cat "$diagnostic" 2>/dev/null || true)" > "$diagnostic"
-          git add "$diagnostic"
+          cp "$diagnostic" .swarm/tmp_origin_patch_error.txt
+          git add .swarm/tmp_origin_patch_error.txt
           git config user.name 'nembra-sol-swarm'
           git config user.email 'nembra-sol-swarm@users.noreply.github.com'
           git commit -m 'Record signed app origin patch mismatch'
