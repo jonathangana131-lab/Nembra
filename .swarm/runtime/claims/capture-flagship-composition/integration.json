@@ -7,9 +7,9 @@
   "workerId": "sol-20260811-1404m2",
   "leaseId": "capture-flagship-integration-1404m2-20260811-2104",
   "generation": 4,
-  "status": "ACTIVE",
+  "status": "BLOCKED",
   "claimedAt": "2026-08-11T21:04:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:21:40Z",
+  "lastHeartbeatAt": "2026-08-11T21:24:20Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-final-go-combined-sol-1404m2",
   "pr": 3023,
@@ -17,5 +17,6 @@
   "currentHeadSHA": "29f58fd3919ea2035a9cf6846b2e3e8a2ecaf226",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
   "takeoverReason": "Generation-3 integration claim was explicitly released. Recover the flagship integration role, continuously compose independently accepted Capture ingredients, and preserve exact-head acceptance. PHYSICAL NO-GO.",
-  "checkpoint": "#2979 exact ce9e2bac independently earned Main, Field Provenance, Xcode 27, Standalone Visual, and pixel/source review, then integration-only PR #3025 cleanly grafted its exact five files into the durable app+Final-GO spine. #3023 is now exact durable head 29f58fd3919ea2035a9cf6846b2e3e8a2ecaf226. Fresh compare from accepted app base 005b7c4 is ahead-only, exactly 28 paths / +5413 -2: prior 23-file Final-GO family plus the five accepted first-fold files; no BLE/Tuya/private/signed-install/physical paths. All previous #3023 greens/review on 19fe3a39 are ancestor evidence only. Moved-head independent review requested and fresh Main/Final-GO/Xcode/Field/Standalone Visual must re-earn acceptance. Runtime VoiceOver remains separate. PHYSICAL NO-GO."
+  "blocker": "#3024 exact c8ecaaa9717c685af05449e1b2c33c2c91d3c216 run 31537399059 terminal SUCCESS mechanically defeats embedded Final-GO parent #2921@471cc025b332f4df8b43a98d709710aeb4e0698f for whole-tree audit atomicity. #3023 was converted to draft and cannot be promoted until repaired Final-GO exact bytes close/replay this invariant, are independently accepted, and are recomposed onto the staging spine.",
+  "checkpoint": "Accepted first-fold #2979 remains valid and composed. Current staging head 29f58fd3919ea2035a9cf6846b2e3e8a2ecaf226 is structurally the 23-file former Final-GO family plus exactly five accepted first-fold files, but the Final-GO authority inside it is now adversarially invalid. Fresh composition greens are structural evidence only. Runtime VoiceOver, build-authority, signed-origin/install, private-identity, repaired Final-GO, and final physical publication remain separate blockers. PHYSICAL NO-GO."
 }
