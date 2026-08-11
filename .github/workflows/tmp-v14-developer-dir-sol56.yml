@@ -1,0 +1,37 @@
+name: Temporary V14 Developer Dir Repair Compiler
+
+on:
+  push:
+    branches:
+      - repair/v14-field-developer-dir-authority-sol56-20260811
+
+permissions:
+  contents: read
+
+jobs:
+  compile-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-field-developer-dir-authority-sol56-20260811
+      - name: Patch and verify exact regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/field/install_one_time_capture.command')
+          source = path.read_text(encoding='utf-8')
+          needle = 'unset BASH_ENV ENV CDPATH || true\n'
+          replacement = 'unset BASH_ENV ENV CDPATH || true\nunset DEVELOPER_DIR || true\n'
+          if source.count(needle) != 1:
+              raise SystemExit('expected startup environment fence exactly once')
+          path.write_text(source.replace(needle, replacement, 1), encoding='utf-8')
+          PY
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          python3 scripts/ci/tests/test_capture_field_developer_dir_authority.py
+          git diff --check -- scripts/field/install_one_time_capture.command
+          printf '%s\n' '---NEMBRA_BLOB_BEGIN---'
+          base64 -w 0 scripts/field/install_one_time_capture.command
+          printf '\n%s\n' '---NEMBRA_BLOB_END---'
