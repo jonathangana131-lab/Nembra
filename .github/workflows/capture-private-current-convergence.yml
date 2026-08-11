@@ -1,0 +1,96 @@
+name: Capture Private Current Convergence
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
+      - scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py
+      - .github/workflows/capture-private-current-convergence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-current-convergence:
+    name: Preserve current private custody plus verified-stdin root
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact current parent and four-path delta
+        shell: bash
+        env:
+          PARENT: 2fe097af9c625ea0abbdb89372f95c8b8acc78fb
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${PARENT}^{commit}"
+          test "$(git merge-base HEAD "$PARENT")" = "$PARENT"
+          changed_paths="$(git diff --name-only "$PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-private-current-convergence.yml' \
+            'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift' \
+            'Scripts/bootstrap_capture_tuya_sdk.sh' \
+            'scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py' | LC_ALL=C sort)"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Current private convergence must remain exactly four-path. Changed:\n' >&2
+            printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
+            exit 20
+          fi
+          test ! -e .github/workflows/tmp-v14-bootstrap-resolution-adapter.yml
+          test ! -e .github/workflows/tmp-v14-private-current-bootstrap-materialize.yml
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove verified-stdin root semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py
+
+      - name: Preserve captured-provenance execution contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'PROVENANCE_HELPER_GIT_BLOB_OID="' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'PROVENANCE_CAPTURE="$({ /bin/cat -- "$PROVENANCE_HELPER";' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq '/usr/bin/python3 -I -c "$PROVENANCE_SOURCE" snapshot' Scripts/bootstrap_capture_tuya_sdk.sh
+          if grep -Fq '/usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot' Scripts/bootstrap_capture_tuya_sdk.sh; then
+            printf 'Private provenance must execute captured accepted bytes, not the mutable helper pathname.\n' >&2
+            exit 21
+          fi
+          grep -Fq '#expect(bootstrap.contains("PROVENANCE_HELPER_GIT_BLOB_OID=\\\""))' \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
+          grep -Fq '#expect(!bootstrap.contains("/usr/bin/python3 -I \\\"$PROVENANCE_HELPER\\\" snapshot"))' \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
+
+      - name: Preserve explicit source-root authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object Scripts/bootstrap_capture_tuya_sdk.sh)" = "0ccae3a1195d66c368ba622076644067f56d533e"
+          grep -Fq 'if [[ -n "${NEMBRA_ACCEPTED_SOURCE_ROOT:-}" ]]; then' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'PHYSICAL_CWD="$(pwd -P)"' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq '[[ "$NEMBRA_ACCEPTED_SOURCE_ROOT" == "$PHYSICAL_CWD" ]]' Scripts/bootstrap_capture_tuya_sdk.sh
+          if grep -Fq 'eval ' Scripts/bootstrap_capture_tuya_sdk.sh; then
+            printf 'Bootstrap must not regain source identity through eval.\n' >&2
+            exit 22
+          fi
+
+      - name: Diff hygiene
+        shell: bash
+        env:
+          PARENT: 2fe097af9c625ea0abbdb89372f95c8b8acc78fb
+        run: |
+          set -euo pipefail
+          git diff --check "$PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Validation only: no credentials, CocoaPods resolution, Xcode build, device operation, Bluetooth/Tuya action, or physical experiment occurred.\n'
