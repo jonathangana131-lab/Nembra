@@ -1,8 +1,25 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [[ -n "${NEMBRA_ACCEPTED_SOURCE_ROOT:-}" ]]; then
+  [[ "$NEMBRA_ACCEPTED_SOURCE_ROOT" == /* ]] || {
+    echo "ERROR: explicit accepted source root must be absolute." >&2
+    exit 19
+  }
+  PHYSICAL_CWD="$(pwd -P)"
+  [[ "$NEMBRA_ACCEPTED_SOURCE_ROOT" == "$PHYSICAL_CWD" ]] || {
+    unset PHYSICAL_CWD
+    echo "ERROR: explicit accepted source root must equal the physical working directory." >&2
+    exit 19
+  }
+  REPO_ROOT="$PHYSICAL_CWD"
+  SCRIPT_DIR="$REPO_ROOT/Scripts"
+  unset PHYSICAL_CWD NEMBRA_ACCEPTED_SOURCE_ROOT || true
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+fi
+readonly SCRIPT_DIR REPO_ROOT
 TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
