@@ -1,0 +1,59 @@
+name: Capture Private Review HMAC Helper Execution Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-private-review-hmac-helper-execution-sol
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - Scripts/capture_private_review_commitment.py
+      - scripts/ci/tests/test_capture_private_review_hmac_helper_execution.py
+      - .github/workflows/capture-private-review-hmac-helper-execution-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-helper-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind diagnostic to exact checked-out head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_hmac_helper_execution.py
+      - name: Reject substituted bootstrap HMAC verifier
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_private_review_hmac_helper_execution.BootstrapHMACHelperExecutionTests.test_substituted_hmac_helper_cannot_admit_generation_b
+
+  build-guard-neighbor-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind diagnostic to exact checked-out head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_hmac_helper_execution.py
+      - name: Reject substituted build-guard HMAC neighbor
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_private_review_hmac_helper_execution.BuildGuardHMACHelperExecutionTests.test_substituted_neighbor_hmac_helper_is_not_build_authority
