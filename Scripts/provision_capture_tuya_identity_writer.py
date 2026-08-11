@@ -213,9 +213,52 @@ def _validate_existing_output(parent_fd: int, name: str) -> None:
         )
 
 
-def _secure_replace_beneath(checkout_fd: int, source_name: str, destination_relative: str) -> None:
+def _require_sealed_staging_name(checkout_fd: int, source_name: str, sealed: os.stat_result) -> None:
+    try:
+        current = os.stat(source_name, dir_fd=checkout_fd, follow_symlinks=False)
+    except OSError as exc:
+        raise ProvisionError("sealed private identity staging name disappeared before publication") from exc
+    if (
+        not stat.S_ISREG(current.st_mode)
+        or current.st_uid != os.geteuid()
+        or current.st_nlink != 1
+        or current.st_dev != sealed.st_dev
+        or current.st_ino != sealed.st_ino
+    ):
+        raise ProvisionError("private identity staging name no longer references the sealed inode")
+
+
+def _unlink_owned_inode_if_named(checkout_fd: int, name: str, sealed: os.stat_result | None) -> None:
+    if sealed is None:
+        return
+    try:
+        current = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+    except (FileNotFoundError, NotADirectoryError):
+        return
+    except OSError:
+        return
+    if (
+        stat.S_ISREG(current.st_mode)
+        and current.st_uid == os.geteuid()
+        and current.st_nlink == 1
+        and current.st_dev == sealed.st_dev
+        and current.st_ino == sealed.st_ino
+    ):
+        try:
+            os.unlink(name, dir_fd=checkout_fd)
+        except OSError:
+            pass
+
+
+def _secure_replace_beneath(
+    checkout_fd: int,
+    source_name: str,
+    destination_relative: str,
+    sealed: os.stat_result,
+) -> None:
     _relative_components(source_name)
     _relative_components(destination_relative)
+    _require_sealed_staging_name(checkout_fd, source_name, sealed)
     if sys.platform == "darwin":
         libc = ctypes.CDLL(None, use_errno=True)
         try:
@@ -270,6 +313,7 @@ def _write_staged(
 
     temporary_name = f".nembra-private-stage-{os.getpid()}-{secrets.token_hex(12)}"
     staging_fd = final_fd = -1
+    sealed: os.stat_result | None = None
     try:
         staging_fd = os.open(temporary_name, _file_flags(), 0o600, dir_fd=checkout_fd)
         metadata = os.fstat(staging_fd)
@@ -293,7 +337,7 @@ def _write_staged(
         if sealed.st_size != len(payload) or sealed.st_nlink != 1:
             raise ProvisionError("private identity staging file changed before publication")
 
-        _secure_replace_beneath(checkout_fd, temporary_name, destination_relative)
+        _secure_replace_beneath(checkout_fd, temporary_name, destination_relative, sealed)
 
         final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
         final = os.fstat(final_fd)
@@ -310,12 +354,7 @@ def _write_staged(
         os.fsync(final_fd)
         os.fsync(checkout_fd)
     except Exception:
-        try:
-            os.unlink(temporary_name, dir_fd=checkout_fd)
-        except FileNotFoundError:
-            pass
-        except OSError:
-            pass
+        _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
         raise
     finally:
         if final_fd >= 0:
