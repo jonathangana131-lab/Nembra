@@ -9,11 +9,11 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:56:00Z",
-  "lastHeartbeatAt": "2026-08-11T10:04:00Z",
+  "lastHeartbeatAt": "2026-08-11T10:16:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-two-file-closure-sol-20260811",
   "sourceSHA": "899e0bf4de07401e2e036895aaf684373142253a",
-  "currentHeadSHA": "9676622389a46ff76fe1cce9ed08103fd542dcad",
+  "currentHeadSHA": "cee0c96405ed0e29b6a96fd467a92383710bd345",
   "pr": 2891,
   "ownedPaths": [
     ".github/workflows/capture-root-ax-action-first-materialize.yml",
@@ -22,6 +22,7 @@
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
   ],
-  "acceptance": "Exact-head package/Main Selective Graft, Xcode 27, retained standard + AX5 pixels, independent human critique, and VoiceOver ordering required; current checks pending.",
-  "intent": "Close #2841's exact retained AX5 visual rejection on a clean descendant: retire failed self-materializer, directly apply action-first Accessibility XXXL composition while preserving Physical capture locked VoiceOver/public-build truth, and align only the three root visual/source acceptance suites that are stale because of this hierarchy change. Require exact-head package/Xcode/runtime/screenshots/VoiceOver before acceptance."
+  "durableEvidence": "Accepted visual-parent compare 513ebea576..cee0c964 is exactly four app/acceptance files and no workflow residue. Ancestor 967662 standalone visual run 31480463422/artifact 9097167192 proved the structural AX first-fold fix but is not acceptance for the moved head; it motivated Capture locked + Details polish now on cee0c964.",
+  "acceptance": "Require unchanged cee0c964 exact-head package/Main Selective Graft, Xcode 27, retained standard + AX5 pixels, independent human critique, and VoiceOver ordering. Do not promote ancestor greens/pixels.",
+  "intent": "Close #2841's retained AX5 visual rejection with an action-first Accessibility XXXL root. Sighted AX uses Capture locked and Details for unambiguous compact hierarchy while VoiceOver preserves Physical capture locked and Engineering details; primary QR action must remain in first iPhone-12 AX5 viewport. PHYSICAL NO-GO until separate build/security authority and final composition gates close."
 }
