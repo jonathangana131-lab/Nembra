@@ -5,6 +5,7 @@ on:
     paths:
       - '.swarm/**'
       - 'scripts/swarm_control.py'
+      - 'scripts/swarmcp/**'
       - 'scripts/ci/tests/test_swarm_control_plane.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
@@ -15,6 +16,7 @@ on:
     paths:
       - '.swarm/**'
       - 'scripts/swarm_control.py'
+      - 'scripts/swarmcp/**'
       - 'scripts/ci/tests/test_swarm_control_plane.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
@@ -42,7 +44,14 @@ jobs:
       - name: Compile trusted control-plane code
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/swarm_control.py scripts/ci/tests/test_swarm_control_plane.py
+          python3 -m py_compile \
+            scripts/swarm_control.py \
+            scripts/swarmcp/__init__.py \
+            scripts/swarmcp/model.py \
+            scripts/swarmcp/store.py \
+            scripts/swarmcp/engine.py \
+            scripts/swarmcp/cli.py \
+            scripts/ci/tests/test_swarm_control_plane.py
       - name: Validate trusted static config
         run: |
           set -euo pipefail
