@@ -1,0 +1,89 @@
+name: Temporary Capture Private Root Contract Materializer
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-private-root-contract-materializer-sol
+    paths:
+      - .github/workflows/tmp-capture-private-root-contract-materializer.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-private-root-contract-materializer-sol
+          fetch-depth: 0
+      - name: Materialize patched contracts as ordinary files
+        shell: bash
+        env:
+          STAGED_PRODUCT: 9229eb8c12c931552d45a7d484a9a3d14b227600
+          BRANCH: qa/v14-capture-private-root-contract-materializer-sol
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$STAGED_PRODUCT"
+          test "$(git diff --name-only "$STAGED_PRODUCT" HEAD)" = '.github/workflows/tmp-capture-private-root-contract-materializer.yml'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          test_source = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift').read_text()
+          old_digest = 'fd636098ef767c76946246f3f7f793a07b969f1abf9ee43445e4b5154f1089e8'
+          new_digest = '920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34'
+          if test_source.count(old_digest) != 1:
+              raise SystemExit('expected exactly one old writer digest assertion')
+          test_source = test_source.replace(old_digest, new_digest, 1)
+          old_invocation = '/usr/bin/python3 -I -c \\"$WRITER_SOURCE\\" \\"$ROOT\\"'
+          new_invocation = '/usr/bin/python3 -I -c \\"$WRITER_SOURCE\\" \\"$ROOT_FD\\" \\"$ROOT\\"'
+          if test_source.count(old_invocation) != 1:
+              raise SystemExit('expected exactly one old captured-writer invocation assertion')
+          test_source = test_source.replace(old_invocation, new_invocation, 1)
+          Path('scripts/ci/tmp_TuyaPrivateIdentityProvisionerCustodyTests.swift').write_text(test_source)
+
+          workflow = Path('.github/workflows/capture-field-build-provenance.yml').read_text()
+          regression_path = '      - scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py\n'
+          if regression_path not in workflow:
+              marker = '      - scripts/ci/tests/test_tuya_account_transport_source.py\n'
+              if workflow.count(marker) != 1:
+                  raise SystemExit('missing unique workflow trigger insertion marker')
+              workflow = workflow.replace(marker, marker + regression_path, 1)
+
+          execution = (
+              '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py\n'
+              '          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py\n'
+          )
+          if execution not in workflow:
+              marker = '          /usr/bin/python3 -I scripts/ci/tests/test_tuya_account_transport_source.py\n'
+              if workflow.count(marker) != 1:
+                  raise SystemExit('missing unique workflow execution insertion marker')
+              workflow = workflow.replace(marker, marker + execution, 1)
+
+          custody_checks = (
+              "          grep -Fq 'ROOT_FD=9' \"$private_identity_provisioner\"\n"
+              "          grep -Fq '_duplicate_inherited_checkout' \"$private_identity_writer\"\n"
+              "          grep -Fq '_require_checkout_path_identity' \"$private_identity_writer\"\n"
+          )
+          if custody_checks not in workflow:
+              marker = "          grep -Fq 'dir_fd=parent_fd' \"$private_identity_writer\"\n"
+              if workflow.count(marker) != 1:
+                  raise SystemExit('missing unique workflow custody insertion marker')
+              workflow = workflow.replace(marker, marker + custody_checks, 1)
+          Path('scripts/ci/tmp_capture_field_build_provenance_root_patched.yml').write_text(workflow)
+          PY
+
+          grep -Fq '920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34' scripts/ci/tmp_TuyaPrivateIdentityProvisionerCustodyTests.swift
+          grep -Fq '"$ROOT_FD" "$ROOT"' scripts/ci/tmp_TuyaPrivateIdentityProvisionerCustodyTests.swift
+          grep -Fq -- '- scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py' scripts/ci/tmp_capture_field_build_provenance_root_patched.yml
+          grep -Fq '/usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py' scripts/ci/tmp_capture_field_build_provenance_root_patched.yml
+          grep -Fq "'_require_checkout_path_identity'" scripts/ci/tmp_capture_field_build_provenance_root_patched.yml
+
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/ci/tmp_TuyaPrivateIdentityProvisionerCustodyTests.swift scripts/ci/tmp_capture_field_build_provenance_root_patched.yml
+          git commit -m 'ci(capture): publish admitted-root contract blobs'
+          git push origin "HEAD:$BRANCH"
