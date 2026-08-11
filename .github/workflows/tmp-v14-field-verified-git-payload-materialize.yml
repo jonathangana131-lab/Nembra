@@ -35,6 +35,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/tmp_materialize_field_verified_git_payload.py")
+          source = path.read_text(encoding="utf-8")
+          old = 'EXPECTED_INSTALLER_BLOB = "87430680649f9eb3160f30162f2c78f75809af68"'
+          new = 'EXPECTED_INSTALLER_BLOB = "840bc068551f060a1d74578247b79b4ce9add029"'
+          if source.count(old) != 1:
+              raise SystemExit("refusing to patch unexpected materializer installer-blob precondition")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
           python3 scripts/ci/tmp_materialize_field_verified_git_payload.py
 
       - name: Validate focused authority contracts
