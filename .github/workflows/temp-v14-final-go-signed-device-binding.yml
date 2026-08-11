@@ -1,0 +1,65 @@
+name: TEMP V14 Final GO signed device binding
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-signed-device-binding-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/temp_v14_signed_device_binding.py
+      - name: Validate full Final GO authority suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 - <<'PY'
+          from pathlib import Path
+          issuer=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
+          signed=Path('scripts/ci/es80_authenticated_stationary_signed_artifact.py').read_text()
+          tests=Path('scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py').read_text()
+          for needle in ('artifact_install={**got,"intendedDeviceIdentifierSHA256":dh}', 'reinspect_signed_artifact(candidate_repo,source,device_file,artifact_install,retained_ipa)'):
+              if needle not in issuer: raise SystemExit(f'missing issuer device binding: {needle}')
+          for needle in ('os.O_DIRECTORY | os.O_NOFOLLOW', 'dir_fd=parent', 'hmac.compare_digest(actual, expected)', 'expected_device_digest = install.get("intendedDeviceIdentifierSHA256")'):
+              if needle not in signed: raise SystemExit(f'missing signed-artifact custody invariant: {needle}')
+          for needle in ('test_private_device_reader_rejects_symlinked_ancestor', 'test_private_device_reader_is_bound_to_preaccepted_digest', 'test_retained_artifact_rejects_device_path_retargeted_after_final_go_admission'):
+              if needle not in tests: raise SystemExit(f'missing regression: {needle}')
+          PY
+          git diff --check
+      - name: Publish clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='ccab1d76b2cfe7448f012d5df8e622cbaf8d371d'
+          rm -f scripts/ci/temp_v14_signed_device_binding.py
+          rm -f .github/workflows/temp-v14-final-go-signed-device-binding.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'nembra-v14-sol@users.noreply.github.com'
+          git commit -m 'fix(capture): bind signed artifact to admitted device'
+          expected=$'scripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/es80_authenticated_stationary_signed_artifact.py\nscripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py'
+          test "$(git diff --name-only "$base"..HEAD | sort)" = "$expected"
+          git diff --check "$base"..HEAD
+          git push origin HEAD:repair/v14-final-go-signed-device-binding-sol
