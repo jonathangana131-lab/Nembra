@@ -26,27 +26,36 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           path = Path('Scripts/capture_tuya_private_input_build_guard.py')
-          text = path.read_text(encoding='utf-8')
-          old = '''    except BuildGuardError as error:
-              print(f"ERROR: {error}", file=sys.stderr)
-              return 74
-          except provenance.ProvenanceError as error:
-              print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)
-              return 75
-          except generated_build.GeneratedBuildSubjectError as error:
-              print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)
-              return 76'''
-          old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines())
-          new = '''    except BuildGuardError as error:
-              print(f"ERROR: {error}", file=sys.stderr)
-              return 74
-          except Exception:
-              print("ERROR: unexpected build-window custody failure; field build refused", file=sys.stderr)
-              return 77'''
-          new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines())
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one CLI authority exception block; found {text.count(old)}')
-          text = text.replace(old, new, 1)
+          lines = path.read_text(encoding='utf-8').splitlines()
+          output = []
+          replaced = 0
+          index = 0
+          while index < len(lines):
+              if lines[index] == '    except provenance.ProvenanceError as error:':
+                  expected = [
+                      '    except provenance.ProvenanceError as error:',
+                      '        print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)',
+                      '        return 75',
+                      '    except generated_build.GeneratedBuildSubjectError as error:',
+                      '        print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)',
+                      '        return 76',
+                  ]
+                  actual = lines[index:index + len(expected)]
+                  if actual != expected:
+                      raise SystemExit(f'CLI proxy exception block shape changed: {actual!r}')
+                  output.extend([
+                      '    except Exception:',
+                      '        print("ERROR: unexpected build-window custody failure; field build refused", file=sys.stderr)',
+                      '        return 77',
+                  ])
+                  index += len(expected)
+                  replaced += 1
+                  continue
+              output.append(lines[index])
+              index += 1
+          if replaced != 1:
+              raise SystemExit(f'expected one proxy exception block; replaced {replaced}')
+          text = '\n'.join(output) + '\n'
           if 'except provenance.ProvenanceError' in text or 'except generated_build.GeneratedBuildSubjectError' in text:
               raise SystemExit('proxy-loading exception classifier remains')
           path.write_text(text, encoding='utf-8')
