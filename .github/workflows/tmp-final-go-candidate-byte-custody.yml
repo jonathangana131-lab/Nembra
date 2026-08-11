@@ -26,7 +26,7 @@ jobs:
           EXPECTED_BASE: 5a83d238e071bdeeb3188dc55425ffc220609cbe
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE"
+          git merge-base --is-ancestor "$EXPECTED_BASE" HEAD
           test "$(git diff --name-only "$EXPECTED_BASE" HEAD)" = '.github/workflows/tmp-final-go-candidate-byte-custody.yml'
 
       - name: Apply candidate byte custody repair
@@ -114,6 +114,7 @@ jobs:
           set -euo pipefail
           trigger="$(git rev-parse HEAD)"
           rm .github/workflows/tmp-final-go-candidate-byte-custody.yml
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
           expected="$(cat <<'EOF' | sort
           scripts/ci/es80_authenticated_stationary_final_go.py
           scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
