@@ -1,0 +1,68 @@
+name: Capture Final GO Nested Restore Exploit Replay
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_es80_final_go_retirement_nested_restore_red_team.py
+      - .github/workflows/capture-final-go-retirement-nested-restore-replay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exploit-replay:
+    name: Require exact old exploit to fail by retirement authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      REPAIRED_PARENT: 36b531b2e7d0c07bb8a63766e5b9fb5779d0a022
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-red-replay-pycache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact repaired parent and unchanged exploit fixture
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$REPAIRED_PARENT" HEAD)" = "$REPAIRED_PARENT"
+          git diff --name-only "$REPAIRED_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-final-go-retirement-nested-restore-replay.yml \
+            scripts/ci/tests/test_es80_final_go_retirement_nested_restore_red_team.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+
+      - name: Require old exploit to die on retirement fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_es80_final_go_retirement_nested_restore_red_team.py
+          set +e
+          python3 -B -I scripts/ci/tests/test_es80_final_go_retirement_nested_restore_red_team.py > "$RUNNER_TEMP/replay.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/replay.log"
+          test "$status" -ne 0
+          grep -F "candidate repository authority retired after sealed Final-GO handoff" "$RUNNER_TEMP/replay.log"
+          grep -F "test_inherited_parent_finally_reopens_git_before_outer_retirement_exits" "$RUNNER_TEMP/replay.log"
+
+      - name: Prove positive permanent repair oracle still passes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$REPAIRED_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
