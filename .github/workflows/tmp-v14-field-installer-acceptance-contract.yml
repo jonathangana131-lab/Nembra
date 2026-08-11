@@ -6,7 +6,7 @@ name: V14 Field acceptance contract materializer
       - repair/v14-field-installer-acceptance-contract-sol-20260811
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   materialize:
@@ -51,13 +51,10 @@ jobs:
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           git diff --check
 
-      - name: Publish permanent repair and self-delete
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'nembra-swarm-bot'
-          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
-          git add .github/workflows/capture-field-build-provenance.yml
-          git rm .github/workflows/tmp-v14-field-installer-acceptance-contract.yml
-          git commit -m 'Align Field gate with accepted Git bootstrap authority'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Export validated canonical workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-field-acceptance-contract
+          path: .github/workflows/capture-field-build-provenance.yml
+          if-no-files-found: error
+          retention-days: 1
