@@ -1,0 +1,146 @@
+name: tmp V14 Private Pre-Rebind Held-Inode Sanitation Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811
+    paths:
+      - .github/workflows/tmp-v14-private-prebind-sanitize-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+
+      - name: Bind materializer to reviewed exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '462d4d3862e48af8aa2582733a7c2cf011075b30'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tmp-v14-private-prebind-sanitize-materialize.yml'
+
+      - name: Strengthen pre-rebind sanitation and delete obsolete pathname cleanup helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          writer_path = Path('Scripts/provision_capture_tuya_identity_writer.py')
+          test_path = Path('scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py')
+          shell_path = Path('Scripts/provision_capture_tuya_identity.sh')
+          swift_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift')
+          old_digest = 'f3a82dd199ef1bb85b9a5b9c6669d92542c4dd93a5502147bb4ade081b196072'
+
+          writer = writer_path.read_text(encoding='utf-8')
+          start = writer.index('def _unlink_owned_inode_if_named(')
+          end = writer.index('def _require_final_relative_name_binding(', start)
+          writer = writer[:start] + writer[end:]
+
+          old = '''    staging_fd = final_fd = -1\n    sealed: os.stat_result | None = None\n    recovered_mutation_started = False\n    try:\n'''
+          new = '''    staging_fd = final_fd = -1\n    sealed: os.stat_result | None = None\n    try:\n'''
+          if writer.count(old) != 1:
+              raise SystemExit('unexpected staging state block')
+          writer = writer.replace(old, new, 1)
+
+          old = '''            _require_recovered_stage_binding(checkout_fd, recovered_stage, staging_fd)\n            recovered_mutation_started = True\n            os.ftruncate(staging_fd, 0)\n'''
+          new = '''            _require_recovered_stage_binding(checkout_fd, recovered_stage, staging_fd)\n            os.ftruncate(staging_fd, 0)\n'''
+          if writer.count(old) != 1:
+              raise SystemExit('unexpected recovered mutation block')
+          writer = writer.replace(old, new, 1)
+
+          old = '''    except Exception:\n        if staging_fd >= 0 and (recovered_stage is None or recovered_mutation_started):\n            _sanitize_held_private_descriptor(staging_fd)\n        raise\n'''
+          new = '''    except Exception:\n        if staging_fd >= 0:\n            _sanitize_held_private_descriptor(staging_fd)\n        raise\n'''
+          if writer.count(old) != 1:
+              raise SystemExit('unexpected outer cleanup block')
+          writer = writer.replace(old, new, 1)
+          if 'recovered_mutation_started' in writer:
+              raise SystemExit('obsolete recovered mutation flag remains')
+          if 'def _unlink_owned_inode_if_named' in writer or 'def _unlink_owned_relative_inode_if_named' in writer:
+              raise SystemExit('obsolete pathname cleanup helper remains')
+          writer_path.write_text(writer, encoding='utf-8')
+
+          regression = test_path.read_text(encoding='utf-8')
+          regression = regression.replace(
+              'def test_post_admission_name_swap_preserves_replacement_and_admitted_inode(self) -> None:',
+              'def test_post_admission_name_swap_preserves_replacement_and_sanitizes_admitted_inode(self) -> None:',
+              1,
+          )
+          old = '''            self.assertTrue(escaped.is_file(), "admitted inode disappeared after fail-closed name swap")\n            self.assertEqual(escaped.read_bytes(), admitted_payload)\n            self.assertTrue(stage.is_file(), "recovery deleted the replacement pathname subject")\n'''
+          new = '''            self.assertTrue(escaped.is_file(), "admitted inode disappeared after fail-closed name swap")\n            self.assertEqual(\n                escaped.read_bytes(),\n                b"",\n                "pre-rebind failure left credential-bearing bytes in the exact held admitted inode",\n            )\n            self.assertTrue(stage.is_file(), "recovery deleted the replacement pathname subject")\n'''
+          if regression.count(old) != 1:
+              raise SystemExit('unexpected pre-rebind regression assertion block')
+          regression = regression.replace(old, new, 1)
+          marker = '''        self.assertIn("_sanitize_held_private_descriptor", write_staged)\n'''
+          addition = '''        self.assertIn("_sanitize_held_private_descriptor", write_staged)\n        self.assertNotIn("def _unlink_owned_inode_if_named", source)\n        self.assertNotIn("def _unlink_owned_relative_inode_if_named", source)\n'''
+          if regression.count(marker) != 1:
+              raise SystemExit('unexpected recovery source-guard marker')
+          regression = regression.replace(marker, addition, 1)
+          test_path.write_text(regression, encoding='utf-8')
+
+          digest = hashlib.sha256(writer.encode('utf-8')).hexdigest()
+          shell = shell_path.read_text(encoding='utf-8')
+          if shell.count(old_digest) != 1:
+              raise SystemExit('shell writer digest pin changed')
+          shell_path.write_text(shell.replace(old_digest, digest, 1), encoding='utf-8')
+
+          swift = swift_path.read_text(encoding='utf-8')
+          if swift.count(old_digest) < 1:
+              raise SystemExit('Swift writer digest pin changed')
+          swift_path.write_text(swift.replace(old_digest, digest), encoding='utf-8')
+          print(f'new writer sha256={digest}')
+          PY
+
+      - name: Validate complete private publication adversarial suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+          /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          writer = Path('Scripts/provision_capture_tuya_identity_writer.py').read_bytes()
+          digest = hashlib.sha256(writer).hexdigest()
+          shell = Path('Scripts/provision_capture_tuya_identity.sh').read_text(encoding='utf-8')
+          swift = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift').read_text(encoding='utf-8')
+          assert f'WRITER_SHA256="{digest}"' in shell
+          assert digest in swift
+          source = writer.decode('utf-8')
+          assert 'def _unlink_owned_inode_if_named' not in source
+          assert 'def _unlink_owned_relative_inode_if_named' not in source
+          PY
+          git diff --check
+
+      - name: Publish durable hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Nembra Swarm'
+          git config user.email 'noreply@users.noreply.github.com'
+          git add \
+            Scripts/provision_capture_tuya_identity_writer.py \
+            Scripts/provision_capture_tuya_identity.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift \
+            scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Capture P0: sanitize admitted crash inode on pre-rebind failure'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
