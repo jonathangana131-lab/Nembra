@@ -13,7 +13,7 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy signed-install repair PR #2789 is still active. On exact head 050cf02d the Signed App Install Custody, Field Build Provenance, Main Selective Graft, and Xcode workflows all concluded action_required with no runnable jobs, so there is no terminal exact-head acceptance to compose.",
+      "reason": "Legacy signed-install repair PR #2789 remains active at exact 050cf02ddaf82a303c700954812a42a4d7e9cfc3. Its intended production direction is still valuable: accepted private-device runner bytes come from exact Git-object authority, and the permanent installer ACL fence has already been materialized with `ditto --noacl` plus a root-side BSD `find ... -acl -print -quit` fail-closed check. However this exact head is intentionally NOT a clean acceptance candidate because `.github/workflows/tmp-v14-capture-signed-app-acl-fence.yml` and `scripts/ci/tmp_materialize_signed_app_acl_fence.py` remain in the production tree. Current normal exact runs are action_required/skipped rather than runnable green. Required next rung is preserve permanent ACL/product regressions, delete only the two temporary materializer artifacts, prove no other temporary materializer residue, then rerun Signed App Install Custody (Ubuntu + real macOS), Field Provenance, Selective Graft, and Xcode on one unchanged clean head. No newer clean signed-install successor was found at the latest refresh.",
       "pr": 2789,
       "headSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3"
     }
@@ -36,12 +36,13 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "primaryPR": 2789,
     "primaryHeadSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3",
-    "lineagePRs": [2688, 2741, 2754, 2789],
-    "exactHeadGateState": "ACTION_REQUIRED_NO_JOBS"
+    "lineagePRs": [2688,2741,2754,2789],
+    "exactHeadGateState": "DIRTY_TEMP_MATERIALIZER_ACTION_REQUIRED",
+    "knownExactHeadFinding": "Reconciled 2026-08-11T08:52Z. Exact 050cf02d contains the permanent ACL fence but still includes the temporary signed-app ACL workflow/materializer pair. The exact-current independent review requires deleting those worker-only artifacts before acceptance, then rerunning permanent signed-app custody with both Ubuntu and real-macOS coverage plus Field/Graft/Xcode. Old d3ff/d8f7/95ca greens are ingredient evidence only. PHYSICAL remains NO-GO."
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "legacy-import"]
 }
