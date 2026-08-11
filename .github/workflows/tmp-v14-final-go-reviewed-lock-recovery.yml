@@ -1,0 +1,54 @@
+name: TEMP V14 Final-GO Reviewed Lock Recovery
+
+on:
+  push:
+    branches:
+      - recovery/v14-final-go-reviewed-lock-current-bcc-sol
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-final-go-reviewed-lock-current-bcc-sol
+          fetch-depth: 0
+      - name: Verify exact current control-plane parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "bccdab041235982ee95a9a4bd366d7b1ec50ccda"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml"
+      - name: Replay accepted reviewed-lock authority delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "jonathangana131-lab"
+          git config user.email "jonathangana131@gmail.com"
+          git cherry-pick 43a5565deb2fb77fd4d1aab4e7ddd96bac17cae2
+          git cherry-pick e7a3cadf5852544bcdcdab05229dcbfa457035d6
+          git cherry-pick d8416aeba19b826cfb50bde9e0b3e2778766a286
+          test "$(git diff --name-only bccdab041235982ee95a9a4bd366d7b1ec50ccda...HEAD | sort)" = "$(printf '%s\n' '.github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml' 'scripts/ci/es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py' | sort)"
+      - name: Validate composed authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+      - name: Remove temporary recovery workflow and publish clean head
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml
+          git add -A
+          test "$(git diff --cached --name-only)" = ".github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml"
+          git commit -m "chore(capture): remove temporary reviewed-lock recovery"
+          test "$(git diff --name-only bccdab041235982ee95a9a4bd366d7b1ec50ccda...HEAD | sort)" = "$(printf '%s\n' 'scripts/ci/es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py' | sort)"
+          git push origin HEAD:recovery/v14-final-go-reviewed-lock-current-bcc-sol
