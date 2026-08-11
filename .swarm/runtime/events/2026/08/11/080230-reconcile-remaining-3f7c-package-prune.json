@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "080230-reconcile-remaining-3f7c-package-prune",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Retired fourteen old Capture package/test convergence ingredients after current recovered package head #2811 proved the complete package runs successfully in both serial and default scheduling. These PRs explicitly existed as test-only/ingredient/differential convergence work and are now historical evidence rather than active lanes. Current #2805/#2810/#2811 and active red-team/authority successors remain open. No production bytes or physical authority changed; PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:02:30Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "closedPRs": [2527, 2533, 2543, 2546, 2550, 2552, 2555, 2556, 2563, 2564, 2567, 2571, 2573, 2582],
+    "currentPackageRepairPR": 2811,
+    "currentPackageRepairHeadSHA": "c5eba1be5fb4a73118d24e2eb936a0a785760713",
+    "packageDiagnosticRun": 31471128989,
+    "packageDiagnosticConclusion": "SUCCESS",
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
