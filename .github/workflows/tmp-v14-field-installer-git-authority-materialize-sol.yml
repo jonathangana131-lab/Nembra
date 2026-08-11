@@ -52,6 +52,11 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
+      - name: Remove construction-only bytecode
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/rm -rf -- scripts/ci/tests/__pycache__
       - name: Verify exact materialized path set
         shell: bash
         run: |
