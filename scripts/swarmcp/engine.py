@@ -100,14 +100,18 @@ def physical_slot_runnable(lane,slot):
 def scope_violations(lane,files):
     lane=validate_lane(lane); areas=lane.get('allowedWriteAreas',[])+lane.get('adjacentWriteAreas',[]); exact=set(areas); pref=[a.rstrip('/')+'/' for a in areas]
     return [p for p in [safe_relpath(x,'changed file') for x in files] if p not in exact and not any(p.startswith(a) for a in pref)]
-def primary_claims(lanes,claims,now):
-    lm={validate_lane(x)['laneId']:validate_lane(x) for x in lanes}; n=0
+def primary_claim_counts(lanes,claims,now):
+    lm={validate_lane(x)['laneId']:validate_lane(x) for x in lanes}; total=0; by_epic={}
     for raw in claims:
         c=validate_claim(raw)
         if not claim_is_live(c,now) or c['laneId'] not in lm:continue
-        slots={s['name']:s for s in lm[c['laneId']]['slots']}
-        if slots.get(c['slot'],{}).get('role')=='implementation':n+=1
-    return n
+        lane=lm[c['laneId']]; slots={s['name']:s for s in lane['slots']}
+        if slots.get(c['slot'],{}).get('role')=='implementation':
+            total+=1
+            epic=lane.get('epic','')
+            by_epic[epic]=by_epic.get(epic,0)+1
+    return total,by_epic
+def primary_claims(lanes,claims,now): return primary_claim_counts(lanes,claims,now)[0]
 @dataclass(frozen=True)
 class Recommendation:
     lane_id:str;slot:str;role:str;priority_key:tuple;reason:str
@@ -116,7 +120,7 @@ def recommend_slots(lanes,claims,resources,config,now,red_main=False):
     if detect_dependency_cycles(ls): raise ValidationError('dependency cycle detected')
     lm={x['laneId']:x for x in ls}; live={(c['laneId'],c['slot']):c for raw in claims for c in [validate_claim(raw)] if claim_is_live(c,now)}
     busy={raw.get('resource') for raw in resources if raw.get('resource') in RESOURCE_CLASSES and claim_is_live(validate_claim(raw),now)}
-    prim=primary_claims(ls,claims,now); w=config['wipLimits']; review=sum(x['state'] in {'REVIEW','NEEDS_CHANGES'} for x in ls); integ=sum(x['state']=='INTEGRATION_READY' for x in ls)
+    prim,prim_by_epic=primary_claim_counts(ls,claims,now); w=config['wipLimits']; review=sum(x['state'] in {'REVIEW','NEEDS_CHANGES'} for x in ls); integ=sum(x['state']=='INTEGRATION_READY' for x in ls)
     fan={x['laneId']:0 for x in ls}
     for x in ls:
         for d in x['dependencies']:
@@ -132,7 +136,7 @@ def recommend_slots(lanes,claims,resources,config,now,red_main=False):
             ok,phys=physical_slot_runnable(lane,s)
             if not ok or any(r in busy for r in s.get('resources',[])):continue
             role=s['role']
-            if role=='implementation' and prim>=w['maxPrimaryLanes']:continue
+            if role=='implementation' and (prim>=w['maxPrimaryLanes'] or prim_by_epic.get(lane.get('epic',''),0)>=w['maxPrimaryPerEpic']):continue
             pressure=(3 if review>=w['reviewBacklogThreshold'] and role not in {'review','adversarial-review'} else 0)+(3 if integ>=w['integrationBacklogThreshold'] and role!='integration' else 0)
             red=0 if red_main and ('red-main-repair' in tags or role=='repair') else (20 if red_main else 0)
             state={'INTEGRATION_READY':0 if role=='integration' else 5,'REVIEW':0 if role in {'review','adversarial-review'} else 5,'NEEDS_CHANGES':1 if role=='implementation' else 4,'VERIFYING':1 if role in {'tests','xcode-evidence','performance','accessibility'} else 4}.get(lane['state'],2)
@@ -192,9 +196,17 @@ def render_dashboard(lanes,claims,workers,resources,events,now,red_main=False):
     count={}
     for x in ls:count[x['state']]=count.get(x['state'],0)+1
     live=[x for x in cs if claim_is_live(x,now)];stale=[x for x in cs if x['status']=='ACTIVE' and not claim_is_live(x,now)];active=[x for x in ws if (now-parse_time(x['lastSeenAt'])).total_seconds()<=7200]
+    rs=[]
+    for raw in resources:
+        c=validate_claim(raw); r=raw.get('resource')
+        if r in RESOURCE_CLASSES: rs.append((r,c,claim_is_live(c,now)))
     lines=['# Nembra Swarm Dashboard','', '> Generated cache only. Authority lives in lane/claim/resource/event records and live GitHub product state.','',f'Generated: `{format_time(now)}`',f"Main: `{'RED' if red_main else 'not declared red by control snapshot'}`",'','## Summary','',f"- Ready lanes: **{count.get('READY',0)}**",f'- Active claims: **{len(live)}**',f"- Waiting review: **{count.get('REVIEW',0)+count.get('NEEDS_CHANGES',0)}**",f"- Waiting integration: **{count.get('INTEGRATION_READY',0)}**",f"- Blocked lanes: **{count.get('BLOCKED',0)+count.get('BLOCKED_EXTERNAL',0)}**",f'- Active workers: **{len(active)}**',f'- Stale claims: **{len(stale)}**','','## Active lanes','']
     for x in sorted(ls,key=lambda q:(q['priority'],q['laneId'])):
         if x['state'] not in TERMINAL_LANE_STATES:lines.append(f"- `{x['laneId']}` — **{x['state']}** — {x['title']}")
+    lines+=['','## Scarce resources','']
+    if rs:
+        for r,c,is_live in sorted(rs,key=lambda x:x[0]): lines.append(f"- `{r}` — **{'LEASED' if is_live else 'STALE/RELEASED'}** — `{c['workerId']}` / `{c['laneId']}`")
+    else: lines.append('- No resource leases recorded.')
     lines+=['','## Recent important events',''];imp=[x for x in es if x['type'] in {'BLOCKER','DECISION','HANDOFF','SUPERSEDED','EVIDENCE_RESULT','EXTERNAL_BLOCKER','INTEGRATION_RESULT','TAKEOVER'}]
     for x in sorted(imp,key=lambda q:q['createdAt'],reverse=True)[:12]:lines.append(f"- `{x['createdAt']}` **{x['type']}**: {x['message']}")
     if not imp:lines.append('- No important events recorded.')
