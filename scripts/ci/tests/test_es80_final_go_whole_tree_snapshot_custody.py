@@ -31,6 +31,7 @@ SPEC.loader.exec_module(MODULE)
 
 ACCEPTED_BYTES = b"// exact accepted Final-GO bytes\n"
 ATTACKER_BYTES = b"// attacker bytes after whole-tree admission\n"
+REPLACEMENT_REJECTION = "physical tracked bytes differ|whole-tree snapshot|namespace diverged"
 
 
 class FinalGoWholeTreeSnapshotCustodyTests(unittest.TestCase):
@@ -108,7 +109,7 @@ class FinalGoWholeTreeSnapshotCustodyTests(unittest.TestCase):
 
             MODULE._physical_blob_oid = mutate_after_real_read
             try:
-                with self.assertRaisesRegex(RuntimeError, "whole-tree snapshot|namespace diverged"):
+                with self.assertRaisesRegex(RuntimeError, REPLACEMENT_REJECTION):
                     MODULE._audit_candidate_tree(root, source)
             finally:
                 MODULE._physical_blob_oid = original
@@ -144,7 +145,7 @@ class FinalGoWholeTreeSnapshotCustodyTests(unittest.TestCase):
 
             MODULE._physical_blob_oid = race_every_physical_read
             try:
-                with self.assertRaisesRegex(RuntimeError, "whole-tree snapshot|namespace diverged"):
+                with self.assertRaisesRegex(RuntimeError, REPLACEMENT_REJECTION):
                     MODULE._audit_candidate_tree(root, source)
             finally:
                 MODULE._physical_blob_oid = original
@@ -175,25 +176,32 @@ class FinalGoWholeTreeSnapshotCustodyTests(unittest.TestCase):
             root.mkdir()
             source, tracked = self._candidate(root)
             original_audit = MODULE._ORIGINAL_AUDIT
+            audit_count = 0
             mutation_count = 0
 
-            def mutate_after_parent_audit(current_root: Path, current_source: str):
-                nonlocal mutation_count
+            def mutate_after_under_custody_audit(current_root: Path, current_source: str):
+                nonlocal audit_count, mutation_count
                 result = original_audit(current_root, current_source)
-                with tracked.open("r+b", buffering=0) as handle:
-                    handle.seek(0)
-                    handle.write(ATTACKER_BYTES)
-                    handle.truncate()
-                    os.fsync(handle.fileno())
-                mutation_count += 1
+                audit_count += 1
+                # Audit one is semantic prevalidation. Audit two runs only after
+                # the accepted descriptor snapshot is held; mutate that exact
+                # inode after its parent proof returns so final rebind must catch it.
+                if audit_count == 2:
+                    with tracked.open("r+b", buffering=0) as handle:
+                        handle.seek(0)
+                        handle.write(ATTACKER_BYTES)
+                        handle.truncate()
+                        os.fsync(handle.fileno())
+                    mutation_count += 1
                 return result
 
-            MODULE._ORIGINAL_AUDIT = mutate_after_parent_audit
+            MODULE._ORIGINAL_AUDIT = mutate_after_under_custody_audit
             try:
                 with self.assertRaisesRegex(RuntimeError, "held tracked inode changed"):
                     MODULE._audit_candidate_tree(root, source)
             finally:
                 MODULE._ORIGINAL_AUDIT = original_audit
+            self.assertGreaterEqual(audit_count, 2)
             self.assertEqual(mutation_count, 1)
             self.assertEqual(tracked.read_bytes(), ATTACKER_BYTES)
 
