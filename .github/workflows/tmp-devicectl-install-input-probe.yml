@@ -1,0 +1,24 @@
+name: Temporary devicectl Install Input Probe
+
+on:
+  push:
+    branches:
+      - research/v14-devicectl-install-input-sol
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect current devicectl install-app contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun devicectl help device install app
+          printf '\n--- direct help variant ---\n'
+          xcrun devicectl device install app --help
