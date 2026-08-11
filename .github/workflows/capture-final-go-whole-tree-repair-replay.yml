@@ -1,0 +1,64 @@
+name: Capture Final GO Whole Tree Repair Replay
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_es80_final_go_whole_tree_repair_replay.py
+      - .github/workflows/capture-final-go-whole-tree-repair-replay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    name: Reject #3024 and #3030 on repaired exact head
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind validation child to exact repair parent
+        shell: bash
+        env:
+          REPAIR_PARENT: 9f1c04f5c0dedc046085d3aa1eac04c4dfec7fff
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${REPAIR_PARENT}^{commit}"
+          changed_paths="$(git diff --name-only "$REPAIR_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-final-go-whole-tree-repair-replay.yml' \
+            'scripts/ci/tests/test_es80_final_go_whole_tree_repair_replay.py')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Whole-tree replay child must remain exactly two-path. Changed:\n' >&2
+            printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exact-child replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_es80_final_go_whole_tree_repair_replay.py
+
+      - name: Replay post-read and finite-rehash attacks
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_es80_final_go_whole_tree_repair_replay.py
+
+      - name: Preserve validation truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Repaired production parent: 9f1c04f5c0dedc046085d3aa1eac04c4dfec7fff\n'
+          printf 'Replays #3024 post-subject replacement and #3030 restore/read/replace scheduling.\n'
+          printf 'No credentials, Xcode/device action, Bluetooth/Tuya traffic, install, launch, or physical experiment occurs.\n'
