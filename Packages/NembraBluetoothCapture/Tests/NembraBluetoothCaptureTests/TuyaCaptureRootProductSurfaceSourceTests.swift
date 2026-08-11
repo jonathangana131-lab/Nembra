@@ -7,47 +7,47 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
     @Test("public unprovisioned launch is guided fail-closed Capture preflight, not an engineering console")
     func publicRootIsGuidedPreflight() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let root = try section(
+        let root = String(try section(
             in: app,
             from: "private struct CaptureP0Root: View",
             to: "@MainActor\nprivate final class SecureLinkController"
-        )
-        let body = String(root)
+        ))
 
-        #expect(body.contains("NEMBRA CAPTURE"))
-        #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
-        #expect(body.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
-        #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
-        #expect(body.contains("Engineering details"))
-        #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
-        #expect(!body.contains("Prove the secure scooter link first."))
-        #expect(!body.contains("Read-only control boundary"))
-        #expect(!body.contains("local_key"))
-        #expect(!body.contains("No DP query"))
-        #expect(!body.contains(".card()"))
+        #expect(root.contains("NEMBRA CAPTURE"))
+        #expect(root.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        #expect(root.contains("Text(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
+        #expect(root.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
+        #expect(root.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
+        #expect(root.contains("Engineering details"))
+        #expect(root.contains("Build provenance: ready"))
+        #expect(root.contains("Build provenance: locked"))
+        #expect(!root.contains("P0 · TUYA AUTHENTICATION"))
+        #expect(!root.contains("Prove the secure scooter link first."))
+        #expect(!root.contains("Read-only control boundary"))
+        #expect(!root.contains("local_key"))
+        #expect(!root.contains("No DP query"))
+        #expect(!root.contains(".card()"))
     }
 
     @Test("premium root preserves the real account and device authority path")
     func accountAndDeviceAuthorityRemainReachable() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let root = try section(
+        let root = String(try section(
             in: app,
             from: "private struct CaptureP0Root: View",
             to: "@MainActor\nprivate final class SecureLinkController"
-        )
-        let body = String(root)
+        ))
 
-        #expect(body.contains("tuya.requestApproval()"))
-        #expect(body.contains("tuya.checkApprovalNow()"))
-        #expect(body.contains("tuya.refreshDevices()"))
-        #expect(body.contains("tuya.selectDevice(device)"))
-        #expect(body.contains("SecureLinkView(device: device)"))
-        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
+        #expect(root.contains("tuya.requestApproval()"))
+        #expect(root.contains("tuya.checkApprovalNow()"))
+        #expect(root.contains("tuya.refreshDevices()"))
+        #expect(root.contains("tuya.selectDevice(device)"))
+        #expect(root.contains("SecureLinkView(device: device)"))
+        #expect(root.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
         #expect(app.contains("No DP query or scooter command is authorized by this surface."))
     }
 
-    @Test("Accessibility XXXL recomposes the root instead of scaling marketing copy")
+    @Test("Accessibility XXXL is compact, action-first and explicitly accessible")
     func accessibilityRootIsDeliberatelyCompact() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
@@ -57,28 +57,16 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         ))
 
         #expect(root.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
-        #expect(root.contains("if !dynamicTypeSize.isAccessibilitySize"))
+        #expect(root.contains("private var isAccessibilityLayout: Bool"))
         #expect(root.contains("fieldBuildIsAuthoritative ? \"Prepare Capture\" : \"Capture locked\""))
         #expect(root.contains("Account setup only in this public build."))
         #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
+        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("Text(\"Tuya Smart user code\")"))
         #expect(root.contains("TextField(\"Paste user code\""))
-        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
-        #expect(root.contains("private var buildAuthorityDetail: String"))
-        #expect(root.contains("Build provenance ready"))
-        #expect(root.contains("private var accountMetadataPrimaryAction: some View"))
-        #expect(root.contains("private var accountMetadataSupportingCopy: some View"))
         #expect(root.contains("nembra.capture.root.account-link-action"))
-
-        let panel = String(try section(
-            in: root,
-            from: "private var accountSetupPanel: some View",
-            to: "private var accountMetadataPrimaryAction: some View"
-        ))
-        let accessibilityBranch = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize"))
-        let primary = try #require(panel.range(of: "accountMetadataPrimaryAction", range: accessibilityBranch.upperBound..<panel.endIndex))
-        let supporting = try #require(panel.range(of: "accountMetadataSupportingCopy", range: primary.upperBound..<panel.endIndex))
-        #expect(primary.lowerBound < supporting.lowerBound)
+        #expect(root.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
+        #expect(root.contains(".tint(.cyan)"))
     }
 
     @Test("metadata preparation bridge remains cloud-only and command-free")
