@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "resource-claim",
+  "laneId": "swarm-v16-max-enforcement",
+  "slot": "high_contention_file",
+  "role": "resource",
+  "workerId": "sol-20260811-maxsys",
+  "leaseId": "res-maxsys-highcontention-080320",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T08:03:20Z",
+  "lastHeartbeatAt": "2026-08-11T08:03:20Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": null,
+  "resource": "HIGH_CONTENTION_FILE"
+}
