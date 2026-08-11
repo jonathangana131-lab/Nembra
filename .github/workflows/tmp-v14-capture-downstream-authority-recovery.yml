@@ -76,13 +76,23 @@ jobs:
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n scripts/field/install_one_time_capture.command
       - name: Python syntax
+        shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
-          python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
-          python3 -m py_compile scripts/ci/tests/test_capture_private_review_commitment.py
-          python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
-          python3 -m py_compile scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          files=(
+            Scripts/capture_tuya_private_input_build_guard.py
+            scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+            scripts/ci/tests/test_capture_private_review_commitment.py
+            scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          )
+          for file in "${files[@]}"; do
+            if ! output="$(python3 -m py_compile "$file" 2>&1)"; then
+              message="$(printf '%s' "$output" | tail -20 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+              echo "::error title=Python syntax failure::$file :: $message"
+              exit 1
+            fi
+          done
       - name: Downstream authority red team
         run: python3 -m unittest -v scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
       - name: Existing private-review helper custody
