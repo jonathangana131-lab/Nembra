@@ -7,13 +7,18 @@
   "workerId": "sol-20260811-1316vk",
   "leaseId": "capture-build-review-1316vk-20260811-2108",
   "generation": 11,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:08:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:08:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:11:00Z",
+  "releasedAt": "2026-08-11T21:11:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2988,
   "sourceSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
   "currentHeadSHA": "6b0c974d432205593f2d1157de06544a01145489",
-  "reviewTarget": "Independent exact-head classification of #2988 current 6b0c974d after focused selected-Xcode/verified-Git gates green but Capture Field Build Provenance run 31534493982 failed while Main/Tracked-Source remain queued. Identify the exact Field blocker without modifying primary-owned production paths; distinguish test-contract drift from real custody defect. PHYSICAL NO-GO."
+  "outcome": "FIELD_RED_IS_STALE_SOURCE_CONTRACT_KEEP_STRONGER_PRODUCTION",
+  "reviewId": 4910725425,
+  "fieldRun": 31534493982,
+  "verifiedGitRun": 31534493987,
+  "releaseReason": "Exact Field run 31534493982 fails only Verify source contract on a legacy positive grep for raw run_authority_git show of es80_signed_field_artifact_private_runner.py. Current installer instead routes PRIVATE_DEVICE_RUNNER_RELATIVE through read_verified_accepted_git_blob, which buffers cat-file bytes, independently re-hashes canonical blob framing, emits zero bytes before OID equality, then pipes to isolated Python. Permanent test_capture_field_verified_git_payload.py requires that stronger boundary and forbids legacy git show interpreter pipelines; exact verified-Git run 31534493987 is terminal SUCCESS. Review 4910725425 requires Field source-contract convergence, not production rollback. Main/Tracked-Source remain queued; PHYSICAL NO-GO."
 }
