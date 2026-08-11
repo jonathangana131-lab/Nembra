@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Expected-red contract for caller-selected xcrun SDK/toolchain authority.
+"""Contract for caller-selected xcrun SDK/toolchain authority.
 
-The field installer uses xcrun for physical device discovery and CoreDevice
-operations before the guarded xcodebuild. xcrun treats SDKROOT and TOOLCHAINS as
-selection inputs, so caller values must not remain ambient at those authority
-boundaries. DEVELOPER_DIR is intentionally owned by the separate #2915 lane.
+The field installer uses xcrun only to resolve exact Xcode tool subjects before
+physical device work. xcrun treats SDKROOT and TOOLCHAINS as selection inputs,
+so caller values must not remain ambient at those authority boundaries.
+DEVELOPER_DIR is intentionally owned by the separate selected-Xcode lane.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-INSTALLER = ROOT / "scripts/field/install_one_time_capture.command"
+INSTALLER = ROOT / "scripts" / "field" / "install_one_time_capture.command"
 
 
 class CaptureFieldXcrunEnvironmentAuthorityTests(unittest.TestCase):
@@ -22,8 +22,9 @@ class CaptureFieldXcrunEnvironmentAuthorityTests(unittest.TestCase):
 
     def _first_field_xcrun_use(self) -> int:
         boundaries = (
-            "/usr/bin/xcrun xctrace list devices",
-            "/usr/bin/xcrun devicectl list devices",
+            "/usr/bin/xcrun --find xcodebuild",
+            "/usr/bin/xcrun --find xctrace",
+            "/usr/bin/xcrun --find devicectl",
         )
         positions = []
         for token in boundaries:
@@ -31,7 +32,7 @@ class CaptureFieldXcrunEnvironmentAuthorityTests(unittest.TestCase):
             self.assertNotEqual(
                 position,
                 -1,
-                f"expected physical field xcrun boundary is missing: {token}",
+                f"expected selected-Xcode xcrun resolution boundary is missing: {token}",
             )
             positions.append(position)
         return min(positions)
@@ -46,7 +47,7 @@ class CaptureFieldXcrunEnvironmentAuthorityTests(unittest.TestCase):
                     names.add(token)
         return names
 
-    def test_caller_xcrun_sdk_and_toolchain_selectors_are_fenced_before_device_discovery(self) -> None:
+    def test_caller_xcrun_sdk_and_toolchain_selectors_are_fenced_before_tool_resolution(self) -> None:
         first_xcrun = self._first_field_xcrun_use()
         preflight = self.source[:first_xcrun]
         unset_names = self._unset_names(preflight)
@@ -54,17 +55,17 @@ class CaptureFieldXcrunEnvironmentAuthorityTests(unittest.TestCase):
         missing = {"SDKROOT", "TOOLCHAINS"} - unset_names
         self.assertFalse(
             missing,
-            "field xcrun still inherits caller SDK/toolchain selection before physical device discovery: "
+            "selected-Xcode xcrun still inherits caller SDK/toolchain selection before exact tool resolution: "
             + ", ".join(sorted(missing)),
         )
 
-    def test_fenced_xcrun_selectors_are_not_reexported_before_field_xcrun_use(self) -> None:
+    def test_fenced_xcrun_selectors_are_not_reexported_before_tool_resolution(self) -> None:
         first_xcrun = self._first_field_xcrun_use()
         preflight = self.source[:first_xcrun]
         for name in ("SDKROOT", "TOOLCHAINS"):
             self.assertIsNone(
                 re.search(rf"(?m)^\s*(?:export\s+)?{name}=", preflight),
-                f"field preflight reintroduces caller-selectable {name} before xcrun authority use",
+                f"field preflight reintroduces caller-selectable {name} before xcrun resolution authority use",
             )
 
 
