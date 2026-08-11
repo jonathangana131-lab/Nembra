@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import importlib.util
 import os
+import pwd
 import resource
 import select
 import stat
@@ -659,6 +660,39 @@ def _verify_accepted_private_review_commitment(inputs: PrivateInputs) -> None:
         ) from error
 
 
+def _closed_xcode_environment() -> dict[str, str]:
+    """Return the complete caller-independent environment admitted to xcodebuild.
+
+    Build settings and toolchain selectors are passed explicitly in the command
+    or selected by the separately reviewed system Xcode boundary. The compiler
+    child therefore receives no ambient caller environment. HOME/identity come
+    from the effective account database so automatic Apple signing can retain
+    its normal user credential/profile lookup without trusting caller variables.
+    """
+    try:
+        account = pwd.getpwuid(os.geteuid())
+    except (KeyError, OSError) as exc:
+        raise BuildGuardError("could not resolve effective account for closed xcodebuild environment") from exc
+
+    home = account.pw_dir
+    if (
+        not account.pw_name
+        or not home
+        or not os.path.isabs(home)
+        or "\x00" in account.pw_name
+        or "\x00" in home
+    ):
+        raise BuildGuardError("effective account is not usable for closed xcodebuild environment")
+
+    return {
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "HOME": home,
+        "USER": account.pw_name,
+        "LOGNAME": account.pw_name,
+        "LANG": "en_US.UTF-8",
+    }
+
+
 def run_guarded_build(
     inputs: PrivateInputs,
     command: Sequence[str],
@@ -725,7 +759,7 @@ def run_guarded_build(
                 + _describe_events(queued, watched)
             )
 
-        process = popen_factory(list(command))
+        process = popen_factory(list(command), env=_closed_xcode_environment())
         while process.poll() is None:
             events = backend.events(poll_interval)
             if events:
