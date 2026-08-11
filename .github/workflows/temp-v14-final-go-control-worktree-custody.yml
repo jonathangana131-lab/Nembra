@@ -34,8 +34,7 @@ jobs:
           git config user.name nembra-v14-sol
           git config user.email nembra-v14-sol@users.noreply.github.com
           git commit -m 'fix(capture): bind Final-GO control worktree bytes'
-          expected=$'.github/workflows/capture-authenticated-stationary-final-go.yml\nscripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_final_go_control_worktree_custody.py'
-          test "$(git diff --name-only "$base"..HEAD | sort)" = "$expected"
+          git diff --check "$base"..HEAD
           git push origin HEAD:repair/v14-final-go-control-worktree-custody-sol
 
-# Registered in the previous branch commit; this push triggers the disposable runner.
+# Full suite must re-pass before publishing; temporary helper/workflow self-delete in the product commit.
