@@ -70,6 +70,10 @@ class PrivateInputs:
             generated_sha256 = generated_build_subject.fingerprint_subject(
                 self.generated_pods,
                 self.generated_workspace,
+                separately_guarded_external_roots=(
+                    self.security_podspec.parent,
+                    self.identity_podspec.parent,
+                ),
             )
         except generated_build_subject.SubjectError as error:
             raise BuildGuardError(
