@@ -44,12 +44,12 @@ PRIVATE_DEVICE_RUNNER_RELATIVE="scripts/ci/es80_signed_field_artifact_private_ru
 PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git rev-parse "$SOURCE_SHA:$PRIVATE_DEVICE_RUNNER_RELATIVE" 2>/dev/null)" || \
     die "Private intended-device reader is missing from the exact accepted Git tree."
 [[ "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Private intended-device reader Git blob identity is malformed."
-PRIVATE_DEVICE_RUNNER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git cat-file blob "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || \
+PRIVATE_DEVICE_RUNNER="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git cat-file blob "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || \
     die "Could not capture the private intended-device reader from the accepted Git object."
-[[ -n "$PRIVATE_DEVICE_RUNNER_BASE64" ]] || die "Captured private intended-device reader is empty."
-[[ "$(printf '%s' "$PRIVATE_DEVICE_RUNNER_BASE64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git hash-object --stdin)" == "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" ]] || \
+[[ -n "$PRIVATE_DEVICE_RUNNER" ]] || die "Captured private intended-device reader is empty."
+[[ "$(printf '%s' "$PRIVATE_DEVICE_RUNNER" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git hash-object --stdin)" == "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" ]] || \
     die "Decoded private intended-device reader bytes do not match the accepted Git blob."
-if ! DEVICE_UDID="$(/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER_BASE64" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT" <<'PY'
+if ! DEVICE_UDID="$(/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT" <<'PY'
 import hashlib
 import hmac
 import base64
@@ -83,7 +83,7 @@ PY
     die "The intended-device verification file failed private custody validation."
 fi
 [[ -n "$DEVICE_UDID" ]] || die "The intended-device verification file produced no identifier."
-unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 PRIVATE_DEVICE_RUNNER_BASE64 PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB PRIVATE_DEVICE_RUNNER_RELATIVE || true
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 PRIVATE_DEVICE_RUNNER PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB PRIVATE_DEVICE_RUNNER_RELATIVE || true
 say "Private intended-device admission validated against Final GO digest"
 
 # The physical authentication candidate is the standalone Capture product with
