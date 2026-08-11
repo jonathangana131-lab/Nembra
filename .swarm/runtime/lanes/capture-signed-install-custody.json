@@ -10,20 +10,12 @@
   "dependencies": [],
   "blockers": [
     {
-      "id": "canonical-clean-head-revalidation",
+      "id": "security-child-exact-head-revalidation",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Canonical #2789 is clean at exact 02d6cb648e2506aee1ea69096c1e6a0b7038d9c1 after #2863 removed the two historical ACL materializer artifacts. Permanent installer still retains exact-Git private-device runner execution, `ditto --noacl`, and root-side BSD ACL fail-closed rejection. Fresh Capture Signed App Install Custody, Field Build Provenance, Main Selective Graft, and Xcode exact-head runs are currently queued on 02d6cb648; queued is not green and ancestor evidence does not accept this head.",
-      "pr": 2789,
-      "headSHA": "02d6cb648e2506aee1ea69096c1e6a0b7038d9c1"
-    },
-    {
-      "id": "signed-helper-replacement-authority-repair-dirty-materializer",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Independent review found the later signed-app custody helper had weaker Git authority than the intended-device runner: ordinary `git rev-parse \"$SOURCE_SHA:$SIGNED_APP_CUSTODY_HELPER_PATH\"` and `git cat-file blob` can follow repository-local replace refs. #2871 is the correct repair family and makes both helper object reads replacement-blind/config-isolated with GIT_NO_REPLACE_OBJECTS=1, GIT_CONFIG_NOSYSTEM=1, and GIT_CONFIG_GLOBAL=/dev/null; the permanent signed-install regression is strengthened accordingly. However #2871 actual live head is ad5e83d2ac6c6a44678d4da5e9580f7d09ed5a9c, not the body-advertised a47ec1fa, and exact compare from canonical #2789 currently contains THREE files including worker-only `.github/workflows/tmp-v14-signed-acl-permanent-macos-c7e19a.yml`. Therefore the replacement-blind two-line product delta is valid ingredient work but this exact head is not clean/acceptable. Require the temporary Mac materializer to finish or be removed, leave only permanent installer+regression bytes, deliberately compose into canonical #2789, then rerun Signed App Install Custody including real macOS transport/ACL evidence plus Field/Graft/Xcode on the moved exact canonical head.",
+      "reason": "Active #2871 exact 15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e is now a clean three-file delta over canonical #2789 02d6cb648e2506aee1ea69096c1e6a0b7038d9c1: installer signed-helper Git reads are replacement-blind/config-isolated; permanent regression pins and rejects unfenced reads; permanent Capture Signed App Install Custody workflow now re-earns real-macOS inherited-ACL strip proof on every exact candidate. Temporary materializer residue is absent. Fresh exact Signed Install, Field Build Provenance, Main Selective Graft, and Xcode 27 runs are queued/pending on 15e607805; queued is not green. Require all applicable exact-head gates terminal SUCCESS plus independent source review before composition into #2789. Any head move resets acceptance.",
       "pr": 2871,
-      "headSHA": "ad5e83d2ac6c6a44678d4da5e9580f7d09ed5a9c"
+      "headSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e"
     }
   ],
   "mode": "exclusive",
@@ -49,10 +41,10 @@
     "primaryPR": 2789,
     "primaryHeadSHA": "02d6cb648e2506aee1ea69096c1e6a0b7038d9c1",
     "activeSecurityChildPR": 2871,
-    "activeSecurityChildHeadSHA": "ad5e83d2ac6c6a44678d4da5e9580f7d09ed5a9c",
+    "activeSecurityChildHeadSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e",
     "lineagePRs": [2688,2741,2754,2789,2863,2871],
-    "exactHeadGateState": "CANONICAL_CLEAN_GATES_QUEUED_PLUS_REPLACEMENT_BLIND_CHILD_DIRTY_TEMP_MATERIALIZER",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:16Z. #2789 02d6cb648 is clean but its exact gates remain queued. #2871 adds a real replacement-blind signed-helper authority repair, but live ad5e83d2 still contains tmp-v14-signed-acl-permanent-macos-c7e19a.yml despite stale body prose. Do not accept or compose the dirty child. Final signed-install candidate needs permanent replacement-blind helper reads, clean tree, independent review, and fresh exact Signed Install/Field/Graft/Xcode including real macOS evidence. PHYSICAL NO-GO."
+    "exactHeadGateState": "CLEAN_SECURITY_CHILD_GATES_QUEUED",
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:31Z by sol-20260811-c7e19a. #2871 is no longer the dirty ad5 materializer head: exact 15e607805 is clean and contains only permanent signed-helper replacement-ref hardening, its regression, and the permanent real-macOS ACL exact-head gate. Do not compose until Signed Install/Field/Graft/Xcode are terminal green on this exact head; after composition the moved canonical #2789 head must re-earn applicable exact gates. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "git-authority", "legacy-import"]
 }
