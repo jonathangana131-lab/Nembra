@@ -1,0 +1,76 @@
+name: Capture Field Verified Git Payload Current QA
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/tmp_v14_field_git_payload_identity_materialize.py'
+      - 'scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py'
+      - 'scripts/ci/tests/test_capture_field_verified_git_payload_current_qa.py'
+      - '.github/workflows/capture-field-verified-git-payload-current-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verified-git-payload:
+    name: Re-anchor accepted Git execution bytes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation head and canonical witness bytes
+        id: premise
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test -f scripts/ci/tmp_v14_field_git_payload_identity_materialize.py
+          test -f scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          sha256sum scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          printf 'witness_sha256=%s\n' "$(sha256sum scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          python3 -m py_compile \
+            scripts/ci/tmp_v14_field_git_payload_identity_materialize.py \
+            scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py \
+            scripts/ci/tests/test_capture_field_verified_git_payload_current_qa.py
+          bash -n scripts/field/install_one_time_capture.command
+
+      - name: Materialize production repair without mutating diagnostics
+        shell: bash
+        env:
+          WITNESS_SHA256: ${{ steps.premise.outputs.witness_sha256 }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_v14_field_git_payload_identity_materialize.py
+          bash -n scripts/field/install_one_time_capture.command
+          test "$(sha256sum scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py | awk '{print $1}')" = "$WITNESS_SHA256"
+          test "$(git diff --name-only)" = "scripts/field/install_one_time_capture.command"
+          git diff --check
+
+      - name: Replay canonical packed-blob premise and current three-surface QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          python3 scripts/ci/tests/test_capture_field_verified_git_payload_current_qa.py
+
+      - name: Replay neighboring portable authority suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in \
+            scripts/ci/tests/test_capture_field_compiler_window_authority.py \
+            scripts/ci/tests/test_capture_field_private_runner_execution_red_team.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          do
+            if [[ -f "$test" ]]; then
+              python3 "$test"
+            fi
+          done
+          git diff --check
