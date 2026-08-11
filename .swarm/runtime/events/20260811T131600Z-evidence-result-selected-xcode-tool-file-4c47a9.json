@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "131600-evidence-result-selected-xcode-tool-file-4c47a9",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-4c47a9",
+  "laneId": "capture-build-authority",
+  "message": "Build review followed live #2966 from stale 6dc67bae to current exact ffba4e252b1be3bbe50c881538a02f0b4b9e6786 after Git-authority repair. Current exact head has terminal green Selected Xcode Custody, Installer Git Authority, Xcrun Environment, Xcode Environment, tracked-source/compiler-window and related Linux security gates, but exact executable-file custody remains absent: selected xcodebuild parent directory is root/nonwritable admitted, while the xcodebuild file itself is only -f/-x/non-symlink; physical xctrace/devicectl are selected indirectly via DEVELOPER_DIR without exact file authority. Additive expected-red #2969@ded098b74f409492867e4ce69f8650cb253878e5 changes only test+workflow. Run 31495086143 bound exact checkout and compiled diagnostic green, then failed at Require exact selected Xcode executable custody. Production #2966 comment 5253651969 links the machine witness and repair constraint. #2969 DO NOT MERGE as product work. Current ffba4e25 also has Field Build Provenance and Main Selective Graft red and Xcode skipped, so it is not an acceptance candidate. PHYSICAL NO-GO / DO NOT SCAN / DO NOT RUN.",
+  "createdAt": "2026-08-11T13:16:00Z"
+}
