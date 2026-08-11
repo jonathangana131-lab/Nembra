@@ -1,0 +1,156 @@
+name: Capture Tool File Custody Materializer V2
+
+on:
+  push:
+    branches:
+      - repair/v14-field-tool-file-custody-sol-go-20260811
+    paths:
+      - .github/workflows/capture-tool-file-custody-materializer-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind recovery seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "05225b164ac76977ef145fa82b48062177e5a54c"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-tool-file-custody-materializer-v2.yml"
+
+      - name: Materialize production installer repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          installer = Path("scripts/field/install_one_time_capture.command")
+          source = installer.read_text(encoding="utf-8")
+
+          old_helper = '''current = Path(path.anchor)
+          for component in path.parts[1:]:
+              current = current / component
+              try:
+                  metadata = os.lstat(current)
+              except OSError as error:
+                  raise SystemExit("selected Xcode custody ancestry is unavailable") from error
+              if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                  raise SystemExit("selected Xcode custody requires real directory ancestry")
+              if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+                  raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable ancestry")
+          if kind != "directory" or not path.is_dir():
+              raise SystemExit("selected Xcode custody expected one directory")
+          '''
+          new_helper = '''if kind not in {"directory", "file"}:
+              raise SystemExit("selected Xcode custody expected a directory or regular file")
+          current = Path(path.anchor)
+          components = path.parts[1:]
+          for index, component in enumerate(components):
+              current = current / component
+              try:
+                  metadata = os.lstat(current)
+              except OSError as error:
+                  raise SystemExit("selected Xcode custody ancestry is unavailable") from error
+              is_leaf_file = kind == "file" and index == len(components) - 1
+              if is_leaf_file:
+                  if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                      raise SystemExit("selected Xcode custody requires one real regular-file executable subject")
+                  if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+                      raise SystemExit("selected Xcode custody requires a root-owned non-group/world-writable executable file")
+              else:
+                  if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                      raise SystemExit("selected Xcode custody requires real directory ancestry")
+                  if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+                      raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable ancestry")
+          if kind == "directory" and not path.is_dir():
+              raise SystemExit("selected Xcode custody expected one directory")
+          if kind == "file" and not path.is_file():
+              raise SystemExit("selected Xcode custody expected one regular file")
+          '''
+          if source.count(old_helper) != 1:
+              raise SystemExit("selected-Xcode custody helper seed drifted")
+          source = source.replace(old_helper, new_helper, 1)
+
+          old_selection = '''validate_root_custodied_path "$(dirname "$SELECTED_XCODEBUILD")" directory || die "Selected xcodebuild parent escaped trusted root custody."
+          [[ -f "$SELECTED_XCODEBUILD" && -x "$SELECTED_XCODEBUILD" && ! -L "$SELECTED_XCODEBUILD" ]] || die "Selected xcodebuild is not one real executable under the admitted Xcode tree."
+          say "Selected Xcode 27 developer tree admitted under root custody"
+          '''
+          new_selection = '''validate_root_custodied_path "$(dirname "$SELECTED_XCODEBUILD")" directory || die "Selected xcodebuild parent escaped trusted root custody."
+          validate_root_custodied_path "$SELECTED_XCODEBUILD" file || die "Selected xcodebuild executable is not under exact root/nonwritable file custody."
+          [[ -x "$SELECTED_XCODEBUILD" ]] || die "Selected xcodebuild is not executable."
+          SELECTED_XCTRACE="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xctrace)"
+          readonly SELECTED_XCTRACE
+          [[ "$SELECTED_XCTRACE" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected xctrace escaped the admitted Xcode developer tree."
+          validate_root_custodied_path "$SELECTED_XCTRACE" file || die "Selected xctrace executable is not under exact root/nonwritable file custody."
+          [[ -x "$SELECTED_XCTRACE" ]] || die "Selected xctrace is not executable."
+          SELECTED_DEVICECTL="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find devicectl)"
+          readonly SELECTED_DEVICECTL
+          [[ "$SELECTED_DEVICECTL" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected devicectl escaped the admitted Xcode developer tree."
+          validate_root_custodied_path "$SELECTED_DEVICECTL" file || die "Selected devicectl executable is not under exact root/nonwritable file custody."
+          [[ -x "$SELECTED_DEVICECTL" ]] || die "Selected devicectl is not executable."
+          say "Selected Xcode 27 developer tree and exact physical tool executables admitted under root custody"
+          '''
+          if source.count(old_selection) != 1:
+              raise SystemExit("selected-Xcode tool selection seed drifted")
+          source = source.replace(old_selection, new_selection, 1)
+
+          source = source.replace(
+              'DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl',
+              'DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_DEVICECTL"',
+          )
+          source = source.replace(
+              'DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl',
+              'DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_DEVICECTL"',
+          )
+          source = source.replace(
+              'DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun xctrace',
+              'DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_XCTRACE"',
+          )
+          if '/usr/bin/xcrun devicectl' in source or '/usr/bin/xcrun xctrace' in source:
+              raise SystemExit("physical tool execution still re-resolves through xcrun")
+          if '"$SELECTED_XCTRACE" list devices' not in source:
+              raise SystemExit("exact xctrace subject is not consumed")
+          if '"$SELECTED_DEVICECTL" list devices' not in source:
+              raise SystemExit("exact devicectl subject is not consumed")
+
+          installer.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Focused authority validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_field_selected_xcode_custody.py \
+            scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py \
+            scripts/ci/tests/test_capture_field_xcrun_environment_authority.py \
+            scripts/ci/tests/test_capture_field_xcode_environment_authority.py \
+            scripts/ci/tests/test_capture_field_developer_dir_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcrun_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcode_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_developer_dir_authority.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish production-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-bot"
+          git config user.email "nembra-capture-bot@users.noreply.github.com"
+          git add scripts/field/install_one_time_capture.command
+          git diff --cached --quiet && { echo "No production repair staged" >&2; exit 1; }
+          git commit -m "Capture P0: custody exact selected Xcode tool files"
+          git push origin HEAD:repair/v14-field-tool-file-custody-sol-go-20260811
