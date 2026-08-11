@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072000-go54f-capture-2805-range-rootcause",
+  "type": "FINDING",
+  "workerId": "sol-20260811-go54f",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Supersedes the earlier generic-toolchain classification for #2805 selective-graft crash. Exact head 76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab scopes engineeringDisclosure lookup after preflightPanel; full package now completes 944 tests/229 suites and reports 3 assertion issues instead of swiftpm-testing-helper signal 5. Serial run reproduces same 3 issues and test listing succeeds; standalone Capture Xcode build succeeds. The three assertions are inherited composition/source-contract mismatches (metadata UID redaction exact substring, metadata localStrategy redaction exact substring, and stale Podfile.lock negative-guard source expectation). #2805-local stale undefined private_review exception clause in build_guard main() remains a separate source blocker. Candidate non-accepting; PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:20:00Z",
+  "data": {
+    "pr": 2805,
+    "exactHead": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab",
+    "parentHead": "73f910f95eea3f23c65928455c1507bf556aee0e",
+    "selectiveGraftRun": 31468276329,
+    "selectiveGraftJob": 93705710887,
+    "packageTests": 944,
+    "packageSuites": 229,
+    "packageIssues": 3,
+    "rangeCrashResolved": true,
+    "standaloneBuild": "SUCCESS",
+    "selectiveGraftConclusion": "FAILURE_ASSERTIONS",
+    "xcodeExactHead": "SKIPPED_DRAFT",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
