@@ -31,5 +31,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
       - name: Compile red team
         run: python3 -m py_compile scripts/ci/tests/test_capture_field_installer_info_exclude_red_team.py
-      - name: Prove info-exclude hidden build-visible input and require closure
-        run: python3 -m unittest -v scripts.ci.tests.test_capture_field_installer_info_exclude_red_team
+      - name: Prove info-exclude hides build-visible Swift from fresh-index status
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_field_installer_info_exclude_red_team.CaptureFieldInstallerInfoExcludeRedTeamTests.test_info_exclude_hides_untracked_swift_from_fresh_index_status
+      - name: Require independent build-visible workspace authority
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_field_installer_info_exclude_red_team.CaptureFieldInstallerInfoExcludeRedTeamTests.test_field_installer_must_audit_build_visible_untracked_bytes_outside_git_excludes
