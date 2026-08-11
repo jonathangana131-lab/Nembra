@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "210730-evidence-result-runtime-ax-orphan-1405rc",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-1405rc",
+  "laneId": "legacy-github-reconciliation",
+  "message": "P0 Capture runtime-accessibility reconciliation against main d8e38d0a786d4fd97e7eb641d97c6cec76adee0c: the legacy claim .swarm/runtime/claims/capture-runtime-accessibility/primary.json is orphaned control-plane residue. Its lane record .swarm/runtime/lanes/capture-runtime-accessibility.json does not exist, its recorded worker/PR #2967 head 771dce5df08db4ba4fec5b869309ba2077adea20 is stale, and it must not be interpreted as current exclusive ownership. Live GitHub has converged runtime VoiceOver work into Capture flagship composition: PR #2973 exact 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9 is the current runtime witness lineage, and .swarm/runtime/claims/capture-flagship-composition/tests.json generation 5 actively owns the non-conflicting runtime test-count gate on that exact source while #2979 primary owns the separate app-visible first-fold product paths. Do not recreate a parallel runtime-accessibility implementation lane from the orphan claim; route current runtime AX work through the flagship composition lane/claims and preserve exact-head Simulator-only semantics. This reconciliation changes no product/UI/BLE/Tuya/physical bytes and grants no physical authority. PHYSICAL NO-GO."
+  ,"createdAt": "2026-08-11T21:07:30Z"
+}
