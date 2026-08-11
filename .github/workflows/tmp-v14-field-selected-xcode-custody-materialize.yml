@@ -51,7 +51,16 @@ jobs:
 
       - name: Test selected Xcode custody
         shell: bash
-        run: /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_custody.py
+        run: |
+          set +e
+          output="$(/usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_custody.py 2>&1)"
+          status=$?
+          printf '%s\n' "$output"
+          if [[ "$status" != "0" ]]; then
+            escaped="$(printf '%s' "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')"
+            printf '::error title=Selected Xcode custody regression::%s\n' "$escaped"
+            exit "$status"
+          fi
 
       - name: Test closed xcodebuild child environment
         shell: bash
