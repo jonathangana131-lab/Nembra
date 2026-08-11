@@ -1,0 +1,49 @@
+name: Temporary Capture Admitted Root Package Diagnostic
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-admitted-root-package-diagnostic-sol
+    paths:
+      - .github/workflows/tmp-capture-admitted-root-package-diagnostic.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-admitted-root-package-diagnostic-sol
+          fetch-depth: 0
+      - name: Bind workflow-only diagnostic child
+        shell: bash
+        env:
+          PRODUCT_HEAD: c6593e8c04f5453c63a6b209c88f1e3997c9e859
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-capture-admitted-root-package-diagnostic.yml'
+      - name: Capture focused custody test output
+        shell: bash
+        env:
+          BRANCH: qa/v14-capture-admitted-root-package-diagnostic-sol
+        run: |
+          set -euo pipefail
+          log="$GITHUB_WORKSPACE/scripts/ci/tmp_admitted_root_package_diagnostic.log"
+          status_file="$GITHUB_WORKSPACE/scripts/ci/tmp_admitted_root_package_diagnostic.status"
+          cd Packages/NembraBluetoothCapture
+          set +e
+          swift test -Xswiftc -warnings-as-errors --filter TuyaPrivateIdentity >"$log" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$status_file"
+          cd "$GITHUB_WORKSPACE"
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/ci/tmp_admitted_root_package_diagnostic.log scripts/ci/tmp_admitted_root_package_diagnostic.status
+          git commit -m 'ci(capture): publish admitted-root package diagnostic'
+          git push origin "HEAD:$BRANCH"
