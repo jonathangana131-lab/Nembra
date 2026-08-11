@@ -4,9 +4,9 @@
   "laneId": "capture-flagship-composition",
   "epic": "capture",
   "title": "Capture flagship exact-current composition",
-  "objective": "Maintain the canonical app-visible Capture candidate on current main, compose only accepted authority/custody descendants, then rerun exact software, package, field, Xcode, visual, accessibility and final adversarial gates on one unchanged head before any physical decision.",
+  "objective": "Maintain one canonical app-visible Capture lineage, compose only independently accepted authority/custody descendants, then rerun exact software, field, Xcode, visual/accessibility and final adversarial gates on one unchanged composed head before any physical decision.",
   "priority": 0,
-  "state": "IMPLEMENTING",
+  "state": "VERIFYING",
   "dependencies": [
     "capture-build-authority",
     "capture-final-go-authority",
@@ -15,20 +15,28 @@
   ],
   "blockers": [
     {
-      "id": "canonical-software-baseline-green-security-uncomposed",
+      "id": "ax-successor-xcode-exact-head-pending",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Canonical flagship #2612 remains the last fully-green app-visible Capture baseline at exact 513ebea576cd6d03132e215d80fac57397877fbf. Its baseline gates are accepted for that SHA only. Selected build authority, private-identity custody, signed-install custody, and Final-GO authority are still deliberately uncomposed, so this baseline cannot authorize hardware and all impacted gates must be re-earned on the eventual composed head.",
-      "pr": 2612,
-      "headSHA": "513ebea576cd6d03132e215d80fac57397877fbf"
+      "reason": "App-visible successor #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 has terminal exact-head Main Selective Graft, Field Build Provenance, and Standalone Visual Evidence success plus human standard/AX5 pixel acceptance. Xcode 27 run 31490540888 has bound the immutable exact PR head and started job 93775787237; checkout/head/project-structure steps are green and core-package validation is running. Until the whole Xcode job is terminal SUCCESS on unchanged 005b7c4, #2612 remains the last fully accepted app-visible baseline.",
+      "pr": 2940,
+      "headSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27"
     },
     {
-      "id": "ax-successor-current-head-is-temporary-materializer",
+      "id": "physical-security-lineages-uncomposed",
       "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "App-visible AX successor #2891 supersedes the rejected #2841 recovery, but current exact head 86928ed9166e006772dfe73b174972134e13b344 is staging, not an acceptance candidate. It adds `.github/workflows/temp-capture-root-ax-compile-fix.yml` with contents:write so a queued push workflow 31489177721 can replace the out-of-scope SecureLinkView `isAccessibilityLayout` reference with `dynamicTypeSize.isAccessibilitySize`, compile the standalone Capture target, commit the product fix, and delete the temporary workflow. PR-triggered Field/Graft/Standalone/Xcode runs on 86928ed are queued but cannot accept the intended clean successor because this head still contains the mutating workflow. Wait for a clean user-visible product/test head, then rerun every exact-head gate and inspect retained standard + AX5 pixels; ancestor 85e62913 evidence is stale after the head move.",
-      "pr": 2891,
-      "headSHA": "86928ed9166e006772dfe73b174972134e13b344"
+      "scope": "dependency",
+      "reason": "Build authority, private-identity custody, signed-install custody, and Final-GO remain independently active and continue to expose/repair authority seams. App-visible acceptance does not compose or accept those lineages and cannot authorize hardware. The final deliberately composed exact head must re-earn all impacted gates.",
+      "pr": null,
+      "headSHA": null
+    },
+    {
+      "id": "standard-first-fold-copy-density",
+      "state": "ACTIVE",
+      "scope": "product-quality",
+      "reason": "Retained exact #2940 standard screenshot is truthful and passes the targeted AX repair, but repeated account/read-only/lock guidance pushes the Create approval QR control to y=2300 of a 2532 px viewport (~90.8%). AX5 already begins the same primary control at y=1101 (~43.5%). After exact #2940 acceptance, simplify redundant sighted standard prose while preserving semantic lock/account/CTA truth and rerun retained standard + AX pixels; do not mutate the current acceptance head mid-gate.",
+      "pr": 2940,
+      "headSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27"
     }
   ],
   "mode": "exclusive",
@@ -51,23 +59,28 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "86928ed9166e006772dfe73b174972134e13b344",
+  "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "legacy": {
-    "primaryPR": 2612,
-    "primaryHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
-    "accessibilitySuccessorPR": 2891,
-    "accessibilityCurrentStagingHeadSHA": "86928ed9166e006772dfe73b174972134e13b344",
-    "accessibilityPriorCleanHeadSHA": "85e629133fb4feab252701c9b2c5700489ea1938",
-    "accessibilityMaterializerRun": 31489177721,
-    "queuedCurrentHeadRuns": {
-      "field": 31489182807,
-      "mainGraft": 31489182760,
-      "standaloneVisual": 31489182785,
-      "xcode": 31489182758
+    "acceptedAppVisibleBaselinePR": 2612,
+    "acceptedAppVisibleBaselineHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
+    "candidateAppVisibleSuccessorPR": 2940,
+    "candidateAppVisibleSuccessorHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+    "supersededVisualPRs": [2841,2891],
+    "exactCandidateRuns": {
+      "mainGraft": 31490540822,
+      "field": 31490540890,
+      "standaloneVisual": 31490540910,
+      "xcode": 31490540888
     },
-    "supersededVisualRecoveryPR": 2841,
+    "visualArtifact": {
+      "id": 9101029285,
+      "digest": "sha256:129c0836ebf8d0274d3f250530da9674730425e879233fbacbed2976f7fe1f5c",
+      "standardPixelReview": "PASS_TARGETED_AX_REPAIR",
+      "accessibilityXXXLReview": "PASS"
+    },
+    "branchConvergence": "Do not fast-forward the #2612 head branch: open authority children including #2709, #2754, and #2719 still target that ref as their PR base. If #2940 Xcode turns terminal green unchanged, prefer PR-level supersession/canonical designation while leaving the historical base ref untouched.",
     "baseMainAtObservation": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-    "note": "Reconciled 2026-08-11T12:06Z. #2612 513ebea remains the last fully-green canonical app-visible baseline. #2891 is now the active AX closure successor, but exact 86928ed is deliberately temporary authoring scaffolding rather than a clean acceptance head; its self-removing compile-repair workflow is queued. Fresh primary/review owners are active. Do not promote queued runs or ancestor pixels. After the workflow creates a clean successor, re-earn package/Graft/Xcode/Field/Standalone Visual and human-review standard + AX5/VoiceOver semantics. Security/control dependencies still block final composition and PHYSICAL GO."
+    "note": "Reconciled 2026-08-11T12:57Z. #2940 exact 005b7c4 is a strict descendant of accepted #2612 513ebea and has no temporary materializer residue. Main Graft + Field + Standalone Visual are terminal green; retained iPhone 12/iOS 27 standard and AX5 pixels were human-inspected. Xcode exact-head job is currently running and is the final declared app-visible acceptance gate. Broader standard copy-density remains a later product-quality rung. Security/control composition and physical proof remain explicitly separate; PHYSICAL NO-GO."
   },
-  "tags": ["capture", "p0", "flagship", "app-visible", "composition", "legacy-import"]
+  "tags": ["capture", "p0", "flagship", "app-visible", "composition", "accessibility"]
 }
