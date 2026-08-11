@@ -9,13 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:51:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:19:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:33:00Z",
   "leaseSeconds": 1800,
   "branch": "review/v14-signed-install-contracts-2911-sol-4f50qa",
   "pr": 2871,
   "sourceSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
   "takeoverFromWorkerId": "sol-20260811-c4d2",
   "takeoverReason": "Generation-3 review lease expired at 2026-08-11T10:41Z without heartbeat. Continue independent signed-install review upward after accepted QA child #2911 composed into #2871.",
-  "durableEvidence": "#2911 exact 83110a6a was accepted for declared QA scope with Field 31488849076, Main Graft 31488848988, and Xcode 31488849061 terminal SUCCESS plus review 4906078063. It merged into #2871 as exact moved parent f76e6ae54b4304df5b02db4f46a72f67daa276e2. All child greens are now ancestor evidence only. Fresh moved-parent runs: Signed App Install Custody 31490454614 queued, Field Build Provenance 31490454631 queued, Main Selective Graft 31490454719 in progress, Xcode 27 31490454623 queued. Review 4906029352 remains the future #2907 workflow composition contract. Review 4906057134 remains a separate unconfirmed post-build/pre-fingerprint signed-app substitution seam under tests ownership.",
-  "acceptance": "MOVED_PARENT_EXACT_HEAD_PENDING. Require Signed App + Field + Main Graft + Xcode terminal SUCCESS on unchanged f76e6ae5 and independent source review before signed-install parent acceptance. PHYSICAL NO-GO."
+  "durableEvidence": "#2911 exact 83110a6a accepted for declared QA scope and composed into #2871 moved exact f76e6ae5. Fresh moved-parent legacy gates now Signed App 31490454614 SUCCESS, Field 31490454631 SUCCESS, Main Graft 31490454719 SUCCESS, Xcode 31490454623 still queued. However draft expected-red #2955 exact afdd329d mechanically confirms a NEW invariant absent from those legacy gates: permanent Signed App run 31491053333 job 93777409233 exact-head-bound and failed only the new build-produced-app origin test. Existing fingerprint, symlink, protected-stage ordering/codesign-boundary, and ACL source-contract controls passed. Witness proves protected stage self-consistently accepts a post-xcodebuild/pre-first-fingerprint substitute (cbe35757...) while the restored actual build-produced bundle fingerprint is 8825e486.... Parent blocker review 4906169989 and diagnostic evidence review 4906195017 record the result. Review 4906029352 remains future #2907 workflow composition contract.",
+  "acceptance": "BLOCKED_BY_CONFIRMED_COMPILER_OUTPUT_ORIGIN_GAP. Legacy exact-head greens on f76e6ae5 cannot accept parent because they do not test the new invariant. Require production repair binding the xcodebuild-produced bundle continuously/non-self-derived through the first protected snapshot, replay #2955 invariant green, then re-earn Signed App + Field + Main Graft + Xcode on one unchanged moved parent. PHYSICAL NO-GO."
 }
