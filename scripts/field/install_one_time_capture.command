@@ -98,9 +98,17 @@ source_sha = sys.argv[2]
 relative_path = sys.argv[3]
 helper_argv = sys.argv[4:]
 try:
+    git_environment = {
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
     source = subprocess.check_output(
         ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
         cwd=root,
+        env=git_environment,
         stderr=subprocess.DEVNULL,
     )
 except subprocess.CalledProcessError as error:
