@@ -24,11 +24,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/tmp_materialize_final_go_hardening_v2.py
+          python3 scripts/ci/tmp_repair_final_go_index_guard.py
           python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
           python3 -m py_compile scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
-          git rm .github/workflows/tmp-auth-stationary-final-go-hardening-v2.yml scripts/ci/tmp_materialize_final_go_hardening_v2.py
+          git rm .github/workflows/tmp-auth-stationary-final-go-hardening-v2.yml scripts/ci/tmp_materialize_final_go_hardening_v2.py scripts/ci/tmp_repair_final_go_index_guard.py
           git config user.name nembra-v14-hardening
           git config user.email nembra-v14-hardening@users.noreply.github.com
           git add scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
