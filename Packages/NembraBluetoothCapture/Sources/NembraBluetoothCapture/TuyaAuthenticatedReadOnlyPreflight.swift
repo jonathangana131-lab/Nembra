@@ -1,10 +1,14 @@
 import Foundation
 
-/// The only authentication routes currently allowed to mint authenticated-session provenance.
+/// Authentication/account routes recognized by the physical Tuya preflight.
 ///
 /// `cloud local_key` is deliberately absent. Tuya cloud metadata can retain that secret for
 /// future supported use, but it is not mechanically equivalent to documented FD50 BLE
 /// authentication material and must never unlock the physical preflight by itself.
+///
+/// Device Sharing is account/device authority only. It can establish that the linked account is
+/// allowed to see a device, but it does not itself prove that the current BLE generation was
+/// authenticated. Physical readiness therefore requires `smartLifeAppSDK` provenance.
 public enum TuyaReadOnlyAuthenticationMethod: String, Codable, Equatable, Sendable {
     case smartLifeAppSDK = "tuya-smartlife-sdk"
     case documentedDeviceSharing = "tuya-device-sharing"
@@ -78,8 +82,11 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         case .authenticated:
             break
         }
-        guard snapshot.authenticationMethod != nil else {
+        guard let authenticationMethod = snapshot.authenticationMethod else {
             return .blocked(reason: "Authenticated state has no accepted Tuya authentication provenance.")
+        }
+        guard authenticationMethod == .smartLifeAppSDK else {
+            return .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation.")
         }
         guard snapshot.applicationPayloadCount > 0 else {
             return .blocked(reason: "Authenticated session has not produced an application payload yet.")
@@ -104,9 +111,10 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
 ///
 /// Implementations may perform only documented authentication/session-establishment transport
 /// writes and authenticated reads/notification decryption. They must not expose generic GATT
-/// writes or DP control through this protocol. An implementation must also report which accepted
-/// authentication method actually established the current generation; possession of a cloud
-/// `local_key` alone is not accepted authentication provenance.
+/// writes or DP control through this protocol. An implementation must also report the provenance
+/// that established the current generation. Device Sharing may establish account/device authority,
+/// but only an official SmartLife SDK-authenticated BLE generation can satisfy physical readiness;
+/// possession of a cloud `local_key` alone is never accepted authentication provenance.
 public protocol TuyaReadOnlyAuthenticationSessionProvider: Sendable {
     func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot
 }
