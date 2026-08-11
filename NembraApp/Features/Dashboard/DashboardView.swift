@@ -138,7 +138,7 @@ struct DashboardView: View {
     private func accessibilityCockpit(personality: DashboardModePersonality) -> some View {
         HStack(alignment: .center, spacing: 12) {
             accessibilityStatusSummary
-                .frame(width: 188, alignment: .leading)
+                .frame(width: 224, alignment: .leading)
                 .frame(maxHeight: .infinity, alignment: .topLeading)
 
             DashboardSpeedInstrumentView(modePersonality: personality)
@@ -556,7 +556,8 @@ struct DashboardView: View {
     private var errorPresented: Binding<Bool> {
         Binding(
             get: { vehicle.lastErrorMessage != nil },
-            set: { if !$0 { vehicle.lastErrorMessage = nil } }
+            set: { if !$0 { vehicle.lastErrorMessage = nil }
+            }
         )
     }
 
