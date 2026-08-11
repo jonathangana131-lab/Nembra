@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "202630-0e43f32f79b849f0",
+  "type": "FINDING",
+  "workerId": "sol-20260811-1315r8",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Capture Build convergence PR #2968 exact-current head 947f592239a800f636e0626b2a0b9233ccbac38d is NOT accepted. Fresh exact-head successes include verified-git-payload, selected-xcode-custody, downstream-helper-execution, xcode-environment-authority, and multiple vnode/compiler custody guards. However 'Stamp and verify Capture provenance' job 93793251406 is FAILURE because the Capture provenance source contract cannot find the required authority-backed git-show invocation for scripts/ci/es80_signed_field_artifact_private_runner.py; integration-audit job 93793251046 is FAILURE with 'Selective live-main Capture graft is not yet accepted'; and the exact PR-head Xcode build/test job 93793253079 is SKIPPED. Skipped is not green. Do not reuse ancestor acceptance or promote this moved head. PHYSICAL NO-GO unchanged.",
+  "createdAt": "2026-08-11T20:26:30Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "pullRequest": 2968,
+    "headSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
+    "provenanceJobId": 93793251406,
+    "provenanceConclusion": "failure",
+    "integrationAuditJobId": 93793251046,
+    "integrationAuditConclusion": "failure",
+    "xcodeJobId": 93793253079,
+    "xcodeConclusion": "skipped",
+    "verifiedGitJobId": 93793251210,
+    "verifiedGitConclusion": "success",
+    "selectedXcodeCustodyJobId": 93793251252,
+    "selectedXcodeCustodyConclusion": "success",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
