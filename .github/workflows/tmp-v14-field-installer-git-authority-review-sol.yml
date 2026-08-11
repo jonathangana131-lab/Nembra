@@ -1,0 +1,45 @@
+name: TEMP V14 Field Installer Git Authority Review (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-field-installer-git-authority-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-field-installer-git-authority-review-sol.yml
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Published installer shell syntax
+        run: bash -n scripts/field/install_one_time_capture.command
+      - name: Published bootstrap shell syntax
+        run: bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+      - name: Ambient Git-dir/work-tree witness remains valid
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_field_installer_git_authority_red_team.CaptureFieldInstallerGitAuthorityRedTeamTests.test_ambient_git_dir_and_work_tree_can_validate_other_bytes
+      - name: Repository core.worktree witness remains valid
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_field_installer_git_authority_red_team.CaptureFieldInstallerGitAuthorityRedTeamTests.test_repository_core_worktree_can_hide_real_checkout_rewrite
+      - name: Published installer source closes original authority split
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_field_installer_git_authority_red_team.CaptureFieldInstallerGitAuthorityRedTeamTests.test_field_installer_must_not_split_git_authority_from_bootstrap_execution
+      - name: Assert stronger authority markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'GIT_INDEX_FILE="$authority_index"' scripts/field/install_one_time_capture.command
+          grep -Fq 'read-tree "$SOURCE_SHA"' scripts/field/install_one_time_capture.command
+          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/field/install_one_time_capture.command
+          ! grep -Fq '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/field/install_one_time_capture.command
