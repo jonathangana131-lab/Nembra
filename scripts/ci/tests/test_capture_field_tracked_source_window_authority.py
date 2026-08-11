@@ -96,6 +96,75 @@ class CaptureFieldTrackedSourceWindowAuthorityTests(unittest.TestCase):
             with self.assertRaises(guard.BuildGuardError):
                 guard._accepted_tracked_source_manifest(repo, accepted_sha)
 
+    def test_prearmed_untracked_build_visible_source_is_rejected(self) -> None:
+        """A source inserted after the installer's raw audit must not survive guard admission."""
+        guard = load_guard()
+
+        class QuietBackend:
+            def register(self, descriptor: int) -> None:
+                del descriptor
+
+            def events(self, timeout: float):
+                del timeout
+                return ()
+
+            def close(self) -> None:
+                pass
+
+        class MinimalInputs:
+            def __init__(self, root: Path, source_sha: str) -> None:
+                self.accepted_source_root = root
+                self.accepted_source_sha = source_sha
+
+            def generation_snapshot(self):
+                return ("stable-private-inputs",)
+
+        with tempfile.TemporaryDirectory(prefix="nembra-tracked-window-prearmed-") as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            git(repo, "init", "-q")
+            git(repo, "config", "user.name", "Nembra Test")
+            git(repo, "config", "user.email", "nembra-test@example.invalid")
+            sources = repo / "Sources"
+            sources.mkdir()
+            tracked = sources / "Capture.swift"
+            tracked.write_text('let authority = "accepted"\n', encoding="utf-8")
+            git(repo, "add", ".")
+            git(repo, "commit", "-qm", "accepted")
+            accepted_sha = git(repo, "rev-parse", "HEAD")
+
+            # This models the real TOCTOU seam: the installer's earlier raw audit
+            # has already passed, then an untracked Swift source becomes present
+            # before the build guard enumerates the accepted Git tree and arms
+            # vnode custody. Because the file is already present, no later vnode
+            # event is required for the compiler to consume it.
+            injected = sources / "Injected.swift"
+            injected.write_text('let attacker = "compiled"\n', encoding="utf-8")
+            consumed = root / "consumed.txt"
+
+            original_watch_paths = guard._watch_paths
+            guard._watch_paths = lambda _inputs: (repo,)
+            try:
+                with self.assertRaises(
+                    guard.BuildGuardError,
+                    msg="pre-armed untracked build-visible source escaped exact-source admission",
+                ):
+                    guard.run_guarded_build(
+                        MinimalInputs(repo, accepted_sha),
+                        ["/bin/sh", "-c", f'/bin/cat "{injected}" > "{consumed}"'],
+                        backend_factory=QuietBackend,
+                        poll_interval=0.001,
+                        require_accepted_tracked_source=True,
+                    )
+            finally:
+                guard._watch_paths = original_watch_paths
+
+            self.assertFalse(
+                consumed.exists(),
+                "guard admitted a build command that consumed an unaccepted pre-armed source",
+            )
+
     @unittest.skipUnless(sys.platform == "darwin", "requires real macOS kqueue vnode delivery")
     def test_real_macos_kqueue_reports_mutate_restore_before_compiler_can_be_accepted(self) -> None:
         guard = load_guard()
