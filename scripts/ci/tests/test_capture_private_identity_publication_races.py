@@ -27,7 +27,7 @@ def load_writer():
 
 
 class PrivateIdentityPublicationRaceTests(unittest.TestCase):
-    def test_staging_name_substitution_cannot_be_accepted_as_published_payload(self) -> None:
+    def _assert_staging_substitution_rejected(self, replacement_kind: str) -> None:
         writer = load_writer()
         payload = b"accepted-private-identity-payload"
         attacker_payload = b"X" * len(payload)
@@ -40,31 +40,35 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
             parent_fd = os.open(parent, writer._directory_flags())
             original_publish = writer._secure_replace_beneath
             attacked = False
+            replacement_name: str | None = None
 
-            def adversarial_publish(root_fd: int, src: str, dst: str) -> None:
-                nonlocal attacked
+            def adversarial_publish(root_fd: int, src: str, dst: str, sealed) -> None:
+                nonlocal attacked, replacement_name
                 if not attacked:
                     attacked = True
                     stolen = f"{src}.attacker-stolen"
                     os.rename(src, stolen, src_dir_fd=root_fd, dst_dir_fd=root_fd)
-                    replacement_fd = os.open(
-                        src,
-                        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                        0o600,
-                        dir_fd=root_fd,
-                    )
-                    try:
-                        view = memoryview(attacker_payload)
-                        offset = 0
-                        while offset < len(view):
-                            written = os.write(replacement_fd, view[offset:])
-                            self.assertGreater(written, 0)
-                            offset += written
-                        os.fchmod(replacement_fd, 0o600)
-                        os.fsync(replacement_fd)
-                    finally:
-                        os.close(replacement_fd)
-                original_publish(root_fd, src, dst)
+                    replacement_name = src
+                    if replacement_kind == "regular":
+                        replacement_fd = os.open(
+                            src,
+                            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                            0o600,
+                            dir_fd=root_fd,
+                        )
+                        try:
+                            os.write(replacement_fd, attacker_payload)
+                            os.fchmod(replacement_fd, 0o600)
+                            os.fsync(replacement_fd)
+                        finally:
+                            os.close(replacement_fd)
+                    elif replacement_kind == "directory":
+                        os.mkdir(src, 0o700, dir_fd=root_fd)
+                    elif replacement_kind == "symlink":
+                        os.symlink("attacker-target", src, dir_fd=root_fd)
+                    else:
+                        raise AssertionError(f"unknown replacement kind {replacement_kind}")
+                original_publish(root_fd, src, dst, sealed)
 
             writer._secure_replace_beneath = adversarial_publish
             rejected = False
@@ -85,14 +89,29 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
                 os.close(checkout_fd)
 
             final = parent / "identity.swift"
-            final_bytes = final.read_bytes() if final.exists() else None
+            final_bytes = final.read_bytes() if final.is_file() else None
             self.assertTrue(attacked, "diagnostic never reached the staging publication boundary")
             self.assertTrue(rejected, "writer accepted a substituted staging inode as successful publication")
-            self.assertNotEqual(
-                final_bytes,
-                attacker_payload,
-                "attacker-controlled replacement bytes remained accepted at the final private identity path",
-            )
+            self.assertNotEqual(final_bytes, attacker_payload)
+
+            replacement = checkout / replacement_name if replacement_name is not None else None
+            self.assertIsNotNone(replacement)
+            if replacement_kind == "regular":
+                self.assertTrue(replacement.is_file(), "cleanup deleted attacker replacement regular file")
+                self.assertEqual(replacement.read_bytes(), attacker_payload)
+            elif replacement_kind == "directory":
+                self.assertTrue(replacement.is_dir(), "cleanup removed attacker replacement directory")
+            else:
+                self.assertTrue(replacement.is_symlink(), "cleanup removed attacker replacement symlink")
+
+    def test_staging_regular_file_substitution_cannot_be_published_or_cleaned_as_owned(self) -> None:
+        self._assert_staging_substitution_rejected("regular")
+
+    def test_staging_directory_substitution_cannot_be_published_or_cleaned_as_owned(self) -> None:
+        self._assert_staging_substitution_rejected("directory")
+
+    def test_staging_symlink_substitution_cannot_be_published_or_cleaned_as_owned(self) -> None:
+        self._assert_staging_substitution_rejected("symlink")
 
     def test_detached_private_directory_cannot_receive_or_stage_credential_identity(self) -> None:
         writer = load_writer()
@@ -109,7 +128,7 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
             attacked = False
             leaked_before_publish: list[bytes] = []
 
-            def adversarial_publish(root_fd: int, src: str, dst: str) -> None:
+            def adversarial_publish(root_fd: int, src: str, dst: str, sealed) -> None:
                 nonlocal attacked
                 if not attacked and dst.endswith("NembraTuyaPrivateIdentity.swift"):
                     runtime = checkout / "LocalSecrets" / "TuyaRuntime"
@@ -122,7 +141,7 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
                         for candidate in detached_module.iterdir():
                             if candidate.name.startswith(".NembraTuyaPrivateIdentity.swift.nembra-"):
                                 leaked_before_publish.append(candidate.read_bytes())
-                original_publish(root_fd, src, dst)
+                original_publish(root_fd, src, dst, sealed)
 
             writer._secure_replace_beneath = adversarial_publish
             rejected = False
