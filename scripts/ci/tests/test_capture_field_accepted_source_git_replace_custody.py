@@ -25,7 +25,9 @@ class CaptureFieldAcceptedSourceGitReplaceCustodyTests(unittest.TestCase):
     def _accepted_source_execution_functions(self) -> str:
         source = INSTALLER.read_text(encoding="utf-8")
         verifier_marker = "read_verified_accepted_git_blob() {\n"
+        verifier_end_marker = "\n}\n\nSOURCE_SHA="
         runner_marker = "run_accepted_source_python() {\n"
+        runner_end_marker = "\n}\nGIT_NO_REPLACE_OBJECTS="
         self.assertEqual(
             source.count(verifier_marker),
             1,
@@ -36,17 +38,31 @@ class CaptureFieldAcceptedSourceGitReplaceCustodyTests(unittest.TestCase):
             1,
             "field installer must expose one accepted-source Python runner",
         )
+        self.assertEqual(
+            source.count(verifier_end_marker),
+            1,
+            "verified payload reader must have one stable authority boundary",
+        )
+        self.assertEqual(
+            source.count(runner_end_marker),
+            1,
+            "accepted Python runner must have one stable authority boundary",
+        )
 
         verifier_start = source.index(verifier_marker)
-        verifier_end = source.index("\n}\n", verifier_start) + len("\n}\n")
+        verifier_end = source.index(verifier_end_marker, verifier_start) + len("\n}\n")
         runner_start = source.index(runner_marker)
-        runner_end = source.index("\n}\n", runner_start) + len("\n}\n")
+        runner_end = source.index(runner_end_marker, runner_start) + len("\n}\n")
         self.assertLess(
             verifier_end,
             runner_start,
             "verified payload reader must be established before accepted Python execution",
         )
-        return source[verifier_start:verifier_end] + "\n" + source[runner_start:runner_end]
+        verifier = source[verifier_start:verifier_end]
+        runner = source[runner_start:runner_end]
+        self.assertIn("sys.stdout.buffer.write(source)", verifier)
+        self.assertIn('read_verified_accepted_git_blob "$relative_path" |', runner)
+        return verifier + "\n" + runner
 
     def test_field_installer_has_no_removed_mutable_guard_variable(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
