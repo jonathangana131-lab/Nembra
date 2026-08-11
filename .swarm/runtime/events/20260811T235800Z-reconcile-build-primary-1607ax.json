@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "235800-reconcile-build-primary-1607ax",
+  "type": "BLOCKED",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-build-authority",
+  "message": "Recovered stale build-primary generation 5 solely for control-plane reconciliation. The real production carrier is #3072 exact 3e41ecd07b020523ccfedc365c201db9799c3e7e, not the abandoned pre-PR branch recorded by the old claim. No safe production mutation exists while its exact Selected Xcode ACL gate is red and retained-diagnostics child #3093 exact 49e51aef has macOS run 31543820090 queued. #3088 exact 31cca94c remains a separately green Field-provenance correction ingredient to absorb only after the ACL blocker is classified; any composition moves the product head and resets exact gates. Release implementation ownership rather than leave a stale lock or create a competing branch. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T23:58:00Z"
+}
