@@ -66,6 +66,7 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'CAPTURE_PROVENANCE_SOURCE_SHA=%s\n' "$actual" >> "$GITHUB_ENV"
           printf 'Exact provenance source: %s\n' "$actual"
+
       - name: Validate private Tuya input provenance helper
         shell: bash
         run: |
