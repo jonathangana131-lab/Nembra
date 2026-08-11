@@ -22,8 +22,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if grep -Fq 'PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB=' scripts/field/install_one_time_capture.command; then
+            echo 'Exact private-device runner execution repair is already materialized.'
+            exit 0
+          fi
           /usr/bin/python3 -B scripts/ci/tmp_materialize_private_device_runner_execution.py
-          rm .github/workflows/tmp-v14-capture-private-device-runner-execution.yml scripts/ci/tmp_materialize_private_device_runner_execution.py
           bash -n scripts/field/install_one_time_capture.command
           PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-pycache" /usr/bin/python3 -m py_compile \
             scripts/ci/tests/test_capture_private_device_runner_execution_subject.py \
@@ -33,12 +36,16 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_custody.py
           git diff --check
 
-      - name: Commit clean production repair
+      - name: Commit installer product repair only
         shell: bash
         run: |
           set -euo pipefail
+          git add scripts/field/install_one_time_capture.command
+          if git diff --cached --quiet; then
+            echo 'No installer product change to publish.'
+            exit 0
+          fi
           git config user.name 'nembra-capture-bot'
           git config user.email 'nembra-capture-bot@users.noreply.github.com'
-          git add -A
           git commit -m 'fix(capture): pin private-device runner execution bytes'
           git push origin HEAD:repair/v14-capture-private-device-runner-execution-sol
