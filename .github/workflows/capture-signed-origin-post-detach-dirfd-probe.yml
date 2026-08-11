@@ -1,0 +1,121 @@
+name: Capture Signed Origin Post-Detach Directory FD Probe
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
+      - .github/workflows/capture-signed-origin-post-detach-dirfd-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-post-detach-dirfd-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  post-detach-directory-fd:
+    name: Prove directory FD loses persistent authority at detach
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact child to directory-FD parent
+        shell: bash
+        env:
+          DIRFD_PARENT: 4bc05e5075752d1a8a2e2575ea6c8910b1b6d888
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$DIRFD_PARENT" HEAD
+          actual_paths="$RUNNER_TEMP/nembra-post-detach-dirfd-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-post-detach-dirfd-expected.txt"
+          git diff --name-only "$DIRFD_PARENT"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-signed-origin-post-detach-dirfd-probe.yml
+          scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile post-detach directory-FD witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-post-detach-dirfd-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
+            scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Test fd-relative authority after successful detach
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-post-detach-dirfd.log"
+          set +e
+          sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'probe_status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Emit validation classification
+        if: always()
+        shell: bash
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/nembra-post-detach-dirfd.log"
+          classification="$RUNNER_TEMP/nembra-post-detach-dirfd-classification.json"
+          /usr/bin/python3 - "$log" "$classification" "${PROBE_STATUS:-missing}" <<'PY'
+          import json, pathlib, sys
+          log = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          status = sys.argv[3]
+          text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+          payload = {
+              "schemaVersion": 1,
+              "probeStatus": status,
+              "successEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_JSON=")],
+              "errorEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_ERROR=")],
+              "physicalAuthorityCreated": False,
+          }
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: Retain post-detach directory-FD evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-post-detach-dirfd-${{ github.event.pull_request.number || github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-post-detach-dirfd.log
+            ${{ runner.temp }}/nembra-post-detach-dirfd-classification.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          DIRFD_PARENT: 4bc05e5075752d1a8a2e2575ea6c8910b1b6d888
+        run: |
+          set -euo pipefail
+          git diff --check "$DIRFD_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
