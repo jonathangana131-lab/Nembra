@@ -22,13 +22,31 @@ class CaptureFieldAcceptedSourceGitReplaceCustodyTests(unittest.TestCase):
         )
         return completed.stdout.strip()
 
-    def _accepted_source_runner(self) -> str:
+    def _accepted_source_execution_functions(self) -> str:
         source = INSTALLER.read_text(encoding="utf-8")
-        marker = "run_accepted_source_python() {\n"
-        self.assertEqual(source.count(marker), 1, "field installer must expose one accepted-source Python runner")
-        start = source.index(marker)
-        end = source.index("\n}\n", start) + len("\n}\n")
-        return source[start:end]
+        verifier_marker = "read_verified_accepted_git_blob() {\n"
+        runner_marker = "run_accepted_source_python() {\n"
+        self.assertEqual(
+            source.count(verifier_marker),
+            1,
+            "field installer must expose one verified accepted-Git payload reader",
+        )
+        self.assertEqual(
+            source.count(runner_marker),
+            1,
+            "field installer must expose one accepted-source Python runner",
+        )
+
+        verifier_start = source.index(verifier_marker)
+        verifier_end = source.index("\n}\n", verifier_start) + len("\n}\n")
+        runner_start = source.index(runner_marker)
+        runner_end = source.index("\n}\n", runner_start) + len("\n}\n")
+        self.assertLess(
+            verifier_end,
+            runner_start,
+            "verified payload reader must be established before accepted Python execution",
+        )
+        return source[verifier_start:verifier_end] + "\n" + source[runner_start:runner_end]
 
     def test_field_installer_has_no_removed_mutable_guard_variable(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
@@ -44,7 +62,7 @@ class CaptureFieldAcceptedSourceGitReplaceCustodyTests(unittest.TestCase):
         )
 
     def test_field_runner_is_replacement_blind_for_exact_accepted_commit(self) -> None:
-        runner = self._accepted_source_runner()
+        execution_functions = self._accepted_source_execution_functions()
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self._git(root, "init", "-q")
@@ -83,9 +101,11 @@ class CaptureFieldAcceptedSourceGitReplaceCustodyTests(unittest.TestCase):
             harness.write_text(
                 "#!/bin/bash\n"
                 "set -euo pipefail\n"
+                "die() { printf '%s\\n' \"$*\" >&2; return 1; }\n"
                 f"ROOT={shlex.quote(str(root))}\n"
+                f"AUTHORITY_GIT_DIR={shlex.quote(str(root / '.git'))}\n"
                 f"SOURCE_SHA={shlex.quote(accepted_sha)}\n"
-                + runner
+                + execution_functions
                 + 'run_accepted_source_python "scripts/helper.py"\n',
                 encoding="utf-8",
             )
