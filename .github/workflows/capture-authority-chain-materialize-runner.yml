@@ -42,24 +42,28 @@ jobs:
               if normalized.count(strict) != 1:
                   raise RuntimeError('materializer replace_once definition changed unexpectedly')
               normalized = normalized.replace(strict, compatible, 1)
-              replacement_sensitive = '''    source = subprocess.check_output(
-        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
-        cwd=root,
-        stderr=subprocess.DEVNULL,
-    )'''
-              replacement_blind = '''    git_environment = {
-        "GIT_NO_REPLACE_OBJECTS": "1",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "LANG": "C",
-        "LC_ALL": "C",
-    }
-    source = subprocess.check_output(
-        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
-        cwd=root,
-        env=git_environment,
-        stderr=subprocess.DEVNULL,
-    )'''
+              replacement_sensitive = (
+                  '    source = subprocess.check_output(\n'
+                  '        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],\n'
+                  '        cwd=root,\n'
+                  '        stderr=subprocess.DEVNULL,\n'
+                  '    )'
+              )
+              replacement_blind = (
+                  '    git_environment = {\n'
+                  '        "GIT_NO_REPLACE_OBJECTS": "1",\n'
+                  '        "GIT_CONFIG_NOSYSTEM": "1",\n'
+                  '        "GIT_CONFIG_GLOBAL": "/dev/null",\n'
+                  '        "LANG": "C",\n'
+                  '        "LC_ALL": "C",\n'
+                  '    }\n'
+                  '    source = subprocess.check_output(\n'
+                  '        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],\n'
+                  '        cwd=root,\n'
+                  '        env=git_environment,\n'
+                  '        stderr=subprocess.DEVNULL,\n'
+                  '    )'
+              )
               if normalized.count(replacement_sensitive) != 1:
                   raise RuntimeError('accepted-source Git execution authority changed unexpectedly')
               normalized = normalized.replace(replacement_sensitive, replacement_blind, 1)
