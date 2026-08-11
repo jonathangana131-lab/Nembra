@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "082330-reconcile-remaining-3f7c-composed-field-ancestors",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Retired old Capture PRs #2512, #2522, and #2540 only after direct canonical-flagship source inspection proved their repaired contracts are already composed in #2612 exact 9e7c65c...: installer emits ES80-AUTHENTICATED-STATIONARY-v1 and the Field Provenance workflow watches capture_tuya_private_input_build_guard.py; terminal-horizon truth keeps last witnessed liveness at 300 after a failure callback at 400; NembraCapture-Info.plist exists and both Debug/Release bind INFOPLIST_FILE plus expanded provenance keys. These ancestors remain historical evidence, not active lanes. No new product bytes or physical authority changed; PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:23:30Z",
+  "data": {
+    "closedPRs": [2512,2522,2540],
+    "canonicalFlagshipPR": 2612,
+    "canonicalFlagshipSHA": "9e7c65cde7d33b731ea04e11cfe43a792743ed5d",
+    "verifiedContracts": [
+      "field-procedure-rendezvous",
+      "private-input-build-guard-workflow-trigger",
+      "terminal-failure-does-not-manufacture-liveness",
+      "custom-field-build-plist-stamps"
+    ],
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
