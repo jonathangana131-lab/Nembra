@@ -7,15 +7,15 @@
   "workerId": "sol-20260811-1402vo",
   "leaseId": "capture-build-review-1402vo-20260811-2117",
   "generation": 12,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:17:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:19:10Z",
+  "releasedAt": "2026-08-11T21:19:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2988,
   "sourceSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
-  "currentHeadSHA": "0f23ebe4aec1f69a9102d2d242a30d66de2e931e",
-  "takeoverFromWorkerId": "sol-20260811-1316vk",
-  "takeoverReason": "Generation-11 review explicitly released after reviewing ancestor 6b0c974. Primary has since frozen exact descendant 0f23ebe with the selected xcodebuild/xctrace/devicectl file-custody ordering repair and explicitly requires independent attack. Review only the immutable descendant; do not touch primary/test owned paths. Preserve stronger verified-Git payload boundary and PHYSICAL NO-GO.",
-  "intent": "Attack exact #2988 0f23ebe selected-Xcode executable-file custody: ownership/mode/symlink ancestry, pre-execution ordering, stale-path replacement, xcrun/tool identity, and exact-head CI status. Do not accept ancestor greens."
+  "currentHeadSHA": "6b0c974d432205593f2d1157de06544a01145489",
+  "outcome": "NO_DUPLICATE_REVIEW_LIVE_HEAD_ALREADY_REVIEWED",
+  "releaseReason": "Fresh GitHub reconciliation showed the primary claim's 0f23ebe checkpoint was stale: the actual #2988 branch/PR head is 6b0c974, whose parent is 0f23ebe. Generation-11 review 4910725425 already independently reviewed exact 6b0c974 and found production stronger than the stale Field source contract; tests generation-7 actively owns that workflow-only repair. Do not duplicate an ancestor review or touch the test-owned workflow. PHYSICAL NO-GO."
 }
