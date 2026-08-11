@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[3]
 PRIVATE = ROOT / "scripts/ci/es80_authenticated_stationary_private_review_final_go.py"
 GIT = "/usr/bin/git"
 TARGET = "Scripts/bootstrap_capture_tuya_sdk.sh"
+DIRECT_PARENT_SOURCE = "471cc025b332f4df8b43a98d709710aeb4e0698f"
+DIRECT_PARENT_BLOB = "48ce4bd8f933ae062eaaadd0d017d13c781a8c02"
 SPEC = importlib.util.spec_from_file_location("nembra_final_go_object_chain", PRIVATE)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("could not load current Final-GO candidate authority")
@@ -127,8 +129,17 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
             self.assertNotEqual(verify.returncode, 0)
 
     def test_tree_authority_never_delegates_to_ls_tree(self):
-        source = PRIVATE.read_text(encoding="utf-8")
-        body = source.split("def _tree_entries", 1)[1].split("def _stable_stat", 1)[0]
+        # The current production subject is an exact-parent composition: it intentionally
+        # does not copy #2921's verified object walker. Validate the immutable parent capture
+        # first, then inspect the exact bytes that actually implement `_tree_entries`.
+        current_source = PRIVATE.read_text(encoding="utf-8")
+        self.assertIn("DIRECT_PARENT_SOURCE", current_source)
+        self.assertEqual(MODULE.DIRECT_PARENT_SOURCE, DIRECT_PARENT_SOURCE)
+        self.assertEqual(MODULE.DIRECT_PARENT_MODULE_GIT_BLOB, DIRECT_PARENT_BLOB)
+        parent_payload = MODULE._capture_direct_parent_blob(ROOT)
+        self.assertEqual(MODULE._canonical_git_blob_oid(parent_payload, DIRECT_PARENT_BLOB), DIRECT_PARENT_BLOB)
+        parent_source = parent_payload.decode("utf-8")
+        body = parent_source.split("def _tree_entries", 1)[1].split("def _stable_stat", 1)[0]
         self.assertNotIn('"ls-tree"', body)
         self.assertIn('_verified_object_bytes(root, "commit", source', body)
         self.assertIn('_verified_object_bytes(', body)
