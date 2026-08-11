@@ -9,17 +9,17 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:59:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:59:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:07:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-capture-runtime-voiceover-testcount-sol-gpt56-20260811",
-  "pr": null,
+  "pr": 3007,
   "sourceSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
-  "currentHeadSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
+  "currentHeadSHA": "1966f231e0113ef0ffdd2f409d3762b0a0878449",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
   "takeoverReason": "Generation-4 flagship tests slot was explicitly RELEASED. Recover a non-conflicting test-only runtime-accessibility acceptance rung while #2973 exact runtime evidence is active: make the workflow mechanically prove testsCount > 0 before green, without changing accepted Capture product bytes or touching the occupied #2979 product paths.",
   "ownedPaths": [
     ".github/workflows/capture-runtime-voiceover.yml"
   ],
-  "checkpoint": "Claimed exact #2973 head 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9 for a stacked test-only fail-closed xcresult test-count gate. Existing #2973 run 31533392572 remains untouched/in progress. PHYSICAL NO-GO.",
-  "acceptance": "Success requires the targeted CaptureRuntimeVoiceOverUITests test to execute at least once on the exact child head, with the retained xcresult proving nonzero test count; no green may be accepted from build-only or zero-test execution. Product/UI/physical authority remains unchanged."
+  "checkpoint": "Draft #3007 exact 1966f231e0113ef0ffdd2f409d3762b0a0878449 is a one-file child of #2973 exact 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9. It adds a fail-closed structured xcresult extraction gate requiring the exact runtime VoiceOver test identifier, retains CaptureRuntimeVoiceOver.tests.json, and binds its SHA-256 into the simulator-only evidence manifest. No product/UI bytes changed. Parent #2973 run 31533392572 remains independent. PHYSICAL NO-GO.",
+  "acceptance": "Require fresh exact-head Capture Runtime VoiceOver on unchanged 1966f231e0113ef0ffdd2f409d3762b0a0878449. The existing accessibility audit and real VoiceOver traversal must pass, then the new xcresult proof step must find the targeted test identifier and retain the extracted structured test result alongside the xcresult. Any head move resets evidence. Product/UI/physical authority remains unchanged."
 }
