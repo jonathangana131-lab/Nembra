@@ -8,8 +8,9 @@ struct TuyaFieldPythonIsolationSourceTests {
     func privateInputProvenanceUsesIsolatedSystemPython() throws {
         let bootstrap = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        #expect(bootstrap.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
+        #expect(bootstrap.contains("/usr/bin/python3 -I -c \"$PROVENANCE_SOURCE\" snapshot"))
         #expect(installer.contains("/usr/bin/python3 -I \"$TUYA_PROVENANCE_HELPER\" verify"))
+        #expect(!bootstrap.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
         #expect(!bootstrap.contains("/usr/bin/python3 \"$PROVENANCE_HELPER\" snapshot"))
         #expect(!installer.contains("/usr/bin/python3 \"$TUYA_PROVENANCE_HELPER\" verify"))
     }
