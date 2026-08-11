@@ -7,13 +7,15 @@
   "workerId": "sol-20260811-1311qy",
   "leaseId": "capture-flagship-review-1311qy-20260811-2028",
   "generation": 10,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:28:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:28:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:34:30Z",
+  "releasedAt": "2026-08-11T20:34:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2975,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "27466f22c5a57a58c05c13e86bab6a300b87fee9",
-  "reviewTarget": "Exact runtime run 31532271720 is now terminal FAILURE after source review passed. Recover retained artifact/xcresult and classify whether the active-arch repair reached VoiceOver XCTest, whether failure is harness versus product/accessibility, and whether the fail-closed 64-step oracle itself needs evidence-driven adjustment. Do not weaken witness from generic exit 65. PHYSICAL NO-GO."
+  "outcome": "HARNESS_API_COMPILE_RED_TESTSCOUNT_ZERO",
+  "releaseReason": "Retained artifact 9117537246/xcresult mechanically proves testsCount=0. #2975 fixed prior mixed architecture, but injected iOS UI test fails to compile because XCUIAccessibilityAuditType.parentChild and .action are unavailable for this iOS target. Apple platform audit documentation classifies Parent/child and Action as macOS audit types; Contrast is all-platform and is currently omitted. Published review 4910516735 requiring test-only platform-correct audit set, preserving strict VoiceOver witness, and fresh exact-head testsCount>0 runtime evidence. No product accessibility result was produced. PHYSICAL NO-GO."
 }
