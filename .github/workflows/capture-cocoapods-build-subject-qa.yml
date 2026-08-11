@@ -10,6 +10,7 @@ on:
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
       - scripts/ci/tests/test_capture_cocoapods_guard_accepted_subject.py
       - scripts/ci/tests/test_capture_cocoapods_converged_subject.py
+      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
       - .github/workflows/capture-cocoapods-build-subject-qa.yml
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
       - scripts/ci/tests/test_capture_cocoapods_guard_accepted_subject.py
       - scripts/ci/tests/test_capture_cocoapods_converged_subject.py
+      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
       - .github/workflows/capture-cocoapods-build-subject-qa.yml
   workflow_dispatch:
 
@@ -57,7 +59,8 @@ jobs:
             Scripts/capture_tuya_private_input_build_guard.py \
             scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py \
             scripts/ci/tests/test_capture_cocoapods_guard_accepted_subject.py \
-            scripts/ci/tests/test_capture_cocoapods_converged_subject.py
+            scripts/ci/tests/test_capture_cocoapods_converged_subject.py \
+            scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
           /usr/bin/python3 -I Scripts/capture_cocoapods_build_subject.py --self-test
 
       - name: Prove lock-preserving generated substitution fails closed
@@ -77,3 +80,9 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_converged_subject.py
+
+      - name: Prove vnode attribute authority stays under live custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
