@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "063600-review-result-rv2804-approve",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-rv2804",
+  "laneId": "swarm-control-plane-foundation",
+  "message": "Independent exact-head review of PR #2804 at 9851a9de62cfc3a0be1fcb5014063bc52a2f84db: APPROVE. The three prior blockers are fixed with targeted regressions, all review threads are resolved, changed files remain within declared scope, and exact-head Swarm Control Plane Shadow is green. Xcode 27 exact-head QA remains a separate integration merge gate and is not waived by this review.",
+  "createdAt": "2026-08-11T06:36:00Z",
+  "data": {
+    "pr": 2804,
+    "headSHA": "9851a9de62cfc3a0be1fcb5014063bc52a2f84db",
+    "result": "APPROVE",
+    "shadowRun": 31465265676,
+    "xcodeRun": 31465265686,
+    "xcodeStateAtReview": "IN_PROGRESS"
+  }
+}
