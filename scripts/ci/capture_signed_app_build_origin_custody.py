@@ -95,7 +95,7 @@ def _structured_credentials(
     gid: int,
     extra_groups: Sequence[int],
 ) -> dict[str, object]:
-    """Describe one minimum-authority POSIX child identity without Python pre-exec code."""
+    """Describe one explicit POSIX child identity without Python pre-exec code."""
 
     if uid <= 0 or gid < 0:
         raise BuildOriginCustodyError("structured child credentials require a non-root invoking identity")
@@ -120,11 +120,15 @@ def _structured_credentials(
 def _invalidate_invoker_sudo(
     uid: int,
     gid: int,
+    groups: Sequence[int],
     environment: dict[str, str],
 ) -> None:
-    """Revoke caller-side cached sudo before any protected build output exists."""
+    """Revoke caller-side cached sudo under the caller's real group authority."""
 
-    credentials = _structured_credentials(uid, gid, ())
+    # This probe must model the actual invoking account, including ambient supplementary groups.
+    # Minimizing this subprocess would under-model policies such as admin-group sudo and could
+    # falsely report that the real caller lost noninteractive privilege when it did not.
+    credentials = _structured_credentials(uid, gid, groups)
     revoke = subprocess.run(
         ["/usr/bin/sudo", "-K"],
         env=environment,
@@ -310,7 +314,7 @@ def run_custodied_build(
     # The outer sudo invocation is needed only to establish this supervisor. Revoke its caller-side
     # cached authority before creating the protected output root. A passwordless/noninteractive sudo
     # policy is deliberately rejected because it defeats the intended same-UID isolation boundary.
-    _invalidate_invoker_sudo(uid, gid, child_env)
+    _invalidate_invoker_sudo(uid, gid, invoking_groups, child_env)
 
     capability_gid = _choose_capability_gid(invoking_groups)
     derived_root: Path | None = None
