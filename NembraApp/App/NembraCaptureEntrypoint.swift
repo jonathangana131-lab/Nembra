@@ -3102,7 +3102,8 @@ private struct SecureLinkView: View {
             }
 
             HStack(alignment: .center, spacing: 16) {
-                ZStack {
+                if !dynamicTypeSize.isAccessibilitySize {
+                    ZStack {
                     Circle()
                         .fill(heroAccent.opacity(0.14))
                         .frame(width: 64, height: 64)
@@ -3114,6 +3115,7 @@ private struct SecureLinkView: View {
                         .foregroundStyle(heroAccent)
                 }
                 .accessibilityHidden(true)
+                }
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(phaseKicker)
@@ -3121,7 +3123,7 @@ private struct SecureLinkView: View {
                         .tracking(1.2)
                         .foregroundStyle(heroAccent)
                     Text(phaseTitle)
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                        .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .system(.largeTitle, design: .rounded, weight: .bold))
                         .fixedSize(horizontal: false, vertical: true)
                     Text(phaseSubtitle)
                         .font(.body)
@@ -3131,6 +3133,7 @@ private struct SecureLinkView: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     @ViewBuilder
