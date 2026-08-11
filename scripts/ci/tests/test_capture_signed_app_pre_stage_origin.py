@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
@@ -120,6 +121,8 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
 
         self.assertIn("os.chown(derived, 0, capability_gid)", source)
         self.assertIn("os.chmod(derived, 0o770)", source)
+        self.assertIn("if gid <= 0:", source)
+        self.assertIn("if any(value <= 0 for value in groups):", source)
         self.assertIn("credentials = _structured_credentials(uid, gid, groups)", source)
         self.assertIn("child_groups = (capability_gid,)", source)
         self.assertIn("**_structured_credentials(uid, gid, child_groups)", source)
@@ -190,7 +193,23 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._structured_credentials(501, 20, (0,))
         with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._structured_credentials(501, 0, ())
+        with self.assertRaises(helper.BuildOriginCustodyError):
             helper._structured_credentials(0, 20, ())
+
+    def test_invoking_identity_rejects_root_primary_group(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_root_gid")
+        environment = {
+            "SUDO_UID": "501",
+            "SUDO_GID": "0",
+            "SUDO_USER": "field",
+        }
+        with (
+            mock.patch.object(helper.os, "geteuid", return_value=0),
+            mock.patch.dict(helper.os.environ, environment, clear=False),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._invoking_identity()
 
     def test_post_handoff_replacement_cannot_change_promoted_stage_model(self) -> None:
         install = load(INSTALL_HELPER, "capture_signed_app_install_custody_for_origin")
