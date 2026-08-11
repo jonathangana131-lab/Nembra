@@ -1,0 +1,55 @@
+name: Temporary Capture Root Truth Accessibility Follow-up
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-root-truth-a11y-followup-sol
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded root truth/accessibility repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='7a8ab06bdd8e60ea4714c330c8e93afa197da360'
+          git merge-base --is-ancestor "$base" HEAD
+          python3 scripts/ci/tmp_v14_capture_root_truth_a11y_followup_sol.py
+          git diff --check
+
+          root='NembraApp/App/NembraCaptureEntrypoint.swift'
+          grep -Fq 'private let buildIdentity = NembraCaptureBuildIdentity.current' "$root"
+          grep -Fq 'private var isAuthoritativeFieldBuild: Bool { buildIdentity.isAuthoritativeFieldBuild }' "$root"
+          grep -Fq 'Physical capture locked' "$root"
+          grep -Fq 'This public build can prepare account metadata. It cannot scan or collect physical scooter evidence.' "$root"
+          grep -Fq 'Nembra does not begin passive Bluetooth correlation until account and device checks are complete.' "$root"
+          grep -Fq 'passive scooter correlation has not begun.' "$root"
+          grep -Fq '.accessibilityAddTraits(.isHeader)' "$root"
+          grep -Fq 'if isAuthoritativeFieldBuild {' "$root"
+          grep -Fq 'NavigationLink("Continue to Capture")' "$root"
+          grep -Fq 'NavigationLink("View locked preflight")' "$root"
+          if sed -n '/private struct CaptureP0Root: View/,/private final class SecureLinkController/p' "$root" | grep -Eq 'writeValue|publishDps|queryDps|SIMCTL_CHILD_|NEMBRA_SIMULATION_|\.dynamicTypeSize\('; then
+            echo 'Root authority/accessibility invariant failed.' >&2
+            exit 1
+          fi
+
+          git rm .github/workflows/tmp-v14-capture-root-truth-a11y-followup-sol.yml
+          git rm scripts/ci/tmp_v14_capture_root_truth_a11y_followup_sol.py
+          changed="$(git diff --name-only "$base" | sort)"
+          expected=$'NembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootFieldBuildAuthoritySourceTests.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductVisualAccessibilitySourceTests.swift'
+          test "$changed" = "$expected"
+
+          git config user.name 'nembra-v14-truth-a11y-sol'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$root" Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductVisualAccessibilitySourceTests.swift
+          git commit -m 'fix(capture): fail closed at root field authority'
+          git push origin HEAD:${GITHUB_REF_NAME}
