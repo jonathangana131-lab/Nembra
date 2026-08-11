@@ -1,0 +1,87 @@
+name: TMP Capture First-Fold VoiceOver Repair
+
+on:
+  push:
+    branches:
+      - polish/v14-capture-root-first-fold-sol-1311jx-20260811
+    paths:
+      - .github/workflows/tmp-v14-capture-first-fold-voiceover-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          ref: polish/v14-capture-root-first-fold-sol-1311jx-20260811
+
+      - name: Bind materializer parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "1f76369a78e0d24112b3e08fe7c16c6a1007368b"
+
+      - name: Restore explicit spoken physical authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = source_path.read_text(encoding="utf-8")
+          authority = "Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified."
+          old = f'''                Text("{authority}")
+                      .font(.body)
+                      .foregroundStyle(Color.white.opacity(0.78))
+                      .fixedSize(horizontal: false, vertical: true)
+          '''
+          new = old + f'''                    .accessibilityLabel(Text(verbatim: "{authority}"))
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one root hero authority block, found {source.count(old)}")
+          source_path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          strings_path = Path("NembraApp/Resources/Localizable.strings")
+          strings = strings_path.read_text(encoding="utf-8")
+          old_comment = "Accessibility semantics remain owned by the explicit accessibility labels/values/hints in\n NembraCaptureEntrypoint.swift; this resource does not mint physical authority."
+          new_comment = "The compact hero keeps its complete physical-lock warning in an explicit verbatim\n accessibility label. This resource changes sighted copy only and mints no authority."
+          if strings.count(old_comment) != 1:
+              raise SystemExit("expected the first-fold resource authority comment exactly once")
+          strings_path.write_text(strings.replace(old_comment, new_comment, 1), encoding="utf-8")
+          PY
+
+      - name: Verify spoken-authority contract shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text(encoding="utf-8")
+          marker = '.accessibilityLabel(Text(verbatim: "Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified."))'
+          if app.count(marker) != 1:
+              raise SystemExit("explicit verbatim authority label not materialized exactly once")
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFirstFoldVoiceOverSourceTests.swift").read_text(encoding="utf-8")
+          for token in ("bluetooth", "physical evidence", "lock", "build", "scooter", "authority"):
+              if f'normalized.contains("{token}")' not in test:
+                  raise SystemExit(f"missing retained source-contract token: {token}")
+          PY
+          git diff --check
+
+      - name: Publish clean successor
+        shell: bash
+        env:
+          BRANCH: polish/v14-capture-root-first-fold-sol-1311jx-20260811
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-capture-first-fold-voiceover-repair.yml
+          git diff --check
+          git config user.name "nembra-swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift NembraApp/Resources/Localizable.strings .github/workflows/tmp-v14-capture-first-fold-voiceover-repair.yml
+          git commit -m "Capture: preserve spoken authority after copy compaction"
+          git push origin "HEAD:${BRANCH}"
