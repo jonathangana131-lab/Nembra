@@ -7,14 +7,17 @@
   "workerId": "sol-20260811-4c47a9",
   "leaseId": "capture-private-identity-primary-4c47a9-20260811-1202",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T12:02:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:42:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:47:30Z",
+  "releasedAt": "2026-08-11T12:47:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-private-identity-recovery-neutralization-sol-4c47a9-20260811",
   "pr": 2943,
   "sourceSHA": "3f662b7a3f3da667ce3f916ee3f0a65629269c8a",
   "currentHeadSHA": "c3cfdda7519024029da3dd36e95de2697362deb3",
   "takeoverFromWorkerId": "sol-20260811-a7e4",
-  "takeoverReason": "Generation-1 primary lease expired after 2026-08-11T09:56:30Z. Live selected convergence #2899 is exact 3f662b7a and independent review produced machine-demonstrated expected-red #2918 for the crash-residue check-to-unlink name race. Recover current production from #2899 and replace raceable pathname deletion with exact-descriptor credential neutralization while preserving fail-closed namespace authority. Crash staging now remains inside held LocalSecrets custody so #2924 raw-tree admission stays closed without allowing root tombstones. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-1 primary lease expired after 2026-08-11T09:56:30Z. Live selected convergence #2899 is exact 3f662b7a and independent review produced machine-demonstrated expected-red #2918 for the crash-residue check-to-unlink name race.",
+  "outcome": "SUPERSEDED_BY_STRONGER_CONVERGENCE",
+  "releaseReason": "#2943 closed without merge after fresh comparison selected #2944@1834a39ac44e09cf12426cf28cb95ed3c008e9a2 as the stronger exact-held-inode cleanup lineage. #2961 now supplies the next canonical expected-red downstream-bootstrap admission blocker. Holding this lease would duplicate actively owned convergence/tests work. PHYSICAL NO-GO."
 }
