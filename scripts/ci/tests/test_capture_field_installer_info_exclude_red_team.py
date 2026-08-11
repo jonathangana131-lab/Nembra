@@ -26,7 +26,9 @@ def run_git(root: Path, *args: str, env: dict[str, str] | None = None) -> str:
 class CaptureFieldInstallerInfoExcludeRedTeamTests(unittest.TestCase):
     def test_info_exclude_hides_untracked_swift_from_fresh_index_status(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-info-exclude-") as temporary:
-            root = Path(temporary)
+            fixture = Path(temporary)
+            root = fixture / "repo"
+            root.mkdir()
             run_git(root, "init", "-q")
             run_git(root, "config", "user.name", "Nembra Red Team")
             run_git(root, "config", "user.email", "redteam@example.invalid")
@@ -45,7 +47,7 @@ class CaptureFieldInstallerInfoExcludeRedTeamTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            authority_index = root / "authority.index"
+            authority_index = fixture / "authority.index"
             env = {
                 "HOME": "/tmp",
                 "PATH": "/usr/bin:/bin",
