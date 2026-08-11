@@ -28,6 +28,68 @@ struct NavigationVisualSurfaceSourceTests {
         #expect(!source.contains("batteryPercent *"))
     }
 
+    @Test("Accessibility Dynamic Type has dedicated launch and map geometry")
+    func accessibilityDynamicTypeRecomposesNavigationGeometry() throws {
+        let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
+        let host = slice(
+            source,
+            after: "private struct NembraNavigationHost<Content: View>: View {",
+            before: "private struct NembraRecentDestination"
+        )
+        let map = slice(
+            source,
+            after: "private var destinationMap: some View {",
+            before: "@ViewBuilder\n    private var searchSurface"
+        )
+
+        // Merely reading Dynamic Type is not enough. Accessibility sizes must
+        // switch the icon-only launcher to labeled geometry while preserving a
+        // large touch target, and the map must deliberately recompose vertically.
+        #expect(host.contains("if dynamicTypeSize.isAccessibilitySize"))
+        #expect(host.contains("Label(\"Navigation\", systemImage: \"location.north.circle.fill\")"))
+        #expect(host.contains(".frame(minWidth: 54, minHeight: 54)"))
+        #expect(map.contains(".frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 220 : 280)"))
+    }
+
+    @Test("Reduce Transparency removes Material from both Navigation overlays")
+    func reduceTransparencyIsBoundToEachMaterialSurface() throws {
+        let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
+        let host = slice(
+            source,
+            after: "private struct NembraNavigationHost<Content: View>: View {",
+            before: "private struct NembraRecentDestination"
+        )
+        let map = slice(
+            source,
+            after: "private var destinationMap: some View {",
+            before: "@ViewBuilder\n    private var searchSurface"
+        )
+
+        // Keep the two contracts scoped independently so a future unrelated
+        // secondarySystemBackground elsewhere cannot satisfy this test by count.
+        #expect(host.contains("if reduceTransparency"))
+        #expect(host.contains("Color(uiColor: .secondarySystemBackground)"))
+        #expect(host.contains("Rectangle().fill(.regularMaterial)"))
+        #expect(map.contains("if reduceTransparency"))
+        #expect(map.contains(".fill(Color(uiColor: .secondarySystemBackground))"))
+        #expect(map.contains(".fill(.regularMaterial)"))
+    }
+
+    @Test("Reduce Motion gates Navigation presentation animation")
+    func reduceMotionRemovesForcedNavigationAnimation() throws {
+        let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
+        let host = slice(
+            source,
+            after: "private struct NembraNavigationHost<Content: View>: View {",
+            before: "private struct NembraRecentDestination"
+        )
+
+        // The setting must gate the actual presentation animation. Merely reading
+        // accessibilityReduceMotion elsewhere is not an acceptance contract.
+        #expect(host.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"))
+        #expect(host.contains("withAnimation(reduceMotion ? nil : .snappy(duration: 0.28))"))
+    }
+
     @Test("Changing a query clears stale provider results before debounce")
     func queryChangeCannotPresentPreviousMapKitResults() throws {
         let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
@@ -44,6 +106,11 @@ struct NavigationVisualSurfaceSourceTests {
         #expect(beforeDebounce.components(separatedBy: "results = []").count >= 3)
         #expect(beforeDebounce.contains("searchError = nil"))
         #expect(beforeDebounce.contains("isSearching = true"))
+    }
+
+    private func slice(_ source: String, after start: String, before end: String) -> String {
+        let tail = source.components(separatedBy: start).dropFirst().first ?? ""
+        return tail.components(separatedBy: end).first ?? ""
     }
 
     private var nembraAppURL: URL {
