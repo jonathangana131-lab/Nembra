@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "075740-evidence-result-dash4e",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-dash4e",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Fresh Go stop-proof at main d8e38d0a786d4fd97e7eb641d97c6cec76adee0c: Capture remains P0 / PHYSICAL_NO_GO. capture-package-test-runner-recovery was corrected to authorized TuyaCapturePrimaryLanguageSourceTests.swift + XCODE_BUILD and is actively owned by generation-2 primary sol-20260811-a52d and independent review sol-20260811-e4b7. capture-build-authority, capture-final-go-authority, capture-private-identity-custody, capture-signed-install-custody, and capture-flagship-composition remain policy/external-blocked by live legacy lineages, so duplicate product edits are unsafe. P1/P2 overflow reconciliation is also actively owned: controls-ui by sol-20260811-ui0052 and battery-range by sol-20260811-f3a8; capture and CI/Xcode reconciliation shards are actively owned as well. This worker atomically lost both controls-ui and battery-range claim races and created no competing product branch. Dashboard PR #1995 exact head c5cb2e16374108a070cb292fddeaa39e7cfd82f7 has completed Xcode run 31463695136 FAILURE, but its reconciliation family is currently owned. No safe unowned claimable objective remained at this refresh; remaining useful work was owned or blocked rather than green-complete.",
+  "createdAt": "2026-08-11T07:57:40Z"
+}
