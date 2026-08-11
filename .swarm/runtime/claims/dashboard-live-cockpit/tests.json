@@ -9,9 +9,9 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T08:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T08:11:00Z",
+  "lastHeartbeatAt": "2026-08-11T08:15:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v15-dashboard-energyrail-authority-regression-sol-5d7e",
-  "pr": null,
+  "pr": 2827,
   "sourceSHA": "182dd4b97a121c13fc9c99d3b5c078b6267d3652"
 }
