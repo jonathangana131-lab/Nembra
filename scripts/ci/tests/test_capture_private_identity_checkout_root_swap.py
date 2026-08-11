@@ -105,6 +105,10 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
     def test_dependency_resolution_adapter_uses_canonical_private_api(self) -> None:
         source = DEPENDENCY_ADAPTER.read_text(encoding="utf-8")
         self.assertIn("return guard.run_guarded_build(inputs, command)", source)
+        self.assertIn("def _lexical_absolute(path: Path) -> Path:", source)
+        self.assertIn("def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Path:", source)
+        self.assertNotIn("guard._lexical_absolute", source)
+        self.assertNotIn("guard._require_real_checkout_ancestry", source)
         self.assertNotIn("require_accepted_generated_subject", source)
         self.assertNotIn("require_accepted_private_review_commitment", source)
         self.assertNotIn("require_accepted_authority_helpers", source)
