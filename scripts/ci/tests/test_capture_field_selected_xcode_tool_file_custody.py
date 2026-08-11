@@ -30,7 +30,7 @@ class CaptureFieldSelectedXcodeToolFileCustodyTests(unittest.TestCase):
         assert assignment is not None
         return assignment.group("name"), assignment.start()
 
-    def _assert_exact_file_custody_after(self, variable: str, start: int) -> None:
+    def _assert_exact_file_custody_after(self, variable: str, start: int) -> int:
         custody = re.search(
             rf'(?m)^(?P<helper>[A-Za-z_][A-Za-z0-9_]*)\s+"?\${variable}"?\s+(?:file|regular_file)\b',
             self.source[start:],
@@ -52,11 +52,38 @@ class CaptureFieldSelectedXcodeToolFileCustodyTests(unittest.TestCase):
             (r'(?i)(lstat|fstat|stat\()', "filesystem metadata proof"),
         ):
             self.assertRegex(body, re.compile(pattern), f"selected tool-file custody is missing {label}")
+        return start + custody.start()
+
+    def _assert_custody_precedes_first_execution(self, tool: str, execution_token: str) -> None:
+        variable, assignment = self._selected_assignment(tool)
+        custody = self._assert_exact_file_custody_after(variable, assignment)
+        execution = self.source.find(execution_token, assignment)
+        self.assertNotEqual(execution, -1, f"{variable} exact executable use is missing: {execution_token}")
+        self.assertLess(assignment, custody, f"{variable} custody must follow exact selected-tool resolution")
+        self.assertLess(
+            custody,
+            execution,
+            f"{variable} must pass exact file custody before its first executable use",
+        )
 
     def test_all_selected_xcode_tools_receive_exact_file_custody(self) -> None:
         for tool in ("xcodebuild", "xctrace", "devicectl"):
             variable, start = self._selected_assignment(tool)
             self._assert_exact_file_custody_after(variable, start)
+
+    def test_exact_file_custody_precedes_first_executable_use(self) -> None:
+        self._assert_custody_precedes_first_execution(
+            "xcodebuild",
+            '"$SELECTED_XCODEBUILD" -version',
+        )
+        self._assert_custody_precedes_first_execution(
+            "xctrace",
+            '"$SELECTED_XCTRACE" list devices',
+        )
+        self._assert_custody_precedes_first_execution(
+            "devicectl",
+            '"$SELECTED_DEVICECTL" list devices',
+        )
 
     def test_physical_xctrace_and_devicectl_use_custodied_exact_subjects(self) -> None:
         xctrace, _ = self._selected_assignment("xctrace")
