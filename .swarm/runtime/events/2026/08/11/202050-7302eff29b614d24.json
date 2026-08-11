@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "202050-7302eff29b614d24",
+  "type": "FINDING",
+  "workerId": "sol-20260811-1315r8",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Capture runtime VoiceOver exact-head classification for PR #2970 at 18707868a3251744ac7eca203396a63a37f5af60: run 31496239815 reached the real iPhone 12/iOS 27 job but failed before any UI test executed. The sealed xcresult reports testsCount=0, buildResult=failed, Swift Compiler Error 'Unable to resolve module dependency: NembraCore', plus an incompatible arm64 iOS Simulator NembraCore.swiftmodule warning. This is HARNESS/BUILD RED, not product accessibility red. Preserve the committed VoiceOver/accessibility assertions; repair build/test module isolation and rerun exact head. PHYSICAL NO-GO unchanged.",
+  "createdAt": "2026-08-11T20:20:50Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "pullRequest": 2970,
+    "headSHA": "18707868a3251744ac7eca203396a63a37f5af60",
+    "workflowRunId": 31496239815,
+    "jobId": 93794556690,
+    "artifactId": 9103295470,
+    "testsCount": 0,
+    "classification": "HARNESS_BUILD_RED_NOT_PRODUCT_AX_RED",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
