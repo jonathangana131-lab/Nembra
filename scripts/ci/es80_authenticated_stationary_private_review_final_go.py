@@ -127,9 +127,6 @@ def _load_predecessor() -> types.ModuleType:
 
 _previous = _load_predecessor()
 
-# Preserve the #3042/#2921 compatibility surface so existing exact authority
-# regressions continue to exercise the accepted implementation rather than a
-# rewritten approximation.
 _direct_parent = _previous._direct_parent
 _parent = _previous._parent
 generated = _previous.generated
@@ -216,7 +213,7 @@ def _require_sealed_final_go_record(record: Any) -> dict[str, Any]:
 
 
 class _CandidateRetirementBoundary:
-    """One-way in-process authority switch held through predecessor teardown."""
+    """One-way Git/blob dispatch fence held through every inherited restore."""
 
     def __init__(self, base: Any) -> None:
         self.base = base
@@ -225,8 +222,23 @@ class _CandidateRetirementBoundary:
         self.token: contextvars.Token[bool] | None = None
         self.retired = False
 
+        def dispatch_git(*args: Any, **kwargs: Any) -> str:
+            if _CANDIDATE_RETIRED.get():
+                raise _retired_candidate_error()
+            return self.original_git(*args, **kwargs)
+
+        def dispatch_git_bytes(*args: Any, **kwargs: Any) -> bytes:
+            if _CANDIDATE_RETIRED.get():
+                raise _retired_candidate_error()
+            return self.original_git_bytes(*args, **kwargs)
+
+        self.dispatch_git = dispatch_git
+        self.dispatch_git_bytes = dispatch_git_bytes
+
     def __enter__(self) -> "_CandidateRetirementBoundary":
         self.token = _CANDIDATE_RETIRED.set(False)
+        self.base.git = self.dispatch_git
+        self.base.git_bytes = self.dispatch_git_bytes
         return self
 
     def retire(self, record: Any) -> dict[str, Any]:
@@ -235,19 +247,8 @@ class _CandidateRetirementBoundary:
         accepted = _require_sealed_final_go_record(record)
         self.retired = True
         _CANDIDATE_RETIRED.set(True)
-
-        def retired_git(*_args: Any, **_kwargs: Any) -> str:
-            raise _retired_candidate_error()
-
-        def retired_git_bytes(*_args: Any, **_kwargs: Any) -> bytes:
-            raise _retired_candidate_error()
-
-        # #3042's inner candidate context still owns its normal finally/restore.
-        # Replacing the dispatch functions here makes any accidental candidate
-        # reopen during that teardown fail closed. The outer boundary restores
-        # the caller's originals only after inner custody has fully exited.
-        self.base.git = retired_git
-        self.base.git_bytes = retired_git_bytes
+        self.base.git = self.dispatch_git
+        self.base.git_bytes = self.dispatch_git_bytes
         return accepted
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
@@ -265,14 +266,7 @@ def build(
     base_module: Any | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Complete every candidate consumer, then retire the checkout before release.
-
-    #3057 exact validation proved that the accepted semantic stack performs the
-    private installer, retained signed-artifact inspection/reinspection, and all
-    candidate postchecks before `_SEMANTIC_BUILD` returns; later publication takes
-    only the completed record/control outputs. Therefore the mutable checkout is
-    no longer an authority input once `retirement.retire(record)` succeeds.
-    """
+    """Complete every candidate consumer, then retire the checkout before release."""
     base = base_module or generated._load_base_module()
     source = base.canon(source, "source")
     candidate_repo = candidate_repo.expanduser().resolve(strict=True)
