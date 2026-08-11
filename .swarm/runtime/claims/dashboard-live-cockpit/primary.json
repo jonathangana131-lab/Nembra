@@ -9,12 +9,12 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:23:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:43:30Z",
+  "lastHeartbeatAt": "2026-08-11T20:49:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-energyrail-sol-c84e",
   "pr": 2991,
   "sourceSHA": "c150a8287463231ee9af174c38564738bab576a3",
-  "currentHeadSHA": "b15524162be97ef303502689bafce11230be273f",
+  "currentHeadSHA": "e6a813c9941da5b70c26bd980dbaa0ce34ae3604",
   "takeoverFromWorkerId": "sol-20260811-hl6k",
   "takeoverReason": "Generation-2 lease expired many hours ago. Exact c150 AX5 evidence exposed status truncation and later independent visual review exposed Energy Rail/currentness-label intersection. Continue the same Dashboard accessibility closure through stacked exact-head successors; preserve telemetry truth and Simulator-only authority.",
   "ownedPaths": [
@@ -23,6 +23,6 @@
     "NembraUITests/NembraUITests.swift",
     "scripts/ci/xcode27_simulator_capture.sh"
   ],
-  "checkpoint": "Final stacked #2991 remains frozen at exact b15524162be97ef303502689bafce11230be273f. Fresh exact resolver run 31533749248 succeeded for b155241 but build job 93919838068 was cancelled before steps while shared Xcode capacity was occupied; no product acceptance earned. Ancestor #2981 exact c200 run 31533023076 remains in real Simulator build/capture and is ingredient-only because c200 still lacks the separately-proven rail fix. Parallel sustained-performance #2980 exact f265dd29 run 31532974506 succeeded and retained artifact 9118077730, but independent evidence review 4910580646 found the xcresult records CPU/memory only and no Hitch metric despite requestedMetrics listing XCTHitchMetric; treat as partial performance ingredient, never frame-pacing acceptance. Capture P0 remains actively owned on ce9e2bac; Dashboard overflow remains safe.",
-  "acceptance": "Final exact b155241 (or a reviewed descendant) must keep speed/Energy Rail semantic truth, show untruncated vehicle/connection status at AX5, separate power currentness text from the rail, prove riding + connected-stopped under real system AX content size, keep stopped controls >=44 pt and fully inside the app window, avoid reintroduced vertical clipping, and earn exact-head Xcode/screenshots plus independent review. Sustained performance separately still lacks a recorded hitch/frame-pacing metric. ES80 physical NO-GO."
+  "checkpoint": "Final stacked #2991 is frozen at exact e6a813c9941da5b70c26bd980dbaa0ce34ae3604. It inherits #2981 AX status reflow + real AX stopped-state rerun, adds AX Energy Rail separation, requires every stopped light/lock/mode target >=44 pt and fully inside the app window, and fixes the #2981 red stale-XCUI oracle by re-querying dashboard.mode after each confirmed SwiftUI mode replacement. Ancestor #2981 exact c200 run 31533023076 failed in the stopped-mode oracle, while retained app logs prove the product reached Walk; do not misclassify that as a command failure. Current e6 exact PR-event run 31534678456 resolved the immutable head but its Xcode job was cancelled before steps because PR-scoped cancel-in-progress plus an immediate duplicate /xcode27 command collided. Do not issue another duplicate command. Capture P0 exact ce9e2bac run 31534132605 currently owns the shared xcode-27 runner in Simulator capture; after it becomes terminal, intentionally rerun cancelled e6 job 93922858737 once. Parallel performance #2980 remains partial ingredient evidence: run 31532974506 green but retained xcresult has CPU/memory only, no recorded Hitch metric; review 4910580646 blocks frame-pacing promotion. Checkpoint != endpoint.",
+  "acceptance": "Final exact e6a813c (or a reviewed descendant) must keep speed/Energy Rail semantic truth, show untruncated vehicle/connection status at AX5, separate power currentness text from the rail, prove riding + connected-stopped under real system AX content size, keep stopped controls >=44 pt and fully inside the app window, avoid reintroduced vertical clipping, preserve exact confirmed mode semantics through fresh AX queries, and earn exact-head Xcode/screenshots plus independent review. Sustained performance separately still lacks a recorded hitch/frame-pacing metric. ES80 physical NO-GO."
 }
