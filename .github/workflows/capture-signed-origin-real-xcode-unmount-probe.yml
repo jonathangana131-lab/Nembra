@@ -6,10 +6,12 @@ on:
       - validation/v14-real-xcode-dedicated-uid-freeze-sol-20260811
     paths:
       - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift
       - .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift
       - .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml
   workflow_dispatch:
 
@@ -36,7 +38,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact red parent and two-path validation delta
+      - name: Bind exact red parent and three-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -50,6 +52,7 @@ jobs:
           git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual-paths"
           printf '%s\n' \
             .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift \
             scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
           diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
@@ -67,6 +70,8 @@ jobs:
           grep -Fq 'structured_credentials(build_uid, build_gid, [])' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
           grep -Fq 'hdiutil_detach(device)' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
           grep -Fq 'readonly=True' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
+          grep -Fq 'Capture Trusted Xcode 27 Exact-Head QA' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift
+          grep -Fq 'NEMBRA_REAL_XCODE_DEDICATED_UID_JSON=' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Run real-Xcode dedicated UID freeze oracle
