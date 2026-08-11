@@ -9,12 +9,12 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:35:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:45:30Z",
+  "lastHeartbeatAt": "2026-08-11T12:55:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-field-untracked-prearm-admission-sol-20260811",
   "pr": 2924,
   "sourceSHA": "0f07d8d673f1b2472dc1439af2413258573ddb0a",
   "currentHeadSHA": "8553e0787092335d5681c36e538f039a5063274b",
   "takeoverFromWorkerId": "sol-20260811-54c8arm",
-  "checkpoint": "Exact current candidate 8553e0787092335d5681c36e538f039a5063274b is temp-free and reviewable. It preserves the clean 200bacfd raw-tree/private-root repair and strengthens the permanent regression to reject both a direct rogue LocalSecrets file and an unrelated LocalSecrets sibling directory. This synchronize event triggered the permanent Capture authority matrix on the exact new head. Do not promote older green; PHYSICAL NO-GO."
+  "checkpoint": "Exact current candidate 8553e0787092335d5681c36e538f039a5063274b is frozen, temp-free, and reviewable. Current exact greens include pre-arm injection (3/3 including direct and sibling LocalSecrets escape cases), tracked-source compiler-window, CocoaPods build-subject, private-review commitment/helper/downstream custody. Portable tracked-source window is green while real macOS vnode, provenance, vnode-current/CocoaPods attribute, graft, and Xcode exact-head remain queued. Source review also confirmed separately authenticated root-kind/symlink custody. Composition guidance posted to current selected-Xcode successor #2966 so closed child env + raw-tree authority can converge without stale ancestry. PHYSICAL NO-GO."
 }
