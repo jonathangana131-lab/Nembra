@@ -56,7 +56,7 @@ private struct CaptureP0Root: View {
 
                         DisclosureGroup(isExpanded: $showEngineeringDetails) {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text(fieldBuildIsAuthoritative ? "Field build authority: ready" : "Field build authority: locked")
+                                Text(fieldBuildIsAuthoritative ? "Build provenance: ready" : "Build provenance: locked")
                                 Text("Account approval and device metadata only establish setup context. Capture independently verifies the current official SDK session and exact scooter membership before discovery.")
                                 Text("No scooter commands are sent by this setup flow.")
                             }
@@ -101,6 +101,7 @@ private struct CaptureP0Root: View {
             )
             .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
             .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
 
             Text(
                 dynamicTypeSize.isAccessibilitySize
@@ -113,7 +114,6 @@ private struct CaptureP0Root: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityElement(children: .combine)
     }
 
     private var buildAuthorityStatus: some View {
@@ -124,7 +124,7 @@ private struct CaptureP0Root: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")
+                Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
                     .font(.headline)
                     .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -150,7 +150,7 @@ private struct CaptureP0Root: View {
                 )
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")
+        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
         .accessibilityValue(
             fieldBuildIsAuthoritative
                 ? "Build provenance is ready. Account and scooter authority are still required before Bluetooth starts."
@@ -275,7 +275,7 @@ private struct CaptureP0Root: View {
                                tuya.phase == .ready,
                                !device.productID.isEmpty,
                                !device.uuid.isEmpty {
-                                NavigationLink(fieldBuildIsAuthoritative ? "Continue to Capture" : "View locked preflight") {
+                                NavigationLink(fieldBuildIsAuthoritative ? "Continue to preflight" : "View locked preflight") {
                                     SecureLinkView(device: device)
                                 }
                                 .buttonStyle(.borderedProminent)
