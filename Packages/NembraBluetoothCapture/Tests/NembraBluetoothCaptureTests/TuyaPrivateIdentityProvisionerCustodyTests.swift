@@ -39,6 +39,30 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(generated.contains(Data(appSecret.utf8).base64EncodedString()))
     }
 
+    @Test("direct invocation ignores hostile Bash startup and caller PATH")
+    func directInvocationClosesStartupEnvironment() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let sandbox = fixture.root.deletingLastPathComponent()
+        let sentinel = sandbox.appendingPathComponent("startup-sentinel")
+        let bashEnvironment = sandbox.appendingPathComponent("hostile-bash-env")
+        try Data("/bin/echo hostile-startup > \(sentinel.path)\n".utf8).write(to: bashEnvironment)
+        let hostilePath = sandbox.appendingPathComponent("hostile-bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: hostilePath, withIntermediateDirectories: true)
+
+        let result = try invokeDirect(
+            fixture.script,
+            environment: [
+                "BASH_ENV": bashEnvironment.path,
+                "PATH": hostilePath.path,
+            ]
+        )
+        #expect(result.status == 0)
+        #expect(!result.output.contains(appKey))
+        #expect(!result.output.contains(appSecret))
+        #expect(!FileManager.default.fileExists(atPath: sentinel.path))
+    }
+
     @Test("symlinked LocalSecrets fails before credential publication")
     func symlinkedLocalSecretsFailsClosed() throws {
         let fixture = try makeFixture()
@@ -97,6 +121,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         let source = repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh")
         let target = scripts.appendingPathComponent("provision_capture_tuya_identity.sh")
         try FileManager.default.copyItem(at: source, to: target)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: target.path)
         return (root, target)
     }
 
@@ -108,6 +133,22 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = (xtrace ? ["-x"] : []) + [script.path]
+        return try run(process, environment: additions)
+    }
+
+    private func invokeDirect(
+        _ script: URL,
+        environment additions: [String: String] = [:]
+    ) throws -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = script
+        return try run(process, environment: additions)
+    }
+
+    private func run(
+        _ process: Process,
+        environment additions: [String: String]
+    ) throws -> (status: Int32, output: String) {
         var environment = ProcessInfo.processInfo.environment
         for (key, value) in additions { environment[key] = value }
         process.environment = environment
