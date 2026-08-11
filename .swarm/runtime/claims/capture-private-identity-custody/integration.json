@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607r4",
   "leaseId": "capture-private-identity-integration-1607r4-20260811-2339",
   "generation": 4,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:39:15Z",
-  "lastHeartbeatAt": "2026-08-11T23:39:15Z",
+  "lastHeartbeatAt": "2026-08-11T23:39:57Z",
+  "releasedAt": "2026-08-11T23:39:57Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3086,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb",
   "takeoverFromWorkerId": "sol-20260811-1607r4",
   "takeoverFromLeaseId": "capture-private-identity-integration-1607r4-20260811-2322",
-  "takeoverReason": "Generation-3 was explicitly released after identifying the verified-stdin caller-interface dependency. #3086 has since advanced from b62c59b to e454b1e9 and earned current private convergence, publication-race, dependency-helper, Main Selective Graft, and Field Build Provenance success. Reacquire the free integration slot to determine whether the moved six-path private successor also closed the launcher interface or whether the future composed build-authority descendant must still pass NEMBRA_ACCEPTED_SOURCE_ROOT explicitly. Read-only composition analysis only; active private review owns source acceptance. PHYSICAL NO-GO.",
-  "intent": "Reconcile exact e454b1e9 private convergence against selected-Xcode/build authority without cross-promoting its queued Xcode or mutating high-contention installer/private paths."
+  "takeoverReason": "Generation-3 was explicitly released after identifying the verified-stdin caller-interface dependency. Reacquired after #3086 advanced to e454b1e9 and current private/Main/Field gates materially changed.",
+  "intent": "Reconcile exact e454b1e9 private convergence against selected-Xcode/build authority without cross-promoting queued Xcode or mutating high-contention paths.",
+  "checkpoint": "#3086 exact e454b1e9 now has Private Current Convergence 31546075745 SUCCESS, Publication Races 31546075814 SUCCESS, Dependency Helper 31546075874 SUCCESS, Main Selective Graft 31546075878 SUCCESS, and Field Build Provenance 31546075937 SUCCESS; exact Xcode 31546075785 remains QUEUED. Six-path private successor does not touch the field installer. Its bootstrap still requires the explicit NEMBRA_ACCEPTED_SOURCE_ROOT verified-stdin authority branch. Current selected-Xcode diagnostic 49e51aef differs from #3072 production only in the ACL workflow, and installer run_accepted_source_bash still pipes verified bytes to bash source /dev/stdin without passing NEMBRA_ACCEPTED_SOURCE_ROOT before bootstrapping. Thus prior cross-lane composition blocker persists. Durable #3086 comment 5260135965 records the exact-current finding. No safe code write while build/private owners are active; release integration. PHYSICAL NO-GO."
 }
