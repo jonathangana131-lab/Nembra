@@ -1,6 +1,12 @@
 name: Capture Signed Origin Real Xcode Dedicated UID Freeze
 
 on:
+  push:
+    branches:
+      - validation/v14-real-xcode-dedicated-uid-freeze-sol-20260811
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
+      - .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
