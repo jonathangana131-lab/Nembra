@@ -94,6 +94,52 @@ class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
             self.assertEqual(stage.read_bytes(), replacement_payload)
             self.assertFalse(destination.exists(), "failed recovery published a private output")
 
+    def test_early_existing_output_rejection_sanitizes_admitted_inode(self) -> None:
+        writer = load_writer()
+        admitted_payload = b"credential-bearing-crash-residue-must-not-survive-rejection"
+        new_payload = b"new-private-output"
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-preconsume-reject-") as temporary:
+            checkout = Path(temporary) / "repo"
+            destination_parent = checkout / "private"
+            destination_parent.mkdir(parents=True, mode=0o700)
+            stage_name = f"{PREFIX}{os.getpid()}-{'c' * 24}"
+            stage = checkout / stage_name
+            stage.write_bytes(admitted_payload)
+            stage.chmod(0o600)
+
+            destination = destination_parent / "identity.swift"
+            destination.mkdir(mode=0o700)
+
+            checkout_fd = os.open(checkout, writer._directory_flags())
+            destination_fd = os.open(destination_parent, writer._directory_flags())
+            recovered = None
+            try:
+                recovered = writer._recover_private_stage_residue(checkout_fd)
+                self.assertIsNotNone(recovered, "fixture did not admit the writer-shaped crash residue")
+                with self.assertRaises(writer.ProvisionError):
+                    writer._write_staged(
+                        checkout_fd,
+                        destination_fd,
+                        "identity.swift",
+                        "private/identity.swift",
+                        new_payload,
+                        recovered_stage=recovered,
+                    )
+            finally:
+                if recovered is not None:
+                    recovered.close()
+                os.close(destination_fd)
+                os.close(checkout_fd)
+
+            self.assertTrue(destination.is_dir(), "failure cleanup mutated the invalid attacker destination")
+            self.assertTrue(stage.is_file(), "admitted residue disappeared instead of remaining under exact inode custody")
+            self.assertEqual(
+                stage.read_bytes(),
+                b"",
+                "early existing-output rejection left credential-bearing bytes in the exact admitted residue inode",
+            )
+
     def test_name_swap_after_rebind_mutates_only_held_inode(self) -> None:
         writer = load_writer()
         admitted_payload = b"dummy-admitted-crash-residue-after-rebind"
