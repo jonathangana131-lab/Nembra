@@ -183,6 +183,7 @@ enum AppBootstrap {
         let scenario: ScooterSimulationScenario?
         let shouldAutoConnectOnStart: Bool
         let speedInterpolationPolicy: SpeedInstrumentInterpolationPolicy
+        let batteryObservationAuthority: BatteryObservationAuthority?
     }
 
     @MainActor
@@ -195,7 +196,8 @@ enum AppBootstrap {
             service: bootstrap.service,
             initialState: bootstrap.initialState,
             shouldAutoConnectOnStart: bootstrap.shouldAutoConnectOnStart,
-            speedInstrumentInterpolationPolicy: bootstrap.speedInterpolationPolicy
+            speedInstrumentInterpolationPolicy: bootstrap.speedInterpolationPolicy,
+            batteryObservationAuthority: bootstrap.batteryObservationAuthority
         )
     }
 
@@ -213,7 +215,8 @@ enum AppBootstrap {
             initialState: bootstrap.initialState,
             shouldAutoConnectOnStart: bootstrap.shouldAutoConnectOnStart,
             speedInstrumentInterpolationPolicy: bootstrap.speedInterpolationPolicy,
-            retainedBatteryStorage: retainedBatteryStorage
+            retainedBatteryStorage: retainedBatteryStorage,
+            batteryObservationAuthority: bootstrap.batteryObservationAuthority
         )
 
         let persistenceScope: RidePersistenceScope
@@ -347,7 +350,8 @@ enum AppBootstrap {
                 initialState: UnverifiedScooterService.initialState(),
                 scenario: nil,
                 shouldAutoConnectOnStart: false,
-                speedInterpolationPolicy: .disabled
+                speedInterpolationPolicy: .disabled,
+                batteryObservationAuthority: nil
             )
         }
 
@@ -359,7 +363,8 @@ enum AppBootstrap {
             initialState: state,
             scenario: scenario,
             shouldAutoConnectOnStart: scenario.shouldAutoConnectOnLaunch,
-            speedInterpolationPolicy: .simulatorQA
+            speedInterpolationPolicy: .simulatorQA,
+            batteryObservationAuthority: .displayOnly
         )
     }
 }
