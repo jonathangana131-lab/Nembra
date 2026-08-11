@@ -1,0 +1,157 @@
+name: Capture final premium accessibility one-shot
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-final-premium-ax-truth-sol
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: recovery/v14-capture-final-premium-ax-truth-sol
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Reconcile premium root with final accessibility semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          visual = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift')
+
+          def replace_exact(path: Path, old: str, new: str, expected: int = 1) -> None:
+              text = path.read_text()
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} matches, found {count}: {old!r}')
+              path.write_text(text.replace(old, new, expected))
+
+          replace_exact(
+              app,
+              '''            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text(
+''',
+              '''            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+
+            Text(
+''',
+          )
+
+          replace_exact(
+              app,
+              '''        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var buildAuthorityStatus: some View {
+''',
+              '''        }
+    }
+
+    private var buildAuthorityStatus: some View {
+''',
+          )
+
+          replace_exact(
+              app,
+              '''                        Text(tuya.isLinked ? "Account metadata ready" : "Prepare account metadata")
+                            .font(.title3.bold())
+                            .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+''',
+              '''                        Text(tuya.isLinked ? "Account metadata ready" : "Prepare account metadata")
+                            .font(.title3.bold())
+                            .accessibilityAddTraits(.isHeader)
+                            .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+''',
+          )
+
+          replace_exact(
+              app,
+              '''                    .tint(.cyan)
+                    .foregroundStyle(.black)
+                    .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
+''',
+              '''                    .tint(.cyan)
+                    .foregroundStyle(.black)
+                    .accessibilityIdentifier("nembra.capture.root.account-link-action")
+                    .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
+''',
+          )
+
+          replace_exact(
+              visual,
+              '''        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
+''',
+              '''        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
+        #expect(root.contains("private var isAccessibilityLayout: Bool"))
+        #expect(root.contains("private func rootSection<Content: View>"))
+        #expect(root.contains(".accessibilityIdentifier(\\"nembra.capture.root.account-link-action\\")"))
+        #expect(!root.contains("private func rootPanel<Content: View>"))
+
+        let field = try #require(root.range(of: "TextField(\\"Paste user code\\""))
+        let action = try #require(root.range(of: "Label(\\"Create approval QR\\", systemImage: \\"qrcode\\")", range: field.upperBound..<root.endIndex))
+        let accessibilitySupport = try #require(root.range(
+            of: "if isAccessibilityLayout {\\n                        Text(\\"This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.\\")",
+            range: action.upperBound..<root.endIndex
+        ))
+        #expect(field.lowerBound < action.lowerBound)
+        #expect(action.lowerBound < accessibilitySupport.lowerBound)
+        #expect(root.contains("if isAccessibilityLayout {\\n                            VStack(alignment: .leading, spacing: 10) {\\n                                scooterSelectionButton(for: device)\\n                                continueButton(for: device)"))
+''',
+          )
+
+          app_text = app.read_text()
+          root = app_text.split('@MainActor\nprivate final class SecureLinkController', 1)[0]
+          required = [
+              'Build provenance ready',
+              'Build provenance: ready',
+              'Continue to preflight',
+              '.accessibilityAddTraits(.isHeader)',
+              '.accessibilityIdentifier("nembra.capture.root.account-link-action")',
+              'private func rootSection<Content: View>',
+              'if isAccessibilityLayout {',
+              'scooterSelectionButton(for: device)',
+              'continueButton(for: device)',
+          ]
+          for token in required:
+              if token not in root:
+                  raise SystemExit(f'missing required final root token: {token}')
+          forbidden = [
+              'Field build ready',
+              'Field build authority: ready',
+              'Continue to Capture',
+              'private func rootPanel<Content: View>',
+          ]
+          for token in forbidden:
+              if token in root:
+                  raise SystemExit(f'forbidden stale final root token survived: {token}')
+          PY
+          git diff --check
+
+      - name: Commit final accessibility convergence and self-delete helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-closure-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm -- .github/workflows/capture-final-premium-a11y-once.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): preserve premium AX root semantics'
+          git push origin HEAD:recovery/v14-capture-final-premium-ax-truth-sol
