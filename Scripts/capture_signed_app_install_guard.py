@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import plistlib
+import re
 import select
 import stat
 import subprocess
@@ -132,8 +134,7 @@ def fingerprint_bundle(root: Path) -> str:
             if stat.S_ISLNK(metadata.st_mode):
                 target = os.readlink(path)
                 try:
-                    resolved = path.resolve(strict=True)
-                    resolved.relative_to(root)
+                    path.resolve(strict=True).relative_to(root)
                 except (OSError, ValueError) as error:
                     raise InstallCustodyError("signed app contains a broken or escaping symlink") from error
                 observed.append((path, identity, "L", target))
@@ -155,8 +156,7 @@ def fingerprint_bundle(root: Path) -> str:
             if stat.S_ISLNK(metadata.st_mode):
                 target = os.readlink(path)
                 try:
-                    resolved = path.resolve(strict=True)
-                    resolved.relative_to(root)
+                    path.resolve(strict=True).relative_to(root)
                 except (OSError, ValueError) as error:
                     raise InstallCustodyError("signed app contains a broken or escaping symlink") from error
                 observed.append((path, identity, "L", target))
@@ -281,6 +281,163 @@ def _open_watched(paths: Iterable[Path], backend: EventBackend) -> tuple[tuple[i
         raise
 
 
+def _close_watched(watched: Iterable[tuple[int, Path]]) -> None:
+    for descriptor, _ in watched:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _require_quiet(backend: EventBackend, message: str) -> None:
+    if backend.events(0):
+        raise InstallCustodyError(message)
+
+
+def _extract_xml_plist(payload: bytes, label: str) -> dict:
+    start = payload.find(b"<?xml")
+    end = payload.rfind(b"</plist>")
+    if start < 0 or end < start:
+        raise InstallCustodyError(f"{label} did not contain one XML plist")
+    try:
+        value = plistlib.loads(payload[start:end + len(b"</plist>")])
+    except Exception as error:
+        raise InstallCustodyError(f"{label} XML plist could not be decoded") from error
+    if not isinstance(value, dict):
+        raise InstallCustodyError(f"{label} XML plist root is not a dictionary")
+    return value
+
+
+def _run_authority_command(
+    command: Sequence[str],
+    backend: EventBackend,
+    run_factory: Callable[..., subprocess.CompletedProcess],
+    label: str,
+) -> subprocess.CompletedProcess:
+    result = run_factory(list(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    _require_quiet(backend, f"signed Capture app mutated while {label} was being verified")
+    if result.returncode != 0:
+        raise InstallCustodyError(f"{label} verification failed")
+    return result
+
+
+def verify_authority_and_seal(
+    app: Path,
+    *,
+    expected_build_identifier: str,
+    expected_source_sha: str,
+    expected_tuya_lock_sha256: str,
+    expected_procedure_id: str,
+    expected_bundle_id: str,
+    expected_team_id: str,
+    backend_factory: Callable[[], EventBackend] = KqueueVnodeBackend,
+    run_factory: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> str:
+    if not expected_build_identifier:
+        raise InstallCustodyError("expected build identifier is unavailable")
+    if re.fullmatch(r"[0-9a-f]{40}", expected_source_sha) is None:
+        raise InstallCustodyError("expected source SHA is malformed")
+    if re.fullmatch(r"[0-9a-f]{64}", expected_tuya_lock_sha256) is None:
+        raise InstallCustodyError("expected Tuya dependency-lock digest is malformed")
+    if not expected_procedure_id or not expected_bundle_id:
+        raise InstallCustodyError("expected Capture procedure or bundle identity is unavailable")
+    if re.fullmatch(r"[A-Z0-9]{10}", expected_team_id) is None:
+        raise InstallCustodyError("expected Apple Development team identity is malformed")
+
+    accepted_digest = fingerprint_bundle(app)
+    backend = backend_factory()
+    watched: tuple[tuple[int, Path], ...] = ()
+    try:
+        watched = _open_watched(_watch_paths(app), backend)
+        if fingerprint_bundle(app) != accepted_digest:
+            raise InstallCustodyError("signed Capture app changed while verification custody was armed")
+        _require_quiet(backend, "signed Capture app changed before authority verification began")
+
+        info_path = app / "Info.plist"
+        try:
+            info = plistlib.loads(info_path.read_bytes())
+        except Exception as error:
+            raise InstallCustodyError("signed Capture app Info.plist could not be decoded") from error
+        _require_quiet(backend, "signed Capture app mutated while provenance was being verified")
+        expected_info = {
+            "NembraCaptureBuildIdentifier": expected_build_identifier,
+            "NembraCaptureSourceCommitSHA": expected_source_sha,
+            "NembraCaptureTuyaDependencyLockSHA256": expected_tuya_lock_sha256,
+            "NembraCaptureProcedureIdentifier": expected_procedure_id,
+            "CFBundleIdentifier": expected_bundle_id,
+        }
+        for key, expected in expected_info.items():
+            if info.get(key) != expected:
+                raise InstallCustodyError(f"signed Capture app {key} does not match accepted authority")
+
+        closed_prefix = ["/usr/bin/env", "-i", "PATH=/usr/bin:/bin"]
+        _run_authority_command(
+            [*closed_prefix, "/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)],
+            backend,
+            run_factory,
+            "recursive strict code signature",
+        )
+        entitlement_result = _run_authority_command(
+            [*closed_prefix, "/usr/bin/codesign", "-d", "--entitlements", ":-", "--xml", str(app)],
+            backend,
+            run_factory,
+            "effective signed entitlements",
+        )
+        entitlements = _extract_xml_plist(entitlement_result.stdout + entitlement_result.stderr, "signed entitlements")
+        apple = entitlements.get("com.apple.developer.applesignin")
+        application_identifier = entitlements.get("application-identifier")
+        entitlement_team = entitlements.get("com.apple.developer.team-identifier")
+        suffix = "." + expected_bundle_id
+        if apple != ["Default"]:
+            raise InstallCustodyError("signed Capture app is missing exact Sign in with Apple entitlement")
+        if not isinstance(application_identifier, str) or not application_identifier.endswith(suffix):
+            raise InstallCustodyError("signed Capture app application identifier does not match the Capture bundle")
+        if "*" in application_identifier or application_identifier == suffix:
+            raise InstallCustodyError("signed Capture app application identifier is wildcard or missing a concrete prefix")
+        if entitlement_team != expected_team_id:
+            raise InstallCustodyError("signed Capture app team identifier does not match accepted Apple team")
+
+        profile = app / "embedded.mobileprovision"
+        try:
+            profile_metadata = profile.lstat()
+        except OSError as error:
+            raise InstallCustodyError("signed Capture app is missing embedded.mobileprovision") from error
+        if stat.S_ISLNK(profile_metadata.st_mode) or not stat.S_ISREG(profile_metadata.st_mode):
+            raise InstallCustodyError("embedded.mobileprovision must be one real regular file")
+        profile_result = _run_authority_command(
+            [*closed_prefix, "/usr/bin/security", "cms", "-D", "-i", str(profile)],
+            backend,
+            run_factory,
+            "embedded provisioning profile",
+        )
+        try:
+            profile_plist = plistlib.loads(profile_result.stdout)
+        except Exception as error:
+            raise InstallCustodyError("embedded provisioning profile plist could not be decoded") from error
+        if not isinstance(profile_plist, dict):
+            raise InstallCustodyError("embedded provisioning profile plist root is invalid")
+        profile_entitlements = profile_plist.get("Entitlements", {})
+        team_identifiers = profile_plist.get("TeamIdentifier")
+        if not isinstance(profile_entitlements, dict):
+            raise InstallCustodyError("embedded provisioning profile entitlements are invalid")
+        if profile_entitlements.get("com.apple.developer.applesignin") != ["Default"]:
+            raise InstallCustodyError("embedded provisioning profile lacks exact Sign in with Apple authority")
+        if profile_entitlements.get("application-identifier") != application_identifier:
+            raise InstallCustodyError("embedded provisioning profile application identifier does not match signed app")
+        if profile_entitlements.get("com.apple.developer.team-identifier") != expected_team_id:
+            raise InstallCustodyError("embedded provisioning profile entitlement team does not match accepted Apple team")
+        if team_identifiers != [expected_team_id]:
+            raise InstallCustodyError("embedded provisioning profile root TeamIdentifier does not match accepted Apple team")
+
+        if fingerprint_bundle(app) != accepted_digest:
+            raise InstallCustodyError("signed Capture app changed across authority verification")
+        _require_quiet(backend, "signed Capture app mutated during final authority sealing")
+        return accepted_digest
+    finally:
+        _close_watched(watched)
+        backend.close()
+
+
 def _stop_process(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
@@ -316,8 +473,7 @@ def run_guarded_install(
         watched = _open_watched(_watch_paths(app), backend)
         if fingerprint_bundle(app) != expected:
             raise InstallCustodyError("signed Capture app changed while install custody was armed")
-        if backend.events(0):
-            raise InstallCustodyError("signed Capture app changed before devicectl admission")
+        _require_quiet(backend, "signed Capture app changed before devicectl admission")
 
         process = popen_factory(list(command))
         while process.poll() is None:
@@ -325,29 +481,30 @@ def run_guarded_install(
                 _stop_process(process)
                 raise InstallCustodyError("signed Capture app mutated while devicectl was consuming it")
 
-        if backend.events(0):
-            raise InstallCustodyError("signed Capture app mutated at devicectl completion")
+        _require_quiet(backend, "signed Capture app mutated at devicectl completion")
         if fingerprint_bundle(app) != expected:
             raise InstallCustodyError("signed Capture app changed across the devicectl install boundary")
-        if backend.events(0):
-            raise InstallCustodyError("signed Capture app mutated during final install-subject verification")
+        _require_quiet(backend, "signed Capture app mutated during final install-subject verification")
         return int(process.returncode or 0)
     finally:
         if process is not None and process.poll() is None:
             _stop_process(process)
-        for descriptor, _ in watched:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
+        _close_watched(watched)
         backend.close()
 
 
 def _parse(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Bind the verified signed Capture.app to the devicectl install side effect.")
+    parser = argparse.ArgumentParser(description="Bind signed Capture.app authority to the devicectl install side effect.")
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--digest-only", action="store_true")
+    parser.add_argument("--verify-authority-only", action="store_true")
     parser.add_argument("--expected-sha256")
+    parser.add_argument("--expected-build-identifier")
+    parser.add_argument("--expected-source-sha")
+    parser.add_argument("--expected-tuya-lock-sha256")
+    parser.add_argument("--expected-procedure-id")
+    parser.add_argument("--expected-bundle-id")
+    parser.add_argument("--expected-team-id")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     arguments = parser.parse_args(list(argv))
     if arguments.command and arguments.command[0] == "--":
@@ -359,9 +516,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parse(sys.argv[1:] if argv is None else argv)
     try:
         if arguments.digest_only:
-            if arguments.expected_sha256 is not None or arguments.command:
-                raise InstallCustodyError("digest-only mode does not accept an expected digest or install command")
+            if arguments.verify_authority_only or arguments.expected_sha256 is not None or arguments.command:
+                raise InstallCustodyError("digest-only mode does not accept verification/install authority arguments")
             print(fingerprint_bundle(arguments.app))
+            return 0
+        if arguments.verify_authority_only:
+            required = {
+                "--expected-build-identifier": arguments.expected_build_identifier,
+                "--expected-source-sha": arguments.expected_source_sha,
+                "--expected-tuya-lock-sha256": arguments.expected_tuya_lock_sha256,
+                "--expected-procedure-id": arguments.expected_procedure_id,
+                "--expected-bundle-id": arguments.expected_bundle_id,
+                "--expected-team-id": arguments.expected_team_id,
+            }
+            missing = [name for name, value in required.items() if value is None]
+            if missing or arguments.expected_sha256 is not None or arguments.command:
+                raise InstallCustodyError("verify-authority-only mode requires exact expected authority and no install command")
+            print(
+                verify_authority_and_seal(
+                    arguments.app,
+                    expected_build_identifier=arguments.expected_build_identifier,
+                    expected_source_sha=arguments.expected_source_sha,
+                    expected_tuya_lock_sha256=arguments.expected_tuya_lock_sha256,
+                    expected_procedure_id=arguments.expected_procedure_id,
+                    expected_bundle_id=arguments.expected_bundle_id,
+                    expected_team_id=arguments.expected_team_id,
+                )
+            )
             return 0
         if arguments.expected_sha256 is None:
             raise InstallCustodyError("--expected-sha256 is required for guarded installation")
