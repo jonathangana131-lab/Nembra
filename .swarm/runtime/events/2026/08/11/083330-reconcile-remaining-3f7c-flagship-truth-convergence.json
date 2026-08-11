@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "083330-reconcile-remaining-3f7c-flagship-truth-convergence",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Canonical Capture flagship #2612 moved to exact 513ebea576cd6d03132e215d80fac57397877fbf by integrating reviewed #2824 package-truth repairs. Reconciliation closed sibling #2820 as superseded and closed #2799 after direct blob verification showed its two metadata truth-test outputs are now exactly present in flagship (#2799/flagship blobs b8f47b8... and 4e17f09...). Flagship exact-head revalidation is running/queued and old child greens remain ingredient evidence only. Production/UI bytes were unchanged by the integrated test repair. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:33:30Z",
+  "data": {
+    "canonicalFlagshipPR": 2612,
+    "canonicalFlagshipSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
+    "integratedChildPR": 2824,
+    "closedSupersededPRs": [2820,2799],
+    "verifiedMetadataBlobs": ["b8f47b8bd4da123fb9765607f01fdb4a518b6760","4e17f093755967c91ef43a8b679172c4dd648c4f"],
+    "flagshipRevalidationRequired": true,
+    "productBytesChangedByReconciliation": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
