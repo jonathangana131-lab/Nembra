@@ -52,6 +52,7 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
             "cat > Podfile.lock <<'EOF'\n"
             "PODS:\n  - ThingSmartHomeKit (7.8.0)\n  - ThingSmartBusinessExtensionKit (7.8.0)\n"
             "DEPENDENCIES:\n  - ThingSmartHomeKit (= 7.8.0)\n  - ThingSmartBusinessExtensionKit (= 7.8.0)\nEOF\n"
+            "cp Podfile.lock Pods/Manifest.lock\n"
             "printf '%s\\n' \"${NEMBRA_TEST_GRAPH:?}\" > 'Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig'\n"
             "printf '%s\\n' \"${NEMBRA_TEST_GRAPH:?}\" > NembraCapture.xcworkspace/contents.xcworkspacedata\n",
             encoding="utf-8",
@@ -94,29 +95,44 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
             check=False,
         )
 
-    def test_same_graph_reproduces_reviewed_attested_lock(self) -> None:
+    def fingerprint(self) -> subprocess.CompletedProcess[str]:
+        return self.helper(
+            "fingerprint",
+            "--pods", str(self.root / "Pods"),
+            "--workspace", str(self.root / "NembraCapture.xcworkspace"),
+        )
+
+    def test_same_graph_reproduces_reviewed_attested_lock_and_manifest(self) -> None:
         review = self.bootstrap("GRAPH_A", review=True)
         self.assertEqual(review.returncode, 0, review.stdout)
-        accepted = digest(self.root / "Podfile.lock")
-        expected = self.helper("read-attestation", "--lockfile", str(self.root / "Podfile.lock"))
+        lock = self.root / "Podfile.lock"
+        manifest = self.root / "Pods/Manifest.lock"
+        accepted = digest(lock)
+        self.assertEqual(lock.read_bytes(), manifest.read_bytes())
+        expected = self.helper("read-attestation", "--lockfile", str(lock))
         self.assertEqual(expected.returncode, 0, expected.stdout)
         self.assertRegex(expected.stdout.strip(), r"^[0-9a-f]{64}$")
+
         field = self.bootstrap("GRAPH_A", review=False, accepted=accepted)
         self.assertEqual(field.returncode, 0, field.stdout)
-        self.assertEqual(digest(self.root / "Podfile.lock"), accepted)
+        self.assertEqual(digest(lock), accepted)
+        self.assertEqual(lock.read_bytes(), manifest.read_bytes())
 
     def test_changed_graph_fails_with_same_reviewed_lock(self) -> None:
         review = self.bootstrap("GRAPH_A", review=True)
         self.assertEqual(review.returncode, 0, review.stdout)
-        accepted = digest(self.root / "Podfile.lock")
+        lock = self.root / "Podfile.lock"
+        manifest = self.root / "Pods/Manifest.lock"
+        accepted = digest(lock)
         before = (self.root / GENERATED).read_bytes()
         field = self.bootstrap("GRAPH_B", review=False, accepted=accepted)
         self.assertNotEqual(field.returncode, 0, field.stdout)
-        self.assertEqual(digest(self.root / "Podfile.lock"), accepted)
+        self.assertEqual(digest(lock), accepted)
+        self.assertEqual(lock.read_bytes(), manifest.read_bytes())
         self.assertNotEqual(before, (self.root / GENERATED).read_bytes())
         self.assertIn("generated different build-affecting bytes", field.stdout)
 
-    def test_attestation_rewrite_is_deterministic(self) -> None:
+    def test_attestation_rewrite_is_deterministic_and_single(self) -> None:
         review = self.bootstrap("GRAPH_A", review=True)
         self.assertEqual(review.returncode, 0, review.stdout)
         lock = self.root / "Podfile.lock"
@@ -127,12 +143,25 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         self.assertEqual(lock.read_bytes(), before)
         self.assertEqual(lock.read_bytes().count(b"# NEMBRA_CAPTURE_GENERATED_BUILD_SUBJECT_SHA256="), 1)
 
-    def test_existing_build_guard_includes_generated_subject(self) -> None:
+    def test_manifest_bytes_are_not_recursive_graph_input(self) -> None:
+        review = self.bootstrap("GRAPH_A", review=True)
+        self.assertEqual(review.returncode, 0, review.stdout)
+        before = self.fingerprint()
+        self.assertEqual(before.returncode, 0, before.stdout)
+        manifest = self.root / "Pods/Manifest.lock"
+        manifest.write_bytes(manifest.read_bytes() + b"# mirror-only-change\n")
+        after = self.fingerprint()
+        self.assertEqual(after.returncode, 0, after.stdout)
+        self.assertEqual(before.stdout.strip(), after.stdout.strip())
+
+    def test_existing_build_guard_includes_generated_subject_and_manifest_mirror(self) -> None:
         source = GUARD.read_text(encoding="utf-8")
         for marker in (
             '"capture_cocoapods_build_subject.py"',
             "def generated_pods",
             "def generated_workspace",
+            "def generated_manifest",
+            "build_subject.stable_file_sha256(self.generated_manifest)",
             "build_subject.read_attestation(self.lockfile)",
             "build_subject.build_subject_fingerprint",
             "inputs.generated_pods",
