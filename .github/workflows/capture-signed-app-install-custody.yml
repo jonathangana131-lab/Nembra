@@ -3,12 +3,13 @@ name: Capture Signed App Install Custody
 on:
   push:
     branches:
-      - repair/v14-capture-signed-app-install-custody-gpt56-sol
+      - repair/v14-capture-signed-app-helper-execution-custody-sol
   pull_request:
     paths:
       - scripts/field/install_one_time_capture.command
       - scripts/ci/capture_signed_app_install_custody.py
       - scripts/ci/tests/test_capture_signed_app_install_custody.py
+      - scripts/ci/tests/test_capture_signed_app_helper_execution_subject.py
       - .github/workflows/capture-signed-app-install-custody.yml
   workflow_dispatch:
 
@@ -17,7 +18,7 @@ permissions:
 
 jobs:
   exact-install-subject:
-    name: Require protected exact app at devicectl boundary
+    name: Require protected exact app and helper at devicectl boundary
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -38,12 +39,18 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'Exact install-custody source: %s\n' "$actual"
 
-      - name: Run portable source and fingerprint regressions
+      - name: Run portable source, helper-execution, and fingerprint regressions
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 -m py_compile scripts/ci/capture_signed_app_install_custody.py scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /usr/bin/python3 -m py_compile scripts/ci/capture_signed_app_install_custody.py scripts/ci/tests/test_capture_signed_app_install_custody.py scripts/ci/tests/test_capture_signed_app_helper_execution_subject.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_helper_execution_subject.py
+          bash -n scripts/field/install_one_time_capture.command
+          ! grep -Fq '/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py"' scripts/field/install_one_time_capture.command
+          grep -Fq 'HELPER_CAPTURED_BLOB=' scripts/field/install_one_time_capture.command
+          grep -Fq 'run_signed_app_custody_helper fingerprint' scripts/field/install_one_time_capture.command
+          grep -Fq 'run_signed_app_custody_helper verify-stage' scripts/field/install_one_time_capture.command
 
       - name: Prove root-owned stage rejects same-UID mutation
         shell: bash
