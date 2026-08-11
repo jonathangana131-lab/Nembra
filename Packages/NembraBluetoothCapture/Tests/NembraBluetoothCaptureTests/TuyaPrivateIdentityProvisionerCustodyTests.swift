@@ -179,7 +179,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34\""))
+        #expect(shell.contains("WRITER_SHA256=\"8a3bc75629a384f54d4c7dd4cf6f63e4bfc994dbde472683826dfb3acfa19d4f\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))

@@ -195,6 +195,82 @@ def _open_relative_regular_file(checkout_fd: int, relative_path: str) -> int:
         os.close(parent_fd)
 
 
+
+def _require_staging_name_matches_fd(
+    checkout_fd: int,
+    temporary_name: str,
+    sealed: os.stat_result,
+) -> None:
+    try:
+        named = os.stat(temporary_name, dir_fd=checkout_fd, follow_symlinks=False)
+    except OSError as exc:
+        raise ProvisionError("private identity staging name changed before publication") from exc
+    if (
+        not stat.S_ISREG(named.st_mode)
+        or named.st_uid != os.geteuid()
+        or named.st_nlink != 1
+        or named.st_size != sealed.st_size
+        or named.st_dev != sealed.st_dev
+        or named.st_ino != sealed.st_ino
+    ):
+        raise ProvisionError("private identity staging name no longer names the sealed staging inode")
+
+
+def _remove_final_if_same_inode_beneath(
+    checkout_fd: int,
+    relative_path: str,
+    expected_dev: int,
+    expected_ino: int,
+) -> None:
+    components = _relative_components(relative_path)
+    parent_fd = os.dup(checkout_fd)
+    try:
+        for component in components[:-1]:
+            next_fd = os.open(component, _directory_flags(), dir_fd=parent_fd)
+            os.close(parent_fd)
+            parent_fd = next_fd
+        try:
+            named = os.stat(components[-1], dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        if (
+            stat.S_ISREG(named.st_mode)
+            and named.st_uid == os.geteuid()
+            and named.st_nlink == 1
+            and named.st_dev == expected_dev
+            and named.st_ino == expected_ino
+        ):
+            os.unlink(components[-1], dir_fd=parent_fd)
+            os.fsync(parent_fd)
+    except OSError:
+        return
+    finally:
+        os.close(parent_fd)
+
+
+def _publication_metadata_signature(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        stat.S_IFMT(metadata.st_mode),
+        metadata.st_uid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _read_exact_fd_payload(descriptor: int, expected_size: int) -> bytes:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    result = bytearray()
+    while len(result) <= expected_size:
+        chunk = os.read(descriptor, min(65536, expected_size + 1 - len(result)))
+        if not chunk:
+            break
+        result.extend(chunk)
+    return bytes(result)
+
 def _validate_existing_output(parent_fd: int, name: str) -> None:
     try:
         metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
@@ -293,6 +369,7 @@ def _write_staged(
         if sealed.st_size != len(payload) or sealed.st_nlink != 1:
             raise ProvisionError("private identity staging file changed before publication")
 
+        _require_staging_name_matches_fd(checkout_fd, temporary_name, sealed)
         _secure_replace_beneath(checkout_fd, temporary_name, destination_relative)
 
         final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
@@ -305,7 +382,26 @@ def _write_staged(
             or final.st_dev != sealed.st_dev
             or final.st_ino != sealed.st_ino
         ):
+            _remove_final_if_same_inode_beneath(
+                checkout_fd,
+                destination_relative,
+                final.st_dev,
+                final.st_ino,
+            )
             raise ProvisionError("published private identity output is not the sealed staging inode")
+
+        before_read = _publication_metadata_signature(final)
+        published_payload = _read_exact_fd_payload(final_fd, len(payload))
+        after_read_metadata = os.fstat(final_fd)
+        after_read = _publication_metadata_signature(after_read_metadata)
+        if before_read != after_read or published_payload != payload:
+            _remove_final_if_same_inode_beneath(
+                checkout_fd,
+                destination_relative,
+                after_read_metadata.st_dev,
+                after_read_metadata.st_ino,
+            )
+            raise ProvisionError("published private identity output changed or does not match accepted bytes")
         os.fchmod(final_fd, 0o600)
         os.fsync(final_fd)
         os.fsync(checkout_fd)
