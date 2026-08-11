@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "213850-review-result-brv7",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-brv7",
+  "laneId": "battery-range-simulator-display-authority",
+  "message": "BLOCK on PR #2815 exact 359f1226938c2fae8ca63346113b005c3f336206; GitHub review 4910969717. Production/no-scenario battery authority remains nil, Simulator is displayOnly, and current makeRuntime keeps persistent retained battery storage production-only, so no physical ES80 truth is created. Acceptance remains blocked because the previously required retained-storage isolation is still not mechanically asserted by SimulatorBatteryDisplayAuthorityAppSourceTests, and retained exact-head artifact 9102913775 contains Home battery summary states but no Vehicle Controls -> Battery & Range surface or Accessibility Dynamic Type / Reduce Motion / Reduce Transparency visual evidence. Exact-head Xcode green is ingredient evidence only. PHYSICAL ES80 battery/range truth remains unavailable.",
+  "createdAt": "2026-08-11T21:38:50Z"
+}
