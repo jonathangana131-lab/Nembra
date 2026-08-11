@@ -252,6 +252,28 @@ def _unlink_owned_inode_if_named(checkout_fd: int, name: str, sealed: os.stat_re
             pass
 
 
+def _unlink_owned_relative_inode_if_named(
+    checkout_fd: int,
+    relative_path: str,
+    sealed: os.stat_result | None,
+) -> None:
+    if sealed is None:
+        return
+    try:
+        components = _relative_components(relative_path)
+        parent_fd = os.dup(checkout_fd)
+        try:
+            for component in components[:-1]:
+                next_fd = os.open(component, _directory_flags(), dir_fd=parent_fd)
+                os.close(parent_fd)
+                parent_fd = next_fd
+            _unlink_owned_inode_if_named(parent_fd, components[-1], sealed)
+        finally:
+            os.close(parent_fd)
+    except OSError:
+        return
+
+
 class _SealedStaging:
     def __init__(self, metadata: os.stat_result, descriptor: int, payload: bytes) -> None:
         self.metadata = metadata
@@ -421,7 +443,7 @@ def _write_staged(
             or final.st_dev != sealed.st_dev
             or final.st_ino != sealed.st_ino
         ):
-            _unlink_owned_inode_if_named(destination_parent_fd, final_name, final)
+            _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, final)
             raise ProvisionError("published private identity output is not the sealed staging inode")
         try:
             _require_descriptor_payload(
@@ -438,7 +460,7 @@ def _write_staged(
             )
         except Exception:
             compromised = os.fstat(final_fd)
-            _unlink_owned_inode_if_named(destination_parent_fd, final_name, compromised)
+            _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, compromised)
             raise
         os.fsync(checkout_fd)
     except Exception:
