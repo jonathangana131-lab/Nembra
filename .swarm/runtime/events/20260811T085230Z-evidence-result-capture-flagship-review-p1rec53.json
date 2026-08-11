@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "085230-evidence-result-capture-flagship-review-p1rec53",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-p1rec53",
+  "laneId": "capture-flagship-composition",
+  "message": "Independent review of flagship PR #2612 exact head 513ebea576cd6d03132e215d80fac57397877fbf confirms the #2824 merge changes only three Capture package source-test files and preserves current production/UI truth. Primary-language scoping now selects the Capture Engineering Details disclosure after preflight; metadata tests match production status custody from rawDetail.status and reject retired /status/localStrategy provenance; export redaction does not resurrect localStrategy. Live main d8e38d0a786d4fd97e7eb641d97c6cec76adee0c drift since PR base is control-plane-only across the reviewed compare, with no Capture product/package/UI overlap. Exact-head Field provenance, standalone iPhone 12 visual evidence, Main Selective Graft integration and Final-GO custody/hardening checks are green on 513ebea; the exact-head Xcode build/test/capture job remains in progress, not accepted. Build-authority dependency review separately found #2805 fa35 source-approved as an ingredient after exception-proxy hardening, but KQ_NOTE_ATTRIB remains outside that exact head; selected #2840/#2849 family carries vnode/Field QA while #2805 carries exact-Git presence + exception-proxy semantics, so one exact converged descendant is still required. Physical Capture remains NO-GO / do not scan / do not run.",
+  "createdAt": "2026-08-11T08:52:30Z"
+}
