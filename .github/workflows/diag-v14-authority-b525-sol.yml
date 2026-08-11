@@ -1,0 +1,43 @@
+name: Diagnose V14 Capture Authority b525 (Sol)
+
+on:
+  push:
+    branches:
+      - diag/v14-authority-b525-sol
+
+permissions:
+  contents: read
+
+jobs:
+  focused-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diag/v14-authority-b525-sol
+      - name: Syntax-check field scripts
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            Scripts/capture_tuya_private_input_provenance.py \
+            Scripts/capture_cocoapods_generated_build_subject.py \
+            Scripts/capture_private_review_commitment.py
+      - name: Run authority custody regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v \
+            scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody \
+            scripts.ci.tests.test_capture_private_review_helper_execution_custody \
+            scripts.ci.tests.test_capture_private_review_commitment \
+            scripts.ci.tests.test_capture_cocoapods_generated_build_subject \
+            scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+      - name: Run bootstrap authority regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts.ci.tests.test_capture_tuya_sdk_bootstrap
+      - name: Ensure diagnostic did not mutate product tree
+        run: git diff --check
