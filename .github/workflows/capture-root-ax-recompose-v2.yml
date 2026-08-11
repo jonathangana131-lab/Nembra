@@ -1,0 +1,38 @@
+name: Capture Root AX Recompose V2
+
+on:
+  push:
+    branches:
+      - product/v14-capture-root-ax-recompose-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch-root:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+      - name: Patch scoped Capture root
+        id: patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)"
+          python3 scripts/ci/temporary_capture_root_ax_recompose.py
+          after="$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)"
+          test "$before" != "$after" && echo 'changed=true' >> "$GITHUB_OUTPUT" || echo 'changed=false' >> "$GITHUB_OUTPUT"
+          git diff --check
+      - name: Commit product repair
+        if: steps.patch.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'nembra-v14-sol@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m 'product(capture): recompose root for Accessibility XXXL'
+          git push origin HEAD:${{ github.ref_name }}
