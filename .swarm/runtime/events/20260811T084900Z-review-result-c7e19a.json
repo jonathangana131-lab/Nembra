@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084900-review-result-c7e19a",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-c7e19a",
+  "laneId": "capture-flagship-composition",
+  "message": "Visual acceptance rejected for PR #2841 exact fbff1688e8da457cbf1f2702f90e41402bc7dbe3 after inspection of retained artifact 9094752082 sha256 5e1bf78e6db2009a7b13102d0a891691f5a0f0618e687b44b1f17fbc2dffaf24. Standard root hierarchy is cleaner, but Accessibility XXXL retained pixels still render `Physical capture locked` as an oversized three-line second hero and `Set up account metadata` as another huge three-line block; the primary Create approval QR action remains below the first viewport. Main Selective Graft run 31474314034 is also red: standalone build succeeded but the package recorded 10 stale source-contract failures in CaptureP0RootVisualAcceptanceTests.swift and TuyaCaptureRootProductSurfaceSourceTests.swift requiring old branding/copy/font expressions. PR review COMMENT 4904460619 records required recomposition + contract updates + fresh exact-head screenshot/package/Xcode acceptance. Physical state remains PHYSICAL_NO_GO.",
+  "createdAt": "2026-08-11T08:49:00Z"
+}
