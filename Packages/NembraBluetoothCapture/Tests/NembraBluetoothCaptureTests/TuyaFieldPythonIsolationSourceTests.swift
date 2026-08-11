@@ -24,6 +24,8 @@ struct TuyaFieldPythonIsolationSourceTests {
         #expect(!executablePythonLines.isEmpty)
         for line in executablePythonLines { #expect(line.contains("/usr/bin/python3 -I")) }
         #expect(!installer.contains("/usr/bin/python3 -c"))
+        #expect(installer.contains("/usr/bin/python3 -I -B - \"$PRIVATE_DEVICE_RUNNER\" \"$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE\" \"$ROOT\""))
+        #expect(!installer.contains("/usr/bin/python3 -I - \"$PRIVATE_DEVICE_RUNNER\""))
         #expect(installer.contains("DEVICE_ROWS=\"$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c"))
         #expect(installer.contains("COREDEVICE_MATCH=\"$(printf '%s\\0%s' \"$DEVICE_UDID\" \"$COREDEVICE_ROWS\" | /usr/bin/python3 -I -c"))
     }
