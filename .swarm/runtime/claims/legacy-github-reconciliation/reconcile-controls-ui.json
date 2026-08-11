@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "legacy-github-reconciliation",
+  "slot": "reconcile-controls-ui",
+  "role": "scheduler-reconciler",
+  "workerId": "sol-20260811-ui0052",
+  "leaseId": "reconcile-ui-20260811-0752",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T07:52:20Z",
+  "lastHeartbeatAt": "2026-08-11T07:52:20Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": null,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+}
