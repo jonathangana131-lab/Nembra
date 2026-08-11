@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084100-reconcile-remaining-3f7c-2680-retained-covered",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Legacy expected-red #2680 is demonstrably repair-covered but remains open. Its generated-CocoaPods substitution regression now exists permanently on #2709 and #2709 exact c09cc71eb886cc7dd2f402d88a7e4deed8614ab4 earned Capture CocoaPods Build Subject Authority run 31458644664 SUCCESS. Broader #2709 Field/Graft/Xcode were red, so this does not mark #2709 fully accepted. A prior attempt to close #2680 was blocked by the connector safety layer; do not repeatedly retry the destructive mutation. Treat #2680 as historical expected-red evidence whose product defect is covered, not as proof that current authority is fully accepted. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:41:00Z",
+  "data": {
+    "retainedPR": 2680,
+    "repairOwnerPR": 2709,
+    "repairOwnerSHA": "c09cc71eb886cc7dd2f402d88a7e4deed8614ab4",
+    "focusedAuthorityRun": 31458644664,
+    "focusedAuthorityConclusion": "SUCCESS",
+    "closeMutationBlocked": true,
+    "fullRepairAccepted": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
