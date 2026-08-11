@@ -9,11 +9,11 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:22:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:29:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
-  "sourceSHA": "df700cf0481d96725da833e4059bae237ac0d7de",
-  "intent": "Integrate/validate the clean #2918 production repair after successful R3 self-materialization without modifying the active primary owner's production files. Bind exact head, verify canonical red-team and wider private-identity custody acceptance, then prepare safe composition only after exact-head evidence and independent review. PHYSICAL NO-GO.",
-  "checkpoint": "Source/integration review clears recovered-inode reuse against current field raw-tree authority: ordinary hard-exit recovery consumes the one canonical root stage into first private output and inherited crash-residue regression requires zero root stage entries afterward; #2918 swap failures preserve replacement paths and keep sanitation on held inode. Publication Races exact df700 green. Cancelled Xcode/Field/Main-Graft do not count; Xcode command and Field/Main-Graft reruns requested. Independent review still must re-anchor from tombstone repair to df700 before composition."
+  "sourceSHA": "b46bc52e5c6e9916953af253784918587bc41889",
+  "intent": "Integrate/validate #2918 production repair descendants without modifying the active primary owner's production files. Bind only clean exact heads, verify publication/recovery/final-name custody and Build raw-tree composability, then prepare safe composition only after exact-head evidence and independent review. PHYSICAL NO-GO.",
+  "checkpoint": "Current b46bc52 is construction-only and integration-blocked: it carries temporary diagnostic/materializer workflows/helpers. R3 run 31491293788 self-test PASS but Publication Races FAILS exactly test_staging_substitution_after_name_check_cannot_be_left_at_destination; attacker bytes remain at credential destination when all pathname cleanup is removed. Descriptor-reuse core from df700 remains promising and normal successful hard-exit recovery leaves zero root stages, but no descendant is accepted until owner produces a clean head that closes post-publication wrong-destination sanitation without check-then-unlink or permanent root tombstones. Independent reviewer remains NEEDS_CHANGES. PHYSICAL NO-GO."
 }
