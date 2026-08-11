@@ -2,14 +2,13 @@
 """Regression for Final-GO private-installer process environment custody.
 
 The external GO issuer must not let caller-owned Bash startup variables execute code before the
-reviewed candidate installer begins. A hostile or stale BASH_ENV is caller-constructible authority;
-if it runs, the physical authorization control plane has admitted a side effect outside the exact
-candidate installer bytes.
+reviewed candidate installer begins. Hostile/stale authority values are caller-constructible input;
+only the exact reviewed lock + generated CocoaPods build-subject digests may cross the closed
+installer environment.
 """
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import os
 import subprocess
@@ -42,6 +41,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             )
 
             accepted_lock = "e" * 64
+            accepted_build_subject = "d" * 64
             installer = repository / GO.INSTALLER
             installer.parent.mkdir(parents=True, exist_ok=True)
             installer.write_text(
@@ -55,6 +55,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
                 "[[ \"${NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256:-}\" =~ ^[0-9a-f]{64}$ ]] || exit 47\n"
                 f"[[ \"${{PATH:-}}\" == {GO.TRUSTED_INSTALLER_PATH!r} ]] || exit 46\n"
                 f"[[ \"${{NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:-}}\" == {accepted_lock!r} ]] || exit 48\n"
+                f"[[ \"${{NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256:-}}\" == {accepted_build_subject!r} ]] || exit 49\n"
                 "printf '%s\\n' 'SDK-INTEGRATED CAPTURE LAUNCHED'\n",
                 encoding="utf-8",
             )
@@ -86,9 +87,17 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             os.environ["NEMBRA_TUYA_APP_SECRET"] = "caller-secret-must-not-cross"
             os.environ["NEMBRA_TUYA_APP_KEY"] = "caller-key-must-not-cross"
             os.environ["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"] = "f" * 64
+            os.environ["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"] = "c" * 64
             os.environ["PATH"] = "/caller/prepended/path:/usr/bin:/bin"
             try:
-                result = GO.installer(repository, source, private_device, GO.device_hash(private_device), accepted_lock)
+                result = GO.installer(
+                    repository,
+                    source,
+                    private_device,
+                    GO.device_hash(private_device),
+                    accepted_lock,
+                    accepted_build_subject,
+                )
             finally:
                 os.environ.clear()
                 os.environ.update(old)
@@ -107,13 +116,18 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             device.chmod(0o600)
             digest = GO.device_hash(device)
             accepted_lock = "e" * 64
-            env = GO.installer_environment(device, digest, accepted_lock)
+            accepted_build_subject = "d" * 64
+            env = GO.installer_environment(device, digest, accepted_lock, accepted_build_subject)
             self.assertEqual(env["PATH"], GO.TRUSTED_INSTALLER_PATH)
             self.assertEqual(env["BASH_ENV"], "/dev/null")
             self.assertEqual(env["ENV"], "/dev/null")
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"], str(device))
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"], digest)
             self.assertEqual(env["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"], accepted_lock)
+            self.assertEqual(
+                env["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"],
+                accepted_build_subject,
+            )
             forbidden = {
                 "GITHUB_TOKEN", "GH_TOKEN", "PYTHONPATH", "PYTHONHOME",
                 "NEMBRA_TUYA_APP_KEY", "NEMBRA_TUYA_APP_SECRET",
@@ -129,7 +143,17 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             digest = GO.device_hash(device)
             for lock in ("A" * 64, "a" * 63, "not-a-digest"):
                 with self.assertRaises(GO.GoError):
-                    GO.installer_environment(device, digest, lock)
+                    GO.installer_environment(device, digest, lock, "d" * 64)
+
+    def test_installer_environment_rejects_noncanonical_reviewed_build_subject(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-subject-shape-") as temporary:
+            device = Path(temporary).resolve(strict=True) / "device"
+            device.write_text("device", encoding="utf-8")
+            device.chmod(0o600)
+            digest = GO.device_hash(device)
+            for subject in ("A" * 64, "a" * 63, "not-a-digest"):
+                with self.assertRaises(GO.GoError):
+                    GO.installer_environment(device, digest, "e" * 64, subject)
 
     def test_installer_environment_rejects_symlinked_private_device_parent(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-final-go-env-symlink-") as temporary:
@@ -142,7 +166,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             alias = root / "alias"
             alias.symlink_to(real_parent, target_is_directory=True)
             with self.assertRaises(GO.GoError):
-                GO.installer_environment(alias / "device", "a" * 64, "e" * 64)
+                GO.installer_environment(alias / "device", "a" * 64, "e" * 64, "d" * 64)
 
 
 if __name__ == "__main__":
