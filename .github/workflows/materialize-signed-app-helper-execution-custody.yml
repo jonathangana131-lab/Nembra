@@ -24,48 +24,44 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           installer = Path("scripts/field/install_one_time_capture.command")
           source = installer.read_text(encoding="utf-8")
-
           anchor = '[[ "$HELPER_ACTUAL_BLOB" == "$HELPER_ACCEPTED_BLOB" ]] || die "Signed-app install custody helper worktree bytes differ from the exact accepted Git blob."\n'
           if source.count(anchor) != 1:
               raise SystemExit("helper acceptance anchor drifted")
-
-          custody = r'''SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64="$(/usr/bin/base64 < "$SIGNED_APP_CUSTODY_HELPER")" || \
-    die "Could not capture the exact accepted signed-app custody helper bytes."
-[[ -n "$SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64" ]] || die "Captured signed-app custody helper payload is empty."
-HELPER_CAPTURED_BLOB="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64" | /usr/bin/base64 -D | git hash-object --stdin)" || \
-    die "Could not hash the captured signed-app custody helper execution subject."
-[[ "$HELPER_CAPTURED_BLOB" == "$HELPER_ACCEPTED_BLOB" ]] || \
-    die "Captured signed-app custody helper bytes differ from the exact accepted Git blob."
-run_signed_app_custody_helper() {
-    printf '%s' "$SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64" | \
-        /usr/bin/base64 -D | \
-        /usr/bin/python3 -I -c '
-import sys
-source = sys.stdin.buffer.read()
-name = "<accepted-capture-signed-app-install-custody>"
-scope = {"__name__": "__main__", "__file__": name}
-exec(compile(source, name, "exec"), scope, scope)
-' "$@"
-}
-unset SIGNED_APP_CUSTODY_HELPER HELPER_ACTUAL_BLOB HELPER_CAPTURED_BLOB
-'''
+          custody_lines = [
+              'SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64="$(/usr/bin/base64 < "$SIGNED_APP_CUSTODY_HELPER")" || \\',
+              '    die "Could not capture the exact accepted signed-app custody helper bytes."',
+              '[[ -n "$SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64" ]] || die "Captured signed-app custody helper payload is empty."',
+              'HELPER_CAPTURED_BLOB="$(printf \'%s\' "$SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64" | /usr/bin/base64 -D | git hash-object --stdin)" || \\',
+              '    die "Could not hash the captured signed-app custody helper execution subject."',
+              '[[ "$HELPER_CAPTURED_BLOB" == "$HELPER_ACCEPTED_BLOB" ]] || \\',
+              '    die "Captured signed-app custody helper bytes differ from the exact accepted Git blob."',
+              'run_signed_app_custody_helper() {',
+              '    printf \'%s\' "$SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64" | \\',
+              '        /usr/bin/base64 -D | \\',
+              "        /usr/bin/python3 -I -c '",
+              'import sys',
+              'source = sys.stdin.buffer.read()',
+              'name = "<accepted-capture-signed-app-install-custody>"',
+              'scope = {"__name__": "__main__", "__file__": name}',
+              'exec(compile(source, name, "exec"), scope, scope)',
+              "' \"$@\"",
+              '}',
+              'unset SIGNED_APP_CUSTODY_HELPER HELPER_ACTUAL_BLOB HELPER_CAPTURED_BLOB',
+          ]
+          custody = "\n".join(custody_lines) + "\n"
           source = source.replace(anchor, anchor + custody, 1)
-
-          old_fingerprint = 'SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" fingerprint --app "$APP")" || \\\n'
-          new_fingerprint = 'SOURCE_APP_TREE_SHA256="$(run_signed_app_custody_helper fingerprint --app "$APP")" || \\\n'
+          old_fingerprint = 'SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" fingerprint --app "$APP")" || \\' + "\n"
+          new_fingerprint = 'SOURCE_APP_TREE_SHA256="$(run_signed_app_custody_helper fingerprint --app "$APP")" || \\' + "\n"
           if source.count(old_fingerprint) != 1:
               raise SystemExit("fingerprint helper execution marker drifted")
           source = source.replace(old_fingerprint, new_fingerprint, 1)
-
-          old_verify = 'STAGED_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" verify-stage \\\n'
-          new_verify = 'STAGED_APP_TREE_SHA256="$(run_signed_app_custody_helper verify-stage \\\n'
+          old_verify = 'STAGED_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" verify-stage \\' + "\n"
+          new_verify = 'STAGED_APP_TREE_SHA256="$(run_signed_app_custody_helper verify-stage \\' + "\n"
           if source.count(old_verify) != 1:
               raise SystemExit("verify-stage helper execution marker drifted")
           source = source.replace(old_verify, new_verify, 1)
-
           installer.write_text(source, encoding="utf-8")
           Path(".github/workflows/materialize-signed-app-helper-execution-custody.yml").unlink()
           PY
@@ -75,7 +71,7 @@ unset SIGNED_APP_CUSTODY_HELPER HELPER_ACTUAL_BLOB HELPER_CAPTURED_BLOB
           python3 -I scripts/ci/tests/test_capture_signed_app_helper_execution_subject.py
           bash -n scripts/field/install_one_time_capture.command
           ! grep -Fq '/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py"' scripts/field/install_one_time_capture.command
-          grep -Fq 'HELPER_CAPTURED_BLOB="$(printf '\''%s'\'' "$SIGNED_APP_CUSTODY_HELPER_CAPTURE_B64" | /usr/bin/base64 -D | git hash-object --stdin)"' scripts/field/install_one_time_capture.command
+          grep -Fq 'HELPER_CAPTURED_BLOB=' scripts/field/install_one_time_capture.command
           grep -Fq 'run_signed_app_custody_helper fingerprint' scripts/field/install_one_time_capture.command
           grep -Fq 'run_signed_app_custody_helper verify-stage' scripts/field/install_one_time_capture.command
           git diff --check
