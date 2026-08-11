@@ -21,6 +21,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/_compose_final_go_build_subject_recovery.py')
+          lines = path.read_text().splitlines()
+          prefix = "e=one(e,'            accepted_lock = \"e\" * 64\\n'"
+          hits = [index for index, line in enumerate(lines) if line.startswith(prefix)]
+          if len(hits) != 1:
+              raise SystemExit(f'env-subject fixer expected one composer line, found {len(hits)}')
+          lines[hits[0]] = "e=e.replace('            accepted_lock = \"e\" * 64\\n','            accepted_lock = \"e\" * 64\\n            accepted_build_subject = \"d\" * 64\\n',1)"
+          path.write_text('\n'.join(lines) + '\n')
+          PY
           python3 scripts/ci/_compose_final_go_build_subject_recovery.py
           python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
