@@ -72,6 +72,28 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
         ]
         var utterances: [String] = []
 
+        // Retain whatever VoiceOver actually spoke even when a strict
+        // moveForward() call throws. The throw stays fail-closed. The same
+        // bounded transcript is also mirrored to the XCTest/job log so an
+        // artifact-service outage cannot erase the only useful red diagnostic.
+        defer {
+            let retainedTranscript = utterances.enumerated()
+                .map { "\($0.offset): \($0.element)" }
+                .joined(separator: "\n")
+            let attachment = XCTAttachment(string: retainedTranscript)
+            attachment.name = "Capture VoiceOver Runtime Transcript"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+
+            let retainedLogPrefix = retainedTranscript.prefix(16_384)
+            print("NEMBRA_CAPTURE_VOICEOVER_TRANSCRIPT_BEGIN")
+            print(retainedLogPrefix)
+            if retainedLogPrefix.count < retainedTranscript.count {
+                print("NEMBRA_CAPTURE_VOICEOVER_TRANSCRIPT_TRUNCATED")
+            }
+            print("NEMBRA_CAPTURE_VOICEOVER_TRANSCRIPT_END")
+        }
+
         if let current = try? service.currentSpeech().utterance, !current.isEmpty {
             utterances.append(current)
         }
@@ -91,10 +113,6 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
         let transcript = utterances.enumerated()
             .map { "\($0.offset): \($0.element)" }
             .joined(separator: "\n")
-        let attachment = XCTAttachment(string: transcript)
-        attachment.name = "Capture VoiceOver Runtime Transcript"
-        attachment.lifetime = .keepAlways
-        add(attachment)
 
         let normalizedTranscript = transcript.lowercased()
         let positions = try requiredSpeech.map { phrase -> String.Index in
