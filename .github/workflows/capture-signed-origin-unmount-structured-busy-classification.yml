@@ -1,0 +1,138 @@
+name: Capture Signed Origin Structured Busy Classification
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py
+      - scripts/ci/tests/test_capture_signed_app_unmount_freeze_structured_credentials.py
+      - scripts/ci/tests/test_capture_signed_app_unmount_freeze_minimal_groups.py
+      - .github/workflows/capture-signed-origin-unmount-structured-busy-classification.yml
+  push:
+    branches:
+      - fix/v14-unmount-structured-resource-busy-sol-20260811
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-signed-origin-structured-busy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  explicit-resource-busy:
+    name: Require explicit resource-busy quiescence evidence
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind exact diagnostic parent and one-workflow delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          DIAGNOSTIC_PARENT_SHA: ac21813c06eed3e9c7d0f1aa5c82d507de01f6b5
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test "$(git merge-base HEAD "$DIAGNOSTIC_PARENT_SHA")" = "$DIAGNOSTIC_PARENT_SHA"
+          changed="$(git diff --name-only "$DIAGNOSTIC_PARENT_SHA"...HEAD | LC_ALL=C sort)"
+          expected_paths='.github/workflows/capture-signed-origin-unmount-structured-busy-classification.yml'
+          if [[ "$changed" != "$expected_paths" ]]; then
+            printf 'Busy-classification child must remain exactly one workflow path. Changed:\n%s\n' "$changed" >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile unchanged structured APFS witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-unmount-busy-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
+            scripts/ci/tests/test_capture_signed_app_unmount_freeze_structured_credentials.py \
+            scripts/ci/tests/test_capture_signed_app_unmount_freeze_minimal_groups.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Replay exact regular-file-FD APFS oracle
+        shell: bash
+        run: |
+          set -uo pipefail
+          output_file="$RUNNER_TEMP/nembra-unmount-structured-busy-output.txt"
+          set +e
+          sudo -n /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_unmount_freeze_minimal_groups.py \
+            >"$output_file" 2>&1
+          rc=$?
+          set -e
+          cat "$output_file"
+          if [[ "$rc" != 0 ]]; then
+            diagnostic="$(tail -n 160 "$output_file" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=Structured APFS oracle failed before resource-busy acceptance::%s\n' "$diagnostic"
+            exit "$rc"
+          fi
+
+          /usr/bin/python3 - "$output_file" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          marker = "NEMBRA_UNMOUNT_STRUCTURED_CREDENTIAL_JSON="
+          records = [
+              line[len(marker):]
+              for line in Path(sys.argv[1]).read_text().splitlines()
+              if line.startswith(marker)
+          ]
+          if len(records) != 1:
+              raise SystemExit(f"expected one structured APFS evidence record, found {len(records)}")
+          evidence = json.loads(records[0])
+          first_output = str(evidence.get("firstDetachOutput", ""))
+          first_rc = evidence.get("firstDetachReturnCode")
+          explicit_busy = isinstance(first_rc, int) and first_rc != 0 and "resource busy" in first_output.casefold()
+          required = (
+              evidence.get("structuredCredentialLaunch") is True
+              and evidence.get("normalGroupsContainCapability") is False
+              and evidence.get("pathAttackReturnCode") != 0
+              and explicit_busy
+              and evidence.get("heldDescriptorPostLockWrite") == "write-ok"
+              and evidence.get("secondDetachReturnCode") == 0
+              and isinstance(evidence.get("rootReadonlyWriteErrno"), int)
+              and evidence.get("rootReadonlyWriteErrno") != 0
+              and evidence.get("readonlyAttackReturnCode") != 0
+              and evidence.get("physicalAuthorityCreated") is False
+          )
+          if not required:
+              raise SystemExit(
+                  "regular-file APFS evidence failed fail-closed busy classification: "
+                  + json.dumps(evidence, sort_keys=True)
+              )
+          print("NEMBRA_UNMOUNT_STRUCTURED_EXPLICIT_RESOURCE_BUSY_ACCEPTED=1")
+          PY
+
+      - name: Retain busy-classification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-unmount-structured-busy-${{ github.run_id }}
+          path: ${{ runner.temp }}/nembra-unmount-structured-busy-output.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          DIAGNOSTIC_PARENT_SHA: ac21813c06eed3e9c7d0f1aa5c82d507de01f6b5
+        run: |
+          set -euo pipefail
+          git diff --check "$DIAGNOSTIC_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Validation only: no signing, install, device, Bluetooth, Tuya, telemetry, or physical experiment occurred.\n'
