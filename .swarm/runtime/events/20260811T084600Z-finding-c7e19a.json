@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084600-finding-c7e19a",
+  "type": "FINDING",
+  "workerId": "sol-20260811-c7e19a",
+  "laneId": "capture-build-authority",
+  "message": "Blocking convergence finding on selected PR #2840 exact f3b3c31150e29699172b208dab59c2d3724a5f62: the #2825/#2838 vnode successor still contains mutable-worktree guard presence admission `[[ -f $ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE ]]` and its inherited source-contract test requires that check, so it drops the non-duplicated #2836 exact-Git guard-presence hardening that live lane reconciliation explicitly requires preserving. Durable PR review COMMENT 4904436009 records the required repair: carry #2836's replacement-blind `git cat-file -e SOURCE_SHA:path` presence proof (or equivalent exact-source proof), reject the mutable worktree gate in regression, then rerun all required exact-head vnode/macOS, Field Provenance, Selective Graft, Xcode, and surrounding helper-authority gates. GitHub owner-account policy prevents REQUEST_CHANGES on its own PR, so review state could not be formally blocking. Physical state remains PHYSICAL_NO_GO.",
+  "createdAt": "2026-08-11T08:46:00Z"
+}
