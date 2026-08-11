@@ -1,6 +1,11 @@
 name: Capture Field Selected Xcode Tool ACL Custody
 
 on:
+  push:
+    branches:
+      - validation/v14-selected-xcode-acl-red-diagnostics-sol-20260811
+    paths:
+      - .github/workflows/capture-field-selected-xcode-tool-acl-custody.yml
   pull_request:
     paths:
       - scripts/field/install_one_time_capture.command
