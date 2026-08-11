@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "kind": "swarm-config",
   "stateBranch": "swarm-state",
-  "rolloutMode": "shadow",
+  "rolloutMode": "enforcement",
   "wipLimits": {
     "maxPrimaryLanes": 8,
     "maxPrimaryPerEpic": 3,
@@ -25,5 +25,12 @@
     "simulatorEvidenceIsPhysicalEvidence": false,
     "unknownTelemetryMayBeFabricated": false
   },
-  "legacyPRCompatibility": "shadow-warn"
+  "enforcement": {
+    "legacyCutoffUTC": "2026-08-11T08:03:20Z",
+    "requireValidatedState": true,
+    "trustedBaseValidator": true,
+    "hardFailControlledScope": true,
+    "hardFailPostCutoffMissingMetadata": true
+  },
+  "legacyPRCompatibility": "created-before-v16-cutoff-only"
 }
