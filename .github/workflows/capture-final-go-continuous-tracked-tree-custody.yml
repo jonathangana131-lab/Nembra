@@ -9,6 +9,7 @@ on:
       - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
       - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
       - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+      - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
       - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
       - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+      - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
   workflow_dispatch:
 
@@ -31,14 +33,14 @@ jobs:
     env:
       EXACT_PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
       PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/nembra-finalgo-pycache
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-pycache
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Bind exact candidate and five-path production delta
+      - name: Bind exact candidate and six-path production delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -54,6 +56,7 @@ jobs:
             scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
             scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
             scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
           )
           test "${#changed[@]}" -eq "${#expected[@]}"
           for index in "${!expected[@]}"; do
@@ -69,7 +72,8 @@ jobs:
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
             scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py \
-            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
 
       - name: Prove one-way sealed candidate handoff
         shell: bash
@@ -83,12 +87,13 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
 
-      - name: Preserve object-chain, descriptor, and inherited raw-candidate authority
+      - name: Preserve object-chain, descriptor, and committed-parent authority
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
           python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+          python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             CandidateRawFilesystemAuthorityTests.test_child_executes_exact_2873_parent_blob \
             CandidateRawFilesystemAuthorityTests.test_inherited_parent_candidate_runs_through_raw_authority \
