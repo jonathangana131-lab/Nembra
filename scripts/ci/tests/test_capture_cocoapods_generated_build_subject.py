@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -12,13 +13,22 @@ BOOTSTRAP = ROOT / "Scripts/bootstrap_capture_tuya_sdk.sh"
 BUILD_GUARD = ROOT / "Scripts/capture_tuya_private_input_build_guard.py"
 
 
-def load_helper():
-    spec = importlib.util.spec_from_file_location("cocoapods_subject", HELPER)
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("could not load generated build-subject helper")
+        raise RuntimeError(f"could not load {name}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def load_helper():
+    return load_module("cocoapods_subject", HELPER)
+
+
+def load_build_guard():
+    return load_module("capture_tuya_private_input_build_guard_test", BUILD_GUARD)
 
 
 def make_subject(root: Path) -> tuple[Path, Path, Path, Path]:
@@ -67,6 +77,29 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
                 separately_guarded_external_roots=(private_root,),
             )
             self.assertRegex(admitted, r"^[0-9a-f]{64}$")
+
+    def test_preaccepted_digest_mismatch_blocks_before_backend_or_child_spawn(self) -> None:
+        module = load_build_guard()
+
+        class FakeInputs:
+            def generation_snapshot(self):
+                return ("private-snapshot", "a" * 64)
+
+        def forbidden_backend():
+            self.fail("backend must not be constructed after digest mismatch")
+
+        def forbidden_spawn(*_args, **_kwargs):
+            self.fail("child process must not spawn after digest mismatch")
+
+        with self.assertRaises(module.BuildGuardError) as error:
+            module.run_guarded_build(
+                FakeInputs(),
+                ["xcodebuild"],
+                expected_generated_subject_sha256="b" * 64,
+                backend_factory=forbidden_backend,
+                popen_factory=forbidden_spawn,
+            )
+        self.assertIn("no longer matches the preaccepted SHA-256", str(error.exception))
 
     def test_bootstrap_binds_reviewed_generated_subject_before_field_build(self) -> None:
         source = BOOTSTRAP.read_text(encoding="utf-8")
