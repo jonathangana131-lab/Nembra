@@ -15,24 +15,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout exact repair trigger
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: repair/v14-capture-auth-transport-field-gates-sol
           fetch-depth: 0
 
-      - name: Apply and validate fail-closed repair
+      - name: Apply focused Capture security repair
         shell: bash
         env:
-          EXPECTED_PARENT: fcaf1b0f29f7b6e5a7e379cbe1b7df2b207caf13
+          EXPECTED_BASE: fcaf1b0f29f7b6e5a7e379cbe1b7df2b207caf13
           BRANCH: repair/v14-capture-auth-transport-field-gates-sol
         run: |
           set -euo pipefail
-
           trigger="$(git rev-parse HEAD)"
-          parent="$(git rev-parse HEAD^)"
-          test "$parent" = "$EXPECTED_PARENT"
-          test "$(git diff --name-only "$EXPECTED_PARENT" "$trigger")" = '.github/workflows/tmp-capture-auth-transport-repair.yml'
+          git merge-base --is-ancestor "$EXPECTED_BASE" "$trigger"
+          test "$(git diff --name-only "$EXPECTED_BASE" "$trigger")" = '.github/workflows/tmp-capture-auth-transport-repair.yml'
 
           python3 - <<'PY'
           from pathlib import Path
@@ -42,181 +39,164 @@ jobs:
           old = '/usr/bin/python3 -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
           new = '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
           if text.count(old) != 1 or new in text:
-              raise SystemExit('private-reader invocation did not match the exact pre-repair form')
+              raise SystemExit('unexpected private-reader invocation')
           installer.write_text(text.replace(old, new, 1))
 
           bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
           text = bridge.read_text()
-          old = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
-                      let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\\(rawEndpoint)"
-                      guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
-          '''
-          # Keep indentation exact to the source rather than relying on the visual heredoc alignment.
-          old = old.replace('                      let endpoint', '            let endpoint').replace('                      guard', '            guard')
-          new = '''            let rawEndpoint = (result["endpoint"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                      let endpointCandidate = rawEndpoint.contains("://") ? rawEndpoint : "https://\\(rawEndpoint)"
-                      guard var endpointComponents = URLComponents(string: endpointCandidate),
-                            endpointComponents.scheme?.lowercased() == "https",
-                            let endpointHost = endpointComponents.host,
-                            !endpointHost.isEmpty,
-                            endpointComponents.user == nil,
-                            endpointComponents.password == nil,
-                            endpointComponents.query == nil,
-                            endpointComponents.fragment == nil,
-                            endpointComponents.path.isEmpty || endpointComponents.path == "/" else {
-                          phase = .failed
-                          statusMessage = "Tuya returned a connection endpoint Nembra could not safely use. Account credentials were not sent."
-                          pollTask?.cancel()
-                          manualApprovalTask?.cancel()
-                          return
-                      }
-                      endpointComponents.scheme = "https"
-                      endpointComponents.path = ""
-                      guard let endpointURL = endpointComponents.url else {
-                          phase = .failed
-                          statusMessage = "Tuya returned a connection endpoint Nembra could not safely use. Account credentials were not sent."
-                          pollTask?.cancel()
-                          manualApprovalTask?.cancel()
-                          return
-                      }
-                      let endpoint = endpointURL.absoluteString
-                      guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty else {
-          '''
-          for needle in ('                      let endpointCandidate', '                      guard var endpointComponents', '                            endpointComponents', '                          phase', '                          statusMessage', '                          pollTask', '                          manualApprovalTask', '                          return', '                      }', '                      endpointComponents', '                      guard let endpointURL', '                      let endpoint', '                      guard !access'):
-              new = new.replace(needle, needle[12:])
-          if text.count(old) != 1 or 'rawEndpoint.hasPrefix("http")' not in text:
-              raise SystemExit('Tuya endpoint admission did not match the exact insecure pre-repair form')
+          old = (
+              '            let rawEndpoint = result["endpoint"] as? String ?? ""\n'
+              '            let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\\(rawEndpoint)"\n'
+              '            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {\n'
+              '                throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")\n'
+              '            }\n'
+          )
+          new = (
+              '            let rawEndpoint = result["endpoint"] as? String ?? ""\n'
+              '            guard let endpoint = Self.secureTuyaEndpoint(rawEndpoint) else {\n'
+              '                phase = .failed\n'
+              '                statusMessage = "Tuya returned a connection endpoint Nembra could not safely use. Account credentials were not sent."\n'
+              '                pollTask?.cancel()\n'
+              '                pollTask = nil\n'
+              '                manualApprovalTask?.cancel()\n'
+              '                manualApprovalTask = nil\n'
+              '                return\n'
+              '            }\n'
+              '            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty else {\n'
+              '                throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")\n'
+              '            }\n'
+          )
+          if text.count(old) != 1:
+              raise SystemExit('unexpected Tuya endpoint admission block')
           text = text.replace(old, new, 1)
 
-          old_guard = '        guard let url = components.url else { throw BridgeError.invalidURL }\n\n        var request = URLRequest(url: url)'
-          new_guard = '''        guard let url = components.url,
-                    url.scheme?.lowercased() == "https",
-                    let urlHost = url.host,
-                    !urlHost.isEmpty else { throw BridgeError.invalidURL }
+          old = '        guard let url = components.url else { throw BridgeError.invalidURL }\n\n        var request = URLRequest(url: url)'
+          new = (
+              '        guard let url = components.url,\n'
+              '              url.scheme?.lowercased() == "https",\n'
+              '              let host = url.host,\n'
+              '              !host.isEmpty else { throw BridgeError.invalidURL }\n\n'
+              '        var request = URLRequest(url: url)'
+          )
+          if text.count(old) != 1:
+              raise SystemExit('unexpected signed request URL guard')
+          text = text.replace(old, new, 1)
+
+          marker = '    private static func makeDevice(_ raw: [String: Any]) -> LinkedDevice {'
+          helper = '''    private static func secureTuyaEndpoint(_ rawEndpoint: String) -> String? {
+              let trimmed = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+              guard !trimmed.isEmpty else { return nil }
           
-                  var request = URLRequest(url: url)'''
-          new_guard = new_guard.replace('                    url.scheme', '              url.scheme').replace('                    let urlHost', '              let urlHost').replace('                    !urlHost', '              !urlHost').replace('          \n                  var request', '\n\n        var request')
-          if text.count(old_guard) != 1:
-              raise SystemExit('signed request URL guard did not match the exact pre-repair form')
-          text = text.replace(old_guard, new_guard, 1)
+              let candidate: String
+              if let parsed = URLComponents(string: trimmed), parsed.scheme != nil {
+                  candidate = trimmed
+              } else {
+                  candidate = "https://\\(trimmed)"
+              }
+          
+              guard var components = URLComponents(string: candidate),
+                    components.scheme?.lowercased() == "https",
+                    let host = components.host,
+                    !host.isEmpty,
+                    components.user == nil,
+                    components.password == nil,
+                    components.query == nil,
+                    components.fragment == nil,
+                    components.path.isEmpty || components.path == "/" else {
+                  return nil
+              }
+              components.scheme = "https"
+              components.path = ""
+              guard let url = components.url else { return nil }
+              return url.absoluteString
+          }
+          
+          '''.replace('\n          ', '\n')
+          if text.count(marker) != 1 or 'private static func secureTuyaEndpoint' in text:
+              raise SystemExit('unexpected secure endpoint helper insertion point')
+          text = text.replace(marker, helper + marker, 1)
           bridge.write_text(text)
-
-          test = Path('scripts/ci/tests/test_capture_final_field_tooling_source.py')
-          test.write_text(r'''#!/usr/bin/env python3
-          from pathlib import Path
-          
-          root = Path(__file__).resolve().parents[3]
-          installer = (root / "scripts/field/install_one_time_capture.command").read_text()
-          bridge = (root / "NembraApp/Features/Research/TuyaAccountBridge.swift").read_text()
-          inspector = root / "scripts/ci/es80_signed_field_artifact_evidence.py"
-          provisioner = root / "Scripts/provision_capture_tuya_identity.sh"
-          
-          def require(condition: bool, message: str) -> None:
-              if not condition:
-                  raise AssertionError(message)
-          
-          require('/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"' in installer,
-                  "field installer must suppress Python bytecode while importing the private reader")
-          require('rawEndpoint.hasPrefix("http")' not in bridge,
-                  "Tuya endpoint admission must not accept the broad http* prefix")
-          require('endpointComponents.scheme?.lowercased() == "https"' in bridge,
-                  "Tuya endpoint admission must require HTTPS")
-          require('let endpointHost = endpointComponents.host' in bridge and '!endpointHost.isEmpty' in bridge,
-                  "Tuya endpoint admission must require a nonempty host")
-          require('endpointComponents.user == nil' in bridge and 'endpointComponents.password == nil' in bridge,
-                  "Tuya endpoint admission must reject userinfo")
-          require('endpointComponents.query == nil' in bridge and 'endpointComponents.fragment == nil' in bridge,
-                  "Tuya endpoint admission must reject query/fragment authority confusion")
-          require('url.scheme?.lowercased() == "https"' in bridge and 'let urlHost = url.host' in bridge,
-                  "signed request construction must re-check HTTPS and host before X-token transport")
-          admission = bridge.index('endpointComponents.scheme?.lowercased() == "https"')
-          session = bridge.index('session = Session(')
-          require(admission < session, "secure endpoint admission must precede authenticated session publication")
-          signed = bridge.index('private func signedGET(')
-          request = bridge.index('var request = URLRequest(url: url)', signed)
-          secure_guard = bridge.index('url.scheme?.lowercased() == "https"', signed)
-          require(secure_guard < request, "signed request must reject non-HTTPS URL before URLRequest creation")
-          require(inspector.is_file(), "canonical signed-field inspector must be present in accepted source")
-          require(provisioner.is_file(), "documented private Tuya identity provisioner must be present in accepted source")
-          print("capture final field-tooling source contract: PASS")
-          ''').replace('\n          ', '\n'))
-
-          workflow = Path('.github/workflows/capture-field-build-provenance.yml')
-          text = workflow.read_text()
-          replacements = [
-              (
-                  '      - scripts/ci/es80_signed_field_artifact_private_runner.py\n',
-                  '      - scripts/ci/es80_signed_field_artifact_private_runner.py\n      - scripts/ci/es80_signed_field_artifact_evidence.py\n',
-              ),
-              (
-                  '      - Scripts/bootstrap_capture_tuya_sdk.sh\n',
-                  '      - Scripts/bootstrap_capture_tuya_sdk.sh\n      - Scripts/provision_capture_tuya_identity.sh\n',
-              ),
-              (
-                  '      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py\n',
-                  '      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py\n      - scripts/ci/tests/test_capture_final_field_tooling_source.py\n',
-              ),
-              (
-                  '          bash -n Scripts/bootstrap_capture_tuya_sdk.sh\n',
-                  '          bash -n Scripts/bootstrap_capture_tuya_sdk.sh\n          bash -n Scripts/provision_capture_tuya_identity.sh\n',
-              ),
-              (
-                  '          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test\n          bash -n scripts/field/install_one_time_capture.command\n',
-                  '          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test\n          /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py\n          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test\n          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_final_field_tooling_source.py\n          /usr/bin/python3 scripts/ci/tests/test_capture_final_field_tooling_source.py\n          bash -n scripts/field/install_one_time_capture.command\n',
-              ),
-          ]
-          for old, new in replacements:
-              if text.count(old) != 1:
-                  raise SystemExit(f'provenance workflow transform expected exactly one match: {old!r}')
-              text = text.replace(old, new, 1)
-          workflow.write_text(text)
           PY
 
-          bash -n scripts/field/install_one_time_capture.command
-          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
-          bash -n Scripts/provision_capture_tuya_identity.sh
-          python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
-          python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
-          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
-          python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
-          python3 -m py_compile scripts/ci/tests/test_capture_final_field_tooling_source.py
-          python3 scripts/ci/tests/test_capture_final_field_tooling_source.py
+          cat > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTransportSourceTests.swift <<'SWIFT'
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
 
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "$tmp"' EXIT
-          provision_output="$(printf 'dummy-app-key\ndummy-app-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime" bash Scripts/provision_capture_tuya_identity.sh 2>&1)"
-          test -f "$tmp/runtime/NembraTuyaPrivateConfig.podspec"
-          test -f "$tmp/runtime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift"
-          test "$(stat -c '%a' "$tmp/runtime/NembraTuyaPrivateConfig.podspec")" = 600
-          test "$(stat -c '%a' "$tmp/runtime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")" = 600
-          ! grep -R -Fq 'dummy-app-secret' "$tmp/runtime"
-          ! grep -Fq 'dummy-app-secret' <<< "$provision_output"
-          rm -rf "$tmp"
-          trap - EXIT
+          @Suite("Capture authenticated Tuya transport custody")
+          struct TuyaAuthenticatedTransportSourceTests {
+              @Test("server endpoint cannot downgrade X-token transport to plaintext")
+              func endpointRequiresHTTPSBeforeSessionPublication() throws {
+                  let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+                  #expect(!bridge.contains("rawEndpoint.hasPrefix(\"http\")"))
+                  #expect(bridge.contains("guard let endpoint = Self.secureTuyaEndpoint(rawEndpoint)"))
+                  #expect(bridge.contains("components.scheme?.lowercased() == \"https\""))
+                  #expect(bridge.contains("let host = components.host"))
+                  #expect(bridge.contains("components.user == nil"))
+                  #expect(bridge.contains("components.password == nil"))
+                  #expect(bridge.contains("components.query == nil"))
+                  #expect(bridge.contains("components.fragment == nil"))
+                  let admission = try #require(bridge.range(of: "guard let endpoint = Self.secureTuyaEndpoint(rawEndpoint)"))
+                  let publication = try #require(bridge.range(of: "session = Session("))
+                  #expect(admission.lowerBound < publication.lowerBound)
+              }
+
+              @Test("signed request and private reader stay fail-closed at execution seams")
+              func signedRequestAndReaderSeamsAreGuarded() throws {
+                  let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+                  let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+                  let signedStart = try #require(bridge.range(of: "private func signedGET("))
+                  let signed = String(bridge[signedStart.lowerBound...])
+                  let secureGuard = try #require(signed.range(of: "url.scheme?.lowercased() == \"https\""))
+                  let request = try #require(signed.range(of: "var request = URLRequest(url: url)"))
+                  #expect(secureGuard.lowerBound < request.lowerBound)
+                  #expect(installer.contains("/usr/bin/python3 -I -B - \"$PRIVATE_DEVICE_RUNNER\""))
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+          }
+          SWIFT
 
           python3 - <<'PY'
-          import yaml
           from pathlib import Path
-          yaml.safe_load(Path('.github/workflows/capture-field-build-provenance.yml').read_text())
+          bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift').read_text()
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          assert 'rawEndpoint.hasPrefix("http")' not in bridge
+          assert 'guard let endpoint = Self.secureTuyaEndpoint(rawEndpoint)' in bridge
+          assert 'components.scheme?.lowercased() == "https"' in bridge
+          assert 'components.user == nil' in bridge
+          assert 'components.password == nil' in bridge
+          assert 'components.query == nil' in bridge
+          assert 'components.fragment == nil' in bridge
+          signed = bridge[bridge.index('private func signedGET('):]
+          assert signed.index('url.scheme?.lowercased() == "https"') < signed.index('var request = URLRequest(url: url)')
+          assert '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"' in installer
           PY
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
 
           rm .github/workflows/tmp-capture-auth-transport-repair.yml
           expected="$(cat <<'EOF' | sort
-.github/workflows/capture-field-build-provenance.yml
-NembraApp/Features/Research/TuyaAccountBridge.swift
-scripts/ci/tests/test_capture_final_field_tooling_source.py
-scripts/field/install_one_time_capture.command
-EOF
-)"
+          NembraApp/Features/Research/TuyaAccountBridge.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTransportSourceTests.swift
+          scripts/field/install_one_time_capture.command
+          EOF
+          )"
           actual="$(git status --porcelain=v1 | sed -E 's/^...//' | sort)"
           test "$actual" = "$expected"
-          git diff --check
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git commit -m 'fix(capture): fail closed on insecure auth transport'
-
           git fetch origin "$BRANCH"
           test "$(git rev-parse FETCH_HEAD)" = "$trigger"
           git push origin HEAD:"$BRANCH"
