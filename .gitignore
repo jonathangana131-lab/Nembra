@@ -15,3 +15,9 @@ Package.resolved
 # Local artifacts
 artifacts/
 *.log
+
+# Capture private field-build inputs and generated CocoaPods workspace
+LocalSecrets/
+Pods/
+Podfile.lock
+NembraCapture.xcworkspace/
