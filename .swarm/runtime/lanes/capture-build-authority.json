@@ -9,9 +9,30 @@
   "state": "NEEDS_CHANGES",
   "dependencies": [],
   "blockers": [
-    "Current selected convergence #2968 exact 3c2244ed599d2d0cc557132ef89ea043b68697b3 is not accepted: Capture Private Review Downstream Helper Execution Red Team run 31495035480 is terminal FAILURE. The failing regression extracts run_accepted_source_python without its read_verified_accepted_git_blob dependency and errors command-not-found; repair the exact-current test harness without weakening replacement-blind Git payload authority, then rerun the exact head.",
-    "#2969 exact ded098b74f409492867e4ce69f8650cb253878e5 independently demonstrates a newer selected-Xcode executable-file custody gap on #2966 ancestry: parent-directory custody plus -f/-x/non-symlink is not exact xcodebuild/xctrace/devicectl file ownership/mode authority. Production must prove exact tool-file custody or equal/stronger descriptor/object authority before execution.",
-    "On #2968 exact 3c2244ed, Field Build Provenance 31495035454 and Main Selective Graft 31495035434 are cancelled and Xcode 27 31495035452 is skipped; those are non-evidence. Exact current composition must re-earn all required terminal gates after repairs."
+    {
+      "id": "selected-xcode-acl-custody-red-unclassified",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Current production candidate #3072 exact 3e41ecd07b020523ccfedc365c201db9799c3e7e has terminal Main Graft SUCCESS but terminal Xcode/ACL acceptance failure. The dedicated ACL workflow run 31540635879 reached the unchanged ACL regression and failed, but the retained annotation did not classify whether the red is a fixture incompatibility, legitimate selected-Xcode ACL state, or a production bypass. Validation child #3093 exact 49e51aef23b843f8790d36508b4f6d33025c2df4 preserves the same oracle while retaining bounded failure diagnostics; run 31543820090 is QUEUED. Do not weaken the ACL authority rule before that exact red is classified.",
+      "pr": 3093,
+      "headSHA": "49e51aef23b843f8790d36508b4f6d33025c2df4"
+    },
+    {
+      "id": "field-selected-tool-source-contract-converged-but-parent-unaccepted",
+      "state": "ACTIVE",
+      "scope": "integration",
+      "reason": "#3088 exact 31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4 composes only the selected-tool Field source-oracle correction onto #3072 and has terminal Capture Field Build Provenance SUCCESS run 31542271509. Its Xcode result 31542271777 is SKIPPED. This is valid Field integration evidence but cannot accept or replace #3072's unresolved ACL production authority. If #3072 moves after red classification/repair, the Field correction must be deliberately absorbed and applicable exact-head gates reset.",
+      "pr": 3088,
+      "headSHA": "31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4"
+    },
+    {
+      "id": "final-build-authority-composition-pending",
+      "state": "ACTIVE",
+      "scope": "flagship",
+      "reason": "Even after selected-Xcode ACL closure, final build authority must converge with current private identity, signed compiler-output/install custody, Final-GO and app/runtime lineages on one unchanged exact head. Skipped Xcode or ancestor greens are not promotable.",
+      "pr": 3072,
+      "headSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e"
+    }
   ],
   "mode": "exclusive",
   "allowedWriteAreas": ["Scripts/bootstrap_capture_tuya_sdk.sh","Scripts/capture_private_review_commitment.py","Scripts/capture_tuya_private_input_build_guard.py","Scripts/capture_tuya_private_input_provenance.py","Scripts/capture_cocoapods_generated_build_subject.py","scripts/field/install_one_time_capture.command"],
@@ -24,20 +45,19 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "3c2244ed599d2d0cc557132ef89ea043b68697b3",
+  "sourceSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
   "legacy": {
-    "primaryPR": 2968,
-    "primaryHeadSHA": "3c2244ed599d2d0cc557132ef89ea043b68697b3",
-    "selectedBasePR": 2966,
-    "selectedBaseHeadSHA": "ffba4e252b1be3bbe50c881538a02f0b4b9e6786",
-    "absorbedIngredients": [2867,2876,2878,2892,2898,2910,2924,2937,2941,2949,2960,2966],
-    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856,2859,2867,2869,2875,2876,2878,2892,2898,2907,2910,2913,2915,2917,2922,2924,2933,2937,2939,2941,2949,2960,2966,2968,2969],
-    "exactHeadGateState": "CURRENT_CONVERGENCE_RED_TEST_HARNESS_PLUS_NEW_TOOL_FILE_CUSTODY_BLOCKER",
-    "currentFailedRun": 31495035480,
-    "currentFailedJob": 93790491398,
-    "selectedXcodeToolFileRedTeamPR": 2969,
-    "selectedXcodeToolFileRedTeamHeadSHA": "ded098b74f409492867e4ce69f8650cb253878e5",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T20:14Z by sol-20260811-b7c1a2. Live selected convergence is #2968 exact 3c2244ed, combining the clean current selected-Xcode spine with raw pre-arm and verified Git execution payload authority. Focused tracked-source, vnode/current, private helper/commitment, Git payload, xcrun/Xcode-environment and selected-Xcode gates are green, but the downstream-helper workflow is terminal red because its replacement-blind Git fixture extracts run_accepted_source_python alone after that function acquired a dependency on read_verified_accepted_git_blob. This is test-harness composition debt unless source review shows otherwise; do not weaken the production verified-payload primitive. Separately #2969 is a valid expected-red exact tool-file custody finding against #2966 ancestry and remains a production blocker. Field/Graft cancelled and Xcode skipped on #2968 are not acceptance. PHYSICAL NO-GO."
+    "reconciledAt": "2026-08-11T23:16:22Z",
+    "selectedProductionPR": 3072,
+    "selectedProductionHeadSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
+    "aclDiagnosticPR": 3093,
+    "aclDiagnosticHeadSHA": "49e51aef23b843f8790d36508b4f6d33025c2df4",
+    "aclDiagnosticRun": 31543820090,
+    "fieldConvergencePR": 3088,
+    "fieldConvergenceHeadSHA": "31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4",
+    "fieldConvergenceSuccessRun": 31542271509,
+    "fieldConvergenceSkippedXcodeRun": 31542271777,
+    "knownExactHeadFinding": "Reconciled generation 10 on 2026-08-11. The old #2968/#2969 snapshot is obsolete. Selected production is #3072 exact 3e41ecd0. Its real selected-Xcode ACL regression is terminal red and is not yet classified; #3093 is the exact diagnostic child and remains queued. #3088 has independently made the selected-tool Field source contract green on its exact one-workflow child, but that cannot waive ACL authority or skipped Xcode. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","security","build-authority","field-installer","filesystem-authority","vnode","xcode-authority","legacy-import"]
 }
