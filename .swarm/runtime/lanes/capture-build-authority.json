@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "capture-build-authority",
+  "epic": "capture",
+  "title": "Capture build and private-review execution authority",
+  "objective": "Converge the selected CocoaPods/private-input field-build authority lineage onto one exact descendant, preserving reviewed lock/generated/private subjects and closing verifier execution custody before flagship composition.",
+  "priority": 0,
+  "state": "BLOCKED_EXTERNAL",
+  "dependencies": [],
+  "blockers": [
+    {
+      "id": "legacy-pr-active",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Legacy Capture implementation is actively moving on PR #2805; V15 workers must not duplicate product edits until it hands off or becomes stale.",
+      "pr": 2805,
+      "headSHA": "4456c176874c7489d5f0789b51e56324205442e6"
+    }
+  ],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "Scripts/bootstrap_capture_tuya_sdk.sh",
+    "Scripts/capture_private_review_commitment.py",
+    "Scripts/capture_tuya_private_input_build_guard.py"
+  ],
+  "adjacentWriteAreas": [
+    "scripts/ci/tests",
+    ".github/workflows",
+    "Podfile",
+    "Podfile.lock"
+  ],
+  "slots": [
+    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":[]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "legacy": {
+    "primaryPR": 2805,
+    "primaryHeadSHA": "4456c176874c7489d5f0789b51e56324205442e6",
+    "lineagePRs": [2709, 2778, 2799, 2794, 2805],
+    "knownExactHeadFinding": "Build-guard main still carries an undefined private_review exception handler at the observed head; exact-head selective-graft and field gates must be evaluated after every move."
+  },
+  "tags": ["capture", "p0", "security", "build-authority", "legacy-import"]
+}
