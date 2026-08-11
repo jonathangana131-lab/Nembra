@@ -70,21 +70,18 @@ jobs:
             scripts/ci/tests/test_capture_private_identity_crash_residue.py | LC_ALL=C sort)"
           test "$actual" = "$expected"
 
-      - name: Publish clean product head and retire materializer
+      - name: Publish validated non-workflow product files
         shell: bash
         run: |
           set -euo pipefail
-          rm -f scripts/tmp_v14_private_identity_completion_materializer.py
-          rm -f .github/workflows/tmp-v14-private-identity-completion-materializer.yml
+          git restore .github/workflows/capture-private-identity-publication-races-redteam.yml
           git add \
-            .github/workflows/capture-private-identity-publication-races-redteam.yml \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift \
             Scripts/provision_capture_tuya_identity.sh \
             Scripts/provision_capture_tuya_identity_writer.py \
-            scripts/ci/tests/test_capture_private_identity_crash_residue.py \
-            scripts/tmp_v14_private_identity_completion_materializer.py \
-            .github/workflows/tmp-v14-private-identity-completion-materializer.yml
+            scripts/ci/tests/test_capture_private_identity_crash_residue.py
           git diff --cached --check
+          test -z "$(git diff --cached --name-only | grep '^\.github/workflows/' || true)"
           git config user.name "jonathangana131-lab"
           git config user.email "jonathangana131@gmail.com"
           git commit -m "Capture: close private identity recovery authority"
