@@ -125,10 +125,21 @@ class CaptureFieldInstallerGitAuthorityRedTeamTests(unittest.TestCase):
         self.assertIn('SELECTED_DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"', source)
         self.assertIn('validate_root_custodied_path "$SELECTED_DEVELOPER_DIR" directory', source)
         self.assertIn('SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)"', source)
+        self.assertIn('validate_root_custodied_path "$SELECTED_XCODEBUILD" file', source)
         self.assertIn('-- "$SELECTED_XCODEBUILD" \\', source)
         self.assertNotIn('-- /usr/bin/xcodebuild \\', source)
-        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun xctrace list devices', source)
-        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl', source)
+        for tool, variable in (("xctrace", "SELECTED_XCTRACE"), ("devicectl", "SELECTED_DEVICECTL")):
+            self.assertIn(
+                f'{variable}="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find {tool})"',
+                source,
+            )
+            self.assertIn(f'validate_root_custodied_path "${variable}" file', source)
+        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_XCTRACE" list devices', source)
+        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_DEVICECTL" list devices', source)
+        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_DEVICECTL" device install app', source)
+        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_DEVICECTL" device process launch', source)
+        self.assertNotIn('/usr/bin/xcrun xctrace', source)
+        self.assertNotIn('/usr/bin/xcrun devicectl', source)
         self.assertIn("/usr/bin/security find-identity", source)
 
     def test_bootstrap_executes_only_from_exact_accepted_git_bytes(self) -> None:
