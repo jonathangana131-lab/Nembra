@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'bootstrap Capture field installer prerequisite repair'
+    if: github.event.head_commit.message == 'repair Capture field installer prerequisite materializer'
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -19,116 +19,37 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 2
 
-      - name: Materialize exact field-installer prerequisites
+      - name: Materialize and validate exact field-installer prerequisites
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = '4fce4861d99903eb0772e33949c3d302a1258d2a'
+          git merge-base --is-ancestor 4fce4861d99903eb0772e33949c3d302a1258d2a HEAD
           test "$(git hash-object .gitignore)" = 'dcd1acb190701a96694c2537ca5a8e3f3d352e84'
           test "$(git hash-object .github/workflows/capture-field-build-provenance.yml)" = '408caadd97ef56b83d4ab55d202747cd02bcab9b'
           test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift)" = 'e2d13ab312265ffe2e5c9cac60d8faf6474bc42f'
           test ! -e scripts/ci/es80_signed_field_artifact_private_runner.py
-
           git fetch --no-tags --depth=1 origin a0f4a33451f61411d6e0541f2e70edea5438342d
           git show a0f4a33451f61411d6e0541f2e70edea5438342d:scripts/ci/es80_signed_field_artifact_private_runner.py > scripts/ci/es80_signed_field_artifact_private_runner.py
           test "$(git hash-object scripts/ci/es80_signed_field_artifact_private_runner.py)" = 'f648b3080313f65da1e358ef3beb8c23d05966e6'
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          ignore = Path('.gitignore')
-          text = ignore.read_text()
-          addition = '''
-
-# Private Capture field-build inputs / generated CocoaPods workspace
-LocalSecrets/
-Pods/
-NembraCapture.xcworkspace/
-Podfile.lock
-'''
-          for line in ['LocalSecrets/', 'Pods/', 'NembraCapture.xcworkspace/', 'Podfile.lock']:
-              assert line not in text
-          ignore.write_text(text.rstrip() + addition)
-
-          workflow = Path('.github/workflows/capture-field-build-provenance.yml')
-          w = workflow.read_text()
-          path_anchor = '      - NembraApp/App/NembraCaptureBuildIdentity.swift\n'
-          assert w.count(path_anchor) == 1
-          path_add = '      - .gitignore\n      - scripts/ci/es80_signed_field_artifact_private_runner.py\n'
-          w = w.replace(path_anchor, path_anchor + path_add, 1)
-
-          var_anchor = "          private_provenance='Scripts/capture_tuya_private_input_provenance.py'\n"
-          assert w.count(var_anchor) == 1
-          var_add = "          private_device_runner='scripts/ci/es80_signed_field_artifact_private_runner.py'\n          ignore='.gitignore'\n"
-          w = w.replace(var_anchor, var_anchor + var_add, 1)
-
-          check_anchor = "          bash -n \"$installer\"\n"
-          assert w.count(check_anchor) == 1
-          checks = '''          test -f "$private_device_runner"
-          grep -Fq 'def read_private_identifier(' "$private_device_runner"
-          grep -Fq 'O_NOFOLLOW' "$private_device_runner"
-          grep -Fq 'O_DIRECTORY' "$private_device_runner"
-          grep -Fq 'dir_fd=parent_descriptor' "$private_device_runner"
-          grep -Fxq 'LocalSecrets/' "$ignore"
-          grep -Fxq 'Pods/' "$ignore"
-          grep -Fxq 'NembraCapture.xcworkspace/' "$ignore"
-          grep -Fxq 'Podfile.lock' "$ignore"
-'''
-          w = w.replace(check_anchor, check_anchor + checks, 1)
-          workflow.write_text(w)
-
-          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift')
-          t = test_path.read_text()
-          marker = '    @Test("connected-device discovery must match the private intended iPhone exactly once")\n'
-          assert t.count(marker) == 1
-          addition = '''    @Test("accepted source carries the hardened private intended-device reader")
-    func privateDeviceReaderExistsAndFailsClosed() throws {
-        let helper = try readRepositoryFile("scripts/ci/es80_signed_field_artifact_private_runner.py")
-
-        #expect(helper.contains("def read_private_identifier(path: Path, repository_root: Path) -> str"))
-        #expect(helper.contains("O_NOFOLLOW"))
-        #expect(helper.contains("O_DIRECTORY"))
-        #expect(helper.contains("dir_fd=parent_descriptor"))
-        #expect(helper.contains("must live outside the Nembra repository"))
-        #expect(helper.contains("stat.S_ISREG"))
-        #expect(helper.contains("metadata.st_mode & 0o077"))
-        #expect(helper.contains("metadata.st_uid != os.geteuid()"))
-        #expect(helper.contains("metadata.st_nlink != 1"))
-        #expect(helper.contains("_stable_file_identity(final_metadata) != _stable_file_identity(metadata)"))
-        #expect(helper.contains("value != value.strip()"))
-        #expect(helper.contains("value in os.fspath(path)"))
-    }
-
-    @Test("private build outputs are narrowly ignored while arbitrary untracked state remains rejected")
-    func generatedPrivateWorkspaceDoesNotTripAcceptedSourceGuard() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        let ignore = try readRepositoryFile(".gitignore")
-
-        for expected in ["LocalSecrets/", "Pods/", "NembraCapture.xcworkspace/", "Podfile.lock"] {
-            #expect(ignore.split(separator: "\\n").contains(Substring(expected)))
-        }
-        #expect(installer.components(separatedBy: "git status --porcelain=v1 --untracked-files=all").count >= 3)
-        #expect(installer.contains("Private workspace bootstrap changed tracked or unignored accepted-source inputs"))
-        #expect(installer.contains("Accepted-source inputs changed while the field build was compiling"))
-    }
-
-'''
-          t = t.replace(marker, addition + marker, 1)
-          test_path.write_text(t)
-          PY
-
+          python3 scripts/ci/tmp_capture_field_installer_prereqs.py
           git diff --check
           python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
           python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
-          test "$(git diff --name-only | sort | tr '\n' ' ')" = "$(printf '%s\n' '.gitignore' '.github/workflows/capture-field-build-provenance.yml' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift' 'scripts/ci/es80_signed_field_artifact_private_runner.py' | sort | tr '\n' ' ')"
+          grep -Fxq 'LocalSecrets/' .gitignore
+          grep -Fxq 'Pods/' .gitignore
+          grep -Fxq 'NembraCapture.xcworkspace/' .gitignore
+          grep -Fxq 'Podfile.lock' .gitignore
+          grep -Fq -- '- scripts/ci/es80_signed_field_artifact_private_runner.py' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq -- '- .gitignore' .github/workflows/capture-field-build-provenance.yml
+          ! git diff --name-only | grep -Ev '^(.gitignore|.github/workflows/capture-field-build-provenance.yml|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift|scripts/ci/es80_signed_field_artifact_private_runner.py)$'
 
-      - name: Commit validated repair and remove materializer
+      - name: Commit validated repair and remove temporary materializers
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'Nembra Capture Closure'
           git config user.email 'actions@users.noreply.github.com'
-          git rm .github/workflows/_capture_field_installer_prereqs_once.yml
+          git rm .github/workflows/_capture_field_installer_prereqs_once.yml scripts/ci/tmp_capture_field_installer_prereqs.py
           git add .gitignore .github/workflows/capture-field-build-provenance.yml scripts/ci/es80_signed_field_artifact_private_runner.py Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
           git diff --cached --check
           git commit -m 'fix(capture): restore field installer prerequisites'
