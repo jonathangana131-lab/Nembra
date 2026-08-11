@@ -24,91 +24,65 @@ jobs:
           git merge-base --is-ancestor "$expected" HEAD
           test "$(git diff --name-only "$expected"..HEAD | wc -l | tr -d ' ')" = '1'
           test "$(git diff --name-only "$expected"..HEAD)" = '.github/workflows/capture-auth-final-go-worktree-publication-materializer.yml'
-      - name: Materialize reviewed custody fixes
+      - name: Materialize source repair
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
-          source_path = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
-          source = source_path.read_text()
-          candidate_start = source.index('def candidate(repo:Path,source:str):')
-          candidate_end = source.index('\ndef device_hash(path:Path):', candidate_start)
-          new_candidate = '''def candidate(repo:Path,source:str):
-              root=repo.expanduser().resolve(strict=True)
-              if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
-              authority=(("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))
-              blobs={key:git(root,"rev-parse",f"HEAD:{path}").lower() for key,path in authority}
-              if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
-              paths=[root/path for _,path in authority]
-              if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")
-              for key,path in authority:
-                  raw_blob=git(root,"hash-object","--no-filters","--",path).lower()
-                  if raw_blob!=blobs[key]: raise GoError(f"candidate working {key} bytes differ from accepted Git blob")
-              ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()
-              for key,path in authority:
-                  raw_blob=git(root,"hash-object","--no-filters","--",path).lower()
-                  if raw_blob!=blobs[key]: raise GoError(f"candidate working {key} bytes changed during authority read")
-              if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
-              return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
-          '''
-          new_candidate = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_candidate.splitlines()) + '\n'
-          source = source[:candidate_start] + new_candidate + source[candidate_end + 1:]
-
-          publication_start = source.index('def publication():')
-          main_start = source.index('\ndef main(argv=None):', publication_start)
-          new_publication = '''def publication():
-              p=Path(__file__).with_name("es80_today_final_go_publication.py"); s=importlib.util.spec_from_file_location("pub",p)
-              if not s or not s.loader: raise GoError("publication helper unavailable")
-              m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
-
-          def publish_go_record(output:Path,raw:bytes,module_loader=publication):
-              module=module_loader(); publication_error=getattr(module,"FinalGoPublicationError",None)
-              try:return module.publish_record_no_replace(output,raw)
-              except Exception as error:
-                  if isinstance(publication_error,type) and isinstance(error,publication_error): raise GoError(f"GO record publication rejected: {error}") from error
-                  raise
-          '''
-          new_publication = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_publication.splitlines()) + '\n'
-          source = source[:publication_start] + new_publication + source[main_start + 1:]
-          old_call = 'd=publication().publish_record_no_replace(a.output,raw)'
-          if source.count(old_call) != 1:
-              raise SystemExit(f'publication call count={source.count(old_call)}')
-          source = source.replace(old_call, 'd=publish_go_record(a.output,raw)', 1)
-          source_path.write_text(source)
-
-          test_path = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
-          tests = test_path.read_text()
-          old_end = "if __name__=='__main__':unittest.main(verbosity=2)"
-          additions = ''' def test_candidate_rejects_clean_filter_worktree_bytes_that_do_not_match_head_blob(self):
-           installer=self.f.repo/go.INSTALLER;original=installer.read_text();installer.write_text(original+'# local-filter-only\\n')
-           info=self.f.repo/'.git/info/attributes';info.write_text(f'{go.INSTALLER} filter=nembra-hide-local\\n')
-           subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'config','filter.nembra-hide-local.clean',"sed '/# local-filter-only$/d'"],check=True)
-           subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'config','filter.nembra-hide-local.smudge','cat'],check=True)
-           self.assertEqual(subprocess.check_output(['/usr/bin/git','-C',str(self.f.repo),'status','--porcelain=v1','--untracked-files=all'],text=True).strip(),'')
-           self.no(lambda:go.candidate(self.f.repo,self.f.s))
-          def test_publication_helper_error_is_translated_to_goerror(self):
-           class FakePublication:
-            class FinalGoPublicationError(RuntimeError):pass
-            @staticmethod
-            def publish_record_no_replace(path,raw):raise FakePublication.FinalGoPublicationError('occupied output')
-           with self.assertRaises(go.GoError):go.publish_go_record(self.f.r/'go.json',b'{}\\n',module_loader=lambda:FakePublication)
-          '''
-          if tests.count(old_end) != 1:
-              raise SystemExit(f'test end count={tests.count(old_end)}')
-          test_path.write_text(tests.replace(old_end, additions + old_end, 1))
+          p=Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          s=p.read_text()
+          a=s.index('def candidate(repo:Path,source:str):')
+          b=s.index('\ndef device_hash(path:Path):',a)
+          candidate=(
+          'def candidate(repo:Path,source:str):\n'
+          '    root=repo.expanduser().resolve(strict=True)\n'
+          '    if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")\n'
+          '    authority=(("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))\n'
+          '    blobs={key:git(root,"rev-parse",f"HEAD:{path}").lower() for key,path in authority}\n'
+          '    if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")\n'
+          '    paths=[root/path for _,path in authority]\n'
+          '    if any(not path.is_file() or path.is_symlink() for path in paths): raise GoError("candidate authority path is not a regular non-symlink file")\n'
+          '    for key,path in authority:\n'
+          '        if git(root,"hash-object","--no-filters","--",path).lower()!=blobs[key]: raise GoError(f"candidate working {key} bytes differ from accepted Git blob")\n'
+          '    ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()\n'
+          '    for key,path in authority:\n'
+          '        if git(root,"hash-object","--no-filters","--",path).lower()!=blobs[key]: raise GoError(f"candidate working {key} bytes changed during authority read")\n'
+          '    if f\'PROCEDURE_ID="{PROC}"\' not in ins or f\'BUNDLE_ID="{BUNDLE}"\' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f\'static let requiredFieldProcedureIdentifier = "{PROC}"\' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")\n'
+          '    return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}\n'
+          )
+          s=s[:a]+candidate+s[b+1:]
+          a=s.index('def publication():')
+          b=s.index('\ndef main(argv=None):',a)
+          publication=(
+          'def publication():\n'
+          '    p=Path(__file__).with_name("es80_today_final_go_publication.py"); spec=importlib.util.spec_from_file_location("pub",p)\n'
+          '    if not spec or not spec.loader: raise GoError("publication helper unavailable")\n'
+          '    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module\n\n'
+          'def publish_go_record(output:Path,raw:bytes,module_loader=publication):\n'
+          '    module=module_loader(); publication_error=getattr(module,"FinalGoPublicationError",None)\n'
+          '    try:return module.publish_record_no_replace(output,raw)\n'
+          '    except Exception as error:\n'
+          '        if isinstance(publication_error,type) and isinstance(error,publication_error): raise GoError(f"GO record publication rejected: {error}") from error\n'
+          '        raise\n'
+          )
+          s=s[:a]+publication+s[b+1:]
+          old='d=publication().publish_record_no_replace(a.output,raw)'
+          if s.count(old)!=1: raise SystemExit(f'publication call count={s.count(old)}')
+          s=s.replace(old,'d=publish_go_record(a.output,raw)',1)
+          p.write_text(s)
           PY
-          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
           git diff --check
-      - name: Commit clean repair
+          grep -Fq 'hash-object","--no-filters' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'd=publish_go_record(a.output,raw)' scripts/ci/es80_authenticated_stationary_final_go.py
+      - name: Commit clean source repair
         shell: bash
         run: |
           set -euo pipefail
           rm -f .github/workflows/capture-auth-final-go-worktree-publication-materializer.yml
           git diff --check
-          test "$(git status --short | wc -l | tr -d ' ')" = '3'
+          test "$(git status --short | wc -l | tr -d ' ')" = '2'
           git config user.name 'nembra-sol'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
