@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'bootstrap clean final Capture review recovery'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -18,7 +17,6 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
-
       - name: Close provenance coverage and metadata labeling gaps
         shell: bash
         run: |
@@ -27,119 +25,4 @@ jobs:
           test "$(git hash-object NembraApp/Features/Research/TuyaAccountBridge.swift)" = 'd2055e9e5d19e2b86b7a9145451f1ba9fb2077d8'
           test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift)" = 'e66c6f6e15bf7823e8dea16e31bdd8f18c23b3de'
           test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift)" = '8c4dac8d30a86631a12a02daf7831eef1d348e63'
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          workflow = Path('.github/workflows/capture-field-build-provenance.yml')
-          lines = workflow.read_text().splitlines()
-          anchor = '      - NembraApp/App/NembraCaptureEntrypoint.swift'
-          assert lines.count(anchor) == 1, ('workflow anchor', lines.count(anchor))
-          additions = [
-              '      - NembraApp/Features/Research/TuyaAccountBridge.swift',
-              '      - NembraApp/Features/Research/ES80CaptureShellView.swift',
-              '      - NembraCapture-Info.plist',
-              '      - Packages/NembraBluetoothCapture/**',
-              '      - Podfile',
-              '      - Podfile.lock',
-          ]
-          for item in additions:
-              assert item not in lines, ('already present', item)
-          insertion = lines.index(anchor) + 1
-          lines[insertion:insertion] = additions
-          workflow.write_text('\n'.join(lines) + '\n')
-
-          bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
-          b = bridge.read_text()
-          replacements = [
-              (
-                  "and read-only Device Sharing endpoints to collect the device's cloud metadata, current status,\n/// specifications, and local DP strategy before the next Bluetooth experiment.",
-                  "and read-only Device Sharing endpoints to collect the device's cloud metadata, current status,\n/// and specifications before the next Bluetooth experiment."
-              ),
-              ('    @Published private(set) var selectedDeviceLocalStrategy: [String: Any]?\n', ''),
-              ('            "localStrategy": Self.redactSecrets(selectedDeviceLocalStrategy ?? [:]),\n', ''),
-              ('        selectedDeviceLocalStrategy = nil\n', ''),
-              ('        async let strategyResponse = signedGET(path: "/v1.0/m/life/devices/\\(device.id)/status")\n\n        let (detail, specs, strategy) = try await (detailResponse, specResponse, strategyResponse)',
-               '        let (detail, specs) = try await (detailResponse, specResponse)'),
-              ('''        selectedDeviceLocalStrategy = Self.redactAccountUID(
-            Self.redactSecrets(strategy["result"] as? [String: Any] ?? [:]),
-            accountUID: accountUID
-        ) as? [String: Any] ?? [:]
-''', '')
-          ]
-          for old, new in replacements:
-              count = b.count(old)
-              assert count == 1, (old[:80], count)
-              b = b.replace(old, new, 1)
-          assert 'selectedDeviceLocalStrategy' not in b
-          assert '"localStrategy"' not in b
-          assert '/status")' not in b
-          assert '"status": Self.redactSecrets(selectedDeviceStatus ?? [:])' in b
-          assert '"specifications": Self.redactSecrets(selectedDeviceSpecifications ?? [:])' in b
-          bridge.write_text(b)
-
-          product_test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift')
-          p = product_test.read_text()
-          marker = '    @Test("legacy card-based Capture root is retired from the metadata bridge")\n'
-          assert p.count(marker) == 1
-          inserted = '''    @Test("cloud status is never mislabeled as local strategy evidence")
-    func metadataExportPreservesStatusTruth() throws {
-        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
-
-        #expect(!bridge.contains("selectedDeviceLocalStrategy"))
-        #expect(!bridge.contains("\\\"localStrategy\\\""))
-        #expect(!bridge.contains("/status\\\")"))
-        #expect(bridge.contains("\\\"status\\\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
-        #expect(bridge.contains("\\\"specifications\\\": Self.redactSecrets(selectedDeviceSpecifications ?? [:])"))
-    }
-
-'''
-          p = p.replace(marker, inserted + marker, 1)
-          product_test.write_text(p)
-
-          provenance_test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift')
-          d = provenance_test.read_text()
-          marker = '    @Test("dependency provenance never promotes private SDK credentials into evidence")\n'
-          assert d.count(marker) == 1
-          inserted = '''    @Test("field provenance reruns for all standalone Capture sources and dependency inputs")
-    func workflowCoversCompiledFieldInputs() throws {
-        let workflow = try readRepositoryFile(".github/workflows/capture-field-build-provenance.yml")
-        let requiredPaths = [
-            "NembraApp/App/NembraCaptureBuildIdentity.swift",
-            "NembraApp/App/NembraCaptureEntrypoint.swift",
-            "NembraApp/Features/Research/TuyaAccountBridge.swift",
-            "NembraApp/Features/Research/ES80CaptureShellView.swift",
-            "NembraCapture.xcodeproj/project.pbxproj",
-            "NembraCapture-Info.plist",
-            "Packages/NembraBluetoothCapture/**",
-            "Podfile",
-            "Podfile.lock"
-        ]
-        for path in requiredPaths {
-            #expect(workflow.contains("- \\(path)"))
-        }
-    }
-
-'''
-          d = d.replace(marker, inserted + marker, 1)
-          provenance_test.write_text(d)
-          PY
-
-          git diff --check
-          test "$(git diff --name-only | wc -l | tr -d ' ')" = 4
-          grep -Fq -- '- NembraApp/Features/Research/TuyaAccountBridge.swift' .github/workflows/capture-field-build-provenance.yml
-          grep -Fq -- '- NembraCapture-Info.plist' .github/workflows/capture-field-build-provenance.yml
-          grep -Fq -- '- Packages/NembraBluetoothCapture/**' .github/workflows/capture-field-build-provenance.yml
-          grep -Fq -- '- Podfile.lock' .github/workflows/capture-field-build-provenance.yml
-          ! grep -Fq 'localStrategy' NembraApp/Features/Research/TuyaAccountBridge.swift
-          ! grep -Fq '/status")' NembraApp/Features/Research/TuyaAccountBridge.swift
-
-          git config user.name 'Nembra Capture Closure'
-          git config user.email 'actions@users.noreply.github.com'
-          git add .github/workflows/capture-field-build-provenance.yml \
-                  NembraApp/Features/Research/TuyaAccountBridge.swift \
-                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift \
-                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
-          git rm .github/workflows/_capture_final_review_recovery_once.yml
-          git commit -m 'fix(capture): close final provenance and metadata review gaps'
-          git push origin HEAD:${GITHUB_REF_NAME}
+          python3 scripts/ci/capture_final_review_recovery.py
