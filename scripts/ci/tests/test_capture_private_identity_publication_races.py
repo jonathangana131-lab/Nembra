@@ -113,6 +113,69 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
     def test_staging_symlink_substitution_cannot_be_published_or_cleaned_as_owned(self) -> None:
         self._assert_staging_substitution_rejected("symlink")
 
+    def test_staging_substitution_after_name_check_cannot_be_left_at_destination(self) -> None:
+        writer = load_writer()
+        payload = b"accepted-private-identity-payload"
+        attacker_payload = b"Y" * len(payload)
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-post-check-race-") as temporary:
+            checkout = Path(temporary) / "repo"
+            parent = checkout / "private"
+            parent.mkdir(parents=True, mode=0o700)
+            checkout_fd = os.open(checkout, writer._directory_flags())
+            parent_fd = os.open(parent, writer._directory_flags())
+            original_require = writer._require_sealed_staging_name
+            attacked = False
+
+            def adversarial_require(root_fd: int, src: str, sealed) -> None:
+                nonlocal attacked
+                original_require(root_fd, src, sealed)
+                if attacked:
+                    return
+                attacked = True
+                stolen = f"{src}.sealed-owner"
+                os.rename(src, stolen, src_dir_fd=root_fd, dst_dir_fd=root_fd)
+                replacement_fd = os.open(
+                    src,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                    dir_fd=root_fd,
+                )
+                try:
+                    os.write(replacement_fd, attacker_payload)
+                    os.fchmod(replacement_fd, 0o600)
+                    os.fsync(replacement_fd)
+                finally:
+                    os.close(replacement_fd)
+
+            writer._require_sealed_staging_name = adversarial_require
+            rejected = False
+            try:
+                try:
+                    writer._write_staged(
+                        checkout_fd,
+                        parent_fd,
+                        "identity.swift",
+                        "private/identity.swift",
+                        payload,
+                    )
+                except (writer.ProvisionError, OSError):
+                    rejected = True
+            finally:
+                writer._require_sealed_staging_name = original_require
+                os.close(parent_fd)
+                os.close(checkout_fd)
+
+            final = parent / "identity.swift"
+            final_bytes = final.read_bytes() if final.is_file() else None
+            self.assertTrue(attacked, "diagnostic never reached the post-name-check publication gap")
+            self.assertTrue(rejected, "writer accepted the post-check staging substitution")
+            self.assertNotEqual(
+                final_bytes,
+                attacker_payload,
+                "post-check attacker replacement was published and left at the credential destination",
+            )
+
     def test_detached_private_directory_cannot_receive_or_stage_credential_identity(self) -> None:
         writer = load_writer()
         key_b64 = "bmVtYnJhLWR1bW15LWFwcC1rZXk="
