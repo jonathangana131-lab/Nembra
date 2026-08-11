@@ -4,14 +4,15 @@
   "laneId": "dashboard-live-cockpit",
   "slot": "primary",
   "role": "implementation",
-  "workerId": "sol-20260811-ui0052",
-  "leaseId": "dashboard-primary-20260811-0758",
-  "generation": 1,
+  "workerId": "sol-20260811-hl6k",
+  "leaseId": "dashboard-primary-hl6k-20260811-1203",
+  "generation": 2,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T07:58:40Z",
-  "lastHeartbeatAt": "2026-08-11T08:42:00Z",
+  "claimedAt": "2026-08-11T12:03:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:03:00Z",
   "leaseSeconds": 2700,
-  "branch": "recovery/v15-dashboard-energyrail-main-d8e38d-sol",
+  "branch": "repair/v15-dashboard-module-identity-sol-hl6k",
   "pr": 2817,
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+  "sourceSHA": "14eba29ee2f43b9f1a41ef88566fb2922f1e34df",
+  "takeoverFromWorkerId": "sol-20260811-ui0052"
 }
