@@ -343,49 +343,69 @@ private struct NembraNavigationView: View {
     }
 
     private var navigationEmptyState: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("NAVIGATION")
-                .font(.caption2.weight(.bold))
-                .tracking(1.8)
-                .foregroundStyle(.secondary)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView {
+                    navigationEmptyContent
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 14)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity, minHeight: 230, maxHeight: .infinity)
+            } else {
+                navigationEmptyContent
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, verticalSizeClass == .compact ? 14 : 22)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: verticalSizeClass == .compact ? 150 : 230,
+                        alignment: .topLeading
+                    )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("navigation.empty")
+    }
+
+    private var navigationEmptyContent: some View {
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 14) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                Text("NAVIGATION")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.8)
+                    .foregroundStyle(.secondary)
+            }
 
             Text("Find a destination")
-                .font(.largeTitle.weight(.semibold))
-                .tracking(-0.7)
+                .font(dynamicTypeSize.isAccessibilitySize ? .title2.weight(.semibold) : .largeTitle.weight(.semibold))
+                .tracking(dynamicTypeSize.isAccessibilitySize ? 0 : -0.7)
 
             Text("Search for a place or address. Nembra will preview it here without using scooter telemetry.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 9) {
-                Circle()
-                    .fill(.primary)
-                    .frame(width: 6, height: 6)
+            if !dynamicTypeSize.isAccessibilitySize {
+                HStack(spacing: 9) {
+                    Circle()
+                        .fill(.primary)
+                        .frame(width: 6, height: 6)
 
-                Capsule(style: .continuous)
-                    .fill(.primary.opacity(0.16))
-                    .frame(height: 2)
+                    Capsule(style: .continuous)
+                        .fill(.primary.opacity(0.16))
+                        .frame(height: 2)
 
-                Image(systemName: "location.north.fill")
-                    .font(.caption.weight(.semibold))
+                    Image(systemName: "location.north.fill")
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
 
             Label("Choose a destination before riding.", systemImage: "hand.raised.fill")
-                .font(.subheadline.weight(.medium))
+                .font(dynamicTypeSize.isAccessibilitySize ? .body.weight(.semibold) : .subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, verticalSizeClass == .compact ? 14 : 22)
-        .frame(
-            maxWidth: .infinity,
-            minHeight: verticalSizeClass == .compact ? 150 : 230,
-            alignment: .topLeading
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("navigation.empty")
     }
 
     private func navigationStatusSurface(
@@ -396,7 +416,50 @@ private struct NembraNavigationView: View {
         showsProgress: Bool = false,
         identifier: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 13) {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView {
+                    navigationStatusContent(
+                        eyebrow: eyebrow,
+                        title: title,
+                        detail: detail,
+                        systemImage: systemImage,
+                        showsProgress: showsProgress
+                    )
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 14)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity, minHeight: 230, maxHeight: .infinity)
+            } else {
+                navigationStatusContent(
+                    eyebrow: eyebrow,
+                    title: title,
+                    detail: detail,
+                    systemImage: systemImage,
+                    showsProgress: showsProgress
+                )
+                .padding(.horizontal, 24)
+                .padding(.vertical, verticalSizeClass == .compact ? 14 : 22)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: verticalSizeClass == .compact ? 150 : 230,
+                    alignment: .topLeading
+                )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func navigationStatusContent(
+        eyebrow: String,
+        title: String,
+        detail: String,
+        systemImage: String,
+        showsProgress: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 11 : 13) {
             HStack(spacing: 8) {
                 if showsProgress {
                     ProgressView()
@@ -407,27 +470,18 @@ private struct NembraNavigationView: View {
 
                 Text(eyebrow)
                     .font(.caption2.weight(.bold))
-                    .tracking(1.5)
+                    .tracking(dynamicTypeSize.isAccessibilitySize ? 0.8 : 1.5)
             }
             .foregroundStyle(.secondary)
 
             Text(title)
-                .font(.title2.weight(.semibold))
+                .font(dynamicTypeSize.isAccessibilitySize ? .headline : .title2.weight(.semibold))
 
             Text(detail)
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, verticalSizeClass == .compact ? 14 : 22)
-        .frame(
-            maxWidth: .infinity,
-            minHeight: verticalSizeClass == .compact ? 150 : 230,
-            alignment: .topLeading
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(identifier)
     }
 
     private var recentDestinationList: some View {
@@ -618,6 +672,7 @@ private struct NembraNavigationView: View {
               let encoded = String(data: data, encoding: .utf8) else {
             return
         }
+
         recentDestinationsJSON = encoded
     }
 
