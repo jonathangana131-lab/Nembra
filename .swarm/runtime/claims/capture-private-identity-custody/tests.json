@@ -9,12 +9,12 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:24:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:28:00Z",
   "leaseSeconds": 1800,
   "branch": "adversarial/v14-private-identity-crash-residue-sol-20260811",
   "pr": 2870,
-  "sourceSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432",
-  "currentHeadSHA": "fb8a71461b636c4cac5ea14b2f04858eaaba82d0",
+  "sourceSHA": "9b25480b9317fa59360e2b4d9c146bd346aa6c37",
+  "currentHeadSHA": "6ef21ee7b7ca44e26ca8e478f41b14505fe90d8b",
   "takeoverFromWorkerId": null,
-  "takeoverReason": "Released tests slot reused for non-conflicting private-identity crash-residue review. Exact recovery #2858 parent cb72a47e is attacked by four independently bound cases; run 31477457435 has hard-exit, symlink, hard-link, and nonempty-directory jobs all expected-red after exact checkout and compile pass. Production ownership remains untouched; sibling #2868 owns destination-name race."
+  "takeoverReason": "Released tests slot reused for non-conflicting private-identity crash-residue review. Re-anchored onto current payload-byte custody #2872 exact 9b25480b. Run 31477745361 has hard-exit job 93735315214, symlink 93735315485, hard-link 93735315311, and nonempty-directory 93735315234 all expected-red only after exact checkout binding and compile pass. Production ownership remains untouched; sibling #2868 owns destination-name race."
 }
