@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -42,6 +43,18 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
             outside = root / "outside.txt"
             outside.write_text("mutable\n", encoding="utf-8")
             (app / "escape").symlink_to(outside)
+            with self.assertRaises(helper.CustodyError):
+                helper.fingerprint(app)
+
+    def test_fingerprint_rejects_hardlinked_regular_file(self) -> None:
+        helper = load_helper()
+        with tempfile.TemporaryDirectory(prefix="nembra-install-custody-") as temporary:
+            root = Path(temporary)
+            app = root / "Nembra Capture.app"
+            app.mkdir()
+            payload = app / "subject.txt"
+            payload.write_text("accepted\n", encoding="utf-8")
+            os.link(payload, root / "same-inode.txt")
             with self.assertRaises(helper.CustodyError):
                 helper.fingerprint(app)
 
