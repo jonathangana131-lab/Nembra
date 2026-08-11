@@ -1,0 +1,60 @@
+name: Capture Vnode Exact Artifact Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-vnode-attrib-blob-materialize-gpt56-sol-20260811
+    paths:
+      - scripts/ci/apply_capture_vnode_exact_artifacts.py
+      - .github/workflows/capture-vnode-exact-artifact-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-vnode-attrib-blob-materialize-gpt56-sol-20260811
+          fetch-depth: 0
+      - name: Patch exact guard and canonical gate candidates
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/apply_capture_vnode_exact_artifacts.py
+          python3 scripts/ci/apply_capture_vnode_exact_artifacts.py
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          test "$(grep -Fc 'KQ_NOTE_ATTRIB' Scripts/capture_tuya_private_input_build_guard.py)" = '2'
+          grep -Fq 'Validate compiler-window vnode attribute custody' .github/workflows/capture-field-build-provenance.yml
+          test "$(grep -Fc 'scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py' .github/workflows/capture-field-build-provenance.yml)" = '3'
+          git diff --check
+      - name: Validate vnode and current authority cluster
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          python3 scripts/ci/tests/test_capture_private_review_commitment.py
+          python3 scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          python3 -m unittest -v \
+            scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody \
+            scripts.ci.tests.test_capture_private_review_exception_proxy_custody \
+            scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody \
+            scripts.ci.tests.test_capture_field_accepted_source_path_contract
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+      - name: Publish exact non-workflow artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p .nembra_tmp
+          cp .github/workflows/capture-field-build-provenance.yml .nembra_tmp/capture-field-build-provenance-vnode.yml
+          git restore .github/workflows/capture-field-build-provenance.yml
+          find Scripts scripts -type d -name __pycache__ -prune -exec rm -rf {} + || true
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Scripts/capture_tuya_private_input_build_guard.py .nembra_tmp/capture-field-build-provenance-vnode.yml
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'ERROR: no exact vnode artifacts to publish' >&2; exit 1; }
+          git commit -m 'Capture: publish exact vnode authority artifacts'
+          git push origin HEAD:repair/v14-vnode-attrib-blob-materialize-gpt56-sol-20260811
