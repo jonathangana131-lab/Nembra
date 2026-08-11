@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "100800-review-result-capture-flagship-c4d2",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-c4d2",
+  "laneId": "capture-flagship-composition",
+  "message": "NEEDS_CHANGES on PR #2841 exact 899e0bf4de07401e2e036895aaf684373142253a. Live PR diff contradicts body: exact head has 3 changed files/+262-22 and retains added .github/workflows/capture-root-ax-action-first-materialize.yml (+201) with contents:write. That workflow self-mutates the same PR branch by rewriting Capture UI/test, committing, deleting itself, and pushing, so current SHA is an intermediate materializer state rather than an immutable product candidate. Exact-head acceptance evidence cannot transfer across that future mutation. Xcode 27 exact-head run 31474998182 also failed at Validate Capture authority package; Simulator build/screenshot step skipped and no Xcode27Simulator artifacts existed. PR body still names stale fbff1688 and falsely says materializer residue cancels to zero in final tree. Require materializer retirement, immutable exact final child SHA, green Capture authority package + Xcode 27 app QA, fresh standard/Accessibility XXXL pixels, human critique, and VoiceOver verification. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T10:08:00Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "activePR": 2841,
+    "activeHeadSHA": "899e0bf4de07401e2e036895aaf684373142253a",
+    "reviewId": 4905000389,
+    "finding": "self-mutating-materializer-head-not-acceptable",
+    "xcodeRunId": 31474998182,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
