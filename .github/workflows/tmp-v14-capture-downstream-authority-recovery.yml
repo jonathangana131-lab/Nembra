@@ -1,0 +1,79 @@
+name: TEMP Capture Downstream Authority Recovery
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-downstream-authority-recovery-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-downstream-authority-recovery-sol-20260811
+          fetch-depth: 0
+      - name: Bind recovery input head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Materialize reviewed authority-chain payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/capture-authority-chain-materialize.yml')
+          lines = workflow_path.read_text().splitlines()
+          marker = "          python3 - <<'PY'"
+          starts = [index for index, line in enumerate(lines) if line == marker]
+          if not starts:
+              raise SystemExit('authority materializer payload start not found')
+          start = starts[0]
+          ends = [index for index, line in enumerate(lines) if index > start and line == '          PY']
+          if not ends:
+              raise SystemExit('authority materializer payload terminator not found')
+          end = ends[-1]
+          payload_lines = lines[start + 1:end]
+          payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in payload_lines) + '\n'
+          compile(payload, '<capture-authority-materializer>', 'exec')
+          exec(compile(payload, '<capture-authority-materializer>', 'exec'), {})
+          PY
+      - name: Validate materialized production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_review_commitment.py
+          python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          python3 -m unittest -v scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
+          python3 -m unittest -v scripts.ci.tests.test_capture_private_review_helper_execution_custody
+          git diff --check
+      - name: Publish clean recovery head
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/capture-authority-chain-materialize.yml
+          rm -f .github/capture-authority-chain-materialize-trigger
+          rm -f .github/workflows/tmp-v14-capture-downstream-authority-recovery.yml
+          find scripts Scripts -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          git status --short
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Capture: bind downstream authority helper execution subjects'
+          git push origin HEAD:repair/v14-capture-downstream-authority-recovery-sol-20260811
