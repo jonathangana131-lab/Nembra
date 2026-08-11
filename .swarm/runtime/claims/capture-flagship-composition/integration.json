@@ -7,14 +7,16 @@
   "workerId": "sol-20260811-9a31r",
   "leaseId": "capture-flagship-integration-9a31r-20260811-2019",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:19:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:19:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:20:00Z",
+  "releasedAt": "2026-08-11T20:20:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2940,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "takeoverFromWorkerId": "sol-20260811-f4c2e7",
-  "takeoverReason": "Generation-1 integration lease expired hours ago. Since then #2940 exact 005b7c4 earned terminal Main Graft, Field, Standalone Visual and Xcode acceptance plus independent review. Lane state already designates it accepted app-visible baseline. Complete durable supersession of legacy #2612 without moving its branch ref, preserving historical authority child bases. PHYSICAL NO-GO."
+  "outcome": "APP_VISIBLE_BASELINE_SUPERSESSION_COMPLETE",
+  "releaseReason": "#2940 exact 005b7c4 is durably canonical app-visible Capture baseline. Legacy #2612 was commented with supersession evidence and closed unmerged; historical head branch 513ebea remains untouched because open authority children #2709/#2754/#2719 target it. Lane state records #2612 superseded and #2940 accepted. Standard copy-density successor remains actively owned; security composition/runtime VoiceOver/physical truth remain open. PHYSICAL NO-GO."
 }
