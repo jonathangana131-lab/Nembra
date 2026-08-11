@@ -4,14 +4,16 @@
   "laneId": "dashboard-live-cockpit",
   "slot": "visual-review",
   "role": "review",
-  "workerId": "sol-20260811-c7f1",
-  "leaseId": "dashboard-visual-c7f1-080700",
-  "generation": 1,
+  "workerId": "sol-20260811-54c8vis",
+  "leaseId": "dashboard-visual-54c8vis-20260811-1214",
+  "generation": 2,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T08:07:00Z",
-  "lastHeartbeatAt": "2026-08-11T08:35:03Z",
+  "claimedAt": "2026-08-11T12:14:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:14:00Z",
   "leaseSeconds": 1800,
   "branch": "recovery/v15-dashboard-energyrail-main-d8e38d-sol",
   "pr": 2817,
-  "sourceSHA": "dd9b586a8a8491bd626eb51dd805d682f2e98f61"
+  "sourceSHA": "14eba29ee2f43b9f1a41ef88566fb2922f1e34df",
+  "takeoverFromWorkerId": "sol-20260811-c7f1",
+  "takeoverReason": "Generation-1 visual-review lease expired after 2026-08-11T09:05:03Z. Capture P0 productive lanes are currently saturated/blocked, so V14 overflow takes P1 Dashboard exact-head visual evidence review without touching active primary production paths."
 }
