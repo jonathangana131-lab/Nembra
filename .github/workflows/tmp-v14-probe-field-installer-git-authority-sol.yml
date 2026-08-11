@@ -1,0 +1,59 @@
+name: TEMP V14 Probe Field Installer Git Authority (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-field-installer-git-authority-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-probe-field-installer-git-authority-sol.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Reapply materializer patch in probe worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_EXTRACT'
+          from pathlib import Path
+          source = Path('.github/workflows/tmp-v14-materialize-field-installer-git-authority-sol.yml').read_text(encoding='utf-8')
+          marker = "          python3 - <<'PY'\n"
+          start = source.index(marker) + len(marker)
+          end = source.index("\n          PY\n", start)
+          body = source[start:end]
+          body = "\n".join(line[10:] if line.startswith("          ") else line for line in body.splitlines()) + "\n"
+          Path('/tmp/nembra-field-authority-patch.py').write_text(body, encoding='utf-8')
+          PY_EXTRACT
+          python3 /tmp/nembra-field-authority-patch.py
+
+      - name: Installer shell syntax
+        run: bash -n scripts/field/install_one_time_capture.command
+
+      - name: Bootstrap shell syntax
+        run: bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+
+      - name: Compile permanent red-team regression
+        run: python3 -m py_compile scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+
+      - name: Replay field installer Git authority attacks
+        run: python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+
+      - name: Verify accepted-source execution markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/field/install_one_time_capture.command
+          grep -Fq 'authority_git_status' scripts/field/install_one_time_capture.command
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT' Scripts/bootstrap_capture_tuya_sdk.sh
+          ! grep -Fq '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/field/install_one_time_capture.command
+          git diff --check
