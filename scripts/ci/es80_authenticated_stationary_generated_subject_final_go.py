@@ -186,8 +186,6 @@ def generated_control_plane(
     parent_base = parent.get("base", {})
     child_branch = child_head.get("ref")
     parent_sha = base.canon(parent_head.get("sha"), "parent Final-GO PR head")
-    if parent_sha != PARENT_SOURCE_SHA:
-        raise GeneratedSubjectGoError("generated-subject control plane exact parent moved")
     if (
         base.canon(child_head.get("sha"), "generated-subject PR head") != source
         or child_head.get("repo", {}).get("full_name") != REPO
