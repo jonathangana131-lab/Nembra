@@ -168,8 +168,8 @@ jobs:
           replacement='''--workspace "$REPO_ROOT/NembraCapture.xcworkspace" \\
               --externally-custodied-root "$TUYA_PRIVATE_SDK" \\
               --externally-custodied-root "$TUYA_PRIVATE_IDENTITY")"'''
-          if b.count(needle)!=2: raise SystemExit(f'bootstrap fingerprint call count drift: {b.count(needle)}')
-          bootstrap.write_text(b.replace(needle,replacement))
+          if b.count(needle)!=1: raise SystemExit(f'bootstrap fingerprint call count drift: {b.count(needle)}')
+          bootstrap.write_text(b.replace(needle,replacement,1))
 
           guard=Path('Scripts/capture_tuya_private_input_build_guard.py')
           g=guard.read_text()
