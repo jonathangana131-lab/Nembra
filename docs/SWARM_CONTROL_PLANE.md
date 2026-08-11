@@ -16,6 +16,7 @@ The design rationale is in `docs/adr/ADR-0015-github-native-swarm-control-plane.
 - Resources such as Xcode/Simulator/physical scooter have their own leases.
 - The dashboard is generated; never treat it as authority.
 - The scheduler may observe physical GO but can never grant it.
+- Green CI is evidence about one exact head, not proof that a `Go` worker is finished advancing the repository.
 
 ## Fresh worker: `Go`
 
@@ -28,7 +29,7 @@ A new GPT-5.6 Sol worker receiving only `Go` should:
 5. Register/refresh the worker record.
 6. Read important recent events/handoffs for candidate lanes.
 7. Ask the scheduler for compatible ready slots.
-8. Atomically claim one exact slot. **Claim first. Branch second.** If create conflicts, immediately refresh/recommend another slot; do not duplicate implementation.
+8. Atomically claim one exact slot. **Claim first. Branch second.** If create conflicts, immediately refresh/recommend another slot; do not duplicate implementation and do not stop merely because the first claim lost a race.
 9. Acquire any required resource leases in configured order.
 10. Re-check source/main/claim before a major shared-contract edit.
 11. Create the isolated branch and implement/review/test only the owned role/scope.
@@ -36,11 +37,25 @@ A new GPT-5.6 Sol worker receiving only `Go` should:
 13. Publish a structured event only when another worker would act differently after reading it.
 14. Before substantial push/PR creation, prove the current `{workerId, leaseId, generation}` still owns the slot.
 15. Put swarm metadata in a new controlled PR.
-16. Obtain independent review when required; the accepting review worker ID must differ from the primary worker ID.
+16. Obtain independent review when required; the accepting review worker ID must differ from the implementation/repair/reconciliation work-subject worker ID.
 17. Integration is a claimed role, not a merge race. Sync main, verify dependencies/reviews/exact-head evidence, merge, observe main, and only then close the lane.
-18. Publish a handoff before intentional stop when work remains.
-19. Release slot/resources when done or handed off.
-20. Refresh and claim the next useful role. If none exists, idle/stop cleanly.
+18. When a slice is accepted, blocked, handed off, merged, loses a claim, or reaches a green wait point, preserve the durable state and release anything that should not remain held.
+19. Then refresh current `main`, `swarm-state`, and scheduler recommendations **in the same Go turn** and claim another safe useful role when one exists. If one reconciliation slot is already owned, use another available reconciliation shard or another non-conflicting recommendation rather than equating ownership with no work.
+20. Stop only after the final stop-proof procedure below succeeds. A green check, green `main`, merged PR, completed slice, blocked slice, or one empty recommendation response is not a stop proof.
+
+### Go worker stop proof
+
+An empty scheduler recommendation list is valid as a point-in-time snapshot, but it is **not** enough to end a `Go` turn. Before intentional idle/stop, perform a fresh final reconciliation against the current `main` SHA and verify all of these:
+
+- no safe unowned scheduler recommendation is claimable by this worker;
+- no meaningful open PR, branch, failed-main repair, review/integration opportunity, or reconciliation family is missing from `swarm-state`;
+- no apparently unavailable slot is merely stale/expired ownership that is legally takeable;
+- all remaining useful work is actively owned, policy-blocked, dependency-blocked, resource-blocked, or externally blocked;
+- every newly discovered blocker, missing-work record, supersession, or handoff that would change another worker's behavior has been written durably.
+
+If all conditions hold, publish a durable `EVIDENCE_RESULT` containing the current main SHA, the refreshed queue result, and why the remaining useful objectives are owned or blocked. Only then idle cleanly. Never manufacture speculative work just to stay busy.
+
+If a current lane is merely waiting for CI, review, or external evidence, keep its ownership/evidence correct and release idle scarce resources; then advance another safe non-conflicting recommendation when policy permits instead of spending the whole `Go` turn status-watching.
 
 ## Worker/session identity
 
@@ -156,7 +171,7 @@ The scheduler does not maximize branch count. It removes conflicting/unrunnable 
 
 Configured project WIP limits cap active primary implementation. When implementation outruns review/integration, new workers are directed into those closing roles.
 
-An empty recommendation set is valid. Do not invent speculative features to keep workers occupied.
+An empty recommendation set is valid as a scheduler snapshot, but for a `Go` worker it is **not an automatic completion condition**. The worker must first perform the current-main reconciliation and stop-proof checks above. Reconciliation is allowed to be sharded by objective family so many workers do not queue behind one global scanner. Do not invent speculative features to keep workers occupied.
 
 ## Scarce/high-contention resources
 
@@ -279,7 +294,7 @@ python3 scripts/swarm_control.py board --repo jonathangana131-lab/Nembra
 - **Shadow:** seed/import live state, observe scheduler, warn on metadata/scope, prove real GitHub CAS.
 - **Coordination:** new `Go` work must claim before branch creation; complementary roles/resources/handoffs active.
 - **Enforcement:** controlled PRs require live claim + metadata + review/scope rules.
-- **Full Go:** canonical worker boot instructions depend on a successful claim before implementation.
+- **Full Go:** canonical worker boot instructions depend on a successful claim before implementation and require the explicit stop proof before an intentional idle/stop.
 - **Metrics/autotuning:** tune WIP/leases from throughput data, never lines-written gamification.
 
 The large existing Capture backlog is the reason shadow mode exists: preserve accepted work and safety while new work migrates to real atomic ownership.
