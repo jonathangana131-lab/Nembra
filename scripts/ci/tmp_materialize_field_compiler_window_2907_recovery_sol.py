@@ -73,11 +73,26 @@ for path in (
     target.write_bytes(payload)
 
 installer = INSTALLER.read_text(encoding="utf-8")
-old = '''run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\\n    --lockfile "$ROOT/Podfile.lock" \\\n'''
-new = '''run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\\n    --accepted-source-root "$ROOT" \\\n    --accepted-source-sha "$SOURCE_SHA" \\\n    --lockfile "$ROOT/Podfile.lock" \\\n'''
-if installer.count(old) != 1:
+old_invocation = '''run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\\n    --lockfile "$ROOT/Podfile.lock" \\\n'''
+new_invocation = '''run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\\n    --accepted-source-root "$ROOT" \\\n    --accepted-source-sha "$SOURCE_SHA" \\\n    --lockfile "$ROOT/Podfile.lock" \\\n'''
+if installer.count(old_invocation) != 1:
     raise SystemExit("#2907 guarded-build invocation drifted")
-INSTALLER.write_text(installer.replace(old, new, 1), encoding="utf-8")
+INSTALLER.write_text(installer.replace(old_invocation, new_invocation, 1), encoding="utf-8")
+
+# Preserve #2878's attack primitive and closure invariant, but evolve its one
+# historical pre-repair shape assertion now that accepted-source custody exists.
+canonical = CANONICAL_RED.read_text(encoding="utf-8")
+old_shape = '''    def test_current_field_build_is_endpoint_only_for_tracked_checkout_source(self) -> None:\n        installer = INSTALLER.read_text(encoding="utf-8")\n        guard = BUILD_GUARD.read_text(encoding="utf-8")\n\n        self.assertIn(\n            'verify_accepted_checkout_source "Private workspace bootstrap changed accepted-source inputs."',\n            installer,\n        )\n        self.assertIn(\n            'verify_accepted_checkout_source "Accepted-source inputs changed while the field build was compiling.',\n            installer,\n        )\n\n        start = installer.index('say "Building SDK-integrated Nembra Capture for the intended iPhone"')\n        end = installer.index('verify_private_tuya_inputs\\nverify_accepted_checkout_source', start)\n        build_window = installer[start:end]\n        self.assertIn('run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"', build_window)\n        self.assertIn('-workspace NembraCapture.xcworkspace', build_window)\n\n        self.assertIn("def _watch_paths(inputs: PrivateInputs)", guard)\n        self.assertIn("generated CocoaPods workspace tree", guard)\n        self.assertNotIn("accepted_source_root", guard)\n        self.assertNotIn("accepted_source_sha", guard)\n\n'''
+new_shape = '''    def test_current_field_build_holds_tracked_checkout_source_through_guard(self) -> None:\n        installer = INSTALLER.read_text(encoding="utf-8")\n        guard = BUILD_GUARD.read_text(encoding="utf-8")\n\n        self.assertIn(\n            'verify_accepted_checkout_source "Private workspace bootstrap changed accepted-source inputs."',\n            installer,\n        )\n        self.assertIn(\n            'verify_accepted_checkout_source "Accepted-source inputs changed while the field build was compiling.',\n            installer,\n        )\n\n        start = installer.index('say "Building SDK-integrated Nembra Capture for the intended iPhone"')\n        end = installer.index('verify_private_tuya_inputs\\nverify_accepted_checkout_source', start)\n        build_window = installer[start:end]\n        self.assertIn('run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"', build_window)\n        self.assertIn('--accepted-source-root "$ROOT"', build_window)\n        self.assertIn('--accepted-source-sha "$SOURCE_SHA"', build_window)\n        self.assertIn('-workspace NembraCapture.xcworkspace', build_window)\n\n        self.assertIn("def _accepted_tracked_source_manifest", guard)\n        self.assertIn("def _verify_tracked_source_manifest", guard)\n        self.assertIn("def _tracked_source_watch_paths", guard)\n        self.assertIn("accepted_source_root", guard)\n        self.assertIn("accepted_source_sha", guard)\n        self.assertIn("KQ_NOTE_ATTRIB", guard)\n\n'''
+if canonical.count(old_shape) != 1:
+    raise SystemExit("canonical #2878 pre-repair shape assertion drifted")
+canonical = canonical.replace(old_shape, new_shape, 1)
+canonical = canonical.replace(
+    '"""V14 expected-red attack witness for tracked checkout source during field xcodebuild."""',
+    '"""V14 attack witness and closure regression for tracked source during field xcodebuild."""',
+    1,
+)
+CANONICAL_RED.write_text(canonical, encoding="utf-8")
 
 for relative in BYTECODE:
     path = ROOT / relative
@@ -85,8 +100,6 @@ for relative in BYTECODE:
         raise SystemExit(f"expected accidental bytecode is missing: {relative}")
     subprocess.run(["/usr/bin/git", "rm", "--", relative], cwd=ROOT, check=True)
 
-# Compile/run the exact portable contracts. Some Python imports may recreate ignored
-# bytecode; remove the four accidentally tracked paths again before staging.
 subprocess.run(["/usr/bin/python3", "-m", "py_compile", str(GUARD), str(AUTH_TEST), str(CANONICAL_RED), str(VNODE_TEST), str(PROVENANCE_TEST)], cwd=ROOT, check=True)
 subprocess.run(["/usr/bin/python3", str(AUTH_TEST)], cwd=ROOT, check=True)
 subprocess.run(["/usr/bin/python3", str(CANONICAL_RED)], cwd=ROOT, check=True)
@@ -120,6 +133,7 @@ subprocess.run(
         "Scripts/capture_tuya_private_input_build_guard.py",
         "scripts/field/install_one_time_capture.command",
         "scripts/ci/tests/test_capture_field_tracked_source_window_authority.py",
+        "scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py",
         str(SELF.relative_to(ROOT)),
     ],
     cwd=ROOT,
