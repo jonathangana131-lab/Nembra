@@ -28,11 +28,13 @@ struct TuyaMetadataAccountUIDCustodySourceTests {
         ))
 
         #expect(load.contains("let accountUID = session.uid.trimmingCharacters"))
-        #expect(load.contains("Self.redactAccountUID("))
+        #expect(load.contains("selectedDeviceMetadata = Self.redactAccountUID("))
+        #expect(load.contains("selectedDeviceSpecifications = Self.redactAccountUID("))
+        #expect(load.contains("selectedDeviceStatus = Self.redactAccountUID("))
         #expect(load.contains("Self.redactSecrets(rawDetail)"))
         #expect(load.contains("Self.redactSecrets(specs[\"result\"]"))
-        #expect(load.contains("Self.redactSecrets(strategy[\"result\"]"))
         #expect(load.contains("Self.redactSecrets(statusMap)"))
+        #expect(load.components(separatedBy: "accountUID: accountUID").count - 1 == 3)
     }
 
     @Test("final export scrubs the exact account UID across the complete envelope")
