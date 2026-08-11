@@ -4,9 +4,9 @@
   "laneId": "home-accessibility-product",
   "epic": "home",
   "title": "Home accessibility and outdoor-readable product recovery",
-  "objective": "Recover the legacy Home Accessibility Dynamic Type metric/action-control reflow onto current main without changing confirmed command authority or inventing battery/trip/mode truth, then close exact-head Xcode, iPhone 12/iOS 27 Simulator visual, VoiceOver, large-text, Reduce Motion, and outdoor-readability acceptance before integration.",
+  "objective": "Recover the truthful Home large-text product lineage onto current main, preserving current command/source authority, then close exact-head Xcode, real iPhone 12/iOS 27 Simulator Dynamic Type/visual, VoiceOver, Reduce Motion, and outdoor-readability acceptance before integration.",
   "priority": 5,
-  "state": "READY",
+  "state": "VERIFYING",
   "dependencies": [],
   "blockers": [],
   "mode": "exclusive",
@@ -28,15 +28,25 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOURCE_READY"},
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "sourceSHA": "258ea4897e6cf0fa92a082fbfa4e24a5c2ea8dae",
+  "recovery": {
+    "pr": 2842,
+    "baseSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "headSHA": "258ea4897e6cf0fa92a082fbfa4e24a5c2ea8dae",
+    "aheadBy": 5,
+    "behindBy": 0,
+    "changedFiles": 3,
+    "legacyIntentRecovered": true,
+    "truthHardening": "Captured lock intent is revalidated at confirmation using current-main canLockFromCurrentSpeedEvidence; causally ambiguous ride-mode state haptic removed; current simulator-qualified speed authority preserved.",
+    "accessibilityHardening": "AX metrics, action controls, Ride Mode, header, recovery and detail rows recompose; action semantics preserve confirmed-state labels and separate pending confirmation; low battery has non-color VoiceOver wording.",
+    "runtimeAcceptance": "PENDING"
+  },
   "legacy": {
     "primaryPR": 2400,
     "primaryHeadSHA": "5d03a1dcac4a5684dc8142343c59673166f798cb",
-    "mergeBaseSHA": "969428349de610282fca3cc3a9b82cab636d3f5a",
-    "mainAheadBy": 49,
-    "legacyAheadBy": 12,
-    "changedFileOverlapWithNewMain": 0,
-    "knownExactHeadFinding": "Legacy PR #2400 is open, draft, non-mergeable, and 49 commits behind current main. Its effective delta remains exactly HomeView.swift plus two Home accessibility source-contract tests. Current main's 49 commits since the merge base touch none of those three paths, so recover the intent onto current main rather than merging stale ancestry. Historical Xcode run 31396554134 was skipped and is not acceptance evidence."
+    "strongerLargeTextPR": 165,
+    "truthChildPR": 242,
+    "knownExactHeadFinding": "Legacy Home branches are historical inputs only. PR #2842 rebuilds their still-valid intent on current main while preserving newer Home source authority. Historical #170 green is normal-size compatibility evidence; #2400 Xcode skipped and is not acceptance."
   },
   "tags": ["home", "p5", "app-visible", "dynamic-type", "voiceover", "outdoor-readability", "legacy-import"]
 }
