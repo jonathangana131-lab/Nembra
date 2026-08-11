@@ -132,17 +132,28 @@ jobs:
           git add scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
           git commit -m "Capture: pin R3 parent execution to accepted Git blob"
 
-      - name: Validate exact repair
-        shell: bash
+      - name: Compile repair and regression
         run: |
           set -euo pipefail
           python3 -m py_compile \
             scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
             scripts/ci/tests/test_es80_generated_subject_parent_git_execution_custody.py
-          python3 scripts/ci/tests/test_es80_generated_subject_parent_git_execution_custody.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
-          python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+
+      - name: Reject hidden mutable parent execution
+        run: python3 scripts/ci/tests/test_es80_generated_subject_parent_git_execution_custody.py
+
+      - name: Preserve R3 core authority tests
+        run: python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+
+      - name: Preserve R3 workflow gates
+        run: python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
+
+      - name: Preserve accepted generated-helper execution
+        run: python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+
+      - name: Require clean validation worktree
+        run: |
+          set -euo pipefail
           find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
