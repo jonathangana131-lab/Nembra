@@ -4,24 +4,24 @@
   "laneId": "capture-build-authority",
   "epic": "capture",
   "title": "Capture build and private-review execution authority",
-  "objective": "Converge the selected CocoaPods/private-input field-build authority lineage onto one exact descendant, preserving reviewed lock/generated/private subjects, binding field installer checks to executed accepted bytes, and closing macOS vnode-attribute custody before flagship composition.",
+  "objective": "Converge the selected CocoaPods/private-input field-build authority lineage onto one exact descendant, binding Git selection, executed bootstrap bytes, build-visible filesystem inputs, reviewed helper subjects, and vnode metadata custody before flagship composition.",
   "priority": 0,
   "state": "BLOCKED_EXTERNAL",
   "dependencies": [],
   "blockers": [
     {
-      "id": "field-installer-git-worktree-execution-authority-terminal-red",
+      "id": "field-installer-hidden-build-input-authority-terminal-red",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Expected-red #2869 exact d228dc4eef45f9b3c32a62bdc573f8b5a79d061a attacks latest selected parent #2805 b9311fb105981c2a098f682fb4a95f1b7fdff9e5 and Capture Field Installer Git Authority Red Team run 31476493933 is terminal FAILURE. Exact installer still trusts ambient `git rev-parse HEAD`/`git status` then executes `$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh` by mutable pathname. The attack proves caller GIT_DIR/GIT_WORK_TREE or repository core.worktree can make SHA/cleanliness describe different bytes from the bootstrap actually executed. Required repair must explicitly bind repository/index/worktree/config/replacement authority to the real installer checkout and consume bootstrap authority from exact captured/accepted bytes or an equivalent race-safe subject; do not merely unset one variable or hash then reopen mutable path. PHYSICAL NO-GO.",
-      "pr": 2869,
-      "headSHA": "d228dc4eef45f9b3c32a62bdc573f8b5a79d061a"
+      "reason": "The first #2869 repair branch exact 00be17bcf3dcd3e98272d20fe8041f1dfdffbdb3 materially closes the original ambient Git/worktree/executed-bootstrap split: explicit physical .git + --work-tree binding, fresh authority index read from accepted SOURCE_SHA, and exact-Git bootstrap execution through run_accepted_source_bash. Parent-derived independent review 31477454856 is SUCCESS for the original #2869 witnesses, but this repair diverges from latest #2805 and is ingredient work. New expected-red #2875 exact 5c6533207d9d67cd2469fd7a90c944ab7bae05aa proves the fresh-index `status --untracked-files=all` still honors repository `.git/info/exclude`: an injected untracked SwiftPM source can be hidden from Git while remaining build-visible. Run 31477785550 reaches the hidden-input witness and then fails the required independent workspace-authority assertion. Preserve the explicit Git/bootstrap repair; add an ignore-independent untracked/build-input contract (for example no-exclude `ls-files --others -z` under the same explicit authority wrapper with strict build-input rejection and only narrowly justified generated/private exceptions) plus exact tracked-byte authority. Do not edit exclude files or destructively clean the field checkout. Re-anchor the final repair onto latest selected #2805 and replay #2869+#2875 before vnode composition. PHYSICAL NO-GO.",
+      "pr": 2875,
+      "headSHA": "5c6533207d9d67cd2469fd7a90c944ab7bae05aa"
     },
     {
-      "id": "current-vnode-child-valid-ingredient-but-integration-deferred",
+      "id": "current-vnode-child-valid-ingredient-integration-deferred",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "#2859 has now converged into the correct current-parent vnode child: exact 4b6d24ad2fb3f2e25aa810e4286e47cfc830c5aa is one commit directly on #2805 b9311fb1 and changes exactly four permanent files with no materializer residue: +2 KQ_NOTE_ATTRIB guard lines, permanent vnode regression, reusable real-macOS vnode gate, and canonical Field Provenance wiring. Focused private-review/helper/downstream/CocoaPods gates plus portable vnode are green; real-macOS vnode, Field, Graft remain non-terminal and Xcode is intentionally skipped while draft. This PR was momentarily closed during a stale-state cleanup race and immediately reopened once live GitHub showed its self-cleaned/rebased state; no commit/evidence changed. Keep #2859 as the selected vnode ingredient, but do not integrate it before #2869's deeper field-installer authority seam is closed on the same parent lineage; the eventual moved parent must re-earn all impacted gates.",
+      "reason": "#2859 exact 4b6d24ad2fb3f2e25aa810e4286e47cfc830c5aa is the clean current-parent vnode ingredient: one commit on #2805 b9311fb1, four permanent files, KQ_NOTE_ATTRIB production fence plus portable/real-macOS regression/wiring, no materializer residue. Keep it open and preserve its evidence, but field-installer build-visible authority is deeper in the critical path. After #2869/#2875 class closes on the selected parent, ensure the vnode delta is composed onto that moved head and rerun security/vnode/Field/Graft/Xcode exactly.",
       "pr": 2859,
       "headSHA": "4b6d24ad2fb3f2e25aa810e4286e47cfc830c5aa"
     },
@@ -29,7 +29,7 @@
       "id": "private-identity-separate-blocker",
       "state": "ACTIVE",
       "scope": "epic",
-      "reason": "Separate private-identity lane is actively owned on #2755 and remains blocked by destination-name authority, terminal-red hard-exit crash residue #2870, ordering regression, and field self-test portability. Follow capture-private-identity-custody; do not use stale #2858 as selected production authority. PHYSICAL remains unavailable regardless of build progress.",
+      "reason": "Private identity is actively owned on #2755 and independently blocks physical closure through destination-name authority, hard-exit stage residue #2870, the #2733 ordering regression, and macOS self-test portability. Follow capture-private-identity-custody; stale #2858 descendants are selective evidence only.",
       "pr": 2755,
       "headSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc"
     }
@@ -49,11 +49,12 @@
   "legacy": {
     "primaryPR": 2805,
     "primaryHeadSHA": "b9311fb105981c2a098f682fb4a95f1b7fdff9e5",
+    "fieldInstallerRepairSHA": "00be17bcf3dcd3e98272d20fe8041f1dfdffbdb3",
     "selectedVnodePR": 2859,
     "selectedVnodeHeadSHA": "4b6d24ad2fb3f2e25aa810e4286e47cfc830c5aa",
-    "redTeamPRs": [2869],
-    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856,2859,2867,2869],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:20Z. #2859 is now the clean one-commit vnode child of current #2805 b931 and must remain open as valid ingredient evidence. #2869 terminal-red is a deeper field-installer Git/worktree/executed-bootstrap authority blocker and therefore precedes vnode integration. Close installer authority on selected parent first, then ensure vnode delta is present on the moved exact candidate and rerun security/vnode/Field/Graft/Xcode. PHYSICAL NO-GO."
+    "redTeamPRs": [2869,2875],
+    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856,2859,2867,2869,2875],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:31Z. #2869 original Git/core.worktree/bootstrap split is closed on repair branch 00be17bc, but #2875 terminal expected-red proves ignored untracked build-visible sources escape its fresh-index status. Add ignore-independent build-input authority without regressing exact Git/bootstrap custody, then re-anchor final repair onto selected #2805. Vnode #2859 remains accepted ingredient evidence behind this deeper blocker. PHYSICAL NO-GO."
   },
-  "tags": ["capture","p0","security","build-authority","field-installer","vnode","legacy-import"]
+  "tags": ["capture","p0","security","build-authority","field-installer","filesystem-authority","vnode","legacy-import"]
 }
