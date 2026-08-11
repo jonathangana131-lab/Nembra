@@ -91,6 +91,52 @@ jobs:
             --expected "$source_sha")"
           test "$final_sha" = "$source_sha"
 
+  macos-acl-strip-custody:
+    name: Reject inherited ACL authority on real macOS
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind ACL evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove protected ditto snapshot strips inherited ACLs
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp -d)"
+          stage_root=""
+          cleanup() {
+            rm -rf -- "$fixture"
+            if [[ -n "$stage_root" ]]; then sudo /bin/rm -rf -- "$stage_root"; fi
+          }
+          trap cleanup EXIT
+
+          source_app="$fixture/Nembra Capture.app"
+          mkdir -p "$source_app"
+          printf 'accepted signed subject\n' > "$source_app/subject.txt"
+          /bin/chmod +a "$(id -un) allow write,delete,add_file,add_subdirectory,file_inherit,directory_inherit" "$source_app"
+          /usr/bin/find "$source_app" -acl -print -quit | /usr/bin/grep -q .
+
+          sudo /bin/mkdir -p /private/tmp
+          stage_root="$(sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX)"
+          sudo /usr/bin/ditto --noacl "$source_app" "$stage_root/Nembra Capture.app"
+          staged_acl="$(sudo /usr/bin/find "$stage_root" -acl -print -quit)"
+          test -z "$staged_acl"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
   accepted-runner-transport:
     name: Require exact private-device runner Git blob transport
     runs-on: macos-15
