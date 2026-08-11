@@ -1,0 +1,65 @@
+name: TEMP V14 Final-GO control worktree custody 477b
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-control-worktree-custody-477b-sol
+    paths:
+      - .github/workflows/tmp-v14-final-go-control-worktree-custody-477b.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Apply exact admission repair and promote red-team regression
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "477b13acab3496484a28e1bcfe2b0b95fc2f66f2"
+          git fetch --no-tags origin 6b9e8284331e218f8a48920121c9a25ce4766672
+          git show 6b9e8284331e218f8a48920121c9a25ce4766672:scripts/ci/tests/test_es80_final_go_control_worktree_custody.py > scripts/ci/tests/test_es80_final_go_control_worktree_custody.py
+          python3 - <<'PY'
+          from pathlib import Path
+          issuer=Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          s=issuer.read_text()
+          old='''    blobs={path:git(root,"rev-parse",f"HEAD:{path}").lower() for path in paths}\n    if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) for value in blobs.values()): raise GoError("GO control-plane Git blob identity invalid")\n    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"mainSHA":main_sha,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}\n'''
+          new='''    blobs={path:git(root,"rev-parse",f"HEAD:{path}").lower() for path in paths}\n    if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) for value in blobs.values()): raise GoError("GO control-plane Git blob identity invalid")\n    for path in paths:\n        verbose=git(root,"ls-files","-v","--",path)\n        tagged=git(root,"ls-files","-t","--",path)\n        if not verbose or verbose[:1].islower() or tagged.startswith("S "):\n            raise GoError("GO control-plane authority path has suppressed index worktree tracking")\n        actual_blob=git(root,"hash-object","--no-filters","--",path).lower()\n        if actual_blob!=blobs[path]:\n            raise GoError("GO control-plane authority worktree bytes differ from accepted Git blob")\n    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"mainSHA":main_sha,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}\n'''
+          if s.count(old)!=1: raise SystemExit(f'issuer seam count={s.count(old)}')
+          issuer.write_text(s.replace(old,new,1))
+          wf=Path('.github/workflows/capture-authenticated-stationary-final-go.yml')
+          w=wf.read_text()
+          line='      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py\n'
+          if w.count(line)!=2: raise SystemExit('workflow path seam changed')
+          w=w.replace(line,line+'      - scripts/ci/tests/test_es80_final_go_control_worktree_custody.py\n')
+          run='          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py\n'
+          if w.count(run)!=1: raise SystemExit('workflow run seam changed')
+          wf.write_text(w.replace(run,run+'          python3 scripts/ci/tests/test_es80_final_go_control_worktree_custody.py\n',1))
+          PY
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py
+          python3 -B scripts/ci/tests/test_es80_final_go_control_worktree_custody.py
+          test -z "$(find scripts/ci -type d -name __pycache__ -print -quit)"
+      - name: Remove helper and checkpoint product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-final-go-control-worktree-custody-477b.yml
+          expected=$'.github/workflows/capture-authenticated-stationary-final-go.yml\n.github/workflows/tmp-v14-final-go-control-worktree-custody-477b.yml\nscripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_final_go_control_worktree_custody.py'
+          actual="$(git diff --name-only 477b13acab3496484a28e1bcfe2b0b95fc2f66f2 | sort)"
+          test "$actual" = "$expected"
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): bind Final-GO control worktree bytes"
+          git push origin HEAD:repair/v14-final-go-control-worktree-custody-477b-sol
