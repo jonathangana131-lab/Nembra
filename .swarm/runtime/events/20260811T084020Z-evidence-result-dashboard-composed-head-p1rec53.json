@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084020-evidence-result-dashboard-composed-head-p1rec53",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-p1rec53",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent exact-head review of PR #2817 at f3c166edffd385103d64ae02651d9acea6e67304 closes the original caller-mintable Simulator source-authority defect in source review and confirms the external-consumer compile regression from child #2833 is now composed into the flagship branch. The same exact head preserves the mandatory CoreSimulator accessibility content_size rerun and exports real landscape cockpit attachments, converting the prior large-Dynamic-Type screenshot mechanism gap into evidence-pending rather than accepted. Structural performance review still finds 60 Hz invalidation localized to the instrument subtree and quiescent after canonical interpolation; empirical iPhone 12 performance remains required. PR-associated exact-head checks on f3c166e are skipped/cancelled rather than green, so Xcode, screenshot inspection, Reduce Motion where supported, performance, and final overlap acceptance remain open. Review 4904381926 records the exact-head result. No physical ES80 power/current semantics or Capture GO authority changed; physical remains NO-GO.",
+  "createdAt": "2026-08-11T08:40:20Z"
+}
