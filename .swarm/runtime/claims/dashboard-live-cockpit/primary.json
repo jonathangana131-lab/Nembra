@@ -4,25 +4,23 @@
   "laneId": "dashboard-live-cockpit",
   "slot": "primary",
   "role": "implementation",
-  "workerId": "sol-20260811-c84e",
-  "leaseId": "dashboard-primary-c84e-20260811-2023",
-  "generation": 3,
+  "workerId": "sol-20260811-1611dn",
+  "leaseId": "dashboard-primary-1611dn-20260811-2320",
+  "generation": 4,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T20:23:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:46:00Z",
+  "claimedAt": "2026-08-11T23:20:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:20:00Z",
   "leaseSeconds": 2700,
-  "branch": "repair/v15-dashboard-ax5-energyrail-sol-c84e",
-  "pr": 2991,
-  "sourceSHA": "c150a8287463231ee9af174c38564738bab576a3",
+  "branch": "repair/v15-dashboard-ax5-connection-sol-1611dn",
+  "pr": null,
+  "sourceSHA": "f55f61772138dfdf271cb2952e9cf7c6b86ab050",
   "currentHeadSHA": "f55f61772138dfdf271cb2952e9cf7c6b86ab050",
-  "takeoverFromWorkerId": "sol-20260811-hl6k",
-  "takeoverReason": "Generation-2 lease expired many hours ago. Exact c150 AX5 evidence exposed status truncation and later independent visual review exposed Energy Rail/currentness-label intersection. Continue the same Dashboard accessibility closure through stacked exact-head successors; preserve telemetry truth and Simulator-only authority.",
+  "takeoverFromWorkerId": "sol-20260811-c84e",
+  "takeoverFromLeaseId": "dashboard-primary-c84e-20260811-2023",
+  "takeoverReason": "Generation-3 primary lease expired long before takeover (last heartbeat 2026-08-11T21:46:00Z with 2700s TTL) and worker heartbeat never advanced after boot. Exact f55 AX5 artifact 9121216069 proves the remaining blocker: Connected still renders as Connect- / ed in stopped and riding pixels. Recover the same Dashboard lineage on a clean successor branch without overwriting the stale predecessor.",
   "ownedPaths": [
     "NembraApp/Features/Dashboard/DashboardView.swift",
-    "NembraApp/DesignSystem/NembraVisuals.swift",
-    "NembraUITests/NembraUITests.swift",
-    "scripts/ci/xcode27_simulator_capture.sh"
+    "NembraUITests/NembraUITests.swift"
   ],
-  "checkpoint": "Exact bdd37315 completed iPhone 12/iOS 27 run 31537938694 SUCCESS with artifact 9120010339 digest sha256:6b5e311b004afc9b9927dce6d67331849562e80986c9e4fdb4090dbc133295ba. Real AX XXXL riding/stopped/grid tests passed; pixels preserve the center/2x2 controls and keep the Energy Rail overlap closed, but identity still renders Nembra / Simulat… and Connected is awkwardly hyphenated. Current f55f617 is exactly one file/two substitutions: AX identity headline->subheadline and connection caption->caption2, both still Dynamic-Type-scaled with the 224 pt rail unchanged and no minimum-scale fallback. PR synchronize created exact run 31539532255 automatically; do not post duplicate /xcode27. Parent green is ingredient evidence only until f55 exact pixels prove full unhyphenated status. P0 #2993 conditional review remains active separately. PHYSICAL NO-GO.",
-  "acceptance": "Final exact f55f617 (or a reviewed descendant) must keep speed/Energy Rail semantic truth, show full Nembra Simulator and full connection wording at AX5 without ellipsis or awkward hyphenation, retain closed power-label/rail separation, prove riding + connected-stopped under real system AX content size, preserve deliberate 2x2 AX mode geometry with every stopped target >=44 pt and inside the app window, avoid reintroduced center/vertical clipping, preserve exact confirmed mode semantics through fresh AX queries, and earn exact-head Xcode/screenshots plus independent visual review. Sustained performance separately still requires recorded frame-pacing/hitch evidence. ES80 physical NO-GO."
+  "checkpoint": "Recovered expired Dashboard primary from exact f55f617. Immediate target is the pixel-proven AX5 connection hyphenation defect only: preserve Nembra Simulator visibility, Dynamic Type/VoiceOver semantics, center speed/Energy Rail geometry, 2x2 stopped controls, telemetry/command authority, and Simulator-only truth. Next: minimal accessibility-status composition fix, focused source/test review, exact-head Xcode27/iPhone12 run, inspect retained stopped+riding pixels. ES80 PHYSICAL NO-GO."
 }
