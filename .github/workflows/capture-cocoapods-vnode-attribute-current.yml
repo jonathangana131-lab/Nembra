@@ -1,0 +1,73 @@
+name: Capture CocoaPods Vnode Attribute Current
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/capture_tuya_private_input_build_guard.py'
+      - 'Scripts/capture_cocoapods_generated_build_subject.py'
+      - 'scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py'
+      - 'scripts/ci/tests/test_capture_private_review_commitment.py'
+      - 'scripts/ci/tests/test_capture_private_review_helper_execution_custody.py'
+      - '.github/workflows/capture-cocoapods-vnode-attribute-current.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-contract:
+    name: Vnode attribute custody contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind QA to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile current custody surface
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+
+      - name: Prove mode authority and vnode attribute subscription
+        run: python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+
+      - name: Preserve private-review commitment custody
+        run: python3 scripts/ci/tests/test_capture_private_review_commitment.py
+
+      - name: Preserve accepted helper execution custody
+        run: python3 scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+
+  macos-real-kqueue:
+    name: Real macOS chmod vnode evidence
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind QA to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Exercise real kqueue chmod delivery
+        run: /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
