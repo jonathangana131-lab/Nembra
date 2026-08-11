@@ -77,3 +77,5 @@ jobs:
           git config user.email 'nembra-v14-sol@users.noreply.github.com'
           git commit -m 'fix(capture): bind Final-GO main and worktree custody'
           git push origin HEAD:repair/v14-auth-final-go-main-index-custody-sol
+
+# Registered by the preceding branch commit; this follow-up push triggers the disposable runner.
