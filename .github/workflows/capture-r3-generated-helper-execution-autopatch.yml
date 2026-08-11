@@ -1,0 +1,242 @@
+name: Capture R3 Generated Helper Execution Autopatch
+
+on:
+  push:
+    branches:
+      - control/v14-auth-stationary-generated-subject-r3-sol
+    paths:
+      - .github/workflows/capture-r3-generated-helper-execution-autopatch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-exact-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Patch mutable-path helper execution to accepted in-memory Git blob bytes
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          TARGET_BRANCH: control/v14-auth-stationary-generated-subject-r3-sol
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          production = Path("scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py")
+          text = production.read_text(encoding="utf-8")
+
+          old_imports = "import argparse\nimport contextlib\nimport importlib.util\nimport json\nimport re\nimport subprocess\nimport sys\n"
+          new_imports = "import argparse\nimport contextlib\nimport hashlib\nimport importlib.util\nimport json\nimport os\nimport re\nimport stat\nimport subprocess\nimport sys\nimport types\n"
+          if text.count(old_imports) != 1:
+              raise SystemExit("production import anchor drifted")
+          text = text.replace(old_imports, new_imports, 1)
+
+          old_function = '''def _current_generated_subject(root: Path) -> str:
+              helper = root / GENERATED_HELPER_PATH
+              try:
+                  process = subprocess.run(
+                      [
+                          "/usr/bin/python3",
+                          "-I",
+                          "-B",
+                          str(helper),
+                          "--lockfile",
+                          str(root / "Podfile.lock"),
+                          "--pods",
+                          str(root / "Pods"),
+                          "--workspace",
+                          str(root / "NembraCapture.xcworkspace"),
+                      ],
+                      cwd=root,
+                      env={"PATH": "/usr/bin:/bin"},
+                      text=True,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      check=False,
+                  )
+              except OSError as error:
+                  raise GeneratedSubjectGoError("generated CocoaPods build-subject helper could not run") from error
+              value = process.stdout.strip()
+              if process.returncode != 0 or not HEX64.fullmatch(value) or value != value.lower():
+                  raise GeneratedSubjectGoError("generated CocoaPods build subject could not be re-derived exactly")
+              return value
+
+          '''
+          new_function = '''def _helper_stat_identity(metadata: os.stat_result) -> tuple[int, ...]:
+              return (
+                  metadata.st_dev,
+                  metadata.st_ino,
+                  metadata.st_mode,
+                  metadata.st_uid,
+                  metadata.st_gid,
+                  metadata.st_nlink,
+                  metadata.st_size,
+                  metadata.st_mtime_ns,
+                  metadata.st_ctime_ns,
+              )
+
+
+          def _git_blob_oid(payload: bytes, accepted_oid: str) -> str:
+              header = b"blob " + str(len(payload)).encode("ascii") + b"\\0"
+              if len(accepted_oid) == 40:
+                  return hashlib.sha1(header + payload).hexdigest()
+              if len(accepted_oid) == 64:
+                  return hashlib.sha256(header + payload).hexdigest()
+              raise GeneratedSubjectGoError("accepted generated-helper Git object ID has unsupported width")
+
+
+          def _accepted_generated_helper_bytes(root: Path, source: str, base: Any) -> bytes:
+              helper = root / GENERATED_HELPER_PATH
+              accepted_oid = base.git(root, "rev-parse", f"{source}:{GENERATED_HELPER_PATH}").lower()
+              if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_oid):
+                  raise GeneratedSubjectGoError("accepted generated-helper Git blob identity is invalid")
+              try:
+                  path_before = helper.lstat()
+              except OSError as error:
+                  raise GeneratedSubjectGoError("accepted generated-helper pathname is unavailable") from error
+              if stat.S_ISLNK(path_before.st_mode) or not stat.S_ISREG(path_before.st_mode):
+                  raise GeneratedSubjectGoError("accepted generated-helper pathname is not a regular file")
+              nofollow = getattr(os, "O_NOFOLLOW", None)
+              if nofollow is None:
+                  raise GeneratedSubjectGoError("accepted generated-helper execution requires O_NOFOLLOW")
+              flags = os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0)
+              try:
+                  descriptor = os.open(helper, flags)
+              except OSError as error:
+                  raise GeneratedSubjectGoError("accepted generated-helper source could not be opened safely") from error
+              try:
+                  descriptor_before = os.fstat(descriptor)
+                  if (
+                      _helper_stat_identity(descriptor_before) != _helper_stat_identity(path_before)
+                      or not stat.S_ISREG(descriptor_before.st_mode)
+                  ):
+                      raise GeneratedSubjectGoError("generated-helper source changed before execution custody")
+                  if descriptor_before.st_size > 2 * 1024 * 1024:
+                      raise GeneratedSubjectGoError("generated-helper source exceeds bounded execution size")
+                  chunks: list[bytes] = []
+                  remaining = descriptor_before.st_size
+                  while remaining:
+                      chunk = os.read(descriptor, min(1024 * 1024, remaining))
+                      if not chunk:
+                          raise GeneratedSubjectGoError("generated-helper source truncated during execution custody")
+                      chunks.append(chunk)
+                      remaining -= len(chunk)
+                  if os.read(descriptor, 1):
+                      raise GeneratedSubjectGoError("generated-helper source grew during execution custody")
+                  payload = b"".join(chunks)
+                  descriptor_after = os.fstat(descriptor)
+                  try:
+                      path_after = helper.lstat()
+                  except OSError as error:
+                      raise GeneratedSubjectGoError("generated-helper pathname disappeared during execution custody") from error
+                  if (
+                      _helper_stat_identity(descriptor_after) != _helper_stat_identity(descriptor_before)
+                      or _helper_stat_identity(path_after) != _helper_stat_identity(path_before)
+                  ):
+                      raise GeneratedSubjectGoError("generated-helper source changed during execution custody")
+                  if _git_blob_oid(payload, accepted_oid) != accepted_oid:
+                      raise GeneratedSubjectGoError("generated-helper executed bytes do not match accepted Git blob")
+                  return payload
+              finally:
+                  os.close(descriptor)
+
+
+          def _current_generated_subject(root: Path, source: str, base: Any) -> str:
+              payload = _accepted_generated_helper_bytes(root, source, base)
+              module = types.ModuleType("nembra_accepted_cocoapods_generated_build_subject")
+              module.__file__ = f"{source}:{GENERATED_HELPER_PATH}"
+              module.__package__ = ""
+              try:
+                  code = compile(payload, module.__file__, "exec", dont_inherit=True)
+                  exec(code, module.__dict__)
+              except Exception as error:
+                  raise GeneratedSubjectGoError("accepted generated-helper Git blob could not be evaluated") from error
+              if getattr(module, "SCHEMA", None) != GENERATED_SCHEMA.encode("ascii"):
+                  raise GeneratedSubjectGoError("accepted generated-helper schema does not match Final-GO authority")
+              build_subject = getattr(module, "build_subject", None)
+              if not callable(build_subject):
+                  raise GeneratedSubjectGoError("accepted generated-helper Git blob lacks build_subject authority")
+              try:
+                  value = build_subject(
+                      lockfile=root / "Podfile.lock",
+                      pods=root / "Pods",
+                      workspace=root / "NembraCapture.xcworkspace",
+                  )
+              except Exception as error:
+                  raise GeneratedSubjectGoError("accepted generated-helper rejected the current CocoaPods subject") from error
+              if not isinstance(value, str) or not HEX64.fullmatch(value) or value != value.lower():
+                  raise GeneratedSubjectGoError("generated CocoaPods build subject could not be re-derived exactly")
+              return value
+
+          '''
+          if text.count(old_function) != 1:
+              raise SystemExit("mutable helper execution anchor drifted")
+          text = text.replace(old_function, new_function, 1)
+          text = text.replace(
+              "derive_subject: Callable[[Path], str] = _current_generated_subject",
+              "derive_subject: Callable[[Path, str, Any], str] = _current_generated_subject",
+          )
+          if text.count("derive_subject: Callable[[Path, str, Any], str] = _current_generated_subject") != 2:
+              raise SystemExit("derive_subject signature replacement count drifted")
+          if text.count("current = derive_subject(root)") != 1:
+              raise SystemExit("derive_subject call anchor drifted")
+          text = text.replace("current = derive_subject(root)", "current = derive_subject(root, source, base)", 1)
+          child_anchor = '    "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py",\n'
+          new_child = child_anchor + '    "scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py",\n'
+          if text.count(child_anchor) != 1:
+              raise SystemExit("child authority test anchor drifted")
+          text = text.replace(child_anchor, new_child, 1)
+          production.write_text(text, encoding="utf-8")
+
+          tests = Path("scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py")
+          test_text = tests.read_text(encoding="utf-8")
+          test_text = test_text.replace("derive_subject=lambda _: DIGEST", "derive_subject=lambda *_: DIGEST")
+          test_text = test_text.replace("derive_subject=lambda _: \"ef\" * 32", "derive_subject=lambda *_: \"ef\" * 32")
+          tests.write_text(test_text, encoding="utf-8")
+
+          workflow = Path(".github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml")
+          workflow_text = workflow.read_text(encoding="utf-8")
+          path_anchor = "      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py\n"
+          path_added = path_anchor + "      - scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py\n"
+          if workflow_text.count(path_anchor) != 2:
+              raise SystemExit("workflow path anchors drifted")
+          workflow_text = workflow_text.replace(path_anchor, path_added)
+          compile_anchor = "            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py\n"
+          compile_added = compile_anchor[:-1] + " \\\n            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py\n"
+          if workflow_text.count(compile_anchor) != 1:
+              raise SystemExit("workflow compile anchor drifted")
+          workflow_text = workflow_text.replace(compile_anchor, compile_added, 1)
+          run_anchor = "          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py\n"
+          run_added = run_anchor + "\n      - name: Prove accepted generated-helper execution bytes cannot be swapped\n        shell: bash\n        run: |\n          set -euo pipefail\n          python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py\n"
+          if workflow_text.count(run_anchor) != 1:
+              raise SystemExit("workflow run anchor drifted")
+          workflow_text = workflow_text.replace(run_anchor, run_added, 1)
+          workflow.write_text(workflow_text, encoding="utf-8")
+          PY
+
+          rm .github/workflows/capture-r3-generated-helper-execution-autopatch.yml
+          git diff --check
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py \
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
+          python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+
+          git config user.name "Nembra Capture QA"
+          git config user.email "capture@nembra.invalid"
+          git add -A
+          git commit -m "fix(capture): execute accepted generated helper blob"
+          git push origin "HEAD:${TARGET_BRANCH}"
