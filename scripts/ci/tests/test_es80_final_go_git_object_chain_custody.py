@@ -37,6 +37,14 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
             [GIT, "-C", str(repo), *args], input=input_bytes, stderr=subprocess.DEVNULL
         )
 
+    def _cat_file(self, repo: Path, object_type: str, oid: str) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [GIT, "-C", str(repo), "cat-file", object_type, oid],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
     def _repository(self, repo: Path):
         repo.mkdir(parents=True)
         subprocess.run([GIT, "init", "-q", str(repo)], check=True)
@@ -99,11 +107,11 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
             baseline = MODULE._tree_entries(repo, accepted_commit)
             self.assertEqual(baseline[TARGET][1], accepted_blob)
             forged = self._forge_alias(repo, source_oid=attacker_commit, alias_oid=accepted_commit)
-            substituted = self._git(repo, "cat-file", "commit", accepted_commit)
-            self.assertNotEqual(object_oid("commit", substituted), accepted_commit)
-            # Stock Git already rejects higher-level tree traversal through this
-            # corrupt alias with hash mismatch. The authority contract under test
-            # is that Nembra independently rejects the substituted object bytes.
+            ambient = self._cat_file(repo, "commit", accepted_commit)
+            if ambient.returncode == 0:
+                self.assertNotEqual(object_oid("commit", ambient.stdout), accepted_commit)
+            # Either Git rejects the corrupt alias itself, or it returns bytes
+            # outside the accepted identity. Nembra must fail closed in both cases.
             with self.assertRaises(RuntimeError):
                 MODULE._tree_entries(repo, accepted_commit)
             verify = subprocess.run([GIT, "verify-pack", "-v", str(forged)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -115,10 +123,11 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
             accepted_commit, accepted_tree, accepted_blob, _, attacker_tree, _ = self._repository(repo)
             self.assertEqual(MODULE._tree_entries(repo, accepted_commit)[TARGET][1], accepted_blob)
             forged = self._forge_alias(repo, source_oid=attacker_tree, alias_oid=accepted_tree)
-            substituted = self._git(repo, "cat-file", "tree", accepted_tree)
-            self.assertNotEqual(object_oid("tree", substituted), accepted_tree)
-            # Do not require ambient ls-tree to walk a corrupt pack-index alias;
-            # current Git fails closed before returning attacker path authority.
+            ambient = self._cat_file(repo, "tree", accepted_tree)
+            if ambient.returncode == 0:
+                self.assertNotEqual(object_oid("tree", ambient.stdout), accepted_tree)
+            # Do not require ambient Git to traverse a corrupt pack-index alias;
+            # runner versions are allowed to reject the corruption even earlier.
             with self.assertRaises(RuntimeError):
                 MODULE._tree_entries(repo, accepted_commit)
             verify = subprocess.run([GIT, "verify-pack", "-v", str(forged)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
