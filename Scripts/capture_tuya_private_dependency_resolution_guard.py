@@ -19,6 +19,7 @@ import argparse
 import importlib.util
 import os
 from pathlib import Path
+import select
 import stat
 import sys
 from typing import Sequence
@@ -48,13 +49,31 @@ def _lexical_absolute(path: Path) -> Path:
     return Path(os.path.abspath(os.fspath(path)))
 
 
+def _directory_identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IFMT(metadata.st_mode),
+        metadata.st_uid,
+    )
+
+
+def _directory_flags() -> int:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_DIRECTORY", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is None:
+        raise ResolutionGuardError("dependency-resolution ancestry custody requires O_NOFOLLOW")
+    return flags | nofollow
+
+
 def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Path:
     """Admit one existing subject only through real descendants of one checkout root.
 
-    This is intentionally narrower than resolving arbitrary paths. Every pathname
-    component from the admitted checkout root through the supplied subject must
-    exist without a symlink hop. The canonical guard then owns exact file/tree
-    type, generation-snapshot, descriptor identity, and vnode monitoring checks.
+    Every pathname component from the checkout root through the supplied subject
+    must exist without a symlink hop. The canonical guard remains the authority
+    for final file/tree type, generation snapshots, exact descriptors, and vnode
+    monitoring. A separate backend below keeps the ancestry directories themselves
+    under rename/delete custody while that canonical window is live.
     """
     checkout = _lexical_absolute(root)
     candidate = _lexical_absolute(path)
@@ -87,6 +106,193 @@ def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Pa
     return candidate
 
 
+def _subject_parent_prefixes(checkout: Path, subjects: Sequence[Path]) -> tuple[tuple[str, ...], ...]:
+    prefixes: set[tuple[str, ...]] = set()
+    for subject in subjects:
+        try:
+            relative = subject.relative_to(checkout)
+        except ValueError as exc:
+            raise ResolutionGuardError("private dependency subject escaped checkout before custody") from exc
+        parent_parts = relative.parts[:-1]
+        for depth in range(1, len(parent_parts) + 1):
+            prefixes.add(tuple(parent_parts[:depth]))
+    return tuple(sorted(prefixes, key=lambda parts: (len(parts), parts)))
+
+
+class _AncestryCustodyBackend:
+    """Canonical event backend plus rename custody for absolute + checkout ancestry.
+
+    CocoaPods legitimately writes generated siblings beneath the checkout, so
+    ancestry directories deliberately watch only deletion/rename/revocation.
+    Canonical private input descriptors still use the full mutation flags when
+    `register` is called by `run_guarded_build`.
+    """
+
+    def __init__(self, checkout: Path, inputs) -> None:
+        required = (
+            "kqueue",
+            "kevent",
+            "KQ_FILTER_VNODE",
+            "KQ_EV_ADD",
+            "KQ_EV_ENABLE",
+            "KQ_EV_CLEAR",
+            "KQ_NOTE_DELETE",
+            "KQ_NOTE_WRITE",
+            "KQ_NOTE_EXTEND",
+            "KQ_NOTE_LINK",
+            "KQ_NOTE_RENAME",
+            "KQ_NOTE_REVOKE",
+        )
+        missing = [name for name in required if not hasattr(select, name)]
+        if missing:
+            raise ResolutionGuardError(
+                "macOS kqueue vnode monitoring is unavailable: " + ", ".join(missing)
+            )
+        self._queue = select.kqueue()
+        self._descriptors: list[int] = []
+        self._held_directories: list[tuple[int, Path, tuple[int, int, int, int]]] = []
+        self._closed = False
+        self._ancestry_fflags = (
+            select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME | select.KQ_NOTE_REVOKE
+        )
+        self._input_fflags = (
+            select.KQ_NOTE_DELETE
+            | select.KQ_NOTE_WRITE
+            | select.KQ_NOTE_EXTEND
+            | select.KQ_NOTE_LINK
+            | select.KQ_NOTE_RENAME
+            | select.KQ_NOTE_REVOKE
+        )
+        try:
+            self._arm_checkout_ancestry(checkout, inputs)
+        except Exception:
+            self.close()
+            raise
+
+    def _register_descriptor(self, descriptor: int, fflags: int) -> None:
+        event = select.kevent(
+            descriptor,
+            filter=select.KQ_FILTER_VNODE,
+            flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR,
+            fflags=fflags,
+        )
+        self._queue.control([event], 0, 0)
+
+    def _hold_directory(self, descriptor: int, path: Path) -> None:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ResolutionGuardError(f"dependency ancestry is not a directory: {path}")
+        identity = _directory_identity(metadata)
+        self._register_descriptor(descriptor, self._ancestry_fflags)
+        self._descriptors.append(descriptor)
+        self._held_directories.append((descriptor, path, identity))
+
+    def _arm_checkout_ancestry(self, checkout: Path, inputs) -> None:
+        checkout = _lexical_absolute(checkout)
+        if not checkout.is_absolute():
+            raise ResolutionGuardError("dependency-resolution checkout root is not absolute")
+
+        flags = _directory_flags()
+        filesystem_root = Path(checkout.anchor)
+        try:
+            parent_fd = os.open(filesystem_root, flags)
+        except OSError as exc:
+            raise ResolutionGuardError("filesystem root could not be opened for ancestry custody") from exc
+        self._hold_directory(parent_fd, filesystem_root)
+
+        current = filesystem_root
+        checkout_fd = parent_fd
+        for component in checkout.parts[1:]:
+            current = current / component
+            try:
+                child_fd = os.open(component, flags, dir_fd=checkout_fd)
+            except OSError as exc:
+                raise ResolutionGuardError(
+                    f"checkout ancestry could not be opened without symlinks: {current}"
+                ) from exc
+            self._hold_directory(child_fd, current)
+            checkout_fd = child_fd
+
+        try:
+            cwd_fd = os.open(".", flags)
+        except OSError as exc:
+            raise ResolutionGuardError("inherited bootstrap working directory is unavailable") from exc
+        try:
+            if _directory_identity(os.fstat(cwd_fd)) != _directory_identity(os.fstat(checkout_fd)):
+                raise ResolutionGuardError(
+                    "dependency-resolution checkout path no longer names the inherited bootstrap working directory"
+                )
+        finally:
+            os.close(cwd_fd)
+
+        subjects = (
+            inputs.lockfile,
+            inputs.security_podspec,
+            inputs.security_build,
+            inputs.identity_podspec,
+            inputs.identity_sources,
+        )
+        prefix_fds: dict[tuple[str, ...], int] = {(): checkout_fd}
+        for prefix in _subject_parent_prefixes(checkout, subjects):
+            parent_prefix = prefix[:-1]
+            parent_descriptor = prefix_fds[parent_prefix]
+            component = prefix[-1]
+            path = checkout.joinpath(*prefix)
+            try:
+                descriptor = os.open(component, flags, dir_fd=parent_descriptor)
+            except OSError as exc:
+                raise ResolutionGuardError(
+                    f"private dependency ancestry could not be opened without symlinks: {path}"
+                ) from exc
+            self._hold_directory(descriptor, path)
+            prefix_fds[prefix] = descriptor
+
+        # Registration has its own race boundary. Reprove every canonical
+        # directory pathname against the exact held inode after every ancestry
+        # watcher is armed. Any later swap is queued for the canonical guard's
+        # pre-child `events(0)` check or its live event loop.
+        for descriptor, path, identity in self._held_directories:
+            try:
+                current_metadata = path.lstat()
+            except OSError as exc:
+                raise ResolutionGuardError(
+                    f"dependency ancestry disappeared while custody was armed: {path}"
+                ) from exc
+            if stat.S_ISLNK(current_metadata.st_mode) or not stat.S_ISDIR(current_metadata.st_mode):
+                raise ResolutionGuardError(
+                    f"dependency ancestry changed type while custody was armed: {path}"
+                )
+            if _directory_identity(current_metadata) != identity:
+                raise ResolutionGuardError(
+                    f"dependency ancestry changed inode while custody was armed: {path}"
+                )
+            if _directory_identity(os.fstat(descriptor)) != identity:
+                raise ResolutionGuardError(
+                    f"held dependency ancestry changed while custody was armed: {path}"
+                )
+
+    def register(self, descriptor: int) -> None:
+        self._register_descriptor(descriptor, self._input_fflags)
+
+    def events(self, timeout: float):
+        return self._queue.control(None, 256, timeout)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for descriptor in reversed(self._descriptors):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        self._descriptors.clear()
+        try:
+            self._queue.close()
+        except Exception:
+            pass
+
+
 def _parse_args(guard, argv: Sequence[str]):
     parser = argparse.ArgumentParser(
         description="Run pre-generated private Tuya dependency work under vnode custody."
@@ -105,8 +311,8 @@ def _parse_args(guard, argv: Sequence[str]):
         raise ResolutionGuardError("no guarded dependency command was supplied")
 
     # The tracked Podfile is the root anchor because CocoaPods itself executes it.
-    # This adapter owns only lexical/real checkout ancestry admission; the canonical
-    # guard remains the authority for exact generation snapshots and vnode custody.
+    # The adapter admits only real descendants, and the backend additionally binds
+    # that root to the inherited bootstrap cwd plus watched directory ancestry.
     lockfile = _lexical_absolute(args.lockfile)
     root = lockfile.parent
     lockfile = _require_real_checkout_ancestry(lockfile, root, label="dependency manifest anchor")
@@ -131,20 +337,22 @@ def _parse_args(guard, argv: Sequence[str]):
             identity_sources=identity_sources,
         ),
         command,
+        root,
     )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         guard = _load_guard()
-        inputs, command = _parse_args(guard, sys.argv[1:] if argv is None else argv)
-        # This is the canonical guard's deliberately narrow private API. Its
-        # current contract takes the admitted PrivateInputs + child command;
-        # dependency-resolution authority is not expressed through optional
-        # "disable acceptance" toggles that the canonical guard does not own.
-        # Bootstrap independently re-verifies the root-sealed private identity
-        # inside the already-armed vnode window before the child executes.
-        return guard.run_guarded_build(inputs, command)
+        inputs, command, checkout = _parse_args(guard, sys.argv[1:] if argv is None else argv)
+        # The canonical guard still owns exact input generation + live mutation
+        # authority. The accepted backend keyword is used only to add checkout and
+        # intermediate-directory rename custody to that same event loop.
+        return guard.run_guarded_build(
+            inputs,
+            command,
+            backend_factory=lambda: _AncestryCustodyBackend(checkout, inputs),
+        )
     except ResolutionGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
