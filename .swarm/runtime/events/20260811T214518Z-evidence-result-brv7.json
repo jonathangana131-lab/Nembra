@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "214518-evidence-result-brv7",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-brv7",
+  "laneId": "battery-range-simulator-display-authority",
+  "message": "PR #2815 current exact successor c3798e8abd12fc721daa227bd4ca791e8e42d81d closes the retained-battery storage-isolation source-review blocker with a test-only delta. The regression scopes AppBootstrap.makeRuntime(), requires the exact normalized production-only fence `bootstrap.scenario == nil ? UserDefaultsRetainedBatterySnapshotStorage() : nil`, exactly one production retained-store constructor, exactly one runtime VehicleStore construction, and exactly one guarded retained-store forwarding. Production Swift is unchanged. Local Swift 6.2 parsing of the predecessor form was clean; final delta only strengthens assertions. Exact-head Xcode run 31539214153 resolved the immutable head successfully, then build/test/capture job 93937552374 was CANCELLED before any steps, so this is infrastructure non-evidence: neither acceptance nor product failure. Human BatteryRangeView visual acceptance remains blocked because predecessor artifact 9102913775 never opens Vehicle Controls -> Battery & Range, and the current lane write scope does not authorize NembraUITests/harness changes. Independent review is required for c3798e8; this implementation worker must not self-accept. Physical ES80 battery/range telemetry remains unavailable.",
+  "createdAt": "2026-08-11T21:45:18Z"
+}
