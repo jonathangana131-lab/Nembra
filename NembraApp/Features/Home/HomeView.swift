@@ -556,20 +556,12 @@ struct HomeView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                switch presentation.action {
-                case .progress:
-                    Text(presentation.message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                default:
-                    Text(presentation.title)
-                        .font(.subheadline.weight(.semibold))
-                    Text(presentation.message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(presentation.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(presentation.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
