@@ -377,50 +377,6 @@ def _require_sealed_staging_name(checkout_fd: int, source_name: str, sealed: os.
         raise ProvisionError("private identity staging name no longer references the sealed inode")
 
 
-def _unlink_owned_inode_if_named(checkout_fd: int, name: str, sealed: os.stat_result | None) -> None:
-    if sealed is None:
-        return
-    try:
-        current = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
-    except (FileNotFoundError, NotADirectoryError):
-        return
-    except OSError:
-        return
-    if (
-        stat.S_ISREG(current.st_mode)
-        and current.st_uid == os.geteuid()
-        and current.st_nlink == 1
-        and current.st_dev == sealed.st_dev
-        and current.st_ino == sealed.st_ino
-    ):
-        try:
-            os.unlink(name, dir_fd=checkout_fd)
-        except OSError:
-            pass
-
-
-def _unlink_owned_relative_inode_if_named(
-    checkout_fd: int,
-    relative_path: str,
-    sealed: os.stat_result | None,
-) -> None:
-    if sealed is None:
-        return
-    try:
-        components = _relative_components(relative_path)
-        parent_fd = os.dup(checkout_fd)
-        try:
-            for component in components[:-1]:
-                next_fd = os.open(component, _directory_flags(), dir_fd=parent_fd)
-                os.close(parent_fd)
-                parent_fd = next_fd
-            _unlink_owned_inode_if_named(parent_fd, components[-1], sealed)
-        finally:
-            os.close(parent_fd)
-    except OSError:
-        return
-
-
 def _require_final_relative_name_binding(
     checkout_fd: int,
     relative_path: str,
@@ -591,12 +547,10 @@ def _write_staged(
     )
     staging_fd = final_fd = -1
     sealed: os.stat_result | None = None
-    recovered_mutation_started = False
     try:
         if recovered_stage is not None:
             staging_fd = recovered_stage.take_descriptor()
             _require_recovered_stage_binding(checkout_fd, recovered_stage, staging_fd)
-            recovered_mutation_started = True
             os.ftruncate(staging_fd, 0)
             os.lseek(staging_fd, 0, os.SEEK_SET)
         else:
@@ -672,7 +626,7 @@ def _write_staged(
         except Exception:
             raise
     except Exception:
-        if staging_fd >= 0 and (recovered_stage is None or recovered_mutation_started):
+        if staging_fd >= 0:
             _sanitize_held_private_descriptor(staging_fd)
         raise
     finally:

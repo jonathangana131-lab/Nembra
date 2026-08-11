@@ -42,7 +42,7 @@ def install_replacement(writer, checkout_fd: int, stage_name: str, escaped_name:
 
 
 class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
-    def test_post_admission_name_swap_preserves_replacement_and_admitted_inode(self) -> None:
+    def test_post_admission_name_swap_preserves_replacement_and_sanitizes_admitted_inode(self) -> None:
         writer = load_writer()
         admitted_payload = b"dummy-admitted-crash-residue"
         replacement_payload = b"attacker-replacement-must-survive"
@@ -85,7 +85,11 @@ class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
                 os.close(checkout_fd)
 
             self.assertTrue(escaped.is_file(), "admitted inode disappeared after fail-closed name swap")
-            self.assertEqual(escaped.read_bytes(), admitted_payload)
+            self.assertEqual(
+                escaped.read_bytes(),
+                b"",
+                "pre-rebind failure left credential-bearing bytes in the exact held admitted inode",
+            )
             self.assertTrue(stage.is_file(), "recovery deleted the replacement pathname subject")
             self.assertEqual(stage.read_bytes(), replacement_payload)
             self.assertFalse(destination.exists(), "failed recovery published a private output")
@@ -231,6 +235,8 @@ class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
         self.assertNotIn("_unlink_owned_inode_if_named", write_staged)
         self.assertNotIn("_unlink_owned_relative_inode_if_named", write_staged)
         self.assertIn("_sanitize_held_private_descriptor", write_staged)
+        self.assertNotIn("def _unlink_owned_inode_if_named", source)
+        self.assertNotIn("def _unlink_owned_relative_inode_if_named", source)
 
 
 if __name__ == "__main__":
