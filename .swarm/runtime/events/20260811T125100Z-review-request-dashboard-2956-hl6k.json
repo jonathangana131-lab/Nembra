@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "125100-review-request-dashboard-2956-hl6k",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-hl6k",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent exact-head adversarial review requested for production repair PR #2956 at a3f2bd02e6921b82fbc806ee77bc7d27f4749f96 and its direct combined QA child #2942 at 616746f18c63801a484aa6d394fc6770c8b22cce. Review the app-local canonical Energy Rail runtime wiring, ensure positive Simulator admission remains source-sealed and raw watts/receipt tuple helpers are absent from the app build, and verify the public projection overload is negative-only retained lowering. Do not self-accept or promote Simulator evidence to physical ES80 truth. Exact a3 Xcode run 31491381989 is in progress; combined run 31492094434 is queued. Dark-landscape evidence is separately stacked as #2963 and is not yet accepted.",
+  "createdAt": "2026-08-11T12:51:00Z"
+}
