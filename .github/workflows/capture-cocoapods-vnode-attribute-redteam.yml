@@ -1,0 +1,38 @@
+name: Capture CocoaPods Vnode Attribute Red Team
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/capture_tuya_private_input_build_guard.py'
+      - 'Scripts/capture_cocoapods_build_subject.py'
+      - 'scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py'
+      - '.github/workflows/capture-cocoapods-vnode-attribute-redteam.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-subscription-contract:
+    name: Require vnode attribute subscription
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind diagnostic to exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+      - name: Prove mode authority has live vnode custody
+        run: python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+
+  macos-real-kqueue:
+    name: Real macOS chmod vnode evidence
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind diagnostic to exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Exercise real kqueue attribute delivery
+        run: /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
