@@ -1,0 +1,36 @@
+name: Capture Final GO Packed Tree Witness R2
+
+on:
+  push:
+    branches:
+      - validation/v14-final-go-packed-tree-witness-r2-sol-20260811
+    paths:
+      - scripts/ci/tests/test_es80_final_go_packed_tree_authority_witness_r2.py
+      - .github/workflows/capture-final-go-packed-tree-witness-r2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  witness-r2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/v14-final-go-packed-tree-witness-r2-sol-20260811
+          fetch-depth: 0
+      - name: Bind untouched production parent plus validation files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "bf33fb64f9ffcc1301984d4fba5ca468631151a8" || test "$(git merge-base HEAD bf33fb64f9ffcc1301984d4fba5ca468631151a8)" = "bf33fb64f9ffcc1301984d4fba5ca468631151a8"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check bf33fb64f9ffcc1301984d4fba5ca468631151a8..HEAD
+      - name: Run corrected packed-tree witness against untouched Final-GO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_es80_final_go_packed_tree_authority_witness_r2.py
+          python3 scripts/ci/tests/test_es80_final_go_packed_tree_authority_witness_r2.py
