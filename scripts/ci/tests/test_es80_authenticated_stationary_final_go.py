@@ -6,11 +6,11 @@ class F:
  def __init__(self,r):
   self.r=r;self.repo=r/'repo';self.repo.mkdir();subprocess.run(['/usr/bin/git','-C',str(self.repo),'init','-q'],check=True);subprocess.run(['/usr/bin/git','-C',str(self.repo),'config','user.email','x@y.z'],check=True);subprocess.run(['/usr/bin/git','-C',str(self.repo),'config','user.name','t'],check=True)
   for p,t in {go.INSTALLER:f'PROCEDURE_ID="{go.PROC}"\nBUNDLE_ID="{go.BUNDLE}"\n',go.RUNBOOK:f'PROCEDURE_ID: `{go.PROC}`\n',go.IDENTITY:f'static let requiredFieldProcedureIdentifier = "{go.PROC}"\n'}.items():q=self.repo/p;q.parent.mkdir(parents=True,exist_ok=True);q.write_text(t)
-  subprocess.run(['/usr/bin/git','-C',str(self.repo),'add','.'],check=True);subprocess.run(['/usr/bin/git','-C',str(self.repo),'commit','-qm','f'],check=True);self.s=subprocess.check_output(['/usr/bin/git','-C',str(self.repo),'rev-parse','HEAD'],text=True).strip();self.pr=2612;self.ids={n:100+i for i,n in enumerate(go.WORKFLOWS)};self.aid=99;self.rid=88
+  subprocess.run(['/usr/bin/git','-C',str(self.repo),'add','.'],check=True);subprocess.run(['/usr/bin/git','-C',str(self.repo),'commit','-qm','f'],check=True);self.s=subprocess.check_output(['/usr/bin/git','-C',str(self.repo),'rev-parse','HEAD'],text=True).strip();self.main='a'*40;self.pr=2612;self.ids={n:100+i for i,n in enumerate(go.WORKFLOWS)};self.aid=99;self.rid=88
   self.std=b'std';self.ax=b'ax';self.arc=r/'v.zip';m={'schemaVersion':6,'authority':'standalone-capture-simulator-presentation-only','sourceCommitSHA':self.s,'buildIdentifier':f'capture-v14-{self.s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'baselineDevice':go.DEVICE,'baselineOS':'iOS 27','expectedFieldBuildAuthority':False,'physicalAuthorityCreated':False,'protocolAuthorityCreated':False,'syntheticAuthorityEnvironmentRejected':True,'visualAcceptanceRequiresHumanReview':True,'requiredProcedureSourceVerified':True,'procedureBuildRendezvousVerified':True,'tuyaDependencyLockSHA256':'','screenshots':[{'state':'unprovisioned-dark-standard','relativePath':'s.png','sha256':H(self.std)},{'state':'unprovisioned-dark-accessibility-xxxl','relativePath':'a.png','sha256':H(self.ax)}]};self.mr=(json.dumps(m,sort_keys=True)+'\n').encode()
   with zipfile.ZipFile(self.arc,'w') as z:z.writestr(go.MANIFEST,self.mr);z.writestr('s.png',self.std);z.writestr('a.png',self.ax)
   self.dev=r/'device';self.dev.write_text('device-token\n');self.dev.chmod(0o600)
-  self.map={f'/pulls/{self.pr}':{'state':'open','draft':False,'merged_at':None,'head':{'sha':self.s,'ref':'feature/final','repo':{'full_name':go.REPO}},'base':{'ref':'main'}},f'/actions/artifacts/{self.aid}':{'expired':False,'digest':'sha256:'+H(self.arc.read_bytes()),'workflow_run':{'id':self.ids[go.VISUAL]}}}
+  self.map={f'/pulls/{self.pr}':{'state':'open','draft':False,'merged_at':None,'head':{'sha':self.s,'ref':'feature/final','repo':{'full_name':go.REPO}},'base':{'ref':'main','sha':self.main}},'/git/ref/heads/main':{'ref':'refs/heads/main','object':{'type':'commit','sha':self.main}},f'/actions/artifacts/{self.aid}':{'expired':False,'digest':'sha256:'+H(self.arc.read_bytes()),'workflow_run':{'id':self.ids[go.VISUAL]}}}
   for n,i in self.ids.items():self.map[f'/actions/runs/{i}']={'name':n,'path':go.WORKFLOW_PATHS[n],'head_sha':self.s,'status':'completed','conclusion':'success','event':'pull_request','head_branch':'feature/final','pull_requests':[{'number':self.pr}]}
   self.write_review()
  def body(self,**x):
@@ -18,7 +18,7 @@ class F:
  def write_review(self,**x):
   d={'id':self.rid,'node_id':'PRR_test','state':'COMMENTED','commit_id':self.s,'user':{'login':go.OWNER},'author_association':'OWNER','submitted_at':'2026-08-11T02:00:00Z','body':self.body()};d.update(x);self.map[f'/pulls/{self.pr}/reviews/{self.rid}']=d
  def get(self,p):v=self.map[p];return json.dumps(v).encode(),v
- def control(self,repo,pr,run,get):return {'authority':'nembra-authenticated-stationary-go-control-plane-v1','sourceCommitSHA':'e'*40,'prNumber':2638,'headBranch':'control/final','state':'open','merged':False,'draft':False,'workflowRunID':900,'workflowName':go.AUTH_WORKFLOW_NAME,'workflowPath':go.AUTH_WORKFLOW_PATH,'gitBlobs':{}}
+ def control(self,repo,pr,run,get):return {'authority':'nembra-authenticated-stationary-go-control-plane-v1','sourceCommitSHA':'e'*40,'prNumber':2638,'headBranch':'control/final','baseSHA':self.main,'state':'open','merged':False,'draft':False,'workflowRunID':900,'workflowName':go.AUTH_WORKFLOW_NAME,'workflowPath':go.AUTH_WORKFLOW_PATH,'gitBlobs':{}}
  def inst(self,repo,s,dev):return {'authority':'accepted-candidate-private-installer-execution-v1','result':'success','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'baselineDevice':go.DEVICE,'baselineProductType':go.PRODUCT,'baselineOS':'iOS 27'}
  def signed(self,repo,s,dev,install,output):return {'authority':'nembra-authenticated-stationary-retained-signed-artifact-v1','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'tuyaDependencyLockSHA256':'a'*64,'retainedIPASHA256':'b'*64,'retainedAppTreeSHA256':'c'*64,'embeddedProvisioningProfileSHA256':'d'*64,'signingTeamIdentifier':'TEAM','applicationIdentifier':'TEAM.'+go.BUNDLE,'codesignVerified':True,'intendedDeviceIncluded':True,'physicalAuthorityCreated':False}
  def build(self,**x):
@@ -38,7 +38,7 @@ class T(unittest.TestCase):
   def bad(r,s,d,i,o):x=self.f.signed(r,s,d,i,o);x["retainedIPASHA256"]="not-a-digest";return x
   self.no(lambda:self.f.build(inspect_signed_artifact=bad))
  def test_go_scope_and_remote_review_custody(self):
-  r=self.f.build();self.assertEqual(r['status'],'GO');self.assertFalse(r['physicalResultCollected']);self.assertEqual(r['visualReview']['reviewID'],self.f.rid);self.assertEqual(r['visualReview']['reviewer'],go.OWNER);self.assertFalse(r['experiment']['ridingAuthorized']);self.assertFalse(r['experiment']['applicationWritesAuthorized']);self.assertEqual(r['visualArtifact']['manifestSHA256'],H(self.f.mr))
+  r=self.f.build();self.assertEqual(r['status'],'GO');self.assertEqual(r['acceptedMainCommitSHA'],self.f.main);self.assertFalse(r['physicalResultCollected']);self.assertEqual(r['visualReview']['reviewID'],self.f.rid);self.assertEqual(r['visualReview']['reviewer'],go.OWNER);self.assertFalse(r['experiment']['ridingAuthorized']);self.assertFalse(r['experiment']['applicationWritesAuthorized']);self.assertEqual(r['visualArtifact']['manifestSHA256'],H(self.f.mr))
  def test_draft_or_closed_unmerged_pr_rejected_but_exact_merged_allowed(self):
   p=self.f.map[f'/pulls/{self.f.pr}'];p['draft']=True;self.no(self.f.build);p['draft']=False;p['state']='closed';self.no(self.f.build);p['merged_at']='2026-08-11T02:00:00Z';self.assertTrue(self.f.build()['acceptedPR']['merged'])
  def test_missing_extra_queued_or_ancestor_workflow_rejected(self):
@@ -71,6 +71,17 @@ class T(unittest.TestCase):
   calls=[]
   def run(r,s,d):calls.append(s);return self.f.inst(r,s,d)
   i=self.f.ids['Capture Field Build Provenance'];self.f.map[f'/actions/runs/{i}']['conclusion']='cancelled';self.no(lambda:self.f.build(run_installer=run));self.assertEqual(calls,[])
+ def test_current_main_and_subject_bases_are_bound_before_install(self):
+  calls=[]
+  def run(r,s,d):calls.append(s);return self.f.inst(r,s,d)
+  main=self.f.map['/git/ref/heads/main'];pull=self.f.map[f'/pulls/{self.f.pr}']
+  main['object']['sha']='b'*40;self.no(lambda:self.f.build(run_installer=run));self.assertEqual(calls,[]);main['object']['sha']=self.f.main
+  pull['base']['sha']='b'*40;self.no(lambda:self.f.build(run_installer=run));self.assertEqual(calls,[]);pull['base']['sha']=self.f.main
+  def wrong_control(repo,pr,run_id,get):x=self.f.control(repo,pr,run_id,get);x['baseSHA']='b'*40;return x
+  self.no(lambda:self.f.build(control_authority=wrong_control,run_installer=run));self.assertEqual(calls,[])
+ def test_post_install_revalidation_rejects_main_movement(self):
+  def move_main(r,s,d):x=self.f.inst(r,s,d);self.f.map['/git/ref/heads/main']['object']['sha']='b'*40;return x
+  self.no(lambda:self.f.build(run_installer=move_main))
  def test_post_install_revalidation_rejects_control_plane_drift(self):
   calls=0
   def moving(repo,pr,run,get):
