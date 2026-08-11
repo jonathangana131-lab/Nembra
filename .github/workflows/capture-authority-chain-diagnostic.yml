@@ -75,6 +75,16 @@ jobs:
         run: bash -n Scripts/bootstrap_capture_tuya_sdk.sh
       - name: Syntax-check field installer
         run: bash -n scripts/field/install_one_time_capture.command
+      - name: Expose materialized build-guard context
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          lines = Path('Scripts/capture_tuya_private_input_build_guard.py').read_text(encoding='utf-8').splitlines()
+          window = '\n'.join(f'{number}: {lines[number - 1]!r}' for number in range(48, 67))
+          message = window.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::notice title=Materialized build guard lines 48-66::{message}')
+          PY
       - name: Compile build guard
         shell: bash
         run: |
