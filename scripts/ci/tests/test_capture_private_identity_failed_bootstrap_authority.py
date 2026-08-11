@@ -10,6 +10,7 @@ unreached because no root-sealed successful transaction exists for the fixture.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 from pathlib import Path
@@ -23,6 +24,8 @@ WRITER_PATH = ROOT / "Scripts/provision_capture_tuya_identity_writer.py"
 BOOTSTRAP_PATH = ROOT / "Scripts/bootstrap_capture_tuya_sdk.sh"
 AUTHORITY_PATH = ROOT / "Scripts/capture_tuya_private_identity_authority.py"
 PROVENANCE_PATH = ROOT / "Scripts/capture_tuya_private_input_provenance.py"
+RESOLUTION_GUARD_PATH = ROOT / "Scripts/capture_tuya_private_dependency_resolution_guard.py"
+BUILD_GUARD_PATH = ROOT / "Scripts/capture_tuya_private_input_build_guard.py"
 
 
 def load_writer():
@@ -60,6 +63,48 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
         self.assertIn('--lockfile "$REPO_ROOT/Podfile"', source)
         self.assertIn('verify "$REPO_ROOT_INNER" "$WRITER_SHA_INNER"', source)
         self.assertNotIn("\npod install --repo-update\n", source)
+
+    def test_dependency_resolution_adapter_matches_canonical_guard_api(self) -> None:
+        adapter_tree = ast.parse(RESOLUTION_GUARD_PATH.read_text(encoding="utf-8"))
+        guard_tree = ast.parse(BUILD_GUARD_PATH.read_text(encoding="utf-8"))
+
+        guard_definitions = [
+            node
+            for node in guard_tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "run_guarded_build"
+        ]
+        self.assertEqual(len(guard_definitions), 1, "canonical run_guarded_build definition is ambiguous")
+        guard_definition = guard_definitions[0]
+        accepted_parameters = {
+            argument.arg
+            for argument in (
+                list(guard_definition.args.posonlyargs)
+                + list(guard_definition.args.args)
+                + list(guard_definition.args.kwonlyargs)
+            )
+        }
+
+        adapter_calls = [
+            node
+            for node in ast.walk(adapter_tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "run_guarded_build"
+        ]
+        self.assertEqual(len(adapter_calls), 1, "dependency adapter must have one canonical guard call")
+        supplied_keywords = {
+            keyword.arg for keyword in adapter_calls[0].keywords if keyword.arg is not None
+        }
+        unexpected = supplied_keywords - accepted_parameters
+        self.assertFalse(
+            unexpected,
+            f"dependency adapter passes unsupported canonical guard keywords: {sorted(unexpected)}",
+        )
+        self.assertFalse(
+            any(name.startswith("require_accepted_") for name in supplied_keywords),
+            "pre-generated dependency resolution must not fabricate disable-acceptance toggles",
+        )
 
     def test_failed_publication_attacker_source_is_blocked_before_pod(self) -> None:
         writer = load_writer()
