@@ -1,0 +1,148 @@
+name: Temporary Capture packed Git blob execution custody repair
+
+on:
+  push:
+    branches:
+      - repair/v14-field-packed-blob-exec-custody-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Import canonical packed-object attack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 85349b6e9586d7d0cb076d6eb24be17f026fc5ee
+          git checkout FETCH_HEAD -- \
+            .github/workflows/capture-field-git-packed-blob-execution-red-team.yml \
+            scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+
+      - name: Materialize verified accepted-Git payload execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/field/install_one_time_capture.command')
+          text = path.read_text(encoding='utf-8')
+          anchor = '''run_accepted_source_bash() {
+          '''
+          helper = r'''accepted_blob_oid_for_path() {
+              local relative_path="$1"
+              [[ "$relative_path" != /* && "$relative_path" != *".."* ]] || return 1
+              run_authority_git ls-tree -z "$SOURCE_SHA" -- "$relative_path" |
+                  /usr/bin/env -i \
+                      PATH=/usr/bin:/bin \
+                      HOME=/tmp \
+                      LANG=C \
+                      LC_ALL=C \
+                      /usr/bin/python3 -I -c '
+          import re
+          import sys
+
+          expected_path = sys.argv[1].encode("utf-8")
+          records = [record for record in sys.stdin.buffer.read().split(b"\0") if record]
+          if len(records) != 1:
+              raise RuntimeError("accepted Git tree did not resolve exactly one execution blob")
+          metadata, actual_path = records[0].split(b"\t", 1)
+          mode, object_type, oid = metadata.split(b" ", 2)
+          if actual_path != expected_path:
+              raise RuntimeError("accepted Git tree resolved the wrong execution path")
+          if object_type != b"blob" or mode not in {b"100644", b"100755"}:
+              raise RuntimeError("accepted Git execution subject is not one regular blob")
+          if re.fullmatch(rb"[0-9a-f]{40}", oid) is None:
+              raise RuntimeError("accepted Git execution blob identity is malformed")
+          sys.stdout.write(oid.decode("ascii"))
+          ' "$relative_path"
+          }
+
+          run_verified_accepted_git_blob() {
+              local relative_path="$1"
+              local expected_blob_oid
+              expected_blob_oid="$(accepted_blob_oid_for_path "$relative_path")" || return 1
+              [[ "$expected_blob_oid" =~ ^[0-9a-f]{40}$ ]] || return 1
+              run_authority_git cat-file blob "$expected_blob_oid" |
+                  /usr/bin/env -i \
+                      PATH=/usr/bin:/bin \
+                      HOME=/tmp \
+                      LANG=C \
+                      LC_ALL=C \
+                      NEMBRA_ACCEPTED_GIT_BLOB_OID="$expected_blob_oid" \
+                      /usr/bin/python3 -I -c '
+          import hashlib
+          import hmac
+          import os
+          import re
+          import sys
+
+          expected = os.environ.get("NEMBRA_ACCEPTED_GIT_BLOB_OID", "")
+          if re.fullmatch(r"[0-9a-f]{40}", expected) is None:
+              raise RuntimeError("accepted Git execution blob identity is unavailable")
+          payload = sys.stdin.buffer.read()
+          actual = hashlib.sha1(
+              b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+          ).hexdigest()
+          if not hmac.compare_digest(actual, expected):
+              raise RuntimeError("accepted Git object lookup returned bytes outside the accepted blob identity")
+          sys.stdout.buffer.write(payload)
+          '
+          }
+
+          '''
+          if text.count(anchor) != 1:
+              raise SystemExit(f'expected one run_accepted_source_bash anchor, found {text.count(anchor)}')
+          text = text.replace(anchor, helper + anchor, 1)
+
+          old_bash = '''    if ! run_authority_git show "$SOURCE_SHA:$relative_path" |
+                  /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$ROOT/$relative_path"; then
+          '''
+          new_bash = '''    if ! run_verified_accepted_git_blob "$relative_path" |
+                  /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$ROOT/$relative_path"; then
+          '''
+          if text.count(old_bash) != 1:
+              raise SystemExit(f'expected one direct accepted Bash stream, found {text.count(old_bash)}')
+          text = text.replace(old_bash, new_bash, 1)
+
+          old_runner = '''    run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py" |
+          '''
+          new_runner = '''    run_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE" |
+          '''
+          if text.count(old_runner) != 1:
+              raise SystemExit(f'expected one direct private-runner stream, found {text.count(old_runner)}')
+          text = text.replace(old_runner, new_runner, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          git diff --check
+
+      - name: Publish clean repair and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/temp-v14-capture-packed-blob-exec-custody-sol.yml
+          git add \
+            scripts/field/install_one_time_capture.command \
+            .github/workflows/capture-field-git-packed-blob-execution-red-team.yml \
+            scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          git diff --cached --check
+          git config user.name 'nembra-capture-bot'
+          git config user.email 'capture@nembra.invalid'
+          git commit -m 'Capture: verify accepted Git blob bytes before execution'
+          git push origin HEAD:repair/v14-field-packed-blob-exec-custody-sol-20260811
