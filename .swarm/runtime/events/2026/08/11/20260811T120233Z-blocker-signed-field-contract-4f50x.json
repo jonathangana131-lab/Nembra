@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "20260811T120233Z-blocker-signed-field-contract-4f50x",
+  "type": "DEPENDENCY_DISCOVERED",
+  "workerId": "sol-20260811-4f50x",
+  "laneId": "capture-signed-install-custody",
+  "message": "Recovered signed-install primary and refreshed live #2871/#2911. #2871 exact 15e607805 has dedicated Signed App Install Custody SUCCESS but Field/Graft/Xcode failure inherited from stale acceptance contracts. #2911 moved to 83110a6 after repairing the install-log tail; independent exact-head review now shows canonical Capture Field Build Provenance still encodes earlier retired pre-#2876/#2907 Git/helper/xcodebuild shapes. The same workflow is actively owned by Capture build-authority convergence #2907, so signed-install cannot safely repair or accept this child without colliding with that P0 lane. Treat current signed-install primary as dependency-blocked on accepted build-authority Field-workflow convergence, then re-run #2911 exact-head Field/Graft/Xcode and compose into #2871 only after independent review. PHYSICAL NO-GO."
+  ,"createdAt": "2026-08-11T12:02:33Z"
+}
