@@ -9,7 +9,7 @@
   "generation": 10,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:05:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:05:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:12:49Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
@@ -17,5 +17,5 @@
   "takeoverFromWorkerId": "sol-20260811-1400q7",
   "takeoverFromLeaseId": "reconcapture-1400q7-20260811-2101",
   "takeoverReason": "Generation-9 Capture reconciliation lease expired at 2026-08-11T21:51:30Z. Continue the same non-product reconciliation shard against current live GitHub; do not modify actively owned Capture implementation paths. PHYSICAL NO-GO.",
-  "checkpoint": "Claimed expired Capture reconciliation shard on live main d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. Refreshing current open Capture PR heads, CI, exact blockers, supersession, and stale swarm-state descriptors before any product action. PHYSICAL NO-GO."
+  "checkpoint": "Reconciled current P0 families against exact heads. Final-GO #3082 exact 36b531b is green on software authority gates but child #3087 exact 75c75d2 is terminal red and not yet classified. Runtime accessibility #3073 exact dd204e1 remains unaccepted pending VoiceOver runtime acceptance. Build ACL #3072 exact 3e41ecd has terminal Xcode red with diagnostics child #3093 exact 49e51ae still pending at last refresh. PHYSICAL NO-GO."
 }
