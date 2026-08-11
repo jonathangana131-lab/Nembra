@@ -77,6 +77,11 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
             if loose.exists():
                 loose.unlink()
         index = repo / ".git" / "objects" / "pack" / f"pack-{pack_hash}.idx"
+        original_verify = subprocess.check_output(
+            [GIT, "verify-pack", "-v", str(index)], stderr=subprocess.DEVNULL
+        )
+        self.assertIn(source_oid.encode("ascii"), original_verify)
+        index.chmod(0o644)
         data = bytearray(index.read_bytes())
         self.assertEqual(data[:4], b"\xfftOc")
         self.assertEqual(struct.unpack(">I", data[4:8])[0], 2)
@@ -90,6 +95,7 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
             struct.pack_into(">I", data, fanout + value * 4, 0 if value < first else 1)
         data[-20:] = hashlib.sha1(data[:-20]).digest()
         index.write_bytes(data)
+        self.assertEqual(index.read_bytes()[names : names + 20], bytes.fromhex(alias_oid))
         return index
 
     def test_forged_commit_name_cannot_retarget_tree_authority(self):
@@ -99,11 +105,9 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
             baseline = MODULE._tree_entries(repo, accepted_commit)
             self.assertEqual(baseline[TARGET][1], accepted_blob)
             forged = self._forge_alias(repo, source_oid=attacker_commit, alias_oid=accepted_commit)
-            substituted = self._git(repo, "cat-file", "commit", accepted_commit)
-            self.assertEqual(object_oid("commit", substituted), attacker_commit)
-            self.assertNotEqual(object_oid("commit", substituted), accepted_commit)
-            # Do not require stock Git tree traversal through a deliberately corrupt alias:
-            # Git may reject the mismatch before traversal. Final-GO itself must reject it.
+            # The fixture proves the original pack held attacker bytes and the raw index now
+            # names those bytes as the accepted OID. No post-corruption Git traversal is
+            # required: Git versions may reject the malformed alias at different layers.
             with self.assertRaises(RuntimeError):
                 MODULE._tree_entries(repo, accepted_commit)
             verify = subprocess.run([GIT, "verify-pack", "-v", str(forged)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -115,10 +119,8 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
             accepted_commit, accepted_tree, accepted_blob, _, attacker_tree, _ = self._repository(repo)
             self.assertEqual(MODULE._tree_entries(repo, accepted_commit)[TARGET][1], accepted_blob)
             forged = self._forge_alias(repo, source_oid=attacker_tree, alias_oid=accepted_tree)
-            substituted = self._git(repo, "cat-file", "tree", accepted_tree)
-            self.assertEqual(object_oid("tree", substituted), attacker_tree)
-            self.assertNotEqual(object_oid("tree", substituted), accepted_tree)
-            # The authority contract is the verified object bytes, not ambient ls-tree behavior.
+            # Authority is the independently verified object chain, not ambient Git's choice
+            # of where to reject an intentionally corrupt pack index.
             with self.assertRaises(RuntimeError):
                 MODULE._tree_entries(repo, accepted_commit)
             verify = subprocess.run([GIT, "verify-pack", "-v", str(forged)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
