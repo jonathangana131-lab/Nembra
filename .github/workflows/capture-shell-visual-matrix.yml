@@ -1,0 +1,117 @@
+name: Capture Shell Visual Matrix
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift
+      - Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneCoordinator.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - scripts/ci/capture_shell_visual_matrix.sh
+      - scripts/ci/tests/test_capture_shell_visual_matrix.py
+      - .github/workflows/capture-shell-visual-matrix.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Prove shell-matrix QA isolation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact subject and non-shipping fixture boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          bash -n scripts/ci/capture_shell_visual_matrix.sh
+          /usr/bin/python3 scripts/ci/tests/test_capture_shell_visual_matrix.py
+          ! grep -Fq 'NEMBRA_CAPTURE_SHELL_QA_SCENARIO' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'PassiveBluetoothExperimentOneSimulatorQAFixture' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '#if DEBUG && targetEnvironment(simulator)' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift
+          grep -Fq 'physicalProcedurePermitted: false' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift
+          grep -Fq 'mayUseBluetoothTransport: false' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/PassiveBluetoothExperimentOneSimulatorQAFixture.swift
+
+  shell-matrix:
+    name: Exact iPhone 12 Capture shell matrix
+    needs: source-contract
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Capture presentation-only shell matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          ARTIFACTS_DIR="$RUNNER_TEMP/NembraCaptureShellVisualMatrix" \
+          QA_WORK_DIR="$RUNNER_TEMP/NembraCaptureShellVisualMatrixWork" \
+            bash scripts/ci/capture_shell_visual_matrix.sh
+          test "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" = "$source_sha"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Verify matrix manifest truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/NembraCaptureShellVisualMatrix/NembraCaptureShellVisualMatrix.json"
+          /usr/bin/python3 - "$manifest" "${{ github.event.pull_request.head.sha }}" <<'PY'
+          import json, sys
+          record=json.load(open(sys.argv[1], encoding='utf-8'))
+          expected_sha=sys.argv[2].lower()
+          expected_scenarios={
+              'stationaryPreflight',
+              'targetConfirmation',
+              'passiveDiscovery',
+              'captureInProgress',
+              'observationHorizonReady',
+              'horizonSealed',
+              'captureComplete',
+              'shareRetry',
+              'foregroundInterrupted',
+          }
+          assert record['schemaVersion'] == 1
+          assert record['sourceCommitSHA'] == expected_sha
+          assert record['baselineDevice'] == 'iPhone 12'
+          assert record['baselineOS'] == 'iOS 27'
+          assert record['authority'] == 'temporary-simulator-qa-host-presentation-only'
+          assert record['temporaryQARunnerSourceMutation'] is True
+          assert record['shippingSourceMutation'] is False
+          assert record['shippingEntrypointFixtureInjectionAbsent'] is True
+          assert record['fixturePhysicalProcedurePermitted'] is False
+          assert record['bluetoothTransportUsed'] is False
+          assert record['physicalAuthorityCreated'] is False
+          assert record['protocolAuthorityCreated'] is False
+          assert record['visualAcceptanceRequiresHumanReview'] is True
+          states=record['screenshots']
+          assert len(states) == len(expected_scenarios) * 2
+          assert {x['scenario'] for x in states} == expected_scenarios
+          assert {x['contentSize'] for x in states} == {'standard', 'accessibility-xxxl'}
+          assert all(len(x['sha256']) == 64 for x in states)
+          PY
+
+      - name: Upload shell matrix evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-capture-shell-visual-matrix-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraCaptureShellVisualMatrix
+          if-no-files-found: error
+          retention-days: 14
