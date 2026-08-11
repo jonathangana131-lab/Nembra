@@ -1,0 +1,68 @@
+name: Capture Downstream Authority Recovery Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-downstream-authority-recovery-gpt56-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-downstream-authority-recovery-gpt56-sol-20260811
+          fetch-depth: 0
+      - name: Normalize and execute reviewed repair payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/capture-authority-chain-materialize.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          start = "          python3 - <<'PY'\n"
+          end = "\n          PY\n"
+          if workflow.count(start) != 1:
+              raise SystemExit('reviewed materializer payload start is not unique')
+          encoded = workflow.split(start, 1)[1].split(end, 1)[0]
+          prefix = '          '
+          lines = encoded.splitlines()
+          payload = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in lines
+          ) + '\n'
+          compile(payload, '<capture-authority-recovery-materializer>', 'exec')
+          exec(compile(payload, '<capture-authority-recovery-materializer>', 'exec'), {})
+          PY
+
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_review_commitment.py
+          python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          python3 -m unittest -v scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
+          git diff --check
+
+          rm -f \
+            .github/capture-authority-chain-materialize-trigger \
+            .github/capture-authority-chain-materializer-error.txt \
+            .github/workflows/capture-authority-chain-materialize.yml \
+            .github/workflows/capture-authority-chain-materialize-runner.yml \
+            .github/workflows/capture-authority-chain-materialize-runner-v2.yml \
+            .github/workflows/capture-downstream-authority-recovery-materialize.yml
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'Capture: bind complete downstream authority helper chain'
+          git push origin HEAD:repair/v14-downstream-authority-recovery-gpt56-sol-20260811
