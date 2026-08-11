@@ -9,11 +9,11 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T13:20:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:20:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:31:00Z",
   "leaseSeconds": 1800,
-  "branch": "",
-  "pr": 2967,
-  "sourceSHA": "771dce5df08db4ba4fec5b869309ba2077adea20",
-  "currentHeadSHA": "771dce5df08db4ba4fec5b869309ba2077adea20",
-  "intent": "Recover the exact runtime VoiceOver test-only gate from macOS Bash 3.2 infrastructure failure without changing accepted #2940 product bytes. Preserve the strict runtime AX/VoiceOver contract; do not weaken product semantics to obtain green. PHYSICAL NO-GO."
+  "branch": "repair/v14-capture-runtime-voiceover-bash3-sol-4c47a9-20260811",
+  "pr": 2970,
+  "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+  "currentHeadSHA": "a5d87610b0fbd8700d5c2115f0b7e2da09b7c5fb",
+  "intent": "Recover the exact runtime VoiceOver test-only gate from macOS Bash 3.2 infrastructure failure without changing accepted #2940 product bytes, and close the witness false-negative that previously stopped traversal once required phrases appeared. Final runtime evidence must use the strict current head: full bounded VoiceOver horizon plus direct forbidden-action hierarchy assertions. Preserve product semantics; do not weaken witness for green. PHYSICAL NO-GO."
 }
