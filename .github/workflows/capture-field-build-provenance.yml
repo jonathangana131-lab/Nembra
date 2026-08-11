@@ -10,6 +10,7 @@ on:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - .gitignore
       - scripts/ci/es80_signed_field_artifact_private_runner.py
+      - scripts/ci/es80_signed_field_artifact_evidence.py
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraApp/Features/Research/TuyaAccountBridge.swift
       - NembraApp/Features/Research/ES80CaptureShellView.swift
@@ -27,6 +28,7 @@ on:
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
       - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/provision_capture_tuya_identity.sh
       - Scripts/capture_tuya_private_input_provenance.py
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
@@ -70,6 +72,7 @@ jobs:
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
           /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n Scripts/provision_capture_tuya_identity.sh
 
       - name: Validate signed Apple application identity custody
         shell: bash
@@ -79,6 +82,8 @@ jobs:
           /usr/bin/python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
           /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
           bash -n scripts/field/install_one_time_capture.command
 
       - name: Verify source contract
@@ -94,11 +99,19 @@ jobs:
           bootstrap='Scripts/bootstrap_capture_tuya_sdk.sh'
           private_provenance='Scripts/capture_tuya_private_input_provenance.py'
           private_device_runner='scripts/ci/es80_signed_field_artifact_private_runner.py'
+          signed_field_inspector='scripts/ci/es80_signed_field_artifact_evidence.py'
+          private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'
           ignore='.gitignore'
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
 
           bash -n "$installer"
           test -f "$private_device_runner"
+          test -f "$signed_field_inspector"
+          test -f "$private_identity_provisioner"
+          grep -Fq 'RECIPE_ID = "ES80-FINGERPRINT-v1"' "$signed_field_inspector"
+          grep -Fq 'INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"' "$signed_field_inspector"
+          grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' "$private_identity_provisioner"
+          grep -Fq 'read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET' "$private_identity_provisioner"
           grep -Fq 'def read_private_identifier(' "$private_device_runner"
           grep -Fq 'O_NOFOLLOW' "$private_device_runner"
           grep -Fq 'O_DIRECTORY' "$private_device_runner"
@@ -129,6 +142,7 @@ jobs:
           fi
 
           grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' "$installer"
+          grep -Fq '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"' "$installer"
           grep -Fq 'read_private_identifier' "$installer"
           grep -Fq 'devicectl list devices --hide-headers' "$installer"
           grep -Fq '.coredevice.local' "$installer"
