@@ -24,15 +24,28 @@ PARENT_TEST_BLOB = "61c2a1bf4cc35203d763ed1b646a7a92358d84c3"
 
 
 def _load_parent_tests() -> types.ModuleType:
-    entry = MODULE._tree_entries(REPOSITORY, MODULE.PARENT_SOURCE).get(PARENT_TEST_PATH)
+    # This successor wraps exact #2921, whose own PARENT_SOURCE remains the
+    # accepted #2873 semantic parent. Preserve the inherited #2873 test contract
+    # through that exact wrapper layer instead of accidentally resolving this
+    # file from the #2921 wrapper commit itself.
+    inherited = MODULE._parent
+    entry = inherited._tree_entries(REPOSITORY, inherited.PARENT_SOURCE).get(PARENT_TEST_PATH)
     if entry is None or entry[1] != PARENT_TEST_BLOB:
         raise RuntimeError("accepted #2873 private-review test blob is unavailable")
-    payload = MODULE._object_git_bytes(REPOSITORY, "cat-file", "blob", PARENT_TEST_BLOB)
-    if MODULE._blob_oid(payload, PARENT_TEST_BLOB) != PARENT_TEST_BLOB:
+    payload = inherited._object_git_bytes(REPOSITORY, "cat-file", "blob", PARENT_TEST_BLOB)
+    if inherited._blob_oid(payload, PARENT_TEST_BLOB) != PARENT_TEST_BLOB:
         raise RuntimeError("accepted #2873 private-review test bytes failed Git identity")
     parent = types.ModuleType("nembra_private_review_final_go_parent_tests_2873")
     parent.__file__ = str(Path(__file__).resolve())
-    exec(compile(payload, f"git:{MODULE.PARENT_SOURCE}:{PARENT_TEST_PATH}", "exec", dont_inherit=True), parent.__dict__)
+    exec(
+        compile(
+            payload,
+            f"git:{inherited.PARENT_SOURCE}:{PARENT_TEST_PATH}",
+            "exec",
+            dont_inherit=True,
+        ),
+        parent.__dict__,
+    )
     return parent
 
 
@@ -92,8 +105,18 @@ class CandidateRawFilesystemAuthorityTests(unittest.TestCase):
         self.assertTrue(path.stat().st_mode & stat.S_IXUSR)
 
     def test_child_executes_exact_2873_parent_blob(self):
+        # The current layer must first be exact #2921, then #2921 must still
+        # carry the exact accepted #2873 semantic parent beneath it.
         self.assertEqual(MODULE._parent.__nembra_accepted_control_source__, MODULE.PARENT_SOURCE)
         self.assertEqual(MODULE._parent.__nembra_accepted_control_blob__, MODULE.PARENT_MODULE_GIT_BLOB)
+        self.assertEqual(
+            MODULE._parent._parent.__nembra_accepted_control_source__,
+            MODULE._parent.PARENT_SOURCE,
+        )
+        self.assertEqual(
+            MODULE._parent._parent.__nembra_accepted_control_blob__,
+            MODULE._parent.PARENT_MODULE_GIT_BLOB,
+        )
         self.assertIs(MODULE.review_v5, MODULE._parent.review_v5)
         self.assertIs(MODULE.candidate_private_authority, MODULE._parent.candidate_private_authority)
 
