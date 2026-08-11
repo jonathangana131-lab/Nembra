@@ -149,6 +149,7 @@ jobs:
             -only-testing:NembraUITests/CaptureRuntimeVoiceOverUITests/testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit
 
       - name: Prove targeted VoiceOver test executed
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -156,9 +157,9 @@ jobs:
           tests_json="$RUNNER_TEMP/CaptureRuntimeVoiceOver.tests.json"
           test -d "$result"
 
-          # Xcode 16+ exposes the structured test-results interface. A green
-          # xcodebuild invocation is not sufficient authority here: previous
-          # harness failures produced retained result bundles with zero tests.
+          # Extract on both green and red. The prior xcodebuild step keeps any
+          # runtime failure red, while this step preserves whether the exact
+          # targeted XCTest actually executed instead of losing that fact.
           xcrun xcresulttool get test-results tests \
             --path "$result" \
             --compact > "$tests_json"
