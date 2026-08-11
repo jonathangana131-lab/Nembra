@@ -4,16 +4,16 @@
   "laneId": "legacy-github-reconciliation",
   "slot": "reconcile-capture",
   "role": "scheduler-reconciler",
-  "workerId": "sol-20260811-c7e19a",
-  "leaseId": "reconcapture-c7e19a-20260811-0851",
-  "generation": 4,
+  "workerId": "sol-20260811-f4c2e7",
+  "leaseId": "reconcapture-f4c2e7-20260811-1150",
+  "generation": 5,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T08:51:20Z",
-  "lastHeartbeatAt": "2026-08-11T09:20:00Z",
+  "claimedAt": "2026-08-11T11:50:30Z",
+  "lastHeartbeatAt": "2026-08-11T11:50:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-  "takeoverFromWorkerId": "sol-20260811-f3a8",
-  "takeoverReason": "generation-3 Capture reconciliation lease expired without heartbeat; preserve durable state and refresh live P0 Capture lineages"
+  "takeoverFromWorkerId": "sol-20260811-c7e19a",
+  "takeoverReason": "generation-4 Capture reconciliation lease expired; live GitHub advanced through current P0 Capture PRs while the lane records still reflected older #2875-era state"
 }
