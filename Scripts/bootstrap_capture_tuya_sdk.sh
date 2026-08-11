@@ -189,7 +189,8 @@ fi
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   cat <<EOF
 
-DEPENDENCY + GENERATED BUILD CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+  Generated CocoaPods build subject is additionally part of this review candidate.
   Podfile.lock SHA-256: $LOCK_SHA256
   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
