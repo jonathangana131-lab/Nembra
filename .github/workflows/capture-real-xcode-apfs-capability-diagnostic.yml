@@ -1,0 +1,80 @@
+name: Capture Real Xcode APFS Capability Diagnostic
+
+on:
+  push:
+    branches:
+      - test/v14-real-xcode-apfs-capability-diagnostic-sol-20260811
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_apfs_capability_diagnostic.py
+      - .github/workflows/capture-real-xcode-apfs-capability-diagnostic.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_apfs_capability_diagnostic.py
+      - .github/workflows/capture-real-xcode-apfs-capability-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capability-diagnostic:
+    name: Classify Xcode access to ephemeral APFS capability
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      EXACT_PARENT: 7d05714e3ba6a9cc4259963780cc71d97ecb42f7
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact failed real-Xcode parent and two-path diagnostic
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          actual="$RUNNER_TEMP/actual-paths"
+          expected="$RUNNER_TEMP/expected-paths"
+          git diff --name-only "$EXACT_PARENT" HEAD | LC_ALL=C sort > "$actual"
+          printf '%s\n' \
+            .github/workflows/capture-real-xcode-apfs-capability-diagnostic.yml \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_apfs_capability_diagnostic.py \
+            | LC_ALL=C sort > "$expected"
+          diff -u "$expected" "$actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-real-xcode-capability-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_unmount_freeze.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_apfs_capability_diagnostic.py
+
+      - name: Classify direct credentials versus real Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/nembra-real-xcode-capability-diagnostic.txt"
+          /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_apfs_capability_diagnostic.py \
+            >"$output" 2>&1
+          cat "$output"
+          grep -q '^NEMBRA_REAL_XCODE_APFS_CAPABILITY_DIAGNOSTIC=' "$output"
+          diagnostic="$(grep '^NEMBRA_REAL_XCODE_APFS_CAPABILITY_DIAGNOSTIC=' "$output" | tail -n 1 | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+          printf '::notice title=Real Xcode APFS capability diagnostic::%s\n' "$diagnostic"
+
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
