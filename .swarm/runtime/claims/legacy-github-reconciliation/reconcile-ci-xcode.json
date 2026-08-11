@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:34:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:34:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:44:38Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
@@ -21,5 +21,5 @@
     "sol-20260811-1315r8"
   ],
   "takeoverReason": "Generation-2 lease expired after last heartbeat 2026-08-11T20:52:00Z. Recover CI/Xcode reconciliation against current Capture P0 live GitHub, especially moved/defeated Final-GO authority, runtime accessibility evidence, build-authority and signed-install exact-head gate truth. Reconciliation only; no product implementation or physical authority.",
-  "checkpoint": "Fresh GO inspection found swarm-state Final-GO lane still describes 471cc025 as accepted even though exploit-positive #3024 and complementary #3030 now defeat that authority and an active generation-4 production repair is underway. Reconcile exact current CI/Xcode state without editing owned product paths. PHYSICAL NO-GO."
+  "checkpoint": "Reconciliation in progress. Exploit-positive #3024 exact head c8ecaaa9717c685af05449e1b2c33c2c91d3c216 succeeded and invalidates old Final-GO 471cc025 authority. Primary whole-tree repair candidate 1399ea87116d58e957e83bd2312d2a3a75d78d8f failed focused closure regressions and was not published; independent review rejects its watcher-registration seam. #3026 exact head a6172620e1c9256f2358d8d7efe186420785c7df has focused custody greens but Xcode 27 QA failure. Refreshing all moving exact heads before final scheduler matrix. Queued/in-progress/skipped/ancestor green are not acceptance. PHYSICAL NO-GO."
 }
