@@ -75,6 +75,21 @@ struct NavigationVisualSurfaceSourceTests {
         #expect(map.contains(".fill(.regularMaterial)"))
     }
 
+    @Test("Reduce Motion gates Navigation presentation animation")
+    func reduceMotionRemovesForcedNavigationAnimation() throws {
+        let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
+        let host = slice(
+            source,
+            after: "private struct NembraNavigationHost<Content: View>: View {",
+            before: "private struct NembraRecentDestination"
+        )
+
+        // The setting must gate the actual presentation animation. Merely reading
+        // accessibilityReduceMotion elsewhere is not an acceptance contract.
+        #expect(host.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"))
+        #expect(host.contains("withAnimation(reduceMotion ? nil : .snappy(duration: 0.28))"))
+    }
+
     @Test("Changing a query clears stale provider results before debounce")
     func queryChangeCannotPresentPreviousMapKitResults() throws {
         let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
