@@ -9,14 +9,14 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:13:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:18:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:22:00Z",
   "leaseSeconds": 1800,
-  "branch": "test/v14-signed-origin-apfs-mmap-gpt56-sol-20260811",
-  "pr": 3064,
-  "sourceSHA": "8519b1ec4fd0ab0de7bd77ef24eb4ee494c8ed71",
-  "currentHeadSHA": "93feb6160ae053dbc71c9cb0919f78f59494eeba",
+  "branch": "validation/v14-apfs-mmap-ready-diagnostics-r2-sol-1607k9",
+  "pr": 3116,
+  "sourceSHA": "93feb6160ae053dbc71c9cb0919f78f59494eeba",
+  "currentHeadSHA": "2e388a5dc6f7f63aeed893d548be214e64e94674",
   "takeoverFromWorkerId": "gpt56-sol-20260811-1437",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-sol-20260811-2154",
-  "takeoverReason": "Generation-5 tests lease expired at 2026-08-11T22:44:15Z. Recover the existing validation-only shared-mmap lane; inspect exact-head macOS evidence first, then repair only the validation harness if evidence shows fixture/tool failure. Do not change production signed-origin code or infer physical authority.",
-  "checkpoint": "Exact #3064 head remains 93feb6160ae053dbc71c9cb0919f78f59494eeba and differs from parent 8519b1ec by exactly the mmap witness plus its workflow. Static review confirms READY occurs only after mmap(ACCESS_WRITE) and original FD close; detach classification is based on hdiutil info -plist attachment inventory, ambiguous mixed states fail closed, and DETACHED path accepts only if post-detach mapped activity cannot alter bytes visible on read-only remount. Dedicated macOS workflow run 31541485138/job 93944622552 is still queued on macos-15, so it is NOT evidence yet. Selective-graft run 31541485147 failed only at its integration truth gate: retained logs show the standalone Capture Xcode build succeeded while package tests inherited exactly 3 source-custody expectation issues; parent 8519b1ec already has the same selective-graft diagnostic failure (run 31538783922), so this is not caused by the two-file mmap delta. No validation bytes changed. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-5 tests lease expired at 2026-08-11T22:44:15Z. Recovered the shared-mmap lane, consumed the first exact macOS result, and advanced only the validation harness after the evidence proved a pre-READY fixture/credential failure rather than a filesystem verdict.",
+  "checkpoint": "#3064 exact 93feb616 macOS run 31541485138/job 93944622552 is terminal RED before READY: mapped writer exited 1 on os.open(target,O_RDWR) with PermissionError errno 13; physicalAuthorityCreated=false. Exact scope, non-root runner group gate, compile/source-contract gate, retained diagnostic, and hygiene all passed. This is NOT APFS detach/mmap authority evidence because no mapping was established. Diagnostics child #3116 exact 2e388a5d changes only the already-registered workflow; the committed Python oracle remains byte-identical. At runtime it temporarily instruments the child before first open to retain real/effective UID/GID, supplementary groups, and child-visible workspace/mount/target owner-group-mode/access metadata, then restores the witness before hygiene. Exact diagnostic workflow run 31546153450 is queued on macos-15 and is NOT evidence yet. A first additive-workflow attempt did not register and is not counted. PHYSICAL NO-GO."
 }
