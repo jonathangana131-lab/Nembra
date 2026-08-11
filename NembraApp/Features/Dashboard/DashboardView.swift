@@ -412,7 +412,7 @@ struct DashboardView: View {
     private var stoppedControls: some View {
         VStack(alignment: .trailing, spacing: 10) {
             if !supportedModes.isEmpty {
-                HStack(spacing: 5) {
+                HStack(spacing: dynamicTypeSize.isAccessibilitySize ? 4 : 5) {
                     ForEach(supportedModes, id: \.self) { mode in
                         let isSelected = vehicle.state.rideMode == mode
                         let isPending = vehicle.pendingRideMode == mode
