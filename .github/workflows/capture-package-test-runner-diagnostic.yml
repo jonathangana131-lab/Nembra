@@ -1,0 +1,124 @@
+name: Capture Package Test Runner Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/capture-package-test-runner-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  isolate-range-abort:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact clean head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          printf 'expected=%s\nactual=%s\n' "$EXPECTED" "$actual"
+          test "$actual" = "$EXPECTED"
+          test -z "$(git status --porcelain)"
+
+      - name: Run focused suspect suites
+        id: focused
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="$RUNNER_TEMP/capture-package-runner-diagnostic"
+          mkdir -p "$root"
+          summary="$root/focused-summary.txt"
+          : > "$summary"
+
+          suites=(
+            'CaptureP0RootVisualAcceptanceTests'
+            'TuyaCaptureRootProductSurfaceSourceTests'
+            'TuyaAcceptanceSealResumeAuthoritySourceTests'
+            'TuyaFieldInstallerIntendedDeviceAuthoritySourceTests'
+            'TuyaFieldDependencyProvenanceSourceTests'
+            'TuyaFieldPythonIsolationSourceTests'
+            'TuyaPrivateIdentityProvisionerCustodyTests'
+            'TuyaMetadataAccountUIDCustodySourceTests'
+            'TuyaMetadataSecretRedactionSourceTests'
+          )
+
+          failed=0
+          for suite in "${suites[@]}"; do
+            log="$root/${suite}.log"
+            printf '\n=== %s ===\n' "$suite" | tee -a "$summary"
+            set +e
+            (cd Packages/NembraBluetoothCapture && swift test --filter "$suite") >"$log" 2>&1
+            status="$?"
+            set -e
+            printf 'status=%s\n' "$status" | tee -a "$summary"
+            if grep -q 'Range requires lowerBound <= upperBound' "$log"; then
+              printf 'range_abort=1\n' | tee -a "$summary"
+            else
+              printf 'range_abort=0\n' | tee -a "$summary"
+            fi
+            if [[ "$status" != "0" ]]; then
+              failed=1
+              tail -80 "$log"
+            fi
+          done
+
+          echo "status=$failed" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Reproduce full-package behavior after focused runs
+        id: full
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="$RUNNER_TEMP/capture-package-runner-diagnostic"
+          log="$root/full-package.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if grep -q 'Range requires lowerBound <= upperBound' "$log"; then
+            echo 'range_abort=1' >> "$GITHUB_OUTPUT"
+          else
+            echo 'range_abort=0' >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Report diagnostic truth
+        env:
+          FOCUSED_STATUS: ${{ steps.focused.outputs.status }}
+          FULL_STATUS: ${{ steps.full.outputs.status }}
+          FULL_RANGE_ABORT: ${{ steps.full.outputs.range_abort }}
+        run: |
+          printf 'focused_status=%s\nfull_status=%s\nfull_range_abort=%s\n' \
+            "$FOCUSED_STATUS" "$FULL_STATUS" "$FULL_RANGE_ABORT"
+          if [[ "$FOCUSED_STATUS" != "0" ]]; then
+            echo '::error::At least one focused suspect suite fails independently; inspect retained suite logs.'
+            exit 1
+          fi
+          if [[ "$FULL_STATUS" != "0" ]]; then
+            if [[ "$FULL_RANGE_ABORT" == "1" ]]; then
+              echo '::error::Focused suspect suites pass independently, but the full package still hits the Swift Testing Range abort. Treat this as an interaction/runner defect until narrower evidence proves a source-test culprit.'
+            else
+              echo '::error::Full package remains red for a non-Range failure; inspect retained full-package log.'
+            fi
+            exit 1
+          fi
+
+      - name: Upload exact diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-package-runner-diagnostic-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-package-runner-diagnostic
+          retention-days: 7
+          if-no-files-found: error
