@@ -9,18 +9,18 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:20:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:20:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:22:32Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-connection-sol-1611dn",
-  "pr": null,
+  "pr": 3117,
   "sourceSHA": "f55f61772138dfdf271cb2952e9cf7c6b86ab050",
-  "currentHeadSHA": "f55f61772138dfdf271cb2952e9cf7c6b86ab050",
+  "currentHeadSHA": "e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1",
   "takeoverFromWorkerId": "sol-20260811-c84e",
   "takeoverFromLeaseId": "dashboard-primary-c84e-20260811-2023",
-  "takeoverReason": "Generation-3 primary lease expired long before takeover (last heartbeat 2026-08-11T21:46:00Z with 2700s TTL) and worker heartbeat never advanced after boot. Exact f55 AX5 artifact 9121216069 proves the remaining blocker: Connected still renders as Connect- / ed in stopped and riding pixels. Recover the same Dashboard lineage on a clean successor branch without overwriting the stale predecessor.",
+  "takeoverReason": "Generation-3 primary lease expired long before takeover (last heartbeat 2026-08-11T21:46:00Z with 2700s TTL) and worker heartbeat never advanced after boot. Exact f55 AX5 artifact 9121216069 proved the remaining blocker: Connected still rendered as Connect- / ed in stopped and riding pixels. Recover the same Dashboard lineage on a clean successor branch without overwriting the stale predecessor.",
   "ownedPaths": [
     "NembraApp/Features/Dashboard/DashboardView.swift",
     "NembraUITests/NembraUITests.swift"
   ],
-  "checkpoint": "Recovered expired Dashboard primary from exact f55f617. Immediate target is the pixel-proven AX5 connection hyphenation defect only: preserve Nembra Simulator visibility, Dynamic Type/VoiceOver semantics, center speed/Energy Rail geometry, 2x2 stopped controls, telemetry/command authority, and Simulator-only truth. Next: minimal accessibility-status composition fix, focused source/test review, exact-head Xcode27/iPhone12 run, inspect retained stopped+riding pixels. ES80 PHYSICAL NO-GO."
+  "checkpoint": "PR #3117 exact head e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1 is a one-file four-addition AX-only repair: the dedicated accessibility connection Label is title-only so its decorative SF Symbol cannot consume the word width. Compare against f55 confirms no other delta. /xcode27 triggered exact run 31546199706; currently queued. Acceptance requires terminal exact run reaching real AX5 plus retained stopped+riding pixel inspection proving full unhyphenated connection wording while preserving Nembra Simulator, center speed/Energy Rail separation, 2x2 >=44pt stopped controls and exact mode semantics. Simulator-only; ES80 PHYSICAL NO-GO."
 }
