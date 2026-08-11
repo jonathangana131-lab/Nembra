@@ -88,7 +88,7 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         lock_compare = '[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]]'
         review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
         bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
-        build_call = "-- xcodebuild"
+        build_call = "-- /usr/bin/xcodebuild"
 
         for required in (
             review_mode,
