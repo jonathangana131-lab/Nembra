@@ -24,6 +24,7 @@ struct NembraCaptureApp: App {
 private struct CaptureP0Root: View {
     @StateObject private var tuya = TuyaAccountBridge()
     @State private var showEngineeringDetails = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         NavigationStack {
@@ -38,19 +39,8 @@ private struct CaptureP0Root: View {
                 .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("NEMBRA CAPTURE")
-                                .font(.caption2.bold())
-                                .tracking(1.5)
-                                .foregroundStyle(.cyan)
-                            Text("Prepare the scooter link")
-                                .font(.largeTitle.bold())
-                            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                    VStack(alignment: .leading, spacing: rootContentSpacing) {
+                        rootHero
 
                         rootPanel {
                             VStack(alignment: .leading, spacing: 14) {
@@ -98,20 +88,7 @@ private struct CaptureP0Root: View {
                         if tuya.isLinked {
                             rootPanel {
                                 VStack(alignment: .leading, spacing: 14) {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text("Choose this scooter")
-                                                .font(.title3.bold())
-                                            Text("Nembra will verify the selected device again inside the official SDK before Bluetooth discovery.")
-                                                .font(.footnote)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer(minLength: 8)
-                                        if tuya.devices.isEmpty {
-                                            Button("Refresh") { tuya.refreshDevices() }
-                                                .buttonStyle(.bordered)
-                                        }
-                                    }
+                                    scooterChooserHeader()
 
                                     ForEach(tuya.devices) { device in
                                         VStack(alignment: .leading, spacing: 10) {
@@ -134,20 +111,7 @@ private struct CaptureP0Root: View {
                                                 }
                                             }
 
-                                            HStack(spacing: 10) {
-                                                Button(tuya.selectedDeviceID == device.id ? "Refresh metadata" : "Use this scooter") {
-                                                    tuya.selectDevice(device)
-                                                }
-                                                .buttonStyle(.bordered)
-
-                                                if tuya.selectedDeviceID == device.id,
-                                                   tuya.phase == .ready,
-                                                   !device.productID.isEmpty,
-                                                   !device.uuid.isEmpty {
-                                                    NavigationLink("Continue to Capture") { SecureLinkView(device: device) }
-                                                        .buttonStyle(.borderedProminent)
-                                                }
-                                            }
+                                            scooterActions(for: device)
                                         }
                                         .padding(14)
                                         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -171,9 +135,9 @@ private struct CaptureP0Root: View {
                         .tint(.secondary)
                     }
                     .frame(maxWidth: 720)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 22)
-                    .padding(.bottom, 44)
+                    .padding(.horizontal, rootHorizontalPadding)
+                    .padding(.top, rootTopPadding)
+                    .padding(.bottom, rootBottomPadding)
                     .frame(maxWidth: .infinity)
                 }
                 .scrollIndicators(.hidden)
@@ -184,15 +148,123 @@ private struct CaptureP0Root: View {
     }
 
     @ViewBuilder
+    private var rootHero: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("NEMBRA CAPTURE")
+                    .font(.caption2.bold())
+                    .tracking(1.2)
+                    .foregroundStyle(.cyan)
+                Text("Prepare the scooter link")
+                    .font(.title2.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Link the Tuya account that owns this scooter before passive target correlation begins.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("NEMBRA CAPTURE")
+                    .font(.caption2.bold())
+                    .tracking(1.5)
+                    .foregroundStyle(.cyan)
+                Text("Prepare the scooter link")
+                    .font(.largeTitle.bold())
+                Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func scooterChooserHeader() -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                scooterChooserCopy
+                if tuya.devices.isEmpty {
+                    Button("Refresh") { tuya.refreshDevices() }
+                        .buttonStyle(.bordered)
+                        .frame(minHeight: 44, alignment: .leading)
+                }
+            }
+        } else {
+            HStack {
+                scooterChooserCopy
+                Spacer(minLength: 8)
+                if tuya.devices.isEmpty {
+                    Button("Refresh") { tuya.refreshDevices() }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
+    private var scooterChooserCopy: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Choose this scooter")
+                .font(.title3.bold())
+            Text("Nembra will verify the selected device again inside the official SDK before Bluetooth discovery.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func scooterActions(for device: TuyaAccountBridge.LinkedDevice) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                scooterSelectionButton(for: device)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                continueToCaptureLink(for: device)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            HStack(spacing: 10) {
+                scooterSelectionButton(for: device)
+                continueToCaptureLink(for: device)
+            }
+        }
+    }
+
+    private func scooterSelectionButton(for device: TuyaAccountBridge.LinkedDevice) -> some View {
+        Button(tuya.selectedDeviceID == device.id ? "Refresh metadata" : "Use this scooter") {
+            tuya.selectDevice(device)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    @ViewBuilder
+    private func continueToCaptureLink(for device: TuyaAccountBridge.LinkedDevice) -> some View {
+        if tuya.selectedDeviceID == device.id,
+           tuya.phase == .ready,
+           !device.productID.isEmpty,
+           !device.uuid.isEmpty {
+            NavigationLink("Continue to Capture") { SecureLinkView(device: device) }
+                .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var rootContentSpacing: CGFloat { dynamicTypeSize.isAccessibilitySize ? 14 : 22 }
+    private var rootHorizontalPadding: CGFloat { dynamicTypeSize.isAccessibilitySize ? 16 : 20 }
+    private var rootTopPadding: CGFloat { dynamicTypeSize.isAccessibilitySize ? 8 : 22 }
+    private var rootBottomPadding: CGFloat { dynamicTypeSize.isAccessibilitySize ? 32 : 44 }
+    private var rootPanelPadding: CGFloat { dynamicTypeSize.isAccessibilitySize ? 14 : 18 }
+    private var rootPanelCornerRadius: CGFloat { dynamicTypeSize.isAccessibilitySize ? 20 : 24 }
+
+    @ViewBuilder
     private func rootPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(18)
+            .padding(rootPanelPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: rootPanelCornerRadius, style: .continuous)
                     .fill(.white.opacity(0.055))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(cornerRadius: rootPanelCornerRadius, style: .continuous)
                             .stroke(.white.opacity(0.09), lineWidth: 1)
                     )
             )
