@@ -1,49 +1,80 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 from pathlib import Path
+import re
 
 
 def replace_once(path: Path, old: str, new: str) -> None:
     source = path.read_text(encoding="utf-8")
-    if source.count(old) != 1:
-        raise SystemExit(f"{path}: expected patch subject exactly once, found {source.count(old)}")
+    count = source.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: expected exact subject once, found {count}: {old[:80]!r}")
     path.write_text(source.replace(old, new), encoding="utf-8")
 
 
+def regex_once(path: Path, pattern: str, replacement: str, *, flags: int = 0) -> None:
+    source = path.read_text(encoding="utf-8")
+    updated, count = re.subn(pattern, replacement, source, count=1, flags=flags)
+    if count != 1:
+        raise SystemExit(f"{path}: expected regex subject once, found {count}: {pattern[:100]!r}")
+    path.write_text(updated, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap: review publishes helper source identity; field mode executes only
+# the captured bytes that match that externally accepted identity.
+# ---------------------------------------------------------------------------
 bootstrap = Path("Scripts/bootstrap_capture_tuya_sdk.sh")
 replace_once(
     bootstrap,
-    '  : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 to the externally reviewed opaque private-input commitment}"\n',
-    '  : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 to the externally reviewed opaque private-input commitment}"\n'
-    '  : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 to the externally reviewed verifier source digest}"\n',
+    '  : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 to the preaccepted 64-hex opaque private review commitment before field bootstrap.}"\n',
+    '  : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 to the preaccepted 64-hex opaque private review commitment before field bootstrap.}"\n'
+    '  : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 to the preaccepted 64-hex private-review verifier source SHA-256 before field bootstrap.}"\n',
+)
+replace_once(
+    bootstrap,
+    '  [[ "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {\n'
+    '    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 must be exactly 64 hex characters." >&2\n'
+    '    exit 1\n'
+    '  }\n',
+    '  [[ "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {\n'
+    '    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 must be exactly 64 hex characters." >&2\n'
+    '    exit 1\n'
+    '  }\n'
+    '  [[ "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {\n'
+    '    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 must be exactly 64 hex characters." >&2\n'
+    '    exit 1\n'
+    '  }\n',
 )
 replace_once(
     bootstrap,
     '  ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256="$(printf \'%s\' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" | tr \'[:upper:]\' \'[:lower:]\')"\n',
     '  ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256="$(printf \'%s\' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" | tr \'[:upper:]\' \'[:lower:]\')"\n'
-    '  if [[ ! "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then\n'
-    '    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 must be exactly 64 hex characters." >&2\n'
-    '    exit 72\n'
-    '  fi\n'
     '  ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256="$(printf \'%s\' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" | tr \'[:upper:]\' \'[:lower:]\')"\n',
 )
 replace_once(
     bootstrap,
-    '  unset NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256\n'
+    '  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \\\n'
+    '    NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \\\n'
+    '    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 || true\n'
     '  ACCEPTED_LOCK_SHA256=""\n'
     '  ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256=""\n'
     '  ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256=""\n',
-    '  unset NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256\n'
-    '  unset NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256\n'
+    '  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \\\n'
+    '    NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \\\n'
+    '    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \\\n'
+    '    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 || true\n'
     '  ACCEPTED_LOCK_SHA256=""\n'
     '  ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256=""\n'
     '  ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256=""\n'
     '  ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256=""\n',
 )
-required_loop = '''for required_source in "$PRIVATE_PROVENANCE_HELPER" "$GENERATED_BUILD_SUBJECT_HELPER" "$PRIVATE_REVIEW_HELPER"; do
-  if [[ ! -f "$required_source" ]]; then
-    echo "ERROR: required Capture authority helper is missing: $required_source" >&2
-    exit 66
-  fi
+required_loop = '''for required_source in "$PROVENANCE_HELPER" "$PRIVATE_REVIEW_HELPER" "$GENERATED_BUILD_SUBJECT_HELPER"; do
+  [[ -f "$required_source" ]] || {
+    echo "ERROR: required accepted Capture authority helper is missing: $required_source" >&2
+    exit 6
+  }
 done
 unset required_source
 '''
@@ -72,12 +103,12 @@ except OSError as error:
     print(f"ERROR: accepted private-review verifier source could not be opened: {error}", file=sys.stderr)
     raise SystemExit(73)
 try:
-    metadata = os.fstat(descriptor)
-    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or metadata.st_size > 262144:
-        print("ERROR: private-review verifier source is not one bounded regular file", file=sys.stderr)
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size <= 0 or before.st_size > 262144:
+        print("ERROR: private-review verifier source is not one bounded regular single-link file", file=sys.stderr)
         raise SystemExit(74)
     chunks = []
-    remaining = metadata.st_size
+    remaining = before.st_size
     while remaining:
         chunk = os.read(descriptor, min(65536, remaining))
         if not chunk:
@@ -87,9 +118,9 @@ try:
         remaining -= len(chunk)
     source = b"".join(chunks)
     after = os.fstat(descriptor)
-    if (metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns) != (
-        after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
-    ):
+    before_identity = (before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns, before.st_ctime_ns, before.st_nlink)
+    after_identity = (after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns, after.st_ctime_ns, after.st_nlink)
+    if before_identity != after_identity:
         print("ERROR: private-review verifier source changed during descriptor custody", file=sys.stderr)
         raise SystemExit(76)
 finally:
@@ -105,51 +136,90 @@ PY
 }
 '''
 replace_once(bootstrap, required_loop, accepted_loader)
-replace_once(
+
+regex_once(
     bootstrap,
-    '  PRIVATE_REVIEW_COMMITMENT_SHA256="$(/usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" create --witness "$PRIVATE_PROVENANCE_RECORD" --key "$PRIVATE_REVIEW_KEY")"\n',
-    '  PRIVATE_REVIEW_COMMITMENT_SHA256="$(/usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" create --witness "$PRIVATE_PROVENANCE_RECORD" --key "$PRIVATE_REVIEW_KEY")"\n'
-    '  PRIVATE_REVIEW_HELPER_SHA256="$(shasum -a 256 "$PRIVATE_REVIEW_HELPER" | awk \'{print $1}\')"\n',
+    r'''  PRIVATE_REVIEW_COMMITMENT_SHA256="\$\(/usr/bin/python3 -I "\$PRIVATE_REVIEW_HELPER" create \\\n    --witness "\$DEPENDENCY_PROVENANCE" \\\n    --key "\$PRIVATE_REVIEW_KEY"\)" \|\| \{
+      echo "ERROR: opaque private-input review commitment could not be created\." >&2
+      exit 18
+    \}
+''',
+    '''  PRIVATE_REVIEW_COMMITMENT_SHA256="$(/usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" create \\
+    --witness "$DEPENDENCY_PROVENANCE" \\
+    --key "$PRIVATE_REVIEW_KEY")" || {
+      echo "ERROR: opaque private-input review commitment could not be created." >&2
+      exit 18
+    }
+  PRIVATE_REVIEW_HELPER_SHA256="$(shasum -a 256 "$PRIVATE_REVIEW_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+''',
+)
+regex_once(
+    bootstrap,
+    r'''  /usr/bin/python3 -I "\$PRIVATE_REVIEW_HELPER" verify \\\n    --witness "\$DEPENDENCY_PROVENANCE" \\\n    --key "\$PRIVATE_REVIEW_KEY" \\\n    --expected "\$ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" >/dev/null \|\| \{
+      echo "ERROR: local private-input witness/key do not match the externally accepted private review commitment\." >&2
+      exit 18
+    \}
+''',
+    '''  run_accepted_private_review_helper "$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" verify \\
+    --witness "$DEPENDENCY_PROVENANCE" \\
+    --key "$PRIVATE_REVIEW_KEY" \\
+    --expected "$ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" >/dev/null || {
+      echo "ERROR: local private-input witness/key or verifier source do not match the externally accepted private review authority." >&2
+      exit 18
+    }
+  PRIVATE_REVIEW_HELPER_SHA256="$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
+''',
 )
 replace_once(
     bootstrap,
-    '  PRIVATE_REVIEW_COMMITMENT_SHA256="$(/usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" verify --witness "$PRIVATE_PROVENANCE_RECORD" --key "$PRIVATE_REVIEW_KEY" --expected "$ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256")"\n',
-    '  PRIVATE_REVIEW_COMMITMENT_SHA256="$(run_accepted_private_review_helper "$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" verify --witness "$PRIVATE_PROVENANCE_RECORD" --key "$PRIVATE_REVIEW_KEY" --expected "$ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256")"\n'
-    '  PRIVATE_REVIEW_HELPER_SHA256="$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"\n',
+    '  Private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256\n',
+    '  Private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256\n'
+    '  Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256\n',
 )
 replace_once(
     bootstrap,
-    "  printf 'Private review commitment SHA-256: %s\\n' \"$PRIVATE_REVIEW_COMMITMENT_SHA256\"\n"
-    "  printf 'Review and retain these three public authority values outside the same-UID private witness.\\n'\n",
-    "  printf 'Private review commitment SHA-256: %s\\n' \"$PRIVATE_REVIEW_COMMITMENT_SHA256\"\n"
-    "  printf 'Private review verifier source SHA-256: %s\\n' \"$PRIVATE_REVIEW_HELPER_SHA256\"\n"
-    "  printf 'Review and retain these four public authority values outside the same-UID private witness.\\n'\n",
+    'Review and bind all THREE public authority values to the exact accepted Capture\n',
+    'Review and bind all FOUR public authority values to the exact accepted Capture\n',
 )
 replace_once(
     bootstrap,
-    "printf 'Preaccepted private review commitment SHA-256: %s\\n' \"$PRIVATE_REVIEW_COMMITMENT_SHA256\"\n",
-    "printf 'Preaccepted private review commitment SHA-256: %s\\n' \"$PRIVATE_REVIEW_COMMITMENT_SHA256\"\n"
-    "printf 'Preaccepted private review verifier source SHA-256: %s\\n' \"$PRIVATE_REVIEW_HELPER_SHA256\"\n",
+    "printf 'Externally accepted opaque private review commitment matched: %s\\n' \"$PRIVATE_REVIEW_COMMITMENT_SHA256\"\n",
+    "printf 'Externally accepted opaque private review commitment matched: %s\\n' \"$PRIVATE_REVIEW_COMMITMENT_SHA256\"\n"
+    "printf 'Externally accepted private review verifier source matched: %s\\n' \"$PRIVATE_REVIEW_HELPER_SHA256\"\n",
 )
 replace_once(
     bootstrap,
-    'unset NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256\n'
-    'unset ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256\n',
-    'unset NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256\n'
-    'unset NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256\n'
-    'unset ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256\n'
-    'unset ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256\n',
+    'unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \\\n'
+    '  NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \\\n'
+    '  NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \\\n'
+    '  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 || true\n',
+    'unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 \\\n'
+    '  NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \\\n'
+    '  NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \\\n'
+    '  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \\\n'
+    '  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 || true\n',
+)
+replace_once(
+    bootstrap,
+    '  Opaque private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256\n',
+    '  Opaque private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256\n'
+    '  Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256\n',
 )
 
 
+# ---------------------------------------------------------------------------
+# Build guard: do not import private-review verifier from mutable neighboring
+# path. Descriptor-read + hash the current source, then compile only the exact
+# accepted bytes into an in-memory module.
+# ---------------------------------------------------------------------------
 guard = Path("Scripts/capture_tuya_private_input_build_guard.py")
-replace_once(guard, "import argparse\n", "import argparse\nimport hashlib\nimport hmac\n")
+replace_once(guard, "import argparse\n", "import argparse\nimport hashlib\n")
 replace_once(guard, "import sys\n", "import sys\nimport types\n")
 replace_once(
     guard,
     '''private_review = _load_neighbor_module(
-    "capture_tuya_private_review_commitment",
     "capture_private_review_commitment.py",
+    "capture_private_review_commitment",
 )
 
 
@@ -163,7 +233,7 @@ def _load_accepted_private_review_module():
     expected = os.environ.get(PRIVATE_REVIEW_HELPER_ENV, "").lower()
     if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
         raise BuildGuardError(
-            f"{PRIVATE_REVIEW_HELPER_ENV} is missing or malformed before private-review authority verification"
+            f"{PRIVATE_REVIEW_HELPER_ENV} must remain available as exactly 64 hex characters through build-window admission"
         )
     helper = Path(__file__).with_name("capture_private_review_commitment.py")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -208,26 +278,32 @@ def _load_accepted_private_review_module():
 )
 replace_once(
     guard,
-    '''    try:
-        private_review.verify_commitment(
-            witness=inputs.private_provenance_record,
-            key_path=inputs.private_review_key,
-            expected_tag=accepted,
-        )
-    except (private_review.PrivateReviewCommitmentError, provenance.ProvenanceError) as error:
-''',
-    '''    private_review = _load_accepted_private_review_module()
+    '''def _verify_accepted_private_review_commitment(inputs: PrivateInputs) -> None:
+    accepted = _accepted_private_review_commitment_from_environment()
     try:
         private_review.verify_commitment(
             witness=inputs.private_provenance_record,
             key_path=inputs.private_review_key,
             expected_tag=accepted,
         )
-    except (private_review.PrivateReviewCommitmentError, provenance.ProvenanceError) as error:
+''',
+    '''def _verify_accepted_private_review_commitment(inputs: PrivateInputs) -> None:
+    accepted = _accepted_private_review_commitment_from_environment()
+    private_review = _load_accepted_private_review_module()
+    try:
+        private_review.verify_commitment(
+            witness=inputs.private_provenance_record,
+            key_path=inputs.private_review_key,
+            expected_tag=accepted,
+        )
 ''',
 )
 
 
+# ---------------------------------------------------------------------------
+# Acceptance fixtures: carry the new public helper source digest in every
+# normal-field/build-guard path while leaving review-only creation unchanged.
+# ---------------------------------------------------------------------------
 private_test = Path("scripts/ci/tests/test_capture_private_review_commitment.py")
 replace_once(
     private_test,
@@ -252,13 +328,6 @@ replace_once(
     '                "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256": private,\n'
     '                "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256": self.accepted_helper,\n',
 )
-replace_once(
-    private_test,
-    '        self.assertIn(\'NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256\', bootstrap)\n',
-    '        self.assertIn(\'NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256\', bootstrap)\n'
-    '        self.assertIn(\'NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256\', bootstrap)\n',
-)
-
 
 generated_test = Path("scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py")
 replace_once(
@@ -273,4 +342,4 @@ replace_once(
     '            environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"] = self.accepted_private_review_helper\n',
 )
 
-print("materialized private-review helper execution custody")
+print("materialized private-review verifier execution custody")
