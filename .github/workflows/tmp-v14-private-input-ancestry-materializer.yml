@@ -12,7 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: repair/v14-capture-private-input-ancestry-sol
+          fetch-depth: 1
       - name: Transform and test
         shell: bash
         run: |
