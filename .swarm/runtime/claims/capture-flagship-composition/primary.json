@@ -9,23 +9,24 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:34:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:41:30Z",
   "leaseSeconds": 2700,
   "branch": "polish/v14-capture-root-first-fold-sol-1311jx-20260811",
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "currentHeadSHA": "c8ead84fe8df4effca2a3b3d0061a1f491665aba",
+  "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
   "pr": 2979,
   "takeoverFromWorkerId": "sol-20260811-0458-go-axcompile",
-  "takeoverReason": "Generation-2 lease expired long after the accepted app-visible head 005b7c4 earned terminal exact-head Xcode 27 success. Continue the same Capture flagship upward by closing the durable standard first-fold copy-density blocker without changing security, physical authority, or the accepted AX semantics.",
+  "takeoverReason": "Generation-2 lease expired long after accepted app-visible head 005b7c4 earned terminal exact-head Xcode 27 success. Continue the same Capture flagship upward by closing standard first-fold copy density without weakening security, physical authority, or accessibility semantics.",
   "ownedPaths": [
     "NembraApp/App/NembraCaptureEntrypoint.swift",
     "NembraCapture.xcodeproj/project.pbxproj",
     "NembraApp/Resources/Localizable.strings",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFirstFoldCopySourceTests.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFirstFoldVoiceOverSourceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
   ],
-  "durableEvidence": "Accepted predecessor 005b7c4aaf27fabb442a65599b4538ebcc09ae27 remains fully green. Successor PR #2979 exact head c8ead84fe8df4effca2a3b3d0061a1f491665aba now has Field Build Provenance 31532923763 SUCCESS, Main Selective Graft 31532923795 SUCCESS, and Standalone Visual 31532923883 SUCCESS. Retained visual artifact 9117799344 digest sha256:fd219ed6d533a7778e30869dca2b0282fe9cfae57688d197a2aff4fb6065a2fa received human/pixel acceptance: standard QR button body moved 255 px upward on 1170x2532 (approx y=2300..2491 to y=2045..2236), exposing Engineering Details in first fold; AX5 screenshot SHA-256 e3b39f3948dda07b22b508b07d10df4603933b11df0e2b08eef253e3fa32f8cc is byte-identical to accepted parent. Xcode 27 run 31532923864 is still running and is not yet acceptance. Runtime VoiceOver has separately converged through newer harness successors and remains unaccepted until an exact current runtime head actually executes testsCount>0/audit/traversal.",
-  "acceptance": "Visual density and AX5 preservation are accepted on exact c8ead84f. Freeze this head and require Xcode 27 run 31532923864 terminal SUCCESS before accepting this app-visible successor. Any moved head resets acceptance. Physical Final-GO remains separately NO-GO.",
-  "intent": "Keep PR #2979 frozen on c8ead84f until exact Xcode terminates. Do not merge merely from visual green; after exact-head acceptance, treat this as the preferred app-visible visual successor ingredient while continuing Capture composition/security/accessibility closure."
+  "durableEvidence": "Accepted predecessor 005b7c4aaf27fabb442a65599b4538ebcc09ae27 remains fully green. First compact candidate c8ead84fe8df4effca2a3b3d0061a1f491665aba earned Field 31532923763 SUCCESS, Main Graft 31532923795 SUCCESS and Visual 31532923883 SUCCESS; artifact 9117799344 showed the standard QR button ~255 px earlier and AX5 byte-identical to parent. Test-only #2990 then correctly exposed a normal-size VoiceOver semantic regression: localization shortened the hero's spoken authority because the Text lacked an explicit nonlocalized semantic override. Current exact successor ce9e2bac253fedf6a61f79614519058fc6da116f consumes #2990 unchanged and adds an explicit Text(verbatim:) accessibility label containing the full Bluetooth/physical-evidence/locked reviewed-build/fresh-scooter-authority warning. Temporary materializer was deleted; durable PR diff is five paths. All c8 exact-head greens are ingredient evidence only after this source move; ce9 must re-earn required gates and visual comparison.",
+  "acceptance": "Freeze ce9e2bac253fedf6a61f79614519058fc6da116f. Require exact-head Main Graft, Field Build Provenance, Standalone Visual plus human/pixel comparison, Xcode 27, and #2990 spoken-authority source contract. Do not promote action_required/queued/ancestor results. Physical Final-GO remains separately NO-GO.",
+  "intent": "PR #2979 is the preferred app-visible visual successor candidate only after ce9 exact-head gates pass. Preserve the 255 px standard first-fold gain while retaining full spoken authority. Do not weaken the adopted #2990 oracle and do not merge merely from visual evidence."
 }
