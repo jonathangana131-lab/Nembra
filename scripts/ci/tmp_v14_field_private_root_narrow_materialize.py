@@ -2,9 +2,31 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 GUARD = Path("Scripts/capture_tuya_private_input_build_guard.py")
 TEST = Path("scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py")
+REDTEAM_WORKFLOW = Path(".github/workflows/capture-field-untracked-prearm-injection-red-team.yml")
+CANONICAL_SHA = "8b67673789451835acc1bed192ce66aa4113ee23"
+CANONICAL_TEST_BLOB = "6fee836342f7dd370cfee2309063127575469c86"
+CANONICAL_WORKFLOW_BLOB = "69016999656fbabee0f7026224b6dc6abdf253ea"
+
+
+def canonical_text(path: Path, expected_blob: str) -> str:
+    payload = subprocess.check_output(
+        ["/usr/bin/git", "show", f"{CANONICAL_SHA}:{path.as_posix()}"],
+    )
+    actual_blob = subprocess.check_output(
+        ["/usr/bin/git", "hash-object", "--stdin"],
+        input=payload,
+        text=False,
+    ).decode("ascii").strip()
+    if actual_blob != expected_blob:
+        raise SystemExit(
+            f"canonical blob drift for {path}: expected {expected_blob}, got {actual_blob}"
+        )
+    return payload.decode("utf-8")
+
 
 source = GUARD.read_text(encoding="utf-8")
 old_signature = "def _accepted_source_field_allowlist(inputs: object, repository_root: Path) -> tuple[set[str], set[str]]:"
@@ -38,16 +60,13 @@ if source.count(old_dir_loop) != 1:
 source = source.replace(old_dir_loop, new_dir_loop, 1)
 GUARD.write_text(source, encoding="utf-8")
 
-text = TEST.read_text(encoding="utf-8")
-old_shape_assertion = "allowed_directories, allowed_files = _accepted_source_field_allowlist"
-new_shape_assertion = "allowed_directories, allowed_directory_ancestors, allowed_files = _accepted_source_field_allowlist"
-if text.count(old_shape_assertion) != 1:
-    raise SystemExit("canonical allowlist source-shape assertion drifted")
-text = text.replace(old_shape_assertion, new_shape_assertion, 1)
-
-anchor = '''    def test_untracked_source_inserted_between_endpoint_audit_and_vnode_arming_is_rejected(self) -> None:\n'''
+# Restore the exact current #2913 SwiftPM witness, then extend that same suite with
+# one behavior-level regression for the private-root narrowing. The canonical
+# attack method itself remains byte-for-byte unchanged inside this descendant.
+text = canonical_text(TEST, CANONICAL_TEST_BLOB)
+anchor = '''    def test_untracked_swiftpm_source_inserted_between_endpoint_audit_and_vnode_arming_is_rejected(self) -> None:\n'''
 if text.count(anchor) != 1:
-    raise SystemExit("canonical red-team class anchor drifted")
+    raise SystemExit("canonical SwiftPM red-team anchor drifted")
 extra_test = r'''    def test_private_allowlist_does_not_hide_unrelated_local_secrets_content(self) -> None:
         guard = load_guard()
         with tempfile.TemporaryDirectory(prefix="nembra-private-root-narrow-") as directory:
@@ -68,23 +87,20 @@ extra_test = r'''    def test_private_allowlist_does_not_hide_unrelated_local_se
             runtime = repo / "LocalSecrets" / "TuyaRuntime"
             (sdk / "Build").mkdir(parents=True)
             (sdk / "ThingSmartCryption.podspec").write_text("accepted-security", encoding="utf-8")
-            identity_sources = runtime / "Sources" / "NembraTuyaPrivateConfig"
-            identity_sources.mkdir(parents=True)
+            runtime_sources = runtime / "Sources" / "NembraTuyaPrivateConfig"
+            runtime_sources.mkdir(parents=True)
             (runtime / "NembraTuyaPrivateConfig.podspec").write_text("accepted-identity", encoding="utf-8")
-            (identity_sources / "NembraTuyaPrivateIdentity.swift").write_text("accepted-private", encoding="utf-8")
+            (runtime_sources / "NembraTuyaPrivateIdentity.swift").write_text("accepted-private", encoding="utf-8")
 
             class PrivateShape:
                 generated_pods = None
                 generated_workspace = None
-                lockfile = repo / "missing-lock-for-this-isolated-shape"
+                lockfile = None
                 security_podspec = sdk / "ThingSmartCryption.podspec"
                 security_build = sdk / "Build"
                 identity_podspec = runtime / "NembraTuyaPrivateConfig.podspec"
-                identity_sources = identity_sources
+                identity_sources = runtime_sources
 
-            # The two exact local-pod roots are separately authenticated by the
-            # production provenance contract and therefore may coexist with the
-            # accepted Git tree.
             guard._verify_accepted_source_physical_tree(PrivateShape(), manifest, repo)
 
             rogue = repo / "LocalSecrets" / "Injected.swift"
@@ -95,3 +111,9 @@ extra_test = r'''    def test_private_allowlist_does_not_hide_unrelated_local_se
 '''
 text = text.replace(anchor, extra_test + anchor, 1)
 TEST.write_text(text, encoding="utf-8")
+
+# Keep the permanent expected-red gate itself exactly aligned with current #2913.
+REDTEAM_WORKFLOW.write_text(
+    canonical_text(REDTEAM_WORKFLOW, CANONICAL_WORKFLOW_BLOB),
+    encoding="utf-8",
+)
