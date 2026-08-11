@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Fingerprint the exact ignored CocoaPods build subject used by Nembra Capture.
 
-This helper intentionally fingerprints generated build inputs rather than trusting
-Podfile.lock alone. It records only structure, modes, symlink targets, and file
-content digests; it never serializes private Tuya bytes or credentials.
+The accepted subject binds generated Pods/workspace structure, modes, regular-file
+bytes, symlink text, and the bytes of every in-repository object reached through a
+symlink. The same traversal can expose the real files/directories that must remain
+under vnode custody while xcodebuild consumes the subject.
 """
 
 from __future__ import annotations
@@ -13,10 +14,11 @@ import hashlib
 import os
 import stat
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
 
-SCHEMA = b"nembra-cocoapods-generated-subject-v1"
+SCHEMA = b"nembra-cocoapods-generated-subject-v2"
 
 
 class GeneratedSubjectError(RuntimeError):
@@ -41,12 +43,19 @@ def _identity(metadata: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def _inside(path: Path, root: Path) -> Path:
-    resolved = path.resolve(strict=True)
+def _relative(path: Path, repository_root: Path) -> str:
     try:
-        resolved.relative_to(root)
+        return path.relative_to(repository_root).as_posix()
     except ValueError as error:
         raise GeneratedSubjectError("generated CocoaPods subject escapes the repository root") from error
+
+
+def _inside(path: Path, root: Path) -> Path:
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise GeneratedSubjectError("generated CocoaPods symlink target could not be resolved safely") from error
+    _relative(resolved, root)
     return resolved
 
 
@@ -89,107 +98,151 @@ def _members(path: Path) -> tuple[str, ...]:
         raise GeneratedSubjectError("generated build tree changed during fingerprinting") from error
 
 
-def _tree_fingerprint(root: Path, repository_root: Path) -> bytes:
-    try:
-        metadata = root.lstat()
-    except OSError as error:
-        raise GeneratedSubjectError(f"generated build tree is unavailable: {root.name}") from error
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-        raise GeneratedSubjectError(f"generated build tree is not a real directory: {root.name}")
+@dataclass
+class _Inspection:
+    repository_root: Path
+    active: set[Path] = field(default_factory=set)
+    cache: dict[Path, bytes] = field(default_factory=dict)
+    watch_paths: set[Path] = field(default_factory=set)
 
-    root_identity = _identity(metadata)
-    root_relative = root.relative_to(repository_root).as_posix()
-    observed: list[tuple[Path, tuple[int, ...], str, str | None]] = [(root, root_identity, "D", None)]
-    directories: dict[Path, tuple[str, ...]] = {}
-    entries: list[tuple[str, str, int, bytes]] = []
+    def _watch_target_ancestry(self, target: Path) -> None:
+        current = target.parent
+        while True:
+            _relative(current, self.repository_root)
+            self.watch_paths.add(current)
+            if current == self.repository_root:
+                break
+            current = current.parent
 
-    for current_text, dir_names, file_names in os.walk(root, topdown=True, followlinks=False):
-        current = Path(current_text)
-        directories[current] = tuple(sorted((*dir_names, *file_names), key=os.fsencode))
-        kept: list[str] = []
+    def _symlink_payload(self, path: Path, metadata: os.stat_result) -> bytes:
+        expected = _identity(metadata)
+        try:
+            target_text = os.readlink(path)
+        except OSError as error:
+            raise GeneratedSubjectError("generated build symlink changed before fingerprinting") from error
+        resolved = _inside(path, self.repository_root)
+        self._watch_target_ancestry(resolved)
+        target_payload = self._real_payload(resolved)
 
-        for name in sorted(dir_names, key=os.fsencode):
-            candidate = current / name
-            relative = candidate.relative_to(repository_root).as_posix()
-            item = candidate.lstat()
-            item_identity = _identity(item)
-            mode = stat.S_IMODE(item.st_mode)
-            if stat.S_ISLNK(item.st_mode):
-                target = os.readlink(candidate)
-                _inside(candidate, repository_root)
-                observed.append((candidate, item_identity, "L", target))
-                entries.append(("L", relative, mode, os.fsencode(target)))
-            elif stat.S_ISDIR(item.st_mode):
-                observed.append((candidate, item_identity, "D", None))
-                entries.append(("D", relative, mode, b""))
-                kept.append(name)
-            else:
-                raise GeneratedSubjectError("generated build tree contains an unsupported directory entry")
-        dir_names[:] = kept
+        current = path.lstat()
+        if _identity(current) != expected or not stat.S_ISLNK(current.st_mode):
+            raise GeneratedSubjectError("generated build symlink changed during fingerprinting")
+        if os.readlink(path) != target_text or _inside(path, self.repository_root) != resolved:
+            raise GeneratedSubjectError("generated build symlink target changed during fingerprinting")
 
-        for name in sorted(file_names, key=os.fsencode):
-            candidate = current / name
-            relative = candidate.relative_to(repository_root).as_posix()
-            item = candidate.lstat()
-            item_identity = _identity(item)
-            mode = stat.S_IMODE(item.st_mode)
-            if stat.S_ISLNK(item.st_mode):
-                target = os.readlink(candidate)
-                _inside(candidate, repository_root)
-                observed.append((candidate, item_identity, "L", target))
-                entries.append(("L", relative, mode, os.fsencode(target)))
-            elif stat.S_ISREG(item.st_mode):
-                payload = _stable_file_digest(candidate, item_identity)
-                observed.append((candidate, item_identity, "F", None))
-                entries.append(("F", relative, mode, payload))
-            else:
-                raise GeneratedSubjectError("generated build tree contains an unsupported file entry")
+        digest = hashlib.sha256()
+        _feed(digest, b"symlink")
+        _feed(digest, _relative(path, self.repository_root).encode("utf-8"))
+        _feed(digest, stat.S_IMODE(metadata.st_mode).to_bytes(4, "big"))
+        _feed(digest, os.fsencode(target_text))
+        _feed(digest, _relative(resolved, self.repository_root).encode("utf-8"))
+        _feed(digest, target_payload)
+        return digest.digest()
 
-    for candidate, expected, kind, target in observed:
-        current = candidate.lstat()
-        if _identity(current) != expected:
-            raise GeneratedSubjectError("generated build tree changed during final fingerprint custody")
-        if kind == "D" and not stat.S_ISDIR(current.st_mode):
-            raise GeneratedSubjectError("generated build directory changed type")
-        if kind == "F" and not stat.S_ISREG(current.st_mode):
-            raise GeneratedSubjectError("generated build file changed type")
-        if kind == "L":
-            if not stat.S_ISLNK(current.st_mode) or os.readlink(candidate) != target:
-                raise GeneratedSubjectError("generated build symlink changed during fingerprinting")
-            _inside(candidate, repository_root)
+    def _real_payload(self, path: Path) -> bytes:
+        try:
+            metadata = path.lstat()
+        except OSError as error:
+            raise GeneratedSubjectError(f"generated build object is unavailable: {path}") from error
+        if stat.S_ISLNK(metadata.st_mode):
+            return self._symlink_payload(path, metadata)
 
-    for directory, expected_members in directories.items():
-        if _members(directory) != expected_members:
+        resolved = _inside(path, self.repository_root)
+        if resolved != path.resolve(strict=True):
+            raise GeneratedSubjectError("generated build object canonicalization changed unexpectedly")
+        relative = _relative(resolved, self.repository_root)
+
+        cached = self.cache.get(resolved)
+        if cached is not None:
+            return cached
+        if resolved in self.active:
+            digest = hashlib.sha256()
+            _feed(digest, b"cycle-reference")
+            _feed(digest, relative.encode("utf-8"))
+            return digest.digest()
+
+        expected = _identity(metadata)
+        mode = stat.S_IMODE(metadata.st_mode)
+        if stat.S_ISREG(metadata.st_mode):
+            self.watch_paths.add(resolved)
+            content_digest = _stable_file_digest(resolved, expected)
+            digest = hashlib.sha256()
+            _feed(digest, b"file")
+            _feed(digest, relative.encode("utf-8"))
+            _feed(digest, mode.to_bytes(4, "big"))
+            _feed(digest, content_digest)
+            payload = digest.digest()
+            self.cache[resolved] = payload
+            return payload
+
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise GeneratedSubjectError("generated build subject contains an unsupported object type")
+
+        self.watch_paths.add(resolved)
+        expected_members = _members(resolved)
+        self.active.add(resolved)
+        try:
+            child_payloads: list[tuple[bytes, bytes]] = []
+            for name in expected_members:
+                child = resolved / name
+                child_payloads.append((os.fsencode(name), self._real_payload(child)))
+        finally:
+            self.active.remove(resolved)
+
+        current = resolved.lstat()
+        if _identity(current) != expected or not stat.S_ISDIR(current.st_mode):
+            raise GeneratedSubjectError("generated build directory changed during fingerprinting")
+        if _members(resolved) != expected_members:
             raise GeneratedSubjectError("generated build directory membership changed during fingerprinting")
 
-    digest = hashlib.sha256()
-    _feed(digest, b"tree")
-    _feed(digest, root_relative.encode("utf-8"))
-    _feed(digest, stat.S_IMODE(metadata.st_mode).to_bytes(4, "big"))
-    for kind, relative, mode, payload in sorted(entries, key=lambda item: os.fsencode(item[1])):
-        _feed(digest, kind.encode("ascii"))
+        digest = hashlib.sha256()
+        _feed(digest, b"directory")
         _feed(digest, relative.encode("utf-8"))
         _feed(digest, mode.to_bytes(4, "big"))
-        _feed(digest, payload)
-    return digest.digest()
+        for name, payload in child_payloads:
+            _feed(digest, name)
+            _feed(digest, payload)
+        result = digest.digest()
+        self.cache[resolved] = result
+        return result
+
+    def inspect_roots(self, roots: Iterable[Path]) -> str:
+        ordered: list[tuple[str, Path]] = []
+        for root in roots:
+            try:
+                metadata = root.lstat()
+            except OSError as error:
+                raise GeneratedSubjectError(f"generated build tree is unavailable: {root.name}") from error
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                raise GeneratedSubjectError(f"generated build tree is not a real directory: {root.name}")
+            resolved = _inside(root, self.repository_root)
+            ordered.append((_relative(resolved, self.repository_root), resolved))
+        if not ordered:
+            raise GeneratedSubjectError("no generated build roots were supplied")
+
+        digest = hashlib.sha256()
+        _feed(digest, SCHEMA)
+        for relative, root in sorted(ordered, key=lambda item: os.fsencode(item[0])):
+            _feed(digest, relative.encode("utf-8"))
+            _feed(digest, self._real_payload(root))
+        return digest.hexdigest()
+
+
+def inspect_subject(repository_root: Path, roots: Iterable[Path]) -> tuple[str, tuple[Path, ...]]:
+    repository_root = repository_root.resolve(strict=True)
+    inspection = _Inspection(repository_root)
+    digest = inspection.inspect_roots(roots)
+    return digest, tuple(sorted(inspection.watch_paths, key=lambda item: os.fsencode(str(item))))
 
 
 def fingerprint_subject(repository_root: Path, roots: Iterable[Path]) -> str:
-    repository_root = repository_root.resolve(strict=True)
-    digest = hashlib.sha256()
-    _feed(digest, SCHEMA)
-    count = 0
-    for root in roots:
-        resolved_parent = root.parent.resolve(strict=True)
-        try:
-            resolved_parent.relative_to(repository_root)
-        except ValueError as error:
-            raise GeneratedSubjectError("generated build root is outside the repository") from error
-        _feed(digest, _tree_fingerprint(root, repository_root))
-        count += 1
-    if count == 0:
-        raise GeneratedSubjectError("no generated build roots were supplied")
-    return digest.hexdigest()
+    digest, _ = inspect_subject(repository_root, roots)
+    return digest
+
+
+def subject_watch_paths(repository_root: Path, roots: Iterable[Path]) -> tuple[Path, ...]:
+    _, paths = inspect_subject(repository_root, roots)
+    return paths
 
 
 def _self_test() -> None:
@@ -197,18 +250,34 @@ def _self_test() -> None:
         repository = Path(temporary).resolve()
         pods = repository / "Pods"
         workspace = repository / "NembraCapture.xcworkspace"
+        sources = repository / "Sources"
         pods.mkdir()
         workspace.mkdir()
-        (pods / "project.pbxproj").write_text("A\n", encoding="utf-8")
+        sources.mkdir()
+        project = pods / "project.pbxproj"
+        project.write_text("A\n", encoding="utf-8")
         (workspace / "contents.xcworkspacedata").write_text("workspace\n", encoding="utf-8")
+
         first = fingerprint_subject(repository, (pods, workspace))
         second = fingerprint_subject(repository, (pods, workspace))
         if first != second:
             raise AssertionError("unchanged generated build subject was not stable")
-        (pods / "project.pbxproj").write_text("B\n", encoding="utf-8")
+        project.write_text("B\n", encoding="utf-8")
         third = fingerprint_subject(repository, (pods, workspace))
         if third == first:
             raise AssertionError("generated build byte substitution was not detected")
+
+        target = sources / "Shared.swift"
+        target.write_text("let value = 1\n", encoding="utf-8")
+        link = pods / "Shared.swift"
+        link.symlink_to(target)
+        linked_first, watched = inspect_subject(repository, (pods, workspace))
+        if target.resolve() not in watched:
+            raise AssertionError("resolved generated-build symlink target was not placed under watch custody")
+        target.write_text("let value = 2\n", encoding="utf-8")
+        linked_second = fingerprint_subject(repository, (pods, workspace))
+        if linked_second == linked_first:
+            raise AssertionError("resolved generated-build symlink target byte substitution was not detected")
 
         outside = repository.parent / (repository.name + "-outside")
         outside.write_text("escape", encoding="utf-8")
