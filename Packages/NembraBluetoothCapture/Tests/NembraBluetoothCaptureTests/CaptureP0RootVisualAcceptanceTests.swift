@@ -16,10 +16,10 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(body.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
         #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
         #expect(body.contains("buildIdentity.isAuthoritativeFieldBuild"))
-        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
+        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
         #expect(body.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
         #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
-        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to Capture\" : \"View locked preflight\")"))
+        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
 
         let heroUse = try #require(body.range(of: "rootHero\n                        buildAuthorityStatus\n                        accountSetupPanel"))
         #expect(heroUse.lowerBound < body.endIndex)
@@ -42,6 +42,21 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(root.contains("TextField(\"Paste user code\""))
         #expect(root.contains(".accessibilityLabel(\"Tuya Smart user code\")"))
         #expect(root.contains(".accessibilityIdentifier(\"capture.p0-root\")"))
+        #expect(root.contains("private var buildAuthorityDetail: String"))
+        #expect(root.contains("Public build: account metadata only. Bluetooth and physical Capture stay locked."))
+        #expect(root.contains("private var accountMetadataPrimaryAction: some View"))
+        #expect(root.contains("private var accountMetadataSupportingCopy: some View"))
+        #expect(root.contains("nembra.capture.root.account-link-action"))
+
+        let panel = String(try section(
+            in: root,
+            from: "private var accountSetupPanel: some View",
+            to: "private var accountMetadataPrimaryAction: some View"
+        ))
+        let accessibilityBranch = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize"))
+        let primary = try #require(panel.range(of: "accountMetadataPrimaryAction", range: accessibilityBranch.upperBound..<panel.endIndex))
+        let supporting = try #require(panel.range(of: "accountMetadataSupportingCopy", range: primary.upperBound..<panel.endIndex))
+        #expect(primary.lowerBound < supporting.lowerBound)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {

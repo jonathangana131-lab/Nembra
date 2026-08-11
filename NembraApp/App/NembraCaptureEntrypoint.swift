@@ -56,7 +56,7 @@ private struct CaptureP0Root: View {
 
                         DisclosureGroup(isExpanded: $showEngineeringDetails) {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text(fieldBuildIsAuthoritative ? "Field build authority: ready" : "Field build authority: locked")
+                                Text(fieldBuildIsAuthoritative ? "Build provenance: ready" : "Build provenance: locked")
                                 Text("Account approval and device metadata only establish setup context. Capture independently verifies the current official SDK session and exact scooter membership before discovery.")
                                 Text("No scooter commands are sent by this setup flow.")
                             }
@@ -116,6 +116,18 @@ private struct CaptureP0Root: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var buildAuthorityDetail: String {
+        if dynamicTypeSize.isAccessibilitySize {
+            return fieldBuildIsAuthoritative
+                ? "Provenance is present. Account and scooter checks are still required."
+                : "Public build: account metadata only. Bluetooth and physical Capture stay locked."
+        }
+
+        return fieldBuildIsAuthoritative
+            ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
+            : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."
+    }
+
     private var buildAuthorityStatus: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "lock.shield.fill")
@@ -124,22 +136,18 @@ private struct CaptureP0Root: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")
+                Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
                     .font(.headline)
                     .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(
-                    fieldBuildIsAuthoritative
-                        ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
-                        : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(buildAuthorityDetail)
+                    .font(dynamicTypeSize.isAccessibilitySize ? .footnote : .subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 16)
+        .padding(dynamicTypeSize.isAccessibilitySize ? 12 : 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -150,7 +158,7 @@ private struct CaptureP0Root: View {
                 )
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")
+        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
         .accessibilityValue(
             fieldBuildIsAuthoritative
                 ? "Build provenance is ready. Account and scooter authority are still required before Bluetooth starts."
@@ -160,7 +168,7 @@ private struct CaptureP0Root: View {
 
     private var accountSetupPanel: some View {
         rootPanel {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 10 : 14) {
                 Label(
                     tuya.isLinked ? "Account metadata ready" : "Prepare account metadata",
                     systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark"
@@ -168,38 +176,12 @@ private struct CaptureP0Root: View {
                 .font(.title3.bold())
                 .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
 
-                Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(tuya.statusMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if !tuya.isLinked {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("Tuya Smart user code")
-                            .font(.subheadline.weight(.semibold))
-                        TextField("Paste user code", text: $tuya.userCode)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .padding(12)
-                            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .accessibilityLabel("Tuya Smart user code")
-                            .accessibilityHint("Used only to create the Tuya account approval QR for metadata setup.")
-                    }
-
-                    Button {
-                        tuya.requestApproval()
-                    } label: {
-                        Label("Create approval QR", systemImage: "qrcode")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
+                if dynamicTypeSize.isAccessibilitySize {
+                    accountMetadataPrimaryAction
+                    accountMetadataSupportingCopy
+                } else {
+                    accountMetadataSupportingCopy
+                    accountMetadataPrimaryAction
                 }
 
                 if let data = tuya.qrPNGData,
@@ -223,6 +205,47 @@ private struct CaptureP0Root: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var accountMetadataPrimaryAction: some View {
+        if !tuya.isLinked {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Tuya Smart user code")
+                    .font(.subheadline.weight(.semibold))
+                TextField("Paste user code", text: $tuya.userCode)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .padding(12)
+                    .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityLabel("Tuya Smart user code")
+                    .accessibilityHint("Used only to create the Tuya account approval QR for metadata setup.")
+            }
+
+            Button {
+                tuya.requestApproval()
+            } label: {
+                Label("Create approval QR", systemImage: "qrcode")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .accessibilityIdentifier("nembra.capture.root.account-link-action")
+            .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
+        }
+    }
+
+    @ViewBuilder
+    private var accountMetadataSupportingCopy: some View {
+        Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+        Text(tuya.statusMessage)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var scooterChooserPanel: some View {
@@ -275,7 +298,7 @@ private struct CaptureP0Root: View {
                                tuya.phase == .ready,
                                !device.productID.isEmpty,
                                !device.uuid.isEmpty {
-                                NavigationLink(fieldBuildIsAuthoritative ? "Continue to Capture" : "View locked preflight") {
+                                NavigationLink(fieldBuildIsAuthoritative ? "Continue to preflight" : "View locked preflight") {
                                     SecureLinkView(device: device)
                                 }
                                 .buttonStyle(.borderedProminent)

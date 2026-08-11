@@ -16,7 +16,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
 
         #expect(body.contains("NEMBRA CAPTURE"))
         #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
+        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
         #expect(body.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
         #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
         #expect(body.contains("Engineering details"))
@@ -43,7 +43,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(body.contains("tuya.refreshDevices()"))
         #expect(body.contains("tuya.selectDevice(device)"))
         #expect(body.contains("SecureLinkView(device: device)"))
-        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to Capture\" : \"View locked preflight\")"))
+        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
         #expect(app.contains("No DP query or scooter command is authorized by this surface."))
     }
 
@@ -63,6 +63,21 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
         #expect(root.contains("Text(\"Tuya Smart user code\")"))
         #expect(root.contains("TextField(\"Paste user code\""))
+        #expect(root.contains("private var buildAuthorityDetail: String"))
+        #expect(root.contains("Build provenance ready"))
+        #expect(root.contains("private var accountMetadataPrimaryAction: some View"))
+        #expect(root.contains("private var accountMetadataSupportingCopy: some View"))
+        #expect(root.contains("nembra.capture.root.account-link-action"))
+
+        let panel = String(try section(
+            in: root,
+            from: "private var accountSetupPanel: some View",
+            to: "private var accountMetadataPrimaryAction: some View"
+        ))
+        let accessibilityBranch = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize"))
+        let primary = try #require(panel.range(of: "accountMetadataPrimaryAction", range: accessibilityBranch.upperBound..<panel.endIndex))
+        let supporting = try #require(panel.range(of: "accountMetadataSupportingCopy", range: primary.upperBound..<panel.endIndex))
+        #expect(primary.lowerBound < supporting.lowerBound)
     }
 
     @Test("legacy card-based Capture root is retired from the metadata bridge")
