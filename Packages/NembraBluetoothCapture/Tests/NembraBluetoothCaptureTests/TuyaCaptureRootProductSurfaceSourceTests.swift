@@ -80,6 +80,23 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(primary.lowerBound < supporting.lowerBound)
     }
 
+    @Test("metadata preparation bridge remains cloud-only and command-free")
+    func metadataBridgeCannotAcquireBluetoothOrScooterCommandAuthority() throws {
+        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+
+        #expect(bridge.contains("Official Tuya Smart account-link preflight"))
+        #expect(bridge.contains("read-only Device Sharing endpoints"))
+        #expect(bridge.contains("signedGET(path:"))
+        #expect(!bridge.contains("import CoreBluetooth"))
+        #expect(!bridge.contains("ThingSmartBLEManager"))
+        #expect(!bridge.contains("connectBLE"))
+        #expect(!bridge.contains("disconnectBLE"))
+        #expect(!bridge.contains("publishDps"))
+        #expect(!bridge.contains("queryDps"))
+        #expect(!bridge.contains("writeValue"))
+        #expect(!bridge.contains("setDp"))
+    }
+
     @Test("legacy card-based Capture root is retired from the metadata bridge")
     func legacyCardRootIsRetired() throws {
         let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
