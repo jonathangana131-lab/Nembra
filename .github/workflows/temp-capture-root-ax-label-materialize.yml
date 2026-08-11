@@ -1,0 +1,53 @@
+name: TEMP Capture Root AX Label Materialize
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-root-two-file-closure-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-root-two-file-closure-sol-20260811
+          fetch-depth: 1
+
+      - name: Make sighted AX lock unambiguous
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path("NembraApp/App/NembraCaptureEntrypoint.swift"),
+              Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift"),
+              Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift"),
+              Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"),
+          ]
+          for path in paths:
+              text = path.read_text(encoding="utf-8")
+              count = text.count("Physical lock")
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one Physical lock marker, found {count}")
+              path.write_text(text.replace("Physical lock", "Capture locked", 1), encoding="utf-8")
+          PY
+          git diff --check
+
+      - name: Commit exact label repair and retire materializer
+        run: |
+          git rm .github/workflows/temp-capture-root-ax-label-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+          git diff --cached --check
+          git config user.name "nembra-capture-bot"
+          git config user.email "capture@nembra.invalid"
+          git commit -m "Capture: disambiguate AX lock status"
+          git push origin HEAD:repair/v14-capture-root-two-file-closure-sol-20260811
