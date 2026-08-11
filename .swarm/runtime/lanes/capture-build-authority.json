@@ -10,28 +10,20 @@
   "dependencies": [],
   "blockers": [
     {
-      "id": "legacy-pr-active",
+      "id": "current-complete-security-spine-minus-vnode",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy authority owner #2805 is still moving outside a swarm claim and is now exact fa35eb5181fe17b93f4875508683d99994336fe6. Focused Private Review Commitment, Helper Execution Custody, Downstream Helper Red Team, and CocoaPods Build Subject gates are terminal SUCCESS there; heavyweight Field/Graft/Xcode are queued/non-terminal. The fa35 move adds a non-duplicated exception-proxy execution-custody production repair plus permanent regression. Do not duplicate edits or use stale #2805 body/head snapshots.",
+      "reason": "Live authority owner #2805 has advanced to exact 642c10758c55e730fb1583fdf4545207f5147952. Direct source proves it now carries the three previously non-duplicated security/QA debts: exact accepted-Git guard-presence authority via replacement-blind/ambient-config-isolated `git cat-file -e`, canonical Field path-contract wiring/rejection with `test_capture_field_accepted_source_path_contract.py`, and the exception-proxy execution-custody production+permanent regression. Its exact Private Review Commitment, Helper Execution Custody, Downstream Helper Red Team, and CocoaPods Build Subject gates are terminal SUCCESS; Field Provenance, Selective Graft, and Xcode are queued. The remaining known product-security gap on this otherwise richer current spine is vnode metadata custody: direct `capture_tuya_private_input_build_guard.py` still omits KQ_NOTE_ATTRIB from required capabilities and fflags. Do not use the stale PR body SHA over live GitHub.",
       "pr": 2805,
-      "headSHA": "fa35eb5181fe17b93f4875508683d99994336fe6"
+      "headSHA": "642c10758c55e730fb1583fdf4545207f5147952"
     },
     {
-      "id": "selected-successor-acceptance",
+      "id": "vnode-successor-not-clean-convergence",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Selected clean successor #2840 exact f3b3c31150e29699172b208dab59c2d3724a5f62 is based on #2838 and carries KQ_NOTE_ATTRIB on the clean #2825 authority line. Exact private-review commitment, helper execution, downstream red-team, CocoaPods build-subject, and dedicated portable+real-macOS vnode gates are terminal SUCCESS. Field Provenance is active, Xcode queued, and Selective Graft is red at final integration truth. This is not yet complete build-authority acceptance.",
+      "reason": "#2840 carries the KQ_NOTE_ATTRIB vnode repair on the older clean #2825/#2838 line and has moved again to actual exact head bc1a75bbd75829ecdc9477b42fad2422a47f9296 even though its body still names ce5dfa53. On bc1a75, Field Source Custody Current, Field Provenance, CocoaPods Vnode Attribute Current, Private Review Commitment/Helper/Downstream, and CocoaPods Build Subject are terminal SUCCESS; Selective Graft is in progress and Xcode queued. However compare from first #2840 head shows the exact tree now contains worker-only `.github/workflows/tmp-v14-capture-field-path-converge.yml`, and #2840 remains behind the latest #2805 exception-proxy/current security spine. Therefore #2840 is useful vnode/current-source evidence but not the clean final convergence candidate. Prefer the minimal accepted vnode production+permanent-test delta replayed onto the latest #2805 exact lineage after its moving head stabilizes, rather than whole-branch ancestry grafting.",
       "pr": 2840,
-      "headSHA": "f3b3c31150e29699172b208dab59c2d3724a5f62"
-    },
-    {
-      "id": "remaining-convergence-debt",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Before build-authority closure, the selected #2840 lineage must coherently recover THREE non-duplicated debts without whole-branch stale ancestry: (1) #2834 canonical Field gate hardening that wires/runs test_capture_field_accepted_source_path_contract.py and rejects obsolete direct build-window-guard invocation; (2) #2836 exact-Git guard-presence authority replacing mutable-worktree -f admission with replacement-blind ambient-config-isolated git cat-file proof; (3) #2805 fa35eb51 exception-proxy execution-custody closure, including production build-guard changes and permanent test_capture_private_review_exception_proxy_custody.py. The exception-proxy regression file is absent on #2840. After synthesis, rerun all impacted exact-head gates on one unchanged descendant.",
-      "pr": 2840,
-      "headSHA": "f3b3c31150e29699172b208dab59c2d3724a5f62"
+      "headSHA": "bc1a75bbd75829ecdc9477b42fad2422a47f9296"
     }
   ],
   "mode": "exclusive",
@@ -61,9 +53,9 @@
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "primaryPR": 2805,
-    "primaryHeadSHA": "fa35eb5181fe17b93f4875508683d99994336fe6",
-    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T08:49Z. #2840 is the clean vnode+Field-contract successor and has focused authority/vnode greens, but it is not complete. It still needs #2834 gate wiring/rejection, #2836 exact-Git guard-presence authority, and the latest #2805 fa35eb51 exception-proxy execution-custody production+regression delta. #2843 is adversarial QA evidence for mixed secure+legacy execution, not a substitute for canonical Field wiring. No descendant is accepted until one coherent moved head contains all required non-duplicated semantics and earns terminal exact-head Field/Graft/Xcode/security/vnode gates. PHYSICAL NO-GO remains."
+    "primaryHeadSHA": "642c10758c55e730fb1583fdf4545207f5147952",
+    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T08:57Z. Live #2805 642c107 now includes exact-Git guard presence, canonical Field path-contract negative custody, and exception-proxy execution custody; its focused security/build gates are green and heavy gates queued. Direct source still lacks KQ_NOTE_ATTRIB. #2840 bc1a75 has the vnode repair and current-source gates green but carries a temporary field-path materializer workflow and older security ancestry. The cleanest remaining synthesis is the narrow vnode production+permanent regression delta onto the latest stabilized #2805 lineage, followed by exact vnode/security/Field/Graft/Xcode reruns and clean-tree review. No current successor PR for that exact synthesis was found at the latest search. PHYSICAL NO-GO remains."
   },
   "tags": ["capture","p0","security","build-authority","legacy-import"]
 }
