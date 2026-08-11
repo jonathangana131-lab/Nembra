@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import importlib.util
 import json
 import re
 import subprocess
 import sys
+import types
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -51,6 +53,7 @@ CHILD_AUTHORITY_PATHS = (
     WORKFLOW_PATH,
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py",
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py",
+    "scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py",
 )
 PARENT_PINNED_PATHS = (
     "scripts/ci/es80_authenticated_stationary_final_go.py",
@@ -315,33 +318,51 @@ def review_v3(
     }
 
 
-def _current_generated_subject(root: Path) -> str:
-    helper = root / GENERATED_HELPER_PATH
+def _git_blob_oid(payload: bytes, accepted_oid: str) -> str:
+    header = b"blob " + str(len(payload)).encode("ascii") + b"\0"
+    if len(accepted_oid) == 40:
+        return hashlib.sha1(header + payload).hexdigest()
+    if len(accepted_oid) == 64:
+        return hashlib.sha256(header + payload).hexdigest()
+    raise GeneratedSubjectGoError("accepted generated-helper Git object ID has unsupported width")
+
+
+def _accepted_generated_helper_bytes(root: Path, source: str, base: Any) -> bytes:
+    accepted_oid = base.git(root, "rev-parse", f"{source}:{GENERATED_HELPER_PATH}").lower()
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_oid):
+        raise GeneratedSubjectGoError("accepted generated-helper Git blob identity is invalid")
+    payload = base.git_bytes(root, "show", f"{source}:{GENERATED_HELPER_PATH}")
+    if not isinstance(payload, bytes) or not payload or len(payload) > 2 * 1024 * 1024:
+        raise GeneratedSubjectGoError("accepted generated-helper Git blob has invalid bounded bytes")
+    if _git_blob_oid(payload, accepted_oid) != accepted_oid:
+        raise GeneratedSubjectGoError("generated-helper execution bytes do not match accepted Git blob")
+    return payload
+
+
+def _current_generated_subject(root: Path, source: str, base: Any) -> str:
+    payload = _accepted_generated_helper_bytes(root, source, base)
+    module = types.ModuleType("nembra_accepted_cocoapods_generated_build_subject")
+    module.__file__ = f"{source}:{GENERATED_HELPER_PATH}"
+    module.__package__ = ""
     try:
-        process = subprocess.run(
-            [
-                "/usr/bin/python3",
-                "-I",
-                "-B",
-                str(helper),
-                "--lockfile",
-                str(root / "Podfile.lock"),
-                "--pods",
-                str(root / "Pods"),
-                "--workspace",
-                str(root / "NembraCapture.xcworkspace"),
-            ],
-            cwd=root,
-            env={"PATH": "/usr/bin:/bin"},
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+        code = compile(payload, module.__file__, "exec", dont_inherit=True)
+        exec(code, module.__dict__)
+    except Exception as error:
+        raise GeneratedSubjectGoError("accepted generated-helper Git blob could not be evaluated") from error
+    if getattr(module, "SCHEMA", None) != GENERATED_SCHEMA.encode("ascii"):
+        raise GeneratedSubjectGoError("accepted generated-helper schema does not match Final-GO authority")
+    build_subject = getattr(module, "build_subject", None)
+    if not callable(build_subject):
+        raise GeneratedSubjectGoError("accepted generated-helper Git blob lacks build_subject authority")
+    try:
+        value = build_subject(
+            lockfile=root / "Podfile.lock",
+            pods=root / "Pods",
+            workspace=root / "NembraCapture.xcworkspace",
         )
-    except OSError as error:
-        raise GeneratedSubjectGoError("generated CocoaPods build-subject helper could not run") from error
-    value = process.stdout.strip()
-    if process.returncode != 0 or not HEX64.fullmatch(value) or value != value.lower():
+    except Exception as error:
+        raise GeneratedSubjectGoError("accepted generated-helper rejected the current CocoaPods subject") from error
+    if not isinstance(value, str) or not HEX64.fullmatch(value) or value != value.lower():
         raise GeneratedSubjectGoError("generated CocoaPods build subject could not be re-derived exactly")
     return value
 
@@ -352,7 +373,7 @@ def candidate_generated_authority(
     accepted_digest: str,
     *,
     base: Any,
-    derive_subject: Callable[[Path], str] = _current_generated_subject,
+    derive_subject: Callable[[Path, str, Any], str] = _current_generated_subject,
 ) -> dict[str, Any]:
     root = candidate_repo.expanduser().resolve(strict=True)
     accepted_digest = _canonical_digest(accepted_digest, "accepted CocoaPods generated build subject")
@@ -410,7 +431,7 @@ def candidate_generated_authority(
     if any(fragment not in text for text, fragment in required_fragments):
         raise GeneratedSubjectGoError("candidate source lacks converged generated-build authority enforcement")
 
-    current = derive_subject(root)
+    current = derive_subject(root, source, base)
     if current != accepted_digest:
         raise GeneratedSubjectGoError("candidate generated CocoaPods subject does not match reviewed authority")
     return {
@@ -506,7 +527,7 @@ def build(
     retained_ipa: Path,
     get: Callable[[str], tuple[bytes, dict[str, Any]]] | None = None,
     base_module: Any | None = None,
-    derive_subject: Callable[[Path], str] = _current_generated_subject,
+    derive_subject: Callable[[Path, str, Any], str] = _current_generated_subject,
     now: Any = None,
 ) -> dict[str, Any]:
     base = base_module or _load_base_module()
