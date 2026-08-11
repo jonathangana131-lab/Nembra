@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-54c8arm",
   "leaseId": "capture-build-primary-54c8arm-20260811-1155",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T11:55:00Z",
   "lastHeartbeatAt": "2026-08-11T12:10:13Z",
-  "leaseSeconds": 1,
+  "releasedAt": "2026-08-11T12:10:14Z",
+  "leaseSeconds": 2700,
   "branch": "repair/v14-field-untracked-prearm-sol-54c8arm-20260811",
   "pr": 2934,
   "sourceSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
   "currentHeadSHA": "423f394f77a2ad516cd651a904bfbb1e65b69098",
   "takeoverFromWorkerId": "sol-20260811-8b61c9",
   "takeoverReason": "Generation-1 primary lease expired after 2026-08-11T10:35:20Z. Live selected convergence #2907 advanced to d0b134ca and new expected-red #2913 mechanically exposed an untracked build-visible source insertion gap between endpoint audit and vnode arming. Take over primary to repair that exact current blocker without weakening tracked/private/generated custody.",
-  "yieldReason": "Fresh reconciliation found stronger already-active production successor #2924 on the same d0b134ca parent, with narrower field-input validation and corrected-witness validation #2926. Duplicate #2934 closed without acceptance; expire this lease immediately so canonical #2924 ownership is not blocked."
+  "outcome": "SUPERSEDED_DUPLICATE",
+  "checkpoint": "Fresh reconciliation found stronger already-active production successor #2924 on the same d0b134ca parent, with narrower field-input validation and corrected-witness validation #2926. Duplicate #2934 closed without acceptance; canonical #2924 preserved. PHYSICAL NO-GO."
 }
