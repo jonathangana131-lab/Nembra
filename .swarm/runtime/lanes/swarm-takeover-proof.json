@@ -6,7 +6,7 @@
   "title": "Atomic stale-lease takeover proof",
   "objective": "Exercise real GitHub compare-and-swap takeover semantics, then retire this proof lane.",
   "priority": 9,
-  "state": "IMPLEMENTING",
+  "state": "DONE",
   "dependencies": [],
   "blockers": [],
   "mode": "exclusive",
