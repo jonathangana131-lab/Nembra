@@ -28,6 +28,8 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         let identity = runtime.appendingPathComponent("Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")
         #expect(FileManager.default.fileExists(atPath: podspec.path))
         #expect(FileManager.default.fileExists(atPath: identity.path))
+        #expect(try posixPermissions(fixture.root.appendingPathComponent("LocalSecrets")) == 0o700)
+        #expect(try posixPermissions(runtime) == 0o700)
         #expect(try posixPermissions(podspec) == 0o600)
         #expect(try posixPermissions(identity) == 0o600)
 
@@ -99,6 +101,24 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec").path))
     }
 
+    @Test("writer bytes are digest pinned before credential input")
+    func tamperedWriterNeverExecutesOnCredentialStream() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let writer = fixture.root.appendingPathComponent("Scripts/provision_capture_tuya_identity_writer.py")
+        let sentinel = fixture.root.deletingLastPathComponent().appendingPathComponent("tampered-writer-executed")
+        let malicious = "import os\nopen(os.environ['NEMBRA_WRITER_SENTINEL'], 'w').write('executed')\n"
+        try Data(malicious.utf8).write(to: writer)
+
+        let result = try invoke(
+            fixture.script,
+            environment: ["NEMBRA_WRITER_SENTINEL": sentinel.path]
+        )
+        #expect(result.status != 0)
+        #expect(result.output.contains("writer bytes do not match the accepted digest"))
+        #expect(!FileManager.default.fileExists(atPath: sentinel.path))
+    }
+
     @Test("symlinked LocalSecrets fails before credential publication")
     func symlinkedLocalSecretsFailsClosed() throws {
         let fixture = try makeFixture()
@@ -148,17 +168,57 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(try posixPermissions(runtime.appendingPathComponent("Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")) == 0o600)
     }
 
+    @Test("publication and writer execution are pinned before secrets")
+    func descriptorBoundPublicationSourceContract() throws {
+        let shell = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh"),
+            encoding: .utf8
+        )
+        let writer = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity_writer.py"),
+            encoding: .utf8
+        )
+
+        #expect(shell.contains("WRITER_SHA256=\"920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34\""))
+        #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
+        #expect(shell.contains("/usr/bin/shasum -a 256"))
+        #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
+        #expect(!shell.contains("/usr/bin/python3 -I \"$WRITER\""))
+        let digestFence = shell.range(of: "[[ \"$CAPTURED_WRITER_SHA256\" == \"$WRITER_SHA256\" ]]")
+        let credentialRead = shell.range(of: "builtin read -r -s -p \"Tuya SmartLife SDK AppKey (input hidden): \" APP_KEY")
+        #expect(digestFence != nil)
+        #expect(credentialRead != nil)
+        if let digestFence, let credentialRead {
+            #expect(digestFence.lowerBound < credentialRead.lowerBound)
+        }
+
+        #expect(!shell.contains("/usr/bin/mktemp"))
+        #expect(!shell.contains("/bin/mv -f"))
+        #expect(writer.contains("O_NOFOLLOW"))
+        #expect(writer.contains("O_DIRECTORY"))
+        #expect(writer.contains("O_EXCL"))
+        #expect(writer.contains("dir_fd=parent_fd"))
+        #expect(writer.contains("src_dir_fd=parent_fd"))
+        #expect(writer.contains("dst_dir_fd=parent_fd"))
+    }
+
     private func makeFixture() throws -> (root: URL, script: URL) {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent("nembra-tuya-provisioner-\(UUID().uuidString)", isDirectory: true)
         let root = sandbox.appendingPathComponent("repo", isDirectory: true)
         let scripts = root.appendingPathComponent("Scripts", isDirectory: true)
         try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)
-        let source = repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh")
-        let target = scripts.appendingPathComponent("provision_capture_tuya_identity.sh")
-        try FileManager.default.copyItem(at: source, to: target)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: target.path)
-        return (root, target)
+
+        let sourceScript = repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh")
+        let targetScript = scripts.appendingPathComponent("provision_capture_tuya_identity.sh")
+        try FileManager.default.copyItem(at: sourceScript, to: targetScript)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: targetScript.path)
+
+        let sourceWriter = repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity_writer.py")
+        let targetWriter = scripts.appendingPathComponent("provision_capture_tuya_identity_writer.py")
+        try FileManager.default.copyItem(at: sourceWriter, to: targetWriter)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: targetWriter.path)
+        return (root, targetScript)
     }
 
     private func invoke(

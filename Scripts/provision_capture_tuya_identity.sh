@@ -8,7 +8,7 @@ fi
 
 # A direct operator invocation enters privileged Bash mode from the shebang,
 # which suppresses BASH_ENV/imported startup state. Close xtrace and executable
-# lookup before even resolving the checkout-owned private destination.
+# lookup before resolving or admitting the checkout-owned private destination.
 set +x
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 export PATH
@@ -17,131 +17,73 @@ LOCAL_SECRETS="$ROOT/LocalSecrets"
 # NEMBRA_TUYA_RUNTIME_DIR is deliberately not honored: private field identity
 # output is fixed to the checkout-owned ignored LocalSecrets tree.
 DEST="$LOCAL_SECRETS/TuyaRuntime"
-SOURCE_DIR="$DEST/Sources/NembraTuyaPrivateConfig"
-PODSPEC="$DEST/NembraTuyaPrivateConfig.podspec"
-IDENTITY_SWIFT="$SOURCE_DIR/NembraTuyaPrivateIdentity.swift"
+WRITER="$ROOT/Scripts/provision_capture_tuya_identity_writer.py"
+WRITER_SHA256="920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34"
+ROOT_FD=9
 
 umask 077
 
-# Credential output is intentionally pinned under the ignored checkout-owned
-# LocalSecrets tree. Refuse symlinked/non-directory components instead of
-# following caller-controlled filesystem redirections.
-for directory in "$LOCAL_SECRETS" "$DEST" "$DEST/Sources" "$SOURCE_DIR"; do
-  if [[ -L "$directory" ]]; then
-    echo "ERROR: refusing symlinked private Tuya destination: $directory" >&2
-    exit 4
-  fi
-  if [[ -e "$directory" && ! -d "$directory" ]]; then
-    echo "ERROR: private Tuya destination component is not a directory: $directory" >&2
-    exit 4
-  fi
-  /bin/mkdir -p "$directory"
-  /bin/chmod 700 "$directory"
-done
+# Admit the exact checkout directory before any credential input. FD 9 remains
+# inherited by the Python publication helper; the pathname is used only for a
+# later identity-drift comparison and for non-authoritative operator output.
+if ! exec 9<"$ROOT"; then
+  builtin printf '%s\n' 'ERROR: could not admit the checkout root before private credential input.' >&2
+  exit 4
+fi
+close_root_fd() {
+  exec 9<&- 2>/dev/null || true
+}
+trap close_root_fd EXIT
 
-for output in "$PODSPEC" "$IDENTITY_SWIFT"; do
-  if [[ -L "$output" ]]; then
-    echo "ERROR: refusing symlinked private Tuya identity output: $output" >&2
-    exit 4
-  fi
-  if [[ -e "$output" && ! -f "$output" ]]; then
-    echo "ERROR: private Tuya identity output is not a regular file: $output" >&2
-    exit 4
-  fi
-done
+[[ -f "$WRITER" && ! -L "$WRITER" ]] || {
+  builtin printf '%s\n' 'ERROR: descriptor-bound private Tuya identity writer is missing or symlinked.' >&2
+  exit 4
+}
+[[ -x /usr/bin/python3 && -x /usr/bin/shasum && -x /usr/bin/awk ]] || {
+  builtin printf '%s\n' 'ERROR: system Python 3 and SHA-256 tooling are required for private identity publication.' >&2
+  exit 4
+}
+
+# Capture the helper exactly once before credential input. Appending a non-newline
+# sentinel prevents command substitution from stripping the helper's trailing
+# newline; Python later executes these captured bytes with -c rather than
+# reopening the mutable worktree pathname.
+WRITER_CAPTURE="$({ /bin/cat -- "$WRITER"; builtin printf '\001'; })"
+[[ "$WRITER_CAPTURE" == *$'\001' ]] || {
+  builtin printf '%s\n' 'ERROR: could not capture private identity writer bytes.' >&2
+  exit 4
+}
+WRITER_SOURCE="${WRITER_CAPTURE%$'\001'}"
+unset WRITER_CAPTURE
+CAPTURED_WRITER_SHA256="$(builtin printf '%s' "$WRITER_SOURCE" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+[[ "$CAPTURED_WRITER_SHA256" == "$WRITER_SHA256" ]] || {
+  unset WRITER_SOURCE CAPTURED_WRITER_SHA256
+  builtin printf '%s\n' 'ERROR: private identity writer bytes do not match the accepted digest.' >&2
+  exit 4
+}
+unset CAPTURED_WRITER_SHA256
 
 builtin read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY
 builtin printf '\n'
 builtin read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET
 builtin printf '\n'
 
-[[ -n "$APP_KEY" ]] || { echo "ERROR: AppKey is empty." >&2; exit 2; }
-[[ -n "$APP_SECRET" ]] || { echo "ERROR: AppSecret is empty." >&2; exit 3; }
+[[ -n "$APP_KEY" ]] || { unset WRITER_SOURCE; echo "ERROR: AppKey is empty." >&2; exit 2; }
+[[ -n "$APP_SECRET" ]] || { unset WRITER_SOURCE; echo "ERROR: AppSecret is empty." >&2; exit 3; }
 
 APP_KEY_B64="$(builtin printf '%s' "$APP_KEY" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 APP_SECRET_B64="$(builtin printf '%s' "$APP_SECRET" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 unset APP_KEY APP_SECRET
 
-PODSPEC_TMP=""
-IDENTITY_TMP=""
-cleanup_private_identity_temps() {
-  [[ -z "$PODSPEC_TMP" ]] || /bin/rm -f -- "$PODSPEC_TMP"
-  [[ -z "$IDENTITY_TMP" ]] || /bin/rm -f -- "$IDENTITY_TMP"
-}
-trap cleanup_private_identity_temps EXIT HUP INT TERM
+if ! builtin printf '%s\0%s' "$APP_KEY_B64" "$APP_SECRET_B64" | /usr/bin/python3 -I -c "$WRITER_SOURCE" "$ROOT_FD" "$ROOT"; then
+  unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE
+  builtin printf '%s\n' 'ERROR: private Tuya identity publication failed closed.' >&2
+  exit 4
+fi
+unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE
 
-validate_private_temp() {
-  local candidate="$1"
-  local expected_prefix="$2"
-  local expected_parent="$3"
-  local actual_parent
-  actual_parent="$(cd "$(/usr/bin/dirname "$candidate")" && /bin/pwd -P)"
-  if [[ "$candidate" != "$expected_prefix"* || "$candidate" == "$expected_prefix" || -L "$candidate" || ! -f "$candidate" || "$actual_parent" != "$expected_parent" ]]; then
-    echo "ERROR: refusing unexpected private Tuya temporary output: $candidate" >&2
-    exit 4
-  fi
-}
-
-PODSPEC_TMP_PREFIX="$DEST/.NembraTuyaPrivateConfig.podspec."
-IDENTITY_TMP_PREFIX="$SOURCE_DIR/.NembraTuyaPrivateIdentity.swift."
-PODSPEC_TMP="$(/usr/bin/mktemp "${PODSPEC_TMP_PREFIX}XXXXXX")"
-validate_private_temp "$PODSPEC_TMP" "$PODSPEC_TMP_PREFIX" "$DEST"
-IDENTITY_TMP="$(/usr/bin/mktemp "${IDENTITY_TMP_PREFIX}XXXXXX")"
-validate_private_temp "$IDENTITY_TMP" "$IDENTITY_TMP_PREFIX" "$SOURCE_DIR"
-
-/bin/cat > "$PODSPEC_TMP" <<'RUBY'
-Pod::Spec.new do |s|
-  s.name = 'NembraTuyaPrivateConfig'
-  s.version = '1.0.0'
-  s.summary = 'Local-only Nembra Capture Tuya app identity.'
-  s.description = 'Generated private field-build configuration. Never commit this pod.'
-  s.homepage = 'https://localhost.invalid/nembra-private-config'
-  s.license = { :type => 'Private' }
-  s.author = { 'Nembra' => 'local-only' }
-  s.source = { :git => 'https://localhost.invalid/nembra-private-config.git', :tag => s.version.to_s }
-  s.platform = :ios, '17.0'
-  s.swift_version = '6.0'
-  s.source_files = 'Sources/NembraTuyaPrivateConfig/**/*.swift'
-end
-RUBY
-
-/bin/cat > "$IDENTITY_TMP" <<SWIFT
-import Foundation
-
-public enum NembraTuyaPrivateIdentity {
-    private static let encodedAppKey = "$APP_KEY_B64"
-    private static let encodedAppSecret = "$APP_SECRET_B64"
-
-    public static var appKey: String { decode(encodedAppKey) }
-    public static var appSecret: String { decode(encodedAppSecret) }
-
-    private static func decode(_ value: String) -> String {
-        guard let data = Data(base64Encoded: value),
-              let decoded = String(data: data, encoding: .utf8) else {
-            preconditionFailure("Invalid local Tuya identity encoding")
-        }
-        return decoded
-    }
-}
-SWIFT
-unset APP_KEY_B64 APP_SECRET_B64
-/bin/chmod 600 "$PODSPEC_TMP" "$IDENTITY_TMP"
-
-# Recheck directory custody immediately before publication. `mv` replaces a
-# final-path symlink rather than following it, while the parent checks keep the
-# publication rooted in the checkout-owned private tree.
-for directory in "$LOCAL_SECRETS" "$DEST" "$DEST/Sources" "$SOURCE_DIR"; do
-  [[ ! -L "$directory" && -d "$directory" ]] || {
-    echo "ERROR: private Tuya destination changed during provisioning: $directory" >&2
-    exit 4
-  }
-done
-/bin/mv -f "$PODSPEC_TMP" "$PODSPEC"
-PODSPEC_TMP=""
-/bin/mv -f "$IDENTITY_TMP" "$IDENTITY_SWIFT"
-IDENTITY_TMP=""
-trap - EXIT HUP INT TERM
-/bin/chmod 600 "$PODSPEC" "$IDENTITY_SWIFT"
+close_root_fd
+trap - EXIT
 
 /bin/cat <<EOF
 
@@ -150,5 +92,6 @@ Private Tuya app identity provisioned locally at:
 
 No plaintext credential was written to Git, shell history, host process argv, or stdout.
 The generated source is compiled only by the SDK-integrated Capture workspace.
+The writer source and checkout directory are pinned before credential input; filesystem publication is descriptor-bound and no-follow under that admitted checkout.
 Next: run Scripts/bootstrap_capture_tuya_sdk.sh.
 EOF
