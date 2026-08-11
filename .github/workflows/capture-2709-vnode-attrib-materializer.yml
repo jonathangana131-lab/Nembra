@@ -1,0 +1,154 @@
+name: Capture 2709 Vnode Attribute Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-2709-vnode-attrib-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact #2709 parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=61c56465700f08602137529887644c05e794c6cc
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          test "$(git diff --name-only "$parent" HEAD)" = '.github/workflows/capture-2709-vnode-attrib-materializer.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Add vnode attribute custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          guard=Path('Scripts/capture_tuya_private_input_build_guard.py')
+          s=guard.read_text()
+          required='''            "KQ_NOTE_EXTEND",
+              "KQ_NOTE_LINK",
+          '''
+          required2='''            "KQ_NOTE_EXTEND",
+              "KQ_NOTE_ATTRIB",
+              "KQ_NOTE_LINK",
+          '''
+          if s.count(required)!=1: raise SystemExit('required-flag anchor drift')
+          s=s.replace(required,required2,1)
+          flags='''            select.KQ_NOTE_EXTEND
+              | select.KQ_NOTE_LINK
+          '''
+          flags2='''            select.KQ_NOTE_EXTEND
+              | select.KQ_NOTE_ATTRIB
+              | select.KQ_NOTE_LINK
+          '''
+          if s.count(flags)!=1: raise SystemExit('fflags anchor drift')
+          guard.write_text(s.replace(flags,flags2,1))
+
+          test=Path('scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py')
+          test.write_text(r'''#!/usr/bin/env python3
+from __future__ import annotations
+import importlib.util
+from pathlib import Path
+from types import SimpleNamespace
+import sys
+import unittest
+from unittest import mock
+
+REPOSITORY=Path(__file__).resolve().parents[3]
+GUARD_PATH=REPOSITORY/'Scripts/capture_tuya_private_input_build_guard.py'
+spec=importlib.util.spec_from_file_location('capture_vnode_attrib_guard',GUARD_PATH)
+if spec is None or spec.loader is None: raise RuntimeError('could not load build guard')
+guard=importlib.util.module_from_spec(spec);sys.modules[spec.name]=guard;spec.loader.exec_module(guard)
+
+class FakeQueue:
+    def __init__(self): self.registrations=[]
+    def control(self,changes,max_events,timeout):
+        if changes:self.registrations.extend(changes)
+        return []
+    def close(self): pass
+class FakeSelect:
+    KQ_FILTER_VNODE=-4;KQ_EV_ADD=1;KQ_EV_ENABLE=4;KQ_EV_CLEAR=32
+    KQ_NOTE_DELETE=1;KQ_NOTE_WRITE=2;KQ_NOTE_EXTEND=4;KQ_NOTE_ATTRIB=8
+    KQ_NOTE_LINK=16;KQ_NOTE_RENAME=32;KQ_NOTE_REVOKE=64
+    def __init__(self): self.queue=FakeQueue()
+    def kqueue(self): return self.queue
+    def kevent(self,descriptor,*,filter,flags,fflags): return SimpleNamespace(ident=descriptor,filter=filter,flags=flags,fflags=fflags)
+
+class VnodeAttributeCustodyTests(unittest.TestCase):
+    def test_kqueue_subscription_includes_attribute_mutations(self):
+        fake=FakeSelect()
+        with mock.patch.object(guard,'select',fake):
+            backend=guard.KqueueVnodeBackend()
+            try:
+                backend.register(123)
+                self.assertEqual(len(fake.queue.registrations),1)
+                event=fake.queue.registrations[0]
+                self.assertNotEqual(event.fflags & fake.KQ_NOTE_ATTRIB,0)
+            finally: backend.close()
+
+if __name__=='__main__': unittest.main(verbosity=2)
+''')
+
+          workflow=Path('.github/workflows/capture-cocoapods-build-subject-redteam.yml')
+          w=workflow.read_text()
+          path_anchor='      - scripts/ci/tests/test_capture_cocoapods_coherent_generation.py\n'
+          if w.count(path_anchor)!=1: raise SystemExit('workflow path anchor drift')
+          w=w.replace(path_anchor,path_anchor+'      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py\n',1)
+          compile_anchor='          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_coherent_generation.py\n'
+          if w.count(compile_anchor)!=1: raise SystemExit('workflow compile anchor drift')
+          w=w.replace(compile_anchor,compile_anchor+'          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py\n',1)
+          run_anchor='''      - name: Require one coherent lock plus Pods plus workspace generation
+              shell: bash
+              run: |
+                set -euo pipefail
+                /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
+          '''
+          if w.count(run_anchor)!=1: raise SystemExit('workflow final-step anchor drift')
+          w=w.replace(run_anchor,run_anchor+'''\n      - name: Require vnode custody for generated metadata changes
+              shell: bash
+              run: |
+                set -euo pipefail
+                /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          ''',1)
+          workflow.write_text(w)
+          PY
+
+      - name: Validate exact production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          python3 scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
+          python3 scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
+          grep -Fq '"KQ_NOTE_ATTRIB"' Scripts/capture_tuya_private_input_build_guard.py
+          grep -Fq '| select.KQ_NOTE_ATTRIB' Scripts/capture_tuya_private_input_build_guard.py
+          grep -Fq '_ensure_fd_budget(len(watch_paths))' Scripts/capture_tuya_private_input_build_guard.py
+          git diff --check
+
+      - name: Publish clean child and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=61c56465700f08602137529887644c05e794c6cc
+          git rm .github/workflows/capture-2709-vnode-attrib-materializer.yml
+          git add Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py .github/workflows/capture-cocoapods-build-subject-redteam.yml
+          expected="$({ printf '%s\n' '.github/workflows/capture-cocoapods-build-subject-redteam.yml' 'Scripts/capture_tuya_private_input_build_guard.py' 'scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py'; } | sort)"
+          actual="$(git diff --cached --name-only "$parent" | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name 'jonathangana131-lab'
+          git config user.email 'jonathangana131@gmail.com'
+          git commit -m 'fix(capture): watch generated vnode attribute mutations'
+          git push origin HEAD:repair/v14-capture-2709-vnode-attrib-sol
