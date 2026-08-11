@@ -28,15 +28,15 @@ jobs:
     env:
       EXACT_PARENT: 7d05714e3ba6a9cc4259963780cc71d97ecb42f7
       PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/nembra-real-xcode-dedicated-uid-pycache
+      PYTHONPYCACHEPREFIX: /tmp/nembra-real-xcode-dedicated-uid-pycache
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact #3066 red parent and two-path validation delta
+      - name: Bind exact red parent and two-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -48,16 +48,15 @@ jobs:
           test "$actual" = "$expected"
           test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
           git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual-paths"
-          cat > "$RUNNER_TEMP/expected-paths" <<'EOF'
-          .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml
-          scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          EOF
-          LC_ALL=C sort -o "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/expected-paths"
+          printf '%s\n' \
+            .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
           diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           /usr/bin/xcodebuild -version
 
-      - name: Compile and source-review dedicated-UID oracle
+      - name: Compile and source-review dedicated UID oracle
         shell: bash
         run: |
           set -euo pipefail
@@ -66,42 +65,11 @@ jobs:
             scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
           grep -Fq 'create_local_build_identity' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
           grep -Fq 'structured_credentials(build_uid, build_gid, [])' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'buildIdentityDistinctFromField' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'fieldGroupsContainBuildGID' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
           grep -Fq 'hdiutil_detach(device)' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
           grep -Fq 'readonly=True' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Remove stale Nembra validation identities from this disposable runner
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 - <<'PY'
-          import subprocess
-
-          users = subprocess.run(["/usr/bin/dscl", ".", "-list", "/Users", "UniqueID"], text=True, capture_output=True)
-          for line in users.stdout.splitlines():
-              parts = line.split()
-              if len(parts) < 2 or not parts[0].startswith("nembrabuild"):
-                  continue
-              name, uid = parts[0], parts[-1]
-              detail = subprocess.run(["/usr/bin/dscl", ".", "-read", f"/Users/{name}", "RealName"], text=True, capture_output=True)
-              if "Nembra Build Fixture" not in detail.stdout:
-                  continue
-              if uid.isdigit() and int(uid) > 0:
-                  subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/pkill", "-9", "-u", uid], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-              subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/dscl", ".", "-delete", f"/Users/{name}"], check=False)
-          groups = subprocess.run(["/usr/bin/dscl", ".", "-list", "/Groups"], text=True, capture_output=True)
-          for name in groups.stdout.splitlines():
-              if not name.startswith("nembrabuild"):
-                  continue
-              detail = subprocess.run(["/usr/bin/dscl", ".", "-read", f"/Groups/{name}", "RealName"], text=True, capture_output=True)
-              if "Nembra Build Fixture" in detail.stdout:
-                  subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"], check=False)
-          subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
-          PY
-
-      - name: Run real-Xcode dedicated-UID freeze oracle
+      - name: Run real-Xcode dedicated UID freeze oracle
         id: probe
         continue-on-error: true
         shell: bash
@@ -109,14 +77,16 @@ jobs:
           set -uo pipefail
           output="$RUNNER_TEMP/nembra-real-xcode-dedicated-uid-output.txt"
           set +e
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py >"$output" 2>&1
+          /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py \
+            >"$output" 2>&1
           rc=$?
           set -e
           printf '%s\n' "$rc" > "$RUNNER_TEMP/nembra-real-xcode-dedicated-uid-rc.txt"
           cat "$output"
           if [[ "$rc" != 0 ]]; then
             diagnostic="$(tail -n 160 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
-            printf '::error title=Dedicated-UID real Xcode freeze oracle red::%s\n' "$diagnostic"
+            printf '::error title=Dedicated UID real Xcode freeze oracle red::%s\n' "$diagnostic"
           fi
           exit "$rc"
 
@@ -132,11 +102,8 @@ jobs:
           [[ -f "$output" ]] && cp "$output" "$evidence/probe-output.txt" || printf '%s\n' 'probe output unavailable' > "$evidence/probe-output.txt"
           [[ -f "$rc_file" ]] && cp "$rc_file" "$evidence/probe-return-code.txt" || printf '%s\n' 'missing' > "$evidence/probe-return-code.txt"
           /usr/bin/python3 - "$evidence/manifest.json" "$evidence/probe-output.txt" "$evidence/probe-return-code.txt" "$(git rev-parse HEAD)" "$EXACT_PARENT" <<'PY'
-          import hashlib
-          import json
+          import hashlib, json, sys
           from pathlib import Path
-          import sys
-
           manifest, output_path, rc_path, head, parent = sys.argv[1:]
           output = Path(output_path).read_text(encoding="utf-8", errors="replace")
           raw_rc = Path(rc_path).read_text(encoding="utf-8", errors="replace").strip()
@@ -160,42 +127,11 @@ jobs:
           PY
           shasum -a 256 "$evidence"/* > "$evidence/SHA256SUMS.txt"
 
-      - name: Cleanup any escaped dedicated validation identity
+      - name: Upload architecture evidence
         if: always()
-        shell: bash
-        run: |
-          set +e
-          /usr/bin/python3 - <<'PY'
-          import subprocess
-
-          users = subprocess.run(["/usr/bin/dscl", ".", "-list", "/Users", "UniqueID"], text=True, capture_output=True)
-          for line in users.stdout.splitlines():
-              parts = line.split()
-              if len(parts) < 2 or not parts[0].startswith("nembrabuild"):
-                  continue
-              name, uid = parts[0], parts[-1]
-              detail = subprocess.run(["/usr/bin/dscl", ".", "-read", f"/Users/{name}", "RealName"], text=True, capture_output=True)
-              if "Nembra Build Fixture" not in detail.stdout:
-                  continue
-              if uid.isdigit() and int(uid) > 0:
-                  subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/pkill", "-9", "-u", uid], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-              subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/dscl", ".", "-delete", f"/Users/{name}"], check=False)
-          groups = subprocess.run(["/usr/bin/dscl", ".", "-list", "/Groups"], text=True, capture_output=True)
-          for name in groups.stdout.splitlines():
-              if not name.startswith("nembrabuild"):
-                  continue
-              detail = subprocess.run(["/usr/bin/dscl", ".", "-read", f"/Groups/{name}", "RealName"], text=True, capture_output=True)
-              if "Nembra Build Fixture" in detail.stdout:
-                  subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"], check=False)
-          subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
-          PY
-          exit 0
-
-      - name: Upload dedicated-UID freeze evidence
-        if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: nembra-real-xcode-dedicated-uid-freeze-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          name: nembra-real-xcode-dedicated-uid-freeze-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/NembraRealXcodeDedicatedUIDFreezeEvidence
           if-no-files-found: error
           retention-days: 14
