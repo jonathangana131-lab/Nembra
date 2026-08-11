@@ -185,9 +185,22 @@ def device_hash(path:Path):
     if not t or any(c.isspace() for c in t): raise GoError("private device identifier must be one token")
     return sha(t.encode())
 
+INSTALLER_ENV_ALLOWLIST=("HOME","TMPDIR","LANG","LC_ALL","LC_CTYPE","USER","LOGNAME")
+INSTALLER_TRUSTED_PATH="/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin"
+
+def installer_environment(device_path:Path)->dict[str,str]:
+    # The Final-GO issuer owns the process environment. Never inherit caller Bash startup
+    # hooks, exported functions, secret-bearing CI variables, or caller-prepended PATH.
+    env={"PATH":INSTALLER_TRUSTED_PATH,"BASH_ENV":"/dev/null","ENV":"/dev/null"}
+    for key in INSTALLER_ENV_ALLOWLIST:
+        value=os.environ.get(key)
+        if value: env[key]=value
+    env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device_path)
+    return env
+
 def installer(repo:Path,source:str,device:Path):
-    root=repo.expanduser().resolve(strict=True); device_path=canonical_private_path(device,"private intended-device identifier"); env=os.environ.copy(); env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device_path)
-    try:p=subprocess.run(["/bin/bash",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    root=repo.expanduser().resolve(strict=True); device_path=canonical_private_path(device,"private intended-device identifier"); env=installer_environment(device_path)
+    try:p=subprocess.run(["/bin/bash","--noprofile","--norc",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     except OSError as e: raise GoError("private installer execution failed") from e
     if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
     return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
