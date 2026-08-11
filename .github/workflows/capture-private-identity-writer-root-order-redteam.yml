@@ -1,0 +1,30 @@
+name: Capture Private Identity Writer-Root Order Red Team
+
+on:
+  pull_request:
+    branches:
+      - repair/v14-private-identity-root-custody-sol
+    paths:
+      - Scripts/provision_capture_tuya_identity.sh
+      - scripts/ci/tests/test_capture_private_identity_writer_root_order.py
+      - .github/workflows/capture-private-identity-writer-root-order-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  require-root-before-writer-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout diagnostic subject
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Compile regression
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_identity_writer_root_order.py
+
+      - name: Require checkout-root authority before writer pathname trust
+        run: python3 scripts/ci/tests/test_capture_private_identity_writer_root_order.py
