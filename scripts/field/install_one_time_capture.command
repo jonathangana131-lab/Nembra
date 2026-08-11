@@ -270,10 +270,10 @@ verify_private_tuya_inputs
 APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"
 [[ -d "$APP" ]] || die "Build finished but the standalone Nembra Capture.app was not found at $APP"
 SIGNED_APP_CUSTODY_HELPER_PATH="scripts/ci/capture_signed_app_install_custody.py"
-SIGNED_APP_CUSTODY_HELPER_BLOB="$(/usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_CUSTODY_HELPER_PATH" 2>/dev/null)" || \
+SIGNED_APP_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_CUSTODY_HELPER_PATH" 2>/dev/null)" || \
     die "Signed-app custody helper is missing from the exact accepted Git tree."
 [[ "$SIGNED_APP_CUSTODY_HELPER_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Signed-app custody helper Git blob identity is malformed."
-SIGNED_APP_CUSTODY_HELPER_BASE64="$(/usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" | /usr/bin/base64)" || \
+SIGNED_APP_CUSTODY_HELPER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" | /usr/bin/base64)" || \
     die "Could not capture signed-app custody helper from the accepted Git object."
 [[ -n "$SIGNED_APP_CUSTODY_HELPER_BASE64" ]] || die "Captured signed-app custody helper is empty."
 [[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \

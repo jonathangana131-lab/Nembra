@@ -84,6 +84,16 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         self.assertGreaterEqual(blob_marker, 0)
         self.assertGreaterEqual(decode_marker, 0)
         self.assertGreaterEqual(hash_marker, 0)
+        self.assertIn(
+            'SIGNED_APP_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse',
+            source,
+        )
+        self.assertIn(
+            'SIGNED_APP_CUSTODY_HELPER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob',
+            source,
+        )
+        self.assertNotIn('SIGNED_APP_CUSTODY_HELPER_BLOB="$(/usr/bin/git rev-parse', source)
+        self.assertNotIn('SIGNED_APP_CUSTODY_HELPER_BASE64="$(/usr/bin/git cat-file blob', source)
         self.assertLess(blob_marker, indexes["fingerprint"])
         self.assertLess(decode_marker, indexes["fingerprint"])
         self.assertLess(hash_marker, indexes["fingerprint"])
