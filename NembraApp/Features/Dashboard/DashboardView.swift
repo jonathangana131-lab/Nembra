@@ -138,7 +138,8 @@ struct DashboardView: View {
     private func accessibilityCockpit(personality: DashboardModePersonality) -> some View {
         HStack(alignment: .center, spacing: 12) {
             accessibilityStatusSummary
-                .frame(width: 188, maxHeight: .infinity, alignment: .topLeading)
+                .frame(width: 188, alignment: .leading)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
 
             DashboardSpeedInstrumentView(modePersonality: personality)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -149,7 +150,8 @@ struct DashboardView: View {
                 Spacer(minLength: 0)
                 accessibilityControlStrip
             }
-            .frame(width: 188, maxHeight: .infinity, alignment: .topTrailing)
+            .frame(width: 188, alignment: .trailing)
+            .frame(maxHeight: .infinity, alignment: .topTrailing)
         }
     }
 
