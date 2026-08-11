@@ -1,0 +1,87 @@
+name: TEMP V14 Field Source Contract GPT56 R2
+
+on:
+  push:
+    branches:
+      - repair/v14-field-source-contract-gpt56-20260811-r2
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-field-source-contract-gpt56-20260811-r2
+          fetch-depth: 0
+      - name: Bind exact current parent and source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 2d2b1197eab18570195532a1d401756d5c9582d2 HEAD
+          test "$(git rev-parse HEAD:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift)" = 553023a6a749845b5ef18ce6f349b119cd300881
+          test "$(git rev-parse HEAD:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift)" = 67a51e93b43412069aa2757d541bacad3b9dd0cd
+          test "$(git rev-parse HEAD:scripts/ci/tests/test_capture_tuya_private_input_provenance.py)" = a074b9957770c8ed536cff89a275fcd8df62b5ba
+      - name: Materialize current accepted-source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_materialize_field_source_contract_gpt56.py
+      - name: Validate repaired contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e scripts/ci/tmp_materialize_field_source_contract_gpt56.py
+          test ! -e .github/workflows/tmp-v14-field-source-contract-gpt56.yml
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          intended = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift').read_text()
+          ordering = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift').read_text()
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          required = [
+              'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"',
+              'verify_accepted_checkout_source "Private workspace bootstrap changed accepted-source inputs."',
+              'verify_accepted_checkout_source "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."',
+              'run_authority_git show "$SOURCE_SHA:$relative_path"',
+          ]
+          for token in required:
+              if token not in installer:
+                  raise SystemExit(f'missing production authority token: {token}')
+          if 'git status --porcelain=v1 --untracked-files=all' in intended:
+              raise SystemExit('stale ignore-sensitive field contract remains')
+          if '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' in ordering:
+              raise SystemExit('stale direct bootstrap ordering contract remains')
+          if 'run_accepted_source_bash' not in ordering or 'ls-tree' not in ordering:
+              raise SystemExit('accepted-source ordering contract was not materialized')
+          PY
+          git diff --check
+      - name: Verify exact publish path set
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-field-source-contract-gpt56.yml
+          git add -A
+          /usr/bin/python3 - <<'PY'
+          import subprocess
+          expected = {
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift',
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift',
+              'scripts/ci/tests/test_capture_tuya_private_input_provenance.py',
+              '.github/workflows/tmp-v14-field-source-contract-gpt56.yml',
+          }
+          actual = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines())
+          if actual != expected:
+              raise SystemExit(f'unexpected publish path set: {sorted(actual)}')
+          PY
+      - name: Publish permanent test-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra V14 GPT56"
+          git config user.email "nembra-v14-gpt56@users.noreply.github.com"
+          git commit -m "Capture: align field accepted-source contracts"
+          git push origin HEAD:repair/v14-field-source-contract-gpt56-20260811-r2
