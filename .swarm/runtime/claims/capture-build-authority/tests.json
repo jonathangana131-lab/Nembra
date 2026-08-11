@@ -9,12 +9,13 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:11:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:13:00Z",
   "leaseSeconds": 1800,
-  "branch": "",
-  "pr": 2907,
+  "branch": "redteam/v14-field-selected-xcode-custody-sol-f4c2e7-20260811",
+  "pr": 2939,
   "sourceSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
-  "currentHeadSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
+  "currentHeadSHA": "2129781be6a62e91cf33c8e150a6817edbbe9b49",
   "takeoverFromWorkerId": "sol-20260811-4c47a9",
-  "takeoverReason": "generation-2 tests slot was explicitly released after publishing #2913/#2915/#2917; perform a non-duplicate adversarial audit of exact #2907 for any remaining build-authority inputs while active primary/integration own production repair paths"
+  "takeoverReason": "generation-2 tests slot was explicitly released after publishing #2913/#2915/#2917; non-duplicate audit found the live field path still does not custody the system-selected Xcode developer tree after caller DEVELOPER_DIR is fenced",
+  "checkpoint": "Published test-only expected-red #2939 exact 2129781be6a62e91cf33c8e150a6817edbbe9b49 on #2907 d0b134ca. It re-anchors the distinct selected-Xcode custody invariant from historical #1173: capture xcode-select -p, root/nonwritable ancestry custody, and Xcode 27 admission before physical device/build use. #2915 caller DEVELOPER_DIR and #2917 residual child environment remain separate. PHYSICAL NO-GO."
 }
