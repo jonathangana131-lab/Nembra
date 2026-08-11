@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "204020-9f8ce73b2cf34f15",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-1315r8",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Capture exact-head selectable-state reconciliation at main d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. App-visible #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 is an accepted UI ingredient after terminal exact-head Xcode success, but it is not physical authority. Build #2982 exact current 8650f62e2d8b4d516414c3b85a2c3862ea0ed20c is an intermediate materializer head with selected-Xcode custody FAILURE and is not selectable. Private-identity convergence #2993 moved again to exact 0008d0750dc5298c05ab5e072179c66992683ad7; its Field provenance and integration-audit jobs are queued and Xcode is path-policy skipped, so prior 1f31dbf evidence is stale. Signed-install remains actively owned and blocked by confirmed compiler-output-origin red #2955. Final-GO #2921 exact 471cc025b332f4df8b43a98d709710aeb4e0698f has exact Final-GO security SUCCESS but Xcode run 31532784381 remains in progress. No current security/build/private/final-go lineage may be promoted into a physical GO. PHYSICAL NO-GO remains authoritative.",
+  "createdAt": "2026-08-11T20:40:20Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "appVisibleIngredient": {"pr": 2940, "headSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27", "state": "ACCEPTED_APP_VISIBLE_INGREDIENT_ONLY"},
+    "build": {"pr": 2982, "headSHA": "8650f62e2d8b4d516414c3b85a2c3862ea0ed20c", "state": "INTERMEDIATE_MATERIALIZER_RED_NOT_SELECTABLE"},
+    "privateIdentity": {"pr": 2993, "headSHA": "0008d0750dc5298c05ab5e072179c66992683ad7", "state": "MOVED_HEAD_GATES_PENDING"},
+    "signedInstall": {"blockerPR": 2955, "blockerHeadSHA": "afdd329d8041f909c4d77fc86d78f73953bba81b", "state": "ACTIVE_OWNER_CONFIRMED_ORIGIN_RED"},
+    "finalGo": {"pr": 2921, "headSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f", "securityRun": 31532784360, "securityConclusion": "success", "xcodeRun": 31532784381, "xcodeStatus": "in_progress"},
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
