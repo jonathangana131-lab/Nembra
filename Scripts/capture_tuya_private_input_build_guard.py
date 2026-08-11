@@ -227,9 +227,6 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     _add_tree_watch_paths(paths, inputs.security_build, label="private security build input tree")
     _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")
 
-    # Preserve the original private-only API for isolated callers. Production
-    # field CLI supplies generated roots and receives checkout ancestry plus the
-    # externally committed private witness/key custody below.
     if inputs.generated_pods is not None and inputs.generated_workspace is not None:
         repository_root = _lexical_absolute(inputs.lockfile.parent)
         field_paths = (
@@ -384,14 +381,14 @@ def _verify_accepted_private_review_commitment(inputs: PrivateInputs) -> None:
             key_path=inputs.private_review_key,
             expected_tag=accepted,
         )
-        provenance.verify_record(
+        current = provenance.build_record(
             lockfile=inputs.lockfile,
             security_podspec=inputs.security_podspec,
             security_build=inputs.security_build,
             identity_podspec=inputs.identity_podspec,
             identity_sources=inputs.identity_sources,
-            record_path=inputs.private_provenance_record,
         )
+        provenance.verify_record(inputs.private_provenance_record, current)
     except (private_review.PrivateReviewCommitmentError, provenance.ProvenanceError) as error:
         raise BuildGuardError(
             f"private build inputs no longer match the externally accepted review commitment: {error}"
