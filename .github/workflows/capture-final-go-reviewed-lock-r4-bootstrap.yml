@@ -1,0 +1,54 @@
+name: Capture Final GO Reviewed Lock R4 Bootstrap
+
+on:
+  push:
+    branches:
+      - recovery/v14-final-go-reviewed-lock-r4-sol
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Regenerate valid R4 materializer from reviewed R3 logic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show a1b85e99dc8848130bc56ac0fa07db131d1ddf80:.github/workflows/capture-final-go-reviewed-lock-r3-materializer.yml > /tmp/r3.yml
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          src=Path('/tmp/r3.yml').read_text()
+          src=src.replace('Capture Final GO Reviewed Lock R3 Materializer','Capture Final GO Reviewed Lock R4 Materializer')
+          src=src.replace('recovery/v14-final-go-reviewed-lock-r3-sol','recovery/v14-final-go-reviewed-lock-r4-sol')
+          src=src.replace('capture-final-go-reviewed-lock-r3-materializer.yml','capture-final-go-reviewed-lock-r4-materializer.yml')
+          lines=src.splitlines()
+          inside=False
+          for i,line in enumerate(lines):
+              if line.startswith("          extra='''"):
+                  inside=True
+                  continue
+              if inside:
+                  if line.strip()=="'''":
+                      if len(line)-len(line.lstrip())<10:
+                          lines[i]='          '+line
+                      inside=False
+                      continue
+                  if len(line)-len(line.lstrip())<10:
+                      lines[i]='          '+line
+          if inside: raise SystemExit('unterminated embedded extra test block')
+          out='\n'.join(lines)+'\n'
+          if "\n def test_prechecked_device_digest" in out: raise SystemExit('R4 YAML indentation still unsafe')
+          Path('.github/workflows/capture-final-go-reviewed-lock-r4-materializer.yml').write_text(out)
+          PY
+          git rm .github/workflows/capture-final-go-reviewed-lock-r4-bootstrap.yml
+          git config user.name 'jonathangana131-lab'
+          git config user.email 'jonathangana131@gmail.com'
+          git add .github/workflows/capture-final-go-reviewed-lock-r4-materializer.yml
+          git commit -m 'ci(capture): regenerate valid reviewed-lock materializer'
+          git push origin HEAD:recovery/v14-final-go-reviewed-lock-r4-sol
