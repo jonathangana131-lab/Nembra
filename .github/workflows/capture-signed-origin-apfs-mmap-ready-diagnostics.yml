@@ -1,0 +1,162 @@
+name: Capture Signed Origin APFS Mmap READY Diagnostics
+
+on:
+  push:
+    branches:
+      - validation/v14-apfs-mmap-ready-diagnostics-sol-1607k9
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mmap-ready-diagnostics:
+    name: Classify mmap writer pre-READY permission failure
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind diagnostics to exact failed mmap witness
+        shell: bash
+        env:
+          FAILED_PARENT: 93feb6160ae053dbc71c9cb0919f78f59494eeba
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          git cat-file -e "${FAILED_PARENT}^{commit}"
+          changed="$(git diff --name-only "$FAILED_PARENT"...HEAD | LC_ALL=C sort)"
+          wanted='.github/workflows/capture-signed-origin-apfs-mmap-ready-diagnostics.yml'
+          test "$changed" = "$wanted"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Re-run exact witness with temporary pre-open identity diagnostics
+        id: diagnose
+        shell: bash
+        run: |
+          set -uo pipefail
+          witness='scripts/ci/tests/test_capture_signed_app_apfs_mmap_freeze.py'
+          backup="$RUNNER_TEMP/nembra-apfs-mmap-witness.original.py"
+          output="$RUNNER_TEMP/nembra-apfs-mmap-ready-diagnostic.txt"
+          cp "$witness" "$backup"
+          restore() { cp "$backup" "$witness"; }
+          trap restore EXIT
+
+          /usr/bin/python3 -I - "$witness" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          needle = '''import mmap
+          import os
+          import sys
+
+          target = sys.argv[1]
+          fd = os.open(target, os.O_RDWR)
+          '''
+          replacement = '''import json
+          import mmap
+          import os
+          import sys
+
+          target = sys.argv[1]
+
+          def _nembra_path_state(path):
+              try:
+                  metadata = os.stat(path)
+                  return {
+                      "path": path,
+                      "uid": metadata.st_uid,
+                      "gid": metadata.st_gid,
+                      "mode": oct(metadata.st_mode & 0o7777),
+                      "readable": os.access(path, os.R_OK),
+                      "writable": os.access(path, os.W_OK),
+                      "executable": os.access(path, os.X_OK),
+                  }
+              except OSError as error:
+                  return {
+                      "path": path,
+                      "statError": type(error).__name__,
+                      "errno": error.errno,
+                      "message": str(error),
+                  }
+
+          parent = os.path.dirname(target)
+          workspace = os.path.dirname(parent)
+          print(
+              "NEMBRA_MMAP_CHILD_PREOPEN="
+              + json.dumps(
+                  {
+                      "uid": os.getuid(),
+                      "euid": os.geteuid(),
+                      "gid": os.getgid(),
+                      "egid": os.getegid(),
+                      "groups": sorted(os.getgroups()),
+                      "workspace": _nembra_path_state(workspace),
+                      "mount": _nembra_path_state(parent),
+                      "target": _nembra_path_state(target),
+                  },
+                  sort_keys=True,
+              ),
+              file=sys.stderr,
+              flush=True,
+          )
+          fd = os.open(target, os.O_RDWR)
+          '''
+          if source.count(needle) != 1:
+              raise SystemExit("diagnostic patch target is missing or ambiguous")
+          path.write_text(source.replace(needle, replacement), encoding="utf-8")
+          PY
+
+          /usr/bin/python3 -m py_compile "$witness"
+          set +e
+          sudo /usr/bin/python3 -B -I "$witness" >"$output" 2>&1
+          rc=$?
+          set -e
+          restore
+          trap - EXIT
+          cat "$output"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Retain exact pre-READY diagnostic
+        shell: bash
+        env:
+          DIAGNOSTIC_RC: ${{ steps.diagnose.outputs.rc }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/nembra-apfs-mmap-ready-diagnostic.txt"
+          test -f "$output"
+          if ! grep -q 'NEMBRA_MMAP_CHILD_PREOPEN=' "$output"; then
+            escaped="$(tail -c 12000 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=APFS mmap READY diagnostic missing::%s\n' "$escaped"
+            exit 1
+          fi
+          diagnostic="$(grep 'NEMBRA_MMAP_CHILD_PREOPEN=' "$output" | tail -n 1 | /usr/bin/python3 -c 'import sys; s=sys.stdin.read().strip(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+          printf '::notice title=APFS mmap pre-open identity::%s\n' "$diagnostic"
+          printf 'Underlying exact witness exit=%s; this workflow is diagnostics only and never promotes physical authority.\n' "$DIAGNOSTIC_RC"
+
+      - name: Preserve diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: apfs-mmap-ready-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/nembra-apfs-mmap-ready-diagnostic.txt
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Diff and worktree hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 93feb6160ae053dbc71c9cb0919f78f59494eeba HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
