@@ -1,0 +1,61 @@
+name: Capture Private Dependency Guard Execution Subject Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_private_dependency_guard_execution_subject_red_team.py
+      - .github/workflows/capture-private-dependency-guard-execution-subject-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutable-guard-execution-subject:
+    name: Reject mutable canonical guard execution bytes
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact validation child to #2993
+        shell: bash
+        env:
+          ATTACKED_PARENT: ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$source_sha" = "$expected"
+          git cat-file -e "${ATTACKED_PARENT}^{commit}"
+          changed_paths="$(git diff --name-only "$ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-private-dependency-guard-execution-subject-red-team.yml' \
+            'scripts/ci/tests/test_capture_private_dependency_guard_execution_subject_red_team.py')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Validation child must remain exactly two-path/test-only. Changed paths:\n' >&2
+            printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove mutable sibling guard can execute before custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_dependency_guard_execution_subject_red_team.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_dependency_guard_execution_subject_red_team.py
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Attacked private-identity parent: ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab\n'
+          printf 'No credentials, CocoaPods resolution, Xcode/device operation, Bluetooth, Tuya traffic, or physical experiment occurred.\n'
