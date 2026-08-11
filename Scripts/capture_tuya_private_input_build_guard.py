@@ -18,17 +18,24 @@ class BuildGuardError(RuntimeError):
     pass
 
 
-def _load_provenance_module():
-    helper = Path(__file__).with_name("capture_tuya_private_input_provenance.py")
-    spec = importlib.util.spec_from_file_location("capture_tuya_private_input_provenance", helper)
+def _load_helper(module_name: str, filename: str):
+    helper = Path(__file__).with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, helper)
     if spec is None or spec.loader is None:
-        raise BuildGuardError("private-input provenance helper could not be loaded")
+        raise BuildGuardError(f"accepted build-input helper could not be loaded: {filename}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-provenance = _load_provenance_module()
+provenance = _load_helper(
+    "capture_tuya_private_input_provenance",
+    "capture_tuya_private_input_provenance.py",
+)
+build_subject = _load_helper(
+    "capture_cocoapods_build_subject",
+    "capture_cocoapods_build_subject.py",
+)
 
 
 @dataclass(frozen=True)
@@ -39,13 +46,55 @@ class PrivateInputs:
     identity_podspec: Path
     identity_sources: Path
 
+    @property
+    def generated_pods(self) -> Path:
+        return self.lockfile.parent / "Pods"
+
+    @property
+    def generated_workspace(self) -> Path:
+        return self.lockfile.parent / "NembraCapture.xcworkspace"
+
     def generation_snapshot(self):
-        return provenance._private_input_record_generation_snapshot(
+        private_snapshot = provenance._private_input_record_generation_snapshot(
             lockfile=self.lockfile,
             security_podspec=self.security_podspec,
             security_build=self.security_build,
             identity_podspec=self.identity_podspec,
             identity_sources=self.identity_sources,
+        )
+        try:
+            accepted_generated_sha256 = build_subject.read_attestation(self.lockfile)
+            observed_generated_sha256 = build_subject.build_subject_fingerprint(
+                pods=self.generated_pods,
+                workspace=self.generated_workspace,
+            )
+        except build_subject.BuildSubjectError as error:
+            raise BuildGuardError(
+                f"CocoaPods generated-build subject could not be admitted: {error}"
+            ) from error
+        if observed_generated_sha256 != accepted_generated_sha256:
+            raise BuildGuardError(
+                "CocoaPods generated-build subject does not match the reviewed Podfile.lock attestation"
+            )
+
+        # Re-sample private custody after the generated subject. The two halves
+        # are collected sequentially; this second private snapshot prevents one
+        # transient generation from being represented as a single accepted state.
+        final_private_snapshot = provenance._private_input_record_generation_snapshot(
+            lockfile=self.lockfile,
+            security_podspec=self.security_podspec,
+            security_build=self.security_build,
+            identity_podspec=self.identity_podspec,
+            identity_sources=self.identity_sources,
+        )
+        if final_private_snapshot != private_snapshot:
+            raise BuildGuardError(
+                "accepted private inputs changed while the generated-build subject was snapshotted"
+            )
+        return (
+            private_snapshot,
+            accepted_generated_sha256,
+            observed_generated_sha256,
         )
 
 
@@ -108,15 +157,17 @@ def _lstat_identity(path: Path) -> tuple[int, int, int, int, int, int, int]:
     try:
         metadata = path.lstat()
     except OSError as error:
-        raise BuildGuardError(f"private build input disappeared before vnode admission: {path}") from error
+        raise BuildGuardError(f"accepted build input disappeared before vnode admission: {path}") from error
     return provenance._stat_identity(metadata)
 
 
 def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
-    """Return every regular file + directory whose mutation could change admitted inputs.
+    """Return every real regular file/directory that can change accepted build inputs.
 
-    Symlink objects are covered by their containing directory watcher. The provenance
-    helper independently proves that any admitted symlink remains internal and stable.
+    Symlink objects are covered by their containing directory watcher. Private
+    provenance separately proves its admitted links stay internal. CocoaPods
+    links may intentionally point to LocalSecrets; this guard fingerprints their
+    link text while the private-input half separately guards the target bytes.
     """
 
     paths: set[Path] = {
@@ -124,9 +175,14 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
         inputs.security_podspec,
         inputs.identity_podspec,
     }
-    for root in (inputs.security_build, inputs.identity_sources):
+    for root in (
+        inputs.security_build,
+        inputs.identity_sources,
+        inputs.generated_pods,
+        inputs.generated_workspace,
+    ):
         if not root.is_dir() or root.is_symlink():
-            raise BuildGuardError(f"private build input tree is not one real directory: {root}")
+            raise BuildGuardError(f"accepted build input tree is not one real directory: {root}")
         paths.add(root)
         for current_root, directories, files in os.walk(root, topdown=True, followlinks=False):
             current = Path(current_root)
@@ -153,14 +209,14 @@ def _open_watched_inputs(paths: Iterable[Path], backend: EventBackend) -> tuple[
             try:
                 descriptor = os.open(path, flags)
             except OSError as error:
-                raise BuildGuardError(f"private build input could not be opened for build-window custody: {path}") from error
+                raise BuildGuardError(f"accepted build input could not be opened for build-window custody: {path}") from error
             try:
                 after = provenance._stat_identity(os.fstat(descriptor))
                 if before != after:
-                    raise BuildGuardError(f"private build input changed while vnode custody was armed: {path}")
+                    raise BuildGuardError(f"accepted build input changed while vnode custody was armed: {path}")
                 mode = os.fstat(descriptor).st_mode
                 if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
-                    raise BuildGuardError(f"private build input is not a watchable regular file/directory: {path}")
+                    raise BuildGuardError(f"accepted build input is not a watchable regular file/directory: {path}")
                 backend.register(descriptor)
             except Exception:
                 os.close(descriptor)
@@ -216,16 +272,16 @@ def run_guarded_build(
     try:
         watched = _open_watched_inputs(_watch_paths(inputs), backend)
 
-        # Registration itself has a race boundary. Reprove the entire admitted
-        # generation after every vnode watch is armed, then reject any queued
-        # mutation before the child build is allowed to start.
+        # Registration itself has a race boundary. Reprove the complete private
+        # + generated build subject after every vnode watch is armed, then reject
+        # any queued mutation before the child build is allowed to start.
         armed_snapshot = inputs.generation_snapshot()
         if armed_snapshot != initial_snapshot:
-            raise BuildGuardError("private build inputs changed while build-window monitoring was armed")
+            raise BuildGuardError("accepted build inputs changed while build-window monitoring was armed")
         queued = backend.events(0)
         if queued:
             raise BuildGuardError(
-                "private build inputs changed before xcodebuild admission: "
+                "accepted build inputs changed before xcodebuild admission: "
                 + _describe_events(queued, watched)
             )
 
@@ -235,28 +291,28 @@ def run_guarded_build(
             if events:
                 _stop_process(process)
                 raise BuildGuardError(
-                    "private build input mutation was observed while xcodebuild was running: "
+                    "accepted build input mutation was observed while xcodebuild was running: "
                     + _describe_events(events, watched)
                 )
 
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
-                "private build input mutation was observed at xcodebuild completion: "
+                "accepted build input mutation was observed at xcodebuild completion: "
                 + _describe_events(trailing, watched)
             )
 
-        # Keep every vnode watcher live while the final generation is sampled.
-        # A mutation after this point cannot have affected the already-finished
-        # child build; the install script still performs its independent crypto
-        # provenance verification immediately after this guard returns.
+        # Keep every vnode watcher live while the final complete generation is
+        # sampled. A later mutation cannot affect the already-finished child;
+        # the installer still performs its independent cryptographic private-
+        # input verification immediately after this guard returns.
         final_snapshot = inputs.generation_snapshot()
         if final_snapshot != initial_snapshot:
-            raise BuildGuardError("private build inputs changed across the guarded xcodebuild window")
+            raise BuildGuardError("accepted build inputs changed across the guarded xcodebuild window")
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
-                "private build input mutation was observed during final build-window verification: "
+                "accepted build input mutation was observed during final build-window verification: "
                 + _describe_events(trailing, watched)
             )
         return int(process.returncode or 0)
@@ -273,7 +329,7 @@ def run_guarded_build(
 
 def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     parser = argparse.ArgumentParser(
-        description="Run the Capture field build while macOS vnode custody watches every admitted private input."
+        description="Run the Capture field build while macOS vnode custody watches every accepted private and generated build input."
     )
     parser.add_argument("--lockfile", required=True, type=Path)
     parser.add_argument("--security-podspec", required=True, type=Path)
