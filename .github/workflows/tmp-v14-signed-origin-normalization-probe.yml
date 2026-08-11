@@ -1,0 +1,125 @@
+name: tmp V14 Signed Origin Normalization Probe
+
+on:
+  push:
+    branches:
+      - research/v14-signed-origin-normalization-4f51fg
+    paths:
+      - .github/workflows/tmp-v14-signed-origin-normalization-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Bind probe to signed-install parent plus one research workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 'f76e6ae54b4304df5b02db4f46a72f67daa276e2'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tmp-v14-signed-origin-normalization-probe.yml'
+
+      - name: Probe code-sign normalization on real Nembra Capture product
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          DERIVED="$RUNNER_TEMP/nembra-origin-normalization-derived"
+          UNSIGNED="$RUNNER_TEMP/Nembra Capture unsigned.app"
+          SIGNED="$RUNNER_TEMP/Nembra Capture adhoc.app"
+          REPORT="$RUNNER_TEMP/nembra-origin-normalization-report.txt"
+          rm -rf -- "$DERIVED" "$UNSIGNED" "$SIGNED" "$REPORT"
+
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$DERIVED" \
+            CODE_SIGNING_ALLOWED=NO \
+            build >"$RUNNER_TEMP/nembra-origin-normalization-xcodebuild.log" 2>&1
+
+          APP="$DERIVED/Build/Products/Debug-iphonesimulator/Nembra Capture.app"
+          test -d "$APP"
+          /usr/bin/ditto --noqtn "$APP" "$UNSIGNED"
+          /usr/bin/ditto --noqtn "$APP" "$SIGNED"
+
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$UNSIGNED/Info.plist")"
+          test -n "$EXECUTABLE"
+          test -f "$UNSIGNED/$EXECUTABLE"
+
+          unsigned_exec_sha="$(/usr/bin/shasum -a 256 "$UNSIGNED/$EXECUTABLE" | /usr/bin/awk '{print $1}')"
+          unsigned_info_sha="$(/usr/bin/shasum -a 256 "$UNSIGNED/Info.plist" | /usr/bin/awk '{print $1}')"
+
+          /usr/bin/codesign --force --deep --sign - "$SIGNED"
+          signed_exec_sha="$(/usr/bin/shasum -a 256 "$SIGNED/$EXECUTABLE" | /usr/bin/awk '{print $1}')"
+          cdhash_line="$(/usr/bin/codesign --display -vvv "$SIGNED" 2>&1 | /usr/bin/grep -E '^(CDHash|CandidateCDHashFull)=' | /usr/bin/tr '\n' ';' || true)"
+
+          /usr/bin/codesign --remove-signature "$SIGNED"
+          normalized_exec_sha="$(/usr/bin/shasum -a 256 "$SIGNED/$EXECUTABLE" | /usr/bin/awk '{print $1}')"
+          normalized_info_sha="$(/usr/bin/shasum -a 256 "$SIGNED/Info.plist" | /usr/bin/awk '{print $1}')"
+
+          exec_restored=false
+          info_restored=false
+          full_tree_restored=false
+          test "$unsigned_exec_sha" = "$normalized_exec_sha" && exec_restored=true
+          test "$unsigned_info_sha" = "$normalized_info_sha" && info_restored=true
+
+          set +e
+          /usr/bin/diff -qr "$UNSIGNED" "$SIGNED" >"$RUNNER_TEMP/nembra-origin-normalization-diff.txt"
+          diff_status="$?"
+          set -e
+          test "$diff_status" = 0 && full_tree_restored=true
+          diff_count="$(/usr/bin/wc -l < "$RUNNER_TEMP/nembra-origin-normalization-diff.txt" | /usr/bin/tr -d ' ')"
+
+          {
+            echo 'V14 signed-origin normalization probe (research only; no acceptance authority)'
+            echo "probe_head=$(git rev-parse HEAD)"
+            echo "attacked_parent=f76e6ae54b4304df5b02db4f46a72f67daa276e2"
+            echo "product=Nembra Capture Debug iphonesimulator"
+            echo "executable=$EXECUTABLE"
+            echo "unsigned_exec_sha256=$unsigned_exec_sha"
+            echo "adhoc_signed_exec_sha256=$signed_exec_sha"
+            echo "remove_signature_exec_sha256=$normalized_exec_sha"
+            echo "main_executable_restored_exactly=$exec_restored"
+            echo "info_plist_restored_exactly=$info_restored"
+            echo "full_app_tree_restored_exactly=$full_tree_restored"
+            echo "remaining_tree_diff_lines=$diff_count"
+            echo "signed_cdhash=$cdhash_line"
+            echo 'remaining_tree_diff_begin'
+            /usr/bin/sed -n '1,80p' "$RUNNER_TEMP/nembra-origin-normalization-diff.txt"
+            echo 'remaining_tree_diff_end'
+          } | /usr/bin/tee "$REPORT"
+
+          echo "report=$REPORT" >> "$GITHUB_OUTPUT"
+
+      - name: Publish research result to signed-install production PR
+        if: always() && steps.probe.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.probe.outputs.report }}
+        run: |
+          set -euo pipefail
+          {
+            echo '### Signed-origin normalization research probe'
+            echo
+            echo 'One-shot Mac/Xcode probe from the blocked #2871 exact parent. This is research evidence only and does not create acceptance or physical authority.'
+            echo
+            echo '```text'
+            /bin/cat -- "$REPORT"
+            echo '```'
+            echo
+            echo 'Interpretation must preserve #2955: a normalization path is useful only if a separately isolated/non-self-derived compiler-output reference can be established and the normalization itself does not ignore executable/resource changes. PHYSICAL NO-GO.'
+          } >"$RUNNER_TEMP/comment.md"
+          gh pr comment 2871 --body-file "$RUNNER_TEMP/comment.md"
