@@ -7,13 +7,14 @@ boundary: after one subject is admitted, its pathname can be replaced while
 later subjects are checked, so a finite sequence of endpoint re-hashes can still
 return an accepted tree while the physical candidate has diverged.
 
-This successor does not add another re-hash pass. It loads exact #2921 bytes
-from their immutable Git blob, holds every accepted regular-file inode open for
-the complete candidate-custody window, records symlink inode identity together
-with its accepted target, and finally re-binds every current tracked pathname to
-the held snapshot without calling the per-file hash primitive again. In-place
-mutation changes the held inode metadata; replacement changes the final namespace
-identity. Either condition fails closed before authority can return.
+This successor does not add another re-hash pass. It first lets exact #2921
+validate the Git object graph and raw candidate semantics, then holds every
+accepted regular-file inode open for the complete candidate-custody window,
+records symlink inode identity together with its accepted target, repeats the
+parent audit while those subjects are held, and finally re-binds every current
+tracked pathname to the held snapshot without calling the per-file hash primitive
+again. The preliminary audit is validation only; authority is earned only by the
+held snapshot plus the under-custody audit and final identity rebind.
 """
 from __future__ import annotations
 
@@ -332,22 +333,26 @@ def _rebind_snapshot(snapshot: _HeldTrackedSnapshot) -> None:
 
 
 @contextlib.contextmanager
-def _held_tracked_snapshot(root: Path, source: str) -> Iterator[_HeldTrackedSnapshot]:
+def _held_tracked_snapshot(
+    root: Path,
+    source: str,
+    entries: dict[str, tuple[bytes, str]],
+) -> Iterator[_HeldTrackedSnapshot]:
     root = root.expanduser().resolve(strict=True)
     source = source.lower()
+    accepted_entries = dict(entries)
     _parent._real_git_dir(root)
     if _parent._head_oid(root) != source:
         raise RuntimeError("candidate physical checkout HEAD differs from accepted source")
-    entries = _parent._tree_entries(root, source)
-    old_limit = _raise_fd_budget(len(entries))
+    old_limit = _raise_fd_budget(len(accepted_entries))
     subjects: list[_HeldTrackedSubject] = []
     try:
-        for relative, (mode, accepted_oid) in sorted(entries.items()):
+        for relative, (mode, accepted_oid) in sorted(accepted_entries.items()):
             subjects.append(_capture_subject(root, relative, mode, accepted_oid))
         snapshot = _HeldTrackedSnapshot(
             root=root,
             source=source,
-            entries=entries,
+            entries=accepted_entries,
             subjects=subjects,
             old_fd_limit=old_limit,
         )
@@ -369,14 +374,23 @@ def _held_tracked_snapshot(root: Path, source: str) -> Iterator[_HeldTrackedSnap
             raise close_error
 
 
+def _validated_entries(root: Path, source: str) -> tuple[Path, str, dict[str, tuple[bytes, str]]]:
+    """Run exact #2921 first so malformed Git semantics fail before path admission."""
+    root = root.expanduser().resolve(strict=True)
+    source = source.lower()
+    entries = _ORIGINAL_AUDIT(root, source)
+    return root, source, dict(entries)
+
+
 def _audit_candidate_tree(root: Path, source: str) -> dict[str, tuple[bytes, str]]:
-    """Run #2921's full raw audit while one held tracked snapshot spans it."""
-    with _held_tracked_snapshot(root, source) as snapshot:
+    """Validate first, then repeat #2921 while the accepted snapshot is held."""
+    root, source, validated_entries = _validated_entries(root, source)
+    with _held_tracked_snapshot(root, source, validated_entries) as snapshot:
         entries = _ORIGINAL_AUDIT(snapshot.root, snapshot.source)
         if entries != snapshot.entries:
             raise RuntimeError("candidate accepted tree changed across whole-tree descriptor snapshot")
-        # This is an identity re-bind, not another content re-hash. The accepted
-        # bytes came only from the held descriptors/symlink snapshot above.
+        # This is an identity re-bind, not another content re-hash. Accepted
+        # snapshot bytes came from the held descriptors/symlink snapshot above.
         _rebind_snapshot(snapshot)
         return entries
 
@@ -395,7 +409,9 @@ def _guarded_git_for_snapshot(
         return original_git(repo, *args)
     try:
         if args == ("status", "--porcelain=v1", "--untracked-files=all"):
-            _ORIGINAL_AUDIT(snapshot.root, snapshot.source)
+            entries = _ORIGINAL_AUDIT(snapshot.root, snapshot.source)
+            if entries != snapshot.entries:
+                raise RuntimeError("candidate accepted tree changed under whole-tree descriptor custody")
             _rebind_snapshot(snapshot)
             return ""
         return _parent._candidate_git_text(snapshot.root, snapshot.source, *args)
@@ -423,19 +439,21 @@ def _guarded_git_bytes_for_snapshot(
 
 @contextlib.contextmanager
 def _candidate_git_custody(base: Any, candidate_repo: Path, source: str) -> Iterator[None]:
-    """Keep the same held tracked snapshot alive for the full parent build."""
-    root = candidate_repo.expanduser().resolve(strict=True)
-    source = source.lower()
+    """Keep the same validated held snapshot alive for the full parent build."""
     original_git = getattr(base, "git", None)
     original_git_bytes = getattr(base, "git_bytes", None)
     if not callable(original_git) or not callable(original_git_bytes):
         raise PrivateReviewGoError("parent Final-GO Git authority is not patchable")
 
     try:
-        with _held_tracked_snapshot(root, source) as snapshot:
-            # Preserve #2921's raw-tree/field-input checks once, but do not nest a
-            # second descriptor snapshot inside this long-lived custody window.
-            _ORIGINAL_AUDIT(root, source)
+        root, source, validated_entries = _validated_entries(candidate_repo, source)
+        with _held_tracked_snapshot(root, source, validated_entries) as snapshot:
+            # Repeat the exact parent audit after descriptor admission. The
+            # preliminary audit above only vets object/semantic shape; it never
+            # substitutes for this under-custody proof.
+            entries = _ORIGINAL_AUDIT(snapshot.root, snapshot.source)
+            if entries != snapshot.entries:
+                raise RuntimeError("candidate accepted tree changed under whole-tree descriptor custody")
             _rebind_snapshot(snapshot)
 
             def guarded_git(repo: Path, *args: str) -> str:
