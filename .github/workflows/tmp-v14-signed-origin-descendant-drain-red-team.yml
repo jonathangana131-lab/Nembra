@@ -31,26 +31,25 @@ jobs:
           git merge-base --is-ancestor f76e6ae54b4304df5b02db4f46a72f67daa276e2 HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Confirm expected-red descendant lifetime witness
-        id: witness
+      - name: Confirm expected-red post-return output-authority witness
         shell: bash
         run: |
           set -euo pipefail
-          log="$RUNNER_TEMP/descendant-drain.log"
+          log="$RUNNER_TEMP/descendant-authority.log"
           set +e
           python3 scripts/ci/tests/test_capture_signed_origin_build_descendant_drain.py >"$log" 2>&1
           status="$?"
           set -e
           cat "$log"
           if [[ "$status" -eq 0 ]]; then
-            echo '::error title=Expected-red unexpectedly green::Current build guard no longer reproduces descendant lifetime gap; independently review the mechanism before treating this diagnostic as obsolete.'
+            echo '::error title=Expected-red unexpectedly green::Current build guard no longer reproduces post-return descendant output authority; independently review the mechanism before treating this diagnostic as obsolete.'
             exit 1
           fi
-          grep -F 'Capture build guard returned while a direct build descendant remained alive.' "$log" >/dev/null || {
-            echo '::error title=Diagnostic failed for wrong reason::Expected descendant lifetime assertion was not observed.'
+          grep -F 'Capture build guard returned while a build descendant retained post-return output mutation authority.' "$log" >/dev/null || {
+            echo '::error title=Diagnostic failed for wrong reason::Expected causal post-return output mutation assertion was not observed.'
             exit 1
           }
-          echo "Expected-red confirmed at $GITHUB_SHA: direct build process completion does not mechanically drain its descendant before guard return." >> "$GITHUB_STEP_SUMMARY"
+          echo "Expected-red confirmed at $GITHUB_SHA: a direct build descendant performed a mutation causally gated until after run_guarded_build returned." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish research checkpoint
         shell: bash
@@ -59,15 +58,15 @@ jobs:
         run: |
           set -euo pipefail
           cat >"$RUNNER_TEMP/comment.md" <<EOF
-          ### Signed-origin process-family drain expected-red
+          ### Signed-origin post-return builder-authority expected-red
 
           Research only; no production source or hardware authority moved.
 
-          Exact diagnostic head \`$GITHUB_SHA\` mechanically reproduced a second prerequisite for any transient-GID compiler-output repair: the current guarded-build lifecycle can return after its direct build child exits while a descendant remains alive. The witness uses the real \`run_guarded_build\` process admission/poll/completion/finally path with input-event mechanics stubbed out so the oracle is only process lifetime.
+          Exact diagnostic head \`$GITHUB_SHA\` mechanically reproduced a stronger form of the process-family prerequisite: using the real \`run_guarded_build\` admission/poll/completion/finally path, a descendant of the direct build child performed a mutation that was causally gated until **after** \`run_guarded_build\` returned.
 
-          This does **not** prove real Xcode leaks a descendant. The separate macOS/Xcode prerequisite probe must establish the actual process-family behavior. It does prove that a production output-custody design cannot infer full drain merely from the current direct-child wait. Before root lock / first protected snapshot, the trusted supervisor must mechanically prove the relevant builder process family is drained or has otherwise lost output authority.
+          This does **not** claim real Xcode leaks such a descendant. It proves only that direct-child completion is not itself mechanical revocation of descendant output authority. Any transient-GID compiler-output repair must prove the relevant builder process family is drained, or otherwise loses output authority, before root lock / first protected snapshot.
 
-          This finding is complementary to #2955: compiler-origin custody still requires the actual xcodebuild-produced subject to remain isolated through first protected snapshot. No post-build self-derived digest is promoted by this test.
+          This is complementary to #2955: actual compiler-produced output still has to remain causally bound through the first protected snapshot. No post-build self-derived digest is promoted by this test.
 
           **PHYSICAL NO-GO.**
           EOF
