@@ -15,6 +15,7 @@ import hashlib
 import importlib.util
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,7 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 BOOTSTRAP = REPOSITORY / "Scripts" / "bootstrap_capture_tuya_sdk.sh"
 PROVENANCE = REPOSITORY / "Scripts" / "capture_tuya_private_input_provenance.py"
 SUBJECT_HELPER = REPOSITORY / "Scripts" / "capture_cocoapods_generated_build_subject.py"
+PRIVATE_REVIEW_HELPER = REPOSITORY / "Scripts" / "capture_tuya_private_review_commitment.py"
 BUILD_GUARD = REPOSITORY / "Scripts" / "capture_tuya_private_input_build_guard.py"
 GENERATED_RELATIVE = Path("Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig")
 
@@ -47,9 +49,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         scripts = self.root / "Scripts"
         scripts.mkdir()
-        shutil.copy2(BOOTSTRAP, scripts / BOOTSTRAP.name)
-        shutil.copy2(PROVENANCE, scripts / PROVENANCE.name)
-        shutil.copy2(SUBJECT_HELPER, scripts / SUBJECT_HELPER.name)
+        for source in (BOOTSTRAP, PROVENANCE, SUBJECT_HELPER, PRIVATE_REVIEW_HELPER):
+            shutil.copy2(source, scripts / source.name)
 
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
@@ -67,6 +68,9 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             "enum NembraTuyaPrivateIdentity { static let configured = true }\n",
             encoding="utf-8",
         )
+        self.private_review_key = self.private_identity / "PrivateReviewAuthority.key"
+        self.private_review_key.write_bytes(bytes(range(32)))
+        self.private_review_key.chmod(0o600)
 
         self.fake_bin = self.root / "fake-bin"
         self.fake_bin.mkdir()
@@ -105,6 +109,13 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    @staticmethod
+    def digest_from_review(output: str, label: str) -> str:
+        match = re.search(rf"{re.escape(label)}: ([0-9a-f]{{64}})", output)
+        if match is None:
+            raise AssertionError(f"missing {label} in review output:\n{output}")
+        return match.group(1)
+
     def run_bootstrap(
         self,
         payload: str,
@@ -112,6 +123,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         review_only: bool,
         accepted_lock: str | None = None,
         accepted_subject: str | None = None,
+        accepted_private_hmac: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = {
             "PATH": f"{self.fake_bin}:/usr/bin:/bin",
@@ -124,6 +136,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             environment["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"] = accepted_lock
         if accepted_subject is not None:
             environment["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"] = accepted_subject
+        if accepted_private_hmac is not None:
+            environment["NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256"] = accepted_private_hmac
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review_only:
             command.append("--resolve-lock-for-review")
@@ -167,6 +181,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
 
         accepted_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
         accepted_subject = self.generated_subject()
+        accepted_private_hmac = self.digest_from_review(review.stdout, "Private Tuya review HMAC SHA-256")
         self.assertIn(f"Podfile.lock SHA-256: {accepted_lock}", review.stdout)
         self.assertIn(
             f"CocoaPods generated build subject SHA-256: {accepted_subject}",
@@ -177,6 +192,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             "REVIEWED_GRAPH",
             review_only=False,
             accepted_lock=accepted_lock,
+            accepted_private_hmac=accepted_private_hmac,
         )
         self.assertNotEqual(missing_subject.returncode, 0, missing_subject.stdout)
         self.assertIn("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256", missing_subject.stdout)
@@ -186,6 +202,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             review_only=False,
             accepted_lock=accepted_lock,
             accepted_subject=accepted_subject,
+            accepted_private_hmac=accepted_private_hmac,
         )
         self.assertEqual(accepted.returncode, 0, accepted.stdout)
         self.assertIn("Preaccepted CocoaPods generated build subject matched", accepted.stdout)
@@ -196,6 +213,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
 
         accepted_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
         accepted_subject = self.generated_subject()
+        accepted_private_hmac = self.digest_from_review(review.stdout, "Private Tuya review HMAC SHA-256")
         reviewed_generated = (self.root / GENERATED_RELATIVE).read_bytes()
 
         field = self.run_bootstrap(
@@ -203,6 +221,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             review_only=False,
             accepted_lock=accepted_lock,
             accepted_subject=accepted_subject,
+            accepted_private_hmac=accepted_private_hmac,
         )
         field_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
         substituted_generated = (self.root / GENERATED_RELATIVE).read_bytes()
