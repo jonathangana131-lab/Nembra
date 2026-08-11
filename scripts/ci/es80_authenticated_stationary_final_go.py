@@ -190,23 +190,53 @@ def candidate(repo:Path,source:str):
         actual_blob=git(root,"hash-object","--no-filters","--",relative).lower()
         if actual_blob!=blobs[key]: raise GoError("candidate authority worktree bytes differ from accepted Git blob")
     ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()
+    if "NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" not in ins or "hmac.compare_digest(actual_digest, expected_digest)" not in ins: raise GoError("candidate installer lacks intended-device digest rendezvous")
     if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
     return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
 
 def device_hash(path:Path):
-    p=canonical_private_path(path,"private intended-device identifier")
-    raw=regular(p,"private intended-device identifier",True)
-    try:t=raw.decode().strip()
+    p=path.expanduser()
+    if not p.is_absolute() or p.anchor!=os.sep or any(x in ("", ".", "..") for x in p.parts[1:]): raise GoError("private intended-device identifier path must be canonical absolute")
+    if not hasattr(os,"O_NOFOLLOW") or not hasattr(os,"O_DIRECTORY"): raise GoError("descriptor-bound private device custody unavailable")
+    clo=getattr(os,"O_CLOEXEC",0); parent=None; fd=None
+    try:
+        parent=os.open(os.sep,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|clo)
+        for component in p.parts[1:-1]:
+            nxt=os.open(component,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|clo,dir_fd=parent)
+            os.close(parent); parent=nxt
+        fd=os.open(p.parts[-1],os.O_RDONLY|os.O_NOFOLLOW|clo,dir_fd=parent)
+    except OSError as e:
+        raise GoError("private intended-device identifier unavailable through descriptor-bound path custody") from e
+    finally:
+        if parent is not None: os.close(parent)
+    try:
+        a=os.fstat(fd)
+        if not stat.S_ISREG(a.st_mode) or a.st_size<=0 or a.st_size>4096: raise GoError("private device identifier must be a small non-empty regular file")
+        if stat.S_IMODE(a.st_mode)!=0o600: raise GoError("private device identifier must be mode 0600")
+        if a.st_uid!=os.geteuid() or a.st_nlink!=1: raise GoError("private device identifier ownership/link custody invalid")
+        raw=b""
+        while len(raw)<=4096:
+            chunk=os.read(fd,4097-len(raw))
+            if not chunk: break
+            raw+=chunk
+        b=os.fstat(fd)
+    finally:
+        if fd is not None: os.close(fd)
+    stable=lambda s:(s.st_dev,s.st_ino,s.st_mode,s.st_uid,s.st_gid,s.st_nlink,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+    if stable(a)!=stable(b) or len(raw)!=a.st_size: raise GoError("private device identifier changed while reading")
+    try:t=raw.decode("utf-8")
     except UnicodeDecodeError as e: raise GoError("private device identifier invalid") from e
-    if not t or any(c.isspace() for c in t): raise GoError("private device identifier must be one token")
-    return sha(t.encode())
+    if t!=t.strip() or not re.fullmatch(r"[A-Za-z0-9-]+",t): raise GoError("private device identifier must be one canonical token without surrounding whitespace")
+    return sha(t.encode("utf-8"))
 
-def installer_environment(device:Path)->dict[str,str]:
+def installer_environment(device:Path,device_digest:str)->dict[str,str]:
     account=pwd.getpwuid(os.getuid()); device_path=canonical_private_path(device,"private intended-device identifier")
-    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path)}
+    digest=device_digest.lower()
+    if not HEX64.fullmatch(digest): raise GoError("private intended-device digest invalid")
+    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":digest}
 
-def installer(repo:Path,source:str,device:Path):
-    root=repo.expanduser().resolve(strict=True); env=installer_environment(device)
+def installer(repo:Path,source:str,device:Path,device_digest:str):
+    root=repo.expanduser().resolve(strict=True); env=installer_environment(device,device_digest)
     try:p=subprocess.run(["/bin/bash","--noprofile","--norc","-p",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     except OSError as e: raise GoError("private installer execution failed") from e
     if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
@@ -232,7 +262,7 @@ def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_rep
     control=control_authority(authority_repo,authority_pr,authority_run,get)
     source=canon(source,"source"); pr=pos(pr,"PR")
     ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(pr,review_id,source,vs,get); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
-    got=run_installer(candidate_repo,source,device_file); expected={"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
+    got=run_installer(candidate_repo,source,device_file,dh); expected={"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
     if got!=expected: raise GoError("private installer result drifted")
     signed=inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
     required_signed={"authority":"nembra-authenticated-stationary-retained-signed-artifact-v1","sourceCommitSHA":source,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"codesignVerified":True,"intendedDeviceIncluded":True,"physicalAuthorityCreated":False}
