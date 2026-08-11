@@ -9,6 +9,8 @@ on:
       - scripts/ci/tests/test_capture_private_identity_publication_races.py
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
       - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+      - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+      - scripts/ci/tests/test_capture_private_identity_crash_residue.py
       - .github/workflows/capture-private-identity-publication-races-redteam.yml
   pull_request:
     paths:
@@ -16,6 +18,8 @@ on:
       - scripts/ci/tests/test_capture_private_identity_publication_races.py
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
       - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+      - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+      - scripts/ci/tests/test_capture_private_identity_crash_residue.py
       - .github/workflows/capture-private-identity-publication-races-redteam.yml
   workflow_dispatch:
 
@@ -49,6 +53,8 @@ jobs:
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py
           /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
 
       - name: Reject staging substitution and detached ancestry
@@ -58,3 +64,5 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
