@@ -9,12 +9,12 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:21:55Z",
-  "lastHeartbeatAt": "2026-08-11T23:30:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:37:45Z",
   "leaseSeconds": 1800,
   "branch": "repair/v15-dashboard-sustained-perf-fresh-xcui-sol-r4",
   "pr": 3118,
   "sourceSHA": "55e13388a20d0445513d1d7083c41ed421e00195",
-  "currentHeadSHA": "c300ed2bb9e3a4c02d0185b071572bc3d6ecb624",
+  "currentHeadSHA": "db7773c5dfbd996568546cb11e63df5444ba1898",
   "takeoverFromWorkerId": "sol-20260811-current-perf-recovery",
   "takeoverReason": "The current performance PR declared generation 2 but no live swarm claim existed. Parent run 31535264357 failed before metrics because retained XCUI evidence proves a stale element-handle witness while fresh hierarchy semantics were already moving.",
   "ownedPaths": [
@@ -22,5 +22,5 @@
     "NembraApp/App/AppBootstrap.swift",
     "scripts/ci/dashboard_sustained_performance_xcuitest.swift"
   ],
-  "checkpoint": "Stacked draft #3118 moved to exact c300ed2b on #2980 exact 55e13388. Two performance-only paths now change. Witness fresh-queries dashboard.speed and dashboard.energy-rail on every pre/post observation and requires both Simulator-owned semantic values to move before and after the 3-second XCTHitchMetric/XCTCPUMetric/XCTMemoryMetric interval. Workflow additionally consumes parent adversarial review: every matched required Hitch/CPU/Memory row must contain a finite numeric measurement; exact identifier/displayName/unit/raw/numeric evidence is persisted; missing/invalid rows fail closed. Metrics JSON + manifest explicitly separate metricCaptureComplete from performanceAccepted=false, apply no invented Simulator threshold, and retain final combined-load iPhone 12 profiling as required. Local replay against retained first-green xcresult correctly observes finite CPU+Memory and fails specifically on missing Hitch. No DashboardView/NembraUITests product bytes changed. Await fresh exact child workflow; any predecessor queued/green becomes stale after c300ed2b. Simulator-only; ES80 PHYSICAL NO-GO."
+  "checkpoint": "Stacked draft #3118 is now exact db7773c5 on #2980 exact 55e13388. Two performance-only paths change in this child. Witness fresh-queries dashboard.speed and dashboard.energy-rail on every pre/post observation and requires both Simulator-owned semantic values to move before and after the 3-second XCTHitchMetric/XCTCPUMetric/XCTMemoryMetric interval. Workflow requires every matched Hitch/CPU/Memory row to contain a finite numeric measurement and persists exact identifier/displayName/unit/raw/numeric evidence; missing/invalid rows fail closed. Metrics JSON + manifest explicitly separate metricCaptureComplete from performanceAccepted=false with no invented Simulator threshold. Actions evidence labels now say iPhone 12 Simulator and manifest seals baselineKind=CoreSimulator so no physical-device implication remains. Local retained-artifact replay observes finite CPU+Memory and fails specifically on missing Hitch; synthetic NaN/empty cases fail closed. Any predecessor run on f119/c300 is stale after db7773c5. No DashboardView/NembraUITests product bytes changed. Await fresh exact child workflow. Simulator-only; ES80 PHYSICAL NO-GO."
 }
