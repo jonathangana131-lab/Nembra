@@ -7,13 +7,15 @@
   "workerId": "sol-20260811-1311qy",
   "leaseId": "capture-build-review-1311qy-20260811-2052",
   "generation": 9,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:52:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:52:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:54:30Z",
+  "releasedAt": "2026-08-11T20:54:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2988,
   "sourceSHA": "0f23ebe4aec1f69a9102d2d242a30d66de2e931e",
   "currentHeadSHA": "6b0c974d432205593f2d1157de06544a01145489",
-  "reviewTarget": "Review only the post-blocker ACL repair delta on #2988. Verify leaf and ancestor ACL policy actually closes file-write and namespace-replacement authority, is compatible with selected Xcode installation assumptions, and has a current-head behavioral regression/gates. PHYSICAL NO-GO."
+  "outcome": "ACL_BLOCKER_PERSISTS_INTERMEDIATE_MATERIALIZER_HEAD",
+  "releaseReason": "Exact delta from blocked 0f23ebe4 to 6b0c974d is one temporary provenance materializer workflow only; production installer/custody bytes are unchanged, so POSIX ACL leaf/ancestry blocker from review 4910593174 persists. Comment 5258676860 records that current SHA also contradicts stale body/no-temp-workflow claims and is not an acceptance candidate. Await materializer convergence plus real production ACL repair/current-head macOS witness. PHYSICAL NO-GO."
 }
