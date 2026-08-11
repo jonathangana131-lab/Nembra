@@ -1,0 +1,62 @@
+name: TEMP V14 Exception Guard Export (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/tmp-v14-exception-guard-export-sol.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+      - name: Rewrite CLI exception boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Scripts/capture_tuya_private_input_build_guard.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    except BuildGuardError as error:
+              print(f"ERROR: {error}", file=sys.stderr)
+              return 74
+          except provenance.ProvenanceError as error:
+              print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)
+              return 75
+          except generated_build.GeneratedBuildSubjectError as error:
+              print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)
+              return 76'''
+          old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines())
+          new = '''    except BuildGuardError as error:
+              print(f"ERROR: {error}", file=sys.stderr)
+              return 74
+          except Exception:
+              print("ERROR: unexpected build-window custody failure; field build refused", file=sys.stderr)
+              return 77'''
+          new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines())
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one CLI authority exception block; found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          if 'except provenance.ProvenanceError' in text or 'except generated_build.GeneratedBuildSubjectError' in text:
+              raise SystemExit('proxy-loading exception classifier remains')
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Compile hardened guard
+        run: python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+      - name: Export hardened guard
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-exception-guard-hardening
+          path: Scripts/capture_tuya_private_input_build_guard.py
+          if-no-files-found: error
+          retention-days: 1
