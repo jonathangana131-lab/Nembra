@@ -4,22 +4,22 @@
   "laneId": "capture-runtime-accessibility",
   "slot": "primary",
   "role": "accessibility-runtime-qa",
-  "workerId": "sol-20260811-0458-go-voiceover",
-  "leaseId": "capture-runtime-accessibility-primary-0458-20260811-1303",
-  "generation": 1,
+  "workerId": "sol-20260811-gpt56-transcript-retention",
+  "leaseId": "capture-runtime-accessibility-primary-gpt56-transcript-20260811-2117",
+  "generation": 2,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T13:03:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:07:20Z",
-  "leaseSeconds": 2700,
-  "branch": "test/v14-capture-runtime-voiceover-sol-0458-20260811",
-  "pr": 2967,
-  "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "currentHeadSHA": "771dce5df08db4ba4fec5b869309ba2077adea20",
+  "claimedAt": "2026-08-11T21:17:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:17:00Z",
+  "leaseSeconds": 1800,
+  "branch": "agent/v14-capture-runtime-voiceover-transcript-retention-sol-gpt56-20260811",
+  "pr": null,
+  "sourceSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
+  "currentHeadSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
+  "takeoverFromWorkerId": "sol-20260811-0458-go-voiceover",
+  "takeoverReason": "The prior runtime-accessibility lease expired many hours ago. Recover only the witness-source evidence-retention rung while active flagship tests worker #3007 exclusively owns .github/workflows/capture-runtime-voiceover.yml. Preserve fail-closed VoiceOver traversal and retain accumulated speech if moveForward throws; do not touch product/UI bytes or the occupied workflow path.",
   "ownedPaths": [
-    "scripts/ci/capture_runtime_voiceover_xcuitest.swift",
-    ".github/workflows/capture-runtime-voiceover.yml"
+    "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
   ],
-  "durableEvidence": "Parent 005b7c4 is accepted app-visible large-type/accessibility-semantic ingredient via Main Selective Graft 31490540822, Field Build Provenance 31490540890, Standalone Visual 31490540910 + human exact pixels, and Xcode 27 31490540888. Existing Xcode suite does not directly exercise standalone-root VoiceOver traversal. Apple Xcode 27 XCUIAutomation exposes XCUIDevice.shared.voiceOverService enable/currentSpeech/moveForward plus XCUIApplication(bundleIdentifier:) and performAccessibilityAudit. PR #2967 exact head 771dce5 contains exactly two test-only permanent paths relative to accepted product parent: the committed runtime XCTest witness and dedicated xcode-27 workflow. The workflow mechanically rejects any other path delta, builds/stamps/installs the exact public standalone Capture app, uses exact iPhone 12 / iOS 27 at Accessibility XXXL, injects the committed witness only into the runner worktree's existing UI-test target, and retains xcresult + manifest. No product/UI bytes changed.",
-  "acceptance": "On unchanged 771dce5df08db4ba4fec5b869309ba2077adea20, dedicated Capture Runtime VoiceOver must terminal-green: exact test-only diff bind, exact standalone app build/stamp with no Tuya dependency authority, iPhone 12 / iOS 27 AX XXXL baseline, XCUIApplication(bundleIdentifier:) runtime launch, strict accessibility audit, real VoiceOver service speech traversal proving ordered Physical capture locked -> Tuya Smart user code -> Create approval QR -> Engineering details, and no Start capture/Scan for scooter speech. Artifact manifest + xcresult retained. Any head move resets evidence.",
-  "intent": "Close the runtime VoiceOver/traversal gap explicitly left open by #2940 while preserving accepted product bytes and PHYSICAL NO-GO. If the runtime witness exposes a real semantic/order defect or audit failure, keep exact red evidence and repair only in a separate app-visible production successor before re-acceptance."
+  "checkpoint": "Parent #2973 exact 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9 executed one targeted runtime test and is runner-authority red (AXSpringBoardServerInstanceErrorDomain Code 16 plus AXAuditErrorDomain Code 0), not yet product-semantic red. Independent source review found the witness attaches Capture VoiceOver Runtime Transcript only after successful traversal; a thrown moveForward loses already-spoken evidence. Active #3007 owns workflow-only authority diagnostics. This lane repairs transcript retention only, rethrows every traversal error, and leaves PHYSICAL NO-GO unchanged.",
+  "acceptance": "Successor diff must touch only scripts/ci/capture_runtime_voiceover_xcuitest.swift, attach the accumulated VoiceOver transcript on traversal failure before rethrowing, preserve the success attachment and strict fail-closed oracle, and change no product/UI bytes. Later composition with #3007 must re-run exact-head Capture Runtime VoiceOver and prove runner authority, testsCount > 0, audit, ordered required speech, and forbidden authority absence. Any head move resets evidence. PHYSICAL NO-GO."
 }
