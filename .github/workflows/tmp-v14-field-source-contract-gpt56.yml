@@ -34,21 +34,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test ! -e scripts/ci/tmp_materialize_field_source_contract_gpt56.py
-          test ! -e .github/workflows/tmp-v14-field-source-contract-gpt56.yml
           /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
           intended = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift').read_text()
           ordering = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift').read_text()
           installer = Path('scripts/field/install_one_time_capture.command').read_text()
-          required = [
+          for token in (
               'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"',
               'verify_accepted_checkout_source "Private workspace bootstrap changed accepted-source inputs."',
               'verify_accepted_checkout_source "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."',
               'run_authority_git show "$SOURCE_SHA:$relative_path"',
-          ]
-          for token in required:
+          ):
               if token not in installer:
                   raise SystemExit(f'missing production authority token: {token}')
           if 'git status --porcelain=v1 --untracked-files=all' in intended:
@@ -59,23 +56,17 @@ jobs:
               raise SystemExit('accepted-source ordering contract was not materialized')
           PY
           git diff --check
-      - name: Stage only the permanent contract repair
+      - name: Publish validated permanent files
         shell: bash
         run: |
           set -euo pipefail
+          rm -f scripts/ci/tmp_materialize_field_source_contract_gpt56.py
           rm -f .github/workflows/tmp-v14-field-source-contract-gpt56.yml
           git add -A
-          mapfile -t staged < <(git diff --cached --name-only)
-          test "${#staged[@]}" -eq 4
-          printf '%s\n' "${staged[@]}" | grep -Fx 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift'
-          printf '%s\n' "${staged[@]}" | grep -Fx 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift'
-          printf '%s\n' "${staged[@]}" | grep -Fx 'scripts/ci/tests/test_capture_tuya_private_input_provenance.py'
-          printf '%s\n' "${staged[@]}" | grep -Fx '.github/workflows/tmp-v14-field-source-contract-gpt56.yml'
-          git diff --cached --quiet -- scripts/ci/tmp_materialize_field_source_contract_gpt56.py
-      - name: Publish permanent test-only repair
-        shell: bash
-        run: |
-          set -euo pipefail
+          git diff --cached --check
+          git diff --cached --name-only | grep -Fx 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift'
+          git diff --cached --name-only | grep -Fx 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift'
+          git diff --cached --name-only | grep -Fx 'scripts/ci/tests/test_capture_tuya_private_input_provenance.py'
           git config user.name "Nembra V14 GPT56"
           git config user.email "nembra-v14-gpt56@users.noreply.github.com"
           git commit -m "Capture: align field accepted-source contracts"
