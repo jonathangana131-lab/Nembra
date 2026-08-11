@@ -19,7 +19,7 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
 
         let acceptedDigest = try #require(script.range(of: ": \"${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?"))
-        let resolutionGuard = try #require(script.range(of: "/usr/bin/python3 -I \"$PRIVATE_INPUT_RESOLUTION_GUARD\" \\\n"))
+        let resolutionGuard = try #require(script.range(of: "/usr/bin/python3 -I \"$PRIVATE_INPUT_RESOLUTION_GUARD\""))
         let guardedInstall = try #require(script.range(of: "     \"$POD_BIN\" install --repo-update"))
 
         #expect(acceptedDigest.lowerBound < resolutionGuard.lowerBound)
