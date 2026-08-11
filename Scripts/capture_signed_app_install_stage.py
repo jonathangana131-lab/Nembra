@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a root-owned read-only staging subject for Nembra Capture installation.
+"""Create and verify a root-owned read-only Nembra Capture install subject.
 
 Root never opens the mutable build product. It creates an inaccessible outer directory,
 then a forked child drops permanently to the invoking field user's UID/GID and copies the
@@ -43,6 +43,54 @@ def _symlink_stays_inside(app_root: Path, link: Path, target: str) -> bool:
     relative_parent = PurePosixPath(link.relative_to(app_root).parent.as_posix())
     normalized = PurePosixPath(os.path.normpath(str(relative_parent / target)))
     return not normalized.parts or normalized.parts[0] != ".."
+
+
+def _frozen_mode(meta: os.stat_result) -> int:
+    return stat.S_IMODE(meta.st_mode)
+
+
+def _verify_frozen_tree(app_root: Path, gid: int) -> None:
+    try:
+        app_parent = app_root.parent
+        stage_root = app_parent.parent
+        expected_parent = DEFAULT_PARENT.resolve(strict=True)
+        if stage_root.parent.resolve(strict=True) != expected_parent:
+            raise StageError("staged app escaped the canonical private staging parent")
+        if not stage_root.name.startswith(PREFIX) or app_parent.name != "payload" or app_root.name != APP_NAME:
+            raise StageError("staged app path shape is not canonical")
+    except OSError as error:
+        raise StageError("staged app path could not be canonicalized") from error
+
+    for directory, required_mode in ((stage_root, 0o550), (app_parent, 0o550), (app_root, 0o550)):
+        meta = directory.lstat()
+        if not stat.S_ISDIR(meta.st_mode) or stat.S_ISLNK(meta.st_mode):
+            raise StageError("staged app ancestry is not a real directory")
+        if meta.st_uid != 0 or meta.st_gid != gid or _frozen_mode(meta) != required_mode:
+            raise StageError("staged app ancestry is not root-owned read-only custody")
+
+    for current_text, directory_names, file_names in os.walk(app_root, topdown=True, followlinks=False):
+        current = Path(current_text)
+        current_meta = current.lstat()
+        if current_meta.st_uid != 0 or current_meta.st_gid != gid or _frozen_mode(current_meta) != 0o550:
+            raise StageError("staged app directory custody drifted")
+        for name in directory_names + file_names:
+            path = current / name
+            meta = path.lstat()
+            if meta.st_uid != 0 or meta.st_gid != gid:
+                raise StageError("staged app node ownership drifted")
+            if stat.S_ISLNK(meta.st_mode):
+                if not _symlink_stays_inside(app_root, path, os.readlink(path)):
+                    raise StageError("staged app symlink escaped after freeze")
+                continue
+            if stat.S_ISDIR(meta.st_mode):
+                if _frozen_mode(meta) != 0o550:
+                    raise StageError("staged app directory became writable")
+                continue
+            if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1:
+                raise StageError("staged app node type or link count drifted")
+            mode = _frozen_mode(meta)
+            if mode & 0o222 or not mode & 0o440:
+                raise StageError("staged app file is writable or unreadable")
 
 
 def _freeze_tree(app_root: Path, uid: int, gid: int) -> None:
@@ -141,10 +189,16 @@ def stage(source: Path, uid: int, gid: int, parent: Path = DEFAULT_PARENT) -> Pa
         os.chmod(payload, 0o550)
         os.chown(outer, 0, gid)
         os.chmod(outer, 0o550)
+        _verify_frozen_tree(app, gid)
         return app
     except BaseException:
         shutil.rmtree(outer, ignore_errors=True)
         raise
+
+
+def verify(app: Path, gid: int) -> None:
+    _safe_ids(1, gid)
+    _verify_frozen_tree(app, gid)
 
 
 def cleanup(stage_root: Path) -> None:
@@ -166,12 +220,17 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--source", type=Path, required=True)
     create.add_argument("--uid", type=int, required=True)
     create.add_argument("--gid", type=int, required=True)
+    check = sub.add_parser("verify")
+    check.add_argument("--app", type=Path, required=True)
+    check.add_argument("--gid", type=int, required=True)
     remove = sub.add_parser("cleanup")
     remove.add_argument("--stage-root", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "stage":
             print(stage(args.source, args.uid, args.gid))
+        elif args.command == "verify":
+            verify(args.app, args.gid)
         else:
             cleanup(args.stage_root)
     except (StageError, OSError) as error:
