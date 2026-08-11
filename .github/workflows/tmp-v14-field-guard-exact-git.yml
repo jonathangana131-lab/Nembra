@@ -1,0 +1,84 @@
+name: TEMP Capture Field Guard Exact Git
+
+on:
+  push:
+    branches:
+      - repair/v14-field-guard-exact-git-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-field-guard-exact-git-sol-20260811
+          fetch-depth: 0
+      - name: Bind exact repair input
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Bind guard presence to exact accepted Git source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          installer = Path('scripts/field/install_one_time_capture.command')
+          text = installer.read_text()
+          old = '[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."'
+          new = 'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e "$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE" 2>/dev/null || die "Private Tuya build-window custody guard is missing from the exact accepted Git source."'
+          if text.count(old) != 1:
+              raise SystemExit(f'field guard worktree-presence anchor changed: {text.count(old)} matches')
+          installer.write_text(text.replace(old, new, 1))
+
+          regression = Path('scripts/ci/tests/test_capture_field_accepted_source_path_contract.py')
+          test = regression.read_text()
+          old_assert = '  \'[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]]\',\n  source,\n'
+          new_assert = '  \'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e "$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE"\',\n  source,\n'
+          if test.count(old_assert) != 1:
+              raise SystemExit(f'field guard regression anchor changed: {test.count(old_assert)} matches')
+          test = test.replace(old_assert, new_assert, 1)
+          absent_anchor = '        self.assertNotIn(\n  \'[[ -f "$TUYA_BUILD_WINDOW_GUARD" ]]\',\n'
+          stronger_absent = '        self.assertNotIn(\n  \'[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]]\',\n  source,\n  "field installer must not gate exact-source execution on mutable worktree guard presence",\n        )\n'
+          if stronger_absent not in test:
+              if test.count(absent_anchor) != 1:
+                  raise SystemExit(f'field guard absence anchor changed: {test.count(absent_anchor)} matches')
+              test = test.replace(absent_anchor, stronger_absent + absent_anchor, 1)
+          regression.write_text(test)
+          PY
+      - name: Validate stronger field guard authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract
+          python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+          grep -Fq 'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e "$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE"' scripts/field/install_one_time_capture.command
+          ! grep -Fq '[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]]' scripts/field/install_one_time_capture.command
+          git diff --check
+      - name: Expose clean exact-source candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-field-guard-exact-git.yml
+          find scripts -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet && { echo 'ERROR: no exact-source guard repair to publish' >&2; exit 1; }
+          git commit -m 'Capture: bind field guard presence to accepted Git source'
+          candidate="$(git rev-parse HEAD)"
+          tree="$(git rev-parse HEAD^{tree})"
+          echo "::notice title=Field Guard exact-source candidate::$candidate tree=$tree"
+          git push origin HEAD:repair/v14-field-guard-exact-git-sol-20260811
