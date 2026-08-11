@@ -97,15 +97,27 @@ final class NembraUITests: XCTestCase {
             "The shipping Navigation sheet must expose a stable accessibility surface."
         )
         XCTAssertTrue(app.navigationBars["Navigation"].waitForExistence(timeout: 2))
+
+        // SwiftUI's accessibilityIdentifier does not propagate through MapKit's
+        // native MKMapView bridge on iOS 27. Assert the actual XCUI Map element
+        // that the failed exact-head artifact proved is present, rather than
+        // requiring an identifier the platform drops.
+        let map = app.maps.firstMatch
         XCTAssertTrue(
-            app.descendants(matching: .any)["navigation.map"].waitForExistence(timeout: 2),
+            map.waitForExistence(timeout: 2),
             "Navigation must present its real MapKit surface rather than a placeholder."
         )
+        XCTAssertGreaterThan(map.frame.width, 300)
+        XCTAssertGreaterThan(map.frame.height, 200)
+
         XCTAssertTrue(
-            app.descendants(matching: .any)["navigation.empty"].waitForExistence(timeout: 2),
+            app.staticTexts["Find a destination"].waitForExistence(timeout: 2),
             "A fresh Navigation session must truthfully present the empty destination state."
         )
-        XCTAssertTrue(app.staticTexts["Find a destination"].exists)
+        XCTAssertTrue(
+            app.staticTexts["Search for a place or address. Nembra will preview it here without using scooter telemetry."]
+                .waitForExistence(timeout: 2)
+        )
         XCTAssertFalse(app.staticTexts["READY"].exists)
         XCTAssertFalse(app.staticTexts["RIDING"].exists)
 
