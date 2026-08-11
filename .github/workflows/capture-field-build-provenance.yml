@@ -126,10 +126,17 @@ jobs:
           grep -Fxq 'NembraCapture.xcworkspace/' "$ignore"
           grep -Fxq 'Podfile.lock' "$ignore"
           grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
-          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"
+          grep -Fq 'AUTHORITY_GIT_DIR="$ROOT/.git"' "$installer"
+          grep -Fq 'SOURCE_SHA="$(run_authority_git rev-parse --verify' "$installer"
           grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"
           grep -Fq 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA' "$installer"
-          grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' "$installer"
+          grep -Fq 'verify_accepted_checkout_source "Current checkout is not the exact accepted Capture source."' "$installer"
+          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' "$installer"
+          if grep -Fq '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' "$installer"; then
+            echo 'ERROR: field bootstrap must execute from exact accepted Git bytes, not a mutable checkout pathname.' >&2
+            exit 1
+          fi
+          grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' "$installer"
           if grep -Fq 'Exact accepted Capture source: $SOURCE_SHA' "$installer"; then
             echo 'ERROR: local SHA equality may identify the requested candidate but cannot self-assert GitHub software acceptance.' >&2
             exit 1
