@@ -83,6 +83,41 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testNavigationLaunchOpensTruthPreservingEmptySurfaceAndCapturesIt() {
+        let app = launch(scenario: "connected-stopped", orientation: .portrait)
+
+        let launchButton = app.buttons["navigation.launch"]
+        assertMinimumTouchTarget(launchButton, named: "Navigation launch", minimum: 54)
+        XCTAssertEqual(launchButton.label, "Navigation")
+        launchButton.tap()
+
+        let surface = app.descendants(matching: .any)["navigation.surface"]
+        XCTAssertTrue(
+            surface.waitForExistence(timeout: 3),
+            "The shipping Navigation sheet must expose a stable accessibility surface."
+        )
+        XCTAssertTrue(app.navigationBars["Navigation"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["navigation.map"].waitForExistence(timeout: 2),
+            "Navigation must present its real MapKit surface rather than a placeholder."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["navigation.empty"].waitForExistence(timeout: 2),
+            "A fresh Navigation session must truthfully present the empty destination state."
+        )
+        XCTAssertTrue(app.staticTexts["Find a destination"].exists)
+        XCTAssertFalse(app.staticTexts["READY"].exists)
+        XCTAssertFalse(app.staticTexts["RIDING"].exists)
+
+        keepScreenshot(named: "Navigation Empty Portrait")
+
+        let done = app.navigationBars["Navigation"].buttons["Done"]
+        XCTAssertTrue(done.exists)
+        done.tap()
+        XCTAssertFalse(surface.waitForExistence(timeout: 2))
+    }
+
+    @MainActor
     func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "riding", orientation: .landscapeRight)
