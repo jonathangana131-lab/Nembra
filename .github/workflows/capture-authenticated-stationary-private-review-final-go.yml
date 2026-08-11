@@ -60,11 +60,42 @@ jobs:
             scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
 
-      - name: Red-team raw candidate authority
+      - name: Preserve inherited private-review contracts
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            ParentPrivateReviewContractTests
+
+      - name: Prove raw candidate baseline and core.worktree isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            CandidateRawFilesystemAuthorityTests.test_child_executes_exact_2873_parent_blob \
+            CandidateRawFilesystemAuthorityTests.test_inherited_parent_candidate_runs_through_raw_authority \
+            CandidateRawFilesystemAuthorityTests.test_core_worktree_decoy_cannot_redirect_physical_candidate
+
+      - name: Reject repository-local fsmonitor execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            CandidateRawFilesystemAuthorityTests.test_local_fsmonitor_executes_under_ambient_status_but_never_under_candidate_custody
+
+      - name: Reject info attributes and clean filters
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            CandidateRawFilesystemAuthorityTests.test_info_attributes_clean_filter_executes_ambiently_but_raw_audit_rejects_without_execution
+
+      - name: Reject info exclude hidden physical input
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            CandidateRawFilesystemAuthorityTests.test_info_exclude_cannot_hide_untracked_physical_input
 
       - name: Red-team committed parent execution custody
         shell: bash
