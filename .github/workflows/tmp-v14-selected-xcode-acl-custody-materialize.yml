@@ -6,12 +6,17 @@ on:
       - repair/v14-selected-xcode-acl-custody-sol-20260811
     paths:
       - .github/workflows/tmp-v14-selected-xcode-acl-custody-materialize.yml
+  pull_request:
+    paths:
+      - .github/workflows/tmp-v14-selected-xcode-acl-custody-materialize.yml
+      - scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py
 
 permissions:
   contents: write
 
 jobs:
   materialize:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -19,6 +24,7 @@ jobs:
         with:
           ref: repair/v14-selected-xcode-acl-custody-sol-20260811
           fetch-depth: 0
+          persist-credentials: true
 
       - name: Bind construction to clean selected-tool parent
         shell: bash
@@ -28,9 +34,12 @@ jobs:
           set -euo pipefail
           git cat-file -e "${BASE}^{commit}"
           changed="$(git diff --name-only "$BASE"...HEAD | LC_ALL=C sort)"
-          test "$changed" = '.github/workflows/tmp-v14-selected-xcode-acl-custody-materialize.yml'
+          wanted="$(printf '%s\n' \
+            '.github/workflows/tmp-v14-selected-xcode-acl-custody-materialize.yml' \
+            'scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py')"
+          test "$changed" = "$wanted"
 
-      - name: Materialize ACL-aware production and permanent regression
+      - name: Materialize ACL-aware validator and permanent workflow
         shell: bash
         run: |
           set -euo pipefail
@@ -39,15 +48,8 @@ jobs:
 
           installer = Path('scripts/field/install_one_time_capture.command')
           source = installer.read_text(encoding='utf-8')
-          old_imports = '''import os
-          from pathlib import Path
-          import stat
-          '''
-          new_imports = '''import os
-          from pathlib import Path
-          import stat
-          import subprocess
-          '''
+          old_imports = "import os\nfrom pathlib import Path\nimport stat\n"
+          new_imports = "import os\nfrom pathlib import Path\nimport stat\nimport subprocess\n"
           if source.count(old_imports) != 1:
               raise SystemExit('installer custody import precondition moved')
           source = source.replace(old_imports, new_imports, 1)
@@ -83,177 +85,56 @@ jobs:
           source = source.replace(old_mode, new_mode, 1)
           installer.write_text(source, encoding='utf-8')
 
-          test_path = Path('scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py')
-          test_source = test_path.read_text(encoding='utf-8')
-          old_test_imports = '''from pathlib import Path
-          import re
-          import unittest
-          '''
-          new_test_imports = '''from pathlib import Path
-          import os
-          import re
-          import shlex
-          import subprocess
-          import tempfile
-          import unittest
-          '''
-          if test_source.count(old_test_imports) != 1:
-              raise SystemExit('selected-tool test import precondition moved')
-          test_source = test_source.replace(old_test_imports, new_test_imports, 1)
-
-          anchor = '''    def test_selected_xcodebuild_itself_interrogates_version(self) -> None:
-          '''
-          addition = r'''    def _extract_custody_program(self) -> str:
-              match = re.search(
-                  r"validate_root_custodied_path\(\)\s*\{.*?<<'PY_CUSTODY'\n(?P<body>.*?)\nPY_CUSTODY\n\}",
-                  self.source,
-                  re.DOTALL,
-              )
-              self.assertIsNotNone(match, "selected-tool custody helper must remain extractable")
-              assert match is not None
-              return match.group("body")
-
-              def test_custody_helper_rejects_extended_posix_acl_authority(self) -> None:
-              body = self._extract_custody_program()
-              self.assertIn('["/bin/ls", "-lde", os.fspath(current)]', body)
-              self.assertIn("selected Xcode custody refuses extended ACL authority", body)
-              self.assertIn("acl_probe.returncode != 0", body)
-
-              @unittest.skipUnless(hasattr(os, "uname") and os.uname().sysname == "Darwin", "real ACL fixture requires macOS")
-              def test_real_macos_named_user_write_acl_is_rejected(self) -> None:
-              user = os.environ.get("USER", "").strip()
-              self.assertTrue(user, "macOS ACL witness requires the runner user identity")
-              fixture_dir = Path(f"/Applications/NembraSelectedToolACL-{os.getpid()}")
-              fixture = fixture_dir / "xcodebuild-fixture"
-
-              def run(argv: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-                  return subprocess.run(argv, text=True, capture_output=True, check=check)
-
-              try:
-                  run(["/usr/bin/sudo", "-n", "/bin/mkdir", "-p", str(fixture_dir)])
-                  run([
-                      "/usr/bin/sudo", "-n", "/bin/sh", "-c",
-                      f"printf '#!/bin/sh\\nexit 0\\n' > {shlex.quote(str(fixture))}",
-                  ])
-                  run(["/usr/bin/sudo", "-n", "/usr/sbin/chown", "root:wheel", str(fixture_dir), str(fixture)])
-                  run(["/usr/bin/sudo", "-n", "/bin/chmod", "0755", str(fixture_dir), str(fixture)])
-
-                  program = self._extract_custody_program()
-                  with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as handle:
-                      handle.write(program)
-                      validator_path = Path(handle.name)
-                  try:
-                      env = {
-                          "PATH": "/usr/bin:/bin",
-                          "HOME": "/tmp",
-                          "LANG": "C",
-                          "LC_ALL": "C",
-                          "NEMBRA_CUSTODY_PATH": str(fixture),
-                          "NEMBRA_CUSTODY_KIND": "file",
-                      }
-                      baseline = subprocess.run(
-                          ["/usr/bin/python3", "-I", str(validator_path)],
-                          env=env,
-                          text=True,
-                          capture_output=True,
-                      )
-                      self.assertEqual(
-                          baseline.returncode,
-                          0,
-                          f"fixture must be admissible before ACL injection: {baseline.stderr}",
-                      )
-
-                      run([
-                          "/usr/bin/sudo", "-n", "/bin/chmod", "+a",
-                          f"{user} allow write", str(fixture),
-                      ])
-                      acl = run(["/bin/ls", "-lde", str(fixture)]).stdout
-                      self.assertIn(user, acl)
-                      self.assertRegex(acl, re.compile(r"(?i)allow\s+write"))
-
-                      before = fixture.read_bytes()
-                      mutation = subprocess.run(
-                          ["/bin/sh", "-c", f"printf '# acl-attacker-write\\n' >> {shlex.quote(str(fixture))}"],
-                          text=True,
-                          capture_output=True,
-                      )
-                      self.assertEqual(
-                          mutation.returncode,
-                          0,
-                          f"fixture must mechanically prove ACL-granted same-user write authority: {mutation.stderr}",
-                      )
-                      self.assertNotEqual(before, fixture.read_bytes())
-
-                      admitted = subprocess.run(
-                          ["/usr/bin/python3", "-I", str(validator_path)],
-                          env=env,
-                          text=True,
-                          capture_output=True,
-                      )
-                      self.assertNotEqual(
-                          admitted.returncode,
-                          0,
-                          "root-owned 0755 physical tool with a write-granting ACL must be rejected",
-                      )
-                      self.assertIn("refuses extended ACL authority", admitted.stderr)
-                  finally:
-                      validator_path.unlink(missing_ok=True)
-              finally:
-                  subprocess.run(
-                      ["/usr/bin/sudo", "-n", "/bin/rm", "-rf", "--", str(fixture_dir)],
-                      stdout=subprocess.DEVNULL,
-                      stderr=subprocess.DEVNULL,
-                      check=False,
-                  )
-
-          '''
-          # Fix intentional raw-template indentation to class scope before insertion.
-          addition = addition.replace('\n            def ', '\n    def ').replace('\n            @unittest', '\n    @unittest')
-          addition = addition.replace('\n            body =', '\n        body =').replace('\n            user =', '\n        user =')
-          if test_source.count(anchor) != 1:
-              raise SystemExit('selected-tool test insertion anchor moved')
-          test_source = test_source.replace(anchor, addition + anchor, 1)
-          test_path.write_text(test_source, encoding='utf-8')
-
           workflow = Path('.github/workflows/capture-field-selected-xcode-tool-file-custody.yml')
           workflow_source = workflow.read_text(encoding='utf-8')
+          old_watch = '      - scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py\n'
+          new_watch = old_watch + '      - scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py\n'
+          if workflow_source.count(old_watch) != 2:
+              raise SystemExit('permanent selected-tool workflow watch precondition moved')
+          workflow_source = workflow_source.replace(old_watch, new_watch)
           if 'real-macos-acl-custody:' in workflow_source:
               raise SystemExit('permanent ACL job already exists')
-          workflow_source += r'''
+          workflow_source += '''
 
-            real-macos-acl-custody:
-              name: Reject ACL-granted selected-tool mutation authority
-              if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-              runs-on: xcode-27
-              timeout-minutes: 12
-              steps:
-                - uses: actions/checkout@v4
-                  with:
-                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
-                    persist-credentials: false
+          real-macos-acl-custody:
+            name: Reject ACL-granted selected-tool mutation authority
+            if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+            runs-on: xcode-27
+            timeout-minutes: 12
+            steps:
+              - uses: actions/checkout@v4
+                with:
+                  ref: ${{ github.event.pull_request.head.sha || github.sha }}
+                  persist-credentials: false
 
-                - name: Bind ACL witness to exact checked-out head
-                  shell: bash
-                  env:
-                    EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-                  run: |
-                    set -euo pipefail
-                    test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+              - name: Bind ACL witness to exact checked-out head
+                shell: bash
+                env:
+                  EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+                run: |
+                  set -euo pipefail
+                  test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+                  test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-                - name: Prove real macOS ACL authority is rejected
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
-                    /usr/bin/python3 -I scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
-                    /bin/bash -n scripts/field/install_one_time_capture.command
+              - name: Prove real macOS ACL authority is rejected
+                shell: bash
+                run: |
+                  set -euo pipefail
+                  /usr/bin/python3 -m py_compile \\
+                    scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py \\
+                    scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py
+                  /usr/bin/python3 -I scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+                  /usr/bin/python3 -I scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py
+                  /bin/bash -n scripts/field/install_one_time_capture.command
           '''
           workflow.write_text(workflow_source, encoding='utf-8')
           PY
 
-          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py \
+            scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py
           /bin/bash -n scripts/field/install_one_time_capture.command
           git diff --check
 
@@ -265,7 +146,6 @@ jobs:
           git config user.email 'nembra-swarm@users.noreply.github.com'
           git add \
             scripts/field/install_one_time_capture.command \
-            scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py \
             .github/workflows/capture-field-selected-xcode-tool-file-custody.yml
           git commit -m 'security(capture): reject selected Xcode ACL mutation authority'
           git rm .github/workflows/tmp-v14-selected-xcode-acl-custody-materialize.yml
