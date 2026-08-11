@@ -18,6 +18,33 @@ struct SimulatorBatteryDisplayAuthorityAppSourceTests {
         #expect(forwardedAuthorityCount == 2)
     }
 
+    @Test("Simulator runtime cannot receive the production retained battery store")
+    func simulatorRuntimeKeepsRetainedBatteryStorageProductionOnly() throws {
+        let source = try readRepositoryFile("NembraApp/App/AppBootstrap.swift")
+        let runtime = try section(
+            in: source,
+            from: "static func makeRuntime(",
+            to: "private static func makeVehicleBootstrap"
+        )
+        let body = String(runtime)
+        let retainedStorageDeclaration = try section(
+            in: body,
+            from: "let retainedBatteryStorage:",
+            to: "let vehicleStore = VehicleStore("
+        )
+        let storage = String(retainedStorageDeclaration)
+
+        #expect(storage.contains("bootstrap.scenario == nil"))
+        #expect(storage.contains("? UserDefaultsRetainedBatterySnapshotStorage()"))
+        #expect(storage.contains(": nil"))
+        #expect(
+            storage.components(separatedBy: "UserDefaultsRetainedBatterySnapshotStorage()").count - 1 == 1
+        )
+        #expect(
+            body.components(separatedBy: "retainedBatteryStorage: retainedBatteryStorage").count - 1 == 1
+        )
+    }
+
     @Test("display-only Simulator battery can render but cannot become physical or range evidence")
     func displayOnlyAuthorityCannotBecomePhysicalRangeEvidence() throws {
         let observation = try #require(
@@ -54,6 +81,19 @@ struct SimulatorBatteryDisplayAuthorityAppSourceTests {
         #expect(!productionBranch.contains("batteryObservationAuthority: .measured"))
         #expect(simulatorBranch.contains("batteryObservationAuthority: .displayOnly"))
         #expect(!simulatorBranch.contains("batteryObservationAuthority: .measured"))
+    }
+
+    private func section(
+        in source: String,
+        from start: String,
+        to end: String
+    ) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected bounded source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
     }
 
     private func section(
