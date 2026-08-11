@@ -9,6 +9,7 @@ import unittest
 REPOSITORY = Path(__file__).resolve().parents[3]
 HELPER = REPOSITORY / "scripts/ci/capture_signed_app_install_custody.py"
 INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
+WORKFLOW = REPOSITORY / ".github/workflows/capture-signed-app-install-custody.yml"
 
 
 def load_helper():
@@ -44,6 +45,16 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
             (app / "escape").symlink_to(outside)
             with self.assertRaises(helper.CustodyError):
                 helper.fingerprint(app)
+
+    def test_permanent_workflow_reproves_acl_strip_on_real_macos(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("macos-acl-strip-custody:", workflow)
+        self.assertIn("runs-on: macos-15", workflow)
+        self.assertIn("ref: ${{ github.event.pull_request.head.sha || github.sha }}", workflow)
+        self.assertIn('/bin/chmod +a "$(id -un) allow write,delete,add_file,add_subdirectory,file_inherit,directory_inherit" "$source_app"', workflow)
+        self.assertIn('/usr/bin/ditto --noacl "$source_app" "$stage_root/Nembra Capture.app"', workflow)
+        self.assertIn('/usr/bin/find "$stage_root" -acl -print -quit', workflow)
+        self.assertIn('test -z "$staged_acl"', workflow)
 
     def test_installer_moves_authority_to_protected_stage_before_codesign(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
