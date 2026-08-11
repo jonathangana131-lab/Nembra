@@ -33,6 +33,7 @@ on:
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
       - scripts/ci/tests/test_tuya_account_transport_source.py
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
@@ -87,6 +88,8 @@ jobs:
           /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
           bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          /usr/bin/python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract
 
       - name: Verify source contract
         shell: bash
@@ -163,7 +166,12 @@ jobs:
           grep -Fq 'private_identity_podspec_sha256' "$private_provenance"
           grep -Fq 'private_identity_sources_tree_sha256' "$private_provenance"
           grep -Fq 'O_NOFOLLOW' "$private_provenance"
-          grep -Fq 'run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" snapshot' "$bootstrap"
+          grep -Fq 'run_accepted_python_helper() {' "$bootstrap"
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256' "$bootstrap"
+          grep -Fq 'PROVENANCE_HELPER_SHA256="$(shasum -a 256 "$PROVENANCE_HELPER"' "$bootstrap"
+          grep -Fq 'run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" snapshot \' "$bootstrap"
+          grep -Fq 'PROVENANCE_HELPER_SHA256="$ACCEPTED_PROVENANCE_HELPER_SHA256"' "$bootstrap"
+          grep -Fq 'run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" verify \' "$bootstrap"
           grep -Fq -- '--security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec"' "$bootstrap"
           grep -Fq -- '--security-build "$TUYA_PRIVATE_SDK/Build"' "$bootstrap"
           grep -Fq -- '--identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec"' "$bootstrap"
@@ -174,6 +182,10 @@ jobs:
           grep -Fq -- '--record "$TUYA_DEPENDENCY_PROVENANCE"' "$installer"
           first_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '1s/:.*//p')"
           guard_line="$(grep -nF 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \' "$installer" | sed -n '1s/:.*//p')"
+          if grep -Fq '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"' "$installer"; then
+            echo 'ERROR: build-window guard must execute from the exact accepted Git source subject, not a mutable worktree pathname.' >&2
+            exit 1
+          fi
           build_line="$(grep -nF -- '-- xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
           second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
           test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
