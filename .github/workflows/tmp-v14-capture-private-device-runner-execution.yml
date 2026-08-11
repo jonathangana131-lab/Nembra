@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   materialize:
-    if: github.event.head_commit.message == 'ci(capture): materialize private-device runner execution repair'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
