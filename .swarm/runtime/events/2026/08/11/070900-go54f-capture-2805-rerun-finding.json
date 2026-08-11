@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070900-go54f-capture-2805-rerun-finding",
+  "type": "FINDING",
+  "workerId": "sol-20260811-go54f",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Exact #2805 head f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf: selective-graft rerun attempt 2 again failed only after swiftpm-testing-helper exited signal 5 with Swift Range lowerBound<=upperBound fatal; retained log contains no product assertion/recorded-issue failure before the toolchain crash, and standalone Capture Xcode build succeeded. Focused helper/private-review/CocoaPods/field-provenance gates are green. Source review still finds undefined stale except private_review.PrivateReviewCommitmentError in build_guard main(). Xcode exact-head QA remains skipped while draft. Candidate is non-accepting; PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:09:00Z",
+  "data": {
+    "pr": 2805,
+    "exactHead": "f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf",
+    "selectiveGraftRun": 31467236296,
+    "rerunJob": 93703310711,
+    "rerunAttempt": 2,
+    "selectiveGraftConclusion": "FAILURE_TOOLCHAIN_CRASH",
+    "standaloneBuild": "SUCCESS",
+    "productAssertionFailureObserved": false,
+    "sourceBlocker": "undefined stale private_review exception handler in Scripts/capture_tuya_private_input_build_guard.py main()",
+    "xcodeExactHead": "SKIPPED_DRAFT",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
