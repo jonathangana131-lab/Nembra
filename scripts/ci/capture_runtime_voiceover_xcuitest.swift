@@ -34,6 +34,14 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             app.buttons["Engineering details"].waitForExistence(timeout: 3),
             "The compact sighted Details disclosure must retain the full Engineering details semantic label."
         )
+        XCTAssertFalse(
+            app.buttons["Start capture"].exists,
+            "Public/unprovisioned runtime hierarchy must not expose a physical Capture action anywhere, including offscreen."
+        )
+        XCTAssertFalse(
+            app.buttons["Scan for scooter"].exists,
+            "Public/unprovisioned runtime hierarchy must not expose Bluetooth scan authority anywhere, including offscreen."
+        )
 
         try app.performAccessibilityAudit(
             for: [
@@ -74,16 +82,14 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             utterances.append(current)
         }
 
+        // Traverse the full bounded horizon even after all required phrases are
+        // found. Stopping early would let a forbidden physical action later in
+        // VoiceOver order escape the negative authority assertion.
         for _ in 0..<64 {
             let output = try service.moveForward()
             let utterance = output.utterance
             if !utterance.isEmpty {
                 utterances.append(utterance)
-            }
-            if requiredSpeech.allSatisfy({ phrase in
-                utterances.contains(where: { $0.localizedCaseInsensitiveContains(phrase) })
-            }) {
-                break
             }
         }
 
@@ -95,27 +101,29 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
 
-        let indices = try requiredSpeech.map { phrase -> Int in
-            guard let index = utterances.firstIndex(where: { $0.localizedCaseInsensitiveContains(phrase) }) else {
+        let normalizedTranscript = transcript.lowercased()
+        let positions = try requiredSpeech.map { phrase -> String.Index in
+            guard let range = normalizedTranscript.range(of: phrase.lowercased()) else {
                 XCTFail("VoiceOver never spoke required semantic phrase '\(phrase)'. Transcript:\n\(transcript)")
                 throw RuntimeVoiceOverContractError.missingSpeech(phrase)
             }
-            return index
+            return range.lowerBound
         }
-
-        XCTAssertEqual(
-            indices,
-            indices.sorted(),
-            "VoiceOver traversal must preserve lock authority -> user-code field -> approval QR -> engineering disclosure ordering. Transcript:\n\(transcript)"
-        )
+        for (earlier, later) in zip(positions, positions.dropFirst()) {
+            XCTAssertLessThan(
+                earlier,
+                later,
+                "VoiceOver speech must preserve lock authority -> user-code field -> approval QR -> engineering disclosure ordering, including when one utterance contains multiple semantic phrases. Transcript:\n\(transcript)"
+            )
+        }
 
         XCTAssertFalse(
             transcript.localizedCaseInsensitiveContains("Start capture"),
-            "Public/unprovisioned VoiceOver traversal must not expose a physical Capture action."
+            "Public/unprovisioned VoiceOver traversal must not expose a physical Capture action anywhere in the bounded traversal horizon."
         )
         XCTAssertFalse(
             transcript.localizedCaseInsensitiveContains("Scan for scooter"),
-            "Runtime accessibility traversal must not manufacture Bluetooth/physical authority."
+            "Runtime accessibility traversal must not manufacture Bluetooth/physical authority anywhere in the bounded traversal horizon."
         )
     }
 
