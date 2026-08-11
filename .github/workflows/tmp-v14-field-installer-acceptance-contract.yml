@@ -24,21 +24,25 @@ jobs:
           path = Path('.github/workflows/capture-field-build-provenance.yml')
           source = path.read_text(encoding='utf-8')
 
-          stale_sha = '''          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"'''
-          replacement_sha = '''          grep -Fq 'AUTHORITY_GIT_DIR="$ROOT/.git"' "$installer"
-          grep -Fq 'SOURCE_SHA="$(run_authority_git rev-parse --verify' "$installer"'''
+          stale_sha = "          grep -Fq 'SOURCE_SHA=\"$(git rev-parse HEAD | tr ' \"$installer\""
+          replacement_sha = (
+              "          grep -Fq 'AUTHORITY_GIT_DIR=\"$ROOT/.git\"' \"$installer\"\n"
+              "          grep -Fq 'SOURCE_SHA=\"$(run_authority_git rev-parse --verify' \"$installer\""
+          )
           if source.count(stale_sha) != 1:
               raise SystemExit('stale raw SOURCE_SHA contract not found exactly once')
           source = source.replace(stale_sha, replacement_sha, 1)
 
-          stale_message = '''          grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' "$installer"'''
-          replacement_message = '''          grep -Fq 'verify_accepted_checkout_source "Current checkout is not the exact accepted Capture source."' "$installer"
-          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' "$installer"
-          if grep -Fq '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' "$installer"; then
-            echo 'ERROR: field bootstrap must execute from exact accepted Git bytes, not a mutable checkout pathname.' >&2
-            exit 1
-          fi
-          grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' "$installer"'''
+          stale_message = "          grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' \"$installer\""
+          replacement_message = (
+              "          grep -Fq 'verify_accepted_checkout_source \"Current checkout is not the exact accepted Capture source.\"' \"$installer\"\n"
+              "          grep -Fq 'run_accepted_source_bash \"Scripts/bootstrap_capture_tuya_sdk.sh\"' \"$installer\"\n"
+              "          if grep -Fq '\"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh\"' \"$installer\"; then\n"
+              "            echo 'ERROR: field bootstrap must execute from exact accepted Git bytes, not a mutable checkout pathname.' >&2\n"
+              "            exit 1\n"
+              "          fi\n"
+              "          grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' \"$installer\""
+          )
           if source.count(stale_message) != 1:
               raise SystemExit('stale source-match message contract not found exactly once')
           source = source.replace(stale_message, replacement_message, 1)
@@ -49,6 +53,20 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
           bash -n scripts/field/install_one_time_capture.command
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/capture-field-build-provenance.yml').read_text(encoding='utf-8')
+          required = (
+              "          grep -Fq 'AUTHORITY_GIT_DIR=\"$ROOT/.git\"' \"$installer\"",
+              "          grep -Fq 'SOURCE_SHA=\"$(run_authority_git rev-parse --verify' \"$installer\"",
+              "          grep -Fq 'run_accepted_source_bash \"Scripts/bootstrap_capture_tuya_sdk.sh\"' \"$installer\"",
+              "          if grep -Fq '\"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh\"' \"$installer\"; then",
+              "          grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' \"$installer\"",
+          )
+          for marker in required:
+              if source.count(marker) != 1:
+                  raise SystemExit('patched canonical workflow indentation/marker contract failed: ' + marker)
+          PY
           git diff --check
 
       - name: Export validated canonical workflow
