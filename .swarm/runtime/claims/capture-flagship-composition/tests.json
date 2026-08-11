@@ -9,17 +9,17 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:59:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:18:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:24:30Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-capture-runtime-voiceover-testcount-sol-gpt56-20260811",
   "pr": 3007,
   "sourceSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
-  "currentHeadSHA": "7abf3432d8f6f9caab389557f07b796eda146ace",
+  "currentHeadSHA": "fe6b7fce71a9cbf07586ea54df61bed650056fd9",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
   "takeoverReason": "Generation-4 flagship tests slot was explicitly RELEASED. Recover a non-conflicting test-only runtime-accessibility acceptance rung while #2973 exact runtime evidence is active: make the workflow mechanically prove testsCount > 0 before green, without changing accepted Capture product bytes or touching the occupied #2979 product paths.",
   "ownedPaths": [
     ".github/workflows/capture-runtime-voiceover.yml"
   ],
-  "checkpoint": "Draft #3007 exact 7abf3432d8f6f9caab389557f07b796eda146ace remains workflow-only. Parent #2973 run 31533392572 executed the targeted XCTest once but failed with AXSpringBoardServerInstanceErrorDomain Code 16 plus AXAuditErrorDomain Code 0. This head now (1) rejects zero-test green via structured xcresult evidence, (2) extracts/retains that structured target-test evidence under if: always() so red runtime tests keep execution proof while the original test failure remains red, and (3) retains exact Xcode/macOS/simctl toolchain diagnostics. Convergence #3018 is the preferred combined runtime-AX carrier after rebasing onto this live head. No product/UI bytes changed. PHYSICAL NO-GO.",
-  "acceptance": "Require fresh exact-head Capture Runtime VoiceOver on unchanged 7abf3432d8f6f9caab389557f07b796eda146ace or the deliberately rebased #3018 convergence descendant selected to supersede it. Retain exact toolchain evidence; prove the exact targeted XCTest executed even on red; preserve audit and real VoiceOver traversal fail-closed; require all runtime semantics to pass for green. Any head move resets evidence. Do not weaken the oracle. Product/UI/physical authority remains unchanged."
+  "checkpoint": "Draft #3007 exact fe6b7fce71a9cbf07586ea54df61bed650056fd9 remains one workflow-only path over #2973. Historical retained Xcode-27-beta-4 artifact 9117508366 mechanically exposes root ResultMetrics.testsCount=0 for the old zero-test failure class. Current head now requires BOTH legacy-root metrics.testsCount._value > 0 and modern test-results identity for testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit, retains those execution proofs even on red via if:always(), retains exact Xcode/macOS/simctl toolchain evidence, and hash-binds all retained execution evidence into the simulator-only manifest. No product/UI bytes changed. #3018 is stale relative to this moved parent and must rebase before it can converge transcript retention. PHYSICAL NO-GO.",
+  "acceptance": "Require fresh exact-head Capture Runtime VoiceOver on unchanged fe6b7fce71a9cbf07586ea54df61bed650056fd9 or a deliberately rebased #3018 descendant. For green: exact targeted XCTest executes, retained xcresult root reports testsCount > 0, modern test-results identify the target, accessibility audit passes, real VoiceOver traversal passes semantic/negative-authority assertions, and retained toolchain/execution evidence is bound to this exact head. Any head move resets evidence. Do not weaken the oracle. Product/UI/physical authority remains unchanged."
 }
