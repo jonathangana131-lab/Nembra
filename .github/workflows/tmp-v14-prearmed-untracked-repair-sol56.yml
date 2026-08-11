@@ -1,0 +1,183 @@
+name: Temporary V14 Pre-Armed Untracked Repair Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-field-prearmed-untracked-admission-sol56-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: repair/v14-field-prearmed-untracked-admission-sol56-20260811
+
+      - name: Materialize permanent regression and production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-sol56"
+          git config user.email "nembra-sol56@users.noreply.github.com"
+
+          # Consume the already-durable #2912 expected-red witness exactly rather
+          # than inventing a competing tests lane.
+          git fetch --no-tags origin c57e9bf0a168c66075faecf007ec7d43eb6a21c5
+          git checkout FETCH_HEAD -- scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Scripts/capture_tuya_private_input_build_guard.py")
+          source = path.read_text(encoding="utf-8")
+
+          needle = '''def _verify_tracked_source_manifest(manifest: Sequence[AcceptedTrackedSource]) -> None:
+              for item in manifest:
+                  actual_oid, actual_executable = _tracked_blob_identity(item.path)
+                  if not hmac.compare_digest(actual_oid, item.expected_oid):
+                      raise BuildGuardError(f"accepted tracked source changed across xcodebuild custody: {item.path}")
+                  if actual_executable != item.expected_executable:
+                      raise BuildGuardError(f"accepted tracked source mode changed across xcodebuild custody: {item.path}")
+
+
+def _tracked_source_watch_paths(
+          '''
+          replacement = '''def _verify_tracked_source_manifest(manifest: Sequence[AcceptedTrackedSource]) -> None:
+              for item in manifest:
+                  actual_oid, actual_executable = _tracked_blob_identity(item.path)
+                  if not hmac.compare_digest(actual_oid, item.expected_oid):
+                      raise BuildGuardError(f"accepted tracked source changed across xcodebuild custody: {item.path}")
+                  if actual_executable != item.expected_executable:
+                      raise BuildGuardError(f"accepted tracked source mode changed across xcodebuild custody: {item.path}")
+
+
+def _verify_accepted_source_physical_tree(
+              manifest: Sequence[AcceptedTrackedSource], repository_root: Path
+          ) -> None:
+              """Reject pre-armed build-visible paths that are absent from the accepted Git tree.
+
+              Tracked bytes/modes are independently re-proven by the manifest verifier. This raw
+              walk closes the complementary creation-before-watch race: a same-UID actor must not
+              be able to place an untracked compiler input after the outer installer audit but
+              before vnode custody arms. The only excluded roots are the existing separately
+              authenticated field inputs; `.git` is source-authority metadata, not product input.
+              """
+
+              authority_root = _lexical_absolute(repository_root)
+              tracked: set[str] = set()
+              tracked_directories: set[str] = set()
+              for item in manifest:
+                  admitted = _require_real_checkout_ancestry(
+                      item.path,
+                      authority_root,
+                      label="accepted tracked physical-tree subject",
+                  )
+                  relative = admitted.relative_to(authority_root).as_posix()
+                  tracked.add(relative)
+                  parts = PurePosixPath(relative).parts
+                  for depth in range(1, len(parts)):
+                      tracked_directories.add(PurePosixPath(*parts[:depth]).as_posix())
+
+              allowed_roots = {"LocalSecrets", "Pods", "NembraCapture.xcworkspace"}
+              allowed_files = {"Podfile.lock"}
+              for current_raw, directories, files in os.walk(
+                  authority_root, topdown=True, followlinks=False
+              ):
+                  current = Path(current_raw)
+                  current_relative = current.relative_to(authority_root)
+                  if current_relative.parts and current_relative.parts[0] in allowed_roots:
+                      directories[:] = []
+                      continue
+
+                  if not current_relative.parts:
+                      directories[:] = [
+                          name
+                          for name in directories
+                          if name != ".git" and name not in allowed_roots
+                      ]
+
+                  for name in list(directories):
+                      candidate = current / name
+                      relative = candidate.relative_to(authority_root).as_posix()
+                      try:
+                          metadata = candidate.lstat()
+                      except OSError as error:
+                          raise BuildGuardError(
+                              f"accepted source path disappeared during physical-tree admission: {relative}"
+                          ) from error
+                      if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                          directories.remove(name)
+                          raise BuildGuardError(
+                              f"unexpected build-visible source path before xcodebuild admission: {relative}"
+                          )
+                      if relative not in tracked_directories:
+                          directories.remove(name)
+                          raise BuildGuardError(
+                              f"untracked build-visible source path before xcodebuild admission: {relative}"
+                          )
+
+                  for name in files:
+                      candidate = current / name
+                      relative = candidate.relative_to(authority_root).as_posix()
+                      if relative in tracked or relative in allowed_files:
+                          continue
+                      raise BuildGuardError(
+                          f"untracked build-visible source path before xcodebuild admission: {relative}"
+                      )
+
+
+def _tracked_source_watch_paths(
+          '''
+          if source.count(needle) != 1:
+              raise SystemExit("expected tracked-manifest insertion point exactly once")
+          source = source.replace(needle, replacement, 1)
+
+          armed = '''        if tracked_manifest:
+              _verify_tracked_source_manifest(tracked_manifest)
+          armed_snapshot = inputs.generation_snapshot()
+          '''
+          armed_replacement = '''        if tracked_manifest:
+              _verify_tracked_source_manifest(tracked_manifest)
+              _verify_accepted_source_physical_tree(
+                  tracked_manifest, inputs.accepted_source_root  # type: ignore[arg-type]
+              )
+          armed_snapshot = inputs.generation_snapshot()
+          '''
+          if source.count(armed) != 1:
+              raise SystemExit("expected armed-admission insertion point exactly once")
+          source = source.replace(armed, armed_replacement, 1)
+
+          final = '''        if tracked_manifest:
+              _verify_tracked_source_manifest(tracked_manifest)
+          final_snapshot = inputs.generation_snapshot()
+          '''
+          final_replacement = '''        if tracked_manifest:
+              _verify_tracked_source_manifest(tracked_manifest)
+              _verify_accepted_source_physical_tree(
+                  tracked_manifest, inputs.accepted_source_root  # type: ignore[arg-type]
+              )
+          final_snapshot = inputs.generation_snapshot()
+          '''
+          if source.count(final) != 1:
+              raise SystemExit("expected final-admission insertion point exactly once")
+          source = source.replace(final, final_replacement, 1)
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          python3 scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
+          python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          git diff --check
+
+          rm -f .github/workflows/tmp-v14-prearmed-untracked-repair-sol56.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "Capture: reject pre-armed untracked build inputs"
+          git push origin HEAD:repair/v14-field-prearmed-untracked-admission-sol56-20260811
