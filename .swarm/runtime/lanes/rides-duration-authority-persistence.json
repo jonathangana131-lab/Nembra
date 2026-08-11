@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "rides-duration-authority-persistence",
+  "epic": "rides-records",
+  "title": "Rides monotonic-duration authority and durable archive",
+  "objective": "Converge the completed-ride monotonic-duration authority seal and its one-way non-authoritative persistence attachment onto current main without allowing Codable/persisted bytes, UUID matching, or wall-clock subtraction to remint observed-duration authority.",
+  "priority": 3,
+  "state": "BLOCKED_EXTERNAL",
+  "dependencies": [],
+  "blockers": [
+    {
+      "id": "legacy-parent-not-current",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Legacy parent PR #1474 remains draft and GitHub reports it non-mergeable. Its exact head 40fda83500f6c9830f69631bbe3d6a35c381825b is based on old main b603d5012139559152269ad304fea58fa8a0ceec, while live main at reconciliation is d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. Re-anchor/reconcile before acceptance; focused harness evidence is not full NembraCore acceptance.",
+      "pr": 1474,
+      "headSHA": "40fda83500f6c9830f69631bbe3d6a35c381825b"
+    },
+    {
+      "id": "stacked-child-waits-parent",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Legacy child PR #1514 is correctly stacked on exact #1474 head 40fda83500f6c9830f69631bbe3d6a35c381825b and remains draft. It has no full repository-native NembraCore green claim and must not merge independently or create archive-to-authoritative restore authority.",
+      "pr": 1514,
+      "headSHA": "5744f017a330495d425b9cfcbddd802c9cbfcebd"
+    }
+  ],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "Packages/NembraCore/Sources/NembraCore/CompletedRideDurationEvidence.swift",
+    "Packages/NembraCore/Sources/NembraCore/RideSessionDurationEvidence.swift",
+    "Packages/NembraCore/Sources/NembraCore/RideHistoryDurationAttachment.swift"
+  ],
+  "adjacentWriteAreas": [
+    "Packages/NembraCore/Tests/NembraCoreTests/CompletedRideDurationEvidenceTests.swift",
+    "Packages/NembraCore/Tests/NembraCoreTests/CompletedRideDurationPersistenceInvariantTests.swift",
+    "Packages/NembraCore/Tests/NembraCoreTests/CompletedRideDurationPersistenceRegressionTests.swift",
+    "Packages/NembraCore/Tests/NembraCoreTests/RideHistoryDurationAttachmentTests.swift",
+    "docs/RIDE_HISTORY_DURATION_ARCHIVE_ATTACHMENT.md"
+  ],
+  "slots": [
+    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":[]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": false, "state": "SOFTWARE_ONLY"},
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "legacy": {
+    "parentPR": 1474,
+    "parentHeadSHA": "40fda83500f6c9830f69631bbe3d6a35c381825b",
+    "childPR": 1514,
+    "childHeadSHA": "5744f017a330495d425b9cfcbddd802c9cbfcebd",
+    "supersededPredecessorPRs": [1410],
+    "knownExactHeadFinding": "#1474 seals runtime duration authority away from generic Codable and direct-source producer access; #1514 adds one-way non-authoritative archive persistence on that exact parent. Neither lineage is current-main accepted or app-visible."
+  },
+  "tags": ["rides", "p3", "duration", "authority", "persistence", "legacy-import"]
+}
