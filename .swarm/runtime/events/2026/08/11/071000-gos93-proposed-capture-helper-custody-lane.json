@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "071000-gos93-proposed-capture-helper-custody-lane",
+  "type": "FINDING",
+  "workerId": "sol-20260811-gos93",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Proposed minimal V15 import for the newly isolated Capture P0 seam: laneId capture-build-authority-helper-execution. Objective: add exact-current expected-red coverage for same-UID substitution of build-side provenance/generated-subject helper code, then repair normal bootstrap and capture_tuya_private_input_build_guard so authority semantics execute only from exact accepted source bytes/Git blobs bound to the candidate source, preserving the already-pinned private-review HMAC verifier and existing generated/private evidence contracts. Keep this distinct from #2805 (private-review verifier custody) and #2775 (Final-GO/control-side generated helper custody). Suggested owned production paths are Scripts/bootstrap_capture_tuya_sdk.sh and Scripts/capture_tuya_private_input_build_guard.py; tests/workflows should be narrowly scoped. Acceptance should require expected-red-before-repair, repaired exact-head green for both provenance-helper and generated-helper substitution attacks, existing #2805 private-review suites green, field-provenance/generated-subject gates green, independent review, no temporary/generated residue, and explicit PHYSICAL NO-GO until final flagship composition/issuer gates. This is a reconciliation recommendation only; no lane file was created because reconciliation ownership is active elsewhere.",
+  "createdAt": "2026-08-11T07:10:00Z",
+  "data": {
+    "suggestedLaneId": "capture-build-authority-helper-execution",
+    "priority": 0,
+    "feature": "Nembra Capture",
+    "lineage": {
+      "privateReviewClosurePR": 2805,
+      "privateReviewCurrentHead": "f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf",
+      "selectedBuildAuthorityPR": 2709,
+      "finalGoGeneratedHelperCustodyPR": 2775
+    },
+    "suggestedProductionPaths": [
+      "Scripts/bootstrap_capture_tuya_sdk.sh",
+      "Scripts/capture_tuya_private_input_build_guard.py"
+    ],
+    "requiredAttackClasses": [
+      "PROVENANCE_HELPER_SUBSTITUTION",
+      "GENERATED_SUBJECT_HELPER_SUBSTITUTION"
+    ],
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
