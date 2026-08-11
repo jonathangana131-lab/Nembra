@@ -1,0 +1,139 @@
+name: Temporary Final GO Local Authority Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-local-authority-sol
+    paths:
+      - .github/workflows/tmp-final-go-local-authority-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-final-go-local-authority-sol
+          fetch-depth: 0
+
+      - name: Harden candidate bytes and Bash startup custody
+        shell: bash
+        env:
+          EXPECTED_BASE: a79681b538ffdd70b0538c251438f8590c6f0b9f
+          BRANCH: repair/v14-final-go-local-authority-sol
+        run: |
+          set -euo pipefail
+          trigger="$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE"
+          test "$(git diff --name-only "$EXPECTED_BASE" "$trigger")" = '.github/workflows/tmp-final-go-local-authority-repair.yml'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          module = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          text = module.read_text()
+
+          old = '    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in (("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))}\n'
+          new = ('    authority_paths={"installer":INSTALLER,"runbook":RUNBOOK,"buildIdentity":IDENTITY}\n'
+                 '    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in authority_paths.items()}\n')
+          if text.count(old) != 1:
+              raise SystemExit('candidate blob map transform mismatch')
+          text = text.replace(old, new, 1)
+
+          marker = '    if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")\n'
+          insertion = marker + (
+              '    for key,relative in authority_paths.items():\n'
+              '        verbose=git(root,"ls-files","-v","--",relative)\n'
+              '        tagged=git(root,"ls-files","-t","--",relative)\n'
+              '        if not verbose or verbose[:1].islower() or tagged.startswith("S "):\n'
+              '            raise GoError("candidate authority path has suppressed index worktree tracking")\n'
+              '        actual_blob=git(root,"hash-object","--no-filters","--",relative).lower()\n'
+              '        if actual_blob!=blobs[key]: raise GoError("candidate authority worktree bytes differ from accepted Git blob")\n'
+          )
+          if text.count(marker) != 1 or 'hash-object","--no-filters' in text:
+              raise SystemExit('candidate byte custody insertion mismatch')
+          text = text.replace(marker, insertion, 1)
+
+          old = '    root=repo.expanduser().resolve(strict=True); device_path=canonical_private_path(device,"private intended-device identifier"); env=os.environ.copy(); env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device_path)\n'
+          new = (
+              '    root=repo.expanduser().resolve(strict=True); device_path=canonical_private_path(device,"private intended-device identifier")\n'
+              '    allowed=("DEVELOPER_DIR","HOME","LANG","LC_ALL","LC_CTYPE","LOGNAME","TMPDIR","USER")\n'
+              '    env={key:os.environ[key] for key in allowed if key in os.environ}\n'
+              '    env["PATH"]="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"\n'
+              '    env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device_path)\n'
+          )
+          if text.count(old) != 1:
+              raise SystemExit('installer environment transform mismatch')
+          text = text.replace(old, new, 1)
+
+          old = '    try:p=subprocess.run(["/bin/bash",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)\n'
+          new = '    try:p=subprocess.run(["/bin/bash","--noprofile","--norc","-p",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)\n'
+          if text.count(old) != 1:
+              raise SystemExit('installer Bash invocation transform mismatch')
+          text = text.replace(old, new, 1)
+          module.write_text(text)
+
+          tests = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
+          text = tests.read_text()
+          old = 'import hashlib, importlib.util, json, subprocess, tempfile, unittest, zipfile\n'
+          new = 'import hashlib, importlib.util, json, os, subprocess, tempfile, unittest, zipfile\n'
+          if text.count(old) != 1:
+              raise SystemExit('test import transform mismatch')
+          text = text.replace(old, new, 1)
+
+          marker = "if __name__=='__main__':unittest.main(verbosity=2)"
+          additions = ''' def test_candidate_rejects_hidden_index_flags_and_worktree_tamper(self):
+            path=self.f.repo/go.INSTALLER
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--assume-unchanged',go.INSTALLER],check=True)
+            path.write_text(path.read_text()+'# hidden worktree replacement\\n')
+            self.no(lambda:go.candidate(self.f.repo,self.f.s))
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--no-assume-unchanged',go.INSTALLER],check=True)
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'checkout','--',go.INSTALLER],check=True)
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--skip-worktree',go.INSTALLER],check=True)
+            self.no(lambda:go.candidate(self.f.repo,self.f.s))
+           def test_installer_ignores_bash_env_startup_injection(self):
+            script=self.f.repo/go.INSTALLER
+            script.write_text('#!/bin/bash\\nprintf "REAL INSTALLER RAN\\n"\\nexit 9\\n')
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'add',go.INSTALLER],check=True)
+            subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'commit','-qm','installer fixture'],check=True)
+            source=subprocess.check_output(['/usr/bin/git','-C',str(self.f.repo),'rev-parse','HEAD'],text=True).strip()
+            startup=Path(self.t.name)/'bash-env'
+            startup.write_text('printf "SDK-INTEGRATED CAPTURE LAUNCHED\\n"\\nexit 0\\n')
+            prior=os.environ.get('BASH_ENV')
+            os.environ['BASH_ENV']=str(startup)
+            try:self.no(lambda:go.installer(self.f.repo,source,self.f.dev))
+            finally:
+             if prior is None:os.environ.pop('BASH_ENV',None)
+             else:os.environ['BASH_ENV']=prior
+          '''.replace('\n          ', '\n')
+          if text.count(marker) != 1 or 'test_candidate_rejects_hidden_index_flags' in text:
+              raise SystemExit('test insertion mismatch')
+          text = text.replace(marker, additions + marker, 1)
+          tests.write_text(text)
+          PY
+
+          /usr/bin/python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          git diff --check
+
+          rm .github/workflows/tmp-final-go-local-authority-repair.yml
+          expected="$(cat <<'EOF' | sort
+          scripts/ci/es80_authenticated_stationary_final_go.py
+          scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          EOF
+          )"
+          actual="$(git status --porcelain=v1 | sed -E 's/^...//' | sort)"
+          test "$actual" = "$expected"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): harden Final-GO local execution authority'
+          git fetch origin "$BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger"
+          git push origin HEAD:"$BRANCH"
