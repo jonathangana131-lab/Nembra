@@ -1,0 +1,308 @@
+name: Capture Field Build Provenance
+
+on:
+  push:
+    branches:
+      - capture/field-build-provenance-gpt56
+      - capture/one-time-ble-dump-gpt56
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - .gitignore
+      - scripts/ci/es80_signed_field_artifact_private_runner.py
+      - scripts/ci/es80_signed_field_artifact_evidence.py
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraApp/Features/Research/TuyaAccountBridge.swift
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme
+      - NembraCapture-Info.plist
+      - Packages/NembraBluetoothCapture/**
+      - Packages/NembraCore/**
+      - Podfile
+      - Podfile.lock
+      - NembraCapture.entitlements
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerPrivateInstallLogCustodySourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/provision_capture_tuya_identity.sh
+      - Scripts/capture_tuya_private_input_provenance.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+      - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+      - scripts/ci/tests/test_tuya_account_transport_source.py
+      - scripts/field/install_one_time_capture.command
+      - .github/workflows/capture-field-build-provenance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    name: Stamp and verify Capture provenance
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind job to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'CAPTURE_PROVENANCE_SOURCE_SHA=%s\n' "$actual" >> "$GITHUB_ENV"
+          printf 'Exact provenance source: %s\n' "$actual"
+
+      - name: Validate private Tuya input provenance helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -I scripts/ci/tests/test_tuya_account_transport_source.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n Scripts/provision_capture_tuya_identity.sh
+
+      - name: Validate signed Apple application identity custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
+          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+
+      - name: Validate compiler-window vnode attribute custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+
+      - name: Verify source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rc=$?; printf "::error title=Capture provenance source contract::shell line %s failed: %q (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc"; exit "$rc"' ERR
+          identity='NembraApp/App/NembraCaptureBuildIdentity.swift'
+          entrypoint='NembraApp/App/NembraCaptureEntrypoint.swift'
+          project='NembraCapture.xcodeproj/project.pbxproj'
+          installer='scripts/field/install_one_time_capture.command'
+          procedure_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'
+          bootstrap='Scripts/bootstrap_capture_tuya_sdk.sh'
+          private_provenance='Scripts/capture_tuya_private_input_provenance.py'
+          private_device_runner='scripts/ci/es80_signed_field_artifact_private_runner.py'
+          signed_field_inspector='scripts/ci/es80_signed_field_artifact_evidence.py'
+          private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'
+          ignore='.gitignore'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+
+          bash -n "$installer"
+          test -f "$private_device_runner"
+          test -f "$signed_field_inspector"
+          test -f "$private_identity_provisioner"
+          grep -Fq 'RECIPE_ID = "ES80-FINGERPRINT-v1"' "$signed_field_inspector"
+          grep -Fq 'INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"' "$signed_field_inspector"
+          grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' "$private_identity_provisioner"
+          grep -Fq 'read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET' "$private_identity_provisioner"
+          grep -Fq 'def read_private_identifier(' "$private_device_runner"
+          grep -Fq 'O_NOFOLLOW' "$private_device_runner"
+          grep -Fq 'O_DIRECTORY' "$private_device_runner"
+          grep -Fq 'dir_fd=parent_descriptor' "$private_device_runner"
+          grep -Fxq 'LocalSecrets/' "$ignore"
+          grep -Fxq 'Pods/' "$ignore"
+          grep -Fxq 'NembraCapture.xcworkspace/' "$ignore"
+          grep -Fxq 'Podfile.lock' "$ignore"
+          grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
+          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"
+          grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"
+          grep -Fq 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA' "$installer"
+          grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' "$installer"
+          if grep -Fq 'Exact accepted Capture source: $SOURCE_SHA' "$installer"; then
+            echo 'ERROR: local SHA equality may identify the requested candidate but cannot self-assert GitHub software acceptance.' >&2
+            exit 1
+          fi
+          grep -Fq 'BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL"' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA"' "$installer"
+          grep -Fq 'TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock"' "$installer"
+          grep -Fq '"NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256"' "$installer"
+          grep -Fq "PROCEDURE_ID=\"$procedure\"" "$installer"
+          grep -Fq '"INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"' "$installer"
+          if grep -Fq 'Switch to capture/one-time-ble-dump-gpt56 first' "$installer"; then
+            echo 'ERROR: field-build authority must bind the accepted source SHA, not a branch name.' >&2
+            exit 1
+          fi
+
+          grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' "$installer"
+          grep -Fq '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"' "$installer"
+          grep -Fq 'read_private_identifier' "$installer"
+          grep -Fq 'devicectl list devices --hide-headers' "$installer"
+          grep -Fq '.coredevice.local' "$installer"
+          grep -Fq '[[ "$DEVICE_OS_VERSION" == 27.* ]]' "$installer"
+          grep -Fq '[[ "$DEVICE_MODEL" == "iPhone13,2" ]]' "$installer"
+          grep -Fq 'devicectl device install app --device "$COREDEVICE_ID"' "$installer"
+          grep -Fq -- '--device "$COREDEVICE_ID"' "$installer"
+          if grep -Fq -- '--device "$DEVICE_UDID"' "$installer"; then
+            echo 'ERROR: private intended-device UDID must not be placed in devicectl argv; use the correlated CoreDevice selector.' >&2
+            exit 1
+          fi
+
+          grep -Fq 'SCHEMA = "nembra-capture-tuya-dependencies-v2"' "$private_provenance"
+          grep -Fq 'thing_smart_cryption_podspec_sha256' "$private_provenance"
+          grep -Fq 'thing_smart_cryption_build_tree_sha256' "$private_provenance"
+          grep -Fq 'private_identity_podspec_sha256' "$private_provenance"
+          grep -Fq 'private_identity_sources_tree_sha256' "$private_provenance"
+          grep -Fq 'O_NOFOLLOW' "$private_provenance"
+          grep -Fq 'run_accepted_python_helper() {' "$bootstrap"
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256' "$bootstrap"
+          grep -Fq 'PROVENANCE_HELPER_SHA256="$(shasum -a 256 "$PROVENANCE_HELPER"' "$bootstrap"
+          grep -Fq 'run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" snapshot \' "$bootstrap"
+          grep -Fq 'PROVENANCE_HELPER_SHA256="$ACCEPTED_PROVENANCE_HELPER_SHA256"' "$bootstrap"
+          grep -Fq 'run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" verify \' "$bootstrap"
+          grep -Fq -- '--security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec"' "$bootstrap"
+          grep -Fq -- '--security-build "$TUYA_PRIVATE_SDK/Build"' "$bootstrap"
+          grep -Fq -- '--identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec"' "$bootstrap"
+          grep -Fq -- '--identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig"' "$bootstrap"
+          grep -Fq 'private Tuya dependency provenance record is not mode 0600' "$bootstrap"
+          grep -Fq 'verify_private_tuya_inputs()' "$installer"
+          test "$(grep -xc 'verify_private_tuya_inputs' "$installer")" = '2'
+          grep -Fq -- '--record "$TUYA_DEPENDENCY_PROVENANCE"' "$installer"
+          first_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '1s/:.*//p')"
+          guard_line="$(grep -nF 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \' "$installer" | sed -n '1s/:.*//p')"
+          if grep -Fq '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"' "$installer"; then
+            echo 'ERROR: build-window guard must execute from the exact accepted Git source subject, not a mutable worktree pathname.' >&2
+            exit 1
+          fi
+          build_line="$(grep -nF -- '-- xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
+          second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
+          test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
+          test "$first_private_verify_line" -lt "$guard_line"
+          test "$guard_line" -lt "$build_line"
+          test "$build_line" -lt "$second_private_verify_line"
+
+          grep -Fq '[[ -x /usr/bin/plutil ]]' "$installer"
+          grep -Fq 'APP_INFO_PLIST="$APP/Info.plist"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract CFBundleIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq '[[ "$BUILT_BUILD_IDENTIFIER" == "$BUILD_LABEL" ]]' "$installer"
+          grep -Fq '[[ "$BUILT_SOURCE_SHA" == "$SOURCE_SHA" ]]' "$installer"
+          grep -Fq '[[ "$BUILT_TUYA_DEPENDENCY_LOCK_SHA256" == "$TUYA_DEPENDENCY_LOCK_SHA256" ]]' "$installer"
+          grep -Fq '[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]]' "$installer"
+          grep -Fq '[[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]]' "$installer"
+          readback_line="$(grep -nF 'BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil' "$installer" | cut -d: -f1)"
+          procedure_check_line="$(grep -nF '[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]]' "$installer" | cut -d: -f1)"
+          install_line="$(grep -nF 'say "Installing SDK-integrated Capture on the intended iPhone"' "$installer" | cut -d: -f1)"
+          test -n "$readback_line" && test -n "$procedure_check_line" && test -n "$install_line"
+          test "$readback_line" -lt "$procedure_check_line"
+          test "$procedure_check_line" -lt "$install_line"
+          test "$second_private_verify_line" -lt "$readback_line"
+
+          grep -Fq 'mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX"' "$installer"
+          grep -Fq 'trap '\''rm -f -- "$INSTALL_LOG"'\'' EXIT' "$installer"
+          grep -Fq 'chmod 600 "$INSTALL_LOG"' "$installer"
+          grep -Fq 'payload = sys.stdin.buffer.read()' "$installer"
+          grep -Fq 'private_udid_raw, selector_raw = payload.split(b"\0", 1)' "$installer"
+          grep -Fq 'secret.replace("-", "")' "$installer"
+          grep -Fq 'flags=re.IGNORECASE' "$installer"
+          grep -Fq 'trap - EXIT' "$installer"
+          if grep -Fq 'nembra-authenticated-capture-install.log' "$installer"; then
+            echo 'ERROR: raw devicectl diagnostics must not use a predictable retained temporary pathname.' >&2
+            exit 1
+          fi
+
+          grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' "$project"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";' "$project"
+
+          grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
+          grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
+          grep -Fq 'static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"' "$identity"
+          grep -Fq 'static let procedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"' "$identity"
+          grep -Fq "static let requiredFieldProcedureIdentifier = \"$procedure\"" "$identity"
+          grep -Fq 'static var fieldProcedureIdentifier: String' "$identity"
+          grep -Fq 'current.procedureIdentifier' "$identity"
+          grep -Fq 'sourceCommitSHA.count == 40' "$identity"
+          grep -Fq 'tuyaDependencyLockSHA256.count == 64' "$identity"
+          grep -Fq 'procedureIdentifier == Self.requiredFieldProcedureIdentifier' "$identity"
+          grep -Fq 'let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"' "$identity"
+          grep -Fq "$procedure" "$procedure_test"
+          grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID' "$procedure_test"
+          grep -Fq 'current.procedureIdentifier' "$procedure_test"
+          grep -Fq 'let tuyaDependencyLockSHA256: String' "$entrypoint"
+          grep -Fq 'tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256' "$entrypoint"
+          grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' "$entrypoint"
+          grep -Fq 'self.sealedAcceptedExport = self.makeExport(' "$entrypoint"
+          grep -Fq 'envelope = sealedAcceptedExport' "$entrypoint"
+
+      - name: Build stamped standalone Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="${CAPTURE_PROVENANCE_SOURCE_SHA:?exact source was not established}"
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${sha:0:12}"
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          build_log="$RUNNER_TEMP/nembra-capture-provenance-xcodebuild.log"
+          rm -f -- "$build_log"
+          set +e
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
+            build 2>&1 | tee "$build_log"
+          build_status="${PIPESTATUS[0]}"
+          set -e
+          if [[ "$build_status" != "0" ]]; then
+            /usr/bin/python3 -I - "$build_log" <<'PY'
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
+          errors = [line.strip() for line in lines if "error:" in line.lower()]
+          for line in errors[-12:]:
+              safe = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Capture stamped Simulator build::{safe}")
+          PY
+            exit "$build_status"
+          fi
+
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test -f "$plist"
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
