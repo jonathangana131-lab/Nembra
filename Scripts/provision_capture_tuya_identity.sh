@@ -1,6 +1,11 @@
 #!/bin/bash -p
 set -euo pipefail
 
+if [[ $- != *p* ]]; then
+  builtin printf '%s\n' 'ERROR: execute Scripts/provision_capture_tuya_identity.sh directly; do not invoke it through bash/sh because the privileged startup fence is required.' >&2
+  exit 5
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 LOCAL_SECRETS="$ROOT/LocalSecrets"
 # NEMBRA_TUYA_RUNTIME_DIR is deliberately not honored: private field identity
