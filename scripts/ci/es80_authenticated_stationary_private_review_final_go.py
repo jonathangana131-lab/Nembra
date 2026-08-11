@@ -17,6 +17,7 @@ import contextlib
 import hashlib
 import json
 import re
+import stat
 import subprocess
 import types
 from datetime import datetime
@@ -64,6 +65,73 @@ def _git_environment() -> dict[str, str]:
         "LANG": "C",
         "LC_ALL": "C",
     }
+
+
+def _physical_git_command(repo: Path, *args: str) -> list[str]:
+    """Bind Git metadata and worktree operations to one physical checkout root."""
+    root = repo.expanduser().resolve(strict=True)
+    marker = root / ".git"
+    try:
+        marker_stat = marker.lstat()
+    except OSError as error:
+        raise PrivateReviewGoError("candidate physical Git directory unavailable") from error
+    if not stat.S_ISDIR(marker_stat.st_mode):
+        raise PrivateReviewGoError("candidate physical Git authority requires a real .git directory")
+    try:
+        git_dir = marker.resolve(strict=True)
+    except OSError as error:
+        raise PrivateReviewGoError("candidate physical Git directory could not be resolved") from error
+    return [
+        "/usr/bin/git",
+        "-C", str(root),
+        f"--git-dir={git_dir}",
+        f"--work-tree={root}",
+        "-c", f"core.worktree={root}",
+        *args,
+    ]
+
+
+def _physical_git(repo: Path, *args: str) -> str:
+    try:
+        return subprocess.run(
+            _physical_git_command(repo, *args),
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_git_environment(),
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise PrivateReviewGoError("candidate physical Git custody failed") from error
+
+
+def _physical_git_bytes(repo: Path, *args: str) -> bytes:
+    try:
+        return subprocess.run(
+            _physical_git_command(repo, *args),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=_git_environment(),
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise PrivateReviewGoError("candidate physical Git byte custody failed") from error
+
+
+@contextlib.contextmanager
+def _physical_worktree_git(base: Any) -> Iterator[None]:
+    """Make accepted parent helpers describe the exact physical checkout they inspect."""
+    original_git = getattr(base, "git", None)
+    original_git_bytes = getattr(base, "git_bytes", None)
+    if not callable(original_git) or not callable(original_git_bytes):
+        raise PrivateReviewGoError("parent Final-GO Git authority is not patchable")
+    base.git = _physical_git
+    base.git_bytes = _physical_git_bytes
+    try:
+        yield
+    finally:
+        base.git = original_git
+        base.git_bytes = original_git_bytes
 
 
 def _load_generated_module():
@@ -525,11 +593,12 @@ def build(
 
     visual_subject = base.visual(source, runs[base.VISUAL], base.pos(artifact_id, "artifact"), archive, get)
     pre_review = review_v5(pr, review_id, source, visual_subject, get, base=base)
-    pre_private_candidate = candidate_private_authority(
-        candidate_repo, source, pre_review, base=base, derive_subject=derive_subject
-    )
+    with _physical_worktree_git(base):
+        pre_private_candidate = candidate_private_authority(
+            candidate_repo, source, pre_review, base=base, derive_subject=derive_subject
+        )
 
-    with _generated_extensions(review=pre_review):
+    with _generated_extensions(review=pre_review), _physical_worktree_git(base):
         record = generated.build(
             authority_repo=authority_repo,
             authority_pr=authority_pr,
@@ -553,9 +622,10 @@ def build(
 
     post_visual = base.visual(source, runs[base.VISUAL], artifact_id, archive, get)
     post_review = review_v5(pr, review_id, source, post_visual, get, base=base)
-    post_private_candidate = candidate_private_authority(
-        candidate_repo, source, post_review, base=base, derive_subject=derive_subject
-    )
+    with _physical_worktree_git(base):
+        post_private_candidate = candidate_private_authority(
+            candidate_repo, source, post_review, base=base, derive_subject=derive_subject
+        )
     if post_visual != visual_subject or post_review != pre_review or post_private_candidate != pre_private_candidate:
         raise PrivateReviewGoError("private-review authority changed during Final-GO composition")
     if record.get("visualReview") != pre_review:
