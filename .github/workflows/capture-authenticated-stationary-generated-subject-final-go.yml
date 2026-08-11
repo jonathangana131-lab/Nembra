@@ -1,0 +1,67 @@
+name: Capture Authenticated Stationary Generated Subject Final GO
+
+on:
+  push:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go_2709.py
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go_2709.py
+      - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go_2709.py
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go_2709.py
+      - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authority-tests:
+    name: Generated subject Final-GO authority tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind QA to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile recovered core and selected adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go_2709.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go_2709.py
+
+      - name: Prove recovered sealed-parent Final-GO core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+
+      - name: Prove selected 2709 generated-subject adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go_2709.py
