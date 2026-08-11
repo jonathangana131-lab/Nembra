@@ -1,25 +1,14 @@
 #!/usr/bin/env python3
-"""Final-GO successor that keeps whole-tree mutation custody across raw audit.
+"""Final-GO successor with whole-tree mutation custody.
 
-Exact parent #2921@471cc025... descriptor-binds each tracked payload while it
-is read, but #3024 and #3030 demonstrate that sequential endpoint reproof is
-not whole-tree atomicity: a same-UID writer can replace an already-admitted
-pathname before the overall audit returns, or restore accepted bytes before
-every finite endpoint read and diverge again immediately afterward.
+Exact parent #2921 descriptor-binds each tracked payload while reading it, but
+#3024/#3030 show that sequential or finitely repeated endpoint reproof is not
+whole-tree custody. This successor loads the exact accepted #2921 implementation
+from its accepted Git blob and wraps only its raw-candidate audit with recursive
+Linux inotify mutation custody. Unsupported platforms fail closed.
 
-This successor does not add another rehash pass. On the Linux authority runner
-used by the canonical Final-GO gate, it arms descriptor-bound inotify watches
-for the candidate root and every accepted tracked directory before the parent
-raw audit begins. Directory watches receive content and namespace events for
-direct children, so recursive directory coverage detects tracked-file writes,
-replacements, creates, deletes, renames, metadata changes, and subtree
-mutation. Any event from arming through the completed parent audit fails
-closed. Unsupported platforms fail closed rather than silently falling back to
-finite polling.
-
-The exact #2921 parent implementation is loaded from its immutable accepted Git
-blob and then patched only at its `_audit_candidate_tree` seam. All inherited
-Final-GO semantics remain owned by that exact parent.
+This is a control-plane authority successor only. It creates no BLE/Tuya,
+telemetry, signing, install, device, or physical-scooter authority.
 """
 from __future__ import annotations
 
@@ -31,6 +20,7 @@ from pathlib import Path, PurePosixPath
 import select
 import stat
 import subprocess
+import sys
 import types
 from typing import Any, Sequence
 
@@ -88,8 +78,11 @@ def _capture_parent_blob(root: Path) -> bytes:
     finally:
         if process is not None and process.stdout is not None:
             process.stdout.close()
+
     if _git_blob_oid(payload) != PARENT_MODULE_GIT_BLOB:
-        raise WholeTreeCustodyError("Final-GO parent blob bytes differ from accepted identity")
+        raise WholeTreeCustodyError(
+            "Final-GO parent blob bytes differ from accepted identity"
+        )
     return payload
 
 
@@ -104,14 +97,15 @@ def _load_parent_module() -> types.ModuleType:
     try:
         exec(compile(payload, filename, "exec", dont_inherit=True), module.__dict__)
     except Exception as error:
-        raise WholeTreeCustodyError("accepted #2921 Final-GO parent could not execute") from error
+        raise WholeTreeCustodyError(
+            "accepted #2921 Final-GO parent could not execute"
+        ) from error
     return module
 
 
 _parent = _load_parent_module()
 _original_audit_candidate_tree = _parent._audit_candidate_tree
 
-# Public aliases intentionally preserve the existing Final-GO test/consumer API.
 FIELD_INPUT_DIRECTORIES = _parent.FIELD_INPUT_DIRECTORIES
 FIELD_INPUT_FILES = _parent.FIELD_INPUT_FILES
 _tree_entries = _parent._tree_entries
@@ -122,8 +116,8 @@ _stable_stat = _parent._stable_stat
 class _LinuxInotifyBackend:
     """Descriptor-bound recursive-directory mutation witness for Final-GO CI."""
 
-    # inotify masks from linux/inotify.h. Access/open events are intentionally
-    # excluded because the authority audit itself reads the candidate.
+    # linux/inotify.h. We intentionally exclude OPEN/ACCESS because the accepted
+    # audit itself reads the candidate.
     _MASK = (
         0x00000002  # IN_MODIFY
         | 0x00000004  # IN_ATTRIB
@@ -141,17 +135,21 @@ class _LinuxInotifyBackend:
 
     def __init__(self) -> None:
         if not os.path.isdir("/proc/self/fd"):
-            raise WholeTreeCustodyError("descriptor-bound inotify requires procfs fd subjects")
+            raise WholeTreeCustodyError(
+                "descriptor-bound inotify requires procfs fd subjects"
+            )
         self._libc = ctypes.CDLL(None, use_errno=True)
         try:
             init1 = self._libc.inotify_init1
             add_watch = self._libc.inotify_add_watch
         except AttributeError as error:
             raise WholeTreeCustodyError("Linux inotify custody is unavailable") from error
+
         init1.argtypes = [ctypes.c_int]
         init1.restype = ctypes.c_int
         add_watch.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]
         add_watch.restype = ctypes.c_int
+
         flags = getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
         self._descriptor = init1(flags)
         if self._descriptor < 0:
@@ -160,19 +158,18 @@ class _LinuxInotifyBackend:
                 "Linux inotify custody could not initialize: " + os.strerror(code)
             )
         self._add_watch = add_watch
-        self._watch_count = 0
 
     def register(self, descriptor: int) -> None:
-        # `/proc/self/fd/N` binds the watch to the already-open directory inode;
-        # a mutable pathname lookup never decides which vnode receives custody.
+        # The procfs fd subject resolves from an already-open no-follow directory
+        # descriptor, so a later mutable candidate pathname does not select the
+        # vnode receiving custody.
         subject = f"/proc/self/fd/{descriptor}".encode("ascii")
-        result = self._add_watch(self._descriptor, subject, self._MASK)
-        if result < 0:
+        if self._add_watch(self._descriptor, subject, self._MASK) < 0:
             code = ctypes.get_errno()
             raise WholeTreeCustodyError(
-                "Linux inotify custody could not arm directory subject: " + os.strerror(code)
+                "Linux inotify custody could not arm directory subject: "
+                + os.strerror(code)
             )
-        self._watch_count += 1
 
     def events(self, timeout: float) -> Sequence[bytes]:
         if self._descriptor < 0:
@@ -180,6 +177,7 @@ class _LinuxInotifyBackend:
         ready, _, _ = select.select([self._descriptor], [], [], timeout)
         if not ready:
             return ()
+
         chunks: list[bytes] = []
         while True:
             try:
@@ -203,9 +201,9 @@ class _LinuxInotifyBackend:
 
 class _CandidateWholeTreeCustody:
     def __init__(self, root: Path, entries: dict[str, tuple[bytes, str]]) -> None:
-        if not os.sys.platform.startswith("linux"):
+        if not sys.platform.startswith("linux"):
             raise WholeTreeCustodyError(
-                "whole-tree Final-GO mutation custody is accepted only on Linux inotify authority"
+                "whole-tree Final-GO custody requires the accepted Linux inotify authority"
             )
         self._root = root.expanduser().resolve(strict=True)
         self._entries = entries
@@ -218,36 +216,44 @@ class _CandidateWholeTreeCustody:
             parts = PurePosixPath(relative).parts
             for index in range(1, len(parts)):
                 relatives.add(PurePosixPath(*parts[:index]).as_posix())
-        # Explicit field roots are outside the tracked tree but their own
-        # namespace shape is part of the parent raw-audit admission contract.
+
+        # These roots are intentionally outside tracked-tree byte authority but
+        # their namespace shape is part of the exact parent raw-audit contract.
         relatives.update(FIELD_INPUT_DIRECTORIES)
         return tuple(
             self._root if not relative else self._root / relative
-            for relative in sorted(relatives, key=lambda value: (value.count("/"), value))
+            for relative in sorted(
+                relatives, key=lambda value: (value.count("/"), value)
+            )
         )
 
     def arm(self) -> None:
         flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
+
         try:
             for path in self._directory_subjects():
                 try:
                     before = os.lstat(path)
                 except OSError as error:
                     raise WholeTreeCustodyError(
-                        "whole-tree candidate directory disappeared before custody: " + str(path)
+                        "whole-tree candidate directory disappeared before custody: "
+                        + str(path)
                     ) from error
                 if not stat.S_ISDIR(before.st_mode) or stat.S_ISLNK(before.st_mode):
                     raise WholeTreeCustodyError(
-                        "whole-tree candidate custody requires one real directory: " + str(path)
+                        "whole-tree candidate custody requires one real directory: "
+                        + str(path)
                     )
                 try:
                     descriptor = os.open(path, flags)
                 except OSError as error:
                     raise WholeTreeCustodyError(
-                        "whole-tree candidate directory could not be opened for custody: " + str(path)
+                        "whole-tree candidate directory could not be opened for custody: "
+                        + str(path)
                     ) from error
+
                 try:
                     opened = os.fstat(descriptor)
                     rebound = os.lstat(path)
@@ -256,7 +262,8 @@ class _CandidateWholeTreeCustody:
                         or _stable_stat(opened) != _stable_stat(rebound)
                     ):
                         raise WholeTreeCustodyError(
-                            "whole-tree candidate directory changed while custody armed: " + str(path)
+                            "whole-tree candidate directory changed while custody armed: "
+                            + str(path)
                         )
                     self._backend.register(descriptor)
                 except Exception:
@@ -283,22 +290,20 @@ class _CandidateWholeTreeCustody:
         self._backend.close()
 
 
-def _audit_candidate_tree(root: Path, source: str) -> dict[str, tuple[bytes, str]]:
+def _audit_candidate_tree(
+    root: Path, source: str
+) -> dict[str, tuple[bytes, str]]:
     """Run exact #2921 raw audit while recursive mutation custody stays armed."""
     root = root.expanduser().resolve(strict=True)
     entries = _tree_entries(root, source)
     custody = _CandidateWholeTreeCustody(root, entries)
     custody.arm()
     try:
-        # Registration has its own chronology boundary. Any mutation observed
-        # while earlier directories were already armed invalidates the window;
-        # mutations to not-yet-armed directories are re-proved by the full raw
-        # parent audit that follows once every directory has custody.
         custody.reject_events("while mutation custody was armed")
 
-        # Preserve adversarial monkeypatch seams: validation may replace this
-        # successor module's `_physical_blob_oid`, and the exact parent audit
-        # must consume that same callable instead of silently bypassing it.
+        # Validation may replace this successor module's `_physical_blob_oid`.
+        # The exact parent audit must consume the same callable so the red-team
+        # regression exercises the inherited descriptor-bound read primitive.
         prior_physical_blob_oid = _parent._physical_blob_oid
         _parent._physical_blob_oid = globals()["_physical_blob_oid"]
         try:
@@ -308,15 +313,17 @@ def _audit_candidate_tree(root: Path, source: str) -> dict[str, tuple[bytes, str
 
         custody.reject_events("during the complete raw candidate audit")
         if result != entries:
-            raise WholeTreeCustodyError("whole-tree parent audit returned unexpected accepted tree")
+            raise WholeTreeCustodyError(
+                "whole-tree parent audit returned unexpected accepted tree"
+            )
         return result
     finally:
         custody.close()
 
 
-# Existing parent call sites resolve module globals at execution time. Replacing
-# this one seam makes inherited candidate_private_authority/main consume the
-# stronger whole-tree custody without duplicating their accepted semantics.
+# The exact parent build/candidate-custody functions resolve module globals at
+# execution time. Patching this one seam makes those inherited consumers use the
+# stronger whole-tree audit without duplicating their accepted semantics.
 _parent._audit_candidate_tree = _audit_candidate_tree
 
 
@@ -324,9 +331,8 @@ def __getattr__(name: str) -> Any:
     return getattr(_parent, name)
 
 
-def main() -> int:
-    return int(_parent.main())
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(
+        "This whole-tree Final-GO successor is exercised by its exact-head "
+        "workflow; physical publication remains delegated to the sealed parent issuer."
+    )
