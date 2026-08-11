@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "062800-review-result-rv2804",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-rv2804",
+  "laneId": "swarm-control-plane-foundation",
+  "message": "Independent exact-head review of PR #2804 at a535f645ab7ce0699df721f6113501de61b7210f: NEEDS_CHANGES. Verified three blocking correctness defects: repair roles bypass primary WIP enforcement/reservation; resource heartbeats can renew after owning slot loss; WIP booleans are accepted as integers. Green CI does not waive these findings.",
+  "createdAt": "2026-08-11T06:28:00Z",
+  "data": {
+    "pr": 2804,
+    "headSHA": "a535f645ab7ce0699df721f6113501de61b7210f",
+    "result": "REQUEST_CHANGES",
+    "blockingFindings": 3,
+    "exactHeadCI": [31464076858, 31464076798]
+  }
+}
