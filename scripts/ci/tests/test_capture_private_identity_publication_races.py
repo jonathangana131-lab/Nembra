@@ -113,7 +113,7 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
     def test_staging_symlink_substitution_cannot_be_published_or_cleaned_as_owned(self) -> None:
         self._assert_staging_substitution_rejected("symlink")
 
-    def test_staging_substitution_after_name_check_cannot_be_left_at_destination(self) -> None:
+    def test_post_check_substitution_fails_without_claiming_replacement_cleanup_authority(self) -> None:
         writer = load_writer()
         payload = b"accepted-private-identity-payload"
         attacker_payload = b"Y" * len(payload)
@@ -126,15 +126,16 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
             parent_fd = os.open(parent, writer._directory_flags())
             original_require = writer._require_sealed_staging_name
             attacked = False
+            stolen_name: str | None = None
 
             def adversarial_require(root_fd: int, src: str, sealed) -> None:
-                nonlocal attacked
+                nonlocal attacked, stolen_name
                 original_require(root_fd, src, sealed)
                 if attacked:
                     return
                 attacked = True
-                stolen = f"{src}.sealed-owner"
-                os.rename(src, stolen, src_dir_fd=root_fd, dst_dir_fd=root_fd)
+                stolen_name = f"{src}.sealed-owner"
+                os.rename(src, stolen_name, src_dir_fd=root_fd, dst_dir_fd=root_fd)
                 replacement_fd = os.open(
                     src,
                     os.O_WRONLY | os.O_CREAT | os.O_EXCL,
@@ -167,13 +168,21 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
                 os.close(checkout_fd)
 
             final = parent / "identity.swift"
-            final_bytes = final.read_bytes() if final.is_file() else None
+            stolen = checkout / stolen_name if stolen_name is not None else None
             self.assertTrue(attacked, "diagnostic never reached the post-name-check publication gap")
             self.assertTrue(rejected, "writer accepted the post-check staging substitution")
-            self.assertNotEqual(
-                final_bytes,
+            self.assertTrue(final.is_file(), "writer deleted the attacker replacement after fail-closed publication")
+            self.assertEqual(
+                final.read_bytes(),
                 attacker_payload,
-                "post-check attacker replacement was published and left at the credential destination",
+                "writer mutated or deleted bytes outside the exact held staging inode authority",
+            )
+            self.assertIsNotNone(stolen, "fixture did not retain the accepted staging inode name")
+            self.assertTrue(stolen.is_file(), "accepted held staging inode disappeared during failure sanitation")
+            self.assertEqual(
+                stolen.read_bytes(),
+                b"",
+                "credential-bearing accepted staging bytes survived fail-closed publication",
             )
 
     def test_detached_private_directory_cannot_receive_or_stage_credential_identity(self) -> None:
