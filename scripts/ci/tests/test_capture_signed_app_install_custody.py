@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -10,6 +12,7 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 HELPER = REPOSITORY / "scripts/ci/capture_signed_app_install_custody.py"
 INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
 WORKFLOW = REPOSITORY / ".github/workflows/capture-signed-app-install-custody.yml"
+PRE_STAGE_ORIGIN_DIAGNOSTIC = REPOSITORY / "scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py"
 
 
 def load_helper():
@@ -132,6 +135,24 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         self.assertNotIn('/usr/bin/sudo /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
         self.assertIn('/usr/bin/sudo -n /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
         self.assertIn('Noninteractive sudo authority remained after invalidation', source)
+
+    def test_build_produced_app_origin_survives_into_protected_stage(self) -> None:
+        self.assertTrue(PRE_STAGE_ORIGIN_DIAGNOSTIC.is_file(), "expected-red pre-stage origin diagnostic is missing")
+        result = subprocess.run(
+            [sys.executable, "-B", "-I", str(PRE_STAGE_ORIGIN_DIAGNOSTIC)],
+            cwd=REPOSITORY,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            "post-build/pre-fingerprint substitution became the protected signed-app subject; "
+            "the source->stage fingerprint is self-derived after the mutable compiler-output window.\n"
+            + result.stdout,
+        )
 
 
 if __name__ == "__main__":
