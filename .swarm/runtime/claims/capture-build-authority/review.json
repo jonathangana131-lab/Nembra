@@ -9,11 +9,11 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T13:29:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:29:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:34:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2968,
-  "sourceSHA": "3c2244ed599d2d0cc557132ef89ea043b68697b3",
-  "currentHeadSHA": "3c2244ed599d2d0cc557132ef89ea043b68697b3",
-  "reviewTarget": "Verify whether #2968 still admits selected Xcode xcodebuild/xctrace/devicectl executable files without exact file-level custody after expected-red #2969, and publish durable routing evidence without touching the leased implementation path. PHYSICAL NO-GO."
+  "sourceSHA": "ffba4e252b1be3bbe50c881538a02f0b4b9e6786",
+  "currentHeadSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
+  "reviewTarget": "Independent exact-head review of #2968 after expected-red #2969. Current source still gives root custody to selected Xcode directory ancestry and only dirname(SELECTED_XCODEBUILD), while the executable itself is admitted by -f/-x/non-symlink; xctrace/devicectl remain command-name resolution through xcrun. Current head is also temporary construction (tmp-v14-field-provenance-contract-r2.yml), with Field Build Provenance and Main Selective Graft red and Xcode skipped. Preparing durable NEEDS_CHANGES routing evidence. PHYSICAL NO-GO."
 }
