@@ -20,10 +20,10 @@ jobs:
           ref: agent/v14-capture-private-identity-custody-live-sol
           fetch-depth: 0
 
-      - name: Bind exact repair trigger
+      - name: Bind exact blob-generator trigger
         shell: bash
         env:
-          EXPECTED_PARENT: fa83a3701fa975e7f8727298d99a4b02cbd90e14
+          EXPECTED_PARENT: 16449f40ab781176e0b1ab8b6780293be99ed647
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
@@ -31,15 +31,17 @@ jobs:
           test "$parent" = "$EXPECTED_PARENT"
           test "$(git diff --name-only "$EXPECTED_PARENT" "$actual")" = '.github/workflows/tmp-capture-private-identity-provenance-live.yml'
 
-      - name: Patch provenance source
+      - name: Materialize validated provenance blob
         shell: bash
+        env:
+          BRANCH: agent/v14-capture-private-identity-custody-live-sol
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('.github/workflows/capture-field-build-provenance.yml')
-          text = path.read_text()
+          source = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = source.read_text()
 
           def after(marker: str, addition: str) -> None:
               global text
@@ -66,24 +68,33 @@ jobs:
                 "          grep -Fq 'O_DIRECTORY' \"$private_identity_writer\"\n"
                 "          grep -Fq 'O_EXCL' \"$private_identity_writer\"\n"
                 "          grep -Fq 'dir_fd=parent_fd' \"$private_identity_writer\"\n")
-          path.write_text(text)
+
+          output = Path('scripts/ci/tmp_capture_field_build_provenance_patched.yml')
+          output.write_text(text)
           PY
 
-          grep -Fq -- '- Scripts/provision_capture_tuya_identity_writer.py' .github/workflows/capture-field-build-provenance.yml
-          grep -Fq '/usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test' .github/workflows/capture-field-build-provenance.yml
-          grep -Fq "private_identity_writer='Scripts/provision_capture_tuya_identity_writer.py'" .github/workflows/capture-field-build-provenance.yml
-          grep -Fq 'dir_fd=parent_fd' .github/workflows/capture-field-build-provenance.yml
-          test "$(git diff --name-only)" = '.github/workflows/capture-field-build-provenance.yml'
+          patched='scripts/ci/tmp_capture_field_build_provenance_patched.yml'
+          grep -Fq -- '- Scripts/provision_capture_tuya_identity_writer.py' "$patched"
+          grep -Fq '/usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test' "$patched"
+          grep -Fq "private_identity_writer='Scripts/provision_capture_tuya_identity_writer.py'" "$patched"
+          grep -Fq 'dir_fd=parent_fd' "$patched"
+          python3 - <<'PY'
+          from pathlib import Path
+          original = Path('.github/workflows/capture-field-build-provenance.yml').read_text()
+          patched = Path('scripts/ci/tmp_capture_field_build_provenance_patched.yml').read_text()
+          required = [
+              'scripts/ci/tests/test_tuya_account_transport_source.py',
+              '/usr/bin/python3 -I scripts/ci/tests/test_tuya_account_transport_source.py',
+              '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"',
+          ]
+          for marker in required:
+              if marker not in original or marker not in patched:
+                  raise SystemExit(f'patched provenance lost current canonical authority marker: {marker}')
+          PY
 
-      - name: Commit provenance source
-        shell: bash
-        env:
-          BRANCH: agent/v14-capture-private-identity-custody-live-sol
-        run: |
-          set -euo pipefail
           git config user.name 'nembra-v14-sol'
           git config user.email 'actions@users.noreply.github.com'
-          git add .github/workflows/capture-field-build-provenance.yml
-          test "$(git diff --cached --name-only)" = '.github/workflows/capture-field-build-provenance.yml'
-          git commit -m 'ci(capture): validate private identity filesystem custody'
+          git add "$patched"
+          test "$(git diff --cached --name-only)" = "$patched"
+          git commit -m 'ci(capture): publish validated identity-provenance blob'
           git push origin "HEAD:$BRANCH"
