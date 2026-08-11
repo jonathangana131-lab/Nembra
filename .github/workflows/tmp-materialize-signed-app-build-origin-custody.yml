@@ -30,6 +30,26 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
+      - name: Normalize one temporary legacy marker escape
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tmp_patch_signed_app_origin_existing.py')
+          lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+          matches = 0
+          repaired = []
+          for line in lines:
+              if 'build_line=' in line and 'xcodebuild' in line:
+                  matches += 1
+                  line = line.replace(chr(92) * 4, chr(92) * 2)
+              repaired.append(line)
+          if matches != 2:
+              raise SystemExit(f'expected two temporary build_line literals, found {matches}')
+          path.write_text(''.join(repaired), encoding='utf-8')
+          PY
+
       - name: Compile first-class repair and safe patcher
         shell: bash
         run: |
