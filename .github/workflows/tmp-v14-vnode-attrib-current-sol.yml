@@ -85,6 +85,7 @@ jobs:
           grep -Fq 'run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot' "$python_test"
           grep -Fq 'run_accepted_source_python \"$TUYA_PROVENANCE_HELPER_RELATIVE\" verify' "$python_test"
           grep -Fq 'run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot' "$provenance_test"
+          rm -rf Scripts/__pycache__ scripts/ci/tests/__pycache__
 
           if ! diff_check="$(git diff --check 2>&1)"; then
             encoded="${diff_check//'%'/'%25'}"
