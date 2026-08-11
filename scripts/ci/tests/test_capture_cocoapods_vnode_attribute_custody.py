@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Expected-red proof for CocoaPods generated-subject metadata custody.
+"""Expected-red proof for generated-subject compiler-window custody.
 
-The accepted generated subject hashes mode bits. The field build guard therefore
-must subscribe to vnode attribute changes while xcodebuild is consuming that
-subject; final re-hashing alone cannot detect a chmod mutate/restore window.
+The accepted generated subject hashes mode bits, so vnode custody must subscribe
+to attribute changes during xcodebuild. The same guard also opens one descriptor
+per admitted generated/private node, so it must make the descriptor budget
+explicit rather than fail on a realistic tree under the default soft limit.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import resource
 from types import SimpleNamespace
 import sys
 import tempfile
@@ -76,7 +78,62 @@ class FakeSelect:
         )
 
 
-class CocoaPodsVnodeAttributeCustodyTests(unittest.TestCase):
+class QuietBackend:
+    def register(self, descriptor: int) -> None:
+        pass
+
+    def events(self, timeout: float):
+        return []
+
+    def close(self) -> None:
+        pass
+
+
+def make_field_inputs(root: Path, *, generated_file_count: int = 0):
+    lockfile = root / "Podfile.lock"
+    pods = root / "Pods"
+    workspace = root / "NembraCapture.xcworkspace"
+    lockfile.write_text("LOCK\n", encoding="utf-8")
+    pods.mkdir()
+    workspace.mkdir()
+    (workspace / "contents.xcworkspacedata").write_text("workspace\n", encoding="utf-8")
+
+    generated = pods / "Generated"
+    generated.mkdir()
+    for index in range(generated_file_count):
+        (generated / f"input-{index:04d}.xcconfig").write_text(
+            f"SETTING_{index} = {index}\n",
+            encoding="utf-8",
+        )
+
+    security_build = root / "LocalSecrets/TuyaSDK/Build"
+    security_build.mkdir(parents=True)
+    security_podspec = root / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec"
+    security_podspec.write_text("security\n", encoding="utf-8")
+    (security_build / "libThingSmartCryption.a").write_bytes(b"private-security-sdk")
+
+    identity_sources = root / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"
+    identity_sources.mkdir(parents=True)
+    identity_podspec = root / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"
+    identity_podspec.write_text("identity\n", encoding="utf-8")
+    (identity_sources / "Identity.swift").write_text("private identity\n", encoding="utf-8")
+
+    accepted = guard.generated_subject.subject_digest(
+        lockfile=lockfile,
+        pods=pods,
+        workspace=workspace,
+    )
+    return guard.PrivateInputs(
+        lockfile=lockfile,
+        security_podspec=security_podspec,
+        security_build=security_build,
+        identity_podspec=identity_podspec,
+        identity_sources=identity_sources,
+        accepted_generated_subject_sha256=accepted,
+    )
+
+
+class CocoaPodsCompilerWindowCustodyTests(unittest.TestCase):
     def test_generated_subject_digest_treats_mode_as_authority(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-vnode-attrib-subject-") as temporary:
             root = Path(temporary)
@@ -124,6 +181,44 @@ class CocoaPodsVnodeAttributeCustodyTests(unittest.TestCase):
                 )
             finally:
                 backend.close()
+
+    def test_guard_expands_soft_descriptor_budget_for_realistic_generated_tree(self) -> None:
+        original_soft, original_hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if original_soft == resource.RLIM_INFINITY:
+            low_soft = 48
+        else:
+            low_soft = min(int(original_soft), 48)
+        if low_soft < 32:
+            self.skipTest("host soft descriptor limit is already too small for a safe test harness")
+        if original_hard != resource.RLIM_INFINITY and int(original_hard) < 192:
+            self.skipTest("host hard descriptor limit cannot exercise soft-limit expansion")
+
+        with tempfile.TemporaryDirectory(prefix="nembra-vnode-fd-budget-") as temporary:
+            root = Path(temporary)
+            inputs = make_field_inputs(root, generated_file_count=96)
+            resource.setrlimit(resource.RLIMIT_NOFILE, (low_soft, original_hard))
+            try:
+                try:
+                    result = guard.run_guarded_build(
+                        inputs,
+                        [sys.executable, "-c", "raise SystemExit(0)"],
+                        backend_factory=QuietBackend,
+                        poll_interval=0.001,
+                    )
+                except guard.BuildGuardError as error:
+                    self.fail(
+                        "guard could not make descriptor capacity for an admitted generated tree even though the hard limit has room: "
+                        + str(error)
+                    )
+                self.assertEqual(result, 0)
+                raised_soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+                self.assertGreater(
+                    raised_soft,
+                    low_soft,
+                    "guard consumed a large watch set without explicitly expanding the constrained soft descriptor budget",
+                )
+            finally:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (original_soft, original_hard))
 
     @unittest.skipUnless(sys.platform == "darwin", "real vnode attribute evidence requires macOS kqueue")
     def test_real_kqueue_observes_chmod_of_admitted_generated_file(self) -> None:
