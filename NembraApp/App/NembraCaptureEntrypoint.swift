@@ -22,6 +22,7 @@ struct NembraCaptureApp: App {
 
 @MainActor
 private struct CaptureP0Root: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject private var tuya = TuyaAccountBridge()
     @State private var showEngineeringDetails = false
 
@@ -38,61 +39,13 @@ private struct CaptureP0Root: View {
                 .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("NEMBRA CAPTURE")
-                                .font(.caption2.bold())
-                                .tracking(1.5)
-                                .foregroundStyle(.cyan)
-                            Text("Prepare the scooter link")
-                                .font(.largeTitle.bold())
-                            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        rootPanel {
-                            VStack(alignment: .leading, spacing: 14) {
-                                Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
-                                    .font(.title3.bold())
-                                    .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
-                                Text(tuya.statusMessage)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                if !tuya.isLinked {
-                                    TextField("Tuya Smart User Code", text: $tuya.userCode)
-                                        .textInputAutocapitalization(.never)
-                                        .autocorrectionDisabled()
-                                        .padding(12)
-                                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    Button("Create approval QR") { tuya.requestApproval() }
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.large)
-                                }
-
-                                if let data = tuya.qrPNGData,
-                                   let image = UIImage(data: data),
-                                   !tuya.isLinked {
-                                    Image(uiImage: image)
-                                        .interpolation(.none)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(maxWidth: 230)
-                                        .padding(10)
-                                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                    Button("I approved it · check now") { tuya.checkApprovalNow() }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.large)
-                                }
-
-                                if tuya.phase == .failed {
-                                    Button("Reset account link") { tuya.resetLink() }
-                                        .buttonStyle(.bordered)
-                                }
-                            }
+                    VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 16 : 22) {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            accountSetupPanel
+                            rootIntro
+                        } else {
+                            rootIntro
+                            accountSetupPanel
                         }
 
                         if tuya.isLinked {
@@ -171,8 +124,8 @@ private struct CaptureP0Root: View {
                         .tint(.secondary)
                     }
                     .frame(maxWidth: 720)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 22)
+                    .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 16 : 20)
+                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 12 : 22)
                     .padding(.bottom, 44)
                     .frame(maxWidth: .infinity)
                 }
@@ -180,6 +133,84 @@ private struct CaptureP0Root: View {
             }
             .navigationTitle("Nembra Capture")
             .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private var rootIntro: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NEMBRA CAPTURE")
+                .font(.caption2.bold())
+                .tracking(1.5)
+                .foregroundStyle(.cyan)
+            Text("Prepare the scooter link")
+                .font(.largeTitle.bold())
+            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var accountSetupPanel: some View {
+        rootPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                Label(
+                    tuya.isLinked ? "Account link ready" : "Link your scooter account",
+                    systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark"
+                )
+                .font(.title3.bold())
+                .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+
+                if dynamicTypeSize.isAccessibilitySize {
+                    accountLinkActions
+                    accountStatus
+                } else {
+                    accountStatus
+                    accountLinkActions
+                }
+
+                if let data = tuya.qrPNGData,
+                   let image = UIImage(data: data),
+                   !tuya.isLinked {
+                    Image(uiImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 230)
+                        .padding(10)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    Button("I approved it · check now") { tuya.checkApprovalNow() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                }
+
+                if tuya.phase == .failed {
+                    Button("Reset account link") { tuya.resetLink() }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
+    private var accountStatus: some View {
+        Text(tuya.statusMessage)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var accountLinkActions: some View {
+        if !tuya.isLinked {
+            TextField("Tuya Smart User Code", text: $tuya.userCode)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            Button("Create approval QR") { tuya.requestApproval() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .accessibilityIdentifier("nembra.capture.account.create-approval")
         }
     }
 
