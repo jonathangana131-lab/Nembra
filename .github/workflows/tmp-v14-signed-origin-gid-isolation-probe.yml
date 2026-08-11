@@ -1,0 +1,203 @@
+name: tmp V14 Signed Origin GID Isolation Probe
+
+on:
+  push:
+    branches:
+      - research/v14-signed-origin-normalization-4f51fg
+    paths:
+      - .github/workflows/tmp-v14-signed-origin-gid-isolation-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Bind research delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD~2)" = 'f76e6ae54b4304df5b02db4f46a72f67daa276e2'
+          mapfile -t changed < <(git diff --name-only HEAD~2 HEAD | sort)
+          expected=(
+            '.github/workflows/tmp-v14-signed-origin-gid-isolation-probe.yml'
+            '.github/workflows/tmp-v14-signed-origin-normalization-probe.yml'
+          )
+          test "${#changed[@]}" = "${#expected[@]}"
+          for i in "${!expected[@]}"; do test "${changed[$i]}" = "${expected[$i]}"; done
+
+      - name: Prove transient-group output isolation primitive
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          operator_uid="$(id -u)"
+          operator_gid="$(id -g)"
+          report="$RUNNER_TEMP/nembra-origin-gid-isolation-report.txt"
+          root="$RUNNER_TEMP/nembra-origin-gid-isolation"
+          rm -rf -- "$root"
+          : > "$report"
+
+          # Select a numeric GID not present in the operator's normal group set.
+          ephemeral_gid=61000
+          while id -G | tr ' ' '\n' | grep -Fxq "$ephemeral_gid"; do
+            ephemeral_gid=$((ephemeral_gid + 1))
+          done
+
+          sudo /usr/bin/python3 - "$root" "$operator_uid" "$operator_gid" "$ephemeral_gid" <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import stat
+          import sys
+
+          root = Path(sys.argv[1])
+          operator_uid = int(sys.argv[2])
+          operator_gid = int(sys.argv[3])
+          ephemeral_gid = int(sys.argv[4])
+          if os.geteuid() != 0:
+              raise SystemExit('probe supervisor must be root')
+
+          protected = root / 'protected-derived'
+          stage = root / 'protected-stage'
+          root.mkdir(mode=0o700)
+          os.chown(root, 0, 0)
+          protected.mkdir(mode=0o770)
+          os.chown(protected, 0, ephemeral_gid)
+          stage.mkdir(mode=0o700)
+          os.chown(stage, 0, 0)
+
+          write_fd, read_fd = os.pipe()
+          pid = os.fork()
+          if pid == 0:
+              try:
+                  os.close(read_fd)
+                  os.setgroups([])
+                  os.setgid(ephemeral_gid)
+                  os.setuid(operator_uid)
+                  product = protected / 'Build' / 'Products' / 'Nembra Capture.app'
+                  product.mkdir(parents=True)
+                  payload = product / 'NembraCapture'
+                  payload.write_bytes(b'compiler-produced-reference')
+                  os.write(write_fd, b'written')
+              finally:
+                  os._exit(0)
+
+          os.close(write_fd)
+          if os.read(read_fd, 32) != b'written':
+              raise SystemExit('isolated builder did not write product')
+          os.close(read_fd)
+
+          # A sibling with the same UID but its normal GID must be unable to
+          # traverse the protected output root while the builder credential can.
+          probe_r, probe_w = os.pipe()
+          sibling = os.fork()
+          if sibling == 0:
+              try:
+                  os.close(probe_r)
+                  os.setgroups([])
+                  os.setgid(operator_gid)
+                  os.setuid(operator_uid)
+                  try:
+                      (protected / 'Build').stat()
+                  except PermissionError:
+                      os.write(probe_w, b'denied')
+                  else:
+                      os.write(probe_w, b'ALLOWED')
+              finally:
+                  os._exit(0)
+          os.close(probe_w)
+          sibling_result = os.read(probe_r, 32)
+          os.close(probe_r)
+          os.waitpid(sibling, 0)
+          if sibling_result != b'denied':
+              raise SystemExit(f'same-UID normal-group sibling reached protected output: {sibling_result!r}')
+
+          _, status = os.waitpid(pid, 0)
+          if status != 0:
+              raise SystemExit('isolated builder failed')
+
+          # Remove group traversal before deriving any authority, then copy the
+          # exact product under root-only custody.
+          os.chmod(protected, 0o700)
+          product = protected / 'Build' / 'Products' / 'Nembra Capture.app' / 'NembraCapture'
+          data = product.read_bytes()
+          digest = hashlib.sha256(data).hexdigest()
+          staged = stage / 'NembraCapture'
+          staged.write_bytes(data)
+          os.chown(staged, 0, 0)
+          os.chmod(staged, 0o400)
+
+          result = {
+              'operator_uid': operator_uid,
+              'operator_normal_gid': operator_gid,
+              'ephemeral_builder_gid': ephemeral_gid,
+              'protected_parent_mode_after_build': oct(stat.S_IMODE(protected.stat().st_mode)),
+              'same_uid_normal_group_traversal': 'denied',
+              'root_stage_sha256': digest,
+              'stage_owner_uid': staged.stat().st_uid,
+              'stage_mode': oct(stat.S_IMODE(staged.stat().st_mode)),
+          }
+          print(json.dumps(result, sort_keys=True))
+          PY
+
+          # The normal runner itself must also be denied by the root-only tree.
+          if test -e "$root/protected-derived/Build" 2>/dev/null; then
+            echo 'ERROR: ordinary operator unexpectedly traversed protected output after lock-down' >&2
+            exit 1
+          fi
+
+          sudo /usr/bin/python3 - "$root" <<'PY' | tee "$report"
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import stat
+          import sys
+          root = Path(sys.argv[1])
+          staged = root / 'protected-stage' / 'NembraCapture'
+          result = {
+              'probe_head': os.environ.get('GITHUB_SHA', ''),
+              'attacked_parent': 'f76e6ae54b4304df5b02db4f46a72f67daa276e2',
+              'same_uid_normal_group_cannot_traverse_builder_output': True,
+              'root_stage_sha256': hashlib.sha256(staged.read_bytes()).hexdigest(),
+              'root_stage_uid': staged.stat().st_uid,
+              'root_stage_mode': oct(stat.S_IMODE(staged.stat().st_mode)),
+              'scope': 'POSIX credential-isolation primitive only; not Xcode acceptance',
+          }
+          print(json.dumps(result, sort_keys=True))
+          PY
+          sudo rm -rf -- "$root"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+
+      - name: Publish research result to signed-install production PR
+        if: always() && steps.probe.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.probe.outputs.report }}
+        run: |
+          set -euo pipefail
+          {
+            echo '### Signed-origin transient-GID isolation research probe'
+            echo
+            echo 'Portable research only; this does not move production, satisfy #2955, or create physical authority.'
+            echo
+            echo '```json'
+            cat "$REPORT"
+            echo '```'
+            echo
+            echo 'The primitive is useful only if the Mac implementation keeps the output parent root-owned/group-only for the entire xcodebuild lifetime, launches the trusted build subtree with the operator UID but a non-inheritable/non-member transient GID, removes group traversal before deriving the first app authority, and snapshots into the existing root-owned stage before returning control. Mac/Xcode behavior, child cleanup, source/private-input custody, signing access, and exact #2955 replay remain mandatory.'
+            echo
+            echo '**PHYSICAL NO-GO.**'
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment 2871 --body-file "$RUNNER_TEMP/comment.md"
