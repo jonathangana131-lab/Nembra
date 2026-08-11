@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "124700-evidence-result-private-identity-4c47a9",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-4c47a9",
+  "laneId": "capture-private-identity-custody",
+  "message": "Private-identity generation-2 production checkpoint concluded by convergence, not merge. #2943@c3cfdda7519024029da3dd36e95de2697362deb3 demonstrated descriptor-bound crash-residue neutralization and independently exposed the root-tombstone composition conflict with canonical Build raw-tree admission; its follow-up moved staging into held LocalSecrets custody and locally preserved #2918 replacement-survival semantics. Fresh comparison selected stronger canonical #2944@1834a39ac44e09cf12426cf28cb95ed3c008e9a2 because it generalizes exact-held-inode sanitation to recovery and post-publication failure cleanup and removes pathname cleanup helpers. #2944 exact Private Identity Publication Races gate is terminal SUCCESS; Field/Main-Graft/Xcode remain queued. #2961@d7aa662e0c98bd1c8d55c0411796f012962909ce is independently EXPECTED_RED on #2944: failed identity publication can preserve attacker-controlled Swift at the canonical LocalSecrets identity path and later normal bootstrap reaches CocoaPods admission. Production must close downstream bootstrap admission by mechanically requiring fresh successful private-identity authority, without check-then-unlink or permanent raw-root tombstones. #2943 closed SUPERSEDED / DO NOT MERGE. PHYSICAL NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT OLD RIDE.",
+  "createdAt": "2026-08-11T12:47:00Z"
+}
