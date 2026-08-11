@@ -24,7 +24,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import textwrap
 
           workflow = Path('.github/workflows/capture-authority-chain-materialize.yml').read_text(encoding='utf-8')
           start = "          python3 - <<'PY'\n"
@@ -32,7 +31,12 @@ jobs:
           if workflow.count(start) != 1:
               raise SystemExit('materializer payload start is not unique')
           payload = workflow.split(start, 1)[1].split(end, 1)[0]
-          exec(compile(textwrap.dedent(payload), '<capture-authority-materializer>', 'exec'), {})
+          prefix = "          "
+          normalized = "\n".join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in payload.splitlines()
+          )
+          exec(compile(normalized, '<capture-authority-materializer>', 'exec'), {})
           PY
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n scripts/field/install_one_time_capture.command
