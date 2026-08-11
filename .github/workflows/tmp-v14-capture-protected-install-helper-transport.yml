@@ -20,6 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Trigger commit intentionally reruns this already-present temporary workflow.
           git merge-base --is-ancestor 1e7252ea5bf6bf8bfde7c5719c760181d6beaf6e HEAD
           python3 -B scripts/ci/tmp_fix_protected_install_helper_transport.py
           /bin/bash -n scripts/field/install_one_time_capture.command
