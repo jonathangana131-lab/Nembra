@@ -21,17 +21,17 @@ jobs:
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
           p=Path('.github/workflows/capture-final-go-reviewed-lock-r2-materializer.yml')
-          s=p.read_text()
-          old="""              if f' def {name}(' not in tests:
-                  tests = tests.replace(marker, '\\n' + method(parent_tests, name) + marker, 1)
-          """
-          new="""              if f' def {name}(' not in tests:
-                  recovered = method(parent_tests, name)
-                  recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):').replace('self.f.inst(r,s,d)', 'self.f.inst(r,s,d,lock)')
-                  tests = tests.replace(marker, '\\n' + recovered + marker, 1)
-          """
-          if s.count(old)!=1: raise SystemExit('recovery insertion anchor drift')
-          p.write_text(s.replace(old,new,1))
+          lines=p.read_text().splitlines()
+          needle="                  tests = tests.replace(marker, '\\n' + method(parent_tests, name) + marker, 1)"
+          hits=[i for i,line in enumerate(lines) if line==needle]
+          if len(hits)!=1: raise SystemExit(f'recovery insertion line drift: {hits}')
+          i=hits[0]
+          lines[i:i+1]=[
+              '                  recovered = method(parent_tests, name)',
+              "                  recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):').replace('self.f.inst(r,s,d)', 'self.f.inst(r,s,d,lock)')",
+              "                  tests = tests.replace(marker, '\\n' + recovered + marker, 1)",
+          ]
+          p.write_text('\n'.join(lines)+'\n')
           PY
           git rm .github/workflows/capture-final-go-reviewed-lock-r2-transform-fix.yml
           git config user.name 'jonathangana131-lab'
