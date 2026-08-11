@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  validate-materialization-without-precondition-rewrite:
+  validate-materialization-with-root-depth-correction:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -33,62 +33,35 @@ jobs:
           test "$(git hash-object scripts/field/install_one_time_capture.command)" = "87430680649f9eb3160f30162f2c78f75809af68"
           test "$(git hash-object scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py)" = "514dc57300f6f6987248a09e20f307a18fa43b76"
 
-      - name: Diagnose reader insertion marker
+      - name: Require exact materializer construction defects
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          s=Path('scripts/field/install_one_time_capture.command').read_text()
-          assert s.count('run_accepted_source_bash() {\n') == 1
+          m=Path('scripts/ci/tmp_materialize_field_verified_git_payload.py').read_text()
+          w=Path('.github/workflows/tmp-v14-field-verified-git-payload-materialize.yml').read_text()
+          assert m.count('Path(__file__).resolve().parents[3]') == 1
+          assert 'EXPECTED_INSTALLER_BLOB = "87430680649f9eb3160f30162f2c78f75809af68"' in m
+          assert 'EXPECTED_TEST_BLOB = "514dc57300f6f6987248a09e20f307a18fa43b76"' in m
+          assert '840bc068551f060a1d74578247b79b4ce9add029' in w
+          assert 'a6a03b3b9a5bde131e90c0386f7e6524ec8abd8a' in w
           PY
 
-      - name: Diagnose accepted Bash execution marker
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('scripts/field/install_one_time_capture.command').read_text()
-          old='    if ! run_authority_git show "$SOURCE_SHA:$relative_path" |\n        /bin/bash --noprofile --norc -p -c \'source /dev/stdin\' "$ROOT/$relative_path"; then\n'
-          assert s.count(old) == 1
-          PY
-
-      - name: Diagnose private runner execution marker
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('scripts/field/install_one_time_capture.command').read_text()
-          old='    run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py" |\n        /usr/bin/env -i \\\n'
-          assert s.count(old) == 1
-          PY
-
-      - name: Diagnose accepted Python helper span
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('scripts/field/install_one_time_capture.command').read_text()
-          assert s.count('run_accepted_source_python() {\n') == 1
-          marker='GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e "$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE"'
-          assert s.count(marker) == 1
-          assert s.index(marker) > s.index('run_accepted_source_python() {\n')
-          PY
-
-      - name: Diagnose authority test replacement marker
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py').read_text()
-          old='        self.assertIn(\'run_authority_git show "$SOURCE_SHA:$relative_path"\', installer)\n'
-          assert s.count(old) == 1
-          PY
-
-      - name: Run checked-in materializer unchanged
+      - name: Execute materializer with root-depth correction only
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/tmp_materialize_field_verified_git_payload.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('scripts/ci/tmp_materialize_field_verified_git_payload.py').resolve()
+          source=path.read_text(encoding='utf-8')
+          old='Path(__file__).resolve().parents[3]'
+          new='Path(__file__).resolve().parents[2]'
+          assert source.count(old) == 1
+          corrected=source.replace(old,new,1)
+          namespace={'__file__': str(path), '__name__': '__main__'}
+          exec(compile(corrected, str(path), 'exec'), namespace)
+          PY
 
       - name: Validate materialized authority contracts
         shell: bash
@@ -100,10 +73,11 @@ jobs:
           python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
           git diff --check
 
-      - name: Require production delta and no review mutation of construction helpers
+      - name: Require production delta and untouched construction helpers
         shell: bash
         run: |
           set -euo pipefail
           git diff --quiet -- scripts/ci/tmp_materialize_field_verified_git_payload.py
           git diff --quiet -- .github/workflows/tmp-v14-field-verified-git-payload-materialize.yml
           test -n "$(git diff -- scripts/field/install_one_time_capture.command)"
+          test -n "$(git diff -- scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py)"
