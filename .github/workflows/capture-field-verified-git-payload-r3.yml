@@ -45,11 +45,23 @@ jobs:
           test "$(git diff --name-only)" = "scripts/field/install_one_time_capture.command"
           git diff --check
 
-      - name: Replay corrected three-surface verifier QA
+      - name: Prove all interpreter surfaces route through verifier
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 scripts/ci/tests/test_capture_field_verified_git_payload_current_qa_r3.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_verified_git_payload_current_qa_r3.py -k all_interpreter_bound
+
+      - name: Prove verifier buffers and hashes before emission
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_verified_git_payload_current_qa_r3.py -k bounded_and_buffers
+
+      - name: Prove corrected forged alias is rejected with zero stdout
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_verified_git_payload_current_qa_r3.py -k rejects_forged_pack_alias
 
       - name: Preserve neighboring portable authority contracts
         shell: bash
