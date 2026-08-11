@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607r4",
   "leaseId": "dashboard-integration-1607r4-20260811-2318",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:18:44Z",
-  "lastHeartbeatAt": "2026-08-11T23:18:44Z",
+  "lastHeartbeatAt": "2026-08-11T23:23:10Z",
+  "releasedAt": "2026-08-11T23:23:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2991,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "f55f61772138dfdf271cb2952e9cf7c6b86ab050",
   "takeoverFromWorkerId": "sol-20260811-nv46",
   "takeoverFromLeaseId": "7855286af15c46c6ae95463a9c230c28",
-  "takeoverReason": "Generation-1 integration was explicitly released. P0 Capture is currently saturated by fresh owners/external xcode-27 blockers, so V14 overflow capacity takes the free P1 Dashboard integration slot. Reconcile #2991 exact current head and retained AX evidence without writing primary-owned DashboardView/NembraVisuals/UI-test/capture-script paths. Preserve Simulator/display-only truth and ES80 PHYSICAL NO-GO.",
-  "intent": "Refresh #2991 exact head/gates/reviews, verify whether its AX5 identity/status successor closes the current visual blocker, identify any unowned integration/performance closure rung, and leave durable state. No telemetry promotion from presentation frames."
+  "takeoverReason": "Generation-1 integration was explicitly released. P0 Capture was saturated, so V14 overflow capacity used the free P1 Dashboard integration slot for exact-head reconciliation without product writes.",
+  "intent": "Refresh #2991 exact evidence, identify the visual blocker and next safe closure rung, then release integration rather than hold two Dashboard slots.",
+  "checkpoint": "#2991 exact f55f617 earned Xcode run 31539532255 SUCCESS and retained artifact 9121216069. Exact AX5 riding/stopped pixels show Nembra Simulator fully visible but Connected still awkwardly hyphenated as Connect- / ed; independent review 4911568683 already records this blocking visual finding. Primary generation 4 has now recovered that UI repair. Integration then found separate #2980 sustained-performance failure was a stale XCUI semantic-handle witness and moved into newly claimed performance generation 3 / child #3118. No product writes under integration. Simulator-only; ES80 PHYSICAL NO-GO."
 }
