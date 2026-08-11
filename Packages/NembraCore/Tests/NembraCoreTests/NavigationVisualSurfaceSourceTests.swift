@@ -14,6 +14,13 @@ struct NavigationVisualSurfaceSourceTests {
         #expect(source.contains("accessibilityReduceMotion"))
         #expect(source.contains("accessibilityReduceTransparency"))
 
+        // Both the host launch control and selected-destination overlay must
+        // honor Reduce Transparency instead of leaving an isolated Material surface.
+        #expect(
+            source.components(separatedBy: "@Environment(\\.accessibilityReduceTransparency)").count >= 3
+        )
+        #expect(source.components(separatedBy: "secondarySystemBackground").count >= 3)
+
         // Navigation search/preview is MapKit-backed provider truth. It must not
         // manufacture scooter telemetry or convert navigation data into ride truth.
         #expect(!source.contains("navigation.fake"))
