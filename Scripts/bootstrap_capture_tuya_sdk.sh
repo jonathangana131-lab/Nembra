@@ -7,6 +7,7 @@ TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
+COCOAPODS_BUILD_SUBJECT_HELPER="$SCRIPT_DIR/capture_cocoapods_generated_build_subject.py"
 REVIEW_ONLY=0
 if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
   REVIEW_ONLY=1
@@ -25,9 +26,19 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
     exit 1
   }
   ACCEPTED_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
+
+  ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256="${NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256:-}"
+  if [[ -n "$ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" ]]; then
+    [[ "$ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+      echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 must be exactly 64 hex characters when supplied." >&2
+      exit 1
+    }
+    ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256="$(printf '%s' "$ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" | tr '[:upper:]' '[:lower:]')"
+  fi
 else
-  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 || true
   ACCEPTED_LOCK_SHA256=""
+  ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256=""
 fi
 
 if ! command -v pod >/dev/null 2>&1; then
@@ -58,6 +69,11 @@ fi
 
 if [[ ! -f "$PROVENANCE_HELPER" ]]; then
   echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
+  exit 6
+fi
+
+if [[ ! -f "$COCOAPODS_BUILD_SUBJECT_HELPER" ]]; then
+  echo "ERROR: generated CocoaPods build-subject helper is missing from the accepted source." >&2
   exit 6
 fi
 
@@ -110,6 +126,11 @@ if [[ ! -d NembraCapture.xcworkspace ]]; then
   exit 9
 fi
 
+if [[ ! -d Pods ]]; then
+  echo "ERROR: CocoaPods did not create Pods; exact generated build-subject custody is unavailable." >&2
+  exit 9
+fi
+
 if [[ ! -f Podfile.lock ]]; then
   echo "ERROR: CocoaPods did not create Podfile.lock; exact field dependency provenance is unavailable." >&2
   exit 10
@@ -125,7 +146,7 @@ do
   fi
 done
 
-# Snapshot every ignored input that can materially change the private field
+# Snapshot every ignored private input that can materially change the private field
 # build. The helper writes only SHA-256 fingerprints + public reviewed versions;
 # it never serializes credentials, SDK bytes, or device identifiers.
 if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
@@ -154,18 +175,32 @@ LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[
   exit 15
 }
 
+COCOAPODS_BUILD_SUBJECT_SHA256="$(/usr/bin/python3 -I "$COCOAPODS_BUILD_SUBJECT_HELPER" fingerprint \
+  --pods "$REPO_ROOT/Pods" \
+  --workspace "$REPO_ROOT/NembraCapture.xcworkspace")" || {
+  echo "ERROR: generated CocoaPods build subject could not be fingerprinted." >&2
+  exit 16
+}
+[[ "$COCOAPODS_BUILD_SUBJECT_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "ERROR: generated CocoaPods build-subject helper did not return one canonical SHA-256 digest." >&2
+  exit 16
+}
+
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   cat <<EOF
 
-DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+DEPENDENCY + GENERATED BUILD CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
   Podfile.lock SHA-256: $LOCK_SHA256
+  CocoaPods build subject SHA-256: $COCOAPODS_BUILD_SUBJECT_SHA256
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
 
-Review and bind this exact dependency-lock digest to the exact accepted Capture
-source through the current Final-GO control plane before any field build/install.
-Then rerun the normal bootstrap/installer with that accepted digest supplied as
-NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256. This review-only mode never invokes
-xcodebuild, installs Nembra, scans Bluetooth, or authorizes a physical attempt.
+Review and bind BOTH exact digests to the exact accepted Capture source through
+the current Final-GO control plane before any field build/install. Then rerun the
+normal bootstrap/installer with both accepted digests supplied as
+NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 and
+NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256. This review-only mode
+never invokes xcodebuild, installs Nembra, scans Bluetooth, or authorizes a
+physical attempt.
 EOF
   exit 0
 fi
@@ -175,7 +210,18 @@ fi
   exit 16
 }
 printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
-unset ACCEPTED_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+
+[[ -n "$ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" ]] || {
+  echo "ERROR: generated CocoaPods build subject has no preaccepted SHA-256 authority. Stop before xcodebuild/install and review the exact generated build subject." >&2
+  exit 17
+}
+[[ "$COCOAPODS_BUILD_SUBJECT_SHA256" == "$ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" ]] || {
+  echo "ERROR: generated CocoaPods build subject does not match the preaccepted SHA-256. The same Podfile.lock produced different build-affecting generated bytes; stop before xcodebuild/install and review the new build subject." >&2
+  exit 18
+}
+printf 'Preaccepted CocoaPods build subject matched: %s\n' "$COCOAPODS_BUILD_SUBJECT_SHA256"
+unset ACCEPTED_LOCK_SHA256 ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \
+  NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 || true
 
 cat <<EOF
 
@@ -184,14 +230,17 @@ ThingSmartCryption package and local-only app identity pod.
 
 Resolved dependency provenance:
   Podfile.lock SHA-256: $LOCK_SHA256
+  CocoaPods build subject SHA-256: $COCOAPODS_BUILD_SUBJECT_SHA256
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
 
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
-  Preserve this exact private-input fingerprint record with the field workspace.
-  Do not run 'pod update', replace ThingSmartCryption, or regenerate the private
-  identity before an accepted physical capture; any input change is a new
-  reviewed field-build candidate and must earn a new exact-head acceptance.
+  Preserve this exact private-input fingerprint record and generated CocoaPods
+  build subject with the field workspace.
+  Do not run 'pod update', replace ThingSmartCryption, regenerate the private
+  identity, or regenerate Pods/workspace bytes before an accepted physical
+  capture; any input/build-subject change is a new reviewed field-build candidate
+  and must earn a new exact-head acceptance.
 
 This bootstrap still does NOT authorize the physical experiment. The exact app
 must consume the private identity pod, authorize the user's own SDK session,
