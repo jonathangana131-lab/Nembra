@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-signed-install-custody",
+  "slot": "tests",
+  "role": "tests",
+  "workerId": "sol-20260811-9b7e",
+  "leaseId": "signed-install-tests-9b7e-20260811-0940",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T09:40:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:40:00Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 2871,
+  "sourceSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e"
+}
