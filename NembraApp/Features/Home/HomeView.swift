@@ -4,6 +4,7 @@ import UIKit
 struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showLockConfirmation = false
 
     var body: some View {
@@ -111,29 +112,56 @@ struct HomeView: View {
                     .accessibilityHint("These values may be stale until the scooter reconnects.")
             }
 
-            HStack(spacing: 0) {
-                statusMetric(
-                    title: "Battery",
-                    value: batteryText,
-                    icon: batteryIcon,
-                    accessibilityIdentifier: "home.metric.battery",
-                    valueStyle: batteryValueStyle
-                )
-                metricDivider
-                statusMetric(
-                    title: "Trip",
-                    value: tripDistanceText,
-                    icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                    accessibilityTitle: "Scooter Trip",
-                    accessibilityIdentifier: "home.metric.trip"
-                )
-                metricDivider
-                statusMetric(
-                    title: "Mode",
-                    value: vehicle.state.rideMode?.displayName ?? "—",
-                    icon: "gauge.with.dots.needle.67percent",
-                    accessibilityIdentifier: "home.metric.mode"
-                )
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 0) {
+                    statusMetric(
+                        title: "Battery",
+                        value: batteryText,
+                        icon: batteryIcon,
+                        accessibilityIdentifier: "home.metric.battery",
+                        valueStyle: batteryValueStyle
+                    )
+                    accessibilityMetricDivider
+                    statusMetric(
+                        title: "Trip",
+                        value: tripDistanceText,
+                        icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                        accessibilityTitle: "Scooter Trip",
+                        accessibilityIdentifier: "home.metric.trip"
+                    )
+                    accessibilityMetricDivider
+                    statusMetric(
+                        title: "Mode",
+                        value: vehicle.state.rideMode?.displayName ?? "—",
+                        icon: "gauge.with.dots.needle.67percent",
+                        accessibilityIdentifier: "home.metric.mode"
+                    )
+                }
+            } else {
+                HStack(spacing: 0) {
+                    statusMetric(
+                        title: "Battery",
+                        value: batteryText,
+                        icon: batteryIcon,
+                        accessibilityIdentifier: "home.metric.battery",
+                        valueStyle: batteryValueStyle
+                    )
+                    metricDivider
+                    statusMetric(
+                        title: "Trip",
+                        value: tripDistanceText,
+                        icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                        accessibilityTitle: "Scooter Trip",
+                        accessibilityIdentifier: "home.metric.trip"
+                    )
+                    metricDivider
+                    statusMetric(
+                        title: "Mode",
+                        value: vehicle.state.rideMode?.displayName ?? "—",
+                        icon: "gauge.with.dots.needle.67percent",
+                        accessibilityIdentifier: "home.metric.mode"
+                    )
+                }
             }
         }
         .padding(16)
@@ -151,6 +179,11 @@ struct HomeView: View {
         Divider()
             .frame(height: 44)
             .padding(.horizontal, 12)
+    }
+
+    private var accessibilityMetricDivider: some View {
+        Divider()
+            .padding(.vertical, 12)
     }
 
     private func statusMetric(
@@ -185,35 +218,46 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "Controls")
 
-            HStack(spacing: 12) {
-                if vehicle.profile.capabilities.supportsHeadlight {
-                    actionControl(
-                        title: "Light",
-                        subtitle: lightSubtitle,
-                        icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
-                        active: vehicle.state.isHeadlightOn == true,
-                        pending: vehicle.pendingCommands.contains(.headlight),
-                        available: vehicle.state.isHeadlightOn != nil,
-                        enabled: true
-                    ) {
-                        guard let isOn = vehicle.state.isHeadlightOn else { return }
-                        Task { await vehicle.setHeadlight(!isOn) }
-                    }
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 12) {
+                    actionControls
                 }
+            } else {
+                HStack(spacing: 12) {
+                    actionControls
+                }
+            }
+        }
+    }
 
-                if vehicle.profile.capabilities.supportsLock {
-                    actionControl(
-                        title: lockControlTitle,
-                        subtitle: lockSubtitle,
-                        icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
-                        active: vehicle.state.isLocked == true,
-                        pending: vehicle.pendingCommands.contains(.lock),
-                        available: vehicle.state.isLocked != nil,
-                        enabled: canChangeLockState
-                    ) {
-                        showLockConfirmation = true
-                    }
-                }
+    @ViewBuilder
+    private var actionControls: some View {
+        if vehicle.profile.capabilities.supportsHeadlight {
+            actionControl(
+                title: "Light",
+                subtitle: lightSubtitle,
+                icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
+                active: vehicle.state.isHeadlightOn == true,
+                pending: vehicle.pendingCommands.contains(.headlight),
+                available: vehicle.state.isHeadlightOn != nil,
+                enabled: true
+            ) {
+                guard let isOn = vehicle.state.isHeadlightOn else { return }
+                Task { await vehicle.setHeadlight(!isOn) }
+            }
+        }
+
+        if vehicle.profile.capabilities.supportsLock {
+            actionControl(
+                title: lockControlTitle,
+                subtitle: lockSubtitle,
+                icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
+                active: vehicle.state.isLocked == true,
+                pending: vehicle.pendingCommands.contains(.lock),
+                available: vehicle.state.isLocked != nil,
+                enabled: canChangeLockState
+            ) {
+                showLockConfirmation = true
             }
         }
     }
@@ -251,13 +295,15 @@ struct HomeView: View {
                     Text(available ? subtitle : "Unavailable")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 13)
-            .frame(height: 58)
+            .padding(.vertical, 11)
+            .frame(minHeight: 58)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
