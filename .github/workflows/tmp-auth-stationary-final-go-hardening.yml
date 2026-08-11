@@ -1,0 +1,176 @@
+name: Temporary Authenticated Stationary Final-GO Hardening
+
+on:
+  push:
+    branches:
+      - control/v14-auth-stationary-final-go-hardening-sol
+    paths:
+      - .github/workflows/tmp-auth-stationary-final-go-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: control/v14-auth-stationary-final-go-hardening-sol
+          fetch-depth: 0
+
+      - name: Materialize reviewed authority repair
+        shell: bash
+        env:
+          EXPECTED_PARENT: e216252ccb2948ff4370a57165fa9475983e51d7
+          BRANCH: control/v14-auth-stationary-final-go-hardening-sol
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only "$EXPECTED_PARENT" HEAD)" = '.github/workflows/tmp-auth-stationary-final-go-hardening.yml'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          text = source.read_text()
+
+          replacements = [
+              (
+                  'import argparse, hashlib, importlib.util, json, os, re, stat, subprocess, sys, urllib.request, zipfile\n',
+                  'import argparse, hashlib, importlib.util, json, os, pwd, re, stat, subprocess, sys, urllib.request, zipfile\n',
+              ),
+              (
+                  '    if not ((state=="open" and draft is False) or (state=="closed" and merged)):\n'
+                  '        raise GoError("canonical PR is draft or closed without merge; software acceptance is not promotable")\n'
+                  '    subjects=[]\n',
+                  '    if not ((state=="open" and draft is False) or (state=="closed" and merged)):\n'
+                  '        raise GoError("canonical PR is draft or closed without merge; software acceptance is not promotable")\n'
+                  '    _,main=get("/branches/main"); main_sha=canon(main.get("commit",{}).get("sha"),"current main")\n'
+                  '    _,comparison=get(f"/compare/{main_sha}...{source}"); merge_base=comparison.get("merge_base_commit",{})\n'
+                  '    if comparison.get("status") not in {"ahead","identical"} or canon(merge_base.get("sha"),"main/candidate merge base")!=main_sha:\n'
+                  '        raise GoError("candidate does not contain the exact current main authority")\n'
+                  '    subjects=[]\n',
+              ),
+              (
+                  '    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":state,"merged":merged,"draft":draft},subjects\n',
+                  '    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","mainSHA":main_sha,"state":state,"merged":merged,"draft":draft},subjects\n',
+              ),
+              (
+                  '''def candidate(repo:Path,source:str):
+    root=repo.expanduser().resolve(strict=True)
+    if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
+    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in (("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))}
+    if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
+    paths=[root/INSTALLER,root/RUNBOOK,root/IDENTITY]
+    if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")
+    ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()
+    if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
+    return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
+''',
+                  '''def _tracked_worktree_bytes(root:Path,relative:str,expected_blob:str)->bytes:
+    tag=git(root,"ls-files","-v","--",relative)
+    if tag!=f"H {relative}": raise GoError(f"candidate authority path has non-default Git index flags: {relative}")
+    raw=regular(root/relative,f"candidate authority path {relative}")
+    actual=hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\\0"+raw).hexdigest()
+    if actual!=expected_blob: raise GoError(f"candidate worktree bytes differ from accepted Git blob: {relative}")
+    return raw
+
+def candidate(repo:Path,source:str):
+    root=repo.expanduser().resolve(strict=True)
+    if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
+    entries=(("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))
+    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in entries}
+    if any(not re.fullmatch(r"[0-9a-f]{40}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
+    raws={k:_tracked_worktree_bytes(root,p,blobs[k]) for k,p in entries}
+    try: ins=raws["installer"].decode(); rb=raws["runbook"].decode(); ident=raws["buildIdentity"].decode()
+    except UnicodeDecodeError as e: raise GoError("candidate authority source is not UTF-8") from e
+    if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
+    return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
+''',
+              ),
+              (
+                  '''def installer(repo:Path,source:str,device:Path):
+    root=repo.expanduser().resolve(strict=True); env=os.environ.copy(); env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device.expanduser().resolve(strict=True))
+    try:p=subprocess.run(["/bin/bash",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+''',
+                  '''def installer(repo:Path,source:str,device:Path):
+    root=repo.expanduser().resolve(strict=True); device_path=device.expanduser().resolve(strict=True)
+    home=pwd.getpwuid(os.getuid()).pw_dir
+    env={"PATH":"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin","HOME":home,"TMPDIR":"/tmp","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path)}
+    try:p=subprocess.run(["/bin/bash","-p",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+''',
+              ),
+              (
+                  '    stable_pr=("number","headSHA","headBranch","base")\n',
+                  '    stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")\n',
+              ),
+          ]
+          for old,new in replacements:
+              if text.count(old)!=1:
+                  raise SystemExit(f'Final-GO transform expected exactly one match: {old[:100]!r}')
+              text=text.replace(old,new,1)
+          source.write_text(text)
+
+          tests=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
+          text=tests.read_text()
+          old="import hashlib, importlib.util, json, subprocess, tempfile, unittest, zipfile\n"
+          new="import hashlib, importlib.util, json, os, subprocess, tempfile, unittest, zipfile\n"
+          if text.count(old)!=1: raise SystemExit('test import transform mismatch')
+          text=text.replace(old,new,1)
+          old=" def get(self,p):v=self.map[p];return json.dumps(v).encode(),v\n"
+          new=''' def get(self,p):
+  if p==\'/branches/main\':v={\'commit\':{\'sha\':getattr(self,\'main\',\'0\'*40)}}
+  elif p.startswith(\'/compare/\'):
+   base=p.split(\'/compare/\',1)[1].split(\'...\',1)[0];v={\'status\':getattr(self,\'compare_status\',\'ahead\'),\'merge_base_commit\':{\'sha\':base}}
+  else:v=self.map[p]
+  return json.dumps(v).encode(),v
+'''
+          if text.count(old)!=1: raise SystemExit('fixture get transform mismatch')
+          text=text.replace(old,new,1)
+          marker="if __name__=='__main__':unittest.main(verbosity=2)\n"
+          additions=''' def test_current_main_is_bound_and_must_be_candidate_ancestor(self):
+  r=self.f.build();self.assertEqual(r[\'acceptedPR\'][\'mainSHA\'],\'0\'*40)
+  self.f.compare_status=\'diverged\';self.no(self.f.build)
+ def test_post_install_current_main_or_pr_state_drift_is_rejected(self):
+  def move_main(r,s,d):x=self.f.inst(r,s,d);self.f.main=\'1\'*40;return x
+  self.no(lambda:self.f.build(run_installer=move_main));self.f.main=\'0\'*40
+  pull=self.f.map[f\'/pulls/{self.f.pr}\']
+  def merge_pr(r,s,d):x=self.f.inst(r,s,d);pull[\'state\']=\'closed\';pull[\'merged_at\']=\'2026-08-11T03:00:00Z\';return x
+  self.no(lambda:self.f.build(run_installer=merge_pr))
+ def test_candidate_rejects_hidden_index_flags_and_worktree_byte_drift(self):
+  path=self.f.repo/go.INSTALLER;original=path.read_text()
+  for flag,clear in [(\'--assume-unchanged\',\'--no-assume-unchanged\'),(\'--skip-worktree\',\'--no-skip-worktree\')]:
+   subprocess.run([\'/usr/bin/git\',\'-C\',str(self.f.repo),\'update-index\',flag,go.INSTALLER],check=True)
+   path.write_text(original+\'# hidden byte drift\\n\')
+   self.no(lambda:go.candidate(self.f.repo,self.f.s))
+   path.write_text(original);subprocess.run([\'/usr/bin/git\',\'-C\',str(self.f.repo),\'update-index\',clear,go.INSTALLER],check=True)
+ def test_installer_ignores_inherited_bash_startup_environment(self):
+  path=self.f.repo/go.INSTALLER
+  path.write_text(f\'PROCEDURE_ID="{go.PROC}"\\nBUNDLE_ID="{go.BUNDLE}"\\necho "SDK-INTEGRATED CAPTURE LAUNCHED"\\n\')
+  subprocess.run([\'/usr/bin/git\',\'-C\',str(self.f.repo),\'add\',go.INSTALLER],check=True);subprocess.run([\'/usr/bin/git\',\'-C\',str(self.f.repo),\'commit\',\'-qm\',\'installer\'],check=True)
+  source=subprocess.check_output([\'/usr/bin/git\',\'-C\',str(self.f.repo),\'rev-parse\',\'HEAD\'],text=True).strip()
+  startup=self.f.r/\'bash-env\';startup.write_text(\'exit 42\\n\')
+  old=os.environ.get(\'BASH_ENV\');os.environ[\'BASH_ENV\']=str(startup)
+  try:self.assertEqual(go.installer(self.f.repo,source,self.f.dev)[\'result\'],\'success\')
+  finally:
+   if old is None:os.environ.pop(\'BASH_ENV\',None)
+   else:os.environ[\'BASH_ENV\']=old
+'''
+          if text.count(marker)!=1: raise SystemExit('test insertion marker mismatch')
+          text=text.replace(marker,additions+marker,1)
+          tests.write_text(text)
+          PY
+
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
+          python3 -m py_compile scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+
+          git rm .github/workflows/tmp-auth-stationary-final-go-hardening.yml
+          git config user.name 'nembra-v14-hardening'
+          git config user.email 'nembra-v14-hardening@users.noreply.github.com'
+          git add scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          git commit -m 'fix(capture): harden Final-GO authority custody'
+          git push origin "HEAD:$BRANCH"
