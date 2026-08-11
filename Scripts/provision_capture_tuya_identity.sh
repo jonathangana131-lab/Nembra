@@ -62,12 +62,32 @@ APP_KEY_B64="$(builtin printf '%s' "$APP_KEY" | /usr/bin/base64 | /usr/bin/tr -d
 APP_SECRET_B64="$(builtin printf '%s' "$APP_SECRET" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 unset APP_KEY APP_SECRET
 
-PODSPEC_TMP="$(/usr/bin/mktemp "$DEST/.NembraTuyaPrivateConfig.podspec.XXXXXX")"
-IDENTITY_TMP="$(/usr/bin/mktemp "$SOURCE_DIR/.NembraTuyaPrivateIdentity.swift.XXXXXX")"
+PODSPEC_TMP=""
+IDENTITY_TMP=""
 cleanup_private_identity_temps() {
-  /bin/rm -f "$PODSPEC_TMP" "$IDENTITY_TMP"
+  [[ -z "$PODSPEC_TMP" ]] || /bin/rm -f -- "$PODSPEC_TMP"
+  [[ -z "$IDENTITY_TMP" ]] || /bin/rm -f -- "$IDENTITY_TMP"
 }
 trap cleanup_private_identity_temps EXIT HUP INT TERM
+
+validate_private_temp() {
+  local candidate="$1"
+  local expected_prefix="$2"
+  local expected_parent="$3"
+  local actual_parent
+  actual_parent="$(cd "$(/usr/bin/dirname "$candidate")" && /bin/pwd -P)"
+  if [[ "$candidate" != "$expected_prefix"* || "$candidate" == "$expected_prefix" || -L "$candidate" || ! -f "$candidate" || "$actual_parent" != "$expected_parent" ]]; then
+    echo "ERROR: refusing unexpected private Tuya temporary output: $candidate" >&2
+    exit 4
+  fi
+}
+
+PODSPEC_TMP_PREFIX="$DEST/.NembraTuyaPrivateConfig.podspec."
+IDENTITY_TMP_PREFIX="$SOURCE_DIR/.NembraTuyaPrivateIdentity.swift."
+PODSPEC_TMP="$(/usr/bin/mktemp "${PODSPEC_TMP_PREFIX}XXXXXX")"
+validate_private_temp "$PODSPEC_TMP" "$PODSPEC_TMP_PREFIX" "$DEST"
+IDENTITY_TMP="$(/usr/bin/mktemp "${IDENTITY_TMP_PREFIX}XXXXXX")"
+validate_private_temp "$IDENTITY_TMP" "$IDENTITY_TMP_PREFIX" "$SOURCE_DIR"
 
 /bin/cat > "$PODSPEC_TMP" <<'RUBY'
 Pod::Spec.new do |s|
@@ -117,7 +137,9 @@ for directory in "$LOCAL_SECRETS" "$DEST" "$DEST/Sources" "$SOURCE_DIR"; do
   }
 done
 /bin/mv -f "$PODSPEC_TMP" "$PODSPEC"
+PODSPEC_TMP=""
 /bin/mv -f "$IDENTITY_TMP" "$IDENTITY_SWIFT"
+IDENTITY_TMP=""
 trap - EXIT HUP INT TERM
 /bin/chmod 600 "$PODSPEC" "$IDENTITY_SWIFT"
 
