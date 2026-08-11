@@ -1,6 +1,13 @@
 name: Capture Private Identity Publication Races Red Team
 
 on:
+  push:
+    branches:
+      - adversarial/v14-private-identity-publication-races-sol
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - scripts/ci/tests/test_capture_private_identity_publication_races.py
+      - .github/workflows/capture-private-identity-publication-races-redteam.yml
   pull_request:
     paths:
       - Scripts/provision_capture_tuya_identity_writer.py
