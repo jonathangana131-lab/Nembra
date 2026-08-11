@@ -1,0 +1,59 @@
+name: Fix Capture Authority Materializer Selector
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/fix-capture-authority-materializer.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Make review-output selector unambiguous
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-authority-chain-materialize.yml')
+          text = path.read_text()
+          old = '''          text = replace_once(text,
+              '  Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256\\n',
+              '  Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256\\n'
+              '  Private-input provenance helper source SHA-256: $PROVENANCE_HELPER_SHA256\\n'
+              '  Generated-build-subject helper source SHA-256: $GENERATED_BUILD_SUBJECT_HELPER_SHA256\\n',
+              "bootstrap review helper output")
+'''
+          new = '''          text = replace_once(text,
+              '  Private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256\\n'
+              '  Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256\\n',
+              '  Private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256\\n'
+              '  Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256\\n'
+              '  Private-input provenance helper source SHA-256: $PROVENANCE_HELPER_SHA256\\n'
+              '  Generated-build-subject helper source SHA-256: $GENERATED_BUILD_SUBJECT_HELPER_SHA256\\n',
+              "bootstrap review helper output")
+'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'authority materializer selector: expected one exact block, found {count}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          rm -f .nembra-authority-materializer-error
+          rm -f .github/workflows/fix-capture-authority-materializer.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A .github/workflows/capture-authority-chain-materialize.yml .github/workflows/fix-capture-authority-materializer.yml .nembra-authority-materializer-error
+          git commit -m 'Capture: disambiguate authority materializer review output'
+          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
