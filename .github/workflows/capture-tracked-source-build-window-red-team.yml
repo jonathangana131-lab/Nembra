@@ -1,0 +1,38 @@
+name: Capture Tracked Source Build Window Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v14-capture-tracked-source-build-window-sol-d4c8
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_tracked_source_build_window_red_team.py
+      - .github/workflows/capture-tracked-source-build-window-red-team.yml
+
+permissions:
+  contents: read
+
+jobs:
+  tracked-source-build-window:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Bind exact diagnostic checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Prove tracked-source compiler-window custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_tracked_source_build_window_red_team.py
+          git diff --check
