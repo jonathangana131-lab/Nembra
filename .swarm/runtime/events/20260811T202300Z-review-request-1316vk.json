@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "202300-review-request-1316vk",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-1316vk",
+  "laneId": "capture-final-go-authority",
+  "message": "Independent review requested for test-only PR #2976 exact d9f383b98e4ed9eef99200fc8d3c630d608a1302 against parent #2921 exact 8242722c0b0e4ff2bcd117419fe405db191a5985. Capture Authenticated Stationary Private Review Final GO run 31532461941 is terminal SUCCESS; Xcode is path-policy skipped and not counted. Review should confirm the raw pack-index witness preserves the forged-alias attack without depending on post-corruption ambient Git traversal and does not weaken production verified-object-chain authority. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T20:23:00Z"
+}
