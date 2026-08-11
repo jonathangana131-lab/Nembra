@@ -1,6 +1,11 @@
 name: Capture Signed Origin Post-Detach Directory FD Probe
 
 on:
+  push:
+    branches:
+      - validation/v14-post-detach-dirfd-guard-fix-sol-20260811
+    paths:
+      - .github/workflows/capture-signed-origin-post-detach-dirfd-probe.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
@@ -60,7 +65,10 @@ jobs:
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
           grep -Fq 'completed = subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/python3"' \
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
-          if grep -Fq 'sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py' \
+          # Reject only an actual workflow command that reintroduces the outer
+          # sudo launch. The prior fixed-string guard matched its own grep
+          # source and deterministically exited 21 before the kernel probe.
+          if grep -Eq '^[[:space:]]*sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe\.py([[:space:]]|$)' \
             .github/workflows/capture-signed-origin-post-detach-dirfd-probe.yml; then
             printf 'The parent probe must start as the runner user; it owns the single sudo transition into --root-probe.\n' >&2
             exit 21
