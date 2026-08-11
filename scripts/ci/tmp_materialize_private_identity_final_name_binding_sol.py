@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 import subprocess
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "Scripts/provision_capture_tuya_identity_writer.py"
 SHELL = ROOT / "Scripts/provision_capture_tuya_identity.sh"
 SWIFT = ROOT / "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift"
@@ -102,7 +102,6 @@ workflow = workflow.replace(
 )
 WORKFLOW.write_text(workflow, encoding="utf-8")
 
-# Focused construction validation before publishing any production bytes.
 subprocess.run(["python3", "-m", "py_compile", str(WRITER), str(ATTACK)], cwd=ROOT, check=True)
 subprocess.run(["python3", str(WRITER), "--self-test"], cwd=ROOT, check=True)
 for test in (
@@ -120,8 +119,6 @@ swift_after = SWIFT.read_text(encoding="utf-8")
 if new_digest not in shell_after or writer_digest not in swift_after:
     raise SystemExit("writer digest was not carried through shell + package contract")
 
-# Leave only durable product/regression bytes. The running workflow remains valid
-# after these materializer paths are removed from the working tree.
 SELF.unlink()
 TEMP_WORKFLOW.unlink()
 subprocess.run(
