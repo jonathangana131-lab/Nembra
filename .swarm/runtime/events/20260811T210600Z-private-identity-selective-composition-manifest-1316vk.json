@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "210600-private-identity-selective-composition-manifest-1316vk",
+  "type": "INTEGRATION_BOUNDARY",
+  "workerId": "sol-20260811-1316vk",
+  "laneId": "capture-private-identity-convergence",
+  "createdAt": "2026-08-11T21:06:00Z",
+  "privateReviewedHead": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
+  "observedBuildAuthorityHead": "6b0c974d432205593f2d1157de06544a01145489",
+  "mergeBase": "8292b51e5df90744950e7f0d4a04684523520563",
+  "lineageStatus": "DIVERGED_117_AHEAD_196_BEHIND_DO_NOT_MERGE_WHOLE_BRANCH",
+  "candidatePrivateIdentityPaths": [
+    ".github/workflows/capture-field-build-provenance.yml",
+    ".github/workflows/capture-private-identity-publication-races-redteam.yml",
+    ".gitignore",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataAccountUIDCustodySourceTests.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataSecretRedactionSourceTests.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityCheckoutRootCustodySourceTests.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift",
+    "Scripts/bootstrap_capture_tuya_sdk.sh",
+    "Scripts/capture_tuya_private_dependency_resolution_guard.py",
+    "Scripts/capture_tuya_private_identity_authority.py",
+    "Scripts/provision_capture_tuya_identity.sh",
+    "Scripts/provision_capture_tuya_identity_writer.py",
+    "scripts/ci/tests/test_capture_private_identity_authority_receipt.py",
+    "scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py",
+    "scripts/ci/tests/test_capture_private_identity_crash_residue.py",
+    "scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py",
+    "scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py",
+    "scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py",
+    "scripts/ci/tests/test_capture_private_identity_publication_races.py",
+    "scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py",
+    "scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py"
+  ],
+  "explicitlyExcludedDivergencePaths": [
+    ".github/workflows/tmp-v14-bootstrap-resolution-adapter.yml",
+    "docs/ES80_TODAY_FINAL_GO_OPERATOR_ATTESTATION.md",
+    "scripts/ci/es80_today_final_go_hardened.py",
+    "scripts/ci/tests/test_es80_today_final_go_direct_execution_disabled.py",
+    "scripts/ci/tests/test_es80_today_final_go_executable_bundle_custody.py"
+  ],
+  "constraints": [
+    "This is a candidate whitelist derived from exact path-level compare, not permission to transplant blindly; refresh the active build-authority exact head first and resolve each path against newer accepted semantics.",
+    "Do not merge/cherry-pick the private lineage wholesale; it is deeply divergent from build authority and contains an obsolete one-shot self-mutating workflow.",
+    "Preserve the newer build-authority installer/bootstrap execution semantics, including reviewed $0 source-root handling, selected-Xcode custody, and any later accepted signed-install changes.",
+    "After #2993 exact Field/Main acceptance, recompose #2977 sanitation changes for provision_capture_tuya_identity_writer.py and test_capture_private_identity_recovery_unlink_race.py onto the selectively composed private authority set.",
+    "All composed heads must re-earn private races, Field, Main Graft, required Xcode/Final-GO gates; no ancestor/ingredient green grants physical authority.",
+    "PHYSICAL NO-GO / DO NOT SCAN / DO NOT RUN."
+  ]
+}
