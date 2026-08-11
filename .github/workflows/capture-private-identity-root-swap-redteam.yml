@@ -42,4 +42,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          printf 'NEMBRA_WRITER_SHA256='
+          sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}'
           /usr/bin/python3 scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
