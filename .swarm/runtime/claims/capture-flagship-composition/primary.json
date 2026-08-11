@@ -9,21 +9,22 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:58:02Z",
-  "lastHeartbeatAt": "2026-08-11T12:13:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:18:20Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
   "sourceSHA": "85e629133fb4feab252701c9b2c5700489ea1938",
-  "currentHeadSHA": "99fbbbb701eee16c24e1594ae54417e511a7a88e",
+  "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "pr": 2940,
   "takeoverFromWorkerId": "sol-20260811-root-closure",
-  "takeoverReason": "Generation-1 primary lease expired after last heartbeat 2026-08-11T10:18:00Z. Exact 85e62913 gates exposed a deterministic standalone compile regression at NembraCaptureEntrypoint.swift:3787 and retained AX5 pixels exposed loss of persistent sighted Tuya user-code field identity. Recover the same flagship AX closure, repair both product defects, and re-run exact-head acceptance.",
+  "takeoverReason": "Generation-1 primary lease expired after last heartbeat 2026-08-11T10:18:00Z. Exact 85e62913 gates exposed a deterministic standalone compile regression at NembraCaptureEntrypoint.swift:3787 and retained AX5 pixels exposed loss of persistent sighted Tuya user-code field identity. Recover the same flagship AX closure, repair both product defects, add focused regression contracts, and re-run exact-head acceptance.",
   "ownedPaths": [
     "NembraApp/App/NembraCaptureEntrypoint.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
-    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAXScopeRegressionSourceTests.swift"
   ],
-  "durableEvidence": "Exact 85e62913 Selective Graft artifact 9097533165 proved package green then standalone compile failure because SecureLinkView referenced CaptureP0Root's private isAccessibilityLayout. Retained ancestor AX5 artifact 9097167192 showed the first-fold QR action with large vertical headroom but no persistent sighted user-code label. Clean product commit 99fbbbb701ee fixes SecureLinkView by using its own dynamicTypeSize.isAccessibilitySize and restores a compact persistent Tuya user code label capped at Accessibility 1 while TextField retains semantic Tuya Smart user code. Temporary materializer workflow is absent. Original #2891 bot-head runs were action_required; #2940 points at the same exact clean commit to mint user-authored pull_request acceptance events. Exact 99fbbbb runs: Selective Graft 31490132658 queued, Field Provenance 31490132626 queued, Standalone Visual 31490132765 queued, Xcode 27 31490132773 queued.",
-  "acceptance": "Require unchanged 99fbbbb701eee16c24e1594ae54417e511a7a88e: Capture package/Main Selective Graft green, Xcode 27 green, Field Build Provenance green, Standalone Visual green with retained standard + AX5 pixels, human pixel critique, and VoiceOver ordering. Any head move resets exact-head evidence. Ancestor pixels/greens remain non-authoritative.",
+  "durableEvidence": "99fbbbb701ee closed both product defects: SecureLinkView uses its own dynamicTypeSize.isAccessibilitySize and the root restores a persistent sighted Tuya user code label while keeping TextField semantics. Exact 99fbbbb Selective Graft run 31490132658 was terminal green including package + standalone composition; Standalone Visual exact app build step also passed and Xcode cleared package validation. Before acceptance, a focused regression guard was added because existing source tests did not mechanically prevent the exact cross-view scope bug or protect persistent sighted field identity. Current exact head 005b7c4aaf27 adds only CaptureAXScopeRegressionSourceTests.swift. All 99fbbbb gate results/pixels are ancestor evidence and must not be promoted after this head move.",
+  "acceptance": "Require unchanged 005b7c4aaf27fabb442a65599b4538ebcc09ae27: Capture package/Main Selective Graft green including new regression test, Xcode 27 green, Field Build Provenance green, Standalone Visual green with retained standard + AX5 pixels, human pixel critique, and VoiceOver ordering. Any head move resets exact-head evidence. Ancestor pixels/greens remain non-authoritative.",
   "intent": "Finish #2940 action-first Accessibility XXXL Capture root without weakening physical/build truth. Sighted AX must keep Capture locked, a persistent Tuya user code label, first-fold Create QR, and compact Details; VoiceOver must retain Physical capture locked, Tuya Smart user code, Create approval QR, and Engineering details. PHYSICAL NO-GO until separate build/security authority and final composition close."
 }
