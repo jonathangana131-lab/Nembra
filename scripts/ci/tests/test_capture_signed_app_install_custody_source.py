@@ -21,7 +21,7 @@ class SignedAppInstallCustodySourceTests(unittest.TestCase):
         helper_binding = 'SIGNED_APP_INSTALL_GUARD="$ROOT/scripts/ci/es80_signed_app_install_guard.py"'
         frozen_digest = 'SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" digest --app "$APP")"'
         install_start = 'say "Installing SDK-integrated Capture on the intended iPhone"'
-        guard_call = '/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" guard \\\'
+        guard_call = '/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" guard'
 
         for marker in (xcode_open, strict_signature, profile_acceptance, helper_binding, frozen_digest, install_start, guard_call):
             self.assertIn(marker, source, marker)
