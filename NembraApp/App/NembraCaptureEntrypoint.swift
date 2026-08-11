@@ -88,6 +88,7 @@ private struct CaptureP0Root: View {
                     .font(.body)
                     .foregroundStyle(Color.white.opacity(0.78))
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(Text(verbatim: "Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified."))
             }
         }
     }
