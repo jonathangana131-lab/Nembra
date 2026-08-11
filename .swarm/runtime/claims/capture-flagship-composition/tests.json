@@ -7,16 +7,16 @@
   "workerId": "gpt56-sol-20260811-visual-readiness-guard",
   "leaseId": "capture-flagship-tests-visual-readiness-20260811-2200",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:08:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:21:00Z",
+  "releasedAt": "2026-08-11T22:21:00Z",
   "leaseSeconds": 1800,
   "branch": "polish/v14-capture-root-first-fold-sol-1311jx-20260811",
   "pr": 2979,
   "sourceSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
   "currentHeadSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
-  "takeoverFromWorkerId": "sol-20260811-gpt56-runtime-count",
-  "takeoverReason": "Prior tests slot was RELEASED. Recover a non-conflicting Capture visual-evidence rung after a later exact ce9 rerun proved the visual harness could produce a false-green blank standard screenshot. Harden only standalone visual evidence harness/tests/workflow wiring; do not alter accepted first-fold product/UI/BLE/signing/install/physical-authority bytes.",
+  "outcome": "VISUAL_EVIDENCE_INSTRUMENT_HARDENED_WAITING_EXACT_RUNNERS",
   "ownedPaths": [
     ".github/workflows/capture-standalone-visual-evidence.yml",
     "scripts/ci/capture_standalone_visual_evidence.sh",
@@ -24,5 +24,5 @@
     "scripts/ci/tests/test_capture_standalone_visual_evidence.py",
     "scripts/ci/tests/test_capture_visual_png_content_guard.py"
   ],
-  "checkpoint": "Chronology reconciled: product checkpoint ce9e2bac legitimately earned exact visual acceptance from run 31534132613 / artifact 9119075830 (standard bdcd0dad..., AX5 e3b39f39..., human-reviewed). Later same-head run 31537417996 / artifact 9119812244 also returned SUCCESS but standard app content was black, proving nondeterministic evidence-instrument failure rather than bad product pixels. Current 6bb2e3cb is validation-only ahead of ce9 and changes exactly five CI/harness/test paths. Guard calibration rejects the bad later standard (0 qualifying app pixels / 0 bands) and passes both previously accepted ce9 screenshots. Workflow executes synthetic status-only/rendered/corrupt tests, hashes guard provenance, always uploads diagnostics, and now triggers on NembraApp/Resources/Localizable.strings so copy-only Capture changes cannot bypass visual evidence. Fresh exact runs Visual 31539959311, Field 31539959359, Main 31539959336, Xcode 31539959295 are queued and NOT acceptance. PHYSICAL NO-GO."
+  "checkpoint": "Code complete at #2979 exact 6bb2e3cb and lease released rather than held while runners queue. ce9e2bac retains legitimate prior human visual acceptance from run 31534132613 / artifact 9119075830. Later same-head run 31537417996 exposed a false-green blank standard screenshot, so 6bb2 hardens the evidence instrument only: fail-closed PNG content/CRC/filter guard excluding status bar, bounded content-based screenshot polling, AX5 relaunch, synthetic blank/rendered/corrupt regression, guard hash provenance, always-upload diagnostics, and Localizable.strings workflow trigger. Guard rejects the known bad standard (0 app pixels / 0 bands) and passes legitimate ce9/#2940 captures. Fresh exact Visual 31539959311, Field 31539959359, Main 31539959336, Xcode 31539959295 remain queued and are NOT acceptance. Runtime AX successor #3073 is now based exactly on 6bb2, so if this base moves a successor must rebase/re-earn exact evidence. PHYSICAL NO-GO."
 }
