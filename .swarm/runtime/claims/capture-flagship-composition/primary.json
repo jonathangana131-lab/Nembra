@@ -9,21 +9,21 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:58:02Z",
-  "lastHeartbeatAt": "2026-08-11T12:02:44Z",
+  "lastHeartbeatAt": "2026-08-11T12:13:00Z",
   "leaseSeconds": 1800,
-  "branch": "repair/v14-capture-root-two-file-closure-sol-20260811",
+  "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
   "sourceSHA": "85e629133fb4feab252701c9b2c5700489ea1938",
-  "currentHeadSHA": "86928ed9166e006772dfe73b174972134e13b344",
-  "pr": 2891,
+  "currentHeadSHA": "99fbbbb701eee16c24e1594ae54417e511a7a88e",
+  "pr": 2940,
   "takeoverFromWorkerId": "sol-20260811-root-closure",
-  "takeoverReason": "Generation-1 primary lease expired after last heartbeat 2026-08-11T10:18:00Z. Exact 85e62913 gates exposed a deterministic standalone compile regression at NembraCaptureEntrypoint.swift:3787: engineeringDisclosure references out-of-scope isAccessibilityLayout. Recover the same flagship AX closure to repair that compile blocker, retain the intended Details/Engineering details semantics, and re-run exact-head acceptance.",
+  "takeoverReason": "Generation-1 primary lease expired after last heartbeat 2026-08-11T10:18:00Z. Exact 85e62913 gates exposed a deterministic standalone compile regression at NembraCaptureEntrypoint.swift:3787 and retained AX5 pixels exposed loss of persistent sighted Tuya user-code field identity. Recover the same flagship AX closure, repair both product defects, and re-run exact-head acceptance.",
   "ownedPaths": [
     "NembraApp/App/NembraCaptureEntrypoint.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
   ],
-  "durableEvidence": "Exact 85e62913 Xcode 27 run 31481541039 is green. Exact Selective Graft run 31481541018 artifact 9097533165 proves the full Capture package passes, but standalone build fails compiling NembraCaptureEntrypoint.swift:3787 because isAccessibilityLayout is not in SecureLinkView scope. Standalone Visual 31481541019 and Field Provenance 31481541005 fail at the same stamped standalone build. User-authored staging head 86928ed adds only temporary self-removing workflow temp-capture-root-ax-compile-fix.yml; run 31489177721 is queued to replace the bad SecureLinkView reference with its own dynamicTypeSize.isAccessibilitySize, prove standalone compilation, delete the workflow, and publish a clean product head. 86928ed is not an acceptance candidate.",
-  "acceptance": "After the narrow source fix, require unchanged clean new exact head: Capture package/Main Selective Graft green, Xcode 27 green, Field Build Provenance green, Standalone Visual green with retained standard + AX5 pixels, human pixel critique, and VoiceOver ordering. Add/retain a source contract tying SecureLinkView Details to dynamicTypeSize.isAccessibilitySize. Any head move resets exact-head evidence. Ancestor pixels/greens remain non-authoritative.",
-  "intent": "Finish #2891 action-first Accessibility XXXL Capture root without weakening physical/build truth. Sighted AX must keep Capture locked and compact Details; VoiceOver must retain Physical capture locked, Tuya Smart user code, Create approval QR, and Engineering details. PHYSICAL NO-GO until separate build/security authority and final composition close."
+  "durableEvidence": "Exact 85e62913 Selective Graft artifact 9097533165 proved package green then standalone compile failure because SecureLinkView referenced CaptureP0Root's private isAccessibilityLayout. Retained ancestor AX5 artifact 9097167192 showed the first-fold QR action with large vertical headroom but no persistent sighted user-code label. Clean product commit 99fbbbb701ee fixes SecureLinkView by using its own dynamicTypeSize.isAccessibilitySize and restores a compact persistent Tuya user code label capped at Accessibility 1 while TextField retains semantic Tuya Smart user code. Temporary materializer workflow is absent. Original #2891 bot-head runs were action_required; #2940 points at the same exact clean commit to mint user-authored pull_request acceptance events. Exact 99fbbbb runs: Selective Graft 31490132658 queued, Field Provenance 31490132626 queued, Standalone Visual 31490132765 queued, Xcode 27 31490132773 queued.",
+  "acceptance": "Require unchanged 99fbbbb701eee16c24e1594ae54417e511a7a88e: Capture package/Main Selective Graft green, Xcode 27 green, Field Build Provenance green, Standalone Visual green with retained standard + AX5 pixels, human pixel critique, and VoiceOver ordering. Any head move resets exact-head evidence. Ancestor pixels/greens remain non-authoritative.",
+  "intent": "Finish #2940 action-first Accessibility XXXL Capture root without weakening physical/build truth. Sighted AX must keep Capture locked, a persistent Tuya user code label, first-fold Create QR, and compact Details; VoiceOver must retain Physical capture locked, Tuya Smart user code, Create approval QR, and Engineering details. PHYSICAL NO-GO until separate build/security authority and final composition close."
 }
