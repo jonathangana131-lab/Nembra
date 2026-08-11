@@ -124,6 +124,15 @@ class CaptureFieldUntrackedPrearmInjectionRedTeamTests(unittest.TestCase):
             rogue.write_text('let attacker = "outside accepted private pods"\n', encoding="utf-8")
             with self.assertRaises(guard.BuildGuardError):
                 guard._verify_accepted_source_physical_tree(PrivateShape(), manifest, repo)
+            rogue.unlink()
+
+            sibling = repo / "LocalSecrets" / "OtherPrivateRoot"
+            sibling.mkdir()
+            (sibling / "Injected.swift").write_text(
+                'let attacker = "unrelated private sibling"\n', encoding="utf-8"
+            )
+            with self.assertRaises(guard.BuildGuardError):
+                guard._verify_accepted_source_physical_tree(PrivateShape(), manifest, repo)
 
     def test_untracked_swiftpm_source_inserted_between_endpoint_audit_and_vnode_arming_is_rejected(self) -> None:
         guard = load_guard()
