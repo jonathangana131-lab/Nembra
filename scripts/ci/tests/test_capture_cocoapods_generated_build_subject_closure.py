@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -12,10 +13,12 @@ REPO = Path(__file__).resolve().parents[3]
 FILES = (
     REPO / "Scripts/bootstrap_capture_tuya_sdk.sh",
     REPO / "Scripts/capture_tuya_private_input_provenance.py",
+    REPO / "Scripts/capture_tuya_private_input_review.py",
     REPO / "Scripts/capture_cocoapods_build_subject.py",
 )
 GUARD = REPO / "Scripts/capture_tuya_private_input_build_guard.py"
 GENERATED = Path("Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig")
+PRIVATE_COMMITMENT = re.compile(r"Private Tuya input review commitment:\s*([0-9a-f]{64})")
 
 
 def digest(path: Path) -> str:
@@ -70,7 +73,14 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def bootstrap(self, graph: str, *, review: bool, accepted: str = "") -> subprocess.CompletedProcess[str]:
+    def bootstrap(
+        self,
+        graph: str,
+        *,
+        review: bool,
+        accepted: str = "",
+        private_commitment: str = "",
+    ) -> subprocess.CompletedProcess[str]:
         env = {
             "PATH": f"{self.bin}:/usr/bin:/bin",
             "HOME": str(self.root),
@@ -80,6 +90,8 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         }
         if accepted:
             env["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"] = accepted
+        if private_commitment:
+            env["NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_INPUT_COMMITMENT"] = private_commitment
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review:
             command.append("--resolve-lock-for-review")
@@ -102,30 +114,45 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
             "--workspace", str(self.root / "NembraCapture.xcworkspace"),
         )
 
-    def test_same_graph_reproduces_reviewed_attested_lock_and_manifest(self) -> None:
-        review = self.bootstrap("GRAPH_A", review=True)
+    def review_subject(self, graph: str = "GRAPH_A") -> tuple[str, str, subprocess.CompletedProcess[str]]:
+        review = self.bootstrap(graph, review=True)
         self.assertEqual(review.returncode, 0, review.stdout)
+        match = PRIVATE_COMMITMENT.search(review.stdout)
+        self.assertIsNotNone(match, review.stdout)
+        assert match is not None
+        return digest(self.root / "Podfile.lock"), match.group(1), review
+
+    def test_same_graph_reproduces_reviewed_attested_lock_and_manifest(self) -> None:
+        accepted, private_commitment, _ = self.review_subject()
         lock = self.root / "Podfile.lock"
         manifest = self.root / "Pods/Manifest.lock"
-        accepted = digest(lock)
         self.assertEqual(lock.read_bytes(), manifest.read_bytes())
         expected = self.helper("read-attestation", "--lockfile", str(lock))
         self.assertEqual(expected.returncode, 0, expected.stdout)
         self.assertRegex(expected.stdout.strip(), r"^[0-9a-f]{64}$")
 
-        field = self.bootstrap("GRAPH_A", review=False, accepted=accepted)
+        field = self.bootstrap(
+            "GRAPH_A",
+            review=False,
+            accepted=accepted,
+            private_commitment=private_commitment,
+        )
         self.assertEqual(field.returncode, 0, field.stdout)
         self.assertEqual(digest(lock), accepted)
         self.assertEqual(lock.read_bytes(), manifest.read_bytes())
+        self.assertIn("Preaccepted private Tuya input review commitment matched", field.stdout)
 
     def test_changed_graph_fails_with_same_reviewed_lock(self) -> None:
-        review = self.bootstrap("GRAPH_A", review=True)
-        self.assertEqual(review.returncode, 0, review.stdout)
+        accepted, private_commitment, _ = self.review_subject()
         lock = self.root / "Podfile.lock"
         manifest = self.root / "Pods/Manifest.lock"
-        accepted = digest(lock)
         before = (self.root / GENERATED).read_bytes()
-        field = self.bootstrap("GRAPH_B", review=False, accepted=accepted)
+        field = self.bootstrap(
+            "GRAPH_B",
+            review=False,
+            accepted=accepted,
+            private_commitment=private_commitment,
+        )
         self.assertNotEqual(field.returncode, 0, field.stdout)
         self.assertEqual(digest(lock), accepted)
         self.assertEqual(lock.read_bytes(), manifest.read_bytes())
@@ -133,8 +160,7 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         self.assertIn("generated different build-affecting bytes", field.stdout)
 
     def test_attestation_rewrite_is_deterministic_and_single(self) -> None:
-        review = self.bootstrap("GRAPH_A", review=True)
-        self.assertEqual(review.returncode, 0, review.stdout)
+        _, _, _ = self.review_subject()
         lock = self.root / "Podfile.lock"
         before = lock.read_bytes()
         value = self.helper("read-attestation", "--lockfile", str(lock)).stdout.strip()
@@ -144,8 +170,7 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         self.assertEqual(lock.read_bytes().count(b"# NEMBRA_CAPTURE_GENERATED_BUILD_SUBJECT_SHA256="), 1)
 
     def test_manifest_bytes_are_not_recursive_graph_input(self) -> None:
-        review = self.bootstrap("GRAPH_A", review=True)
-        self.assertEqual(review.returncode, 0, review.stdout)
+        _, _, _ = self.review_subject()
         before = self.fingerprint()
         self.assertEqual(before.returncode, 0, before.stdout)
         manifest = self.root / "Pods/Manifest.lock"
@@ -154,13 +179,18 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         self.assertEqual(after.returncode, 0, after.stdout)
         self.assertEqual(before.stdout.strip(), after.stdout.strip())
 
-    def test_existing_build_guard_includes_generated_subject_manifest_and_capacity(self) -> None:
+    def test_existing_build_guard_includes_generated_and_private_authority(self) -> None:
         source = GUARD.read_text(encoding="utf-8")
         for marker in (
             '"capture_cocoapods_build_subject.py"',
+            '"capture_tuya_private_input_review.py"',
             "def generated_pods",
             "def generated_workspace",
             "def generated_manifest",
+            "def authority_bound_generation_snapshot",
+            "NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_INPUT_COMMITMENT",
+            "private_review.verify_review_paths",
+            "initial_snapshot = inputs.authority_bound_generation_snapshot()",
             "build_subject.stable_file_sha256(self.generated_manifest)",
             "build_subject.read_attestation(self.lockfile)",
             "build_subject.build_subject_fingerprint",
