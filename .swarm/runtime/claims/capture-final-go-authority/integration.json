@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-final-go-authority",
+  "slot": "integration",
+  "role": "integration",
+  "workerId": "sol-20260811-1439r8",
+  "leaseId": "capture-final-go-integration-r8-20260811-2204",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T22:04:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:04:00Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 3069,
+  "sourceSHA": "59b7076aa2e52a0fa56a18cac0e129ac360d7f20",
+  "resource": "RELEASE_INTEGRATION",
+  "intent": "Independently trace exact #3069 sealed-record handoff through downstream Final-GO/publication/composition consumers. Determine whether any consumer reopens candidate_repo or source path after the custody transition without establishing new custody. Do not modify the actively owned production/test paths; durable output is an integration accept/block checkpoint and any non-conflicting consumer fix only if mechanically required. PHYSICAL NO-GO."
+}
