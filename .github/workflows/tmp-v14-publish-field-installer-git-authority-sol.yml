@@ -1,0 +1,105 @@
+name: TEMP V14 Publish Field Installer Git Authority (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-field-installer-git-authority-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-publish-field-installer-git-authority-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Materialize validated base repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_EXTRACT'
+          from pathlib import Path
+          source = Path('.github/workflows/tmp-v14-materialize-field-installer-git-authority-sol.yml').read_text(encoding='utf-8')
+          marker = "          python3 - <<'PY'\n"
+          start = source.index(marker) + len(marker)
+          end = source.index("\n          PY\n", start)
+          body = source[start:end]
+          body = "\n".join(line[10:] if line.startswith("          ") else line for line in body.splitlines()) + "\n"
+          Path('/tmp/nembra-field-authority-patch.py').write_text(body, encoding='utf-8')
+          PY_EXTRACT
+          python3 /tmp/nembra-field-authority-patch.py
+
+      - name: Extend fenced authority through post-build revalidation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/field/install_one_time_capture.command')
+          text = path.read_text(encoding='utf-8')
+          old = '''verify_private_tuya_inputs
+          [[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
+          [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."
+          '''
+          new = '''verify_private_tuya_inputs
+          [[ "$(authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
+          [[ -z "$(authority_git_status)" ]] || die "Accepted-source inputs changed under fenced Git authority while the field build was compiling. Discard this candidate and restart."
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'post-build ambient authority anchor count was {text.count(old)}, expected 1')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Validate shell and original red-team closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          python3 -m py_compile \
+            scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py \
+            scripts/ci/tests/test_capture_field_installer_git_authority_current.py
+          python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+
+      - name: Exercise fenced Git and exact accepted bootstrap bytes
+        run: python3 scripts/ci/tests/test_capture_field_installer_git_authority_current.py
+
+      - name: Require no ambient authority or mutable bootstrap execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Fq 'git rev-parse HEAD' scripts/field/install_one_time_capture.command
+          ! grep -Fq 'git status --porcelain=v1 --untracked-files=all' scripts/field/install_one_time_capture.command
+          ! grep -Fq '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/field/install_one_time_capture.command
+          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/field/install_one_time_capture.command
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT' Scripts/bootstrap_capture_tuya_sdk.sh
+          git diff --check
+
+      - name: Publish permanent files only
+        shell: bash
+        run: |
+          set -euo pipefail
+          find Scripts scripts -type d -name __pycache__ -prune -exec rm -rf {} + || true
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm \
+            .github/workflows/tmp-v14-materialize-field-installer-git-authority-sol.yml \
+            .github/workflows/tmp-v14-probe-field-installer-git-authority-sol.yml \
+            .github/workflows/tmp-v14-publish-field-installer-git-authority-sol.yml
+          git add \
+            scripts/field/install_one_time_capture.command \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py \
+            scripts/ci/tests/test_capture_field_installer_git_authority_current.py \
+            .github/workflows/capture-field-installer-git-authority-current.yml
+          git diff --cached --check
+          git commit -m 'Capture: bind field installer Git authority to executed source'
+          git push origin HEAD:repair/v14-field-installer-git-authority-sol-20260811
