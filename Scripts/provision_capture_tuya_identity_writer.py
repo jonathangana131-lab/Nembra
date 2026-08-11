@@ -7,11 +7,19 @@ This helper inherits that exact directory descriptor and never reopens the
 checkout pathname for publication. The pathname is re-opened only as a drift
 check: its descriptor identity must still equal the inherited admitted root
 before any private descendant is created.
+
+Credential-bearing staging files are created directly under the admitted root,
+not under long-lived descendant directory descriptors. On Darwin, publication
+uses renameatx_np with no-follow-any + resolve-beneath semantics so every path
+component is resolved beneath that admitted root in the publication syscall.
+The sealed staging descriptor remains open through publication and the final
+named inode must match it exactly before success.
 """
 
 from __future__ import annotations
 
 import base64
+import ctypes
 import os
 import secrets
 import stat
@@ -22,6 +30,10 @@ from pathlib import Path
 
 class ProvisionError(RuntimeError):
     pass
+
+
+_DARWIN_RENAME_NOFOLLOW_ANY = 0x00000010
+_DARWIN_RENAME_RESOLVE_BENEATH = 0x00000020
 
 
 def _directory_flags() -> int:
@@ -122,6 +134,67 @@ def _ensure_private_directory(parent_fd: int, name: str) -> int:
         raise
 
 
+def _require_named_child(parent_fd: int, name: str, child_fd: int) -> None:
+    try:
+        named = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except OSError as exc:
+        raise ProvisionError(f"private identity ancestry changed for {name!r}") from exc
+    held = os.fstat(child_fd)
+    if (
+        not stat.S_ISDIR(named.st_mode)
+        or not stat.S_ISDIR(held.st_mode)
+        or named.st_uid != os.geteuid()
+        or held.st_uid != os.geteuid()
+        or named.st_dev != held.st_dev
+        or named.st_ino != held.st_ino
+    ):
+        raise ProvisionError(f"private identity directory is no longer the admitted child: {name!r}")
+
+
+def _require_private_chain(
+    checkout_fd: int,
+    local_secrets_fd: int,
+    runtime_fd: int,
+    sources_fd: int,
+    module_fd: int,
+) -> None:
+    _require_named_child(checkout_fd, "LocalSecrets", local_secrets_fd)
+    _require_named_child(local_secrets_fd, "TuyaRuntime", runtime_fd)
+    _require_named_child(runtime_fd, "Sources", sources_fd)
+    _require_named_child(sources_fd, "NembraTuyaPrivateConfig", module_fd)
+
+
+def _relative_components(relative_path: str) -> tuple[str, ...]:
+    if (
+        not relative_path
+        or os.path.isabs(relative_path)
+        or os.path.normpath(relative_path) != relative_path
+    ):
+        raise ProvisionError("private identity publication path must be canonical and relative")
+    components = tuple(relative_path.split("/"))
+    if any(not component or component in (".", "..") or "/" in component for component in components):
+        raise ProvisionError("private identity publication path contains an invalid component")
+    return components
+
+
+def _open_relative_regular_file(checkout_fd: int, relative_path: str) -> int:
+    components = _relative_components(relative_path)
+    parent_fd = os.dup(checkout_fd)
+    try:
+        for component in components[:-1]:
+            next_fd = os.open(component, _directory_flags(), dir_fd=parent_fd)
+            os.close(parent_fd)
+            parent_fd = next_fd
+        descriptor = os.open(
+            components[-1],
+            os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+            dir_fd=parent_fd,
+        )
+        return descriptor
+    finally:
+        os.close(parent_fd)
+
+
 def _validate_existing_output(parent_fd: int, name: str) -> None:
     try:
         metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
@@ -140,13 +213,66 @@ def _validate_existing_output(parent_fd: int, name: str) -> None:
         )
 
 
-def _write_staged(parent_fd: int, final_name: str, payload: bytes) -> None:
-    _validate_existing_output(parent_fd, final_name)
-    temporary_name = f".{final_name}.nembra-{os.getpid()}-{secrets.token_hex(12)}"
-    descriptor = -1
+def _secure_replace_beneath(checkout_fd: int, source_name: str, destination_relative: str) -> None:
+    _relative_components(source_name)
+    _relative_components(destination_relative)
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL(None, use_errno=True)
+        try:
+            renameatx_np = libc.renameatx_np
+        except AttributeError as exc:
+            raise ProvisionError("Darwin cannot provide renameatx_np publication custody") from exc
+        renameatx_np.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        renameatx_np.restype = ctypes.c_int
+        flags = _DARWIN_RENAME_NOFOLLOW_ANY | _DARWIN_RENAME_RESOLVE_BENEATH
+        result = renameatx_np(
+            checkout_fd,
+            os.fsencode(source_name),
+            checkout_fd,
+            os.fsencode(destination_relative),
+            flags,
+        )
+        if result != 0:
+            error = ctypes.get_errno()
+            raise ProvisionError("Darwin rejected private identity publication outside admitted ancestry") from OSError(
+                error,
+                os.strerror(error),
+            )
+        return
+
+    # Linux CI fallback exercises the same root-relative custody shape. Physical
+    # field publication is macOS-only and is required to take the Darwin path.
+    os.replace(
+        source_name,
+        destination_relative,
+        src_dir_fd=checkout_fd,
+        dst_dir_fd=checkout_fd,
+    )
+
+
+def _write_staged(
+    checkout_fd: int,
+    destination_parent_fd: int,
+    final_name: str,
+    destination_relative: str,
+    payload: bytes,
+) -> None:
+    components = _relative_components(destination_relative)
+    if components[-1] != final_name:
+        raise ProvisionError("private identity final name does not match its admitted relative path")
+    _validate_existing_output(destination_parent_fd, final_name)
+
+    temporary_name = f".nembra-private-stage-{os.getpid()}-{secrets.token_hex(12)}"
+    staging_fd = final_fd = -1
     try:
-        descriptor = os.open(temporary_name, _file_flags(), 0o600, dir_fd=parent_fd)
-        metadata = os.fstat(descriptor)
+        staging_fd = os.open(temporary_name, _file_flags(), 0o600, dir_fd=checkout_fd)
+        metadata = os.fstat(staging_fd)
         if (
             not stat.S_ISREG(metadata.st_mode)
             or metadata.st_uid != os.geteuid()
@@ -157,54 +283,45 @@ def _write_staged(parent_fd: int, final_name: str, payload: bytes) -> None:
         view = memoryview(payload)
         offset = 0
         while offset < len(view):
-            written = os.write(descriptor, view[offset:])
+            written = os.write(staging_fd, view[offset:])
             if written <= 0:
                 raise ProvisionError("could not write complete private identity output")
             offset += written
-        os.fchmod(descriptor, 0o600)
-        os.fsync(descriptor)
-        sealed = os.fstat(descriptor)
+        os.fchmod(staging_fd, 0o600)
+        os.fsync(staging_fd)
+        sealed = os.fstat(staging_fd)
         if sealed.st_size != len(payload) or sealed.st_nlink != 1:
             raise ProvisionError("private identity staging file changed before publication")
-        os.close(descriptor)
-        descriptor = -1
 
-        os.replace(
-            temporary_name,
-            final_name,
-            src_dir_fd=parent_fd,
-            dst_dir_fd=parent_fd,
-        )
+        _secure_replace_beneath(checkout_fd, temporary_name, destination_relative)
 
-        final_descriptor = os.open(
-            final_name,
-            os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
-            dir_fd=parent_fd,
-        )
-        try:
-            final = os.fstat(final_descriptor)
-            if (
-                not stat.S_ISREG(final.st_mode)
-                or final.st_uid != os.geteuid()
-                or final.st_nlink != 1
-                or final.st_size != len(payload)
-            ):
-                raise ProvisionError("published private identity output failed final custody")
-            os.fchmod(final_descriptor, 0o600)
-            os.fsync(final_descriptor)
-        finally:
-            os.close(final_descriptor)
-        os.fsync(parent_fd)
+        final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
+        final = os.fstat(final_fd)
+        if (
+            not stat.S_ISREG(final.st_mode)
+            or final.st_uid != os.geteuid()
+            or final.st_nlink != 1
+            or final.st_size != len(payload)
+            or final.st_dev != sealed.st_dev
+            or final.st_ino != sealed.st_ino
+        ):
+            raise ProvisionError("published private identity output is not the sealed staging inode")
+        os.fchmod(final_fd, 0o600)
+        os.fsync(final_fd)
+        os.fsync(checkout_fd)
     except Exception:
-        if descriptor >= 0:
-            os.close(descriptor)
         try:
-            os.unlink(temporary_name, dir_fd=parent_fd)
+            os.unlink(temporary_name, dir_fd=checkout_fd)
         except FileNotFoundError:
             pass
         except OSError:
             pass
         raise
+    finally:
+        if final_fd >= 0:
+            os.close(final_fd)
+        if staging_fd >= 0:
+            os.close(staging_fd)
 
 
 def _decode_input() -> tuple[str, str]:
@@ -255,8 +372,33 @@ public enum NembraTuyaPrivateIdentity {{
         sources_fd = _ensure_private_directory(runtime_fd, "Sources")
         module_fd = _ensure_private_directory(sources_fd, "NembraTuyaPrivateConfig")
 
-        _write_staged(runtime_fd, "NembraTuyaPrivateConfig.podspec", podspec)
-        _write_staged(module_fd, "NembraTuyaPrivateIdentity.swift", swift)
+        podspec_relative = "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"
+        identity_relative = (
+            "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig/"
+            "NembraTuyaPrivateIdentity.swift"
+        )
+
+        _require_private_chain(checkout_fd, local_secrets_fd, runtime_fd, sources_fd, module_fd)
+        _write_staged(
+            checkout_fd,
+            runtime_fd,
+            "NembraTuyaPrivateConfig.podspec",
+            podspec_relative,
+            podspec,
+        )
+        _require_checkout_path_identity(checkout_fd, checkout_root)
+        _require_private_chain(checkout_fd, local_secrets_fd, runtime_fd, sources_fd, module_fd)
+
+        _write_staged(
+            checkout_fd,
+            module_fd,
+            "NembraTuyaPrivateIdentity.swift",
+            identity_relative,
+            swift,
+        )
+        _require_checkout_path_identity(checkout_fd, checkout_root)
+        _require_private_chain(checkout_fd, local_secrets_fd, runtime_fd, sources_fd, module_fd)
+
         for descriptor in (module_fd, sources_fd, runtime_fd, local_secrets_fd, checkout_fd):
             os.fsync(descriptor)
     finally:
