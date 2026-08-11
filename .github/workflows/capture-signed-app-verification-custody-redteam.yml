@@ -1,0 +1,39 @@
+name: Capture Signed App Verification Custody Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-capture-signed-app-verification-custody-gap-sol
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/es80_signed_app_install_guard.py
+      - scripts/ci/tests/test_capture_signed_app_verification_custody_gap.py
+      - .github/workflows/capture-signed-app-verification-custody-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verification-to-install-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind exact diagnostic head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_signed_app_verification_custody_gap.py
+
+      - name: Require one subject from signed verification through install
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_signed_app_verification_custody_gap
