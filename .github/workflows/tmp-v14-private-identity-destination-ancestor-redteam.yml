@@ -1,0 +1,30 @@
+name: TEMP Capture Private Identity Destination Ancestor Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-private-identity-destination-ancestor-swap-sol-20260811
+
+permissions:
+  contents: read
+
+jobs:
+  redteam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: adversarial/v14-private-identity-destination-ancestor-swap-sol-20260811
+      - name: Bind exact red-team head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile
+        run: |
+          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+      - name: Attack destination ancestor cleanup
+        run: python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
