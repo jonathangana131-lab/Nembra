@@ -1,0 +1,104 @@
+name: Capture Field Build Provenance
+
+on:
+  pull_request:
+    paths:
+      - 'NembraCapture.xcodeproj/**'
+      - 'NembraCapture-Info.plist'
+      - 'NembraApp/App/NembraCaptureBuildIdentity.swift'
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/Features/Research/TuyaAccountBridge.swift'
+      - 'Packages/NembraBluetoothCapture/**'
+      - 'Podfile'
+      - 'Scripts/bootstrap_capture_tuya_sdk.sh'
+      - 'Scripts/capture_tuya_private_input_build_guard.py'
+      - 'Scripts/capture_tuya_private_input_provenance.py'
+      - 'Scripts/provision_capture_tuya_identity.sh'
+      - 'scripts/field/install_one_time_capture.command'
+      - 'scripts/ci/xcode27_signed_field_candidate.sh'
+      - 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'
+      - '.github/workflows/capture-field-build-provenance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture-provenance:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          printf 'expected=%s\nactual=%s\n' "$expected" "$actual"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          [[ "$actual" =~ ^[0-9a-f]{40}$ ]]
+          printf 'NEMBRA_CAPTURE_SOURCE_SHA=%s\n' "$actual" >> "$GITHUB_ENV"
+
+      - name: Verify private Tuya input provenance helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -I Scripts/capture_tuya_private_input_provenance.py --help >/dev/null
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          bash -n scripts/ci/xcode27_signed_field_candidate.sh
+
+      - name: Verify signed Apple application identity custody source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'application-identifier' scripts/field/install_one_time_capture.command
+          grep -Fq 'com.apple.developer.team-identifier' scripts/field/install_one_time_capture.command
+          grep -Fq 'DER-Encoded-Profile' scripts/field/install_one_time_capture.command
+          grep -Fq 'capture_tuya_private_input_provenance.py' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'capture_tuya_private_input_build_guard.py' scripts/field/install_one_time_capture.command
+
+      - name: Verify source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          grep -Fq 'ES80-AUTHENTICATED-STATIONARY-v1' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          grep -Fq 'NembraCaptureEntrypoint.swift in Sources' NembraCapture.xcodeproj/project.pbxproj
+          grep -Fq 'ES80CaptureShellView.swift in Sources' NembraCapture.xcodeproj/project.pbxproj
+          grep -Fq 'TuyaAccountBridge.swift in Sources' NembraCapture.xcodeproj/project.pbxproj
+          grep -Fq 'NembraCaptureBuildIdentity.swift in Sources' NembraCapture.xcodeproj/project.pbxproj
+          ! grep -Fq 'NembraApp.swift in Sources' NembraCapture.xcodeproj/project.pbxproj
+          grep -Fq 'requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'guard buildIdentity.isAuthoritativeFieldBuild else' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'TuyaSDKAccountIdentityLeaseGate.verdict' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'OfficialTuyaFactory.acquirePackageCorrelationLease()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Build stamped standalone Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${NEMBRA_CAPTURE_SOURCE_SHA:0:12}"
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_CAPTURE_SOURCE_SHA" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" build
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_CAPTURE_SOURCE_SHA"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+          test -z "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
