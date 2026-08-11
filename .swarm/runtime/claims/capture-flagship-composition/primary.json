@@ -9,11 +9,11 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:58:02Z",
-  "lastHeartbeatAt": "2026-08-11T11:58:02Z",
+  "lastHeartbeatAt": "2026-08-11T12:02:44Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-two-file-closure-sol-20260811",
   "sourceSHA": "85e629133fb4feab252701c9b2c5700489ea1938",
-  "currentHeadSHA": "85e629133fb4feab252701c9b2c5700489ea1938",
+  "currentHeadSHA": "86928ed9166e006772dfe73b174972134e13b344",
   "pr": 2891,
   "takeoverFromWorkerId": "sol-20260811-root-closure",
   "takeoverReason": "Generation-1 primary lease expired after last heartbeat 2026-08-11T10:18:00Z. Exact 85e62913 gates exposed a deterministic standalone compile regression at NembraCaptureEntrypoint.swift:3787: engineeringDisclosure references out-of-scope isAccessibilityLayout. Recover the same flagship AX closure to repair that compile blocker, retain the intended Details/Engineering details semantics, and re-run exact-head acceptance.",
@@ -23,7 +23,7 @@
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
   ],
-  "durableEvidence": "Exact 85e62913 Xcode 27 run 31481541039 is green. Exact Selective Graft run 31481541018 artifact 9097533165 proves the full Capture package passes, but standalone build fails compiling NembraCaptureEntrypoint.swift:3787 because isAccessibilityLayout is not in SecureLinkView scope. Standalone Visual 31481541019 and Field Provenance 31481541005 fail at the same stamped standalone build. The intended secure-link view already owns @Environment(\\.dynamicTypeSize), so dynamicTypeSize.isAccessibilitySize is the narrow truthful repair. Failed jobs were retriggered unchanged before this deterministic compiler diagnosis; do not promote them as acceptance if they predate the repair head.",
-  "acceptance": "After the narrow source fix, require unchanged new exact head: Capture package/Main Selective Graft green, Xcode 27 green, Field Build Provenance green, Standalone Visual green with retained standard + AX5 pixels, human pixel critique, and VoiceOver ordering. Any head move resets exact-head evidence. Ancestor pixels/greens remain non-authoritative.",
+  "durableEvidence": "Exact 85e62913 Xcode 27 run 31481541039 is green. Exact Selective Graft run 31481541018 artifact 9097533165 proves the full Capture package passes, but standalone build fails compiling NembraCaptureEntrypoint.swift:3787 because isAccessibilityLayout is not in SecureLinkView scope. Standalone Visual 31481541019 and Field Provenance 31481541005 fail at the same stamped standalone build. User-authored staging head 86928ed adds only temporary self-removing workflow temp-capture-root-ax-compile-fix.yml; run 31489177721 is queued to replace the bad SecureLinkView reference with its own dynamicTypeSize.isAccessibilitySize, prove standalone compilation, delete the workflow, and publish a clean product head. 86928ed is not an acceptance candidate.",
+  "acceptance": "After the narrow source fix, require unchanged clean new exact head: Capture package/Main Selective Graft green, Xcode 27 green, Field Build Provenance green, Standalone Visual green with retained standard + AX5 pixels, human pixel critique, and VoiceOver ordering. Add/retain a source contract tying SecureLinkView Details to dynamicTypeSize.isAccessibilitySize. Any head move resets exact-head evidence. Ancestor pixels/greens remain non-authoritative.",
   "intent": "Finish #2891 action-first Accessibility XXXL Capture root without weakening physical/build truth. Sighted AX must keep Capture locked and compact Details; VoiceOver must retain Physical capture locked, Tuya Smart user code, Create approval QR, and Engineering details. PHYSICAL NO-GO until separate build/security authority and final composition close."
 }
