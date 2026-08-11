@@ -8,9 +8,15 @@ struct TuyaAccountEndpointTransportSourceTests {
     func serverSelectedEndpointRequiresHTTPS() throws {
         let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
         #expect(!bridge.contains("rawEndpoint.hasPrefix(\"http\")"))
-        #expect(bridge.contains("endpointURL.scheme?.lowercased() == \"https\""))
-        #expect(bridge.contains("let endpointHost = endpointURL.host"))
+        #expect(bridge.contains("endpointComponents.scheme?.lowercased() == \"https\""))
+        #expect(bridge.contains("let endpointHost = endpointComponents.host"))
+        #expect(bridge.contains("endpointComponents.user == nil"))
+        #expect(bridge.contains("endpointComponents.password == nil"))
         #expect(bridge.contains("requestURL.scheme?.lowercased() == \"https\""))
+        #expect(bridge.contains("delegate: HTTPSOnlyRedirectDelegate.shared"))
+        #expect(bridge.contains("redirectURL.scheme?.lowercased() == \"https\""))
+        #expect(bridge.contains("originalHost.caseInsensitiveCompare(redirectHost) == .orderedSame"))
+        #expect(bridge.contains("responseHost.caseInsensitiveCompare(requestHost) == .orderedSame"))
     }
 
     @Test("private reader import suppresses Python bytecode")
