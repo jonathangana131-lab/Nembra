@@ -105,6 +105,43 @@ class FinalGoCurrentVnodeContractTests(unittest.TestCase):
                     derive_subject=lambda *_args: accepted,
                 )
 
+    def test_semantic_fragments_are_bound_to_accepted_git_bytes(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-vnode-git-bytes-") as temporary:
+            root = Path(temporary).resolve(strict=True)
+            base, source = self._initialize_generated_candidate(root, current=True)
+            accepted = "ab" * 32
+            original_read_text = Path.read_text
+            original_git_bytes = base.git_bytes
+            seen: set[str] = set()
+
+            def forbidden_read_text(subject: Path, *args, **kwargs):
+                if subject == root or root in subject.parents:
+                    raise AssertionError("current vnode semantic authority reopened worktree text")
+                return original_read_text(subject, *args, **kwargs)
+
+            def recording_git_bytes(repo: Path, *args: str):
+                if len(args) == 2 and args[0] == "show":
+                    seen.add(args[1])
+                return original_git_bytes(repo, *args)
+
+            Path.read_text = forbidden_read_text
+            base.git_bytes = recording_git_bytes
+            try:
+                result = MODULE._current_generated_candidate_authority(
+                    root,
+                    source,
+                    accepted,
+                    base=base,
+                    derive_subject=lambda *_args: accepted,
+                )
+            finally:
+                base.git_bytes = original_git_bytes
+                Path.read_text = original_read_text
+
+            expected = {f"{source}:{relative}" for relative in MODULE.CURRENT_GENERATED_AUTHORITY_PATHS}
+            self.assertEqual(seen, expected)
+            self.assertEqual(result[MODULE.generated.GENERATED_KEY], accepted)
+
     def test_current_adapter_changes_only_vnode_contract_and_restores_parent(self):
         generated = MODULE.generated
         original = (
