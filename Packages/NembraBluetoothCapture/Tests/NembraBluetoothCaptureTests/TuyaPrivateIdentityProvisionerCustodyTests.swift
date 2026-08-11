@@ -28,6 +28,8 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         let identity = runtime.appendingPathComponent("Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")
         #expect(FileManager.default.fileExists(atPath: podspec.path))
         #expect(FileManager.default.fileExists(atPath: identity.path))
+        #expect(try posixPermissions(fixture.root.appendingPathComponent("LocalSecrets")) == 0o700)
+        #expect(try posixPermissions(runtime) == 0o700)
         #expect(try posixPermissions(podspec) == 0o600)
         #expect(try posixPermissions(identity) == 0o600)
 
@@ -116,17 +118,46 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(try posixPermissions(runtime.appendingPathComponent("Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")) == 0o600)
     }
 
+    @Test("publication is descriptor-bound rather than check-then-pathname")
+    func descriptorBoundPublicationSourceContract() throws {
+        let shell = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh"),
+            encoding: .utf8
+        )
+        let writer = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity_writer.py"),
+            encoding: .utf8
+        )
+
+        #expect(shell.contains("provision_capture_tuya_identity_writer.py"))
+        #expect(shell.contains("/usr/bin/python3 -I \"$WRITER\" \"$ROOT\""))
+        #expect(!shell.contains("/usr/bin/mktemp"))
+        #expect(!shell.contains("/bin/mv -f"))
+        #expect(writer.contains("O_NOFOLLOW"))
+        #expect(writer.contains("O_DIRECTORY"))
+        #expect(writer.contains("O_EXCL"))
+        #expect(writer.contains("dir_fd=parent_fd"))
+        #expect(writer.contains("src_dir_fd=parent_fd"))
+        #expect(writer.contains("dst_dir_fd=parent_fd"))
+    }
+
     private func makeFixture() throws -> (root: URL, script: URL) {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent("nembra-tuya-provisioner-\(UUID().uuidString)", isDirectory: true)
         let root = sandbox.appendingPathComponent("repo", isDirectory: true)
         let scripts = root.appendingPathComponent("Scripts", isDirectory: true)
         try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)
-        let source = repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh")
-        let target = scripts.appendingPathComponent("provision_capture_tuya_identity.sh")
-        try FileManager.default.copyItem(at: source, to: target)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: target.path)
-        return (root, target)
+
+        let sourceScript = repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh")
+        let targetScript = scripts.appendingPathComponent("provision_capture_tuya_identity.sh")
+        try FileManager.default.copyItem(at: sourceScript, to: targetScript)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: targetScript.path)
+
+        let sourceWriter = repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity_writer.py")
+        let targetWriter = scripts.appendingPathComponent("provision_capture_tuya_identity_writer.py")
+        try FileManager.default.copyItem(at: sourceWriter, to: targetWriter)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: targetWriter.path)
+        return (root, targetScript)
     }
 
     private func invoke(
