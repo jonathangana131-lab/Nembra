@@ -9,12 +9,12 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:35:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:39:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:42:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-field-untracked-prearm-admission-sol-20260811",
   "pr": 2924,
   "sourceSHA": "0f07d8d673f1b2472dc1439af2413258573ddb0a",
-  "currentHeadSHA": "0f07d8d673f1b2472dc1439af2413258573ddb0a",
+  "currentHeadSHA": "200bacfd5396243262aea598afcde780c731b954",
   "takeoverFromWorkerId": "sol-20260811-54c8arm",
-  "takeoverReason": "Generation-2 primary is RELEASED. Canonical #2924 is selected production logic but current exact head 0f07d8d is construction residue: two temporary materializer paths remain and canonical corrected #2913 bytes are not cleanly published. Tests slot is NEEDS_CHANGES with exact blocker. Recover canonical branch in place to repair the one-shot materializer, publish the intended narrowed private-root authority + corrected current #2913 witness, self-delete temp machinery, then re-earn exact-head gates. PHYSICAL NO-GO."
+  "checkpoint": "Clean successor published by exact-head-bound one-shot run 31492201175. Current head has exactly three permanent changed files; temp materializer helper/workflow self-deleted. Publisher pinned/fetched canonical #2913@8b67673789451835acc1bed192ce66aa4113ee23, verified canonical test/workflow blobs, replayed pre-arm + tracked-source authority, py_compile, diff hygiene, then pushed 200bacfd5396243262aea598afcde780c731b954. Private raw-tree allowlist now admits exact derived LocalSecrets/<private-root> subjects while traversing the LocalSecrets ancestor so unrelated content fails closed. Exact-head PR gates still need to be re-earned; PHYSICAL NO-GO."
 }
