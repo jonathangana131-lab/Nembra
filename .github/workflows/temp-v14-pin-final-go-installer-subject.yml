@@ -73,3 +73,5 @@ jobs:
           git config user.email 'nembra-v14-sol@users.noreply.github.com'
           git commit -m 'fix(capture): pin Final-GO installer execution bytes'
           git push origin HEAD:repair/v14-final-go-pinned-installer-subject-sol
+
+# Registered in the previous commit; this push triggers the disposable runner.
