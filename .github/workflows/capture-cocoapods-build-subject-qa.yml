@@ -1,6 +1,9 @@
 name: Capture CocoaPods Build Subject QA
 
 on:
+  push:
+    branches:
+      - repair/v14-capture-cocoapods-generated-subject-sol-r2
   pull_request:
     paths:
       - Scripts/bootstrap_capture_tuya_sdk.sh
