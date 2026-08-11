@@ -65,11 +65,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_detached_dirfd_red_team.py
+          sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_detached_dirfd_red_team.py \
+            2>&1 | tee "$RUNNER_TEMP/nembra-dirfd-redteam.log"
+
+      - name: Retain detached-directory-FD diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-signed-origin-detached-dirfd-${{ github.event.pull_request.number || github.run_id }}
+          path: ${{ runner.temp }}/nembra-dirfd-redteam.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Diff hygiene
         if: always()
         shell: bash
+        env:
+          PRODUCTION_PARENT: a71cc55dbc2281791e327888cf89ce0db6cf6193
         run: |
           set -euo pipefail
           git diff --check "$PRODUCTION_PARENT" HEAD
