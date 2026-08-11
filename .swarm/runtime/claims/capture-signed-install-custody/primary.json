@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:15:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:16:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:21:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-capture-signed-helper-replace-blind-c7e19a",
   "pr": 2871,
@@ -26,7 +26,10 @@
   "portableIsolationDiagnosticHeadSHA": "b1c83a78632cdd7def42fb666defe35635f11161",
   "portableIsolationDiagnosticRun": 31495134925,
   "portableIsolationDiagnosticState": "RESEARCH_ONLY_SUCCESS",
-  "portableIsolationFinding": "GitHub runner uid 1001 normal gid 1001 with ephemeral gid 61000: intended same-UID transient-GID child can write under root-owned group-only parent; same-UID normal-group sibling is denied; root locks parent to 0700. POSIX primitive only, not Mac/Xcode/product acceptance.",
+  "macXcodeIsolationProbeRun": 31495656306,
+  "macXcodeIsolationProbeState": "RESEARCH_ONLY_SUCCESS",
+  "macXcodeIsolationFinding": "Real Nembra Capture Debug iphonesimulator xcodebuild succeeded on xcode-27 while DerivedData parent was root-owned group-only for an ephemeral GID unavailable to ordinary same-UID/normal-GID processes. Root locked the output parent to 0700 before post-build inspection; research workflow publication succeeded. This proves Darwin/Xcode compatibility only, not signing/provisioning or #2955 closure.",
+  "activeSigningPrereqProbeHeadSHA": "dcc6779a5a7ee73292faf67efd8bbd38dac30629",
   "takeoverFromWorkerId": "sol-20260811-4f50x",
-  "takeoverReason": "#2911 accepted QA was composed into #2871 and moved-parent acceptance reset. Fresh parent Signed App 31490454614, Field 31490454631, and Main Graft 31490454719 are terminal green, but independent exact red-team #2955 exact afdd329d / Signed App run 31491053333 mechanically confirms a distinct compiler-output-origin defect: the first protected-stage expected digest is self-derived only after xcodebuild returns from a same-UID-mutable DerivedData pathname. That blocks f76e6ae regardless of legacy gate greens or Xcode status. Production repair must bind the build-produced bundle continuously through the first protected snapshot rather than move the same post-build hash earlier. Portable transient-GID isolation semantics are now mechanically green in research run 31495134925; next required research gate is real Mac/Xcode compatibility before any production design is selected. PHYSICAL NO-GO."
+  "takeoverReason": "#2911 accepted QA was composed into #2871 and moved-parent acceptance reset. Fresh parent Signed App 31490454614, Field 31490454631, and Main Graft 31490454719 are terminal green, but independent exact red-team #2955 exact afdd329d / Signed App run 31491053333 mechanically confirms a distinct compiler-output-origin defect: the first protected-stage expected digest is self-derived only after xcodebuild returns from a same-UID-mutable DerivedData pathname. That blocks f76e6ae regardless of legacy gate greens or Xcode status. Production repair must bind the build-produced bundle continuously through the first protected snapshot rather than move the same post-build hash earlier. Portable POSIX isolation run 31495134925 and real Mac/Xcode isolation run 31495656306 are research-only green; signing/keychain/process-drain prerequisite probe is now the next narrow gate before selecting a production mechanism. PHYSICAL NO-GO."
 }
