@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import os
 from pathlib import Path
+import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -10,7 +15,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 HELPER = ROOT / "Scripts/capture_cocoapods_generated_build_subject.py"
 BOOTSTRAP = ROOT / "Scripts/bootstrap_capture_tuya_sdk.sh"
+PROVENANCE = ROOT / "Scripts/capture_tuya_private_input_provenance.py"
 BUILD_GUARD = ROOT / "Scripts/capture_tuya_private_input_build_guard.py"
+SUBJECT_RE = re.compile(r"CocoaPods build subject SHA-256: ([0-9a-f]{64})")
 
 
 def load_module(name: str, path: Path):
@@ -100,6 +107,132 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
                 popen_factory=forbidden_spawn,
             )
         self.assertIn("no longer matches the preaccepted SHA-256", str(error.exception))
+
+    def test_real_bootstrap_rejects_same_lock_different_generated_graph(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-cocoapods-bootstrap-") as temporary:
+            root = Path(temporary)
+            scripts = root / "Scripts"
+            scripts.mkdir()
+            for source in (BOOTSTRAP, PROVENANCE, HELPER):
+                shutil.copy2(source, scripts / source.name)
+
+            (root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
+            (root / "NembraCapture.xcodeproj").mkdir()
+
+            sdk = root / "LocalSecrets/TuyaSDK"
+            (sdk / "Build").mkdir(parents=True)
+            (sdk / "ThingSmartCryption.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+            (sdk / "Build/security.bin").write_bytes(b"security")
+
+            identity = root / "LocalSecrets/TuyaRuntime"
+            identity_sources = identity / "Sources/NembraTuyaPrivateConfig"
+            identity_sources.mkdir(parents=True)
+            (identity / "NembraTuyaPrivateConfig.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+            (identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+                "enum NembraTuyaPrivateIdentity { static let configured = true }\n",
+                encoding="utf-8",
+            )
+
+            fake_bin = root / "fake-bin"
+            fake_bin.mkdir()
+            fake_pod = fake_bin / "pod"
+            fake_pod.write_text(
+                "#!/usr/bin/python3\n"
+                "import os\n"
+                "from pathlib import Path\n"
+                "payload = os.environ['NEMBRA_TEST_GENERATED_PAYLOAD']\n"
+                "support = Path('Pods/Target Support Files/Pods-NembraCapture')\n"
+                "workspace = Path('NembraCapture.xcworkspace')\n"
+                "support.mkdir(parents=True, exist_ok=True)\n"
+                "workspace.mkdir(parents=True, exist_ok=True)\n"
+                "Path('Podfile.lock').write_text('PODS:\\n  - ThingSmartHomeKit (7.8.0)\\n  - ThingSmartBusinessExtensionKit (7.8.0)\\n', encoding='utf-8')\n"
+                "(support / 'Pods-NembraCapture.debug.xcconfig').write_text('GRAPH=' + payload + '\\n', encoding='utf-8')\n"
+                "(workspace / 'contents.xcworkspacedata').write_text(payload + '\\n', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            fake_pod.chmod(0o755)
+
+            fake_stat = fake_bin / "stat"
+            fake_stat.write_text(
+                "#!/usr/bin/python3\n"
+                "import os, sys\n"
+                "if sys.argv[1:3] == ['-f', '%Lp']:\n"
+                "    print('600')\n"
+                "    raise SystemExit(0)\n"
+                "os.execv('/usr/bin/stat', ['/usr/bin/stat', *sys.argv[1:]])\n",
+                encoding="utf-8",
+            )
+            fake_stat.chmod(0o755)
+
+            base_environment = {
+                "PATH": f"{fake_bin}:/usr/bin:/bin",
+                "HOME": str(root),
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+            }
+
+            review_environment = dict(base_environment)
+            review_environment["NEMBRA_TEST_GENERATED_PAYLOAD"] = "REVIEWED_GRAPH"
+            review = subprocess.run(
+                ["/bin/bash", str(scripts / BOOTSTRAP.name), "--resolve-lock-for-review"],
+                cwd=root,
+                env=review_environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(review.returncode, 0, review.stdout)
+            accepted_lock = hashlib.sha256((root / "Podfile.lock").read_bytes()).hexdigest()
+            match = SUBJECT_RE.search(review.stdout)
+            self.assertIsNotNone(match, review.stdout)
+            assert match is not None
+            accepted_subject = match.group(1)
+
+            changed_environment = dict(base_environment)
+            changed_environment.update(
+                {
+                    "NEMBRA_TEST_GENERATED_PAYLOAD": "SUBSTITUTED_GRAPH",
+                    "NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256": accepted_lock,
+                    "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": accepted_subject,
+                }
+            )
+            changed = subprocess.run(
+                ["/bin/bash", str(scripts / BOOTSTRAP.name)],
+                cwd=root,
+                env=changed_environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(
+                hashlib.sha256((root / "Podfile.lock").read_bytes()).hexdigest(),
+                accepted_lock,
+                "attack fixture must preserve the exact reviewed lock",
+            )
+            self.assertEqual(changed.returncode, 18, changed.stdout)
+            self.assertIn("same Podfile.lock produced different build-affecting generated bytes", changed.stdout)
+
+            accepted_environment = dict(base_environment)
+            accepted_environment.update(
+                {
+                    "NEMBRA_TEST_GENERATED_PAYLOAD": "REVIEWED_GRAPH",
+                    "NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256": accepted_lock,
+                    "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": accepted_subject,
+                }
+            )
+            accepted = subprocess.run(
+                ["/bin/bash", str(scripts / BOOTSTRAP.name)],
+                cwd=root,
+                env=accepted_environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stdout)
+            self.assertIn(f"Preaccepted CocoaPods build subject matched: {accepted_subject}", accepted.stdout)
 
     def test_bootstrap_binds_reviewed_generated_subject_before_field_build(self) -> None:
         source = BOOTSTRAP.read_text(encoding="utf-8")
