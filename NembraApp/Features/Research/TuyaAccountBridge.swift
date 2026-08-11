@@ -6,6 +6,33 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+private final class HTTPSOnlyRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    static let shared = HTTPSOnlyRedirectDelegate()
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let originalURL = task.originalRequest?.url,
+              originalURL.scheme?.lowercased() == "https",
+              let originalHost = originalURL.host,
+              !originalHost.isEmpty,
+              let redirectURL = request.url,
+              redirectURL.scheme?.lowercased() == "https",
+              let redirectHost = redirectURL.host,
+              !redirectHost.isEmpty,
+              originalHost.caseInsensitiveCompare(redirectHost) == .orderedSame,
+              originalURL.port == redirectURL.port else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+}
+
 /// Official Tuya Smart account-link preflight for the one-time Nembra Capture utility.
 ///
 /// This deliberately does NOT send scooter commands. It uses Tuya's QR account authorization
@@ -376,7 +403,19 @@ final class TuyaAccountBridge: ObservableObject {
             let terminal = result["terminal_id"] as? String ?? ""
             let expire = Self.int64(result["expire_time"]) ?? 0
             let rawEndpoint = result["endpoint"] as? String ?? ""
-            let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\(rawEndpoint)"
+            let endpointCandidate = rawEndpoint.contains("://") ? rawEndpoint : "https://\(rawEndpoint)"
+            guard let endpointComponents = URLComponents(string: endpointCandidate),
+                  endpointComponents.scheme?.lowercased() == "https",
+                  let endpointHost = endpointComponents.host,
+                  !endpointHost.isEmpty,
+                  endpointComponents.user == nil,
+                  endpointComponents.password == nil,
+                  endpointComponents.query == nil,
+                  endpointComponents.fragment == nil,
+                  let endpointURL = endpointComponents.url else {
+                throw BridgeError.malformed("Tuya approval returned an invalid secure API endpoint.")
+            }
+            let endpoint = endpointURL.absoluteString
             guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
                 throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
             }
@@ -584,10 +623,25 @@ final class TuyaAccountBridge: ObservableObject {
     }
 
     private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw BridgeError.remote("HTTP request failed.")
-        }
+        guard let requestURL = request.url,
+      requestURL.scheme?.lowercased() == "https",
+      let requestHost = requestURL.host,
+      !requestHost.isEmpty else {
+    throw BridgeError.invalidURL
+}
+let (data, response) = try await URLSession.shared.data(
+    for: request,
+    delegate: HTTPSOnlyRedirectDelegate.shared
+)
+guard let http = response as? HTTPURLResponse,
+      (200..<300).contains(http.statusCode),
+      let responseURL = http.url,
+      responseURL.scheme?.lowercased() == "https",
+      let responseHost = responseURL.host,
+      responseHost.caseInsensitiveCompare(requestHost) == .orderedSame,
+      responseURL.port == requestURL.port else {
+    throw BridgeError.remote("HTTPS request failed.")
+}
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw BridgeError.malformed("Server response was not a JSON object.")
         }
