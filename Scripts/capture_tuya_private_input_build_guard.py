@@ -760,8 +760,8 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     parser.add_argument("--security-build", required=True, type=Path)
     parser.add_argument("--identity-podspec", required=True, type=Path)
     parser.add_argument("--identity-sources", required=True, type=Path)
-    parser.add_argument("--accepted-source-root", required=True, type=Path)
-    parser.add_argument("--accepted-source-sha", required=True)
+    parser.add_argument("--accepted-source-root", type=Path)
+    parser.add_argument("--accepted-source-sha")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(list(argv))
     command = list(args.command)
@@ -793,7 +793,11 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
             identity_sources=identity_sources,
             generated_pods=root / "Pods",
             generated_workspace=root / "NembraCapture.xcworkspace",
-            accepted_source_root=_lexical_absolute(args.accepted_source_root),
+            accepted_source_root=(
+                _lexical_absolute(args.accepted_source_root)
+                if args.accepted_source_root is not None
+                else None
+            ),
             accepted_source_sha=args.accepted_source_sha,
         ),
         command,
@@ -803,6 +807,10 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
 def main(argv: Sequence[str] | None = None) -> int:
     inputs, command = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
+        if inputs.accepted_source_root is None or inputs.accepted_source_sha is None:
+            raise BuildGuardError(
+                "physical field build requires exact accepted checkout root and source SHA custody"
+            )
         return run_guarded_build(
             inputs,
             command,
