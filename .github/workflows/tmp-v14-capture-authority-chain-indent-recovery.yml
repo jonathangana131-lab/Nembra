@@ -19,7 +19,7 @@ jobs:
         with:
           ref: repair/v14-capture-authority-chain-indent-recovery-sol
           fetch-depth: 0
-      - name: Execute reviewed materializer payload with YAML indent normalization
+      - name: Execute reviewed materializer payload with narrow stale-anchor recovery
         shell: bash
         run: |
           set -euo pipefail
@@ -35,14 +35,37 @@ jobs:
               if workflow.count(start) != 1:
                   raise RuntimeError(f'expected one payload start, found {workflow.count(start)}')
               payload = workflow.split(start, 1)[1].split(end, 1)[0]
-              # A global dedent is wrong here: the payload intentionally contains
-              # zero-indented lines inside triple-quoted fixture text. Strip only
-              # the YAML run-block prefix from lines that actually carry it.
+              # A global dedent is wrong here: intentional triple-quoted fixture
+              # text contains zero-indented lines. Strip only the YAML prefix.
               prefix = ' ' * 10
               payload = '\n'.join(
                   line[len(prefix):] if line.startswith(prefix) else line
                   for line in payload.splitlines()
               ) + '\n'
+
+              # The review-candidate and verified-summary blocks both contain the
+              # verifier-source line. The original materializer assumed that line
+              # was globally unique. Preserve fail-closed replacement everywhere
+              # else, but allow this named replacement to consume only the first
+              # of the two ordered occurrences; a later context-specific rewrite
+              # still owns the verified-summary occurrence.
+              old_helper = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one match, found {count}")
+    return text.replace(old, new, 1)
+'''
+              new_helper = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if label == "bootstrap review helper output" and count == 2:
+        return text.replace(old, new, 1)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one match, found {count}")
+    return text.replace(old, new, 1)
+'''
+              if payload.count(old_helper) != 1:
+                  raise RuntimeError(f'expected one replace_once helper, found {payload.count(old_helper)}')
+              payload = payload.replace(old_helper, new_helper, 1)
               exec(compile(payload, '<capture-authority-chain-materializer>', 'exec'), {})
           except BaseException:
               Path('/tmp/nembra-authority-materializer-recovery-error.txt').write_text(traceback.format_exc(), encoding='utf-8')
@@ -54,8 +77,10 @@ jobs:
             git config user.name github-actions[bot]
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add .nembra-authority-materializer-recovery-error
-            git commit -m 'Capture: retain recovery materializer failure'
-            git push origin HEAD:repair/v14-capture-authority-chain-indent-recovery-sol
+            if ! git diff --cached --quiet; then
+              git commit -m 'Capture: retain recovery materializer failure'
+              git push origin HEAD:repair/v14-capture-authority-chain-indent-recovery-sol
+            fi
             exit 1
           fi
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
