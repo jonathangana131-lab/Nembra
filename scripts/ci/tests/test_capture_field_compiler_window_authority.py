@@ -6,6 +6,7 @@ import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -18,6 +19,7 @@ SPEC = importlib.util.spec_from_file_location("capture_field_build_guard_under_t
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("could not load Capture field build guard")
 build_guard = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = build_guard
 SPEC.loader.exec_module(build_guard)
 
 
