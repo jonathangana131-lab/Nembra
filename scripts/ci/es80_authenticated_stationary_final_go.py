@@ -26,6 +26,7 @@ AUTH_WORKFLOW_NAME="Capture Authenticated Stationary Final GO"
 AUTH_WORKFLOW_PATH=".github/workflows/capture-authenticated-stationary-final-go.yml"
 STATES={"unprovisioned-dark-standard","unprovisioned-dark-accessibility-xxxl"}
 INSTALLER="scripts/field/install_one_time_capture.command"; RUNBOOK="docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"; IDENTITY="NembraApp/App/NembraCaptureBuildIdentity.swift"
+BOOTSTRAP="Scripts/bootstrap_capture_tuya_sdk.sh"; BUILD_SUBJECT_HELPER="Scripts/capture_cocoapods_build_subject.py"
 HEX40=re.compile(r"^[0-9a-f]{40}$"); HEX64=re.compile(r"^[0-9a-f]{64}$"); DIGEST=re.compile(r"^sha256:([0-9a-f]{64})$")
 
 class GoError(RuntimeError): pass
@@ -158,9 +159,9 @@ def review(pr:int,review_id:int,source:str,v:dict[str,Any],get=api):
     body=r.get("body")
     if not isinstance(body,str) or not body.strip(): raise GoError("GitHub candidate review body missing")
     b=obj(body.encode(),"GitHub candidate review body")
-    keys={"schemaVersion","authority","sourceCommitSHA","visualRunID","visualArtifactID","standardScreenshotSHA256","accessibilityScreenshotSHA256","tuyaDependencyLockSHA256","verdict"}; lock=b.get("tuyaDependencyLockSHA256")
+    keys={"schemaVersion","authority","sourceCommitSHA","visualRunID","visualArtifactID","standardScreenshotSHA256","accessibilityScreenshotSHA256","tuyaDependencyLockSHA256","cocoaPodsBuildSubjectSHA256","verdict"}; lock=b.get("tuyaDependencyLockSHA256"); build_subject=b.get("cocoaPodsBuildSubjectSHA256")
     user=r.get("user",{})
-    if set(b)!=keys or b.get("schemaVersion")!=2 or b.get("authority")!="nembra-capture-human-review-github-v2" or canon(b.get("sourceCommitSHA"),"candidate review source")!=source or b.get("visualRunID")!=v["runID"] or b.get("visualArtifactID")!=v["artifactID"] or not isinstance(lock,str) or not HEX64.fullmatch(lock) or lock!=lock.lower() or b.get("verdict")!="accepted": raise GoError("GitHub candidate review authority mismatch")
+    if set(b)!=keys or b.get("schemaVersion")!=3 or b.get("authority")!="nembra-capture-human-review-github-v3" or canon(b.get("sourceCommitSHA"),"candidate review source")!=source or b.get("visualRunID")!=v["runID"] or b.get("visualArtifactID")!=v["artifactID"] or not isinstance(lock,str) or not HEX64.fullmatch(lock) or lock!=lock.lower() or not isinstance(build_subject,str) or not HEX64.fullmatch(build_subject) or build_subject!=build_subject.lower() or b.get("verdict")!="accepted": raise GoError("GitHub candidate review authority mismatch")
     if r.get("id")!=review_id or r.get("state") not in {"COMMENTED","APPROVED"} or canon(r.get("commit_id"),"candidate review commit")!=source or user.get("login")!=OWNER or r.get("author_association")!="OWNER": raise GoError("GitHub candidate review custody mismatch")
     stamp=r.get("submitted_at")
     if not isinstance(stamp,str) or not stamp.endswith("Z"): raise GoError("GitHub candidate review timestamp invalid")
@@ -168,7 +169,7 @@ def review(pr:int,review_id:int,source:str,v:dict[str,Any],get=api):
     except ValueError as e: raise GoError("GitHub candidate review timestamp invalid") from e
     s=v["screenshots"]; std=s["unprovisioned-dark-standard"]["sha256"]; ax=s["unprovisioned-dark-accessibility-xxxl"]["sha256"]
     if b["standardScreenshotSHA256"]!=std or b["accessibilityScreenshotSHA256"]!=ax: raise GoError("GitHub candidate review screenshot mismatch")
-    return {"authority":b["authority"],"reviewID":review_id,"reviewNodeID":r.get("node_id"),"reviewBodySHA256":sha(body.encode()),"reviewedAtUTC":stamp,"reviewer":OWNER,"state":r["state"],"verdict":"accepted","standardScreenshotSHA256":std,"accessibilityScreenshotSHA256":ax,"tuyaDependencyLockSHA256":lock}
+    return {"authority":b["authority"],"reviewID":review_id,"reviewNodeID":r.get("node_id"),"reviewBodySHA256":sha(body.encode()),"reviewedAtUTC":stamp,"reviewer":OWNER,"state":r["state"],"verdict":"accepted","standardScreenshotSHA256":std,"accessibilityScreenshotSHA256":ax,"tuyaDependencyLockSHA256":lock,"cocoaPodsBuildSubjectSHA256":build_subject}
 
 def _git_environment()->dict[str,str]:
     return {"PATH":"/usr/bin:/bin","GIT_NO_REPLACE_OBJECTS":"1"}
@@ -184,22 +185,20 @@ def git_bytes(repo:Path,*args)->bytes:
 def candidate(repo:Path,source:str):
     root=repo.expanduser().resolve(strict=True)
     if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
-    authority_paths={"installer":INSTALLER,"runbook":RUNBOOK,"buildIdentity":IDENTITY}
+    authority_paths={"installer":INSTALLER,"runbook":RUNBOOK,"buildIdentity":IDENTITY,"bootstrap":BOOTSTRAP,"cocoaPodsBuildSubjectHelper":BUILD_SUBJECT_HELPER}
     blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in authority_paths.items()}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
-    paths=[root/p for p in authority_paths.values()]
-    if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")
+    paths={key:root/relative for key,relative in authority_paths.items()}
+    if any(not p.is_file() or p.is_symlink() for p in paths.values()): raise GoError("candidate authority path is not a regular non-symlink file")
     for key,relative in authority_paths.items():
-        verbose=git(root,"ls-files","-v","--",relative)
-        tagged=git(root,"ls-files","-t","--",relative)
-        if not verbose or verbose[:1].islower() or tagged.startswith("S "):
-            raise GoError("candidate authority path has suppressed index worktree tracking")
-        actual_blob=git(root,"hash-object","--no-filters","--",relative).lower()
-        if actual_blob!=blobs[key]: raise GoError("candidate authority worktree bytes differ from accepted Git blob")
-    ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()
+        verbose=git(root,"ls-files","-v","--",relative); tagged=git(root,"ls-files","-t","--",relative)
+        if not verbose or verbose[:1].islower() or tagged.startswith("S "): raise GoError("candidate authority path has suppressed index worktree tracking")
+        if git(root,"hash-object","--no-filters","--",relative).lower()!=blobs[key]: raise GoError("candidate authority worktree bytes differ from accepted Git blob")
+    ins=paths["installer"].read_text(); rb=paths["runbook"].read_text(); ident=paths["buildIdentity"].read_text(); bootstrap=paths["bootstrap"].read_text(); helper=paths["cocoaPodsBuildSubjectHelper"].read_text()
     if "NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" not in ins or "hmac.compare_digest(actual_digest, expected_digest)" not in ins: raise GoError("candidate installer lacks intended-device digest rendezvous")
+    if "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" not in bootstrap or "nembra-cocoapods-build-subject-v1" not in helper: raise GoError("candidate lacks reviewed generated CocoaPods build-subject authority")
     if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
-    return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
+    return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"],"bootstrapGitBlob":blobs["bootstrap"],"cocoaPodsBuildSubjectHelperGitBlob":blobs["cocoaPodsBuildSubjectHelper"]}
 
 def device_hash(path:Path):
     p=path.expanduser()
@@ -236,12 +235,13 @@ def device_hash(path:Path):
     if t!=t.strip() or not re.fullmatch(r"[A-Za-z0-9-]+",t): raise GoError("private device identifier must be one canonical token without surrounding whitespace")
     return sha(t.encode("utf-8"))
 
-def installer_environment(device:Path,device_digest:str,accepted_lock_sha256:str)->dict[str,str]:
+def installer_environment(device:Path,device_digest:str,accepted_lock_sha256:str,accepted_build_subject_sha256:str)->dict[str,str]:
     account=pwd.getpwuid(os.getuid()); device_path=canonical_private_path(device,"private intended-device identifier")
     digest=device_digest.lower()
     if not HEX64.fullmatch(digest): raise GoError("private intended-device digest invalid")
     if not isinstance(accepted_lock_sha256,str) or not HEX64.fullmatch(accepted_lock_sha256) or accepted_lock_sha256!=accepted_lock_sha256.lower(): raise GoError("accepted Tuya dependency-lock digest is not canonical lowercase SHA-256")
-    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","GIT_NO_REPLACE_OBJECTS":"1","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":digest,"NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256":accepted_lock_sha256}
+    if not isinstance(accepted_build_subject_sha256,str) or not HEX64.fullmatch(accepted_build_subject_sha256) or accepted_build_subject_sha256!=accepted_build_subject_sha256.lower(): raise GoError("accepted CocoaPods generated build-subject digest is not canonical lowercase SHA-256")
+    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","GIT_NO_REPLACE_OBJECTS":"1","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":digest,"NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256":accepted_lock_sha256,"NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256":accepted_build_subject_sha256}
 
 def _accepted_installer_bytes(root:Path,source:str)->tuple[bytes,str]:
     accepted_blob=git(root,"rev-parse",f"{source}:{INSTALLER}").lower()
@@ -254,8 +254,8 @@ def _accepted_installer_bytes(root:Path,source:str)->tuple[bytes,str]:
     if actual_blob!=accepted_blob: raise GoError("candidate installer execution bytes differ from accepted Git blob")
     return raw,accepted_blob
 
-def installer(repo:Path,source:str,device:Path,device_digest:str,accepted_lock_sha256:str):
-    root=repo.expanduser().resolve(strict=True); env=installer_environment(device,device_digest,accepted_lock_sha256)
+def installer(repo:Path,source:str,device:Path,device_digest:str,accepted_lock_sha256:str,accepted_build_subject_sha256:str):
+    root=repo.expanduser().resolve(strict=True); env=installer_environment(device,device_digest,accepted_lock_sha256,accepted_build_subject_sha256)
     raw,accepted_blob=_accepted_installer_bytes(root,source)
     pinned=None
     try:
@@ -298,7 +298,7 @@ def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_rep
     control=control_authority(authority_repo,authority_pr,authority_run,get)
     source=canon(source,"source"); pr=pos(pr,"PR")
     ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(pr,review_id,source,vs,get); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
-    got=run_installer(candidate_repo,source,device_file,dh,rv["tuyaDependencyLockSHA256"]); expected={"authority":"accepted-candidate-private-installer-execution-v2","result":"success","sourceCommitSHA":source,"installerGitBlob":cs["installerGitBlob"],"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
+    got=run_installer(candidate_repo,source,device_file,dh,rv["tuyaDependencyLockSHA256"],rv["cocoaPodsBuildSubjectSHA256"]); expected={"authority":"accepted-candidate-private-installer-execution-v2","result":"success","sourceCommitSHA":source,"installerGitBlob":cs["installerGitBlob"],"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
     if got!=expected: raise GoError("private installer result drifted")
     signed=inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
     required_signed={"authority":"nembra-authenticated-stationary-retained-signed-artifact-v1","sourceCommitSHA":source,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"codesignVerified":True,"intendedDeviceIncluded":True,"physicalAuthorityCreated":False}
@@ -316,7 +316,7 @@ def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_rep
     ps,ws,vs,rv,cs,dh=post_ps,post_ws,post_vs,post_rv,post_cs,post_dh
 
     stamp=(now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat().replace("+00:00","Z")
-    return {"schemaVersion":1,"authority":"nembra-authenticated-stationary-final-go-v1","status":"GO","createdAtUTC":stamp,"finalGOControlPlane":control,"acceptedSourceCommitSHA":source,"acceptedPR":ps,"procedureIdentifier":PROC,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"softwareAcceptance":ws,"visualArtifact":vs,"visualReview":rv,"acceptedTuyaDependencyLockSHA256":rv["tuyaDependencyLockSHA256"],"candidateSource":cs,"privateFieldInstall":{**got,"intendedDeviceIdentifierSHA256":dh},"retainedSignedFieldArtifact":signed,"experiment":{"scope":"one stationary authenticated read-only ES80 Capture attempt","baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27","initialScooterState":"OFF and stationary","runtimeRequiredGates":["field-build provenance remains current","official Tuya SDK + owning account","fresh exact scooter membership/UID lease","fresh unique OFF1 -> ON1 -> OFF2 -> ON2 full-UUID correlation","explicit operator target confirmation","official Tuya SDK sole post-handoff BLE owner",">=45 monotonic seconds same-generation authenticated application evidence","seal accepted immutable prefix before share"],"expectedArtifact":"one immutable sanitized Nembra Capture JSON","expectedArtifactTruth":{"rawFD50BytesCaptured":False,"dpQueriesSent":False,"dpCommandsSent":False},"stopConditions":["authority/account/membership changes","correlation none/ambiguous","continuity/clock/lifecycle fails","no same-generation evidence by deadline","any secret leak","any DP query/publish, scooter command, reset/unbind/OTA, or second post-auth CoreBluetooth owner"],"ridingAuthorized":False,"applicationWritesAuthorized":False,"dpQueryOrPublishAuthorized":False,"scooterCommandsAuthorized":False},"physicalResultCollected":False}
+    return {"schemaVersion":1,"authority":"nembra-authenticated-stationary-final-go-v1","status":"GO","createdAtUTC":stamp,"finalGOControlPlane":control,"acceptedSourceCommitSHA":source,"acceptedPR":ps,"procedureIdentifier":PROC,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"softwareAcceptance":ws,"visualArtifact":vs,"visualReview":rv,"acceptedTuyaDependencyLockSHA256":rv["tuyaDependencyLockSHA256"],"acceptedCocoaPodsBuildSubjectSHA256":rv["cocoaPodsBuildSubjectSHA256"],"candidateSource":cs,"privateFieldInstall":{**got,"intendedDeviceIdentifierSHA256":dh},"retainedSignedFieldArtifact":signed,"experiment":{"scope":"one stationary authenticated read-only ES80 Capture attempt","baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27","initialScooterState":"OFF and stationary","runtimeRequiredGates":["field-build provenance remains current","official Tuya SDK + owning account","fresh exact scooter membership/UID lease","fresh unique OFF1 -> ON1 -> OFF2 -> ON2 full-UUID correlation","explicit operator target confirmation","official Tuya SDK sole post-handoff BLE owner",">=45 monotonic seconds same-generation authenticated application evidence","seal accepted immutable prefix before share"],"expectedArtifact":"one immutable sanitized Nembra Capture JSON","expectedArtifactTruth":{"rawFD50BytesCaptured":False,"dpQueriesSent":False,"dpCommandsSent":False},"stopConditions":["authority/account/membership changes","correlation none/ambiguous","continuity/clock/lifecycle fails","no same-generation evidence by deadline","any secret leak","any DP query/publish, scooter command, reset/unbind/OTA, or second post-auth CoreBluetooth owner"],"ridingAuthorized":False,"applicationWritesAuthorized":False,"dpQueryOrPublishAuthorized":False,"scooterCommandsAuthorized":False},"physicalResultCollected":False}
 
 def publication():
     p=Path(__file__).with_name("es80_today_final_go_publication.py"); s=importlib.util.spec_from_file_location("pub",p)
