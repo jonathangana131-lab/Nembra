@@ -7,11 +7,20 @@
   "workerId": "sol-20260811-f3a8",
   "leaseId": "recdash-f3a8-20260811-0806",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "COMPLETED",
   "claimedAt": "2026-08-11T08:06:30Z",
-  "lastHeartbeatAt": "2026-08-11T08:06:30Z",
+  "lastHeartbeatAt": "2026-08-11T08:09:15Z",
+  "completedAt": "2026-08-11T08:09:15Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "result": {
+    "canonicalSuccessorLane": "dashboard-live-cockpit",
+    "canonicalSuccessorPR": 2817,
+    "legacyCanonicalPR": 1995,
+    "deferredEvidenceChildren": [2047, 2054],
+    "ownership": "primary/review/tests already scheduler-owned; do not duplicate",
+    "physicalTruth": "SIMULATOR PROPULSION ONLY; NO VERIFIED ES80 POWER/CURRENT"
+  }
 }
