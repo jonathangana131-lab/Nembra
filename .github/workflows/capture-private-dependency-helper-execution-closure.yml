@@ -36,10 +36,11 @@ jobs:
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SELECTED_PARENT_SHA: c20484aec3c003143c9ebf034a40166a6d0ff94f
+          SELECTED_PARENT_SHA: 34091153f8bb4f9b024553ca628145bdec873e1e
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse '${{ github.event.pull_request.base.sha }}')" = "$SELECTED_PARENT_SHA"
           git merge-base --is-ancestor "$SELECTED_PARENT_SHA" HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
@@ -82,7 +83,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          SELECTED_PARENT_SHA: c20484aec3c003143c9ebf034a40166a6d0ff94f
+          SELECTED_PARENT_SHA: 34091153f8bb4f9b024553ca628145bdec873e1e
         run: |
           set -euo pipefail
           git diff --check "$SELECTED_PARENT_SHA" HEAD
