@@ -1,0 +1,44 @@
+name: Capture Final GO Control Import Execution Red Team
+
+on:
+  pull_request:
+    paths:
+      - "scripts/ci/es80_authenticated_stationary_final_go.py"
+      - "scripts/ci/es80_authenticated_stationary_signed_artifact.py"
+      - "scripts/ci/tests/test_es80_final_go_control_import_execution_subject.py"
+      - ".github/workflows/capture-final-go-control-import-execution-redteam.yml"
+  push:
+    branches:
+      - "adversarial/v14-final-go-control-import-execution-subject-sol"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  control-import-execution-subject:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bind checked-out diagnostic head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Compile diagnostic and Final-GO modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_final_go_control_import_execution_subject.py
+      - name: Require immutable Final-GO control import execution subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tests/test_es80_final_go_control_import_execution_subject.py
