@@ -166,6 +166,20 @@ class PrivateReviewHMACAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(COMMIT.CommitmentError, "symlink"):
             self.current_commitment()
 
+    def test_key_parent_symlink_is_rejected_by_descriptor_walk(self) -> None:
+        fixture = self.fixture
+        alias = fixture.root / "TuyaRuntimeAlias"
+        alias.symlink_to(fixture.identity_root, target_is_directory=True)
+        with self.assertRaisesRegex(COMMIT.CommitmentError, "symlink"):
+            COMMIT.commitment(
+                key_file=alias / "PrivateReviewAuthority.key",
+                lockfile=fixture.root / "Podfile.lock",
+                security_podspec=fixture.security_sdk / "ThingSmartCryption.podspec",
+                security_build=fixture.security_build,
+                identity_podspec=fixture.identity_root / "NembraTuyaPrivateConfig.podspec",
+                identity_sources=fixture.identity_sources,
+            )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
