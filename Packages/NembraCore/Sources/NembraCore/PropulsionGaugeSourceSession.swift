@@ -155,6 +155,21 @@ public struct PropulsionGaugeSourceSession: Sendable {
         displayModel.cockpitSnapshot(atUptimeNanoseconds: now, scale: scale)
     }
 
+    /// Canonical app-facing Energy Rail subject from this exact lifecycle owner.
+    ///
+    /// Integration code must use this forwarding seam rather than reconstructing a
+    /// projection from `frame`/`cockpitSnapshot`: the display model owns the required
+    /// semantic/render cross-binding and the source session owns interruption fences.
+    public func energyRailAppProjection(
+        atUptimeNanoseconds now: UInt64,
+        scale: PropulsionGaugeScale?
+    ) -> PropulsionEnergyRailAppProjection {
+        displayModel.energyRailAppProjection(
+            atUptimeNanoseconds: now,
+            scale: scale
+        )
+    }
+
     /// Accepted observed-scale semantic projection from the canonical model. In particular, the
     /// returned verified-wording gate remains authority-sealed and is not inferred from render motion.
     public func observedScaleRegionSnapshot(

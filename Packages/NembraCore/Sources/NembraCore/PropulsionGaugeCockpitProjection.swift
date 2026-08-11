@@ -45,39 +45,70 @@ public enum PropulsionGaugeCockpitMeasurement: Equatable, Sendable {
 /// unavailable). Product semantics such as "near observed max" are intentionally owned by the separate
 /// accepted-power observed-scale-region layer rather than duplicated here.
 public struct PropulsionGaugeCockpitSnapshot: Equatable, Sendable {
-    /// Exact vehicle/mode identity for this snapshot, including unavailable states.
-    /// Keeping identity on the snapshot prevents an asynchronous/cached projection from becoming
-    /// ordinary-looking state for a different selected vehicle or confirmed mode.
     public let identity: PropulsionGaugeIdentity
     public let measurement: PropulsionGaugeCockpitMeasurement
-
-    /// Render-only position for the live propulsion band. Never telemetry evidence.
     public let visualPropulsionFraction: Double?
-    /// Render-only marker derived from accepted peak samples inside the canonical hold window.
+    public let acceptedPropulsionFraction: Double?
     public let recentAcceptedPeakMarkerFraction: Double?
-    /// The compatible presentation-scale origin admitted by the canonical gauge frame.
-    /// This is presentation provenance only; it does not convert render fractions into measurements.
     public let scaleOrigin: PropulsionGaugeScaleOrigin?
 
     fileprivate init(
         identity: PropulsionGaugeIdentity,
         measurement: PropulsionGaugeCockpitMeasurement,
         visualPropulsionFraction: Double?,
+        acceptedPropulsionFraction: Double?,
         recentAcceptedPeakMarkerFraction: Double?,
         scaleOrigin: PropulsionGaugeScaleOrigin?
     ) {
         self.identity = identity
         self.measurement = measurement
         self.visualPropulsionFraction = visualPropulsionFraction
+        self.acceptedPropulsionFraction = acceptedPropulsionFraction
         self.recentAcceptedPeakMarkerFraction = recentAcceptedPeakMarkerFraction
         self.scaleOrigin = scaleOrigin
     }
+
+#if SWIFT_PACKAGE
+    /// Package-sealed reconstruction of an exact source-owned Simulator receipt as
+    /// retained cockpit truth. This supports a fresh runtime/view mount after source
+    /// custody already demoted a legitimate receipt. It never creates live geometry,
+    /// a local receipt, or a render-clock timestamp.
+    package static func retainedSimulatorSource(
+        identity: PropulsionGaugeIdentity,
+        watts: Double,
+        receiptSequenceNumber: UInt64,
+        receivedAtUptimeNanoseconds: UInt64,
+        continuityGeneration: UInt64
+    ) -> Self? {
+        guard watts.isFinite,
+              watts >= 0,
+              receiptSequenceNumber > 0,
+              receivedAtUptimeNanoseconds > 0,
+              continuityGeneration > 0 else {
+            return nil
+        }
+
+        let accepted = PropulsionGaugeCockpitAcceptedMeasurement(
+            identity: identity,
+            watts: watts == 0 ? 0 : watts,
+            receiptSequenceNumber: receiptSequenceNumber,
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            continuityGeneration: continuityGeneration,
+            authority: .simulator
+        )
+        return Self(
+            identity: identity,
+            measurement: .retained(accepted),
+            visualPropulsionFraction: nil,
+            acceptedPropulsionFraction: nil,
+            recentAcceptedPeakMarkerFraction: nil,
+            scaleOrigin: nil
+        )
+    }
+#endif
 }
 
 public extension PropulsionGaugeDisplayModel {
-    /// Projects one cockpit snapshot while keeping accepted-measurement truth and display-clock motion separate.
-    /// The canonical frame is evaluated exactly once per call so a 60 Hz cockpit does not duplicate
-    /// interpolation work merely to recover the accepted numeric value.
     func cockpitSnapshot(
         atUptimeNanoseconds now: UInt64,
         scale: PropulsionGaugeScale?
@@ -85,13 +116,12 @@ public extension PropulsionGaugeDisplayModel {
         let frame = frame(atUptimeNanoseconds: now, scale: scale)
         let measurement = cockpitMeasurement(from: frame)
 
-        // A live/retained frame must carry complete accepted provenance. If it does not, fail the whole
-        // cockpit surface closed rather than showing moving presentation state without accepted truth.
         guard measurement != .unavailable || frame.availability == .unavailable else {
             return PropulsionGaugeCockpitSnapshot(
                 identity: frame.identity,
                 measurement: .unavailable,
                 visualPropulsionFraction: nil,
+                acceptedPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil
             )
@@ -102,6 +132,7 @@ public extension PropulsionGaugeDisplayModel {
                 identity: frame.identity,
                 measurement: measurement,
                 visualPropulsionFraction: nil,
+                acceptedPropulsionFraction: nil,
                 recentAcceptedPeakMarkerFraction: nil,
                 scaleOrigin: nil
             )
@@ -111,9 +142,37 @@ public extension PropulsionGaugeDisplayModel {
             identity: frame.identity,
             measurement: measurement,
             visualPropulsionFraction: frame.normalizedPropulsion,
+            acceptedPropulsionFraction: acceptedPropulsionFraction(
+                from: measurement,
+                scale: scale,
+                admittedScaleOrigin: frame.scaleOrigin
+            ),
             recentAcceptedPeakMarkerFraction: frame.acceptedPeakNormalized,
             scaleOrigin: frame.scaleOrigin
         )
+    }
+
+    private func acceptedPropulsionFraction(
+        from measurement: PropulsionGaugeCockpitMeasurement,
+        scale: PropulsionGaugeScale?,
+        admittedScaleOrigin: PropulsionGaugeScaleOrigin?
+    ) -> Double? {
+        guard case let .live(accepted) = measurement,
+              let scale,
+              let admittedScaleOrigin,
+              accepted.identity == identity,
+              accepted.watts.isFinite,
+              accepted.watts >= 0,
+              scale.identity == identity,
+              scale.origin == admittedScaleOrigin,
+              scale.ceilingWatts.isFinite,
+              scale.ceilingWatts > 0 else {
+            return nil
+        }
+
+        let fraction = accepted.watts / scale.ceilingWatts
+        guard fraction.isFinite else { return nil }
+        return min(1, max(0, fraction))
     }
 
     private func cockpitMeasurement(
