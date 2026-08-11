@@ -3,7 +3,8 @@
 
 DEVELOPER_DIR has its own current diagnostic. This test owns the broader child
 process boundary: xcodebuild must not inherit arbitrary caller build/toolchain
-settings after that narrower fence is repaired.
+settings after that narrower fence is repaired. The contract is intentionally
+repair-compatible so the exact same test can be replayed on a production fix.
 """
 from __future__ import annotations
 
@@ -16,7 +17,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 GUARD_PATH = ROOT / "Scripts/capture_tuya_private_input_build_guard.py"
-INSTALLER = ROOT / "scripts/field/install_one_time_capture.command"
 
 
 def load_guard():
@@ -103,6 +103,10 @@ class CaptureFieldXcodeEnvironmentAuthorityTests(unittest.TestCase):
             "SWIFT_EXEC": "/tmp/nembra-attacker-swiftc",
             "CC": "/tmp/nembra-attacker-cc",
             "CXX": "/tmp/nembra-attacker-cxx",
+            "CPATH": "/tmp/nembra-attacker-headers",
+            "CFLAGS": "-include /tmp/nembra-attacker.h",
+            "CXXFLAGS": "-include /tmp/nembra-attacker.hpp",
+            "LDFLAGS": "-Wl,-rpath,/tmp/nembra-attacker-libs",
             "DYLD_INSERT_LIBRARIES": "/tmp/nembra-attacker.dylib",
             "DYLD_LIBRARY_PATH": "/tmp/nembra-attacker-libs",
             "DYLD_FRAMEWORK_PATH": "/tmp/nembra-attacker-frameworks",
@@ -149,15 +153,6 @@ class CaptureFieldXcodeEnvironmentAuthorityTests(unittest.TestCase):
                 attacker_value,
                 f"caller-controlled {name} reached the guarded compiler child",
             )
-
-    def test_narrow_developer_dir_fence_would_not_close_the_residual_boundary(self) -> None:
-        installer = INSTALLER.read_text(encoding="utf-8")
-        guard = GUARD_PATH.read_text(encoding="utf-8")
-        self.assertIn("/usr/bin/xcodebuild", installer)
-        self.assertIn("popen_factory(list(command))", guard)
-        self.assertNotIn("XCODE_XCCONFIG_FILE", guard)
-        self.assertNotIn("TOOLCHAINS", guard)
-        self.assertNotIn("SDKROOT", guard)
 
 
 if __name__ == "__main__":
