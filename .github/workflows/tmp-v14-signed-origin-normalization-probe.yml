@@ -20,13 +20,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
 
-      - name: Bind probe to signed-install parent plus one research workflow
+      - name: Bind probe to signed-install parent and research-only branch delta
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 'f76e6ae54b4304df5b02db4f46a72f67daa276e2'
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tmp-v14-signed-origin-normalization-probe.yml'
+          base='f76e6ae54b4304df5b02db4f46a72f67daa276e2'
+          git merge-base --is-ancestor "$base" HEAD
+          mapfile -t changed < <(git diff --name-only "$base" HEAD | sort)
+          expected=(
+            '.github/workflows/tmp-v14-signed-origin-gid-isolation-probe.yml'
+            '.github/workflows/tmp-v14-signed-origin-normalization-probe.yml'
+          )
+          test "${#changed[@]}" = "${#expected[@]}"
+          for i in "${!expected[@]}"; do test "${changed[$i]}" = "${expected[$i]}"; done
 
       - name: Probe code-sign normalization on real Nembra Capture product
         id: probe
