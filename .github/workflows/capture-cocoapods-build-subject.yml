@@ -1,0 +1,47 @@
+name: Capture CocoaPods Build Subject
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_cocoapods_build_subject.py
+      - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - .github/workflows/capture-cocoapods-build-subject.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-build-subject:
+    name: Bind generated CocoaPods build subject
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Validate helper and bootstrap syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_cocoapods_build_subject.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+
+      - name: Reject lock-preserving generated-build substitution
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
