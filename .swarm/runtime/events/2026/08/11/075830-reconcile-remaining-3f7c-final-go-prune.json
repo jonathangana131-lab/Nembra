@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "075830-reconcile-remaining-3f7c-final-go-prune",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Pruned obsolete Final-GO recovery/sync PRs #2659, #2665, #2666, #2677, and #2707 after reconciling them against the selected control lineage. Current durable routing keeps #2638 as the authenticated-stationary parent and #2775 as the selected generated-subject spine; active execution-before-authority blockers #2803/#2798 remain open and PHYSICAL NO-GO remains. Closed PRs retain historical commits/evidence but are no longer ambiguous active lanes.",
+  "createdAt": "2026-08-11T07:58:30Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "closedPRs": [2659, 2665, 2666, 2677, 2707],
+    "selectedParentPR": 2638,
+    "selectedGeneratedPR": 2775,
+    "activeRedTeamPRs": [2798, 2803],
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
