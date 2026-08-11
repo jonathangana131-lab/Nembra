@@ -54,8 +54,8 @@ def choose_capability_gid(normal_groups: list[int]) -> int:
 def structured_credentials(uid: int, gid: int, extra_groups: list[int]) -> dict[str, object]:
     """Use the same minimum-authority POSIX launch shape as the production supervisor."""
 
-    if uid <= 0 or gid < 0:
-        raise RuntimeError("structured child credentials require a non-root invoking identity")
+    if uid <= 0 or gid <= 0:
+        raise RuntimeError("structured child credentials require non-root user and group identity")
     normalized = sorted({group for group in extra_groups if group != gid})
     if any(group <= 0 for group in normalized):
         raise RuntimeError("structured child supplementary groups contain invalid authority")
@@ -108,15 +108,18 @@ def root_probe(package_root: Path, normal_groups: list[int], caller_environment:
     except (KeyError, ValueError) as error:
         emit_error("identity", f"missing sudo invoking identity: {error}")
         return 71
-    if uid <= 0:
-        emit_error("identity", "root is not a valid field-user identity")
+    if uid <= 0 or gid <= 0:
+        emit_error("identity", "root user/group is not a valid field-build identity")
         return 71
     account = pwd.getpwuid(uid)
     if account.pw_name != user or account.pw_gid != gid:
         emit_error("identity", "sudo identity does not match local account database")
         return 71
 
-    normal_groups = sorted(set(group for group in normal_groups if group >= 0) | {gid})
+    normal_groups = sorted(set(normal_groups) | {gid})
+    if any(group <= 0 for group in normal_groups):
+        emit_error("identity", "field-build account carries root or invalid group authority")
+        return 71
     capability_gid = choose_capability_gid(normal_groups)
     build_root = Path(tempfile.mkdtemp(prefix="nembra-real-xcode-origin.", dir="/private/tmp"))
     stage_root = Path(tempfile.mkdtemp(prefix="nembra-real-xcode-stage.", dir="/private/tmp"))
@@ -223,6 +226,7 @@ def root_probe(package_root: Path, normal_groups: list[int], caller_environment:
             "schemaVersion": 1,
             "fieldUID": uid,
             "fieldPrimaryGID": gid,
+            "fieldNormalGroups": normal_groups,
             "capabilityGID": capability_gid,
             "normalGroupsContainCapability": capability_gid in normal_groups,
             "buildSupplementaryGroups": [capability_gid],
@@ -305,6 +309,7 @@ def parent_probe() -> int:
         required = (
             evidence.get("xcodebuildReturnCode") == 0
             and evidence.get("sameUIDAttackReturnCode") != 0
+            and all(group > 0 for group in evidence.get("fieldNormalGroups", []))
             and evidence.get("normalGroupsContainCapability") is False
             and evidence.get("buildSupplementaryGroups") == [evidence.get("capabilityGID")]
             and evidence.get("attackSupplementaryGroups") == []
