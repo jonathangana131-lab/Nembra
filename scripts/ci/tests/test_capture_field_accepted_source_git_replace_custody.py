@@ -30,6 +30,19 @@ class CaptureFieldAcceptedSourceGitReplaceCustodyTests(unittest.TestCase):
         end = source.index("\n}\n", start) + len("\n}\n")
         return source[start:end]
 
+    def test_field_installer_has_no_removed_mutable_guard_variable(self) -> None:
+        source = INSTALLER.read_text(encoding="utf-8")
+        self.assertNotIn(
+            "$TUYA_BUILD_WINDOW_GUARD\"",
+            source,
+            "field installer must not dereference the removed mutable build-guard path under set -u",
+        )
+        self.assertIn(
+            'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"',
+            source,
+            "field build guard must execute from exact accepted source bytes",
+        )
+
     def test_field_runner_is_replacement_blind_for_exact_accepted_commit(self) -> None:
         runner = self._accepted_source_runner()
         with tempfile.TemporaryDirectory() as temporary:
