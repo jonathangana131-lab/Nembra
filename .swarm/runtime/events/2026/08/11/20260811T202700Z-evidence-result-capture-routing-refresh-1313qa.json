@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "202700-evidence-result-capture-routing-refresh-1313qa",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-1313qa",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Capture routing refresh at main d8e38d0a. PHYSICAL_NO_GO. #2977@0d789181 consumes #2964 and has private-identity race gate green, but Field Build Provenance run 31532629831 is red because test_capture_tuya_private_input_provenance.py expects literal 'pod install --repo-update' that is absent; graft is still running and Xcode queued, so not accepted. #2976@d9f383b9 is the reviewed-green Final-GO test-contract recovery: canonical run 31532461941 SUCCESS and independent review released accepted. #2978@57f3c436 remains red at the object-chain proof and declares undeclared slot tests-recovery; do not prefer it over #2976 without explicit integration selection. Build-authority repair is active on WIP 22b08488 from #2968@947f5922 to close #2969 exact tool-file custody, with no exact-head CI observed yet. Signed-install still has #2955 expected-red. Runtime VoiceOver remains active. Final physical GO still requires one deliberately composed unchanged head with all applicable exact-head gates re-earned.",
+  "createdAt": "2026-08-11T20:27:00Z"
+}
