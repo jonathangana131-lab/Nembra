@@ -68,6 +68,8 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(root.contains("fieldBuildIsAuthoritative ? \"Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority.\" : \"Account setup only in this public build.\""))
         #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
         #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
+        #expect(root.contains(".font(isAccessibilityLayout ? .headline : .title3.bold())\n                        .accessibilityAddTraits(.isHeader)"))
+        #expect(root.contains("Text(\"Choose this scooter\")\n                .font(.title3.bold())\n                .accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("Text(\"Tuya Smart user code\")"))
         #expect(root.contains("TextField(\"Paste user code\""))
         #expect(root.contains("nembra.capture.root.account-link-action"))
