@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "082430-evidence-result-battery-review-p1rec53",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-p1rec53",
+  "laneId": "battery-range-simulator-display-authority",
+  "message": "Independent review of PR #2815 exact head 0d874412fb7e0479792c46e06128e1c749bd2a2c confirms the intended software truth split: production/no-scenario battery authority is nil; valid Simulator scenarios are .displayOnly; .displayOnly cannot cross PhysicalBatterySOCObservation or rangeEligible; shipping AppBootstrap.makeRuntime gives UserDefaultsRetainedBatterySnapshotStorage only to scenario==nil and gives Simulator scenarios nil retained storage, preventing synthetic Simulator battery fixtures from entering production LAST KNOWN continuity. Review 4904273113 requires a focused regression freezing that storage-isolation invariant because generic .displayOnly snapshots are intentionally persistable. Exact-head Xcode run 31472582221 was cancelled after trusted-head resolution, so there is no accepting Xcode/visual evidence on this head. Lane moved to NEEDS_CHANGES for the regression plus fresh final-head Xcode/screenshots/accessibility/Reduce Motion gates. No physical ES80 battery/range truth or Capture GO authority changed.",
+  "createdAt": "2026-08-11T08:24:30Z"
+}
