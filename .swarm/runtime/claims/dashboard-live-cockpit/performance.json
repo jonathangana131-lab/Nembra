@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "dashboard-live-cockpit",
+  "slot": "performance",
+  "role": "performance",
+  "workerId": "sol-20260811-1607r4",
+  "leaseId": "dashboard-performance-1607r4-20260811-2321",
+  "generation": 3,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T23:21:55Z",
+  "lastHeartbeatAt": "2026-08-11T23:21:55Z",
+  "leaseSeconds": 1800,
+  "branch": "repair/v15-dashboard-sustained-perf-fresh-xcui-sol-r4",
+  "pr": 2980,
+  "sourceSHA": "55e13388a20d0445513d1d7083c41ed421e00195",
+  "currentHeadSHA": "55e13388a20d0445513d1d7083c41ed421e00195",
+  "takeoverFromWorkerId": "sol-20260811-current-perf-recovery",
+  "takeoverReason": "The current performance PR declares generation 2 but no live swarm claim exists. Exact run 31535264357 failed before metrics because the retained XCUI debug attachment proves a stale element-handle witness: the captured dashboard.speed handle remained 11 mph while a fresh hierarchy query already exposed 14 mph and Energy Rail 410 W. Recover performance on a clean successor branch, touching only performance fixture/witness/workflow paths and leaving active DashboardView/UITest product repair to primary generation 4.",
+  "ownedPaths": [
+    ".github/workflows/dashboard-sustained-performance.yml",
+    "NembraApp/App/AppBootstrap.swift",
+    "scripts/ci/dashboard_sustained_performance_xcuitest.swift"
+  ],
+  "checkpoint": "Claimed from exact #2980 head 55e13388 after retained failure analysis. Immediate repair target: re-query dashboard.speed and dashboard.energy-rail at each pre/post semantic observation rather than using stale XCUIElement handles, preserving fail-closed requirement that both accepted Simulator-owned source values move before and after the measured interval. No DashboardView or NembraUITests production edits. Simulator-only; ES80 PHYSICAL NO-GO."
+}
