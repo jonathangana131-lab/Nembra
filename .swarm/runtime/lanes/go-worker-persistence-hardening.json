@@ -6,7 +6,7 @@
   "title": "Prevent Go workers from treating green checks as completion",
   "objective": "Harden the trusted Go bootstrap so a worker keeps advancing claims after green CI or a completed slice, and may stop only after a refreshed live-GitHub reconciliation plus a refreshed empty scheduler queue; make queue starvation and blocked work explicit rather than silently equating green with done.",
   "priority": 0,
-  "state": "IMPLEMENTING",
+  "state": "REVIEW",
   "dependencies": ["swarm-control-plane-foundation"],
   "blockers": [],
   "mode": "exclusive",
