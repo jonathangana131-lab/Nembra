@@ -1,0 +1,42 @@
+name: Capture Authenticated Stationary Final GO Environment Custody Diagnostic
+
+on:
+  push:
+    branches:
+      - agent/v14-auth-final-go-env-custody
+    paths:
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+      - .github/workflows/capture-authenticated-stationary-final-go-env-custody-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Reject inherited Bash startup authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Bind diagnostic to exact pushed source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile issuer and environment-custody regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+      - name: Prove caller Bash startup environment cannot execute before installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py -v
