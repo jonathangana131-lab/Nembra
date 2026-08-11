@@ -301,29 +301,25 @@ final class NembraUITests: XCTestCase {
             identifier: "dashboard.mode.walk",
             expectedValue: "Walk",
             screenshotName: "Dashboard Walk Landscape",
-            in: app,
-            confirmedMode: confirmedMode
+            in: app
         )
         selectDashboardMode(
             identifier: "dashboard.mode.eco",
             expectedValue: "Eco",
             screenshotName: "Dashboard Eco Landscape",
-            in: app,
-            confirmedMode: confirmedMode
+            in: app
         )
         selectDashboardMode(
             identifier: "dashboard.mode.drive",
             expectedValue: "Drive",
             screenshotName: "Dashboard Drive Landscape",
-            in: app,
-            confirmedMode: confirmedMode
+            in: app
         )
         selectDashboardMode(
             identifier: "dashboard.mode.sport",
             expectedValue: "Sport",
             screenshotName: "Dashboard Sport Confirmed Landscape",
-            in: app,
-            confirmedMode: confirmedMode
+            in: app
         )
     }
 
@@ -355,12 +351,18 @@ final class NembraUITests: XCTestCase {
         identifier: String,
         expectedValue: String,
         screenshotName: String,
-        in app: XCUIApplication,
-        confirmedMode: XCUIElement
+        in app: XCUIApplication
     ) {
         let button = app.buttons[identifier]
         XCTAssertTrue(button.waitForExistence(timeout: 2))
         button.tap()
+
+        // SwiftUI may replace the semantic AX snapshot after a confirmed mode
+        // change. Re-query the post-command element instead of polling a stale
+        // pre-command XCUI handle; the product state still has to expose the exact
+        // scooter-confirmed value before the screenshot is accepted.
+        let confirmedMode = app.descendants(matching: .any)["dashboard.mode"]
+        XCTAssertTrue(confirmedMode.waitForExistence(timeout: 2))
         XCTAssertTrue(
             waitForValue(expectedValue, element: confirmedMode),
             "Dashboard personality must follow the scooter-confirmed \(expectedValue) mode, not the tapped button alone."
