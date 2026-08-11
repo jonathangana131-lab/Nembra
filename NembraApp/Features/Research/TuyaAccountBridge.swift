@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 ///
 /// This deliberately does NOT send scooter commands. It uses Tuya's QR account authorization
 /// and read-only Device Sharing endpoints to collect the device's cloud metadata, current status,
-/// specifications, and local DP strategy before the next Bluetooth experiment.
+/// specifications, and cloud status payload before the next Bluetooth experiment.
 @MainActor
 final class TuyaAccountBridge: ObservableObject {
     struct LinkedDevice: Identifiable, Equatable {
@@ -64,7 +64,7 @@ final class TuyaAccountBridge: ObservableObject {
     @Published private(set) var selectedDeviceMetadata: [String: Any]?
     @Published private(set) var selectedDeviceStatus: [String: Any]?
     @Published private(set) var selectedDeviceSpecifications: [String: Any]?
-    @Published private(set) var selectedDeviceLocalStrategy: [String: Any]?
+    @Published private(set) var selectedDeviceCloudStatus: Any?
     @Published private(set) var redactedExportData: Data?
     @Published private(set) var redactedExportFilename = "Nembra-Tuya-ReadOnly-Metadata.json"
 
@@ -236,7 +236,7 @@ final class TuyaAccountBridge: ObservableObject {
             ],
             "status": Self.redactSecrets(selectedDeviceStatus ?? [:]),
             "specifications": Self.redactSecrets(selectedDeviceSpecifications ?? [:]),
-            "localStrategy": Self.redactSecrets(selectedDeviceLocalStrategy ?? [:]),
+            "cloudStatusResponse": Self.redactSecrets(selectedDeviceCloudStatus ?? []),
             "safety": [
                 "readOnlyCloudCalls": true,
                 "localKeyRetained": false,
@@ -299,7 +299,7 @@ final class TuyaAccountBridge: ObservableObject {
         selectedDeviceMetadata = nil
         selectedDeviceStatus = nil
         selectedDeviceSpecifications = nil
-        selectedDeviceLocalStrategy = nil
+        selectedDeviceCloudStatus = nil
         redactedExportData = nil
     }
 
@@ -488,9 +488,9 @@ final class TuyaAccountBridge: ObservableObject {
 
         async let detailResponse = signedGET(path: "/v1.0/m/life/ha/devices/detail", params: ["devIds": device.id])
         async let specResponse = signedGET(path: "/v1.1/m/life/\(device.id)/specifications")
-        async let strategyResponse = signedGET(path: "/v1.0/m/life/devices/\(device.id)/status")
+        async let cloudStatusResponse = signedGET(path: "/v1.0/m/life/devices/\(device.id)/status")
 
-        let (detail, specs, strategy) = try await (detailResponse, specResponse, strategyResponse)
+        let (detail, specs, cloudStatus) = try await (detailResponse, specResponse, cloudStatusResponse)
         guard !Task.isCancelled,
               generation == operationGeneration,
               selectedDeviceID == device.id else { return }
@@ -504,10 +504,10 @@ final class TuyaAccountBridge: ObservableObject {
             Self.redactSecrets(specs["result"] as? [String: Any] ?? [:]),
             accountUID: accountUID
         ) as? [String: Any] ?? [:]
-        selectedDeviceLocalStrategy = Self.redactAccountUID(
-            Self.redactSecrets(strategy["result"] as? [String: Any] ?? [:]),
+        selectedDeviceCloudStatus = Self.redactAccountUID(
+            Self.redactSecrets(cloudStatus["result"] ?? []),
             accountUID: accountUID
-        ) as? [String: Any] ?? [:]
+        )
 
         var statusMap: [String: Any] = [:]
         if let statuses = rawDetail["status"] as? [[String: Any]] {
