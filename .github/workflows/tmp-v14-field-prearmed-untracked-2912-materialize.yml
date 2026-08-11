@@ -1,0 +1,76 @@
+name: tmp v14 field prearmed untracked 2912 materialize
+
+on:
+  push:
+    branches:
+      - repair/v14-field-prearmed-untracked-2912-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind temporary construction scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git merge-base --is-ancestor d0b134ca2a49edc029f114660dfb8e216ece682e HEAD
+          mapfile -t changed < <(git diff --name-only d0b134ca2a49edc029f114660dfb8e216ece682e...HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = ".github/workflows/tmp-v14-field-prearmed-untracked-2912-materialize.yml"
+          test "${changed[1]}" = "scripts/ci/tmp_materialize_field_prearmed_untracked_2912.py"
+
+      - name: Materialize accepted repair and exact diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tmp_materialize_field_prearmed_untracked_2912.py
+
+      - name: Validate prearmed-source closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          for path in (
+              Path("Scripts/capture_tuya_private_input_build_guard.py"),
+              Path("scripts/ci/tests/test_capture_field_tracked_source_window_authority.py"),
+          ):
+              compile(path.read_text(encoding="utf-8"), str(path), "exec")
+          PY
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+          test -z "$(find Scripts scripts -type d -name __pycache__ -print -quit)"
+
+      - name: Publish clean repair head
+        shell: bash
+        env:
+          TARGET_BRANCH: repair/v14-field-prearmed-untracked-2912-sol-20260811
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-sol-worker"
+          git config user.email "nembra-sol-worker@users.noreply.github.com"
+          git add Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          git commit -m "Reject pre-armed untracked field build sources"
+          git rm .github/workflows/tmp-v14-field-prearmed-untracked-2912-materialize.yml scripts/ci/tmp_materialize_field_prearmed_untracked_2912.py
+          git commit -m "Remove one-shot prearmed-source materializer"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check d0b134ca2a49edc029f114660dfb8e216ece682e..HEAD
+          mapfile -t final_changed < <(git diff --name-only d0b134ca2a49edc029f114660dfb8e216ece682e..HEAD | sort)
+          printf '%s\n' "${final_changed[@]}"
+          test "${#final_changed[@]}" -eq 2
+          test "${final_changed[0]}" = "Scripts/capture_tuya_private_input_build_guard.py"
+          test "${final_changed[1]}" = "scripts/ci/tests/test_capture_field_tracked_source_window_authority.py"
+          git push origin "HEAD:${TARGET_BRANCH}"
