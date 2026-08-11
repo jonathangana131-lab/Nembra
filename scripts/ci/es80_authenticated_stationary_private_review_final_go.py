@@ -4,9 +4,10 @@
 The accepted #2873 private-review implementation remains the semantic parent.
 This child executes that exact parent from its immutable Git blob, then replaces
 only the candidate checkout's inherited Git view. Candidate cleanliness is
-proved by comparing the accepted Git tree to the physical filesystem directly;
-repository-local config, index flags, fsmonitor, filters, attributes, and ignore
-metadata never participate in candidate worktree authority.
+proved by comparing a cryptographically captured accepted Git object chain to
+the physical filesystem directly; repository-local config, index flags,
+fsmonitor, filters, attributes, ignore metadata, and mutable Git name lookup do
+not become authority.
 
 The historical generated-subject parent is also adapted narrowly at composition
 time to require the selected current CocoaPods vnode gate. The retired
@@ -31,15 +32,22 @@ PARENT_MODULE_GIT_BLOB = "c6c0b68ad9c2af7cd3378c721752fbca7d4ed9e9"
 OID = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 FIELD_INPUT_DIRECTORIES = ("LocalSecrets", "Pods", "NembraCapture.xcworkspace")
 FIELD_INPUT_FILES = ("Podfile.lock",)
+MAX_COMMIT_OBJECT_BYTES = 4 * 1024 * 1024
+MAX_TREE_OBJECT_BYTES = 16 * 1024 * 1024
+MAX_BLOB_OBJECT_BYTES = 64 * 1024 * 1024
+MAX_TREE_DEPTH = 64
+MAX_TREE_OBJECTS = 100_000
+MAX_TRACKED_ENTRIES = 250_000
+MAX_TRACKED_PATH_BYTES = 4096
 
 
 def _closed_object_environment() -> dict[str, str]:
     """Environment for object-database-only Git commands.
 
     Local config can still describe repository format/object storage, but the
-    only Git commands admitted below are rev-parse, ls-tree, and cat-file. They
-    never inspect a pathname in the candidate worktree. Known worktree-side
-    executable/config surfaces are explicitly disabled as defense in depth.
+    admitted commands never inspect a pathname in the candidate worktree.
+    Known worktree-side executable/config surfaces are explicitly disabled as
+    defense in depth. Object bytes used as authority are independently hashed.
     """
     return {
         "PATH": "/usr/bin:/bin",
@@ -80,8 +88,13 @@ def _real_git_dir(root: Path) -> Path:
 
 
 def _object_git_bytes(root: Path, *args: str) -> bytes:
-    """Run a tightly scoped Git object-database command, never a worktree command."""
-    if not args or args[0] not in {"rev-parse", "ls-tree", "cat-file"}:
+    """Run a tightly scoped Git object command for non-authoritative plumbing.
+
+    Authority-bearing object captures use `_verified_object_bytes`, which is
+    bounded and independently re-hashes the returned bytes. This helper remains
+    for fixed-blob regression fixtures and small rev-parse plumbing only.
+    """
+    if not args or args[0] not in {"rev-parse", "cat-file"}:
         raise RuntimeError("candidate object Git command is outside the accepted allowlist")
     git_dir = _real_git_dir(root)
     try:
@@ -103,13 +116,63 @@ def _object_git_text(root: Path, *args: str) -> str:
         raise RuntimeError("candidate object Git output was not canonical ASCII") from error
 
 
-def _blob_oid(payload: bytes, accepted_oid: str) -> str:
-    header = b"blob " + str(len(payload)).encode("ascii") + b"\0"
+def _object_oid(object_type: str, payload: bytes, accepted_oid: str) -> str:
+    if object_type not in {"commit", "tree", "blob"}:
+        raise RuntimeError("candidate Git object type is unsupported")
+    header = object_type.encode("ascii") + b" " + str(len(payload)).encode("ascii") + b"\0"
     if len(accepted_oid) == 40:
         return hashlib.sha1(header + payload).hexdigest()
     if len(accepted_oid) == 64:
         return hashlib.sha256(header + payload).hexdigest()
     raise RuntimeError("candidate accepted Git object has unsupported width")
+
+
+def _blob_oid(payload: bytes, accepted_oid: str) -> str:
+    return _object_oid("blob", payload, accepted_oid)
+
+
+def _capture_object_bytes(root: Path, object_type: str, oid: str, limit: int) -> bytes:
+    """Capture one Git object with a hard stdout bound before trusting bytes."""
+    oid = oid.lower()
+    if not OID.fullmatch(oid):
+        raise RuntimeError("candidate Git object identity is not canonical")
+    if object_type not in {"commit", "tree", "blob"} or limit <= 0:
+        raise RuntimeError("candidate Git object capture contract is invalid")
+    git_dir = _real_git_dir(root)
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        process = subprocess.Popen(
+            ["/usr/bin/git", f"--git-dir={git_dir}", "cat-file", object_type, oid],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=_closed_object_environment(),
+        )
+        if process.stdout is None:
+            raise RuntimeError("candidate Git object capture pipe unavailable")
+        payload = process.stdout.read(limit + 1)
+        if len(payload) > limit:
+            process.kill()
+            process.wait()
+            raise RuntimeError("candidate Git object exceeds bounded capture limit")
+        returncode = process.wait()
+        if returncode != 0:
+            raise RuntimeError("candidate Git object capture failed")
+        return payload
+    except OSError as error:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        raise RuntimeError("candidate Git object capture failed") from error
+    finally:
+        if process is not None and process.stdout is not None:
+            process.stdout.close()
+
+
+def _verified_object_bytes(root: Path, object_type: str, oid: str, limit: int) -> bytes:
+    payload = _capture_object_bytes(root, object_type, oid, limit)
+    if _object_oid(object_type, payload, oid) != oid.lower():
+        raise RuntimeError("candidate Git object lookup returned bytes outside accepted identity")
+    return payload
 
 
 def _head_oid(root: Path) -> str:
@@ -119,32 +182,104 @@ def _head_oid(root: Path) -> str:
     return value
 
 
+def _commit_tree_oid(commit_payload: bytes, source: str) -> str:
+    try:
+        headers = commit_payload.split(b"\n\n", 1)[0]
+        tree_lines = [line for line in headers.splitlines() if line.startswith(b"tree ")]
+        if len(tree_lines) != 1:
+            raise ValueError("commit must carry exactly one tree header")
+        tree_oid = tree_lines[0][5:].decode("ascii").lower()
+    except (UnicodeDecodeError, ValueError) as error:
+        raise RuntimeError("candidate accepted commit tree header is malformed") from error
+    if not OID.fullmatch(tree_oid) or len(tree_oid) != len(source):
+        raise RuntimeError("candidate accepted commit tree identity is invalid")
+    return tree_oid
+
+
+def _parse_tree_object(payload: bytes, oid_width: int) -> list[tuple[bytes, bytes, str]]:
+    raw_oid_bytes = oid_width // 2
+    if raw_oid_bytes not in {20, 32}:
+        raise RuntimeError("candidate tree hash width is unsupported")
+    entries: list[tuple[bytes, bytes, str]] = []
+    offset = 0
+    while offset < len(payload):
+        space = payload.find(b" ", offset)
+        if space <= offset:
+            raise RuntimeError("candidate accepted tree mode record is malformed")
+        nul = payload.find(b"\0", space + 1)
+        if nul <= space + 1:
+            raise RuntimeError("candidate accepted tree name record is malformed")
+        oid_start = nul + 1
+        oid_end = oid_start + raw_oid_bytes
+        if oid_end > len(payload):
+            raise RuntimeError("candidate accepted tree object identity is truncated")
+        mode = payload[offset:space]
+        name = payload[space + 1:nul]
+        if name in {b".", b".."} or b"/" in name or not name:
+            raise RuntimeError("candidate accepted tree contains unsafe path component")
+        entries.append((mode, name, payload[oid_start:oid_end].hex()))
+        offset = oid_end
+    return entries
+
+
 def _tree_entries(root: Path, source: str) -> dict[str, tuple[bytes, str]]:
+    """Derive tracked leaves from one captured, verified commit/tree chain.
+
+    The external `source` is bound to the exact commit bytes returned by object
+    storage before any tree identity is accepted. Each tree payload is then
+    independently captured and re-hashed against the OID derived from its
+    already-verified parent object. Git `ls-tree <source>` never defines path
+    authority, so a mutable pack index cannot retarget the accepted root into a
+    self-consistent attacker tree/blob chain.
+    """
     source = source.lower()
     if not OID.fullmatch(source):
         raise RuntimeError("candidate source is not a canonical Git object ID")
-    raw = _object_git_bytes(root, "ls-tree", "-r", "-z", source)
+    commit_payload = _verified_object_bytes(root, "commit", source, MAX_COMMIT_OBJECT_BYTES)
+    root_tree_oid = _commit_tree_oid(commit_payload, source)
     entries: dict[str, tuple[bytes, str]] = {}
-    for record in raw.split(b"\0"):
-        if not record:
-            continue
+    tree_cache: dict[str, bytes] = {}
+    active_trees: set[str] = set()
+    tree_objects = 0
+
+    def walk(tree_oid: str, prefix: tuple[str, ...], depth: int) -> None:
+        nonlocal tree_objects
+        if depth > MAX_TREE_DEPTH:
+            raise RuntimeError("candidate accepted tree exceeds recursion limit")
+        if tree_oid in active_trees:
+            raise RuntimeError("candidate accepted tree contains recursive object cycle")
+        if tree_oid not in tree_cache:
+            tree_objects += 1
+            if tree_objects > MAX_TREE_OBJECTS:
+                raise RuntimeError("candidate accepted tree exceeds object-count limit")
+            tree_cache[tree_oid] = _verified_object_bytes(
+                root, "tree", tree_oid, MAX_TREE_OBJECT_BYTES
+            )
+        payload = tree_cache[tree_oid]
+        active_trees.add(tree_oid)
         try:
-            metadata, relative_raw = record.split(b"\t", 1)
-            mode, object_type, oid_raw = metadata.split(b" ", 2)
-            relative = os.fsdecode(relative_raw)
-            oid = oid_raw.decode("ascii").lower()
-        except (ValueError, UnicodeDecodeError) as error:
-            raise RuntimeError("candidate accepted tree record is malformed") from error
-        if object_type != b"blob" or mode not in {b"100644", b"100755", b"120000"}:
-            raise RuntimeError("candidate accepted tree contains unsupported tracked object")
-        if not OID.fullmatch(oid):
-            raise RuntimeError("candidate accepted tree contains invalid blob identity")
-        parts = PurePosixPath(relative).parts
-        if not parts or relative.startswith("/") or any(part in {"", ".", ".."} for part in parts):
-            raise RuntimeError("candidate accepted tree contains unsafe tracked path")
-        if relative in entries:
-            raise RuntimeError("candidate accepted tree contains duplicate tracked path")
-        entries[relative] = (mode, oid)
+            for mode, name_raw, oid in _parse_tree_object(payload, len(source)):
+                name = os.fsdecode(name_raw)
+                relative_parts = prefix + (name,)
+                relative = PurePosixPath(*relative_parts).as_posix()
+                if len(os.fsencode(relative)) > MAX_TRACKED_PATH_BYTES:
+                    raise RuntimeError("candidate accepted tree path exceeds bounded length")
+                if mode == b"40000":
+                    walk(oid, relative_parts, depth + 1)
+                    continue
+                if mode not in {b"100644", b"100755", b"120000"}:
+                    raise RuntimeError("candidate accepted tree contains unsupported tracked object")
+                if not OID.fullmatch(oid) or len(oid) != len(source):
+                    raise RuntimeError("candidate accepted tree contains invalid blob identity")
+                if relative in entries:
+                    raise RuntimeError("candidate accepted tree contains duplicate tracked path")
+                entries[relative] = (mode, oid)
+                if len(entries) > MAX_TRACKED_ENTRIES:
+                    raise RuntimeError("candidate accepted tree exceeds tracked-entry limit")
+        finally:
+            active_trees.remove(tree_oid)
+
+    walk(root_tree_oid, (), 0)
     if not entries:
         raise RuntimeError("candidate accepted tree contains no tracked blobs")
     return entries
@@ -267,8 +402,8 @@ def _audit_candidate_tree(root: Path, source: str) -> dict[str, tuple[bytes, str
     """Compare exact accepted tree authority to the raw physical candidate.
 
     The audit does not call git status, hash-object(path), ls-files, check-ignore,
-    or any other command that can consult candidate filters, fsmonitor, index
-    flags, attributes, or ignore metadata.
+    ls-tree(source), or any other command that can turn mutable repository-local
+    metadata/object naming into candidate authority.
     """
     root = root.expanduser().resolve(strict=True)
     _real_git_dir(root)
@@ -346,9 +481,7 @@ def _load_parent_module() -> types.ModuleType:
     parent_entry = entries.get(PARENT_MODULE_PATH)
     if parent_entry is None or parent_entry[1] != PARENT_MODULE_GIT_BLOB:
         raise RuntimeError("Final-GO parent path is not the accepted #2873 Git blob")
-    payload = _object_git_bytes(root, "cat-file", "blob", PARENT_MODULE_GIT_BLOB)
-    if not payload or _blob_oid(payload, PARENT_MODULE_GIT_BLOB) != PARENT_MODULE_GIT_BLOB:
-        raise RuntimeError("Final-GO parent execution bytes failed Git object identity")
+    payload = _verified_object_bytes(root, "blob", PARENT_MODULE_GIT_BLOB, MAX_BLOB_OBJECT_BYTES)
     module = types.ModuleType("nembra_private_review_final_go_parent_2873")
     module.__file__ = str(Path(__file__).resolve())
     module.__nembra_accepted_control_source__ = PARENT_SOURCE
@@ -582,19 +715,13 @@ def _candidate_git_bytes(root: Path, source: str, *args: str) -> bytes:
         if revision not in {"HEAD", source}:
             raise PrivateReviewGoError("candidate Git byte request is outside accepted source")
         oid = _candidate_relative_oid(root, source, relative)[1]
-        payload = _object_git_bytes(root, "cat-file", "blob", oid)
-        if _blob_oid(payload, oid) != oid:
-            raise PrivateReviewGoError("candidate accepted Git bytes failed object identity")
-        return payload
+        return _verified_object_bytes(root, "blob", oid, MAX_BLOB_OBJECT_BYTES)
     if len(args) == 3 and args[:2] == ("cat-file", "blob"):
         oid = args[2].lower()
         accepted_oids = {item[1] for item in _tree_entries(root, source).values()}
         if oid not in accepted_oids:
             raise PrivateReviewGoError("candidate blob request is outside accepted source tree")
-        payload = _object_git_bytes(root, "cat-file", "blob", oid)
-        if _blob_oid(payload, oid) != oid:
-            raise PrivateReviewGoError("candidate accepted blob bytes failed object identity")
-        return payload
+        return _verified_object_bytes(root, "blob", oid, MAX_BLOB_OBJECT_BYTES)
     raise PrivateReviewGoError("candidate inherited Git byte command is outside sealed object authority")
 
 
