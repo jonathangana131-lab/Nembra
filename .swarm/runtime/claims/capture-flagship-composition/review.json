@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "capture-flagship-review-1607ax-20260811-2307",
   "generation": 15,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:07:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:07:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:13:00Z",
+  "releasedAt": "2026-08-11T23:13:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3073,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "dd204e1e943af853e02857db145127810791b04b",
   "takeoverFromWorkerId": "sol-20260811-axrt1408",
   "takeoverFromLeaseId": "capture-flagship-review-axrt1408-20260811-2108",
-  "takeoverReason": "Prior generation expired at 2026-08-11T21:45:30Z. Recover independent flagship review on current runtime accessibility successor #3073 exact dd204e1e to classify exact-head CI, verify the narrowly filtered accessibility-audit exception and real VoiceOver contract, and preserve PHYSICAL NO-GO without competing with product implementation."
+  "takeoverReason": "Prior generation expired at 2026-08-11T21:45:30Z. Recovered independent flagship review on current runtime accessibility successor #3073 exact dd204e1e.",
+  "outcome": "SOURCE_ACCEPTABLE_PARENT_VISUAL_EXACT_ACCEPTED_RUNTIME_QUEUED",
+  "checkpoint": "GitHub review 4911544145 posted. Exact parent 6bb2e3cb Main/Field/Xcode/Visual are terminal SUCCESS and fresh visual artifact 9122036074 was human-inspected with screenshot hashes identical to accepted ce9 product pixels. #3073 exact Runtime VoiceOver run 31542656345 remains queued; no runtime or physical acceptance promoted."
 }
