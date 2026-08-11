@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "dashboard-live-cockpit",
+  "slot": "visual-review",
+  "role": "review",
+  "workerId": "sol-20260811-c7f1",
+  "leaseId": "dashboard-visual-c7f1-080700",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T08:07:00Z",
+  "lastHeartbeatAt": "2026-08-11T08:07:00Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 1995,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+}
