@@ -8,12 +8,14 @@ on:
       - Scripts/provision_capture_tuya_identity_writer.py
       - scripts/ci/tests/test_capture_private_identity_publication_races.py
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+      - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
       - .github/workflows/capture-private-identity-publication-races-redteam.yml
   pull_request:
     paths:
       - Scripts/provision_capture_tuya_identity_writer.py
       - scripts/ci/tests/test_capture_private_identity_publication_races.py
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+      - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
       - .github/workflows/capture-private-identity-publication-races-redteam.yml
   workflow_dispatch:
 
@@ -46,6 +48,7 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
           /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
 
       - name: Reject staging substitution and detached ancestry
@@ -54,3 +57,4 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
