@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "resource-claim",
+  "laneId": "capture-package-test-runner-recovery",
+  "slot": "xcode_build",
+  "role": "resource",
+  "workerId": "sol-20260811-a52d",
+  "leaseId": "res-xcode-build-a52d-20260811-0756",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T07:56:00Z",
+  "lastHeartbeatAt": "2026-08-11T07:56:00Z",
+  "leaseSeconds": 1800,
+  "branch": "repair/v15-capture-package-runner-range-recovery-sol-a52d",
+  "pr": null,
+  "resource": "XCODE_BUILD"
+}
