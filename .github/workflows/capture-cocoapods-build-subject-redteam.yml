@@ -8,10 +8,12 @@ on:
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
       - scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
+      - scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
       - .github/workflows/capture-cocoapods-build-subject-redteam.yml
   push:
     branches:
       - repair/v14-capture-cocoapods-generated-subject-sol-20260810
+      - repair/v14-capture-2709-coherent-generation-sol
   workflow_dispatch:
 
 permissions:
@@ -45,6 +47,7 @@ jobs:
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
           /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
 
       - name: Require lock-preserving generated substitutions to fail closed
@@ -58,3 +61,9 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
+
+      - name: Require one coherent lock plus Pods plus workspace generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
