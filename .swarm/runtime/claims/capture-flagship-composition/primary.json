@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:27:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:34:00Z",
   "leaseSeconds": 2700,
   "branch": "polish/v14-capture-root-first-fold-sol-1311jx-20260811",
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
@@ -25,7 +25,7 @@
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
   ],
-  "durableEvidence": "App-visible predecessor 005b7c4aaf27fabb442a65599b4538ebcc09ae27 is accepted: Main Selective Graft 31490540822 SUCCESS; Field Build Provenance 31490540890 SUCCESS; Standalone Visual 31490540910 SUCCESS with human standard/AX5 pixel acceptance; Xcode 27 31490540888 terminal SUCCESS. Successor PR #2979 exact head c8ead84fe8df4effca2a3b3d0061a1f491665aba bundles compact standard-only sighted copy and a source/resource-wiring regression; exact-head gates are running. Runtime VoiceOver PR #2970 remains separately active and failing only the direct traversal/audit step; intentionally untouched here.",
-  "acceptance": "Successor must preserve semantic lock/account/CTA truth and AX layout, reduce redundant standard sighted prose so Create approval QR is materially earlier in the first fold, pass focused package/source regression, then re-earn exact-head package/Xcode/visual evidence plus human screenshot comparison. Any moved head resets acceptance.",
-  "intent": "PR #2979 is the clean successor directly from accepted 005b7c4. Simplify redundant standard-size sighted guidance only; do not weaken VoiceOver semantics, Tuya identity truth, build lock, QR authorization, or physical NO-GO. Accessibility-size composition remains unchanged."
+  "durableEvidence": "Accepted predecessor 005b7c4aaf27fabb442a65599b4538ebcc09ae27 remains fully green. Successor PR #2979 exact head c8ead84fe8df4effca2a3b3d0061a1f491665aba now has Field Build Provenance 31532923763 SUCCESS, Main Selective Graft 31532923795 SUCCESS, and Standalone Visual 31532923883 SUCCESS. Retained visual artifact 9117799344 digest sha256:fd219ed6d533a7778e30869dca2b0282fe9cfae57688d197a2aff4fb6065a2fa received human/pixel acceptance: standard QR button body moved 255 px upward on 1170x2532 (approx y=2300..2491 to y=2045..2236), exposing Engineering Details in first fold; AX5 screenshot SHA-256 e3b39f3948dda07b22b508b07d10df4603933b11df0e2b08eef253e3fa32f8cc is byte-identical to accepted parent. Xcode 27 run 31532923864 is still running and is not yet acceptance. Runtime VoiceOver has separately converged through newer harness successors and remains unaccepted until an exact current runtime head actually executes testsCount>0/audit/traversal.",
+  "acceptance": "Visual density and AX5 preservation are accepted on exact c8ead84f. Freeze this head and require Xcode 27 run 31532923864 terminal SUCCESS before accepting this app-visible successor. Any moved head resets acceptance. Physical Final-GO remains separately NO-GO.",
+  "intent": "Keep PR #2979 frozen on c8ead84f until exact Xcode terminates. Do not merge merely from visual green; after exact-head acceptance, treat this as the preferred app-visible visual successor ingredient while continuing Capture composition/security/accessibility closure."
 }
