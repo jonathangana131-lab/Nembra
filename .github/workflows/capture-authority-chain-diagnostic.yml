@@ -71,11 +71,36 @@ jobs:
               Path('capture-authority-materializer-error.txt').write_text(traceback.format_exc(), encoding='utf-8')
               raise
           PY
+      - name: Syntax-check bootstrap
+        run: bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+      - name: Syntax-check field installer
+        run: bash -n scripts/field/install_one_time_capture.command
+      - name: Compile build guard
+        run: python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+      - name: Compile downstream red-team
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+      - name: Compile private-review commitment tests
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_commitment.py
+      - name: Compile CocoaPods subject tests
+        run: python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - name: Compile helper custody tests
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+      - name: Prove replacement-blind field helper behavior
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+      - name: Validate materialized diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git diff --quiet; then
+            echo 'ERROR: authority materializer produced no production/test diff' >&2
+            exit 1
+          fi
+          git diff --stat
       - name: Upload exact failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: capture-authority-materializer-error
           path: capture-authority-materializer-error.txt
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 1
