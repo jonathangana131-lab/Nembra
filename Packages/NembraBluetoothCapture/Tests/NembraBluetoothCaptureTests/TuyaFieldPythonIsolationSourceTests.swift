@@ -4,12 +4,19 @@ import Testing
 
 @Suite("Capture field Python interpreter isolation")
 struct TuyaFieldPythonIsolationSourceTests {
-    @Test("private Tuya input snapshot and verification ignore caller Python environment")
+    @Test("private Tuya input snapshot and verification ignore caller Python environment under accepted-source custody")
     func privateInputProvenanceUsesIsolatedSystemPython() throws {
         let bootstrap = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        #expect(bootstrap.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
-        #expect(installer.contains("/usr/bin/python3 -I \"$TUYA_PROVENANCE_HELPER\" verify"))
+
+        #expect(bootstrap.contains("run_accepted_python_helper()"))
+        #expect(bootstrap.contains("/usr/bin/python3 -I - \"$helper_path\" \"$expected_sha256\" \"$@\""))
+        #expect(bootstrap.contains("run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot"))
+
+        #expect(installer.contains("run_accepted_source_python()"))
+        #expect(installer.contains("/usr/bin/python3 -I - \"$ROOT\" \"$SOURCE_SHA\" \"$relative_path\" \"$@\""))
+        #expect(installer.contains("run_accepted_source_python \"$TUYA_PROVENANCE_HELPER_RELATIVE\" verify"))
+
         #expect(!bootstrap.contains("/usr/bin/python3 \"$PROVENANCE_HELPER\" snapshot"))
         #expect(!installer.contains("/usr/bin/python3 \"$TUYA_PROVENANCE_HELPER\" verify"))
     }
