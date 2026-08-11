@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "091000-nv46-dashboard-timeout-review",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-nv46",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent exact-head source review passed Dashboard timeout repair PR #2839 at 06c45a9382cc7b9f128cf2233ba2fc67c03df543. Suite default remains 120s; only launch-performance test explicitly requests 180s and runner max is raised to avoid clamping it. No assertion waits or acceptance metrics are relaxed. Final composed exact-head Xcode/Simulator/performance/visual evidence still required.",
+  "createdAt": "2026-08-11T09:10:00Z",
+  "data": {
+    "pr": 2839,
+    "headSHA": "06c45a9382cc7b9f128cf2233ba2fc67c03df543",
+    "sourceReview": "PASS",
+    "commentId": 5251183606,
+    "finalAcceptance": "PENDING"
+  }
+}
