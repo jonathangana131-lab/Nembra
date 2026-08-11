@@ -7,14 +7,16 @@
   "workerId": "sol-20260811-4c47a9",
   "leaseId": "capture-build-tests-4c47a9-20260811-1154",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T11:54:00Z",
-  "lastHeartbeatAt": "2026-08-11T11:54:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:01:00Z",
+  "releasedAt": "2026-08-11T12:01:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2907,
   "sourceSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
   "currentHeadSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
   "takeoverFromWorkerId": "sol-20260811-e3c4",
-  "takeoverReason": "generation-1 tests lease expired; resume complementary exact-head validation on selected #2907 field-authority successor without touching production ownership. PHYSICAL NO-GO."
+  "takeoverReason": "generation-1 tests lease expired; resume complementary exact-head validation on selected #2907 field-authority successor without touching production ownership. PHYSICAL NO-GO.",
+  "releaseReason": "Exact-head test synthesis checkpoint completed and red witness matrix published; production is blocked on #2913, #2915, and #2917, so retaining this lease would only obstruct the repair cycle. PHYSICAL NO-GO."
 }
