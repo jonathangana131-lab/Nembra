@@ -1,0 +1,68 @@
+name: Temporary Combined Capture Field Provenance Materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-field-installer-prereqs-live-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.event.head_commit.message == 'bootstrap combined Capture field provenance closure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Admit shared standalone scheme without losing installer prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='0dcbe79db496b85c2d7075d478fae6e329e55c7c'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          test "$(git diff --name-only "$expected_parent"..HEAD)" = '.github/workflows/tmp-capture-field-scheme-provenance.yml'
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/capture-field-build-provenance.yml')
+          workflow = workflow_path.read_text()
+          old = '      - NembraCapture.xcodeproj/project.pbxproj\n      - NembraCapture-Info.plist\n'
+          new = '      - NembraCapture.xcodeproj/project.pbxproj\n      - NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme\n      - NembraCapture-Info.plist\n'
+          assert workflow.count(old) == 1
+          workflow = workflow.replace(old, new, 1)
+          assert '      - Packages/NembraCore/**\n' in workflow
+          assert '      - .gitignore\n' in workflow
+          assert '      - scripts/ci/es80_signed_field_artifact_private_runner.py\n' in workflow
+          workflow_path.write_text(workflow)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift')
+          test = test_path.read_text()
+          old = '            "NembraCapture.xcodeproj/project.pbxproj",\n            "NembraCapture-Info.plist",\n'
+          new = '            "NembraCapture.xcodeproj/project.pbxproj",\n            "NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme",\n            "NembraCapture-Info.plist",\n'
+          assert test.count(old) == 1
+          test_path.write_text(test.replace(old, new, 1))
+          PY
+          git diff --check
+          grep -Fq -- '- NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq -- '- Packages/NembraCore/**' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq -- '- scripts/ci/es80_signed_field_artifact_private_runner.py' .github/workflows/capture-field-build-provenance.yml
+          python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' '.github/workflows/capture-field-build-provenance.yml' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift' | sort)"
+
+      - name: Commit coherent closure and self-delete helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Nembra Capture Closure'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/tmp-capture-field-scheme-provenance.yml
+          git add .github/workflows/capture-field-build-provenance.yml Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): complete field provenance prerequisites'
+          echo "LOCAL_COMMIT_SHA=$(git rev-parse HEAD)"
+          git push origin HEAD:agent/v14-capture-field-installer-prereqs-live-sol
