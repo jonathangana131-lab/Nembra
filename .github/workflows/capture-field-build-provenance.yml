@@ -14,6 +14,7 @@ on:
       - NembraCapture.xcodeproj/project.pbxproj
       - NembraCapture-Info.plist
       - Packages/NembraBluetoothCapture/**
+      - Packages/NembraCore/**
       - Podfile
       - Podfile.lock
       - NembraCapture.entitlements

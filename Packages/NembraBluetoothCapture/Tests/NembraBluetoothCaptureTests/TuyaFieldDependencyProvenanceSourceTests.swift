@@ -44,11 +44,21 @@ struct TuyaFieldDependencyProvenanceSourceTests {
             "NembraCapture.xcodeproj/project.pbxproj",
             "NembraCapture-Info.plist",
             "Packages/NembraBluetoothCapture/**",
+            "Packages/NembraCore/**",
             "Podfile",
             "Podfile.lock"
         ] {
             #expect(workflow.contains("- \(path)"))
         }
+    }
+
+    @Test("Capture package declares NembraCore as a field-build dependency")
+    func capturePackageDependencyRequiresNembraCoreProvenanceAdmission() throws {
+        let manifest = try readRepositoryFile("Packages/NembraBluetoothCapture/Package.swift")
+        let workflow = try readRepositoryFile(".github/workflows/capture-field-build-provenance.yml")
+        #expect(manifest.contains(".package(path: \"../NembraCore\")"))
+        #expect(manifest.contains(".product(name: \"NembraCore\", package: \"NembraCore\")"))
+        #expect(workflow.contains("- Packages/NembraCore/**"))
     }
 
     @Test("dependency provenance never promotes private SDK credentials into evidence")
