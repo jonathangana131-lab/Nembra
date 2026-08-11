@@ -6,6 +6,11 @@ on:
       - adversarial/v14-private-identity-publication-races-sol
     paths:
       - Scripts/provision_capture_tuya_identity_writer.py
+      - Scripts/provision_capture_tuya_identity.sh
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_identity_authority.py
+      - scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+      - scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
       - scripts/ci/tests/test_capture_private_identity_publication_races.py
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
       - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
@@ -16,6 +21,11 @@ on:
   pull_request:
     paths:
       - Scripts/provision_capture_tuya_identity_writer.py
+      - Scripts/provision_capture_tuya_identity.sh
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_identity_authority.py
+      - scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+      - scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
       - scripts/ci/tests/test_capture_private_identity_publication_races.py
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
       - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
@@ -30,7 +40,7 @@ permissions:
 
 jobs:
   publication-custody:
-    name: Reject publication races, crash-residue swaps, and final-name swaps
+    name: Reject publication, recovery, and downstream admission races
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -52,13 +62,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_identity_authority.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
-          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+          /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
 
       - name: Reject publication races and hard-exit residue
         shell: bash
@@ -70,3 +85,10 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+
+      - name: Reject failed transaction as later bootstrap authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
