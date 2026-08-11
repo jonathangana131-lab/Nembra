@@ -1,5 +1,9 @@
-#!/bin/bash
+#!/bin/bash -p
 set -euo pipefail
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+unset BASH_ENV ENV CDPATH || true
+hash -r
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 cd "$ROOT"
@@ -8,10 +12,9 @@ say() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ "$(uname -s)" == "Darwin" ]] || die "Run this on the Mac with Xcode and the intended iPhone connected."
-command -v xcodebuild >/dev/null || die "Xcode command-line tools are not available."
-command -v xcrun >/dev/null || die "xcrun is not available."
-command -v security >/dev/null || die "macOS security tool is not available."
-command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SDK field build."
+[[ -x /usr/bin/xcodebuild ]] || die "Xcode command-line tools are not available."
+[[ -x /usr/bin/xcrun ]] || die "xcrun is not available."
+[[ -x /usr/bin/security ]] || die "macOS security tool is not available."
 [[ -x /usr/bin/python3 ]] || die "System Python 3 is required for private intended-device admission."
 [[ -x /usr/bin/plutil ]] || die "System plutil is required for exact built-app provenance verification."
 [[ -x /usr/bin/codesign ]] || die "System codesign is required for effective signed-entitlement verification."
@@ -20,10 +23,231 @@ command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SD
 EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
 [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "Pass the exact software-accepted Capture source SHA as the first argument (40 hex characters)."
 EXPECTED_SOURCE_SHA="$(printf '%s' "$EXPECTED_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
-SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+
+# Physical source authority is tied to this installer's real checkout, never to
+# caller GIT_* selection or repository-local worktree redirection. Field-only
+# ignored inputs remain available, but tracked source bytes must match the exact
+# externally accepted commit through an independent raw-byte audit.
+AUTHORITY_GIT_DIR="$ROOT/.git"
+[[ -d "$AUTHORITY_GIT_DIR" && ! -L "$AUTHORITY_GIT_DIR" ]] || die "Accepted field checkout must contain one real .git directory."
+for variable in ${!GIT_@}; do
+    unset "$variable"
+done
+unset variable || true
+
+run_authority_git() {
+    /usr/bin/env -i \
+        PATH=/usr/bin:/bin \
+        HOME=/tmp \
+        LANG=C \
+        LC_ALL=C \
+        GIT_DIR="$AUTHORITY_GIT_DIR" \
+        GIT_WORK_TREE="$ROOT" \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL=/dev/null \
+        GIT_NO_REPLACE_OBJECTS=1 \
+        GIT_CONFIG_COUNT=7 \
+        GIT_CONFIG_KEY_0=core.worktree \
+        GIT_CONFIG_VALUE_0="$ROOT" \
+        GIT_CONFIG_KEY_1=core.bare \
+        GIT_CONFIG_VALUE_1=false \
+        GIT_CONFIG_KEY_2=core.fsmonitor \
+        GIT_CONFIG_VALUE_2=false \
+        GIT_CONFIG_KEY_3=core.ignorestat \
+        GIT_CONFIG_VALUE_3=false \
+        GIT_CONFIG_KEY_4=core.filemode \
+        GIT_CONFIG_VALUE_4=true \
+        GIT_CONFIG_KEY_5=core.excludesFile \
+        GIT_CONFIG_VALUE_5=/dev/null \
+        GIT_CONFIG_KEY_6=core.sparseCheckout \
+        GIT_CONFIG_VALUE_6=false \
+        /usr/bin/git "$@"
+}
+
+SOURCE_SHA="$(run_authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')" || die "Could not resolve HEAD from the accepted field checkout."
 [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || die "Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA. Checkout the exact accepted SHA before building."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
-say "Exact requested Capture source matched: $SOURCE_SHA"
+
+verify_accepted_checkout_source() {
+    local context="${1:-Accepted Capture source changed.}"
+    local authority_index tracked_status
+    [[ "$(run_authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "$context Repository HEAD no longer matches the accepted source."
+
+    authority_index="$(/usr/bin/mktemp -t nembra-capture-field-index)" || die "$context Could not allocate a fresh source-authority index."
+    /bin/rm -f -- "$authority_index"
+    if ! /usr/bin/env -i \
+        PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
+        GIT_DIR="$AUTHORITY_GIT_DIR" GIT_WORK_TREE="$ROOT" \
+        GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 \
+        GIT_INDEX_FILE="$authority_index" \
+        GIT_CONFIG_COUNT=5 \
+        GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0="$ROOT" \
+        GIT_CONFIG_KEY_1=core.bare GIT_CONFIG_VALUE_1=false \
+        GIT_CONFIG_KEY_2=core.fsmonitor GIT_CONFIG_VALUE_2=false \
+        GIT_CONFIG_KEY_3=core.ignorestat GIT_CONFIG_VALUE_3=false \
+        GIT_CONFIG_KEY_4=core.filemode GIT_CONFIG_VALUE_4=true \
+        /usr/bin/git read-tree "$SOURCE_SHA"; then
+        /bin/rm -f -- "$authority_index"
+        die "$context Could not build a fresh accepted-source authority index."
+    fi
+    tracked_status="$(
+        /usr/bin/env -i \
+            PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
+            GIT_DIR="$AUTHORITY_GIT_DIR" GIT_WORK_TREE="$ROOT" \
+            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 \
+            GIT_INDEX_FILE="$authority_index" \
+            GIT_CONFIG_COUNT=5 \
+            GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0="$ROOT" \
+            GIT_CONFIG_KEY_1=core.bare GIT_CONFIG_VALUE_1=false \
+            GIT_CONFIG_KEY_2=core.fsmonitor GIT_CONFIG_VALUE_2=false \
+            GIT_CONFIG_KEY_3=core.ignorestat GIT_CONFIG_VALUE_3=false \
+            GIT_CONFIG_KEY_4=core.filemode GIT_CONFIG_VALUE_4=true \
+            /usr/bin/git -c core.fsmonitor=false -c core.ignorestat=false -c core.filemode=true \
+                status --porcelain=v1 --untracked-files=no
+    )" || {
+        /bin/rm -f -- "$authority_index"
+        die "$context Fresh-index tracked-source verification failed."
+    }
+    /bin/rm -f -- "$authority_index"
+    [[ -z "$tracked_status" ]] || die "$context Tracked source differs from the accepted commit."
+
+    /usr/bin/env -i \
+        PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
+        NEMBRA_ROOT="$ROOT" NEMBRA_SOURCE_SHA="$SOURCE_SHA" \
+        GIT_DIR="$AUTHORITY_GIT_DIR" GIT_WORK_TREE="$ROOT" \
+        GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 \
+        GIT_CONFIG_COUNT=2 \
+        GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0="$ROOT" \
+        GIT_CONFIG_KEY_1=core.bare GIT_CONFIG_VALUE_1=false \
+        /usr/bin/python3 -I - <<'PY' || die "$context Raw accepted-source byte audit failed."
+import hashlib
+import os
+from pathlib import Path, PurePosixPath
+import stat
+import subprocess
+
+root = Path(os.environ["NEMBRA_ROOT"])
+source_sha = os.environ["NEMBRA_SOURCE_SHA"]
+git_env = os.environ.copy()
+tree = subprocess.check_output(
+    ["/usr/bin/git", "ls-tree", "-r", "-z", source_sha],
+    cwd=root,
+    env=git_env,
+)
+tracked: set[str] = set()
+tracked_directories: set[str] = set()
+checked = 0
+for record in tree.split(b"\0"):
+    if not record:
+        continue
+    metadata, relative_raw = record.split(b"\t", 1)
+    mode, object_type, expected_oid = metadata.split(b" ", 2)
+    if object_type != b"blob" or mode not in {b"100644", b"100755", b"120000"}:
+        raise SystemExit("raw accepted checkout refuses unsupported tracked object")
+    relative = os.fsdecode(relative_raw)
+    parts = PurePosixPath(relative).parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise SystemExit("raw accepted checkout contains an unsafe tracked path")
+    tracked.add(relative)
+    for depth in range(1, len(parts)):
+        tracked_directories.add(PurePosixPath(*parts[:depth]).as_posix())
+    current = root
+    for component in parts[:-1]:
+        current = current / component
+        current_meta = os.lstat(current)
+        if not stat.S_ISDIR(current_meta.st_mode) or stat.S_ISLNK(current_meta.st_mode):
+            raise SystemExit("raw accepted checkout has symlink/non-directory ancestry: " + relative)
+    path = root.joinpath(*parts)
+    current_meta = os.lstat(path)
+    if mode == b"120000":
+        if not stat.S_ISLNK(current_meta.st_mode):
+            raise SystemExit("raw accepted checkout expected symlink: " + relative)
+        payload = os.readlink(path)
+        if isinstance(payload, str):
+            payload = os.fsencode(payload)
+    else:
+        if not stat.S_ISREG(current_meta.st_mode):
+            raise SystemExit("raw accepted checkout expected regular file: " + relative)
+        expected_executable = mode == b"100755"
+        actual_executable = bool(current_meta.st_mode & 0o111)
+        if actual_executable != expected_executable:
+            raise SystemExit("raw accepted checkout executable mode mismatch: " + relative)
+        payload = path.read_bytes()
+    actual_oid = hashlib.sha1(
+        b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+    ).hexdigest().encode("ascii")
+    if actual_oid != expected_oid:
+        raise SystemExit("raw accepted checkout blob mismatch: " + relative)
+    checked += 1
+
+if checked == 0:
+    raise SystemExit("raw accepted checkout audit found no tracked blobs")
+
+field_input_directories = ("LocalSecrets", "Pods", "NembraCapture.xcworkspace")
+for relative in field_input_directories:
+    candidate = root / relative
+    try:
+        metadata = os.lstat(candidate)
+    except OSError:
+        raise SystemExit("required field-input directory is unavailable: " + relative)
+    if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        raise SystemExit("field-input allowlist root must be one real directory: " + relative)
+try:
+    lock_metadata = os.lstat(root / "Podfile.lock")
+except OSError:
+    raise SystemExit("required field-input lockfile is unavailable: Podfile.lock")
+if not stat.S_ISREG(lock_metadata.st_mode) or stat.S_ISLNK(lock_metadata.st_mode):
+    raise SystemExit("field-input allowlist lockfile must be one real regular file: Podfile.lock")
+
+allowed_roots = set(field_input_directories)
+for current_raw, directories, files in os.walk(root, topdown=True, followlinks=False):
+    current = Path(current_raw)
+    current_relative = current.relative_to(root)
+    if current_relative.parts and current_relative.parts[0] in allowed_roots:
+        directories[:] = []
+        continue
+    if not current_relative.parts:
+        directories[:] = [
+            name for name in directories
+            if name != ".git" and name not in allowed_roots
+        ]
+    for name in list(directories):
+        candidate = current / name
+        relative = candidate.relative_to(root).as_posix()
+        if candidate.is_symlink():
+            directories.remove(name)
+            if relative not in tracked:
+                raise SystemExit(
+                    "untracked accepted-source path outside field-input allowlist: " + relative
+                )
+            continue
+        if relative not in tracked_directories:
+            directories.remove(name)
+            raise SystemExit(
+                "untracked accepted-source path outside field-input allowlist: " + relative
+            )
+    for name in files:
+        candidate = current / name
+        relative = candidate.relative_to(root).as_posix()
+        if relative in tracked or relative == "Podfile.lock":
+            continue
+        raise SystemExit(
+            "untracked accepted-source path outside field-input allowlist: " + relative
+        )
+print(f"raw accepted checkout audit accepted {checked} tracked blobs")
+PY
+}
+
+run_accepted_source_bash() {
+    local relative_path="$1"
+    [[ "$relative_path" != /* && "$relative_path" != *".."* ]] || die "Accepted Bash source path is invalid."
+    if ! run_authority_git show "$SOURCE_SHA:$relative_path" |
+        /bin/bash --noprofile --norc -p -c 'source /dev/stdin' "$ROOT/$relative_path"; then
+        die "Accepted Bash source failed or could not be executed from exact Git authority: $relative_path"
+    fi
+}
+
+verify_accepted_checkout_source "Current checkout is not the exact accepted Capture source."
+say "Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA"
 
 # The intended-device identifier is private field-admission input, never product
 # evidence. Reuse the canonical descriptor-bound reader so the private file is
@@ -36,24 +260,40 @@ unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true
 [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || die "NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 must be exactly 64 hex characters."
 NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256="$(printf '%s' "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" | tr '[:upper:]' '[:lower:]')"
 export NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256
+# Keep this pathname variable only as a temporary compatibility marker for the
+# existing source-contract/red-team slice. It is never opened, read, imported,
+# or executed as authority. Remove it once those tests key on the relative
+# accepted-source subject instead.
 PRIVATE_DEVICE_RUNNER="$ROOT/scripts/ci/es80_signed_field_artifact_private_runner.py"
-[[ -f "$PRIVATE_DEVICE_RUNNER" ]] || die "Private intended-device reader is missing from the accepted source."
-if ! DEVICE_UDID="$(/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT" <<'PY'
+PRIVATE_DEVICE_RUNNER_RELATIVE="scripts/ci/es80_signed_field_artifact_private_runner.py"
+if ! DEVICE_UDID="$(
+    run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py" |
+        /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LANG=C \
+            LC_ALL=C \
+            NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256="$NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" \
+            /usr/bin/python3 -I -B -c '
 import hashlib
 import hmac
-import importlib.util
 import os
 import re
 import sys
 from pathlib import Path
+from types import ModuleType
 
-runner_path = Path(sys.argv[1])
-spec = importlib.util.spec_from_file_location("nembra_private_device_reader", runner_path)
-if spec is None or spec.loader is None:
-    raise RuntimeError("private intended-device reader could not be loaded")
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-value = module.read_private_identifier(Path(sys.argv[2]), Path(sys.argv[3]))
+relative_path = sys.argv[1]
+source = sys.stdin.buffer.read(2 * 1024 * 1024 + 1)
+if not source or len(source) > 2 * 1024 * 1024:
+    raise RuntimeError("accepted private intended-device reader source has an invalid bounded size")
+module = ModuleType("nembra_private_device_reader")
+module.__file__ = f"<accepted-{relative_path}>"
+exec(compile(source, module.__file__, "exec"), module.__dict__)
+reader = getattr(module, "read_private_identifier", None)
+if not callable(reader):
+    raise RuntimeError("accepted private intended-device reader does not expose the required contract")
+value = reader(Path(sys.argv[2]), Path(sys.argv[3]))
 expected_digest = os.environ.get("NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256", "")
 if re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None:
     raise RuntimeError("expected intended-device digest is unavailable or malformed")
@@ -61,7 +301,7 @@ actual_digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
 if not hmac.compare_digest(actual_digest, expected_digest):
     raise RuntimeError("private intended-device identifier does not match Final GO authority")
 sys.stdout.write(value)
-PY
+' "$PRIVATE_DEVICE_RUNNER_RELATIVE" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"
 )"; then
     die "The intended-device verification file failed private custody validation."
 fi
@@ -74,10 +314,9 @@ say "Private intended-device admission validated against Final GO digest"
 # CocoaPods. Building the public .xcodeproj here would intentionally compile the
 # fail-closed fallback and cannot authorize the ES80 experiment.
 say "Validating official Tuya SDK and private app-identity provisioning"
-"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"
+run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"
 [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
-[[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs. Review and re-accept before building."
+verify_accepted_checkout_source "Private workspace bootstrap changed accepted-source inputs."
 [[ -f "$ROOT/Podfile.lock" ]] || die "Private workspace bootstrap produced no Podfile.lock; reviewed Tuya dependency provenance is unavailable."
 TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
 [[ "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Could not compute a valid SHA-256 fingerprint for the resolved Tuya dependency lock."
@@ -140,7 +379,7 @@ verify_private_tuya_inputs() {
 unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
 
 say "Verifying the intended iPhone 12 / iOS 27 baseline"
-DEVICE_ROWS="$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c '
+DEVICE_ROWS="$(/usr/bin/xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c '
 import re,sys
 section=False
 for raw in sys.stdin:
@@ -180,7 +419,7 @@ unset INTENDED_NORMALIZED ROW_NORMALIZED ROW_UDID
 # Correlate it to the private UDID through the device hostname, then use only the
 # CoreDevice identifier for install/launch so the private UDID never enters
 # devicectl argv. `--hide-headers` is an Xcode-supported textual-output option.
-COREDEVICE_ROWS="$(xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
+COREDEVICE_ROWS="$(/usr/bin/xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
 [[ -n "$COREDEVICE_ROWS" ]] || die "CoreDevice did not report the intended iPhone. Keep it connected/unlocked and allow Xcode device preparation to finish."
 COREDEVICE_MATCH="$(printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -I -c '
 import re,sys
@@ -218,7 +457,7 @@ unset COREDEVICE_MATCH COREDEVICE_ROWS DEVICE_ROWS DEVICE_LABEL DEVICE_MODEL
 say "Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION"
 
 say "Finding Apple Development signing team"
-TEAM_IDS="$(security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -I -c '
+TEAM_IDS="$(/usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -I -c '
 import re,sys
 seen=[]
 for line in sys.stdin:
@@ -263,7 +502,7 @@ run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \
     --security-build "$TUYA_PRIVATE_SDK/Build" \
     --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
     --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-    -- xcodebuild \
+    -- /usr/bin/xcodebuild \
     -workspace NembraCapture.xcworkspace \
     -scheme "Nembra Capture" \
     -configuration Debug \
@@ -281,8 +520,7 @@ run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \
     build || die "Private inputs changed while xcodebuild was running, vnode custody failed, or the signed build itself failed. No field artifact was admitted."
 
 verify_private_tuya_inputs
-[[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."
+verify_accepted_checkout_source "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."
 APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"
 [[ -d "$APP" ]] || die "Build finished but the standalone Nembra Capture.app was not found at $APP"
 APP_INFO_PLIST="$APP/Info.plist"

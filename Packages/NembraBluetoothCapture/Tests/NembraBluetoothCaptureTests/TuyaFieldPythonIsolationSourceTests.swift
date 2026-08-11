@@ -9,14 +9,13 @@ struct TuyaFieldPythonIsolationSourceTests {
         let bootstrap = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(bootstrap.contains("/usr/bin/python3 -I - \"$helper_path\" \"$expected_sha256\" \"$@\" <<'PY'"))
         #expect(bootstrap.contains("run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot"))
-        #expect(installer.contains("/usr/bin/python3 -I - \"$ROOT\" \"$SOURCE_SHA\" \"$relative_path\" \"$@\" <<'PY'"))
+        #expect(bootstrap.contains("/usr/bin/python3 -I - \"$helper_path\" \"$expected_sha256\""))
         #expect(installer.contains("run_accepted_source_python \"$TUYA_PROVENANCE_HELPER_RELATIVE\" verify"))
-
+        #expect(installer.contains("/usr/bin/python3 -I - \"$ROOT\" \"$SOURCE_SHA\" \"$relative_path\" \"$@\""))
         #expect(!bootstrap.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
-        #expect(!bootstrap.contains("/usr/bin/python3 \"$PROVENANCE_HELPER\" snapshot"))
         #expect(!installer.contains("/usr/bin/python3 -I \"$TUYA_PROVENANCE_HELPER\" verify"))
+        #expect(!bootstrap.contains("/usr/bin/python3 \"$PROVENANCE_HELPER\" snapshot"))
         #expect(!installer.contains("/usr/bin/python3 \"$TUYA_PROVENANCE_HELPER\" verify"))
     }
 
@@ -32,7 +31,7 @@ struct TuyaFieldPythonIsolationSourceTests {
         #expect(!installer.contains("/usr/bin/python3 -c"))
         #expect(installer.contains("/usr/bin/python3 -I -B - \"$PRIVATE_DEVICE_RUNNER\" \"$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE\" \"$ROOT\""))
         #expect(!installer.contains("/usr/bin/python3 -I - \"$PRIVATE_DEVICE_RUNNER\""))
-        #expect(installer.contains("DEVICE_ROWS=\"$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c"))
+        #expect(installer.contains("DEVICE_ROWS=\"$(/usr/bin/xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c"))
         #expect(installer.contains("COREDEVICE_MATCH=\"$(printf '%s\\0%s' \"$DEVICE_UDID\" \"$COREDEVICE_ROWS\" | /usr/bin/python3 -I -c"))
     }
 
