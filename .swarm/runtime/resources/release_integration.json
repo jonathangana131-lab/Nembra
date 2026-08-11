@@ -5,15 +5,13 @@
   "slot": "integration",
   "role": "resource",
   "workerId": "sol-20260811-1439r8",
-  "leaseId": "release-integration-r8-20260811-2204",
-  "generation": 5,
-  "status": "RELEASED",
-  "claimedAt": "2026-08-11T22:04:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:10:30Z",
-  "releasedAt": "2026-08-11T22:10:30Z",
+  "leaseId": "release-integration-r8-20260811-2222",
+  "generation": 6,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T22:22:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:22:00Z",
   "leaseSeconds": 1800,
   "branch": "",
-  "pr": 3042,
-  "resource": "RELEASE_INTEGRATION",
-  "checkpoint": "Exact #3042@899e5dc5 integration audit complete. Publication has no candidate_repo/source dependency after build, but candidate Git retirement is reopened during inherited teardown as documented in released integration claim generation 1. Resource released for the production repair/re-integration successor. PHYSICAL NO-GO."
+  "pr": 3082,
+  "resource": "RELEASE_INTEGRATION"
 }
