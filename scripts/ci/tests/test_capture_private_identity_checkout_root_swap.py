@@ -3,7 +3,8 @@
 
 Credential publication must stay bound to the checkout opened before input, and
 pre-generated dependency work must stay bound to the same real checkout/ancestry
-for the complete guarded child window.
+for the complete guarded child window. Dependency custody helper source itself is
+also copied into the fixture and admitted through the production pinned-byte path.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 PROVISIONER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity.sh"
 WRITER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity_writer.py"
 DEPENDENCY_ADAPTER = REPOSITORY / "Scripts" / "capture_tuya_private_dependency_resolution_guard.py"
+CANONICAL_BUILD_GUARD = REPOSITORY / "Scripts" / "capture_tuya_private_input_build_guard.py"
+PROVENANCE_HELPER = REPOSITORY / "Scripts" / "capture_tuya_private_input_provenance.py"
 
 
 def load_dependency_adapter():
@@ -45,10 +48,14 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
         self.checkout = self.sandbox / "repo"
         scripts = self.checkout / "Scripts"
         scripts.mkdir(parents=True)
-        shutil.copy2(PROVISIONER, scripts / PROVISIONER.name)
-        shutil.copy2(WRITER, scripts / WRITER.name)
+        for source in (PROVISIONER, WRITER, CANONICAL_BUILD_GUARD, PROVENANCE_HELPER):
+            shutil.copy2(source, scripts / source.name)
         (scripts / PROVISIONER.name).chmod(0o700)
         (scripts / WRITER.name).chmod(0o600)
+        (scripts / CANONICAL_BUILD_GUARD.name).chmod(0o600)
+        (scripts / PROVENANCE_HELPER.name).chmod(0o600)
+        self.fixture_build_guard = scripts / CANONICAL_BUILD_GUARD.name
+        self.fixture_provenance = scripts / PROVENANCE_HELPER.name
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -131,8 +138,8 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
         )
         return podfile, security_podspec, build, identity_podspec, identity_sources
 
-    @staticmethod
     def _adapter_argv(
+        self,
         podfile: Path,
         security_podspec: Path,
         build: Path,
@@ -141,6 +148,8 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
         command: list[str],
     ) -> list[str]:
         return [
+            "--canonical-guard-source", str(self.fixture_build_guard),
+            "--provenance-helper-source", str(self.fixture_provenance),
             "--lockfile", str(podfile),
             "--security-podspec", str(security_podspec),
             "--security-build", str(build),
@@ -158,6 +167,11 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
         self.assertIn("select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME | select.KQ_NOTE_REVOKE", source)
         self.assertIn("def _lexical_absolute(path: Path) -> Path:", source)
         self.assertIn("def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Path:", source)
+        self.assertIn('parser.add_argument("--canonical-guard-source", required=True, type=Path)', source)
+        self.assertIn('parser.add_argument("--provenance-helper-source", required=True, type=Path)', source)
+        self.assertIn("_CANONICAL_GUARD_GIT_BLOB_OID", source)
+        self.assertIn("_PROVENANCE_HELPER_GIT_BLOB_OID", source)
+        self.assertIn("_capture_accepted_python_source(", source)
         self.assertNotIn("guard._lexical_absolute", source)
         self.assertNotIn("guard._require_real_checkout_ancestry", source)
         self.assertNotIn("require_accepted_generated_subject", source)
