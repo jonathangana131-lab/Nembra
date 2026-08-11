@@ -1,0 +1,109 @@
+name: Temporary Capture provenance-label repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-provenance-label-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply narrow root truth and accessibility repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          app = app_path.read_text()
+          marker = "@MainActor\nprivate final class SecureLinkController"
+          if marker not in app:
+              raise SystemExit("CaptureP0Root boundary missing")
+          root, suffix = app.split(marker, 1)
+
+          root = replace_once(
+              root,
+              'Text(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")',
+              'Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")',
+              "visible provenance label",
+          )
+          root = replace_once(
+              root,
+              'Text(fieldBuildIsAuthoritative ? "Field build authority: ready" : "Field build authority: locked")',
+              'Text(fieldBuildIsAuthoritative ? "Build provenance: ready" : "Build provenance: locked")',
+              "engineering provenance label",
+          )
+          root = replace_once(
+              root,
+              '.accessibilityLabel(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")',
+              '.accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")',
+              "accessibility provenance label",
+          )
+          root = replace_once(
+              root,
+              'NavigationLink(fieldBuildIsAuthoritative ? "Continue to Capture" : "View locked preflight")',
+              'NavigationLink(fieldBuildIsAuthoritative ? "Continue to preflight" : "View locked preflight")',
+              "preflight navigation label",
+          )
+          root = replace_once(
+              root,
+              '            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())\n            .fixedSize(horizontal: false, vertical: true)',
+              '            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())\n            .fixedSize(horizontal: false, vertical: true)\n            .accessibilityAddTraits(.isHeader)',
+              "root hero heading semantics",
+          )
+          root = replace_once(
+              root,
+              '            .foregroundStyle(.secondary)\n            .fixedSize(horizontal: false, vertical: true)\n        }\n        .accessibilityElement(children: .combine)\n    }\n\n    private var buildAuthorityStatus',
+              '            .foregroundStyle(.secondary)\n            .fixedSize(horizontal: false, vertical: true)\n        }\n    }\n\n    private var buildAuthorityStatus',
+              "root hero VoiceOver separation",
+          )
+          app_path.write_text(root + marker + suffix)
+
+          test_paths = [
+              Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift"),
+              Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"),
+          ]
+          for path in test_paths:
+              text = path.read_text()
+              text = text.replace('Text(fieldBuildIsAuthoritative ? \\"Field build ready\\" : \\"Physical capture locked\\")',
+                                  'Text(fieldBuildIsAuthoritative ? \\"Build provenance ready\\" : \\"Physical capture locked\\")')
+              text = text.replace('NavigationLink(fieldBuildIsAuthoritative ? \\"Continue to Capture\\" : \\"View locked preflight\\")',
+                                  'NavigationLink(fieldBuildIsAuthoritative ? \\"Continue to preflight\\" : \\"View locked preflight\\")')
+              path.write_text(text)
+
+          visual_test = test_paths[0]
+          text = visual_test.read_text()
+          anchor = '        #expect(root.contains(".accessibilityIdentifier(\\"capture.p0-root\\")"))\n'
+          if anchor not in text:
+              raise SystemExit("visual test heading anchor missing")
+          text = text.replace(anchor, anchor + '        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))\n', 1)
+          visual_test.write_text(text)
+
+          Path(".github/workflows/tmp-capture-provenance-label-gpt56.yml").unlink()
+          PY
+          git diff --check
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+      - name: Commit product-only repair
+        shell: bash
+        run: |
+          git config user.name "nembra-v14-gpt56"
+          git config user.email "nembra-v14-gpt56@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift \
+            .github/workflows/tmp-capture-provenance-label-gpt56.yml
+          git commit -m "fix(capture): scope field readiness to provenance"
+          git push origin HEAD:repair/v14-capture-provenance-label-gpt56
