@@ -1,0 +1,62 @@
+name: Capture Live Main Package Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/capture-live-main-package-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package-audit:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test -z "$(git status --porcelain)"
+      - name: Run full live-main Capture package
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-live-main-package.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          /usr/bin/python3 -I - "$log" <<'PY'
+          import re, sys
+          from collections import Counter
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          files = Counter()
+          total = 0
+          for line in lines:
+              match = re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if match and ('recorded an issue' in line or 'Caught error' in line):
+                  files[match.group(1)] += 1
+                  total += 1
+          print(f'LIVE_MAIN_CAPTURE_ISSUES {total}')
+          for name, count in files.most_common():
+              print(f'PACKAGE_ISSUES {count:3d} {name}')
+          PY
+          exit "$status"
+      - name: Upload exact package log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-live-main-package-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-live-main-package.log
+          retention-days: 7
+          if-no-files-found: error
