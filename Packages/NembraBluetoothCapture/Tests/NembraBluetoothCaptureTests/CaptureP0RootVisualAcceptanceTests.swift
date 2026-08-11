@@ -44,6 +44,39 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(root.contains(".accessibilityIdentifier(\"capture.p0-root\")"))
     }
 
+    @Test("Accessibility setup promotes the primary action ahead of verbose status")
+    func accessibilitySetupPromotesActionBeforeVerboseStatus() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let panel = String(try section(
+            in: source,
+            from: "private var accountSetupPanel: some View",
+            to: "private var statusText: some View"
+        ))
+
+        let standardBranch = try #require(panel.range(of: "if !isAccessibilityLayout {"))
+        let field = try #require(panel.range(of: "TextField(\"Paste user code\""))
+        let action = try #require(panel.range(of: "Label(\"Create approval QR\", systemImage: \"qrcode\")"))
+        let standardStatus = try #require(panel.range(
+            of: "statusText",
+            range: standardBranch.upperBound..<field.lowerBound
+        ))
+        let accessibilityBranch = try #require(panel.range(
+            of: "if isAccessibilityLayout {",
+            range: action.upperBound..<panel.endIndex
+        ))
+        let accessibilityStatus = try #require(panel.range(
+            of: "statusText",
+            range: accessibilityBranch.upperBound..<panel.endIndex
+        ))
+
+        #expect(standardStatus.lowerBound < field.lowerBound)
+        #expect(field.lowerBound < action.lowerBound)
+        #expect(action.lowerBound < accessibilityBranch.lowerBound)
+        #expect(accessibilityBranch.lowerBound < accessibilityStatus.lowerBound)
+        #expect(panel.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
+        #expect(panel.contains(".tint(.cyan)"))
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
