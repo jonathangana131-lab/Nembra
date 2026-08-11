@@ -7,13 +7,17 @@
   "workerId": "sol-20260811-9a31r",
   "leaseId": "capture-build-review-9a31r-20260811-1329",
   "generation": 5,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T13:29:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:34:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:36:00Z",
+  "releasedAt": "2026-08-11T13:36:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2968,
   "sourceSHA": "ffba4e252b1be3bbe50c881538a02f0b4b9e6786",
   "currentHeadSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
-  "reviewTarget": "Independent exact-head review of #2968 after expected-red #2969. Current source still gives root custody to selected Xcode directory ancestry and only dirname(SELECTED_XCODEBUILD), while the executable itself is admitted by -f/-x/non-symlink; xctrace/devicectl remain command-name resolution through xcrun. Current head is also temporary construction (tmp-v14-field-provenance-contract-r2.yml), with Field Build Provenance and Main Selective Graft red and Xcode skipped. Preparing durable NEEDS_CHANGES routing evidence. PHYSICAL NO-GO."
+  "outcome": "NEEDS_CHANGES_CURRENT_HEAD",
+  "findingPR": 2969,
+  "reviewCommentId": 5258344368,
+  "releaseReason": "Independent exact-head review confirms #2969 still applies on #2968@947f592: selected xcodebuild leaf has only parent-directory custody plus -f/-x/non-symlink admission, while physical xctrace/devicectl remain name-resolved through xcrun. Exact head also contains tmp-v14-field-provenance-contract-r2.yml; Field Build Provenance 31495854313 and Main Selective Graft 31495854257 are red, Xcode 31495854274 skipped. Durable PR comment 5258344368 published. Production owner can repair without review-slot contention. PHYSICAL NO-GO."
 }
