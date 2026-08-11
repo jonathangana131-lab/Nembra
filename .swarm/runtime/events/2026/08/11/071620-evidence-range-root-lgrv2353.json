@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "071620-evidence-range-root-lgrv2353",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Residual SWIFT_TESTING_RANGE_ABORT from 071140-capture-flagship-metadata-test-truth-9c42 is now source-isolated. Exact #2805@4456c artifact 9092226121 reran the full Capture suite serially and still aborts, proving this is not parallel-test scheduling. The final serial test started before the fatal is `Capture primary rider language` / `primary Capture flow stays rider-first while Engineering Details retains exact protocol truth`. Its source is TuyaCapturePrimaryLanguageSourceTests.primaryLanguageBoundary(): it independently locates preflightPanel and engineeringDisclosure and constructs primaryStart.lowerBound..<detailsStart.lowerBound without ordering the second lookup. Current app source order makes lowerBound > upperBound, yielding the observed Swift fatal. Minimal truthful repair is a test-source boundary fix: constrain the engineeringDisclosure search to primaryStart.lowerBound..<app.endIndex (or explicitly require marker ordering), with every existing positive/negative rider-language assertion preserved. Treat #2799 metadata truth repair as necessary predecessor evidence and this Range boundary repair as the separate residual package-test closure; neither is physical authority.",
+  "createdAt": "2026-08-11T07:16:20Z",
+  "data": {
+    "evidenceArtifact": 9092226121,
+    "headSHA": "4456c176874c7489d5f0789b51e56324205442e6",
+    "testFile": "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift",
+    "testFunction": "primaryLanguageBoundary",
+    "parallelRun": "ABORT_RANGE",
+    "serialRun": "ABORT_RANGE",
+    "testList": "SUCCESS",
+    "standaloneBuild": "SUCCESS",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
