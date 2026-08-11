@@ -9,7 +9,7 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T05:14:00Z",
-  "lastHeartbeatAt": "2026-08-11T05:14:00Z",
+  "lastHeartbeatAt": "2026-08-11T05:27:00Z",
   "leaseSeconds": 21600,
   "branch": "agent/swarm-control-plane-v15-sol",
   "pr": 2804,
