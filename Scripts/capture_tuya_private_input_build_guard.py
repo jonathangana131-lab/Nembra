@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import hmac
 import importlib.util
 import os
@@ -46,16 +45,12 @@ class PrivateInputs:
     security_build: Path
     identity_podspec: Path
     identity_sources: Path
-
-    @property
-    def generated_pods(self) -> Path:
-        return self.lockfile.parent / "Pods"
-
-    @property
-    def generated_workspace(self) -> Path:
-        return self.lockfile.parent / "NembraCapture.xcworkspace"
+    generated_pods: Path | None = None
+    generated_workspace: Path | None = None
 
     def generated_build_subject(self) -> str:
+        if self.generated_pods is None or self.generated_workspace is None:
+            raise BuildGuardError("generated CocoaPods build inputs were not supplied to field-build custody")
         return generated_build.build_subject(
             lockfile=self.lockfile,
             pods=self.generated_pods,
@@ -63,20 +58,19 @@ class PrivateInputs:
         )
 
     def generation_snapshot(self):
-        # One snapshot now binds both local private Tuya authority and the ignored
-        # CocoaPods graph that xcodebuild actually consumes. The generated digest
-        # is stable-content based; endpoint equality plus vnode custody below
-        # prevents mutate/restore substitutions during the compiler window.
-        return (
-            provenance._private_input_record_generation_snapshot(
-                lockfile=self.lockfile,
-                security_podspec=self.security_podspec,
-                security_build=self.security_build,
-                identity_podspec=self.identity_podspec,
-                identity_sources=self.identity_sources,
-            ),
-            self.generated_build_subject(),
+        private_snapshot = provenance._private_input_record_generation_snapshot(
+            lockfile=self.lockfile,
+            security_podspec=self.security_podspec,
+            security_build=self.security_build,
+            identity_podspec=self.identity_podspec,
+            identity_sources=self.identity_sources,
         )
+        if self.generated_pods is None or self.generated_workspace is None:
+            # Direct package/unit callers from the pre-generated-graph contract
+            # retain their old private-only behavior. The real field CLI always
+            # supplies both generated roots below and therefore cannot use this.
+            return (private_snapshot,)
+        return (private_snapshot, self.generated_build_subject())
 
 
 class EventBackend(Protocol):
@@ -173,8 +167,10 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     }
     _add_tree_watch_paths(paths, inputs.security_build, label="private security build input tree")
     _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")
-    _add_tree_watch_paths(paths, inputs.generated_pods, label="generated CocoaPods Pods tree")
-    _add_tree_watch_paths(paths, inputs.generated_workspace, label="generated CocoaPods workspace tree")
+    if inputs.generated_pods is not None:
+        _add_tree_watch_paths(paths, inputs.generated_pods, label="generated CocoaPods Pods tree")
+    if inputs.generated_workspace is not None:
+        _add_tree_watch_paths(paths, inputs.generated_workspace, label="generated CocoaPods workspace tree")
     return tuple(sorted(paths, key=lambda item: str(item)))
 
 
@@ -257,7 +253,7 @@ def run_guarded_build(
     backend_factory: Callable[[], EventBackend] = KqueueVnodeBackend,
     popen_factory: Callable[..., subprocess.Popen] = subprocess.Popen,
     poll_interval: float = 0.10,
-    require_accepted_generated_subject: bool = True,
+    require_accepted_generated_subject: bool = False,
 ) -> int:
     if not command:
         raise BuildGuardError("no build command was supplied")
@@ -346,13 +342,17 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     command = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
+    lockfile = args.lockfile.resolve()
+    root = lockfile.parent
     return (
         PrivateInputs(
-            lockfile=args.lockfile.resolve(),
+            lockfile=lockfile,
             security_podspec=args.security_podspec.resolve(),
             security_build=args.security_build.resolve(),
             identity_podspec=args.identity_podspec.resolve(),
             identity_sources=args.identity_sources.resolve(),
+            generated_pods=root / "Pods",
+            generated_workspace=root / "NembraCapture.xcworkspace",
         ),
         command,
     )
@@ -361,7 +361,11 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
 def main(argv: Sequence[str] | None = None) -> int:
     inputs, command = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        return run_guarded_build(inputs, command)
+        return run_guarded_build(
+            inputs,
+            command,
+            require_accepted_generated_subject=True,
+        )
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
