@@ -4,15 +4,15 @@
   "laneId": "capture-build-authority",
   "epic": "capture",
   "title": "Capture build and private-review execution authority",
-  "objective": "Converge the selected field-build authority lineage onto one exact descendant that binds accepted Git/source bytes, build-visible inputs, private helpers, tracked compiler-window custody, and vnode metadata before flagship composition.",
+  "objective": "Converge the selected field-build authority lineage onto one exact descendant that binds accepted Git/source bytes, build-visible inputs, private helpers, tracked compiler-window custody, and Xcode execution authority before flagship composition.",
   "priority": 0,
-  "state": "VERIFYING",
+  "state": "IMPLEMENTING",
   "dependencies": [],
   "blockers": [
-    "#2913 current exact expected-red: post-audit/pre-vnode SwiftPM auto-discovered untracked source admission",
-    "active primary repair head 2c8d768d contains accidental tracked __pycache__/*.pyc host artifacts and is not composable",
-    "#2915 exact expected-red: caller DEVELOPER_DIR is not fenced before field Xcode tools",
-    "#2917 current exact expected-red: guarded xcodebuild inherits residual caller build/toolchain environment"
+    "#2924@0f07d8d6 is canonical pre-arm production repair; #2913 focused witness and Main-Graft are green, but Xcode is skipped on draft and remaining exact authority gates are not all terminal green",
+    "#2922 packed Git-object execution payload identity remains expected-red; #2933@b197c2d3 construction materializer fails before production publication and #2937 remains a temporary construction alternative",
+    "#2941@9f15b582 closes caller DEVELOPER_DIR narrowly, but #2917 residual xcodebuild child-environment authority remains expected-red",
+    "#2939 requires custody and Xcode-27 admission of the system-selected developer tree; test-only expected-red until production closure"
   ],
   "mode": "exclusive",
   "allowedWriteAreas": ["Scripts/bootstrap_capture_tuya_sdk.sh","Scripts/capture_private_review_commitment.py","Scripts/capture_tuya_private_input_build_guard.py","Scripts/capture_tuya_private_input_provenance.py","Scripts/capture_cocoapods_generated_build_subject.py","scripts/field/install_one_time_capture.command"],
@@ -33,9 +33,9 @@
     "selectedBaseHeadSHA": "47740b53736f0dd277420693fa15e1de94075c27",
     "absorbedIngredients": [2867,2876,2878,2892,2898,2910],
     "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856,2859,2867,2869,2875,2876,2878,2892,2898,2907,2910],
-    "exactHeadGateState": "PARENT_XCODE_GREEN_BUT_BLOCKED_BY_NEWER_EXPECTED_RED_AND_DIRTY_PRIMARY_SUCCESSOR",
+    "exactHeadGateState": "PARENT_GREEN_BUT_NONPROMOTABLE_PENDING_CURRENT_AUTHORITY_REPAIRS",
     "xcodeRun": 31488213467,
-    "knownExactHeadFinding": "Reconciled 2026-08-11T12:04Z. #2907 exact d0b134ca now has terminal SUCCESS on Xcode 27 run 31488213467 in addition to its earlier green authority/Field/Main-Graft gates, but it remains NOT ACCEPTABLE because newer adversarial evidence exposes authority classes those gates did not cover. #2913 current exact 8b676737 has terminal expected-red run 31488986888 against the real SwiftPM auto-discovery surface. Active primary repair materialized a directionally coherent post-arm raw inventory scan, but current head 2c8d768d is not composable because exact parent compare also contains two tracked __pycache__/*.pyc artifacts; integration blocker comment 5252885787 records required cleanup. #2915 exact bb5f2b22 remains terminal expected-red for caller DEVELOPER_DIR. #2917 collision-reconciled into the complementary residual child-environment contract; current exact 3249ae2c has terminal expected-red run 31489042280. Integration slot sol-20260811-g56si must compose only a clean descendant that closes these findings and then re-earn exact-head Xcode/Field/Main-Graft/security gates without weakening tracked/private/generated vnode/source custody. Parent Xcode green is supporting ancestor evidence only. PHYSICAL NO-GO."
+    "knownExactHeadFinding": "Reconciled 2026-08-11T12:18Z by integration worker sol-20260811-g56si. #2907 exact d0b134ca has Xcode 27 terminal SUCCESS plus earlier authority gates, but is ancestor evidence only. Duplicate #2934 is closed; canonical pre-arm repair is #2924@0f07d8d6. Packed-object execution authority #2922 remains open; #2933 materialization fails because its workflow rewrites correct #2907 blob preconditions before require_blob, documented in PR comment 5253035182. #2941@9f15b582 is the clean focused DEVELOPER_DIR repair. #2917 residual child environment and #2939 selected-Xcode-tree custody remain distinct open contracts. Integration must compose only clean selected descendants and then re-earn exact-head Xcode, Field, Main-Graft, vnode/private/generated and adversarial gates. PHYSICAL NO-GO."
   },
-  "tags": ["capture","p0","security","build-authority","field-installer","filesystem-authority","vnode","legacy-import"]
+  "tags": ["capture","p0","security","build-authority","field-installer","filesystem-authority","vnode","xcode-authority","legacy-import"]
 }
