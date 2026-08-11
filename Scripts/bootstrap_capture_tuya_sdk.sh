@@ -6,7 +6,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
+PRIVATE_REVIEW_KEY="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyReview.key"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
+PRIVATE_REVIEW_HELPER="$SCRIPT_DIR/capture_tuya_private_review_commitment.py"
 GENERATED_BUILD_SUBJECT_HELPER="$SCRIPT_DIR/capture_cocoapods_generated_build_subject.py"
 REVIEW_ONLY=0
 if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
@@ -22,61 +24,48 @@ cd "$REPO_ROOT"
 if [[ "$REVIEW_ONLY" == "0" ]]; then
   : "${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 to the preaccepted 64-hex Podfile.lock SHA-256 before field bootstrap. To create a candidate dependency subject without build authority, use --resolve-lock-for-review.}"
   : "${NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 to the preaccepted 64-hex generated CocoaPods build-subject SHA-256 before field bootstrap. To create a candidate generated subject without build authority, use --resolve-lock-for-review.}"
-  [[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
-    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 must be exactly 64 hex characters." >&2
-    exit 1
-  }
-  [[ "$NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
-    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 must be exactly 64 hex characters." >&2
-    exit 1
-  }
+  : "${NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256 to the owner-reviewed 64-hex opaque private-input commitment before field bootstrap. To create a candidate without build authority, use --resolve-lock-for-review.}"
+  for value in \
+    "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" \
+    "$NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" \
+    "$NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256"
+  do
+    [[ "$value" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+      echo "ERROR: every accepted field-build review subject must be exactly 64 hex characters." >&2
+      exit 1
+    }
+  done
   ACCEPTED_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
   ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" | tr '[:upper:]' '[:lower:]')"
+  ACCEPTED_PRIVATE_REVIEW_HMAC_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256" | tr '[:upper:]' '[:lower:]')"
 else
-  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 || true
+  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \
+    NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \
+    NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256 || true
   ACCEPTED_LOCK_SHA256=""
   ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256=""
-fi
-
-if ! command -v pod >/dev/null 2>&1; then
-  cat >&2 <<'EOF'
-ERROR: CocoaPods is not installed.
-
-Nembra Capture's authenticated Tuya BLE path intentionally uses Tuya's official
-SmartLife App SDK. Install CocoaPods on the development Mac, then run this
-script again. Do not copy SDK binaries or private Tuya credentials into git.
-EOF
-  exit 2
+  ACCEPTED_PRIVATE_REVIEW_HMAC_SHA256=""
 fi
 
 [[ -x /usr/bin/python3 ]] || {
   echo "ERROR: System Python 3 is required for private Tuya input provenance." >&2
   exit 3
 }
-
-if [[ ! -f Podfile ]]; then
+[[ -f Podfile ]] || {
   echo "ERROR: Podfile is missing at $REPO_ROOT/Podfile" >&2
   exit 4
-fi
-
-if [[ ! -d NembraCapture.xcodeproj ]]; then
+}
+[[ -d NembraCapture.xcodeproj ]] || {
   echo "ERROR: NembraCapture.xcodeproj is missing." >&2
   exit 5
-fi
+}
+for helper in "$PROVENANCE_HELPER" "$PRIVATE_REVIEW_HELPER" "$GENERATED_BUILD_SUBJECT_HELPER"; do
+  [[ -f "$helper" ]] || {
+    echo "ERROR: required Capture build-authority helper is missing from the accepted source: $(basename "$helper")" >&2
+    exit 6
+  }
+done
 
-if [[ ! -f "$PROVENANCE_HELPER" ]]; then
-  echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
-  exit 6
-fi
-
-if [[ ! -f "$GENERATED_BUILD_SUBJECT_HELPER" ]]; then
-  echo "ERROR: generated CocoaPods build-subject helper is missing from the accepted source." >&2
-  exit 6
-fi
-
-# Tuya's SmartLife iOS SDK requires the app-specific security package generated
-# for the exact Developer Platform app/bundle identity. It must never be
-# replaced with a public placeholder or omitted just to make CocoaPods resolve.
 if [[ ! -f "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" || ! -d "$TUYA_PRIVATE_SDK/Build" ]]; then
   cat >&2 <<EOF
 ERROR: Tuya's app-specific iOS security SDK is not provisioned.
@@ -112,56 +101,96 @@ EOF
   exit 8
 fi
 
-printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
-# `pod install` preserves an existing Podfile.lock instead of silently upgrading
-# resolved transitive SDK inputs. `--repo-update` refreshes specs only; the two
-# public Tuya products themselves are exact-pinned in Podfile at 7.8.0.
-pod install --repo-update
-
-if [[ ! -d NembraCapture.xcworkspace ]]; then
-  echo "ERROR: CocoaPods did not create NembraCapture.xcworkspace." >&2
-  exit 9
+if [[ "$REVIEW_ONLY" == "1" ]]; then
+  command -v pod >/dev/null 2>&1 || {
+    echo "ERROR: CocoaPods is required only to create an explicit review candidate." >&2
+    exit 2
+  }
+  printf 'Resolving one review-only Tuya/CocoaPods candidate for Nembra Capture...\n'
+  pod install --repo-update
+else
+  printf 'Verifying the already-reviewed Tuya/CocoaPods field build subject without regeneration...\n'
 fi
 
-if [[ ! -d Pods ]]; then
-  echo "ERROR: CocoaPods did not create Pods/; generated field build authority is unavailable." >&2
+[[ -d NembraCapture.xcworkspace ]] || {
+  echo "ERROR: NembraCapture.xcworkspace is unavailable. Create/review a candidate with --resolve-lock-for-review; normal field bootstrap never regenerates it." >&2
   exit 9
-fi
-
-if [[ ! -f Podfile.lock ]]; then
-  echo "ERROR: CocoaPods did not create Podfile.lock; exact field dependency provenance is unavailable." >&2
+}
+[[ -d Pods ]] || {
+  echo "ERROR: Pods/ is unavailable. Create/review a candidate with --resolve-lock-for-review; normal field bootstrap never regenerates it." >&2
+  exit 9
+}
+[[ -f Podfile.lock ]] || {
+  echo "ERROR: Podfile.lock is unavailable. Create/review a candidate with --resolve-lock-for-review; normal field bootstrap never regenerates it." >&2
   exit 10
+}
+
+LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+[[ "$LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "ERROR: could not compute the Podfile.lock SHA-256 provenance fingerprint." >&2
+  exit 13
+}
+if [[ "$REVIEW_ONLY" == "0" && "$LOCK_SHA256" != "$ACCEPTED_LOCK_SHA256" ]]; then
+  echo "ERROR: existing Podfile.lock does not match the preaccepted dependency-lock SHA-256. Normal field bootstrap will not run CocoaPods or mutate the candidate." >&2
+  exit 16
 fi
 
 for expected in \
   "  - ThingSmartHomeKit (7.8.0)" \
   "  - ThingSmartBusinessExtensionKit (7.8.0)"
 do
-  if ! grep -Fq -- "$expected" Podfile.lock; then
+  grep -Fq -- "$expected" Podfile.lock || {
     echo "ERROR: resolved Tuya SDK does not match the exact reviewed 7.8.0 field dependency: $expected" >&2
     exit 11
-  fi
+  }
 done
 
-# Snapshot every ignored private input that can materially change the field
-# build. The helper writes only SHA-256 fingerprints + public reviewed versions;
-# it never serializes credentials, SDK bytes, or device identifiers.
-if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
-  --lockfile "$REPO_ROOT/Podfile.lock" \
-  --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
-  --security-build "$TUYA_PRIVATE_SDK/Build" \
-  --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
-  --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-  --record "$DEPENDENCY_PROVENANCE"
-then
-  echo "ERROR: exact private Tuya build-input provenance could not be snapshotted." >&2
-  exit 12
+if [[ "$REVIEW_ONLY" == "1" ]]; then
+  /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
+    --lockfile "$REPO_ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    --record "$DEPENDENCY_PROVENANCE" || {
+      echo "ERROR: exact private Tuya build-input provenance could not be snapshotted for review." >&2
+      exit 12
+    }
+  PRIVATE_REVIEW_HMAC_SHA256="$(/usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" create \
+    --repository-root "$REPO_ROOT" \
+    --witness "$DEPENDENCY_PROVENANCE" \
+    --key-file "$PRIVATE_REVIEW_KEY")" || {
+      echo "ERROR: opaque private-input review commitment could not be created." >&2
+      exit 12
+    }
+else
+  [[ -f "$DEPENDENCY_PROVENANCE" && -f "$PRIVATE_REVIEW_KEY" ]] || {
+    echo "ERROR: reviewed private-input witness/key is missing. Normal field bootstrap never creates or replaces review authority." >&2
+    exit 12
+  }
+  /usr/bin/python3 -I "$PROVENANCE_HELPER" verify \
+    --lockfile "$REPO_ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    --record "$DEPENDENCY_PROVENANCE" || {
+      echo "ERROR: current private Tuya inputs do not match the reviewed local continuity witness." >&2
+      exit 12
+    }
+  /usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" verify \
+    --repository-root "$REPO_ROOT" \
+    --witness "$DEPENDENCY_PROVENANCE" \
+    --key-file "$PRIVATE_REVIEW_KEY" \
+    --accepted-tag "$ACCEPTED_PRIVATE_REVIEW_HMAC_SHA256" || {
+      echo "ERROR: private Tuya field inputs do not match the owner-reviewed opaque commitment." >&2
+      exit 12
+    }
+  PRIVATE_REVIEW_HMAC_SHA256="$ACCEPTED_PRIVATE_REVIEW_HMAC_SHA256"
 fi
-
-LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
-[[ "$LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
-  echo "ERROR: could not compute the Podfile.lock SHA-256 provenance fingerprint." >&2
-  exit 13
+[[ "$PRIVATE_REVIEW_HMAC_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "ERROR: private review helper did not return one lowercase SHA-256 HMAC tag." >&2
+  exit 12
 }
 
 if ! GENERATED_BUILD_SUBJECT_SHA256="$(/usr/bin/python3 -I "$GENERATED_BUILD_SUBJECT_HELPER" \
@@ -177,66 +206,55 @@ fi
   exit 13
 }
 
-[[ -f "$DEPENDENCY_PROVENANCE" ]] || {
-  echo "ERROR: private Tuya dependency provenance record was not created." >&2
-  exit 14
-}
-[[ "$(stat -f '%Lp' "$DEPENDENCY_PROVENANCE" 2>/dev/null || true)" == "600" ]] || {
-  echo "ERROR: private Tuya dependency provenance record is not mode 0600." >&2
-  exit 15
-}
-
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   cat <<EOF
 
-DEPENDENCY + GENERATED BUILD CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+DEPENDENCY + PRIVATE + GENERATED BUILD CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
   Podfile.lock SHA-256: $LOCK_SHA256
   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
-  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
+  Private-input review HMAC-SHA256: $PRIVATE_REVIEW_HMAC_SHA256
+  Local private-input witness: $DEPENDENCY_PROVENANCE
+  Local private review key: retained privately; bytes are never printed
 
-Review and bind BOTH exact digests to the exact accepted Capture source through
-the current Final-GO control plane before any field build/install. Then rerun
-the normal bootstrap/installer with those accepted digests supplied as
-NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 and
-NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256. This review-only mode
-never invokes xcodebuild, installs Nembra, scans Bluetooth, or authorizes a
+Review and bind all THREE public subjects to the exact accepted Capture source
+through the current Final-GO control plane before any field build/install. Keep
+the local witness, private review key, and generated workspace unchanged. Then
+rerun normal bootstrap with NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256,
+NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256, and
+NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256. Normal field bootstrap
+is verification-only: it never runs CocoaPods, snapshots private inputs, rotates
+the key, invokes xcodebuild, installs Nembra, scans Bluetooth, or authorizes a
 physical attempt.
 EOF
   exit 0
 fi
 
-[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]] || {
-  echo "ERROR: resolved Podfile.lock does not match the preaccepted dependency-lock SHA-256. Stop before xcodebuild/install and review the new dependency subject." >&2
-  exit 16
-}
 [[ "$GENERATED_BUILD_SUBJECT_SHA256" == "$ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256" ]] || {
-  echo "ERROR: generated CocoaPods build inputs do not match the preaccepted generated-build subject SHA-256. Stop before xcodebuild/install and review the new build subject." >&2
+  echo "ERROR: existing CocoaPods generated build inputs do not match the preaccepted generated-build subject SHA-256. Normal field bootstrap will not regenerate them." >&2
   exit 17
 }
 printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
 printf 'Preaccepted CocoaPods generated build subject matched: %s\n' "$GENERATED_BUILD_SUBJECT_SHA256"
+printf 'Owner-reviewed opaque private-input commitment matched: %s\n' "$PRIVATE_REVIEW_HMAC_SHA256"
 unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 \
-  NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \
-  NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 || true
+  ACCEPTED_PRIVATE_REVIEW_HMAC_SHA256 || true
 
 cat <<EOF
 
-Tuya SDK dependencies are integrated locally, including the app-specific
-ThingSmartCryption package and local-only app identity pod.
+The exact pre-reviewed Tuya SDK/CocoaPods/private field subject is present
+locally. Normal field bootstrap did not regenerate dependency bytes or rewrite
+private review authority.
 
-Resolved dependency provenance:
+Verified dependency provenance:
   Podfile.lock SHA-256: $LOCK_SHA256
   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
-  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
+  Private-input review HMAC-SHA256: $PRIVATE_REVIEW_HMAC_SHA256
 
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
-  Preserve this exact private-input fingerprint record and the accepted generated
-  build-subject digest with the field workspace.
-  Do not run 'pod update', replace ThingSmartCryption, regenerate the private
-  identity, or regenerate CocoaPods inputs before an accepted physical capture;
-  any input change is a new reviewed field-build candidate and must earn a new
-  exact-head acceptance.
+  Preserve the exact private witness/key and generated workspace through the
+  guarded build. Any private input, witness/key, lock, Pods, or workspace change
+  is a new review candidate and must earn new exact-head authority.
 
 This bootstrap still does NOT authorize the physical experiment. The exact app
 must consume the private identity pod, authorize the user's own SDK session,
