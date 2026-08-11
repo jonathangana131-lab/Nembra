@@ -36,58 +36,54 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
-
           helper = Path('scripts/ci/capture_signed_app_build_origin_custody.py')
-          source = helper.read_text(encoding='utf-8')
-          old = '''        returncode = process.wait()
-        _terminate_remaining_process_group(process.pid)
-        if returncode != 0:
-            raise BuildOriginCustodyError(
-                f"guarded field build failed with exit status {returncode}"
-            )
-
-        # Revoke the transient filesystem capability before any bundle bytes are hashed or copied.
-        # External same-UID processes never possessed the supplementary gid, and ordinary build
-        # descendants have been retired before root closes traversal of the output root.
-        os.chown(derived_root, 0, 0)
-        os.chmod(derived_root, 0o700)
-'''
-          new = '''        returncode = process.wait()
-
-        # Revoke the transient filesystem capability at the first privileged instruction after the
-        # guarded build returns. The group-owner change alone removes the one-run gid from the root
-        # traversal decision; mode 0700 then makes the closed authority explicit. Only after that
-        # revocation do we retire ordinary descendants, so no leftover process retains a writable
-        # compiler-output window while the supervisor is cleaning up the build process group.
-        os.chown(derived_root, 0, 0)
-        os.chmod(derived_root, 0o700)
-        _terminate_remaining_process_group(process.pid)
-        if returncode != 0:
-            raise BuildOriginCustodyError(
-                f"guarded field build failed with exit status {returncode}"
-            )
-'''
-          if source.count(old) != 1:
-              raise SystemExit('exact helper lock-order precondition changed')
-          helper.write_text(source.replace(old, new, 1), encoding='utf-8')
+          lines = helper.read_text(encoding='utf-8').splitlines(keepends=True)
+          wait = '        returncode = process.wait()\n'
+          retire = '        _terminate_remaining_process_group(process.pid)\n'
+          owner = '        os.chown(derived_root, 0, 0)\n'
+          mode = '        os.chmod(derived_root, 0o700)\n'
+          if lines.count(wait) != 1 or lines.count(retire) != 1 or lines.count(owner) != 1 or lines.count(mode) != 1:
+              raise SystemExit('helper lock-order markers changed')
+          wait_i = lines.index(wait)
+          retire_i = lines.index(retire)
+          owner_i = lines.index(owner)
+          mode_i = lines.index(mode)
+          if not (retire_i == wait_i + 1 and owner_i < mode_i):
+              raise SystemExit('helper lock-order precondition changed')
+          lines.pop(retire_i)
+          mode_i = lines.index(mode)
+          lines.insert(mode_i + 1, retire)
+          old_comment = [
+              '        # Revoke the transient filesystem capability before any bundle bytes are hashed or copied.\n',
+              '        # External same-UID processes never possessed the supplementary gid, and ordinary build\n',
+              '        # descendants have been retired before root closes traversal of the output root.\n',
+          ]
+          start = next((i for i in range(len(lines) - 2) if lines[i:i + 3] == old_comment), None)
+          if start is None:
+              raise SystemExit('helper authority comment precondition changed')
+          new_comment = [
+              '        # Revoke the transient filesystem capability at the first privileged instruction after the\n',
+              '        # guarded build returns. The group-owner change removes the one-run gid from the root\n',
+              '        # traversal decision; mode 0700 makes that closure explicit before descendant cleanup.\n',
+          ]
+          lines[start:start + 3] = new_comment
+          helper.write_text(''.join(lines), encoding='utf-8')
 
           test = Path('scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py')
-          source = test.read_text(encoding='utf-8')
-          old = '''            "spawn",
-            "retire",
-            "lock_owner",
-            "lock_mode",
-            "source_hash",
-'''
-          new = '''            "spawn",
-            "lock_owner",
-            "lock_mode",
-            "retire",
-            "source_hash",
-'''
-          if source.count(old) != 1:
-              raise SystemExit('exact regression lock-order precondition changed')
-          test.write_text(source.replace(old, new, 1), encoding='utf-8')
+          lines = test.read_text(encoding='utf-8').splitlines(keepends=True)
+          tuple_start = lines.index('        for name in (\n')
+          retire_line = '            "retire",\n'
+          owner_line = '            "lock_owner",\n'
+          mode_line = '            "lock_mode",\n'
+          retire_i = lines.index(retire_line, tuple_start)
+          owner_i = lines.index(owner_line, tuple_start)
+          mode_i = lines.index(mode_line, tuple_start)
+          if not (retire_i + 1 == owner_i and owner_i + 1 == mode_i):
+              raise SystemExit('regression lock-order precondition changed')
+          lines.pop(retire_i)
+          mode_i = lines.index(mode_line, tuple_start)
+          lines.insert(mode_i + 1, retire_line)
+          test.write_text(''.join(lines), encoding='utf-8')
           PY
 
       - name: Validate hardening
