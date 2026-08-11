@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Bind exact clean repair scope
+      - name: Bind exact diagnostic scope
         shell: bash
         env:
           EXACT_PARENT: 0807fc75a7edb51597d9e926c747cd5e6c400771
@@ -37,17 +37,15 @@ jobs:
           git cat-file -e "${EXACT_PARENT}^{commit}"
           changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected_paths="$(printf '%s\n' \
-            '.github/workflows/capture-field-build-provenance.yml' \
             '.github/workflows/capture-field-selected-xcode-tool-acl-custody.yml' \
-            'scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py' \
-            'scripts/field/install_one_time_capture.command')"
+            'scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py')"
           if [[ "$changed_paths" != "$expected_paths" ]]; then
-            printf 'ACL/provenance repair must remain exactly four-path after construction cleanup. Changed paths:\n' >&2
+            printf 'ACL diagnostic must remain exactly two-path relative to the clean selected-Xcode parent. Changed paths:\n' >&2
             printf '%s\n' "$changed_paths" | /usr/bin/sed 's/^/  /' >&2
             exit 20
           fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          printf 'NEMBRA_ACL_REPAIR_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+          printf 'NEMBRA_ACL_DIAGNOSTIC_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
 
       - name: Compile and exercise ACL authority regression
         shell: bash
@@ -63,5 +61,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf 'Repair head: %s\n' "${NEMBRA_ACL_REPAIR_SOURCE_SHA:-unavailable}"
+          printf 'Diagnostic head: %s\n' "${NEMBRA_ACL_DIAGNOSTIC_SOURCE_SHA:-unavailable}"
           printf 'This gate performs no Xcode device discovery, install, launch, Bluetooth action, Tuya action, telemetry capture, or physical experiment.\n'
