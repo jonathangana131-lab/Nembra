@@ -1,0 +1,63 @@
+name: TEMP V14 Field Provenance Bootstrap Contract (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/tmp-v14-field-provenance-bootstrap-contract-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Align field provenance with accepted helper execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text(encoding='utf-8')
+          old = "          grep -Fq '\"$PROVENANCE_HELPER\" snapshot' \"$bootstrap\"\n"
+          new = (
+              "          grep -Fq 'run_accepted_python_helper()' \"$bootstrap\"\n"
+              "          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256' \"$bootstrap\"\n"
+              "          grep -Fq 'run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot' \"$bootstrap\"\n"
+          )
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one stale direct provenance-helper assertion, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+          grep -Fq 'run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" snapshot' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" snapshot' .github/workflows/capture-field-build-provenance.yml
+          ! grep -Fq 'grep -Fq '\''"$PROVENANCE_HELPER" snapshot'\'' "$bootstrap"' .github/workflows/capture-field-build-provenance.yml
+      - name: Publish contract repair and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-v14-field-provenance-bootstrap-contract-sol.yml
+          git add .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'Capture: align field provenance with accepted helper execution'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin repair/v14-private-review-hmac-helper-execution-sol
+            if git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'ERROR: could not publish field provenance contract after safe rebase retries.' >&2
+          exit 1
