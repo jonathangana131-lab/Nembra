@@ -21,7 +21,7 @@ new_preamble = '''PRIVATE_DEVICE_RUNNER_RELATIVE="scripts/ci/es80_signed_field_a
 PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git rev-parse "$SOURCE_SHA:$PRIVATE_DEVICE_RUNNER_RELATIVE" 2>/dev/null)" || \\
     die "Private intended-device reader is missing from the exact accepted Git tree."
 [[ "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Private intended-device reader Git blob identity is malformed."
-PRIVATE_DEVICE_RUNNER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git cat-file blob "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" | /usr/bin/base64)" || \\
+PRIVATE_DEVICE_RUNNER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git cat-file blob "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" | /usr/bin/base64 | /usr/bin/tr -d '\\r\\n')" || \\
     die "Could not capture the private intended-device reader from the accepted Git object."
 [[ -n "$PRIVATE_DEVICE_RUNNER_BASE64" ]] || die "Captured private intended-device reader is empty."
 [[ "$(printf '%s' "$PRIVATE_DEVICE_RUNNER_BASE64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git hash-object --stdin)" == "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" ]] || \\
