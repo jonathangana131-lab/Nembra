@@ -1,0 +1,46 @@
+name: Temporary Private Identity Residue Hardening
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-publication-custody-sol
+    paths:
+      - .github/workflows/tmp-v14-private-identity-residue-a7e4.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-identity-publication-custody-sol
+          fetch-depth: 0
+      - name: Materialize and validate residue hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          trigger="$(git rev-parse HEAD)"
+          python3 scripts/ci/tmp_v14_private_identity_residue_a7e4.py
+          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          for test in scripts/ci/tests/test_capture_private_identity_*.py; do
+            echo "== $test =="
+            python3 -I "$test"
+          done
+          swift test --package-path Packages/NembraBluetoothCapture
+          git diff --check
+          rm -f .github/workflows/tmp-v14-private-identity-residue-a7e4.yml
+          rm -f scripts/ci/tmp_v14_private_identity_residue_a7e4.py
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          git status --short
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): scrub rejected private identity staging bytes'
+          git fetch origin repair/v14-private-identity-publication-custody-sol
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger"
+          git push origin HEAD:repair/v14-private-identity-publication-custody-sol
