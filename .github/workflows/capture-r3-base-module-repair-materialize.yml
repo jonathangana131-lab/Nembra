@@ -25,84 +25,19 @@ jobs:
           git fetch --no-tags origin adversarial/v14-r3-base-module-execution-r3-current-sol
           git show FETCH_HEAD:scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py > scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
           python3 - <<'PY'
+          import base64
           from pathlib import Path
-
           path = Path('scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py')
           text = path.read_text(encoding='utf-8')
           old_import = 'import importlib.util\n'
           if text.count(old_import) != 1:
               raise SystemExit(f'importlib loader import count drifted: {text.count(old_import)}')
-          text = text.replace(old_import, '', 1)
-          old = '''def _load_base_module():
-              path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")
-              spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)
-              if spec is None or spec.loader is None:
-                  raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")
-              module = importlib.util.module_from_spec(spec)
-              spec.loader.exec_module(module)
-              return module
-          '''
-          old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines()) + '\n'
-          new = '''BASE_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"
-
-
-def _load_base_module():
-    root = Path(__file__).resolve().parents[2]
-    environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
-    try:
-        source = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", "HEAD"],
-            check=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        ).stdout.strip().lower()
-        accepted_blob = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{source}:{BASE_MODULE_PATH}"],
-            check=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        ).stdout.strip().lower()
-        payload = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", accepted_blob],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        ).stdout
-        verified = subprocess.run(
-            ["/usr/bin/git", "-C", str(root), "hash-object", "--stdin"],
-            input=payload,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        ).stdout.decode("ascii").strip().lower()
-    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git custody failed") from error
-    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source):
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO control source is invalid")
-    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_blob):
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob is invalid")
-    if not payload or verified != accepted_blob:
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git bytes failed identity verification")
-    filename = f"git:{source}:{BASE_MODULE_PATH}"
-    module = types.ModuleType("nembra_authenticated_stationary_final_go")
-    module.__file__ = filename
-    module.__nembra_accepted_control_source__ = source
-    module.__nembra_accepted_control_blob__ = accepted_blob
-    try:
-        exec(compile(payload, filename, "exec", dont_inherit=True), module.__dict__)
-    except Exception as error:
-        raise GeneratedSubjectGoError("accepted authenticated-stationary Final-GO parent could not execute") from error
-    return module
-'''
+          old = base64.b64decode('ZGVmIF9sb2FkX2Jhc2VfbW9kdWxlKCk6CiAgICBwYXRoID0gUGF0aChfX2ZpbGVfXykud2l0aF9uYW1lKCJlczgwX2F1dGhlbnRpY2F0ZWRfc3RhdGlvbmFyeV9maW5hbF9nby5weSIpCiAgICBzcGVjID0gaW1wb3J0bGliLnV0aWwuc3BlY19mcm9tX2ZpbGVfbG9jYXRpb24oIm5lbWJyYV9hdXRoZW50aWNhdGVkX3N0YXRpb25hcnlfZmluYWxfZ28iLCBwYXRoKQogICAgaWYgc3BlYyBpcyBOb25lIG9yIHNwZWMubG9hZGVyIGlzIE5vbmU6CiAgICAgICAgcmFpc2UgR2VuZXJhdGVkU3ViamVjdEdvRXJyb3IoImF1dGhlbnRpY2F0ZWQtc3RhdGlvbmFyeSBGaW5hbC1HTyBwYXJlbnQgY291bGQgbm90IGJlIGxvYWRlZCIpCiAgICBtb2R1bGUgPSBpbXBvcnRsaWIudXRpbC5tb2R1bGVfZnJvbV9zcGVjKHNwZWMpCiAgICBzcGVjLmxvYWRlci5leGVjX21vZHVsZShtb2R1bGUpCiAgICByZXR1cm4gbW9kdWxlCg==').decode('utf-8')
+          new = base64.b64decode('QkFTRV9NT0RVTEVfUEFUSCA9ICJzY3JpcHRzL2NpL2VzODBfYXV0aGVudGljYXRlZF9zdGF0aW9uYXJ5X2ZpbmFsX2dvLnB5IgoKCmRlZiBfbG9hZF9iYXNlX21vZHVsZSgpOgogICAgcm9vdCA9IFBhdGgoX19maWxlX18pLnJlc29sdmUoKS5wYXJlbnRzWzJdCiAgICBlbnZpcm9ubWVudCA9IHsiUEFUSCI6ICIvdXNyL2JpbjovYmluIiwgIkdJVF9OT19SRVBMQUNFX09CSkVDVFMiOiAiMSJ9CiAgICB0cnk6CiAgICAgICAgc291cmNlID0gc3VicHJvY2Vzcy5ydW4oCiAgICAgICAgICAgIFsiL3Vzci9iaW4vZ2l0IiwgIi1DIiwgc3RyKHJvb3QpLCAicmV2LXBhcnNlIiwgIkhFQUQiXSwKICAgICAgICAgICAgY2hlY2s9VHJ1ZSwKICAgICAgICAgICAgdGV4dD1UcnVlLAogICAgICAgICAgICBzdGRvdXQ9c3VicHJvY2Vzcy5QSVBFLAogICAgICAgICAgICBzdGRlcnI9c3VicHJvY2Vzcy5QSVBFLAogICAgICAgICAgICBlbnY9ZW52aXJvbm1lbnQsCiAgICAgICAgKS5zdGRvdXQuc3RyaXAoKS5sb3dlcigpCiAgICAgICAgYWNjZXB0ZWRfYmxvYiA9IHN1YnByb2Nlc3MucnVuKAogICAgICAgICAgICBbIi91c3IvYmluL2dpdCIsICItQyIsIHN0cihyb290KSwgInJldi1wYXJzZSIsIGYie3NvdXJjZX06e0JBU0VfTU9EVUxFX1BBVEh9Il0sCiAgICAgICAgICAgIGNoZWNrPVRydWUsCiAgICAgICAgICAgIHRleHQ9VHJ1ZSwKICAgICAgICAgICAgc3Rkb3V0PXN1YnByb2Nlc3MuUElQRSwKICAgICAgICAgICAgc3RkZXJyPXN1YnByb2Nlc3MuUElQRSwKICAgICAgICAgICAgZW52PWVudmlyb25tZW50LAogICAgICAgICkuc3Rkb3V0LnN0cmlwKCkubG93ZXIoKQogICAgICAgIHBheWxvYWQgPSBzdWJwcm9jZXNzLnJ1bigKICAgICAgICAgICAgWyIvdXNyL2Jpbi9naXQiLCAiLUMiLCBzdHIocm9vdCksICJjYXQtZmlsZSIsICJibG9iIiwgYWNjZXB0ZWRfYmxvYl0sCiAgICAgICAgICAgIGNoZWNrPVRydWUsCiAgICAgICAgICAgIHN0ZG91dD1zdWJwcm9jZXNzLlBJUEUsCiAgICAgICAgICAgIHN0ZGVycj1zdWJwcm9jZXNzLlBJUEUsCiAgICAgICAgICAgIGVudj1lbnZpcm9ubWVudCwKICAgICAgICApLnN0ZG91dAogICAgICAgIHZlcmlmaWVkID0gc3VicHJvY2Vzcy5ydW4oCiAgICAgICAgICAgIFsiL3Vzci9iaW4vZ2l0IiwgIi1DIiwgc3RyKHJvb3QpLCAiaGFzaC1vYmplY3QiLCAiLS1zdGRpbiJdLAogICAgICAgICAgICBpbnB1dD1wYXlsb2FkLAogICAgICAgICAgICBjaGVjaz1UcnVlLAogICAgICAgICAgICBzdGRvdXQ9c3VicHJvY2Vzcy5QSVBFLAogICAgICAgICAgICBzdGRlcnI9c3VicHJvY2Vzcy5QSVBFLAogICAgICAgICAgICBlbnY9ZW52aXJvbm1lbnQsCiAgICAgICAgKS5zdGRvdXQuZGVjb2RlKCJhc2NpaSIpLnN0cmlwKCkubG93ZXIoKQogICAgZXhjZXB0IChPU0Vycm9yLCBzdWJwcm9jZXNzLkNhbGxlZFByb2Nlc3NFcnJvciwgVW5pY29kZURlY29kZUVycm9yKSBhcyBlcnJvcjoKICAgICAgICByYWlzZSBHZW5lcmF0ZWRTdWJqZWN0R29FcnJvcigiYXV0aGVudGljYXRlZC1zdGF0aW9uYXJ5IEZpbmFsLUdPIHBhcmVudCBHaXQgY3VzdG9keSBmYWlsZWQiKSBmcm9tIGVycm9yCiAgICBpZiBub3QgcmUuZnVsbG1hdGNoKHIiWzAtOWEtZl17NDB9fFswLTlhLWZdezY0fSIsIHNvdXJjZSk6CiAgICAgICAgcmFpc2UgR2VuZXJhdGVkU3ViamVjdEdvRXJyb3IoImF1dGhlbnRpY2F0ZWQtc3RhdGlvbmFyeSBGaW5hbC1HTyBjb250cm9sIHNvdXJjZSBpcyBpbnZhbGlkIikKICAgIGlmIG5vdCByZS5mdWxsbWF0Y2gociJbMC05YS1mXXs0MH18WzAtOWEtZl17NjR9IiwgYWNjZXB0ZWRfYmxvYik6CiAgICAgICAgcmFpc2UgR2VuZXJhdGVkU3ViamVjdEdvRXJyb3IoImF1dGhlbnRpY2F0ZWQtc3RhdGlvbmFyeSBGaW5hbC1HTyBwYXJlbnQgR2l0IGJsb2IgaXMgaW52YWxpZCIpCiAgICBpZiBub3QgcGF5bG9hZCBvciB2ZXJpZmllZCAhPSBhY2NlcHRlZF9ibG9iOgogICAgICAgIHJhaXNlIEdlbmVyYXRlZFN1YmplY3RHb0Vycm9yKCJhdXRoZW50aWNhdGVkLXN0YXRpb25hcnkgRmluYWwtR08gcGFyZW50IEdpdCBieXRlcyBmYWlsZWQgaWRlbnRpdHkgdmVyaWZpY2F0aW9uIikKICAgIGZpbGVuYW1lID0gZiJnaXQ6e3NvdXJjZX06e0JBU0VfTU9EVUxFX1BBVEh9IgogICAgbW9kdWxlID0gdHlwZXMuTW9kdWxlVHlwZSgibmVtYnJhX2F1dGhlbnRpY2F0ZWRfc3RhdGlvbmFyeV9maW5hbF9nbyIpCiAgICBtb2R1bGUuX19maWxlX18gPSBmaWxlbmFtZQogICAgbW9kdWxlLl9fbmVtYnJhX2FjY2VwdGVkX2NvbnRyb2xfc291cmNlX18gPSBzb3VyY2UKICAgIG1vZHVsZS5fX25lbWJyYV9hY2NlcHRlZF9jb250cm9sX2Jsb2JfXyA9IGFjY2VwdGVkX2Jsb2IKICAgIHRyeToKICAgICAgICBleGVjKGNvbXBpbGUocGF5bG9hZCwgZmlsZW5hbWUsICJleGVjIiwgZG9udF9pbmhlcml0PVRydWUpLCBtb2R1bGUuX19kaWN0X18pCiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGVycm9yOgogICAgICAgIHJhaXNlIEdlbmVyYXRlZFN1YmplY3RHb0Vycm9yKCJhY2NlcHRlZCBhdXRoZW50aWNhdGVkLXN0YXRpb25hcnkgRmluYWwtR08gcGFyZW50IGNvdWxkIG5vdCBleGVjdXRlIikgZnJvbSBlcnJvcgogICAgcmV0dXJuIG1vZHVsZQo=').decode('utf-8')
           if text.count(old) != 1:
               raise SystemExit(f'R3 mutable base loader count drifted: {text.count(old)}')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          text = text.replace(old_import, '', 1).replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
           PY
           python3 -m py_compile scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
           python3 -m unittest -v scripts.ci.tests.test_es80_generated_subject_base_module_execution_custody
