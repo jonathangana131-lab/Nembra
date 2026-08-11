@@ -4,18 +4,22 @@
   "laneId": "legacy-github-reconciliation",
   "slot": "reconcile-ci-xcode",
   "role": "scheduler-reconciler",
-  "workerId": "sol-20260811-1315r8",
-  "leaseId": "e6d762dc4450429cb9a6ff5acbff90e1",
-  "generation": 2,
+  "workerId": "sol-20260811-1433c9",
+  "leaseId": "reconcile-ci-xcode-1433c9-20260811-2134",
+  "generation": 3,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T20:16:38Z",
-  "lastHeartbeatAt": "2026-08-11T20:52:00Z",
+  "claimedAt": "2026-08-11T21:34:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:34:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-  "takeoverFromWorkerId": "sol-20260811-go54f",
+  "takeoverFromWorkerId": "sol-20260811-1315r8",
+  "takeoverFromLeaseId": "e6d762dc4450429cb9a6ff5acbff90e1",
   "priorWorkerIds": [
-    "sol-20260811-go54f"
-  ]
+    "sol-20260811-go54f",
+    "sol-20260811-1315r8"
+  ],
+  "takeoverReason": "Generation-2 lease expired after last heartbeat 2026-08-11T20:52:00Z. Recover CI/Xcode reconciliation against current Capture P0 live GitHub, especially moved/defeated Final-GO authority, runtime accessibility evidence, build-authority and signed-install exact-head gate truth. Reconciliation only; no product implementation or physical authority.",
+  "checkpoint": "Fresh GO inspection found swarm-state Final-GO lane still describes 471cc025 as accepted even though exploit-positive #3024 and complementary #3030 now defeat that authority and an active generation-4 production repair is underway. Reconcile exact current CI/Xcode state without editing owned product paths. PHYSICAL NO-GO."
 }
