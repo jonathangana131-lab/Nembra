@@ -89,9 +89,6 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         )
         pod.chmod(0o755)
 
-        # The product bootstrap uses the macOS `stat -f %Lp` spelling only to
-        # assert the mode of its freshly created private provenance record. Keep
-        # this portable diagnostic faithful without changing product bytes.
         fake_stat = self.fake_bin / "stat"
         fake_stat.write_text(
             "#!/bin/bash\n"
@@ -211,16 +208,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         substituted_generated = (self.root / GENERATED_RELATIVE).read_bytes()
 
         self.assertEqual(field_lock, accepted_lock, "fake pod must preserve the exact preaccepted Podfile.lock")
-        self.assertNotEqual(
-            reviewed_generated,
-            substituted_generated,
-            "test setup must materially replace one generated build-affecting CocoaPods file",
-        )
-        self.assertNotEqual(
-            field.returncode,
-            0,
-            "field bootstrap admitted different CocoaPods-generated build bytes under the exact same accepted Podfile.lock",
-        )
+        self.assertNotEqual(reviewed_generated, substituted_generated)
+        self.assertNotEqual(field.returncode, 0, field.stdout)
         self.assertIn("generated CocoaPods build inputs do not match", field.stdout)
 
     def test_build_window_snapshot_and_watch_set_cover_generated_graph(self) -> None:
@@ -261,6 +250,53 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             self.assertNotEqual(before, after)
             with self.assertRaises(guard.BuildGuardError):
                 guard._verify_accepted_generated_build_subject(inputs)
+
+    def test_private_only_guard_keeps_original_cross_root_staging_contract(self) -> None:
+        guard = load_build_guard()
+        with tempfile.TemporaryDirectory(prefix="nembra-private-only-lock-") as lock_text, tempfile.TemporaryDirectory(
+            prefix="nembra-private-only-inputs-"
+        ) as private_text:
+            lock_root = Path(lock_text)
+            private_root = Path(private_text)
+            lockfile = lock_root / "Podfile.lock"
+            lockfile.write_text("private-only\n", encoding="utf-8")
+            security_build = private_root / "security-build"
+            identity_sources = private_root / "identity-sources"
+            security_build.mkdir()
+            identity_sources.mkdir()
+            security_podspec = private_root / "security.podspec"
+            identity_podspec = private_root / "identity.podspec"
+            security_podspec.write_text("security\n", encoding="utf-8")
+            identity_podspec.write_text("identity\n", encoding="utf-8")
+            (security_build / "lib.a").write_bytes(b"private")
+            (identity_sources / "identity.swift").write_text("private\n", encoding="utf-8")
+
+            inputs = guard.PrivateInputs(
+                lockfile=lockfile,
+                security_podspec=security_podspec,
+                security_build=security_build,
+                identity_podspec=identity_podspec,
+                identity_sources=identity_sources,
+            )
+            watched = set(guard._watch_paths(inputs))
+            self.assertIn(lockfile, watched)
+            self.assertIn(security_build / "lib.a", watched)
+            self.assertIn(identity_sources / "identity.swift", watched)
+            self.assertNotIn(lock_root, watched)
+            self.assertNotIn(private_root, watched)
+
+    def test_partial_generated_roots_fail_closed(self) -> None:
+        guard = load_build_guard()
+        inputs = guard.PrivateInputs(
+            lockfile=self.root / "Podfile.lock",
+            security_podspec=self.private_sdk / "ThingSmartCryption.podspec",
+            security_build=self.private_sdk / "Build",
+            identity_podspec=self.private_identity / "NembraTuyaPrivateConfig.podspec",
+            identity_sources=self.identity_sources,
+            generated_pods=self.root / "Pods",
+        )
+        with self.assertRaises(guard.BuildGuardError):
+            guard._watch_paths(inputs)
 
     def test_generated_watch_fd_budget_raises_soft_limit_or_fails_closed(self) -> None:
         guard = load_build_guard()
