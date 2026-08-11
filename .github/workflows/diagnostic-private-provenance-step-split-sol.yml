@@ -1,0 +1,92 @@
+name: Diagnostic Private Provenance Step Split Sol
+
+on:
+  push:
+    branches:
+      - diagnostic/v14-private-provenance-step-split-sol-20260811
+    paths:
+      - .github/workflows/diagnostic-private-provenance-step-split-sol.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  provenance-contract:
+    name: Provenance contract unit tests
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+
+  account-transport:
+    name: Tuya account transport source tests
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_tuya_account_transport_source.py
+
+  checkout-root-swap:
+    name: Private identity checkout-root swap tests
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
+
+  bootstrap-syntax:
+    name: Bootstrap shell syntax
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+
+  provision-syntax:
+    name: Provision shell syntax
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - run: |
+          set -euo pipefail
+          bash -n Scripts/provision_capture_tuya_identity.sh
+
+  writer-self-test:
+    name: Private identity writer self-test
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
