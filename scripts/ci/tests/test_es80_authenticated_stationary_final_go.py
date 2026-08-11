@@ -42,7 +42,14 @@ class T(unittest.TestCase):
   with zipfile.ZipFile(self.f.arc,'a') as z:z.writestr('s.png',b'bad')
   self.f.map[f'/actions/artifacts/{self.f.aid}']['digest']='sha256:'+H(self.f.arc.read_bytes());self.no(self.f.build)
  def test_github_review_owner_commit_state_and_body_are_authority(self):
-  path=f'/pulls/{self.f.pr}/reviews/{self.f.rid}';r=self.f.map[path];r['user']['login']='attacker';self.no(self.f.build);r['user']['login']=go.OWNER;r['commit_id']='1'*40;self.no(self.f.build);r['commit_id']=self.f.s;r['state']='DISMISSED';self.no(self.f.build);r['state']='COMMENTED';r['body']=self.f.body(verdict='rejected');self.no(self.f.build);r['body']=self.f.body(standardScreenshotSHA256='0'*64);self.no(self.f.build)
+  path=f'/pulls/{self.f.pr}/reviews/{self.f.rid}';r=self.f.map[path]
+  r['user']['login']='attacker';self.no(self.f.build);r['user']['login']=go.OWNER
+  r['author_association']='MEMBER';self.no(self.f.build);r['author_association']='OWNER'
+  r['commit_id']='1'*40;self.no(self.f.build);r['commit_id']=self.f.s
+  r['state']='DISMISSED';self.no(self.f.build);r['state']='COMMENTED'
+  r['body']='{"schemaVersion":1,"schemaVersion":1}';self.no(self.f.build)
+  r['body']=self.f.body(verdict='rejected');self.no(self.f.build)
+  r['body']=self.f.body(standardScreenshotSHA256='0'*64);self.no(self.f.build)
  def test_candidate_dirty_and_retired_authority_rejected(self):
   (self.f.repo/'dirty').write_text('x');self.no(self.f.build);(self.f.repo/'dirty').unlink();p=self.f.repo/go.INSTALLER;p.write_text(p.read_text()+'ES80-FINGERPRINT-v1\n');subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'add','.'],check=True);subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'commit','-qm','old'],check=True);s=subprocess.check_output(['/usr/bin/git','-C',str(self.f.repo),'rev-parse','HEAD'],text=True).strip();self.no(lambda:go.candidate(self.f.repo,s))
  def test_private_device_custody_and_installer_drift_rejected(self):
