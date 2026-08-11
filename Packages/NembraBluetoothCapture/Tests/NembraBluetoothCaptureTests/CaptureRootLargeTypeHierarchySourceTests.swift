@@ -4,6 +4,7 @@ import Testing
 
 @Suite("Capture root large-type hierarchy")
 struct CaptureRootLargeTypeHierarchySourceTests {
+    // Keep the AX-first-viewport composition mechanically reviewable as the UI evolves.
     @Test("large type keeps the recovery action ahead of redundant lock branding")
     func largeTypeHierarchy() throws {
         let app = try read("NembraApp/App/NembraCaptureEntrypoint.swift")
