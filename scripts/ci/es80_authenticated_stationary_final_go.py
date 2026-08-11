@@ -98,6 +98,10 @@ def public(source:str,pr:int,runs:dict[str,int],get=api):
     if canon(head.get("sha"),"PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main" or not isinstance(head_ref,str) or not head_ref: raise GoError("canonical PR subject mismatch")
     if not ((state=="open" and draft is False) or (state=="closed" and merged)):
         raise GoError("canonical PR is draft or closed without merge; software acceptance is not promotable")
+    _,main=get("/branches/main"); main_sha=canon(main.get("commit",{}).get("sha"),"current main")
+    _,comparison=get(f"/compare/{main_sha}...{source}"); merge_base=comparison.get("merge_base_commit",{})
+    if comparison.get("status") not in {"ahead","identical"} or canon(merge_base.get("sha"),"main/candidate merge base")!=main_sha:
+        raise GoError("candidate does not contain the exact current main authority")
     subjects=[]
     for name in WORKFLOWS:
         rid=pos(runs[name],name); _,r=get(f"/actions/runs/{rid}")
@@ -105,13 +109,16 @@ def public(source:str,pr:int,runs:dict[str,int],get=api):
         bound=(isinstance(pulls,list) and any(isinstance(x,dict) and x.get("number")==pr for x in pulls)) or (pulls==[] and r.get("head_branch")==head_ref)
         if r.get("name")!=name or r.get("path")!=WORKFLOW_PATHS[name] or canon(r.get("head_sha"),name)!=source or r.get("status")!="completed" or r.get("conclusion")!="success" or r.get("event")!="pull_request" or not bound: raise GoError(f"{name} is not exact terminal SUCCESS from its canonical workflow for PR #{pr}")
         subjects.append({"name":name,"path":WORKFLOW_PATHS[name],"runID":rid,"headSHA":source,"conclusion":"success"})
-    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":state,"merged":merged,"draft":draft},subjects
+    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","mainSHA":main_sha,"state":state,"merged":merged,"draft":draft},subjects
 
 def control_plane(authority_repo:Path,pr:int,run_id:int,get=api):
     root=authority_repo.expanduser().resolve(strict=True); source=canon(git(root,"rev-parse","HEAD"),"GO control-plane HEAD")
     if git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("GO control-plane checkout is not clean")
     _,p=get(f"/pulls/{pos(pr,'GO control-plane PR')}"); head=p.get("head",{}); base=p.get("base",{}); state=p.get("state"); merged=bool(p.get("merged_at")); draft=p.get("draft")
     if canon(head.get("sha"),"GO control-plane PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main" or not ((state=="open" and draft is False) or (state=="closed" and merged)): raise GoError("GO control-plane PR is not exact/promotable")
+    _,main=get("/branches/main"); main_sha=canon(main.get("commit",{}).get("sha"),"current main")
+    _,comparison=get(f"/compare/{main_sha}...{source}"); merge_base=comparison.get("merge_base_commit",{})
+    if comparison.get("status") not in {"ahead","identical"} or canon(merge_base.get("sha"),"GO control-plane main merge base")!=main_sha: raise GoError("GO control plane does not contain the exact current main authority")
     _,run=get(f"/actions/runs/{pos(run_id,'GO control-plane workflow run')}")
     if run.get("name")!=AUTH_WORKFLOW_NAME or run.get("path")!=AUTH_WORKFLOW_PATH or canon(run.get("head_sha"),"GO control-plane workflow head")!=source or run.get("status")!="completed" or run.get("conclusion")!="success" or run.get("event") not in {"push","pull_request"}: raise GoError("GO control-plane exact authority workflow is not terminal SUCCESS")
     branch=head.get("ref"); pulls=run.get("pull_requests",[])
@@ -122,7 +129,7 @@ def control_plane(authority_repo:Path,pr:int,run_id:int,get=api):
     paths=("scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py",AUTH_WORKFLOW_PATH,"scripts/ci/tests/test_es80_authenticated_stationary_final_go.py")
     blobs={path:git(root,"rev-parse",f"HEAD:{path}").lower() for path in paths}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) for value in blobs.values()): raise GoError("GO control-plane Git blob identity invalid")
-    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
+    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"mainSHA":main_sha,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
 
 def visual(source:str,run:int,aid:int,archive:Path,get=api):
     _,a=get(f"/actions/artifacts/{aid}"); m=DIGEST.fullmatch(a.get("digest","") if isinstance(a.get("digest"),str) else "")
@@ -236,7 +243,7 @@ def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_rep
     if not HEX64.fullmatch(signed["tuyaDependencyLockSHA256"]) or not HEX64.fullmatch(signed["retainedIPASHA256"]) or not HEX64.fullmatch(signed["retainedAppTreeSHA256"]) or not HEX64.fullmatch(signed["embeddedProvisioningProfileSHA256"]): raise GoError("retained signed artifact digest invalid")
 
     post_control=control_authority(authority_repo,authority_pr,authority_run,get); post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file); post_signed=reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
-    stable_pr=("number","headSHA","headBranch","base","state","merged","draft")
+    stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")
     if post_control!=control or any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh or post_signed!=signed:
         raise GoError("GO authority changed during private install; re-run from fresh exact evidence")
     ps,ws,vs,rv,cs,dh=post_ps,post_ws,post_vs,post_rv,post_cs,post_dh

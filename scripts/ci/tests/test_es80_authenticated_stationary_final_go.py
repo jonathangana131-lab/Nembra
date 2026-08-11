@@ -17,7 +17,12 @@ class F:
   d={'schemaVersion':1,'authority':'nembra-visual-human-review-github-v1','sourceCommitSHA':self.s,'visualRunID':self.ids[go.VISUAL],'visualArtifactID':self.aid,'standardScreenshotSHA256':H(self.std),'accessibilityScreenshotSHA256':H(self.ax),'verdict':'accepted'};d.update(x);return json.dumps(d,sort_keys=True)
  def write_review(self,**x):
   d={'id':self.rid,'node_id':'PRR_test','state':'COMMENTED','commit_id':self.s,'user':{'login':go.OWNER},'author_association':'OWNER','submitted_at':'2026-08-11T02:00:00Z','body':self.body()};d.update(x);self.map[f'/pulls/{self.pr}/reviews/{self.rid}']=d
- def get(self,p):v=self.map[p];return json.dumps(v).encode(),v
+ def get(self,p):
+  if p=='/branches/main':v={'commit':{'sha':getattr(self,'main','0'*40)}}
+  elif p.startswith('/compare/'):
+   base=p.split('/compare/',1)[1].split('...',1)[0];v={'status':getattr(self,'compare_status','ahead'),'merge_base_commit':{'sha':base}}
+  else:v=self.map[p]
+  return json.dumps(v).encode(),v
  def control(self,repo,pr,run,get):return {'authority':'nembra-authenticated-stationary-go-control-plane-v1','sourceCommitSHA':'e'*40,'prNumber':2638,'headBranch':'control/final','state':'open','merged':False,'draft':False,'workflowRunID':900,'workflowName':go.AUTH_WORKFLOW_NAME,'workflowPath':go.AUTH_WORKFLOW_PATH,'gitBlobs':{}}
  def inst(self,repo,s,dev):return {'authority':'accepted-candidate-private-installer-execution-v1','result':'success','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'baselineDevice':go.DEVICE,'baselineProductType':go.PRODUCT,'baselineOS':'iOS 27'}
  def signed(self,repo,s,dev,install,output):return {'authority':'nembra-authenticated-stationary-retained-signed-artifact-v1','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'tuyaDependencyLockSHA256':'a'*64,'retainedIPASHA256':'b'*64,'retainedAppTreeSHA256':'c'*64,'embeddedProvisioningProfileSHA256':'d'*64,'signingTeamIdentifier':'TEAM','applicationIdentifier':'TEAM.'+go.BUNDLE,'codesignVerified':True,'intendedDeviceIncluded':True,'physicalAuthorityCreated':False}
@@ -85,6 +90,15 @@ class T(unittest.TestCase):
   def moving(repo,pr,run,get):
    nonlocal calls;calls+=1;x=self.f.control(repo,pr,run,get);return x if calls==1 else {**x,"state":"closed","merged":True}
   self.no(lambda:self.f.build(control_authority=moving))
+ def test_current_main_is_bound_and_must_be_candidate_ancestor(self):
+  r=self.f.build();self.assertEqual(r['acceptedPR']['mainSHA'],'0'*40)
+  self.f.compare_status='diverged';self.no(self.f.build)
+ def test_post_install_current_main_or_pr_state_drift_is_rejected(self):
+  def move_main(r,s,d):x=self.f.inst(r,s,d);self.f.main='1'*40;return x
+  self.no(lambda:self.f.build(run_installer=move_main));self.f.main='0'*40
+  pull=self.f.map[f'/pulls/{self.f.pr}']
+  def merge_pr(r,s,d):x=self.f.inst(r,s,d);pull['state']='closed';pull['merged_at']='2026-08-11T03:00:00Z';return x
+  self.no(lambda:self.f.build(run_installer=merge_pr))
  def test_post_install_revalidation_rejects_pr_artifact_review_or_device_drift(self):
   pull=f'/pulls/{self.f.pr}';review=f'/pulls/{self.f.pr}/reviews/{self.f.rid}';artifact=f'/actions/artifacts/{self.f.aid}'
   def merge_pr(r,s,d):x=self.f.inst(r,s,d);self.f.map[pull]['state']='closed';self.f.map[pull]['merged_at']='2026-08-11T02:10:00Z';return x
