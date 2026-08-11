@@ -4,14 +4,18 @@ on:
   push:
     paths:
       - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
       - .github/workflows/capture-authenticated-stationary-final-go.yml
   pull_request:
     paths:
       - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
       - .github/workflows/capture-authenticated-stationary-final-go.yml
   workflow_dispatch:
 
@@ -28,9 +32,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Compile and red-team issuer
+      - name: Compile and red-team issuer + retained signed artifact authority
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
