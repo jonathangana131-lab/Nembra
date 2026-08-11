@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "Scripts/provision_capture_tuya_identity_writer.py"
 SHELL = ROOT / "Scripts/provision_capture_tuya_identity.sh"
 SWIFT = ROOT / "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift"
-WORKFLOW = ROOT / ".github/workflows/capture-private-identity-publication-races-redteam.yml"
 FINAL_NAME_TEST = ROOT / "scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py"
 TEMP_SCRIPT = ROOT / "scripts/ci/tmp_materialize_private_identity_final_name_sol.py"
 TEMP_WORKFLOW = ROOT / ".github/workflows/tmp-v14-private-identity-final-name-sol.yml"
@@ -19,7 +18,6 @@ EXPECTED_BLOBS = {
     WRITER: "86fad360144fed7b26937476f6cd8f4caeba9831",
     SHELL: "5162c6e35297fcf2315dc22c8a296828d7216be5",
     SWIFT: "af4c47324260727a9788b8ac5b637883fd4b2dea",
-    WORKFLOW: "7cf4f172a9f8e11ab9590a2568cec859cb031fe9",
 }
 
 
@@ -92,32 +90,6 @@ final_name_bytes = subprocess.check_output(
     cwd=ROOT,
 )
 FINAL_NAME_TEST.write_bytes(final_name_bytes)
-
-workflow = WORKFLOW.read_text(encoding="utf-8")
-path_marker = '      - scripts/ci/tests/test_capture_private_identity_crash_residue.py\n'
-if workflow.count(path_marker) != 2:
-    raise SystemExit("publication workflow path contract moved")
-workflow = workflow.replace(
-    path_marker,
-    path_marker + '      - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py\n',
-)
-workflow = replace_once(
-    workflow,
-    '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py\n'
-    '          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py\n',
-    '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py\n'
-    '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py\n'
-    '          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py\n',
-    "publication workflow compile",
-)
-workflow = replace_once(
-    workflow,
-    '          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py\n',
-    '          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py\n'
-    '          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py\n',
-    "publication workflow final-name attack",
-)
-WORKFLOW.write_text(workflow, encoding="utf-8")
 
 TEMP_SCRIPT.unlink()
 TEMP_WORKFLOW.unlink()
