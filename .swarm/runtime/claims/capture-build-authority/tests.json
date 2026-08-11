@@ -9,16 +9,17 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:12:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:12:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:13:00Z",
   "leaseSeconds": 1800,
-  "branch": "",
-  "pr": 2988,
+  "branch": "repair/v14-field-verified-git-source-contract-sol-1316vk",
+  "pr": 3016,
   "sourceSHA": "6b0c974d432205593f2d1157de06544a01145489",
-  "currentHeadSHA": "6b0c974d432205593f2d1157de06544a01145489",
+  "currentHeadSHA": "1d121893adee23b5764db80cd7c4268525564c24",
   "takeoverFromWorkerId": "sol-20260811-b7c1a2",
   "takeoverReason": "Generation-6 test lease expired after independently identifying the same stale direct-git-show Field source contract. Review 4910725425 confirms exact #2988 production uses stronger read_verified_accepted_git_blob for the private runner and exact Verified Git Payload run 31534493987 is green; Field run 31534493982 is red only on the legacy positive grep. Recover test-only workflow contract repair without touching installer production. PHYSICAL NO-GO.",
   "ownedPaths": [
     ".github/workflows/capture-field-build-provenance.yml"
   ],
-  "intent": "Replace the stale positive direct-git-show private-runner assertion with the stronger verified-buffered accepted-Git boundary, preserve explicit negative ban on mutable/raw private-runner execution, then run exact Field/Main acceptance on a child of #2988. Do not modify installer production."
+  "checkpoint": "Draft PR #3016 exact 1d121893adee23b5764db80cd7c4268525564c24 is a test-only child of #2988 exact 6b0c974d. Exact compare is one changed workflow file, +6/-1; temporary constructor absent from final tree. Field oracle now positively requires PRIVATE_DEVICE_RUNNER_RELATIVE plus read_verified_accepted_git_blob and negatively rejects legacy raw run_authority_git show private-runner execution. Installer/production bytes unchanged. Fresh exact-head CI and independent review required; PHYSICAL NO-GO.",
+  "intent": "Hold exact #3016 head, classify fresh Field/Main path-policy gates, request independent review if terminal green, and never promote parent ancestor greens after the head move."
 }
