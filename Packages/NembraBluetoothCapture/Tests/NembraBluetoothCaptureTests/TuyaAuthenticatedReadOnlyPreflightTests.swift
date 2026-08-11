@@ -107,8 +107,8 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
     }
 
-    @Test("documented device-sharing provenance can unlock the same read-only gate")
-    func acceptedDeviceSharingPhysicalGate() {
+    @Test("device-sharing account authority cannot substitute for BLE authentication")
+    func deviceSharingDoesNotMintBLEAuthentication() {
         let authenticatedAt: UInt64 = 20
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
@@ -120,6 +120,6 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 2,
             connectionGeneration: 3
         )
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation."))
     }
 }
