@@ -14,9 +14,10 @@ on:
       - 'scripts/ci/tests/test_swarm_*.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
+      - 'docs/adr/ADR-0016-swarm-v16-enforcement.md'
       - '.github/workflows/swarm-control-plane-shadow.yml'
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -165,3 +166,65 @@ jobs:
           git fetch origin swarm-state:refs/remotes/origin/swarm-state
           [[ "$(git rev-parse origin/swarm-state)" == "$EXPECTED" ]] || { echo 'swarm-state advanced; refusing stale projection'; exit 1; }
           git push origin HEAD:swarm-state
+
+  live-open-pr-ownership-audit:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Materialize exact current state and validation fence
+        run: |
+          set -euo pipefail
+          git fetch origin swarm-state:refs/remotes/origin/swarm-state
+          ROOT="$RUNNER_TEMP/nembra-swarm-audit"
+          mkdir -p "$ROOT/.swarm"
+          cp .swarm/config.json "$ROOT/.swarm/config.json"
+          git archive origin/swarm-state .swarm/runtime | tar -x -C "$ROOT"
+          PYTHONPATH=scripts python3 -m swarmcp.maximum render --root "$ROOT"
+          PYTHONPATH=scripts python3 -m swarmcp.maximum verify-fence --root "$ROOT"
+          echo "SWARM_ROOT=$ROOT" >> "$GITHUB_ENV"
+      - name: Revalidate every open PR against current ownership
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" > "$RUNNER_TEMP/open-pr-pages.json"
+          jq -c '.[][]' "$RUNNER_TEMP/open-pr-pages.json" | while IFS= read -r pr; do
+            number="$(jq -r '.number' <<<"$pr")"
+            sha="$(jq -r '.head.sha' <<<"$pr")"
+            ref="$(jq -r '.head.ref' <<<"$pr")"
+            created="$(jq -r '.created_at' <<<"$pr")"
+            body="$(jq -r '.body // ""' <<<"$pr")"
+            event="$RUNNER_TEMP/pr-$number.json"
+            files="$RUNNER_TEMP/pr-$number-files.txt"
+            jq -n \
+              --argjson number "$number" \
+              --arg created "$created" \
+              --arg body "$body" \
+              --arg ref "$ref" \
+              '{pull_request:{number:$number,created_at:$created,body:$body,head:{ref:$ref}}}' > "$event"
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$number/files?per_page=100" --jq '.[].filename' > "$files"
+            log="$RUNNER_TEMP/pr-$number-audit.log"
+            if PYTHONPATH=scripts python3 -m swarmcp.maximum render --root "$SWARM_ROOT" >/dev/null 2>&1 && \
+               PYTHONPATH=scripts python3 -m swarmcp.maximum pr-check --root "$SWARM_ROOT" --event "$event" --changed-files "$files" >"$log" 2>&1; then
+              state=success
+              description="Current live swarm ownership is valid"
+            else
+              state=failure
+              description="Live swarm ownership invalid; refresh claim/state"
+              cat "$log"
+            fi
+            gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+              -f state="$state" \
+              -f context='Swarm Live Ownership' \
+              -f description="$description" \
+              -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+          done
