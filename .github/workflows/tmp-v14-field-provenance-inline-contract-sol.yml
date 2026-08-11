@@ -1,0 +1,82 @@
+name: Temporary V14 Field Provenance Inline Contract Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-field-provenance-inline-contract-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Align permanent provenance source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          out = []
+          source_sha_replaced = 0
+          source_message_replaced = 0
+          build_line_replaced = 0
+
+          for line in lines:
+              if "grep -Fq 'SOURCE_SHA=\"$(git rev-parse HEAD | tr '" in line:
+                  indent = line[:len(line) - len(line.lstrip())]
+                  out.extend([
+                      indent + "grep -Fq 'AUTHORITY_GIT_DIR=\"$ROOT/.git\"' \"$installer\"",
+                      indent + "grep -Fq 'run_authority_git() {' \"$installer\"",
+                      indent + "grep -Fq 'GIT_CONFIG_NOSYSTEM=1' \"$installer\"",
+                      indent + "grep -Fq 'GIT_CONFIG_GLOBAL=/dev/null' \"$installer\"",
+                      indent + "grep -Fq 'GIT_NO_REPLACE_OBJECTS=1' \"$installer\"",
+                      indent + "grep -Fq 'SOURCE_SHA=\"$(run_authority_git rev-parse --verify' \"$installer\"",
+                      indent + "if grep -Fq 'SOURCE_SHA=\"$(git rev-parse HEAD' \"$installer\"; then",
+                      indent + "  echo 'ERROR: field-build source authority must not fall back to ambient git rev-parse.' >&2",
+                      indent + "  exit 1",
+                      indent + "fi",
+                  ])
+                  source_sha_replaced += 1
+              elif "grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA'" in line:
+                  indent = line[:len(line) - len(line.lstrip())]
+                  out.append(indent + "grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' \"$installer\"")
+                  source_message_replaced += 1
+              elif "build_line=\"$(grep -nF -- '-- xcodebuild \\\\'" in line:
+                  out.append(line.replace("-- xcodebuild \\\\`,", "-- /usr/bin/xcodebuild \\\\,"))
+                  build_line_replaced += 1
+              elif "build_line=\"$(grep -nF -- '-- xcodebuild \\" in line:
+                  out.append(line.replace("-- xcodebuild \\", "-- /usr/bin/xcodebuild \\") )
+                  build_line_replaced += 1
+              else:
+                  out.append(line)
+
+          if (source_sha_replaced, source_message_replaced, build_line_replaced) != (1, 1, 1):
+              raise SystemExit(
+                  f'unexpected replacement counts: source={source_sha_replaced}, message={source_message_replaced}, build={build_line_replaced}'
+              )
+
+          rendered = '\n'.join(out) + '\n'
+          if "SOURCE_SHA=\"$(git rev-parse HEAD" in rendered and "if grep -Fq 'SOURCE_SHA=\"$(git rev-parse HEAD'" not in rendered:
+              raise SystemExit('retired ambient source-authority assertion remains')
+          if "build_line=\"$(grep -nF -- '-- /usr/bin/xcodebuild \\" not in rendered:
+              raise SystemExit('exact /usr/bin/xcodebuild ordering assertion was not materialized')
+          path.write_text(rendered, encoding='utf-8')
+          PY
+
+          rm -f .github/workflows/tmp-v14-field-provenance-inline-contract-sol.yml
+          git config user.name 'nembra-sol-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/capture-field-build-provenance.yml .github/workflows/tmp-v14-field-provenance-inline-contract-sol.yml
+          git diff --cached --check
+          git diff --cached -- .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'Capture: align inline field provenance authority contract'
+          git push origin HEAD:repair/v14-field-provenance-inline-contract-sol-20260811
