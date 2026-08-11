@@ -183,7 +183,7 @@ def validate_handoff(r):
 def validate_config(r):
     x=dict(_dict(r,'config')); validate_data_only(x); _schema(x)
     if x.get('kind')!='swarm-config': raise ValidationError('invalid config kind')
-    _branch(x.get('stateBranch',DEFAULT_STATE_BRANCH),'stateBranch',False)
+    x['stateBranch']=_branch(x.get('stateBranch',DEFAULT_STATE_BRANCH),'stateBranch',False)
     if x.get('rolloutMode','shadow') not in {'shadow','coordination','enforcement'}: raise ValidationError('invalid rolloutMode')
     w=_dict(x.get('wipLimits',{}),'wipLimits')
     for k in ('maxPrimaryLanes','maxPrimaryPerEpic','reviewBacklogThreshold','integrationBacklogThreshold'):
