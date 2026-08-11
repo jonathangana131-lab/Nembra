@@ -1,0 +1,35 @@
+name: Capture Private Identity Publication Name Binding Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-private-identity-publication-name-race-sol-20260811
+  pull_request:
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - scripts/ci/tests/test_capture_private_identity_publication_name_binding_races.py
+      - .github/workflows/capture-private-identity-publication-name-binding-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  name-binding-races:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Bind to exact checked-out head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile publication name-binding red team
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_name_binding_races.py
+      - name: Reject source/destination pathname re-resolution races
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_private_identity_publication_name_binding_races
