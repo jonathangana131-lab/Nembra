@@ -99,21 +99,24 @@ final class AppRuntime {
         // Simulator-owned source receipts through the normal source boundary while
         // adding zero synthetic trip/odometer distance. Run the driver detached so
         // its own 10 Hz loop does not execute on the app MainActor that the hitch
-        // metric is evaluating. Render-clock frames remain display-only evidence.
+        // metric is evaluating. The loop remains active for the fixture lifetime so
+        // UI-test launch/idle latency cannot accidentally move the measured window
+        // after the stress source has stopped. Render-clock frames remain display-only evidence.
         if simulatorDrivesDashboardStress {
             let speedsKilometersPerHour: [Double] = [
-                8, 16, 22, 12, 19, 6, 24, 14, 18, 10
+                8, 16, 22, 12, 19, 6, 24, 14, 18, 10, 21
             ]
             simulatorRideDriverTask = Task.detached(priority: .userInitiated) {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard !Task.isCancelled else { return }
 
-                for index in 0..<120 {
-                    guard !Task.isCancelled else { return }
+                var index = 0
+                while !Task.isCancelled {
                     await simulatorService.simulateRide(
-                        speedKilometersPerHour: speedsKilometersPerHour[index % speedsKilometersPerHour.count],
+                        speedKilometersPerHour: speedsKilometersPerHour[index],
                         elapsedSeconds: 0
                     )
+                    index = (index + 1) % speedsKilometersPerHour.count
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
             }
@@ -412,7 +415,7 @@ enum AppBootstrap {
             simulatorService: service,
             initialState: state,
             scenario: scenario,
-            shouldAutoConnectOnStart: scenario.shouldAutoConnectOnLaunch,
+            shouldAutoConnectOnLaunch: scenario.shouldAutoConnectOnLaunch,
             speedInterpolationPolicy: .simulatorQA
         )
     }
