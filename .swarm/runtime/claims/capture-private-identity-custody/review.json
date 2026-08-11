@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-1402vo",
   "leaseId": "capture-private-identity-review-1402vo-20260811-2136",
   "generation": 8,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:36:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:36:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:42:00Z",
+  "releasedAt": "2026-08-11T21:42:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2993,
   "sourceSHA": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
   "currentHeadSHA": "c20484aec3c003143c9ebf034a40166a6d0ff94f",
-  "takeoverFromWorkerId": "sol-20260811-1311qy",
-  "takeoverReason": "Generation-7 review explicitly released on prior ee7 head. #2993 moved to current c204 and exact moved-head helper-execution red-team #3020 has terminal exploit-positive evidence. Review current production plus exact attack without touching active primary/test/red-team paths.",
-  "intent": "Classify current #2993 private dependency execution-subject authority after #3020 exact replay. Verify moved-head delta, bootstrap->adapter and adapter->canonical-guard acquisition boundaries, whether kqueue custody can start before mutable helper execution, and define the minimum replacement-blind production closure. Preserve private identity sanitation work and PHYSICAL NO-GO."
+  "outcome": "NEEDS_CHANGES_HELPER_EXECUTION_AUTHORITY_AND_CONSTRUCTION_CLEANUP",
+  "reviewId": 4910884671,
+  "durableEvidence": "c204 moved from ee7 by test-only provenance delta; implicated production bytes unchanged. Exact moved-head #3020 exploit-positive run 31537057975 SUCCESS proves bootstrap executes mutable adapter pathname and exact adapter can import/execute a substituted same-name canonical guard before _AncestryCustodyBackend exists. #3010 run 31536398942 SUCCESS separately proves verified-stdin Bash execution breaks current BASH_SOURCE-derived repo-root semantics, so repair must preserve accepted bytes plus explicit admitted path/root semantics rather than regress to mutable path execution. Exact c204 tree also still contains tmp-v14-bootstrap-resolution-adapter.yml, a permissions: contents:write materializer; c204 cannot be clean acceptance carrier. Review 4910884671 requires replacement-blind accepted bootstrap->adapter->guard execution, explicit admitted repo root, preservation of kqueue/private-input custody after authentic code loads, replay of #3020 + #3010, and temp-workflow removal. PHYSICAL NO-GO.",
+  "releaseReason": "Durable exact-head red review published. Release slot so production owner/recovery worker can build a clean successor; later reviewer must inspect repaired exact head rather than treating current greens as promotion."
 }
