@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   sustained-performance:
-    name: Exact iPhone 12 sustained cockpit metrics
+    name: Exact iPhone 12 Simulator cockpit metric capture
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
     timeout-minutes: 30
@@ -58,7 +58,7 @@ jobs:
           printf 'NEMBRA_DASH_PERF_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
           printf 'NEMBRA_DASH_PERF_PRODUCT_PARENT=%s\n' "$DASHBOARD_PRODUCT_PARENT_SHA" >> "$GITHUB_ENV"
 
-      - name: Create exact iPhone 12 / iOS 27 performance baseline
+      - name: Create exact iPhone 12 / iOS 27 Simulator baseline
         shell: bash
         run: |
           set -euo pipefail
@@ -242,6 +242,7 @@ jobs:
               "authority": "dashboard-sustained-performance-simulator-only",
               "sourceCommitSHA": os.environ.get("NEMBRA_DASH_PERF_SOURCE_SHA", "unavailable"),
               "productParentSHA": os.environ.get("NEMBRA_DASH_PERF_PRODUCT_PARENT", "c150a8287463231ee9af174c38564738bab576a3"),
+              "baselineKind": "CoreSimulator",
               "baselineDevice": "iPhone 12",
               "baselineOS": "iOS 27",
               "simulatorRuntime": os.environ.get("NEMBRA_DASH_PERF_RUNTIME", "unavailable"),
