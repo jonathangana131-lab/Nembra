@@ -4,12 +4,14 @@ from .model import *
 from .model import _dict
 from .store import *
 from .engine import *
-from .resources import heartbeat_resource, release_resource
+from .resources import release_resource
 from .enforcement import (
     acquire_resources_for_claim,
     claim_slot,
+    heartbeat_resource_for_claim,
     safe_recommend_slots,
     takeover_claim,
+    validate_config,
     validate_lane,
     validate_state_snapshot,
 )
@@ -60,7 +62,7 @@ def main(argv=None):
             l,c,w,e,r=snapshot(s);print(render_dashboard(l,c,w,r,e,utc_now(),a.red_main),end='');return 0
         elif a.cmd=='resource-acquire':
             values=acquire_resources_for_claim(s,a.resource,a.worker,a.lane,utc_now(),config['resourceOrder']);print(pretty_json([value.value for value in values]),end='');return 0
-        elif a.cmd=='resource-heartbeat':x=heartbeat_resource(s,a.resource,a.worker,a.lease_id,a.generation,utc_now())
+        elif a.cmd=='resource-heartbeat':x=heartbeat_resource_for_claim(s,a.resource,a.worker,a.lease_id,a.generation,utc_now())
         elif a.cmd=='resource-release':x=release_resource(s,a.resource,a.worker,a.lease_id,a.generation,utc_now())
         else:raise ValidationError('unknown command')
         print(pretty_json(x.value),end='');return 0
