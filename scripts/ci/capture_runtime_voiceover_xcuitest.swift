@@ -76,26 +76,38 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             utterances.append(current)
         }
 
+        let retainTranscript: () -> String = {
+            let transcript = utterances.enumerated()
+                .map { "\($0.offset): \($0.element)" }
+                .joined(separator: "\n")
+            let attachment = XCTAttachment(string: transcript)
+            attachment.name = "Capture VoiceOver Runtime Transcript"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return transcript
+        }
+
         // Traverse a bounded horizon even after the required phrases appear so
         // later forbidden authority cannot hide behind an early success break.
         // Until retained runtime evidence demonstrates a specific terminal
         // VoiceOver boundary error, every moveForward failure is fail-closed.
-        for _ in 0..<64 {
-            let output = try service.moveForward()
-            let utterance = output.utterance
-            if !utterance.isEmpty {
-                utterances.append(utterance)
+        do {
+            for _ in 0..<64 {
+                let output = try service.moveForward()
+                let utterance = output.utterance
+                if !utterance.isEmpty {
+                    utterances.append(utterance)
+                }
             }
+        } catch {
+            // Preserve everything VoiceOver had already spoken before the
+            // strict traversal failure. Evidence retention must never turn a
+            // red boundary/service error into a pass, so rethrow unchanged.
+            _ = retainTranscript()
+            throw error
         }
 
-        let transcript = utterances.enumerated()
-            .map { "\($0.offset): \($0.element)" }
-            .joined(separator: "\n")
-        let attachment = XCTAttachment(string: transcript)
-        attachment.name = "Capture VoiceOver Runtime Transcript"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
+        let transcript = retainTranscript()
         let normalizedTranscript = transcript.lowercased()
         let positions = try requiredSpeech.map { phrase -> String.Index in
             guard let range = normalizedTranscript.range(of: phrase.lowercased()) else {
