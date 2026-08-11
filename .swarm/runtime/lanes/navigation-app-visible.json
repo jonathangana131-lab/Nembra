@@ -6,7 +6,7 @@
   "title": "Navigation app-visible recovery",
   "objective": "Recover the existing Navigation accessibility product delta from legacy PR #2509 onto current main, preserve provider-backed data as provider data, and require exact-head app runtime and accessibility acceptance before integration.",
   "priority": 4,
-  "state": "READY",
+  "state": "VERIFYING",
   "dependencies": [],
   "blockers": [],
   "mode": "exclusive",
@@ -21,7 +21,17 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOURCE_READY"},
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "sourceSHA": "afd5bdd53e53df9bb647466f5a144bfe8e294552",
+  "recovery": {
+    "pr": 2831,
+    "baseSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "headSHA": "afd5bdd53e53df9bb647466f5a144bfe8e294552",
+    "aheadBy": 2,
+    "behindBy": 0,
+    "changedFiles": 2,
+    "legacyBlobParity": true,
+    "runtimeAcceptance": "PENDING"
+  },
   "legacy": {
     "primaryPR": 2509,
     "primaryHeadSHA": "69bd2dc61ea29429413ce20399a3bbb08e29a00e",
@@ -29,7 +39,7 @@
     "mainAheadBy": 49,
     "legacyAheadBy": 3,
     "changedFileOverlapWithNewMain": 0,
-    "knownExactHeadFinding": "Legacy PR #2509 is open, draft, non-mergeable, and 49 current-main commits behind. It changes two paths and current-main movement since the merge base touches neither path. Historical exact-head run 31436805256 was skipped and is not acceptance."
+    "knownExactHeadFinding": "Legacy PR #2509 is open, draft, non-mergeable, and 49 current-main commits behind. Recovery PR #2831 selectively copies the exact two legacy blobs onto current main and must earn fresh exact-head Xcode/runtime/visual/accessibility evidence. Historical exact-head run 31436805256 was skipped and is not acceptance."
   },
   "tags": ["navigation", "p4", "app-visible", "accessibility", "legacy-import"]
 }
