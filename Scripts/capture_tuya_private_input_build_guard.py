@@ -462,6 +462,131 @@ def _verify_tracked_source_manifest(manifest: Sequence[AcceptedTrackedSource]) -
             raise BuildGuardError(f"accepted tracked source mode changed across xcodebuild custody: {item.path}")
 
 
+
+def _verify_no_unaccepted_build_visible_paths(
+    root: Path,
+    manifest: Sequence[AcceptedTrackedSource],
+) -> None:
+    """Reject build-visible checkout entries not admitted by Git or field-input custody.
+
+    This audit runs only after vnode custody is armed. Tracked file bytes/modes are
+    still authorized by the retained Git manifest; this check closes the distinct
+    pre-armed-untracked window by requiring the physical tree shape to contain
+    only tracked paths plus the already-established private/generated field roots.
+    Any concurrent tree mutation remains observable by the armed parent-directory
+    vnode descriptors and is rejected by the queued-event check before xcodebuild.
+    """
+
+    authority_root = _lexical_absolute(root)
+    tracked_files: set[Path] = set()
+    tracked_directories: set[Path] = {Path(".")}
+    for item in manifest:
+        admitted = _require_real_checkout_ancestry(
+            item.path,
+            authority_root,
+            label="accepted tracked source physical-tree subject",
+        )
+        relative = admitted.relative_to(authority_root)
+        tracked_files.add(relative)
+        parent = relative.parent
+        while parent != Path("."):
+            tracked_directories.add(parent)
+            parent = parent.parent
+
+    # These are the same narrow non-Git inputs admitted by the field installer.
+    # Their contents are independently authenticated/watched by the existing
+    # private/generated custody contracts; this tree-shape audit must not redefine
+    # those byte authorities.
+    allowed_subtrees = {
+        Path(".git"),
+        Path("LocalSecrets"),
+        Path("Pods"),
+        Path("NembraCapture.xcworkspace"),
+    }
+    allowed_files = {Path("Podfile.lock")}
+
+    for relative in allowed_subtrees:
+        candidate = authority_root / relative
+        try:
+            metadata = candidate.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            raise BuildGuardError(
+                f"field build allowlisted subtree could not be inspected: {relative.as_posix()}"
+            ) from error
+        if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+            raise BuildGuardError(
+                f"field build allowlisted subtree is not one real directory: {relative.as_posix()}"
+            )
+
+    for relative in allowed_files:
+        candidate = authority_root / relative
+        try:
+            metadata = candidate.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            raise BuildGuardError(
+                f"field build allowlisted file could not be inspected: {relative.as_posix()}"
+            ) from error
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+            raise BuildGuardError(
+                f"field build allowlisted file is not one real regular file: {relative.as_posix()}"
+            )
+
+    for current_raw, directory_names, file_names in os.walk(
+        authority_root,
+        topdown=True,
+        followlinks=False,
+    ):
+        current = Path(current_raw)
+        current_relative = current.relative_to(authority_root)
+        kept_directories: list[str] = []
+
+        for name in directory_names:
+            relative = Path(name) if current_relative == Path(".") else current_relative / name
+            candidate = authority_root / relative
+            try:
+                metadata = candidate.lstat()
+            except OSError as error:
+                raise BuildGuardError(
+                    f"build-visible directory changed during physical-tree admission: {relative.as_posix()}"
+                ) from error
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                raise BuildGuardError(
+                    f"build-visible directory is not one real admitted directory: {relative.as_posix()}"
+                )
+            if relative in allowed_subtrees:
+                # Contents are separately authenticated/watched and intentionally
+                # outside the accepted Git tree. Do not reinterpret their bytes.
+                continue
+            if relative not in tracked_directories:
+                raise BuildGuardError(
+                    f"unaccepted build-visible directory present before xcodebuild: {relative.as_posix()}"
+                )
+            kept_directories.append(name)
+
+        directory_names[:] = kept_directories
+
+        for name in file_names:
+            relative = Path(name) if current_relative == Path(".") else current_relative / name
+            candidate = authority_root / relative
+            if relative in tracked_files:
+                continue
+            if relative in allowed_files:
+                try:
+                    metadata = candidate.lstat()
+                except OSError as error:
+                    raise BuildGuardError(
+                        f"field build allowlisted file changed during physical-tree admission: {relative.as_posix()}"
+                    ) from error
+                if stat.S_ISREG(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
+                    continue
+            raise BuildGuardError(
+                f"unaccepted build-visible file present before xcodebuild: {relative.as_posix()}"
+            )
+
 def _tracked_source_watch_paths(
     manifest: Sequence[AcceptedTrackedSource], repository_root: Path
 ) -> tuple[Path, ...]:
@@ -711,6 +836,9 @@ def run_guarded_build(
 
         if tracked_manifest:
             _verify_tracked_source_manifest(tracked_manifest)
+            _verify_no_unaccepted_build_visible_paths(
+                inputs.accepted_source_root, tracked_manifest  # type: ignore[arg-type]
+            )
         armed_snapshot = inputs.generation_snapshot()
         if armed_snapshot != initial_snapshot:
             raise BuildGuardError("build inputs changed while build-window monitoring was armed")
