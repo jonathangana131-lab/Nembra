@@ -67,6 +67,38 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(!FileManager.default.fileExists(atPath: sentinel.path))
     }
 
+    @Test("checkout root derivation ignores caller PATH executables")
+    func checkoutRootDerivationIgnoresCallerPathExecutables() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let source = try String(contentsOf: fixture.script, encoding: .utf8)
+        let pathFence = source.range(of: "PATH=\"/usr/bin:/bin:/usr/sbin:/sbin\"")
+        let trustedRoot = source.range(of: "ROOT=\"$(cd \"$(/usr/bin/dirname")
+        #expect(pathFence != nil)
+        #expect(trustedRoot != nil)
+        if let pathFence, let trustedRoot {
+            #expect(pathFence.lowerBound < trustedRoot.lowerBound)
+        }
+
+        let sandbox = fixture.root.deletingLastPathComponent()
+        let hostilePath = sandbox.appendingPathComponent("hostile-root-bin", isDirectory: true)
+        let attackerRoot = sandbox.appendingPathComponent("attacker-root", isDirectory: true)
+        let attackerScripts = attackerRoot.appendingPathComponent("Scripts", isDirectory: true)
+        try FileManager.default.createDirectory(at: hostilePath, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: attackerScripts, withIntermediateDirectories: true)
+        let sentinel = sandbox.appendingPathComponent("hostile-dirname-invoked")
+        let hostileDirname = hostilePath.appendingPathComponent("dirname")
+        let fake = "#!/bin/sh\n/bin/echo invoked > \"\(sentinel.path)\"\n/bin/echo \"\(attackerScripts.path)\"\n"
+        try Data(fake.utf8).write(to: hostileDirname)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: hostileDirname.path)
+
+        let result = try invokeDirect(fixture.script, environment: ["PATH": hostilePath.path])
+        #expect(result.status == 0)
+        #expect(!FileManager.default.fileExists(atPath: sentinel.path))
+        #expect(!FileManager.default.fileExists(atPath: attackerRoot.appendingPathComponent("LocalSecrets/TuyaRuntime").path))
+        #expect(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec").path))
+    }
+
     @Test("symlinked LocalSecrets fails before credential publication")
     func symlinkedLocalSecretsFailsClosed() throws {
         let fixture = try makeFixture()

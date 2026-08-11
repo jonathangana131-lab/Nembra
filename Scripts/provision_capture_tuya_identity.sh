@@ -6,7 +6,13 @@ if [[ $- != *p* ]]; then
   exit 5
 fi
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# A direct operator invocation enters privileged Bash mode from the shebang,
+# which suppresses BASH_ENV/imported startup state. Close executable lookup
+# before deriving the checkout root so caller PATH cannot redirect custody.
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+set +x
+ROOT="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 LOCAL_SECRETS="$ROOT/LocalSecrets"
 # NEMBRA_TUYA_RUNTIME_DIR is deliberately not honored: private field identity
 # output is fixed to the checkout-owned ignored LocalSecrets tree.
@@ -16,12 +22,6 @@ PODSPEC="$DEST/NembraTuyaPrivateConfig.podspec"
 IDENTITY_SWIFT="$SOURCE_DIR/NembraTuyaPrivateIdentity.swift"
 
 umask 077
-# A direct operator invocation enters privileged Bash mode from the shebang,
-# which suppresses BASH_ENV/imported startup state. Also close the executable
-# lookup surface before any credential is read or transformed.
-PATH="/usr/bin:/bin:/usr/sbin:/sbin"
-export PATH
-set +x
 
 # Credential output is intentionally pinned under the ignored checkout-owned
 # LocalSecrets tree. Refuse symlinked/non-directory components instead of
