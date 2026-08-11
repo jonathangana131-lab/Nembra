@@ -18,6 +18,7 @@ LOCAL_SECRETS="$ROOT/LocalSecrets"
 # output is fixed to the checkout-owned ignored LocalSecrets tree.
 DEST="$LOCAL_SECRETS/TuyaRuntime"
 WRITER="$ROOT/Scripts/provision_capture_tuya_identity_writer.py"
+WRITER_SHA256="fd636098ef767c76946246f3f7f793a07b969f1abf9ee43445e4b5154f1089e8"
 
 umask 077
 
@@ -25,29 +26,48 @@ umask 077
   builtin printf '%s\n' 'ERROR: descriptor-bound private Tuya identity writer is missing or symlinked.' >&2
   exit 4
 }
-[[ -x /usr/bin/python3 ]] || {
-  builtin printf '%s\n' 'ERROR: system Python 3 is required for descriptor-bound private identity publication.' >&2
+[[ -x /usr/bin/python3 && -x /usr/bin/shasum && -x /usr/bin/awk ]] || {
+  builtin printf '%s\n' 'ERROR: system Python 3 and SHA-256 tooling are required for private identity publication.' >&2
   exit 4
 }
+
+# Capture the helper exactly once before credential input. Appending a non-newline
+# sentinel prevents command substitution from stripping the helper's trailing
+# newline; Python later executes these captured bytes with -c rather than
+# reopening the mutable worktree pathname.
+WRITER_CAPTURE="$({ /bin/cat -- "$WRITER"; builtin printf '\001'; })"
+[[ "$WRITER_CAPTURE" == *$'\001' ]] || {
+  builtin printf '%s\n' 'ERROR: could not capture private identity writer bytes.' >&2
+  exit 4
+}
+WRITER_SOURCE="${WRITER_CAPTURE%$'\001'}"
+unset WRITER_CAPTURE
+CAPTURED_WRITER_SHA256="$(builtin printf '%s' "$WRITER_SOURCE" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+[[ "$CAPTURED_WRITER_SHA256" == "$WRITER_SHA256" ]] || {
+  unset WRITER_SOURCE CAPTURED_WRITER_SHA256
+  builtin printf '%s\n' 'ERROR: private identity writer bytes do not match the accepted digest.' >&2
+  exit 4
+}
+unset CAPTURED_WRITER_SHA256
 
 builtin read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY
 builtin printf '\n'
 builtin read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET
 builtin printf '\n'
 
-[[ -n "$APP_KEY" ]] || { echo "ERROR: AppKey is empty." >&2; exit 2; }
-[[ -n "$APP_SECRET" ]] || { echo "ERROR: AppSecret is empty." >&2; exit 3; }
+[[ -n "$APP_KEY" ]] || { unset WRITER_SOURCE; echo "ERROR: AppKey is empty." >&2; exit 2; }
+[[ -n "$APP_SECRET" ]] || { unset WRITER_SOURCE; echo "ERROR: AppSecret is empty." >&2; exit 3; }
 
 APP_KEY_B64="$(builtin printf '%s' "$APP_KEY" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 APP_SECRET_B64="$(builtin printf '%s' "$APP_SECRET" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 unset APP_KEY APP_SECRET
 
-if ! builtin printf '%s\0%s' "$APP_KEY_B64" "$APP_SECRET_B64" | /usr/bin/python3 -I "$WRITER" "$ROOT"; then
-  unset APP_KEY_B64 APP_SECRET_B64
+if ! builtin printf '%s\0%s' "$APP_KEY_B64" "$APP_SECRET_B64" | /usr/bin/python3 -I -c "$WRITER_SOURCE" "$ROOT"; then
+  unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE
   builtin printf '%s\n' 'ERROR: private Tuya identity publication failed closed.' >&2
   exit 4
 fi
-unset APP_KEY_B64 APP_SECRET_B64
+unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE
 
 /bin/cat <<EOF
 
@@ -56,6 +76,6 @@ Private Tuya app identity provisioned locally at:
 
 No plaintext credential was written to Git, shell history, host process argv, or stdout.
 The generated source is compiled only by the SDK-integrated Capture workspace.
-Filesystem publication is descriptor-bound and no-follow under the fixed checkout LocalSecrets tree.
+The writer source is SHA-256 pinned before credential input; filesystem publication is descriptor-bound and no-follow under the fixed checkout LocalSecrets tree.
 Next: run Scripts/bootstrap_capture_tuya_sdk.sh.
 EOF

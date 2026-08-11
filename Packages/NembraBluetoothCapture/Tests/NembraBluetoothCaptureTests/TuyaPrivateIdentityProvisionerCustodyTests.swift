@@ -101,6 +101,24 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec").path))
     }
 
+    @Test("writer bytes are digest pinned before credential input")
+    func tamperedWriterNeverExecutesOnCredentialStream() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let writer = fixture.root.appendingPathComponent("Scripts/provision_capture_tuya_identity_writer.py")
+        let sentinel = fixture.root.deletingLastPathComponent().appendingPathComponent("tampered-writer-executed")
+        let malicious = "import os\nopen(os.environ['NEMBRA_WRITER_SENTINEL'], 'w').write('executed')\n"
+        try Data(malicious.utf8).write(to: writer)
+
+        let result = try invoke(
+            fixture.script,
+            environment: ["NEMBRA_WRITER_SENTINEL": sentinel.path]
+        )
+        #expect(result.status != 0)
+        #expect(result.output.contains("writer bytes do not match the accepted digest"))
+        #expect(!FileManager.default.fileExists(atPath: sentinel.path))
+    }
+
     @Test("symlinked LocalSecrets fails before credential publication")
     func symlinkedLocalSecretsFailsClosed() throws {
         let fixture = try makeFixture()
@@ -150,7 +168,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(try posixPermissions(runtime.appendingPathComponent("Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")) == 0o600)
     }
 
-    @Test("publication is descriptor-bound rather than check-then-pathname")
+    @Test("publication and writer execution are pinned before secrets")
     func descriptorBoundPublicationSourceContract() throws {
         let shell = try String(
             contentsOf: repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh"),
@@ -161,8 +179,19 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("provision_capture_tuya_identity_writer.py"))
-        #expect(shell.contains("/usr/bin/python3 -I \"$WRITER\" \"$ROOT\""))
+        #expect(shell.contains("WRITER_SHA256=\"fd636098ef767c76946246f3f7f793a07b969f1abf9ee43445e4b5154f1089e8\""))
+        #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
+        #expect(shell.contains("/usr/bin/shasum -a 256"))
+        #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT\""))
+        #expect(!shell.contains("/usr/bin/python3 -I \"$WRITER\""))
+        let digestFence = shell.range(of: "[[ \"$CAPTURED_WRITER_SHA256\" == \"$WRITER_SHA256\" ]]")
+        let credentialRead = shell.range(of: "builtin read -r -s -p \"Tuya SmartLife SDK AppKey (input hidden): \" APP_KEY")
+        #expect(digestFence != nil)
+        #expect(credentialRead != nil)
+        if let digestFence, let credentialRead {
+            #expect(digestFence.lowerBound < credentialRead.lowerBound)
+        }
+
         #expect(!shell.contains("/usr/bin/mktemp"))
         #expect(!shell.contains("/bin/mv -f"))
         #expect(writer.contains("O_NOFOLLOW"))
