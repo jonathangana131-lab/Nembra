@@ -6,24 +6,24 @@
   "title": "Capture Final-GO control authority",
   "objective": "Converge authenticated-stationary Final-GO so reviewed generated/private build authority, candidate worktree authority, and all parent-module execution subjects are bound to one exact accepted Git/physical candidate without regressing sealed installer or signed-artifact custody.",
   "priority": 0,
-  "state": "NEEDS_CHANGES",
+  "state": "VERIFYING",
   "dependencies": ["capture-build-authority"],
   "blockers": [
     {
-      "id": "final-go-exact-head-self-test-red",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Current Final-GO production head #2890 exact fc662c996ad4551e3bd7bba6e225e3bee9aa620c is not accepted. Capture Final GO production self-test run 31481279993 is terminal FAILURE. The new raw physical-tree scanner correctly rejects divergent accepted-root helper bytes in several fixtures, but three authority witnesses still return READY when they must BLOCK: an untracked build-visible file, checkout bytes differing from the accepted Git tree despite commit==tree, and a missing build-visible tracked file. Several snapshot-race tests are also currently masked by the fixture's divergent Scripts/capture_private_review_downstream_exec.py bytes, so fixture/source-contract alignment is required without weakening raw-tree authority.",
-      "pr": 2890,
-      "headSHA": "fc662c996ad4551e3bd7bba6e225e3bee9aa620c"
-    },
-    {
-      "id": "build-authority-exact-head-not-yet-accepted",
+      "id": "build-authority-current-convergence-not-accepted",
       "state": "ACTIVE",
       "scope": "dependency",
-      "reason": "Selected build-authority convergence #2907 exact d0b134ca2a49edc029f114660dfb8e216ece682e has all current field/security/graft gates terminal green, but its fresh exact-head Xcode run 31488213467 was still in progress at reconciliation time. Queued/running is not accepted, and Final-GO cannot outrun that dependency.",
-      "pr": 2907,
-      "headSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e"
+      "reason": "Final-GO control successor #2921 exact bf33fb64f9ffcc1301984d4fba5ca468631151a8 is exact-head control green, but current selected build-authority convergence #2968 exact 3c2244ed599d2d0cc557132ef89ea043b68697b3 is NEEDS_CHANGES and has no promotable Field/Graft/Xcode acceptance. Final-GO cannot authorize or outrun that dependency.",
+      "pr": 2968,
+      "headSHA": "3c2244ed599d2d0cc557132ef89ea043b68697b3"
+    },
+    {
+      "id": "final-go-independent-review-and-final-composition-pending",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "#2921 exact bf33fb64 has Capture Authenticated Stationary Private Review Final GO runs 31490569648 and 31491154798 terminal SUCCESS. Xcode is skipped by path policy and is not counted. Fresh independent exact-head review and deliberate final flagship composition against accepted build/private/signed/app-visible subjects are still required; control green alone is not physical GO.",
+      "pr": 2921,
+      "headSHA": "bf33fb64f9ffcc1301984d4fba5ca468631151a8"
     }
   ],
   "mode": "exclusive",
@@ -37,20 +37,20 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "fc662c996ad4551e3bd7bba6e225e3bee9aa620c",
+  "sourceSHA": "bf33fb64f9ffcc1301984d4fba5ca468631151a8",
   "legacy": {
     "selectedGeneratedPR": 2775,
     "selectedGeneratedHeadSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f",
     "selectedPrivateReviewRecoveryPR": 2873,
-    "selectedPrivateReviewRecoveryHeadSHA": "65e9aadc8797c7b8ff33c73616892fcac6ff217b",
-    "selectedProductionPR": 2890,
-    "selectedProductionHeadSHA": "fc662c996ad4551e3bd7bba6e225e3bee9aa620c",
+    "selectedPrivateReviewRecoveryHeadSHA": "3c8711f8520b93e2647ec9e3b52d50894193bc30",
+    "selectedProductionPR": 2921,
+    "selectedProductionHeadSHA": "bf33fb64f9ffcc1301984d4fba5ca468631151a8",
     "rawTreeRedTeamPR": 2903,
     "rawTreeRedTeamHeadSHA": "a19b9c389f76c3838436b13b5b87b33def258d5c",
-    "finalGoFailureRun": 31481279993,
-    "redTeamInputs": [2798,2869,2903],
-    "lineagePRs": [2638,2775,2791,2798,2803,2873,2890,2903],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T11:56Z. Live production #2890 moved beyond the stale #2873 blocker to exact fc662c99 and now contains a raw physical candidate-tree scanner, but exact-head Final GO self-test 31481279993 is red. It catches divergent accepted-root helper bytes yet still admits at least three adversarial states that must block: untracked build-visible source, accepted commit/tree with differing checkout bytes, and missing build-visible tracked source. Snapshot-race expectations are partly masked by divergent helper fixture bytes. Fresh primary/tests/review claims are all active on this exact head, so reconciliation did not seize product ownership. #2903 remains the expected-red raw-tree diagnostic against the prior #2890 head. Build authority #2907 exact Xcode is also still pending acceptance. PHYSICAL NO-GO."
+    "finalGoSuccessRuns": [31490569648,31491154798],
+    "redTeamInputs": [2798,2869,2903,2936],
+    "lineagePRs": [2638,2775,2791,2798,2803,2873,2890,2903,2936,2938,2921],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T20:15Z by sol-20260811-b7c1a2. #2921 exact bf33fb64 is the current Final-GO control successor and its canonical private-review Final-GO workflow is terminal SUCCESS twice on that unchanged head. This supersedes the stale #2890 self-test-red lane snapshot. Xcode on #2921 remains skipped by path policy and is not product acceptance. Current build authority #2968 is red/nonpromotable, private identity and signed-install remain separate unfinished dependencies, and the final composed unchanged candidate has not re-earned all product/security/device gates. Therefore Final-GO is control-ready only, not physical authority. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","physical-go","control-authority","git-authority","legacy-import"]
 }
