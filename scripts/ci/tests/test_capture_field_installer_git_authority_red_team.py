@@ -103,25 +103,32 @@ class CaptureFieldInstallerGitAuthorityRedTeamTests(unittest.TestCase):
         directory_rejection = '''        if relative not in tracked_directories:\n            directories.remove(name)\n            raise SystemExit(\n                "untracked accepted-source path outside field-input allowlist: " + relative\n            )'''
         self.assertIn(directory_rejection, source)
 
-    def test_physical_tool_execution_ignores_caller_path(self) -> None:
+    def test_physical_tool_execution_ignores_caller_path_and_uses_admitted_xcode(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
         self.assertTrue(source.startswith("#!/bin/bash -p\n"))
         path_fence = 'PATH="/usr/bin:/bin:/usr/sbin:/sbin"'
         environment_fence = "unset BASH_ENV ENV CDPATH"
+        xcode_selector_fence = "unset DEVELOPER_DIR SDKROOT TOOLCHAINS || true"
         root_derivation = 'ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"'
         self.assertIn(path_fence, source)
         self.assertIn("export PATH", source)
         self.assertIn(environment_fence, source)
+        self.assertIn(xcode_selector_fence, source)
         self.assertIn(root_derivation, source)
         self.assertLess(source.index(path_fence), source.index(root_derivation))
         self.assertLess(source.index("export PATH"), source.index(root_derivation))
         self.assertLess(source.index(environment_fence), source.index(root_derivation))
+        self.assertLess(source.index(xcode_selector_fence), source.index(root_derivation))
         self.assertLess(source.index("hash -r"), source.index(root_derivation))
         self.assertNotIn("command -v pod", source)
-        self.assertIn("[[ -x /usr/bin/xcodebuild ]]", source)
         self.assertIn("[[ -x /usr/bin/xcrun ]]", source)
-        self.assertIn("-- /usr/bin/xcodebuild \\", source)
-        self.assertIn("/usr/bin/xcrun xctrace list devices", source)
+        self.assertIn('SELECTED_DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"', source)
+        self.assertIn('validate_root_custodied_path "$SELECTED_DEVELOPER_DIR" directory', source)
+        self.assertIn('SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)"', source)
+        self.assertIn('-- "$SELECTED_XCODEBUILD" \\', source)
+        self.assertNotIn('-- /usr/bin/xcodebuild \\', source)
+        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun xctrace list devices', source)
+        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl', source)
         self.assertIn("/usr/bin/security find-identity", source)
 
     def test_bootstrap_executes_only_from_exact_accepted_git_bytes(self) -> None:
