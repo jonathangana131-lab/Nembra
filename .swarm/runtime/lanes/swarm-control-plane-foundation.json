@@ -6,7 +6,7 @@
   "title": "GitHub-native swarm control plane foundation",
   "objective": "Implement, adversarially validate, and safely shadow-roll out atomic GitHub-native coordination without weakening Nembra product or physical-safety truth.",
   "priority": 0,
-  "state": "REVIEW",
+  "state": "NEEDS_CHANGES",
   "dependencies": [],
   "blockers": [],
   "mode": "exclusive",
@@ -15,9 +15,11 @@
     "scripts/swarmcp",
     "scripts/swarm_control.py",
     "scripts/ci/tests/test_swarm_control_plane.py",
+    "scripts/ci/tests/test_swarm_control_plane_regressions.py",
     ".github/workflows/swarm-control-plane-shadow.yml",
     "docs/SWARM_CONTROL_PLANE.md",
-    "docs/adr/ADR-0015-github-native-swarm-control-plane.md"
+    "docs/adr/ADR-0015-github-native-swarm-control-plane.md",
+    "SWARM_GO.md"
   ],
   "adjacentWriteAreas": [],
   "slots": [
@@ -29,5 +31,5 @@
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOURCE_READY"},
   "sourceSHA": "e17238c2df0f1ce331a6924da79ff137e0f15b2e",
-  "tags": ["control-plane", "shadow-rollout"]
+  "tags": ["control-plane", "shadow-rollout", "review-repair"]
 }
