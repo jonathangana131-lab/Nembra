@@ -21,17 +21,17 @@
       "id": "standard-first-fold-successor-verification",
       "state": "ACTIVE",
       "scope": "product-quality",
-      "reason": "The accepted app-visible baseline remains #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27. The live density/accessibility successor is now #2979 exact ce9e2bac253fedf6a61f79614519058fc6da116f, which consumes #2990's spoken-authority red-team. On ce9e2bac Main Graft 31534132595, Field Build Provenance 31534132593, and Xcode 27 31534132605 are terminal SUCCESS, while Standalone Visual 31534132613 is still queued. Do not promote the successor or its ancestor pixel evidence until exact-head visual evidence terminates and is human-reviewed.",
+      "reason": "The accepted app-visible baseline remains #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27. The live density/accessibility successor is #2979 exact ce9e2bac253fedf6a61f79614519058fc6da116f, which consumes #2990's spoken-authority red-team. On ce9e2bac Main Graft 31534132595, Field Build Provenance 31534132593, and Xcode 27 31534132605 are terminal SUCCESS, while Standalone Visual 31534132613 is still queued. Do not promote the successor or its ancestor pixel evidence until exact-head visual evidence terminates and is human-reviewed.",
       "pr": 2979,
       "headSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f"
     },
     {
-      "id": "runtime-voiceover-not-yet-accepted",
+      "id": "runtime-voiceover-diagnostic-evidence-pending",
       "state": "ACTIVE",
       "scope": "accessibility",
-      "reason": "Runtime VoiceOver recovery #2973 exact 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9 is still evidence-in-progress against accepted product parent #2940. Capture Runtime VoiceOver run 31533392572 and Main Selective Graft 31533392699 are in progress; Xcode 31533392474 is skipped. Final Accessibility acceptance requires testsCount > 0, actual accessibility audit execution, real VoiceOver traversal, required semantic ordering, forbidden-authority absence, and retained exact provenance. In-progress/skipped are not acceptance.",
-      "pr": 2973,
-      "headSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9"
+      "reason": "#2973 exact 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9 is terminal runtime RED, not accessibility-accepted: Main Selective Graft 31533392699 succeeded, but Capture Runtime VoiceOver 31533392572 failed with xcodebuild exit 65 after exact bind/build/iPhone 12+iOS 27 Accessibility XXXL baseline/witness injection. The same job then failed artifact upload with runner/network ENOTFOUND, so no retained xcresult/transcript exists and the direct XCTest red cannot truthfully be classified as a product semantic defect. Source review also found the strict 64-step moveForward oracle attached its speech transcript only after all moves completed. Active non-conflicting recovery #3012 exact b7c746d063bb53660c8157c652c2e64e246967b8 preserves fail-closed traversal but retains accumulated speech on every exit; its Runtime VoiceOver run 31536488987 and Main Graft 31536488971 are queued. Require #3012 exact retained runtime evidence before accessibility classification; queued is not acceptance.",
+      "pr": 3012,
+      "headSHA": "b7c746d063bb53660c8157c652c2e64e246967b8"
     }
   ],
   "mode": "exclusive",
@@ -58,10 +58,16 @@
       "xcode": 31534132605
     },
     "candidateSuccessorGateState": "SOFTWARE_GREEN_VISUAL_QUEUED",
-    "runtimeVoiceOverPR": 2973,
-    "runtimeVoiceOverHeadSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
-    "runtimeVoiceOverRun": 31533392572,
+    "runtimeVoiceOverFailedPR": 2973,
+    "runtimeVoiceOverFailedHeadSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
+    "runtimeVoiceOverFailedRun": 31533392572,
     "runtimeVoiceOverMainGraftRun": 31533392699,
+    "runtimeVoiceOverFailureClass": "UNRESOLVED_XCTEST_RED_PLUS_ARTIFACT_UPLOAD_INFRA_FAILURE",
+    "runtimeVoiceOverRecoveryPR": 3012,
+    "runtimeVoiceOverRecoveryHeadSHA": "b7c746d063bb53660c8157c652c2e64e246967b8",
+    "runtimeVoiceOverRecoveryRun": 31536488987,
+    "runtimeVoiceOverRecoveryMainGraftRun": 31536488971,
+    "runtimeVoiceOverGateState": "DIAGNOSTIC_EVIDENCE_PENDING",
     "previousAcceptedAppVisibleBaselinePR": 2612,
     "previousAcceptedAppVisibleBaselineHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
     "supersededVisualPRs": [2612, 2841, 2891],
@@ -72,7 +78,7 @@
       "accessibilityXXXLReview": "PASS"
     },
     "baseMainAtObservation": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-    "note": "Reconciled 2026-08-11T21:07Z by sol-20260811-1400q7. The prior lane blocker still pointed at #2940 as if no product successor existed. Live #2979 exact ce9e2bac now has Main/Field/Xcode exact-head success and preserves full spoken physical/build authority while compacting sighted first-fold copy, but its exact Standalone Visual run is queued so #2940 remains the accepted app-visible baseline. Runtime VoiceOver #2973 exact 4ed3c579 is independently still in progress and cannot be promoted. Final-GO is an accepted software ingredient only; build/private/signed authority remain uncomposed. PHYSICAL NO-GO."
+    "note": "Reconciled 2026-08-11T21:13Z by sol-20260811-1400q7. #2973 exact 4ed3c579 is now terminal red: the direct runtime XCTest exited 65 and the evidence upload independently failed ENOTFOUND, leaving no retained xcresult/transcript and therefore no truthful product-vs-harness semantic classification. #3012 exact b7c746d is the selected test-only evidence-retention recovery and is queued. #2979 exact ce9e2bac remains the preferred app-visible product successor with exact Main/Field/Xcode success but visual queued, so #2940 remains accepted baseline. Final-GO is accepted software ingredient only; build/private/signed authority remain uncomposed. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "flagship", "app-visible", "composition", "accessibility"]
 }
