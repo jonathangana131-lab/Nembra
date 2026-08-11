@@ -87,6 +87,7 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         digest_shape = '[[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]'
         lock_compare = '[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]]'
         review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
+        guarded_pod_install = '"$POD_BIN" install --repo-update'
         bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
         build_call = "-- xcodebuild"
 
@@ -96,9 +97,10 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
             digest_shape,
             lock_compare,
             review_only_stop,
+            guarded_pod_install,
         ):
             self.assertIn(required, bootstrap)
-        self.assertLess(bootstrap.index(required_digest), bootstrap.index("pod install --repo-update"))
+        self.assertLess(bootstrap.index(required_digest), bootstrap.index(guarded_pod_install))
         self.assertLess(bootstrap.index(lock_compare), bootstrap.index("NEXT BUILD RULE:"))
         self.assertIn(bootstrap_call, installer)
         self.assertIn(build_call, installer)
