@@ -39,6 +39,13 @@ build_subject = _load_helper(
 )
 
 
+def _normalize_sha256(value: str) -> str:
+    normalized = value.lower()
+    if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
+        raise BuildGuardError("expected accepted lock digest must be exactly 64 hexadecimal characters")
+    return normalized
+
+
 @dataclass(frozen=True)
 class PrivateInputs:
     lockfile: Path
@@ -46,6 +53,7 @@ class PrivateInputs:
     security_build: Path
     identity_podspec: Path
     identity_sources: Path
+    expected_lock_sha256: str
 
     @property
     def generated_pods(self) -> Path:
@@ -60,6 +68,7 @@ class PrivateInputs:
         return self.generated_pods / "Manifest.lock"
 
     def _lock_mirror_snapshot(self) -> tuple[str, str]:
+        expected_lock_sha256 = _normalize_sha256(self.expected_lock_sha256)
         try:
             lock_sha256 = build_subject.stable_file_sha256(self.lockfile)
             manifest_sha256 = build_subject.stable_file_sha256(self.generated_manifest)
@@ -67,6 +76,10 @@ class PrivateInputs:
             raise BuildGuardError(
                 f"CocoaPods lock/manifest mirror could not be admitted: {error}"
             ) from error
+        if lock_sha256 != expected_lock_sha256:
+            raise BuildGuardError(
+                "current attested Podfile.lock does not match the preaccepted field-build lock digest"
+            )
         if manifest_sha256 != lock_sha256:
             raise BuildGuardError(
                 "Pods/Manifest.lock does not exactly mirror the reviewed attested Podfile.lock"
@@ -394,6 +407,7 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     parser.add_argument("--security-build", required=True, type=Path)
     parser.add_argument("--identity-podspec", required=True, type=Path)
     parser.add_argument("--identity-sources", required=True, type=Path)
+    parser.add_argument("--expected-lock-sha256", required=True)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(list(argv))
     command = list(args.command)
@@ -406,14 +420,15 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
             security_build=args.security_build.resolve(),
             identity_podspec=args.identity_podspec.resolve(),
             identity_sources=args.identity_sources.resolve(),
+            expected_lock_sha256=_normalize_sha256(args.expected_lock_sha256),
         ),
         command,
     )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    inputs, command = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
+        inputs, command = _parse_args(sys.argv[1:] if argv is None else argv)
         return run_guarded_build(inputs, command)
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
