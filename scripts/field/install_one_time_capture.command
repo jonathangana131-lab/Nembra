@@ -260,15 +260,12 @@ SIGNED_APP_CUSTODY_HELPER_PATH="scripts/ci/capture_signed_app_install_custody.py
 SIGNED_APP_CUSTODY_HELPER_BLOB="$(/usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_CUSTODY_HELPER_PATH" 2>/dev/null)" || \
     die "Signed-app custody helper is missing from the exact accepted Git tree."
 [[ "$SIGNED_APP_CUSTODY_HELPER_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Signed-app custody helper Git blob identity is malformed."
-SIGNED_APP_CUSTODY_HELPER_SOURCE="$(
-    /usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" || exit 1
-    printf ''
-)" || die "Could not capture signed-app custody helper from the accepted Git object."
-[[ "${SIGNED_APP_CUSTODY_HELPER_SOURCE: -1}" == $'' ]] || die "Signed-app custody helper capture sentinel is missing."
-SIGNED_APP_CUSTODY_HELPER_SOURCE="${SIGNED_APP_CUSTODY_HELPER_SOURCE%$''}"
-[[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_SOURCE" | /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \
-    die "Captured signed-app custody helper bytes do not match the accepted Git blob."
-SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I -c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" fingerprint --app "$APP")" || \
+SIGNED_APP_CUSTODY_HELPER_BASE64="$(/usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" | /usr/bin/base64)" || \
+    die "Could not capture signed-app custody helper from the accepted Git object."
+[[ -n "$SIGNED_APP_CUSTODY_HELPER_BASE64" ]] || die "Captured signed-app custody helper is empty."
+[[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \
+    die "Decoded signed-app custody helper bytes do not match the accepted Git blob."
+SOURCE_APP_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/python3 -I - fingerprint --app "$APP")" || \
     die "Could not bind the exact post-build signed-app tree before protected staging."
 [[ "$SOURCE_APP_TREE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Signed-app tree fingerprint is malformed."
 
@@ -303,7 +300,7 @@ APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"
     die "Could not root-own every protected signed-app install entry."
 /usr/bin/sudo /bin/chmod 0755 "$APP_INSTALL_STAGE_ROOT" || \
     die "Could not expose read-only traversal of the protected signed-app install stage."
-STAGED_APP_TREE_SHA256="$(/usr/bin/python3 -I -c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" verify-stage \
+STAGED_APP_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/python3 -I - verify-stage \
     --stage-root "$APP_INSTALL_STAGE_ROOT" \
     --app "$APP_INSTALL_STAGE" \
     --expected "$SOURCE_APP_TREE_SHA256")" || \
@@ -467,7 +464,7 @@ INSTALL_LOG=""
 /usr/bin/sudo /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT" || die "Could not remove the protected signed-app install stage after successful launch."
 APP_INSTALL_STAGE_ROOT=""
 trap - EXIT
-unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_SOURCE APP_INSTALL_STAGE
+unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_BASE64 APP_INSTALL_STAGE
 
 say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \

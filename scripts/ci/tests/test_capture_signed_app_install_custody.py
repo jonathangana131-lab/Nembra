@@ -48,11 +48,11 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
     def test_installer_moves_authority_to_protected_stage_before_codesign(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
         app_marker = 'APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"'
-        fingerprint_marker = '-c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" fingerprint --app "$APP"'
+        fingerprint_marker = '/usr/bin/python3 -I - fingerprint --app "$APP"'
         stage_marker = '/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX'
         copy_marker = '/usr/bin/sudo /usr/bin/ditto "$APP" "$APP_INSTALL_STAGE"'
         owner_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -exec /usr/sbin/chown -h root:wheel {} +'
-        verify_stage_marker = '-c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" verify-stage'
+        verify_stage_marker = '/usr/bin/python3 -I - verify-stage'
         switch_marker = 'APP="$APP_INSTALL_STAGE"'
         codesign_marker = '/usr/bin/codesign --verify --deep --strict "$APP"'
         install_marker = 'xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"'
@@ -73,12 +73,19 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
             self.assertGreaterEqual(indexes[name], 0, f"installer is missing {name} custody marker")
 
         blob_marker = source.find('/usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"')
+        decode_marker = source.find('/usr/bin/base64 -D')
         hash_marker = source.find('/usr/bin/git hash-object --stdin')
         self.assertGreaterEqual(blob_marker, 0)
+        self.assertGreaterEqual(decode_marker, 0)
         self.assertGreaterEqual(hash_marker, 0)
         self.assertLess(blob_marker, indexes["fingerprint"])
+        self.assertLess(decode_marker, indexes["fingerprint"])
         self.assertLess(hash_marker, indexes["fingerprint"])
         self.assertNotIn('/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py"', source)
+        self.assertNotIn('SIGNED_APP_CUSTODY_HELPER_SOURCE=', source)
+        self.assertIn('SIGNED_APP_CUSTODY_HELPER_BASE64=', source)
+        self.assertIn("/usr/bin/base64 -D | /usr/bin/python3 -I - fingerprint", source)
+        self.assertIn("/usr/bin/base64 -D | /usr/bin/python3 -I - verify-stage", source)
 
         self.assertLess(indexes["app"], indexes["fingerprint"])
         self.assertLess(indexes["fingerprint"], indexes["stage"])
