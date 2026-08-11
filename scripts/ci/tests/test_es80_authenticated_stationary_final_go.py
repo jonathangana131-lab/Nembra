@@ -123,4 +123,25 @@ class T(unittest.TestCase):
   self.no(lambda:self.f.build(run_installer=change_lock_review));self.f.map[lockreview]['body']=self.f.lock_body()
   def change_device(r,s,d,lock):x=self.f.inst(r,s,d,lock);self.f.dev.write_text('other-device\n');return x
   self.no(lambda:self.f.build(run_installer=change_device))
+ def test_candidate_rejects_assume_unchanged_installer_tamper(self):
+  path=self.f.repo/go.INSTALLER
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--assume-unchanged',go.INSTALLER],check=True)
+  path.write_text(path.read_text()+'# hidden replacement bytes\n')
+  self.no(lambda:go.candidate(self.f.repo,self.f.s))
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--no-assume-unchanged',go.INSTALLER],check=True)
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'checkout','--',go.INSTALLER],check=True)
+ def test_candidate_rejects_skip_worktree_installer_tamper(self):
+  path=self.f.repo/go.INSTALLER
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--skip-worktree',go.INSTALLER],check=True)
+  path.write_text(path.read_text()+'# hidden replacement bytes\n')
+  self.no(lambda:go.candidate(self.f.repo,self.f.s))
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--no-skip-worktree',go.INSTALLER],check=True)
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'checkout','--',go.INSTALLER],check=True)
+ def test_candidate_rejects_assume_unchanged_bootstrap_tamper(self):
+  path=self.f.repo/go.BOOTSTRAP
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--assume-unchanged',go.BOOTSTRAP],check=True)
+  path.write_text(path.read_text()+'# hidden lock-bypass bytes\n')
+  self.no(lambda:go.candidate(self.f.repo,self.f.s))
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index','--no-assume-unchanged',go.BOOTSTRAP],check=True)
+  subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'checkout','--',go.BOOTSTRAP],check=True)
 if __name__=='__main__':unittest.main(verbosity=2)
