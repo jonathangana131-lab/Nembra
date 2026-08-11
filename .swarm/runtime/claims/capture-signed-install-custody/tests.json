@@ -9,13 +9,13 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:54:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:54:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:00:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-signed-origin-apfs-mmap-gpt56-sol-20260811",
-  "pr": null,
+  "pr": 3064,
   "sourceSHA": "8519b1ec4fd0ab0de7bd77ef24eb4ee494c8ed71",
-  "currentHeadSHA": "8519b1ec4fd0ab0de7bd77ef24eb4ee494c8ed71",
+  "currentHeadSHA": "07c516c76364a531dac6de18a6f49f915c4b3f9d",
   "takeoverFromWorkerId": "sol-20260811-1312t8",
   "takeoverReason": "Generation-4 tests last heartbeat 2026-08-11T20:40:00Z plus 1800-second lease expired. Recover the free tests slot for one uncovered compiler-output authority class: a detached process retaining a writable shared mmap across the proposed APFS detach/read-only-remount boundary. Existing regular-file FD (#3027) and directory-FD (#3029/#3039) probes remain independently owned; do not duplicate them. PHYSICAL NO-GO.",
-  "checkpoint": "Recovered stale tests slot on corrected structured/minimal-credential APFS parent #3027 exact 8519b1ec. Next: add a validation-only mmap authority witness that distinguishes busy detach from successful detach and requires no post-detach mapping mutation to persist. No production bytes or physical authority."
+  "checkpoint": "Published validation-only draft #3064 exact 07c516c on #3027 exact 8519b1ec. The witness closes the original file FD before READY, retains only ACCESS_WRITE shared mmap authority, uses minimal structured supplementary-group authority, classifies detach by hdiutil info -plist postcondition instead of exit status alone, and requires no post-detach mapping mutation to persist into read-only remount. Exact macOS workflow 31540344837 queued; queued != evidence. No production bytes or physical authority."
 }
