@@ -50,6 +50,7 @@ jobs:
           fi
           git diff --check "$DASHBOARD_PRODUCT_PARENT_SHA"...HEAD
           grep -Fq 'NEMBRA_SIMULATION_DASHBOARD_STRESS' NembraApp/App/AppBootstrap.swift
+          grep -Fq 'while !Task.isCancelled' NembraApp/App/AppBootstrap.swift
           grep -Fq 'elapsedSeconds: 0' NembraApp/App/AppBootstrap.swift
           grep -Fq 'XCTHitchMetric(application: app)' scripts/ci/dashboard_sustained_performance_xcuitest.swift
           grep -Fq 'XCTCPUMetric(application: app)' scripts/ci/dashboard_sustained_performance_xcuitest.swift
@@ -123,6 +124,66 @@ jobs:
           printf 'NEMBRA_DASH_PERF_TEST_STATUS=%s\n' "$status" >> "$GITHUB_ENV"
           exit "$status"
 
+      - name: Require emitted hitch, CPU, and memory metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/NembraDashboardSustainedPerformance.xcresult"
+          database="$result/database.sqlite3"
+          metrics_json="$RUNNER_TEMP/NembraDashboardSustainedPerformanceMetrics.json"
+          test -f "$database"
+          /usr/bin/python3 - "$database" "$metrics_json" <<'PY'
+          import json
+          import sqlite3
+          import sys
+          from pathlib import Path
+
+          database = Path(sys.argv[1])
+          output = Path(sys.argv[2])
+          connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+          try:
+              rows = connection.execute(
+                  "SELECT identifier, displayName, unitOfMeasurement, measurements "
+                  "FROM PerformanceMetrics ORDER BY orderInTestCase"
+              ).fetchall()
+          finally:
+              connection.close()
+
+          records = [
+              {
+                  "identifier": identifier or "",
+                  "displayName": display_name or "",
+                  "unitOfMeasurement": unit or "",
+                  "measurements": measurements or "",
+              }
+              for identifier, display_name, unit, measurements in rows
+          ]
+          observed = set()
+          for record in records:
+              searchable = (record["identifier"] + " " + record["displayName"]).lower()
+              if "hitch" in searchable:
+                  observed.add("hitch")
+              if "cpu" in searchable:
+                  observed.add("cpu")
+              if "memory" in searchable:
+                  observed.add("memory")
+
+          required = {"hitch", "cpu", "memory"}
+          missing = sorted(required - observed)
+          payload = {
+              "schemaVersion": 1,
+              "requiredMetricFamilies": sorted(required),
+              "observedMetricFamilies": sorted(observed),
+              "missingMetricFamilies": missing,
+              "performanceMetrics": records,
+          }
+          output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          if missing:
+              raise SystemExit("required XCTest performance metric family was not emitted: " + ", ".join(missing))
+          PY
+          printf 'NEMBRA_DASH_PERF_METRIC_PRESENCE_GATE=passed\n' >> "$GITHUB_ENV"
+
       - name: Seal sustained-performance evidence
         if: always()
         shell: bash
@@ -133,6 +194,7 @@ jobs:
           mkdir -p "$evidence/attachments"
           witness_sha="$(shasum -a 256 scripts/ci/dashboard_sustained_performance_xcuitest.swift | awk '{print $1}')"
           cp "$RUNNER_TEMP/NembraDashboardSustainedPerformance.log" "$evidence/xcodebuild.log" 2>/dev/null || true
+          cp "$RUNNER_TEMP/NembraDashboardSustainedPerformanceMetrics.json" "$evidence/performance-metrics.json" 2>/dev/null || true
           if [[ -d "$result" ]]; then
             if ! xcrun xcresulttool export attachments --path "$result" --output-path "$evidence/attachments" > "$evidence/xcresult-attachments.log" 2>&1; then
               printf '%s\n' 'Attachment export failed; complete xcresult is still preserved.' >> "$evidence/xcresult-attachments.log"
@@ -143,7 +205,7 @@ jobs:
           import json,os,platform,sys
           path,witness=sys.argv[1:]
           record={
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "authority": "dashboard-sustained-performance-simulator-only",
               "sourceCommitSHA": os.environ.get("NEMBRA_DASH_PERF_SOURCE_SHA", "unavailable"),
               "productParentSHA": os.environ.get("NEMBRA_DASH_PERF_PRODUCT_PARENT", "c150a8287463231ee9af174c38564738bab576a3"),
@@ -152,9 +214,11 @@ jobs:
               "simulatorRuntime": os.environ.get("NEMBRA_DASH_PERF_RUNTIME", "unavailable"),
               "hostArchitecture": platform.machine(),
               "sourceStressCadenceHz": 10,
-              "sourceStressUpdateCount": 120,
+              "sourceStressLifetime": "fixture-lifetime-until-cancelled",
               "sourceStressElapsedSecondsPerUpdate": 0,
               "requestedMetrics": ["XCTHitchMetric", "XCTCPUMetric", "XCTMemoryMetric"],
+              "metricPresenceGateRequired": True,
+              "metricPresenceGatePassed": os.environ.get("NEMBRA_DASH_PERF_METRIC_PRESENCE_GATE") == "passed",
               "metricThresholdsApplied": False,
               "runtimeWitnessSHA256": witness,
               "testExitStatus": os.environ.get("NEMBRA_DASH_PERF_TEST_STATUS", "unavailable"),
