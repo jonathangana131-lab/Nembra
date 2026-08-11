@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "092430-nv46-navigation-visual-review",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-nv46",
+  "laneId": "navigation-app-visible",
+  "message": "Runtime visual review of parent PR #2831 using exact-head child run 31475149163 recording: functional recovery evidence but NOT V14 visual acceptance. Real MapKit surface exists; current modal still reads as generic Maps, exposes evidence/debugger copy, removes machine/cockpit context, and lacks a landscape entry path. Truth boundaries remain sound and must not be weakened for polish.",
+  "createdAt": "2026-08-11T09:24:30Z",
+  "data": {
+    "pr": 2831,
+    "headSHA": "d43bf700c3b2fca8881e4947cdbf8f2c6226c84b",
+    "evidenceRun": 31475149163,
+    "commentId": 5251341353,
+    "visualAcceptance": "BLOCKED",
+    "physicalStatus": "PHYSICAL_NO_GO"
+  }
+}
