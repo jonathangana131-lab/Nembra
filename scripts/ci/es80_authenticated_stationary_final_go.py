@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse, hashlib, importlib.util, json, os, re, stat, subprocess, sys, urllib.request, zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 REPO="jonathangana131-lab/Nembra"; PROC="ES80-AUTHENTICATED-STATIONARY-v1"
 BUNDLE="com.jonathangana131.nembra.capturelearn"; DEVICE="iPhone 12"; PRODUCT="iPhone13,2"
@@ -149,9 +149,21 @@ def installer(repo:Path,source:str,device:Path):
     return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
 
 def build(*,candidate_repo:Path,source:str,pr:int,runs:dict[str,int],artifact_id:int,archive:Path,attestation:Path,device_file:Path,get=api,run_installer=installer,now=None):
-    source=canon(source,"source"); pr=pos(pr,"PR"); ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(attestation,source,vs); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
+    source=canon(source,"source"); pr=pos(pr,"PR")
+    ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(attestation,source,vs); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
     got=run_installer(candidate_repo,source,device_file); expected={"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
     if got!=expected: raise GoError("private installer result drifted")
+
+    # Installation is intentionally the last side effect, but it may take long enough for the
+    # canonical PR or retained acceptance evidence to move underneath us. Re-read every mutable
+    # authority subject after launch and require it to be byte/identity-equivalent before GO is
+    # published. PR state may legitimately move open -> closed/merged; its exact head/branch/base may not.
+    post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(attestation,source,post_vs); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file)
+    stable_pr=("number","headSHA","headBranch","base")
+    if any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh:
+        raise GoError("GO authority changed during private install; re-run from fresh exact evidence")
+    ps,ws,vs,rv,cs,dh=post_ps,post_ws,post_vs,post_rv,post_cs,post_dh
+
     stamp=(now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat().replace("+00:00","Z")
     return {"schemaVersion":1,"authority":"nembra-authenticated-stationary-final-go-v1","status":"GO","createdAtUTC":stamp,"acceptedSourceCommitSHA":source,"acceptedPR":ps,"procedureIdentifier":PROC,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"softwareAcceptance":ws,"visualArtifact":vs,"visualReview":rv,"candidateSource":cs,"privateFieldInstall":{**got,"intendedDeviceIdentifierSHA256":dh},"experiment":{"scope":"one stationary authenticated read-only ES80 Capture attempt","baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27","initialScooterState":"OFF and stationary","runtimeRequiredGates":["field-build provenance remains current","official Tuya SDK + owning account","fresh exact scooter membership/UID lease","fresh unique OFF1 -> ON1 -> OFF2 -> ON2 full-UUID correlation","explicit operator target confirmation","official Tuya SDK sole post-handoff BLE owner",">=45 monotonic seconds same-generation authenticated application evidence","seal accepted immutable prefix before share"],"expectedArtifact":"one immutable sanitized Nembra Capture JSON","expectedArtifactTruth":{"rawFD50BytesCaptured":False,"dpQueriesSent":False,"dpCommandsSent":False},"stopConditions":["authority/account/membership changes","correlation none/ambiguous","continuity/clock/lifecycle fails","no same-generation evidence by deadline","any secret leak","any DP query/publish, scooter command, reset/unbind/OTA, or second post-auth CoreBluetooth owner"],"ridingAuthorized":False,"applicationWritesAuthorized":False,"dpQueryOrPublishAuthorized":False,"scooterCommandsAuthorized":False},"physicalResultCollected":False}
 
