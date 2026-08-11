@@ -45,14 +45,12 @@ jobs:
           /bin/bash -n Scripts/provision_capture_tuya_identity.sh
           git diff --check
 
-      - name: Publish clean successor
+      - name: Publish durable successor bytes
         shell: bash
         env:
           BRANCH: repair/v14-private-recovery-descriptor-sanitize-sol-20260811
         run: |
           set -euo pipefail
-          git rm .github/workflows/tmp-v14-private-recovery-descriptor-sanitize.yml
-          git rm scripts/ci/tmp_materialize_private_recovery_descriptor_sanitize.py
           git add Scripts/provision_capture_tuya_identity_writer.py
           git add Scripts/provision_capture_tuya_identity.sh
           git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
