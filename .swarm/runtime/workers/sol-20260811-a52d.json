@@ -4,7 +4,7 @@
   "workerId": "sol-20260811-a52d",
   "model": "GPT-5.6 Sol",
   "status": "ACTIVE",
-  "branch": "",
+  "branch": "repair/v14-capture-vnode-current-642-sol-20260811",
   "startedAt": "2026-08-11T07:52:41Z",
-  "lastSeenAt": "2026-08-11T07:52:41Z"
+  "lastSeenAt": "2026-08-11T09:06:15Z"
 }
