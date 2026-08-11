@@ -15,10 +15,10 @@
   ],
   "blockers": [
     {
-      "id": "legacy-pr-active",
+      "id": "canonical-software-baseline-green-security-uncomposed",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Canonical flagship #2612 remains the single app-visible Capture spine at exact 513ebea576cd6d03132e215d80fac57397877fbf. On the latest exact-head refresh, TODAY Final GO, Legacy Final GO Entrypoint, Signed Candidate Reinspection, Final GO Hardening, Final GO GitHub API Custody, Main Selective Graft, Standalone Visual Evidence, and Field Build Provenance are terminal SUCCESS; Xcode 27 PR Exact-Head QA is still in progress. Security/build/private/signed-install authority remains deliberately uncomposed, so even full software green would not close Capture.",
+      "reason": "Canonical flagship #2612 remains the single app-visible Capture spine at exact 513ebea576cd6d03132e215d80fac57397877fbf. This unchanged exact head has now earned terminal SUCCESS on every currently triggered baseline gate: TODAY Final GO, Legacy Final GO Entrypoint, Signed Candidate Reinspection, Final GO Hardening, Final GO GitHub API Custody, Field Build Provenance, Standalone Visual Evidence, Main Selective Graft Diagnostic, and Xcode 27 PR Exact-Head QA. Therefore the canonical software/runtime baseline itself is currently green. This still does NOT close Capture because selected build authority, private-identity custody, signed-install custody, and private-review Final-GO authority remain deliberately uncomposed and individually blocked; those exact accepted descendants must be composed into one final flagship head and all impacted gates rerun.",
       "pr": 2612,
       "headSHA": "513ebea576cd6d03132e215d80fac57397877fbf"
     },
@@ -26,9 +26,9 @@
       "id": "root-large-type-visual-closure",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "App-visible child #2841 exact fbff1688e8da457cbf1f2702f90e41402bc7dbe3 addresses a retained screenshot weakness in the public/unprovisioned root, especially Accessibility XXXL, while preserving the explicit Physical capture locked truth and account-before-Bluetooth semantics. Field Provenance is terminal SUCCESS on this exact child; Standalone Visual Evidence and Main Selective Graft are in progress and Xcode exact-head QA is queued (an earlier Xcode trigger was skipped and is not acceptance). Require retained standard + Accessibility XXXL screenshots and human critique before composition; do not accept from source review alone.",
+      "reason": "App-visible visual/accessibility child #2841 has moved to actual exact head 899e0bf4de07401e2e036895aaf684373142253a while its body still names fbff1688. The first retained fbff screenshots were human-REJECTED at Accessibility XXXL because the lock and account headings consumed the first viewport and the safe Create approval QR action remained below the fold. Exact 899e source is directionally truth-preserving but is NOT a clean acceptance candidate: `.github/workflows/capture-root-ax-action-first-materialize.yml` remains in the exact PR diff with `contents: write` and is scripted to mutate the Accessibility layout again. On 899e, Field Provenance and Standalone Visual Evidence are green, Main Selective Graft is in progress, and Xcode 27 exact-head run 31474998182 is terminal FAILURE at `Validate Capture authority package`; Simulator state capture was skipped. Existing review identifies stale root visual source contracts as the package failure class. Required next rung is let the materializer finish or remove it, leave a clean intended product/test tree, deliberately update all existing root acceptance contracts, rerun package/Graft/Xcode/standard+AX5 screenshots, and human-review the NEW exact pixels. Old fbff screenshot digests cannot accept the moved UI.",
       "pr": 2841,
-      "headSHA": "fbff1688e8da457cbf1f2702f90e41402bc7dbe3"
+      "headSHA": "899e0bf4de07401e2e036895aaf684373142253a"
     }
   ],
   "mode": "exclusive",
@@ -56,7 +56,7 @@
     "primaryPR": 2612,
     "primaryHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
     "baseMainAtObservation": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-    "note": "Software flagship revalidation is nearly complete but Xcode remains non-terminal. #2841 is the current app-visible visual/accessibility child from this exact flagship and must earn screenshot-based human acceptance before composition. Final closure still requires selected security/build/private/signed-install authority composed into one exact descendant plus all moved-head product gates and later private intended-device/physical authorization requirements."
+    "note": "Reconciled 2026-08-11T09:02Z. Canonical #2612 exact baseline is fully green across all currently triggered software/runtime/visual/field/control-presence gates. The critical path has moved to unresolved security/control dependency composition and the separate #2841 Accessibility XXXL visual child. #2841 current 899e is dirty recovery scaffolding plus package/Xcode red and has no fresh human-accepted AX pixels. Even after visual acceptance, final physical authorization still requires the security dependencies, intended-device signed install/provenance rendezvous, and deliberate Final-GO on one final unchanged build."
   },
   "tags": ["capture", "p0", "flagship", "app-visible", "composition", "legacy-import"]
 }
