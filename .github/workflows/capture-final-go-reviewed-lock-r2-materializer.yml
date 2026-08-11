@@ -1,0 +1,194 @@
+name: Capture Final GO Reviewed Lock R2 Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v14-final-go-reviewed-lock-r2-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact current control-plane parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=5fc7eb8f0eb08ae309e021ed4c8c3c62d543300c
+          donor=7ca39be83842acb77e7c4eb46868d3348c8e4744
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          test "$(git diff --name-only "$parent" HEAD)" = '.github/workflows/capture-final-go-reviewed-lock-r2-materializer.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git cat-file -e "$donor^{commit}"
+
+      - name: Materialize separate reviewed dependency-lock authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          donor=7ca39be83842acb77e7c4eb46868d3348c8e4744
+          cp scripts/ci/tests/test_es80_authenticated_stationary_final_go.py /tmp/current_tests.py
+          git show "$donor":scripts/ci/es80_authenticated_stationary_final_go.py > /tmp/donor_issuer.py
+          git show "$donor":scripts/ci/tests/test_es80_authenticated_stationary_final_go.py > /tmp/donor_tests.py
+          git show "$donor":scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py > /tmp/donor_env_tests.py
+
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          def block(text: str, start: str, end: str) -> str:
+              a = text.index(start)
+              b = text.index(end, a)
+              return text[a:b]
+
+          issuer_path = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          current = issuer_path.read_text()
+          donor = Path('/tmp/donor_issuer.py').read_text()
+
+          constant = 'INSTALLER="scripts/field/install_one_time_capture.command"; RUNBOOK="docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"; IDENTITY="NembraApp/App/NembraCaptureBuildIdentity.swift"\n'
+          replacement = 'INSTALLER="scripts/field/install_one_time_capture.command"; BOOTSTRAP="Scripts/bootstrap_capture_tuya_sdk.sh"; RUNBOOK="docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"; IDENTITY="NembraApp/App/NembraCaptureBuildIdentity.swift"\n'
+          if current.count(constant) != 1:
+              raise SystemExit('BOOTSTRAP constant anchor drift')
+          current = current.replace(constant, replacement, 1)
+
+          # Keep visual acceptance independent. Add the donor's strict owner-custodied lock review.
+          lock_review = block(donor, 'def dependency_lock_review(', '\ndef git(')
+          if 'def dependency_lock_review(' in current:
+              raise SystemExit('dependency lock review already present')
+          current = current.replace('\ndef git(', '\n' + lock_review + '\ndef git(', 1)
+
+          # Candidate custody donor is based on the same hidden-index hardening and adds only the
+          # bootstrap authority path + preaccepted-lock-before-xcodebuild source contract.
+          donor_candidate = block(donor, 'def candidate(', '\ndef device_hash(')
+          c0 = current.index('def candidate(')
+          c1 = current.index('\ndef device_hash(', c0)
+          current = current[:c0] + donor_candidate + current[c1:]
+
+          # Preserve the newer intended-device path+digest handoff while adding exactly one
+          # reviewed dependency-lock value to the otherwise closed installer environment.
+          c0 = current.index('def installer_environment(')
+          c1 = current.index('\ndef retained_signed_artifact(', c0)
+          merged_installer = '''def installer_environment(device:Path,accepted_lock_sha:str)->dict[str,str]:
+              if not isinstance(accepted_lock_sha,str) or not HEX64.fullmatch(accepted_lock_sha): raise GoError("accepted Tuya dependency lock digest invalid")
+              account=pwd.getpwuid(os.getuid()); device_path=canonical_private_path(device,"private intended-device identifier")
+              intended_device_digest=device_hash(device_path)
+              return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":intended_device_digest,"NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256":accepted_lock_sha}
+
+          def installer(repo:Path,source:str,device:Path,accepted_lock_sha:str):
+              root=repo.expanduser().resolve(strict=True); env=installer_environment(device,accepted_lock_sha)
+              try:p=subprocess.run(["/bin/bash","--noprofile","--norc","-p",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+              except OSError as e: raise GoError("private installer execution failed") from e
+              if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
+              return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"acceptedTuyaDependencyLockSHA256":accepted_lock_sha,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
+          '''
+          current = current[:c0] + merged_installer + current[c1:]
+
+          # Reuse the donor's lock-review/install/signed-artifact chain, but retain current-main
+          # as part of post-install software subject stability.
+          donor_build = block(donor, 'def build(', '\ndef publication(')
+          old_stable = 'stable_pr=("number","headSHA","headBranch","base","state","merged","draft")'
+          if donor_build.count(old_stable) != 1:
+              raise SystemExit('donor stable PR anchor drift')
+          donor_build = donor_build.replace(old_stable, 'stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")', 1)
+          c0 = current.index('def build(')
+          c1 = current.index('\ndef publication(', c0)
+          current = current[:c0] + donor_build + current[c1:]
+
+          # CLI must require the exact GitHub dependency-lock review ID.
+          donor_main = donor[donor.index('def main('):]
+          c0 = current.index('def main(')
+          current = current[:c0] + donor_main
+          issuer_path.write_text(current)
+
+          # Start from the donor's mature lock-review regression fixture, then restore the newer
+          # exact-current-main API fixture and focused current-main/control-plane regressions.
+          donor_tests = Path('/tmp/donor_tests.py').read_text()
+          parent_tests = Path('/tmp/current_tests.py').read_text()
+          tests = donor_tests
+          d0 = tests.index(' def get(self,p):')
+          d1 = tests.index(' def control(', d0)
+          p0 = parent_tests.index(' def get(self,p):')
+          p1 = parent_tests.index(' def control(', p0)
+          tests = tests[:d0] + parent_tests[p0:p1] + tests[d1:]
+
+          def method(text: str, name: str) -> str:
+              start = text.index(f' def {name}(')
+              candidates = [x for x in (text.find('\n def ', start + 1), text.find('\nif __name__', start + 1)) if x != -1]
+              return text[start:min(candidates)] + '\n'
+
+          marker = '\nif __name__'
+          if marker not in tests:
+              raise SystemExit('test file terminator drift')
+          for name in (
+              'test_go_control_plane_requires_exact_current_main_ancestor',
+              'test_current_main_is_bound_and_must_be_candidate_ancestor',
+              'test_post_install_current_main_drift_is_rejected',
+          ):
+              if f' def {name}(' not in tests:
+                  tests = tests.replace(marker, '\n' + method(parent_tests, name) + marker, 1)
+          Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py').write_text(tests)
+
+          # Donor environment suite already proves ambient lock injection cannot cross the closed
+          # boundary and preserves the symlink-parent regression. Restore the newer device digest.
+          env_path = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py')
+          env_tests = Path('/tmp/donor_env_tests.py').read_text()
+          anchor = '            self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"], str(device))\n'
+          addition = anchor + '            self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"], GO.device_hash(device))\n'
+          if env_tests.count(anchor) != 1:
+              raise SystemExit('environment digest assertion anchor drift')
+          env_path.write_text(env_tests.replace(anchor, addition, 1))
+          PY
+
+      - name: Validate complete composed authority stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          grep -Fq 'nembra-tuya-dependency-lock-review-github-v1' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'BOOTSTRAP="Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'candidate carries wrong/retired/incomplete field authority' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'retained signed artifact dependency lock does not match GitHub-accepted lock subject' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'candidate does not contain the exact current main authority' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'GO control plane does not contain the exact current main authority' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'candidate authority path has suppressed index worktree tracking' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'canonical_private_path(device,"private intended-device identifier")' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq '["/bin/bash","--noprofile","--norc","-p"' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq -- '--dependency-lock-review-id' scripts/ci/es80_authenticated_stationary_final_go.py
+          git diff --check
+
+      - name: Publish clean reviewed-lock recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=5fc7eb8f0eb08ae309e021ed4c8c3c62d543300c
+          git rm .github/workflows/capture-final-go-reviewed-lock-r2-materializer.yml
+          git add \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          expected="$({ printf '%s\n' \
+            'scripts/ci/es80_authenticated_stationary_final_go.py' \
+            'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' \
+            'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py'; } | sort)"
+          actual="$(git diff --cached --name-only "$parent" | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name 'jonathangana131-lab'
+          git config user.email 'jonathangana131@gmail.com'
+          git commit -m 'fix(capture): bind reviewed Tuya lock on current Final GO'
+          git push origin HEAD:recovery/v14-final-go-reviewed-lock-r2-sol
