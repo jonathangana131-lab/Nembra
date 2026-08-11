@@ -9,12 +9,16 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:56:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:56:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:58:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-two-file-closure-sol-20260811",
   "sourceSHA": "899e0bf4de07401e2e036895aaf684373142253a",
+  "currentHeadSHA": "d85e8549486fe0b21741008d863d114fc631484e",
+  "pr": 2891,
   "ownedPaths": [
-    ".github/workflows/capture-root-ax-action-first-materialize.yml"
+    ".github/workflows/capture-root-ax-action-first-materialize.yml",
+    "NembraApp/App/NembraCaptureEntrypoint.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootLargeTypeHierarchySourceTests.swift"
   ],
-  "intent": "Remove only stale materializer workflow residue from Capture visual child #2841 so its live compare matches the claimed two-file app/test delta; do not modify app source or accessibility regression test."
+  "intent": "Close #2841's exact retained AX5 visual rejection on a clean descendant: retire the failed self-materializer, directly apply an action-first Accessibility XXXL composition while preserving Physical capture locked VoiceOver/public-build truth, update only the dedicated hierarchy source regression, then require exact-head runtime/screenshots/Xcode before acceptance."
 }
