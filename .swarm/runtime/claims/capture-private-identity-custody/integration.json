@@ -9,10 +9,11 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:17:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:22:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
-  "pr": null,
+  "pr": 2944,
   "sourceSHA": "df700cf0481d96725da833e4059bae237ac0d7de",
-  "intent": "Integrate/validate the clean #2918 production repair after successful R3 self-materialization without modifying the active primary owner's production files. Bind exact head, verify canonical red-team and wider private-identity custody acceptance, then prepare safe composition only after exact-head evidence and independent review. PHYSICAL NO-GO."
+  "intent": "Integrate/validate the clean #2918 production repair after successful R3 self-materialization without modifying the active primary owner's production files. Bind exact head, verify canonical red-team and wider private-identity custody acceptance, then prepare safe composition only after exact-head evidence and independent review. PHYSICAL NO-GO.",
+  "checkpoint": "Source/integration review clears recovered-inode reuse against current field raw-tree authority: ordinary hard-exit recovery consumes the one canonical root stage into first private output and inherited crash-residue regression requires zero root stage entries afterward; #2918 swap failures preserve replacement paths and keep sanitation on held inode. Publication Races exact df700 green. Cancelled Xcode/Field/Main-Graft do not count; Xcode command and Field/Main-Graft reruns requested. Independent review still must re-anchor from tombstone repair to df700 before composition."
 }
