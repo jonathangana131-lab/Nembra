@@ -36,6 +36,7 @@ validate_root_custodied_path() {
 import os
 from pathlib import Path
 import stat
+import subprocess
 
 raw = os.environ.get("NEMBRA_CUSTODY_PATH", "")
 kind = os.environ.get("NEMBRA_CUSTODY_KIND", "")
@@ -67,6 +68,42 @@ for component in path.parts[1:]:
         raise SystemExit("selected Xcode custody requires real directory ancestry")
     if metadata.st_uid != 0 or metadata.st_mode & 0o022:
         raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable metadata")
+    acl_probe = subprocess.run(
+        ["/bin/ls", "-lde", str(current)],
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": "/tmp",
+            "LANG": "C",
+            "LC_ALL": "C",
+        },
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if acl_probe.returncode != 0:
+        raise SystemExit("selected Xcode custody could not inspect extended ACL authority")
+    acl_lines = acl_probe.stdout.splitlines()
+    if not acl_lines:
+        raise SystemExit("selected Xcode custody received no ACL metadata")
+    mode_field = acl_lines[0].split(None, 1)[0]
+    if mode_field.endswith("+") or len(acl_lines) != 1:
+        raise SystemExit("selected Xcode custody refuses extended ACL authority")
+    try:
+        after_acl = os.lstat(current)
+    except OSError as error:
+        raise SystemExit("selected Xcode custody ancestry changed during ACL admission") from error
+    before_identity = (
+        metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid,
+        metadata.st_gid, metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns,
+    )
+    after_identity = (
+        after_acl.st_dev, after_acl.st_ino, after_acl.st_mode, after_acl.st_uid,
+        after_acl.st_gid, after_acl.st_size, after_acl.st_mtime_ns, after_acl.st_ctime_ns,
+    )
+    if after_identity != before_identity:
+        raise SystemExit("selected Xcode custody ancestry changed during ACL admission")
 if kind == "directory" and not path.is_dir():
     raise SystemExit("selected Xcode custody expected one directory")
 if kind == "file" and (not path.is_file() or path.is_symlink()):
