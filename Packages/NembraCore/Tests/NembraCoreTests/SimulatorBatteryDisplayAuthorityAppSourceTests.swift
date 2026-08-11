@@ -33,10 +33,15 @@ struct SimulatorBatteryDisplayAuthorityAppSourceTests {
             to: "let vehicleStore = VehicleStore("
         )
         let storage = String(retainedStorageDeclaration)
+        let compactedStorage = storage
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
 
-        #expect(storage.contains("bootstrap.scenario == nil"))
-        #expect(storage.contains("? UserDefaultsRetainedBatterySnapshotStorage()"))
-        #expect(storage.contains(": nil"))
+        #expect(
+            compactedStorage.contains(
+                "let retainedBatteryStorage: (any RetainedBatterySnapshotStorage)? = bootstrap.scenario == nil ? UserDefaultsRetainedBatterySnapshotStorage() : nil"
+            )
+        )
         #expect(
             storage.components(separatedBy: "UserDefaultsRetainedBatterySnapshotStorage()").count - 1 == 1
         )
