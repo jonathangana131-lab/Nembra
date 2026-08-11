@@ -14,6 +14,7 @@ on:
       - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
       - scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+      - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
   pull_request:
     paths:
@@ -26,6 +27,7 @@ on:
       - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
       - scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+      - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
   workflow_dispatch:
 
@@ -64,7 +66,8 @@ jobs:
             scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py \
             scripts/ci/tests/test_es80_final_go_current_vnode_contract.py \
-            scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+            scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py \
+            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
 
       - name: Preserve inherited private-review contracts
         shell: bash
@@ -72,6 +75,12 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             ParentPrivateReviewContractTests
+
+      - name: Prove verified accepted commit and tree object chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
 
       - name: Prove raw candidate baseline and core.worktree isolation
         shell: bash
