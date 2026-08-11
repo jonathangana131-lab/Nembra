@@ -20,7 +20,7 @@ DEST="$LOCAL_SECRETS/TuyaRuntime"
 WRITER="$ROOT/Scripts/provision_capture_tuya_identity_writer.py"
 WRITER_SHA256="6a27f9f0640a00dfe5f74a1cc4a65a0faf76994fe584efe23afb8f7ee1638fc2"
 AUTHORITY_HELPER="$ROOT/Scripts/capture_tuya_private_identity_authority.py"
-AUTHORITY_HELPER_SHA256="5ffb2118f6ecb260dce35d9663c0e0840ca72590e8b1ef4ab00b75fe2f97f646"
+AUTHORITY_HELPER_SHA256="40f5aee5c5e39c0a6146ba2ca7bc6bad7cf6abd6576fff8835d02f714589ae71"
 ROOT_FD=9
 
 umask 077

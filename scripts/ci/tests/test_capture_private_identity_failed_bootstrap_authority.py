@@ -41,7 +41,7 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
         pod_discovery = source.index("command -v pod")
         self.assertLess(verify, pod_discovery)
         self.assertIn(
-            'PRIVATE_IDENTITY_AUTHORITY_HELPER_SHA256="5ffb2118f6ecb260dce35d9663c0e0840ca72590e8b1ef4ab00b75fe2f97f646"',
+            'PRIVATE_IDENTITY_AUTHORITY_HELPER_SHA256="40f5aee5c5e39c0a6146ba2ca7bc6bad7cf6abd6576fff8835d02f714589ae71"',
             source,
         )
 

@@ -122,6 +122,7 @@ class PrivateIdentityAuthorityReceiptTests(unittest.TestCase):
                 checkout,
                 authority_root=authority_root,
                 authority_uid=uid,
+                operator_uid=uid,
             )
             # Model a failed later transaction leaving attacker bytes at the
             # canonical identity path. No new root receipt was sealed.
@@ -180,6 +181,44 @@ class PrivateIdentityAuthorityReceiptTests(unittest.TestCase):
                 authority_uid=uid,
             )
             self.assertEqual(stat.S_IMODE(authority_root.stat().st_mode), 0o755)
+
+    def test_pathname_inode_swap_cannot_preserve_prior_transaction_receipt(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-private-authority-path-swap-") as temporary:
+            helper, checkout, authority_root, uid, writer_sha, podspec_sha, identity_sha, _, _ = self.make_subject(temporary)
+            receipt = helper._seal_current_subject(
+                checkout,
+                operator_uid=uid,
+                expected_writer_sha256=writer_sha,
+                expected_podspec_sha256=podspec_sha,
+                expected_identity_sha256=identity_sha,
+                authority_root=authority_root,
+                authority_uid=uid,
+            )
+            self.assertTrue(receipt.is_file())
+
+            parked = checkout.with_name("repo.admitted-before-swap")
+            checkout.rename(parked)
+            checkout.mkdir(mode=0o700)
+            try:
+                helper._invalidate_current_subject(
+                    checkout,
+                    authority_root=authority_root,
+                    authority_uid=uid,
+                    operator_uid=uid,
+                )
+            finally:
+                checkout.rmdir()
+                parked.rename(checkout)
+
+            self.assertFalse(receipt.exists(), "swapped checkout inode preserved stale path-bound authority")
+            with self.assertRaises(helper.AuthorityError):
+                helper._verify_current_subject(
+                    checkout,
+                    operator_uid=uid,
+                    expected_writer_sha256=writer_sha,
+                    authority_root=authority_root,
+                    authority_uid=uid,
+                )
 
     def test_world_writable_authority_directory_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-private-authority-mode-") as temporary:

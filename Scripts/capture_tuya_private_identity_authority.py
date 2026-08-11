@@ -627,11 +627,12 @@ def _invalidate_current_subject(
     *,
     authority_root: Path,
     authority_uid: int,
+    operator_uid: int | None = None,
 ) -> None:
     checkout_fd, checkout_metadata = _open_checkout_root(root)
     authority_fd = -1
     try:
-        subject, _ = _checkout_subject(root, checkout_metadata)
+        _, path_sha256 = _checkout_subject(root, checkout_metadata)
         authority_fd_or_none = _authority_directory_fd(
             authority_root,
             create=False,
@@ -640,29 +641,41 @@ def _invalidate_current_subject(
         if authority_fd_or_none is None:
             return
         authority_fd = authority_fd_or_none
-        name = _receipt_name(subject)
+
         try:
-            metadata = os.stat(name, dir_fd=authority_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            return
+            entries = os.listdir(authority_fd)
         except OSError as exc:
-            raise AuthorityError("could not inspect private identity authority receipt for revocation") from exc
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_uid != authority_uid
-            or metadata.st_nlink != 1
-            or stat.S_IMODE(metadata.st_mode) != 0o444
-        ):
-            raise AuthorityError("private identity authority receipt is unsafe to revoke automatically")
-        os.unlink(name, dir_fd=authority_fd)
-        os.fsync(authority_fd)
+            raise AuthorityError("could not inspect private identity authority receipts for revocation") from exc
+
+        # Revocation is path-generation authority, not current-inode authority.
+        # The provisioning shell admits a checkout FD before this privileged
+        # call, but the user-owned parent can be renamed between those actions.
+        # Revoke every valid receipt for the same canonical path/operator so a
+        # replacement checkout inode cannot preserve an older successful
+        # transaction that later becomes authoritative again when the original
+        # pathname is restored.
+        receipt_names = sorted(
+            name
+            for name in entries
+            if name.endswith(".json") and _HEX64.fullmatch(name[:-5]) is not None
+        )
+        revoked = False
+        for name in receipt_names:
+            receipt = _read_receipt(authority_fd, name, authority_uid)
+            if receipt.get("checkout_path_sha256") != path_sha256:
+                continue
+            if operator_uid is not None and receipt.get("operator_uid") != operator_uid:
+                continue
+            os.unlink(name, dir_fd=authority_fd)
+            revoked = True
+        if revoked:
+            os.fsync(authority_fd)
     except OSError as exc:
         raise AuthorityError("could not revoke prior private identity authority") from exc
     finally:
         if authority_fd >= 0:
             os.close(authority_fd)
         os.close(checkout_fd)
-
 
 def _sudo_operator_uid() -> int:
     raw = os.environ.get("SUDO_UID", "")
@@ -697,6 +710,7 @@ def main() -> int:
                     root,
                     authority_root=AUTHORITY_ROOT,
                     authority_uid=0,
+                    operator_uid=operator_uid,
                 )
                 return 0
             if len(sys.argv) != 6:
