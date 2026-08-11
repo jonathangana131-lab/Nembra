@@ -1,0 +1,215 @@
+name: tmp V14 Signed Origin Mac GID Xcode Probe
+
+on:
+  push:
+    branches:
+      - research/v14-signed-origin-normalization-4f51fg
+    paths:
+      - .github/workflows/tmp-v14-signed-origin-mac-gid-xcode-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Bind probe to blocked signed-install parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git cat-file -e f76e6ae54b4304df5b02db4f46a72f67daa276e2^{commit}
+          git merge-base --is-ancestor f76e6ae54b4304df5b02db4f46a72f67daa276e2 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Probe Nembra Capture Xcode build under transient-GID output custody
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          operator_uid="$(id -u)"
+          operator_gid="$(id -g)"
+          repo="$GITHUB_WORKSPACE"
+          root="/private/tmp/nembra-v14-mac-gid-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          report="$RUNNER_TEMP/nembra-v14-mac-gid-probe-report.txt"
+          log="$RUNNER_TEMP/nembra-v14-mac-gid-xcodebuild.log"
+          rm -f -- "$report" "$log"
+          sudo rm -rf -- "$root"
+
+          ephemeral_gid=61000
+          while id -G | tr ' ' '\n' | grep -Fxq "$ephemeral_gid"; do
+            ephemeral_gid=$((ephemeral_gid + 1))
+          done
+
+          sudo -n /usr/bin/python3 - "$repo" "$root" "$operator_uid" "$operator_gid" "$ephemeral_gid" "$log" "$report" <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import stat
+          import sys
+
+          repo = Path(sys.argv[1]).resolve()
+          root = Path(sys.argv[2])
+          operator_uid = int(sys.argv[3])
+          operator_gid = int(sys.argv[4])
+          ephemeral_gid = int(sys.argv[5])
+          log_path = Path(sys.argv[6])
+          report_path = Path(sys.argv[7])
+
+          if os.geteuid() != 0:
+              raise SystemExit('Mac probe supervisor must be root')
+
+          protected = root / 'protected-derived'
+          root.mkdir(mode=0o711)
+          os.chown(root, 0, 0)
+          os.chmod(root, 0o711)
+          protected.mkdir(mode=0o770)
+          os.chown(protected, 0, ephemeral_gid)
+          os.chmod(protected, 0o770)
+
+          # Prove an ordinary same-UID process cannot traverse the output root.
+          read_fd, write_fd = os.pipe()
+          sibling_pid = os.fork()
+          if sibling_pid == 0:
+              try:
+                  os.close(read_fd)
+                  os.setgroups([])
+                  os.setgid(operator_gid)
+                  os.setuid(operator_uid)
+                  try:
+                      os.listdir(protected)
+                  except PermissionError:
+                      os.write(write_fd, b'denied')
+                  else:
+                      os.write(write_fd, b'ALLOWED')
+              except BaseException as exc:
+                  os.write(write_fd, ('ERR:' + type(exc).__name__ + ':' + str(exc)).encode('utf-8', 'replace'))
+              finally:
+                  os._exit(0)
+          os.close(write_fd)
+          sibling_result = os.read(read_fd, 4096)
+          os.close(read_fd)
+          os.waitpid(sibling_pid, 0)
+          if sibling_result != b'denied':
+              raise SystemExit(f'same-UID normal-GID sibling reached protected DerivedData: {sibling_result!r}')
+
+          # Open the log before dropping credentials; inherited FD avoids any
+          # authority dependence on the protected output pathname.
+          log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC, 0o600)
+          os.fchown(log_fd, operator_uid, operator_gid)
+          os.set_inheritable(log_fd, True)
+
+          build_pid = os.fork()
+          if build_pid == 0:
+              try:
+                  os.chdir(repo)
+                  os.setgroups([])
+                  os.setgid(ephemeral_gid)
+                  os.setuid(operator_uid)
+                  os.dup2(log_fd, 1)
+                  os.dup2(log_fd, 2)
+                  if log_fd not in (1, 2):
+                      os.close(log_fd)
+                  env = dict(os.environ)
+                  env['HOME'] = str(Path.home())
+                  argv = [
+                      '/usr/bin/xcodebuild',
+                      '-project', 'NembraCapture.xcodeproj',
+                      '-scheme', 'Nembra Capture',
+                      '-configuration', 'Debug',
+                      '-sdk', 'iphonesimulator',
+                      '-destination', 'generic/platform=iOS Simulator',
+                      '-derivedDataPath', str(protected),
+                      'CODE_SIGNING_ALLOWED=NO',
+                      'build',
+                  ]
+                  os.execve('/usr/bin/xcodebuild', argv, env)
+              except BaseException as exc:
+                  os.write(2, ('probe child setup failed: ' + type(exc).__name__ + ': ' + str(exc) + '\n').encode('utf-8', 'replace'))
+                  os._exit(127)
+
+          os.close(log_fd)
+          _, wait_status = os.waitpid(build_pid, 0)
+          if os.WIFEXITED(wait_status):
+              build_status = os.WEXITSTATUS(wait_status)
+          elif os.WIFSIGNALED(wait_status):
+              build_status = 128 + os.WTERMSIG(wait_status)
+          else:
+              build_status = 255
+
+          # Remove the transient group capability before looking at any output.
+          os.chmod(protected, 0o700)
+
+          app = protected / 'Build' / 'Products' / 'Debug-iphonesimulator' / 'Nembra Capture.app'
+          executable = app / 'Nembra Capture'
+          app_exists = app.is_dir()
+          executable_exists = executable.is_file()
+          executable_sha = hashlib.sha256(executable.read_bytes()).hexdigest() if executable_exists else ''
+
+          result = {
+              'probe_head': os.environ.get('GITHUB_SHA', ''),
+              'attacked_parent': 'f76e6ae54b4304df5b02db4f46a72f67daa276e2',
+              'operator_uid': operator_uid,
+              'operator_normal_gid': operator_gid,
+              'ephemeral_builder_gid': ephemeral_gid,
+              'same_uid_normal_gid_traversal_during_window': 'denied',
+              'xcodebuild_exit': build_status,
+              'protected_parent_mode_after_build': oct(stat.S_IMODE(protected.stat().st_mode)),
+              'app_exists_after_root_lock': app_exists,
+              'main_executable_exists_after_root_lock': executable_exists,
+              'main_executable_sha256_after_root_lock': executable_sha,
+              'scope': 'Mac/Xcode transient-GID compatibility research only; no signing or product acceptance',
+          }
+          report_path.write_text(json.dumps(result, sort_keys=True) + '\n', encoding='utf-8')
+          os.chown(report_path, operator_uid, operator_gid)
+          os.chmod(report_path, 0o600)
+
+          if build_status != 0 or not app_exists:
+              raise SystemExit(f'xcodebuild under transient GID failed or produced no app: {result!r}')
+          PY
+
+          sudo -n rm -rf -- "$root"
+          cat "$report"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+
+      - name: Surface failed Xcode diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f "$RUNNER_TEMP/nembra-v14-mac-gid-xcodebuild.log" ]]; then
+            grep -iE 'error:|permission denied|operation not permitted|sandbox|failed' "$RUNNER_TEMP/nembra-v14-mac-gid-xcodebuild.log" | tail -n 30 || true
+          fi
+
+      - name: Publish research result to signed-install production PR
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.probe.outputs.report }}
+        run: |
+          set -euo pipefail
+          {
+            echo '### Signed-origin Mac/Xcode transient-GID research probe'
+            echo
+            echo 'Research-only compatibility evidence from the blocked #2871 lineage; this does not move production, satisfy #2955, or create hardware authority.'
+            echo
+            echo '```json'
+            cat "$REPORT"
+            echo '```'
+            echo
+            echo 'A production repair still needs one trusted supervisor boundary that preserves source/private-input checks, process cleanup, signing/keychain access, root lock before first output authority, root-owned protected snapshot, downstream signature/provenance/device custody, and an exact green replay of #2955. Simulator/no-signing success only establishes that Xcode itself tolerates the transient-GID output model.'
+            echo
+            echo '**PHYSICAL NO-GO.**'
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment 2871 --body-file "$RUNNER_TEMP/comment.md"
