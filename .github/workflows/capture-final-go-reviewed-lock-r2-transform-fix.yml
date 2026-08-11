@@ -21,17 +21,22 @@ jobs:
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
           p=Path('.github/workflows/capture-final-go-reviewed-lock-r2-materializer.yml')
-          lines=p.read_text().splitlines()
-          hits=[i for i,line in enumerate(lines) if 'tests = tests.replace(marker' in line and 'method(parent_tests, name)' in line]
-          if len(hits)!=1: raise SystemExit(f'recovery insertion line drift: {hits}')
-          i=hits[0]
-          indent=lines[i][:len(lines[i])-len(lines[i].lstrip())]
-          lines[i:i+1]=[
-              indent + 'recovered = method(parent_tests, name)',
-              indent + "recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):').replace('self.f.inst(r,s,d)', 'self.f.inst(r,s,d,lock)')",
-              indent + "tests = tests.replace(marker, '\\n' + recovered + marker, 1)",
-          ]
-          p.write_text('\n'.join(lines)+'\n')
+          s=p.read_text()
+          needle='tests = tests.replace(marker'
+          pos=s.find(needle)
+          if pos<0: raise SystemExit('recovery insertion call missing')
+          line_start=s.rfind('\n',0,pos)+1
+          line_end=s.find('\n',pos)
+          if line_end<0: raise SystemExit('recovery insertion line unterminated')
+          line=s[line_start:line_end]
+          if 'method(parent_tests, name)' not in line: raise SystemExit('recovery method call drift')
+          indent=line[:len(line)-len(line.lstrip())]
+          replacement='\n'.join([
+              indent+'recovered = method(parent_tests, name)',
+              indent+"recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):').replace('self.f.inst(r,s,d)', 'self.f.inst(r,s,d,lock)')",
+              line.replace('method(parent_tests, name)','recovered'),
+          ])
+          p.write_text(s[:line_start]+replacement+s[line_end:])
           PY
           git rm .github/workflows/capture-final-go-reviewed-lock-r2-transform-fix.yml
           git config user.name 'jonathangana131-lab'
