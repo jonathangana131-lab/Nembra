@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "083430-evidence-result-dashboard-rereview-p1rec53",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-p1rec53",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent re-review of Dashboard PR #2817 exact head 28c7e886f1152ab92a673029b4a1e966f2610e01 clears the original public raw-scalar Simulator authority defect. PropulsionEnergyRailSimulatorRuntime positive public admission is now source-sealed through SimulatorPowerEvidenceAvailability; raw live/retained chronology methods are non-public; Store negative transport fencing plus exact Store/source receipt equality prevents same-receipt product-visible LIVE replay after demotion. Child PR #2833 exact f9250b38facff51e79e324934b3c6f2a936fd18a supplies the required genuine external Swift-package compile regression and source review found it coherent, but it must be composed into the flagship head and executed there. Source-level performance review confirms 60 Hz invalidation is localized to DashboardSpeedInstrumentView, continuous frames stop when canonical interpolation settles, and Energy Rail drawing uses simple shapes rather than per-frame material effects; empirical iPhone 12 performance remains unearned. Visual review 4904233235 narrows the outstanding screenshot blocker to the accessibility-size/large-Dynamic-Type landscape cockpit, which has materially different composition/rail geometry and no real screenshot evidence. Exact-head Xcode jobs on 28c7e886 are skipped, not green. Lane remains VERIFYING, not accepted; physical ES80 truth and Capture GO remain unchanged/NO-GO.",
+  "createdAt": "2026-08-11T08:34:30Z"
+}
