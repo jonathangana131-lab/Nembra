@@ -80,11 +80,38 @@ jobs:
               backend.close()
           PY
 
-      - name: Replay whole-tree races through real kqueue custody
+      # Keep the permanent whole-tree suite semantically unchanged, but expose
+      # each adversarial case as a named step. The stale Darwin carrier proved
+      # backend selection and then failed somewhere inside the aggregate suite;
+      # named steps make the exact failing contract durable in Actions metadata
+      # without weakening, skipping, or marking any failure continue-on-error.
+      - name: Race case — restore before every read then mutate after
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            FinalGoContinuousTrackedTreeCustodyTests.test_restore_before_every_read_then_mutate_after_is_rejected
+
+      - name: Race case — post-subject replacement before audit returns
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            FinalGoContinuousTrackedTreeCustodyTests.test_post_subject_replacement_is_rejected_before_whole_audit_returns
+
+      - name: Race case — mutation after initial audit at context handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            FinalGoContinuousTrackedTreeCustodyTests.test_mutation_after_initial_audit_is_rejected_at_context_handoff
+
+      - name: Race case — stable candidate remains accepted
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            FinalGoContinuousTrackedTreeCustodyTests.test_stable_candidate_passes_continuous_audit
 
       - name: Prove sealed retirement dispatch on Darwin
         shell: bash
