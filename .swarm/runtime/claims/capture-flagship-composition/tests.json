@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-a91c7e",
   "leaseId": "capture-flagship-tests-a91c7e-20260811-2043",
   "generation": 4,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:43:20Z",
-  "lastHeartbeatAt": "2026-08-11T20:43:20Z",
+  "lastHeartbeatAt": "2026-08-11T20:45:10Z",
+  "releasedAt": "2026-08-11T20:45:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2979,
   "sourceSHA": "c8ead84fe8df4effca2a3b3d0061a1f491665aba",
   "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
-  "takeoverReason": "Generation-3 expected-red source blocker was published and released while CI queued. Active flagship primary has now consumed #2990 exactly, moving #2979 from c8ead84f to ce9e2bac with the diagnostic test adopted unchanged plus an explicit Text(verbatim:) full-authority accessibility label. Re-enter tests only to verify this exact moved head satisfies the regression and to bind fresh exact-head gates; do not edit primary-owned product paths. PHYSICAL NO-GO.",
-  "intent": "Verify ce9e2bac satisfies the adopted VoiceOver source contract, inspect exact workflow state/pixels, publish acceptance or defect, then release. No physical promotion."
+  "outcome": "SOURCE_CONTRACT_ACCEPTED_WAITING_EXACT_HEAD_GATES",
+  "reviewId": 4910576877,
+  "releaseReason": "Repaired #2979 ce9e2bac adopts the #2990 VoiceOver regression as byte-identical Git blob e6a1868203de8167a4170ff2c151edddc3a42464 and adds one explicit Text(verbatim:) full-authority accessibility label that satisfies its unchanged Bluetooth/physical-evidence/lock/build/scooter/authority contract while preserving compact sighted copy. Fresh Xcode/Field/Main/Standalone Visual gates are nonterminal, so app-visible acceptance is not promoted. Review 4910576877 published. PHYSICAL NO-GO."
 }
