@@ -9,11 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:51:00Z",
-  "lastHeartbeatAt": "2026-08-11T11:51:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:02:00Z",
   "leaseSeconds": 1800,
   "branch": "review/v14-signed-install-contracts-2911-sol-4f50qa",
   "pr": 2911,
   "sourceSHA": "8dbc60e68b38c23b95a7885e262e363b786e5820",
   "takeoverFromWorkerId": "sol-20260811-c4d2",
-  "takeoverReason": "Generation-3 review lease expired at 2026-08-11T10:41Z without heartbeat. Recover independent review on the active tests-only signed-install source-contract repair #2911 before any composition into #2871."
+  "takeoverReason": "Generation-3 review lease expired at 2026-08-11T10:41Z without heartbeat. Recover independent review on the active tests-only signed-install source-contract repair #2911 before any composition into #2871.",
+  "durableEvidence": "Exact-head Main Selective Graft 31484032164 and Xcode 27 31484031811 are terminal SUCCESS on 8dbc60e6. Capture Field Build Provenance 31484031852 is terminal FAILURE in job 93755215380 Verify source contract because .github/workflows/capture-field-build-provenance.yml still greps for the retired nembra-authenticated-capture-install.XXXXXX one-file log and simple rm-only EXIT trap. Review 4905936642 records the exact-SHA blocker. Production installer already uses protected root-owned app stage plus distinct mode-0600 install-log and cleanup_install_subject lifecycle; do not weaken production/new Swift contract.",
+  "acceptance": "BLOCKED. Align the canonical Field workflow with current protected-stage/separate-log custody, explicitly reject retired simple trap/predictable log, then require unchanged exact-head Field + Main Graft + Xcode SUCCESS and fresh independent review. PHYSICAL NO-GO."
 }
