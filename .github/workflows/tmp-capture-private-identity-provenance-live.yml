@@ -20,11 +20,10 @@ jobs:
           ref: agent/v14-capture-private-identity-custody-live-sol
           fetch-depth: 0
 
-      - name: Validate and wire private identity custody
+      - name: Bind exact repair trigger
         shell: bash
         env:
-          EXPECTED_PARENT: d65a4ea3ecd3ed607b8465102380d338f6e4fe42
-          BRANCH: agent/v14-capture-private-identity-custody-live-sol
+          EXPECTED_PARENT: 51775082925369cbaab573c45340cc435ee5245c
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
@@ -32,10 +31,18 @@ jobs:
           test "$parent" = "$EXPECTED_PARENT"
           test "$(git diff --name-only "$EXPECTED_PARENT" "$actual")" = '.github/workflows/tmp-capture-private-identity-provenance-live.yml'
 
-          bash -n Scripts/provision_capture_tuya_identity.sh
+      - name: Validate descriptor writer
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
           python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
 
+      - name: Validate wrapper fresh provisioning
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/provision_capture_tuya_identity.sh
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           output="$(printf 'dummy-app-key\ndummy-app-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime" bash Scripts/provision_capture_tuya_identity.sh 2>&1)"
@@ -45,6 +52,14 @@ jobs:
           test "$(stat -c '%a' "$tmp/runtime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")" = 600
           ! grep -R -Fq 'dummy-app-secret' "$tmp/runtime"
           ! grep -Fq 'dummy-app-secret' <<< "$output"
+
+      - name: Validate wrapper no-reuse and no-symlink custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          printf 'first-key\nfirst-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime" bash Scripts/provision_capture_tuya_identity.sh >/dev/null 2>&1
           if printf 'second-key\nsecond-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime" bash Scripts/provision_capture_tuya_identity.sh >/dev/null 2>&1; then
             echo 'ERROR: provisioner reused an existing runtime destination.' >&2
             exit 1
@@ -56,9 +71,13 @@ jobs:
             exit 1
           fi
           test -z "$(find "$tmp/outside" -mindepth 1 -print -quit)"
-          rm -rf "$tmp"
-          trap - EXIT
 
+      - name: Wire dedicated provenance execution
+        shell: bash
+        env:
+          BRANCH: agent/v14-capture-private-identity-custody-live-sol
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
