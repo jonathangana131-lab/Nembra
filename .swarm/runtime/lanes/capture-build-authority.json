@@ -15,7 +15,7 @@
       "scope": "lane",
       "reason": "Legacy Capture implementation is actively moving on PR #2805; V15 workers must not duplicate product edits until it hands off or becomes stale.",
       "pr": 2805,
-      "headSHA": "4456c176874c7489d5f0789b51e56324205442e6"
+      "headSHA": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab"
     }
   ],
   "mode": "exclusive",
@@ -41,9 +41,9 @@
   "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
   "legacy": {
     "primaryPR": 2805,
-    "primaryHeadSHA": "4456c176874c7489d5f0789b51e56324205442e6",
+    "primaryHeadSHA": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab",
     "lineagePRs": [2709, 2778, 2799, 2794, 2805],
-    "knownExactHeadFinding": "Build-guard main still carries an undefined private_review exception handler at the observed head; exact-head selective-graft and field gates must be evaluated after every move."
+    "knownExactHeadFinding": "At 76d2ed50, build-guard main still carries an undefined private_review exception handler. Focused helper-execution, private-review commitment, and CocoaPods build-subject gates are green; field provenance and main selective-graft are still in progress; Xcode exact-head is skipped while draft. Re-evaluate all exact-head gates after every move."
   },
   "tags": ["capture", "p0", "security", "build-authority", "legacy-import"]
 }
