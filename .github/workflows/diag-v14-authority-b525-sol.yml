@@ -27,14 +27,27 @@ jobs:
             Scripts/capture_cocoapods_generated_build_subject.py \
             Scripts/capture_private_review_commitment.py
       - name: Run authority custody regressions
+        shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           python3 -m unittest -v \
             scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody \
             scripts.ci.tests.test_capture_private_review_helper_execution_custody \
             scripts.ci.tests.test_capture_private_review_commitment \
             scripts.ci.tests.test_capture_cocoapods_generated_build_subject \
-            scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+            scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody \
+            > /tmp/authority-tests.txt 2>&1
+          status=$?
+          cat /tmp/authority-tests.txt
+          if [[ "$status" -ne 0 ]]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          message = Path('/tmp/authority-tests.txt').read_text(encoding='utf-8')[-12000:]
+          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=Focused Capture authority regression::{message}')
+          PY
+            exit "$status"
+          fi
       - name: Run bootstrap authority regressions
         run: |
           set -euo pipefail
