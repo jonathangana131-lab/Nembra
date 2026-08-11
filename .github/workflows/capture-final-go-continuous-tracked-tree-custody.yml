@@ -1,0 +1,85 @@
+name: Capture Final GO Continuous Tracked Tree Custody
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-continuous-tree-custody-sol-20260811
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+      - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+      - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  continuous-tracked-tree-custody:
+    name: Reject whole-tree and finite-rehash mutation races
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact candidate and three-path production delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          test "$(git rev-list --count "$EXACT_PARENT"..HEAD)" -ge 1
+          mapfile -t changed < <(git diff --name-only "$EXACT_PARENT" HEAD | LC_ALL=C sort)
+          expected=(
+            .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+          )
+          test "${#changed[@]}" -eq "${#expected[@]}"
+          for index in "${!expected[@]}"; do
+            test "${changed[$index]}" = "${expected[$index]}"
+          done
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile successor and permanent adversarial acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+
+      - name: Reject post-subject and finite-rehash mutation races
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+
+      - name: Preserve descriptor and inherited raw-candidate authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            CandidateRawFilesystemAuthorityTests.test_child_executes_exact_2873_parent_blob \
+            CandidateRawFilesystemAuthorityTests.test_inherited_parent_candidate_runs_through_raw_authority \
+            CandidateRawFilesystemAuthorityTests.test_core_worktree_decoy_cannot_redirect_physical_candidate
+
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
