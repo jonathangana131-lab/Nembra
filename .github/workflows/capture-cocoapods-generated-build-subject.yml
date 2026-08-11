@@ -1,0 +1,70 @@
+name: Capture CocoaPods Generated Build Subject
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_cocoapods_generated_build_subject.py
+      - Scripts/capture_cocoapods_generated_build_guard.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - .github/workflows/capture-cocoapods-generated-build-subject.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-build-authority:
+    name: Reject lock-preserving generated build substitution
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind job to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact generated-build authority source: %s\n' "$actual"
+
+      - name: Validate generated-build authority helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          python3 -m py_compile \
+            Scripts/capture_cocoapods_generated_build_subject.py \
+            Scripts/capture_cocoapods_generated_build_guard.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          python3 -I Scripts/capture_cocoapods_generated_build_subject.py --self-test
+
+      - name: Require build-window composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          guard='Scripts/capture_tuya_private_input_build_guard.py'
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_TUYA_GENERATED_BUILD_SHA256' "$guard"
+          grep -Fq 'capture_cocoapods_generated_build_guard.py' "$guard"
+          grep -Fq 'NembraCapture.xcworkspace' "$guard"
+          grep -Fq '"--expected-sha256"' "$guard"
+          bootstrap='Scripts/bootstrap_capture_tuya_sdk.sh'
+          grep -Fq 'rm -rf -- "$REPO_ROOT/Pods" "$REPO_ROOT/NembraCapture.xcworkspace"' "$bootstrap"
+          grep -Fq 'Preaccepted CocoaPods generated-build subject matched' "$bootstrap"
+
+      - name: Exercise lock-preserving generator substitution regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
