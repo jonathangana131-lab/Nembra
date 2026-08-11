@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607r4",
   "leaseId": "capture-flagship-integration-1607r4-20260811-2315",
   "generation": 5,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:14:30Z",
-  "lastHeartbeatAt": "2026-08-11T23:15:45Z",
+  "lastHeartbeatAt": "2026-08-11T23:16:59Z",
+  "releasedAt": "2026-08-11T23:16:59Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-final-go-combined-sol-1404m2",
   "pr": 3023,
@@ -17,7 +18,7 @@
   "currentHeadSHA": "29f58fd3919ea2035a9cf6846b2e3e8a2ecaf226",
   "takeoverFromWorkerId": "sol-20260811-1404m2",
   "takeoverFromLeaseId": "capture-flagship-integration-1404m2-20260811-2104",
-  "takeoverReason": "Generation-4 was explicitly released after Final-GO red. Fresh Go recovers flagship integration as a read-only closure-graph reconciliation across current Final-GO, build authority, private convergence, runtime accessibility, signed-install, and first-fold state. PHYSICAL NO-GO.",
+  "takeoverReason": "Generation-4 was explicitly released after Final-GO red. Fresh Go recovered flagship integration to reconcile the current closure graph and remove stale composition ambiguity. PHYSICAL NO-GO.",
   "intent": "Reconcile current flagship composition order, close stale carrier ambiguity, and leave durable exact blockers without cross-promoting ancestor/queued evidence.",
-  "checkpoint": "Timestamp normalization only: corrected this generation-5 lease to real GitHub time after detecting local coordination timestamps had been written ahead. Product state unchanged. #3023 has since been verified as stale and is being superseded under this integration claim. PHYSICAL NO-GO."
+  "checkpoint": "#3023 exact 29f58fd3 was verified as an obsolete carrier: it uniquely combines accepted first-fold bytes that remain available on #2979 with defeated Final-GO #2921 bytes. It does not contain current Final-GO #3082/#3092, selected-Xcode #3072/#3088, private #3086, runtime #3073, or signed-install successors. Durable comment 5259949292 records the replacement closure graph. PR #3023 is now CLOSED UNMERGED and retitled SUPERSEDED, removing stale-spine ambiguity. Current composition order must wait for exact dependency closure and include the newly discovered verified-stdin caller-interface repair: final build-authority launcher must pass NEMBRA_ACCEPTED_SOURCE_ROOT=$ROOT when consuming #3086 bootstrap, then re-earn all moved-head gates. No safe product composition write exists while #3072 remains red and current Final-GO review/Darwin closure is active, so integration is released. PHYSICAL NO-GO."
 }
