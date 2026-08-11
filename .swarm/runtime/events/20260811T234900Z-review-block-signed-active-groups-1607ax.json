@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "234900-review-block-signed-active-groups-1607ax",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-signed-install-custody",
+  "message": "Independent review of permanent validation #3129 exact 2c687bac0331575f5b3835d66684085e9d65bfa9 is BLOCKING pending one narrow cross-sudo identity bind. Active supplementary-group model is otherwise preferred: pre-sudo os.getgroups vector is separated from primary GID, validated against Directory Services in root mode, build-GID overlap rejected, and exact active groups are replayed for the field negative writer. Missing: parent must retain pre-sudo field_uid/os.getuid and require returned evidence fieldUID == field_uid and fieldPrimaryGID == pre-sudo field_primary_gid; otherwise SUDO_UID/SUDO_GID-derived root evidence is not mechanically tied to the invoking process identity that supplied the active groups. GitHub account-level REQUEST_CHANGES was rejected because shared repo account authored the PR, so blocking swarm review was recorded as review COMMENT 4911656711. Current exact dedicated-UID run 31546911246 and Main 31546910721 are queued; Xcode path-policy skipped. Any repair moves head and requires fresh exact macOS evidence. Validation only; #3056 production and PHYSICAL GO remain unaccepted.",
+  "createdAt": "2026-08-11T23:49:00Z"
+}
