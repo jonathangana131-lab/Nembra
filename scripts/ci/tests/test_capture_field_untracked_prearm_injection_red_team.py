@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Expected-red regression for untracked build-visible source injection before vnode arming."""
+"""Expected-red regression for untracked SwiftPM source injection before vnode arming."""
 from __future__ import annotations
 
 import importlib.util
@@ -11,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 GUARD_PATH = ROOT / "Scripts/capture_tuya_private_input_build_guard.py"
+PRODUCTION_PACKAGE = ROOT / "Packages/NembraBluetoothCapture/Package.swift"
 
 
 def load_guard():
@@ -41,10 +42,13 @@ class QuietBackend:
         pass
 
 
-class ImmediateProcess:
+class SwiftPMDefaultSourceProcess:
+    """Models SwiftPM's default Sources/<Target> source discovery at compiler admission."""
+
     def __init__(self, consumed: list[str], repo: Path) -> None:
+        source_root = repo / "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture"
         consumed.extend(
-            sorted(path.relative_to(repo).as_posix() for path in repo.rglob("*.swift"))
+            sorted(path.relative_to(repo).as_posix() for path in source_root.rglob("*.swift"))
         )
         self.returncode = 0
 
@@ -72,7 +76,15 @@ class StableInputs:
 
 
 class CaptureFieldUntrackedPrearmInjectionRedTeamTests(unittest.TestCase):
-    def test_untracked_source_inserted_between_endpoint_audit_and_vnode_arming_is_rejected(self) -> None:
+    def test_production_capture_package_uses_swiftpm_default_source_discovery(self) -> None:
+        manifest = PRODUCTION_PACKAGE.read_text(encoding="utf-8")
+        self.assertIn('.target(\n            name: "NembraBluetoothCapture",', manifest)
+        self.assertTrue(
+            (ROOT / "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture").is_dir(),
+            "production Capture package must retain its default SwiftPM target source root for this witness",
+        )
+
+    def test_untracked_swiftpm_source_inserted_between_endpoint_audit_and_vnode_arming_is_rejected(self) -> None:
         guard = load_guard()
         with tempfile.TemporaryDirectory(prefix="nembra-untracked-prearm-") as directory:
             repo = Path(directory) / "repo"
@@ -81,28 +93,40 @@ class CaptureFieldUntrackedPrearmInjectionRedTeamTests(unittest.TestCase):
             git(repo, "config", "user.name", "Nembra Test")
             git(repo, "config", "user.email", "nembra-test@example.invalid")
 
-            app_sources = repo / "NembraApp" / "App"
-            app_sources.mkdir(parents=True)
-            tracked = app_sources / "Tracked.swift"
+            package = repo / "Packages/NembraBluetoothCapture/Package.swift"
+            package.parent.mkdir(parents=True)
+            package.write_text(
+                '// swift-tools-version: 6.2\n'
+                'import PackageDescription\n'
+                'let package = Package(name: "NembraBluetoothCapture", targets: ['
+                '.target(name: "NembraBluetoothCapture")])\n',
+                encoding="utf-8",
+            )
+            target_sources = package.parent / "Sources/NembraBluetoothCapture"
+            target_sources.mkdir(parents=True)
+            tracked = target_sources / "Tracked.swift"
             tracked.write_text('let authority = "accepted"\n', encoding="utf-8")
             project = repo / "NembraCapture.xcodeproj" / "project.pbxproj"
             project.parent.mkdir()
-            project.write_text("// accepted project graph\n", encoding="utf-8")
+            project.write_text(
+                '// accepted project graph references local package Packages/NembraBluetoothCapture\n',
+                encoding="utf-8",
+            )
             git(repo, "add", ".")
             git(repo, "commit", "-qm", "accepted")
             accepted_sha = git(repo, "rev-parse", "HEAD")
             self.assertEqual(git(repo, "status", "--porcelain=v1", "--untracked-files=all"), "")
 
-            injected = app_sources / "Injected.swift"
+            injected = target_sources / "Injected.swift"
             consumed: list[str] = []
             original_watch_paths = guard._watch_paths
             original_open_watched_inputs = guard._open_watched_inputs
 
-            # The production installer performs a raw accepted-checkout audit before
-            # it enters run_guarded_build(). This wrapper models a same-UID actor
-            # inserting a build-visible source in that audit -> vnode-registration
-            # gap. The directory watcher is then armed against a directory where the
-            # entry already exists, so there is no historical vnode event to drain.
+            # The field installer performs a raw accepted-checkout audit before
+            # run_guarded_build(). This wrapper models a same-UID actor inserting a
+            # SwiftPM-auto-discovered source in that audit -> vnode-registration gap.
+            # The directory watcher is armed after the entry already exists, so there
+            # is no historical vnode event for the guard to drain.
             guard._watch_paths = lambda _inputs: (repo,)
 
             def inject_then_arm(paths, backend):
@@ -117,7 +141,7 @@ class CaptureFieldUntrackedPrearmInjectionRedTeamTests(unittest.TestCase):
                         StableInputs(repo, accepted_sha),
                         ["/usr/bin/true"],
                         backend_factory=QuietBackend,
-                        popen_factory=lambda _command: ImmediateProcess(consumed, repo),
+                        popen_factory=lambda _command: SwiftPMDefaultSourceProcess(consumed, repo),
                         require_accepted_tracked_source=True,
                     )
                 except guard.BuildGuardError:
@@ -128,21 +152,24 @@ class CaptureFieldUntrackedPrearmInjectionRedTeamTests(unittest.TestCase):
 
             # An attacker can remove the injected source after guard teardown but
             # before the installer's outer endpoint audit. That later audit can then
-            # look perfectly clean even if xcodebuild already consumed attacker bytes.
+            # look clean even though SwiftPM source discovery already consumed it.
             if injected.exists():
                 injected.unlink()
             endpoint_status = git(repo, "status", "--porcelain=v1", "--untracked-files=all")
             self.assertEqual(endpoint_status, "")
 
+            injected_relative = (
+                "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/Injected.swift"
+            )
             if not rejected:
                 self.assertIn(
-                    "NembraApp/App/Injected.swift",
+                    injected_relative,
                     consumed,
-                    "fixture must prove the compiler window observed the injected source",
+                    "fixture must prove SwiftPM default source discovery observed the injected source",
                 )
             self.assertTrue(
                 rejected,
-                "field build guard admitted an untracked build-visible source that existed before vnode registration; "
+                "field build guard admitted an untracked SwiftPM source that existed before vnode registration; "
                 "tracked-blob reproof cannot detect this audit-to-arm directory-entry gap",
             )
 
