@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "capture-private-identity-convergence-1607ax-20260812-0004",
   "generation": 3,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T00:04:00Z",
-  "lastHeartbeatAt": "2026-08-12T00:04:00Z",
+  "lastHeartbeatAt": "2026-08-12T00:05:00Z",
+  "releasedAt": "2026-08-12T00:05:00Z",
   "leaseSeconds": 2700,
   "branch": "",
   "pr": 3086,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb",
   "takeoverFromWorkerId": "sol-20260811-1316vk",
   "takeoverFromLeaseId": "capture-private-identity-convergence-1316vk-20260811-2038",
-  "takeoverReason": "Generation-2 expired hours ago after last heartbeat 2026-08-11T21:26:30Z and still points at ancestor #2993. Live selected private convergence has advanced through #3026 to #3086 exact e454b1e9. Recover only to reconcile stale ownership to current selected lineage and release it evidence/composition-blocked; no source mutation. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-2 stale ancestor ownership was recovered only for live-lineage reconciliation.",
+  "outcome": "RECONCILED_TO_CURRENT_3086_EVIDENCE_COMPOSITION_BLOCKED",
+  "checkpoint": "Event 20260812T000500Z points stale #2993 ownership to selected #3086 exact e454b1e9. #3086 Current/Publication/Helper/Main are green; Field/Xcode remain queued and selected-build NEMBRA_ACCEPTED_SOURCE_ROOT consumption remains later composition debt. No safe ancestor mutation. PHYSICAL NO-GO."
 }
