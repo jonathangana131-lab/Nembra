@@ -1,0 +1,67 @@
+name: TMP V14 Field Selected Xcode Custody R2
+
+on:
+  push:
+    branches:
+      - repair/v14-field-selected-xcode-custody-r2-sol-20260811
+    paths:
+      - scripts/ci/tmp_materialize_selected_xcode_custody_r2.py
+      - .github/workflows/tmp-v14-field-selected-xcode-custody-r2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-field-selected-xcode-custody-r2-sol-20260811
+          fetch-depth: 0
+
+      - name: Bind exact construction head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize selected Xcode custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_selected_xcode_custody_r2.py
+          /usr/bin/python3 scripts/ci/tmp_materialize_selected_xcode_custody_r2.py
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_field_selected_xcode_custody.py \
+            scripts/ci/tests/test_capture_field_xcode_environment_authority.py \
+            scripts/ci/tests/test_capture_field_xcrun_environment_authority.py \
+            scripts/ci/tests/test_capture_field_developer_dir_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcode_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcrun_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_developer_dir_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish tested installer bytes
+        shell: bash
+        env:
+          BRANCH: repair/v14-field-selected-xcode-custody-r2-sol-20260811
+        run: |
+          set -euo pipefail
+          git add scripts/field/install_one_time_capture.command
+          git diff --cached --check
+          git config user.name "Nembra V14 Swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): pin selected Xcode custody on current spine"
+          git push origin "HEAD:$BRANCH"
