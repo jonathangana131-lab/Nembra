@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'repair Capture field installer prerequisite materializer'
+    if: github.event.head_commit.message == 'retry Capture field installer prerequisite materializer'
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor 4fce4861d99903eb0772e33949c3d302a1258d2a HEAD
+          git fetch --no-tags --depth=1 origin 4fce4861d99903eb0772e33949c3d302a1258d2a
           test "$(git hash-object .gitignore)" = 'dcd1acb190701a96694c2537ca5a8e3f3d352e84'
           test "$(git hash-object .github/workflows/capture-field-build-provenance.yml)" = '408caadd97ef56b83d4ab55d202747cd02bcab9b'
           test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift)" = 'e2d13ab312265ffe2e5c9cac60d8faf6474bc42f'
