@@ -25,6 +25,12 @@ def lane(lane_id: str, epic: str = "swarm", state: str = "READY"):
     return sc.validate_lane(value)
 
 
+def as_state(value, state: str):
+    updated = dict(value)
+    updated["state"] = state
+    return sc.validate_lane(updated)
+
+
 def persist_lane(store, value):
     return store.create(sc.lane_path(value["laneId"]), value)
 
@@ -42,14 +48,15 @@ class ReviewFindingRegressionTests(unittest.TestCase):
         store = sc.MemoryStore()
         value = lane("review-claim")
         sc.claim_slot(store, value, "primary", worker("impl1"), NOW)
+        review_lane = as_state(value, "REVIEW")
         with self.assertRaises(sc.ValidationError):
-            sc.claim_slot(store, value, "review", worker("impl1"), NOW)
+            sc.claim_slot(store, review_lane, "review", worker("impl1"), NOW)
 
     def test_different_reviewer_can_claim_review_slot(self):
         store = sc.MemoryStore()
         value = lane("review-ok")
         sc.claim_slot(store, value, "primary", worker("impl2"), NOW)
-        review = sc.claim_slot(store, value, "review", worker("review2"), NOW)
+        review = sc.claim_slot(store, as_state(value, "REVIEW"), "review", worker("review2"), NOW)
         self.assertEqual(review.value["workerId"], worker("review2"))
 
     def test_project_wip_is_enforced_atomically_at_claim_time(self):
@@ -115,11 +122,48 @@ class ReviewFindingRegressionTests(unittest.TestCase):
         value = lane("terminal-takeover")
         claim = sc.claim_slot(store, value, "primary", worker("term1"), NOW).value
         sc.release_claim(store, value["laneId"], "primary", worker("term1"), claim["leaseId"], claim["generation"], NOW)
-        terminal = dict(value)
-        terminal["state"] = "DONE"
-        terminal = sc.validate_lane(terminal)
+        terminal = as_state(value, "DONE")
         with self.assertRaises(sc.ValidationError):
             sc.takeover_claim(store, terminal, "primary", worker("term2"), NOW)
+
+    def test_ready_lane_does_not_recommend_integration(self):
+        value = lane("phase-ready")
+        recommendations = sc.recommend_slots([value], [], [], sc.default_config(), NOW)
+        self.assertFalse(any(item.role == "integration" for item in recommendations))
+        self.assertTrue(any(item.role == "implementation" for item in recommendations))
+
+    def test_integration_cannot_be_claimed_before_integration_ready(self):
+        store = sc.MemoryStore()
+        value = lane("phase-claim")
+        with self.assertRaises(sc.ValidationError):
+            sc.claim_slot(store, value, "integration", worker("intg1"), NOW)
+
+    def test_integration_is_recommended_and_claimable_when_ready(self):
+        store = sc.MemoryStore()
+        value = lane("phase-integrate", state="INTEGRATION_READY")
+        recommendations = sc.recommend_slots([value], [], [], sc.default_config(), NOW)
+        self.assertTrue(any(item.role == "integration" for item in recommendations))
+        claim = sc.claim_slot(store, value, "integration", worker("intg2"), NOW)
+        self.assertEqual(claim.value["role"], "integration")
+
+    def test_review_role_requires_review_phase(self):
+        store = sc.MemoryStore()
+        value = lane("phase-review")
+        sc.claim_slot(store, value, "primary", worker("impl3"), NOW)
+        with self.assertRaises(sc.ValidationError):
+            sc.claim_slot(store, value, "review", worker("revw3"), NOW)
+
+    def test_malformed_epic_fails_validation_before_scheduler(self):
+        value = sc.sample_lane("bad-epic")
+        value["epic"] = ["capture"]
+        with self.assertRaises(sc.ValidationError):
+            sc.validate_lane(value)
+
+    def test_resource_order_must_cover_every_resource_class(self):
+        config = sc.default_config()
+        config["resourceOrder"] = config["resourceOrder"][:-1]
+        with self.assertRaises(sc.ValidationError):
+            sc.validate_config(config)
 
 
 if __name__ == "__main__":
