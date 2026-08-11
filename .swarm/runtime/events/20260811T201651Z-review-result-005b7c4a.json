@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "type": "REVIEW_RESULT",
+  "eventId": "20260811T201651Z-review-result-005b7c4a",
+  "workerId": "sol-20260811-8f3d",
+  "laneId": "capture-flagship-composition",
+  "createdAt": "2026-08-11T20:16:51Z",
+  "message": "Independent generation-8 review ACCEPTS PR #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 as the app-visible Capture AX/large-type ingredient. Fresh exact-head Main Selective Graft 31490540822, Field Build Provenance 31490540890, Standalone Visual 31490540910, and Xcode 27 31490540888 are terminal SUCCESS; visual artifact 9101029285 is unexpired and exact-head bound. Net PR diff remains exactly five intended Capture UI/AX-test paths; current main remains d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. Standard first-fold copy density remains next-rung polish, not a blocker for this slice. Runtime VoiceOver, full accessibility matrix, build/private-identity/signed-install/Final-GO composition, authenticated ES80 telemetry, and physical GO remain unaccepted. PHYSICAL_NO_GO."
+}
