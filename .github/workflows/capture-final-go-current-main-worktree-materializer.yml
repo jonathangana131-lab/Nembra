@@ -25,137 +25,65 @@ jobs:
           test "$(git merge-base "$parent" HEAD)" = "$parent"
           test "$(git diff --name-only "$parent" HEAD)" = '.github/workflows/capture-final-go-current-main-worktree-materializer.yml'
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git cat-file -e 36feddadc1b5bcfb28274b2e7e5f1d3d341e3335^{commit}
 
-      - name: Materialize exact-current-main and worktree-byte custody
+      - name: Recover only the validated unique custody deltas
         shell: bash
         run: |
           set -euo pipefail
+          git show 36feddadc1b5bcfb28274b2e7e5f1d3d341e3335:scripts/ci/es80_authenticated_stationary_final_go.py > /tmp/hardened_issuer.py
+          git show 36feddadc1b5bcfb28274b2e7e5f1d3d341e3335:scripts/ci/tests/test_es80_authenticated_stationary_final_go.py > /tmp/hardened_tests.py
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
 
-          issuer = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
-          source = issuer.read_text()
+          issuer_path = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          current = issuer_path.read_text()
+          hardened = Path('/tmp/hardened_issuer.py').read_text()
 
-          old = '''    if not ((state=="open" and draft is False) or (state=="closed" and merged)):
-              raise GoError("canonical PR is draft or closed without merge; software acceptance is not promotable")
-              subjects=[]
-          '''
-          new = '''    if not ((state=="open" and draft is False) or (state=="closed" and merged)):
-              raise GoError("canonical PR is draft or closed without merge; software acceptance is not promotable")
-              _,main=get("/branches/main"); main_sha=canon(main.get("commit",{}).get("sha"),"current main")
-              _,comparison=get(f"/compare/{main_sha}...{source}"); merge_base=comparison.get("merge_base_commit",{})
-              if comparison.get("status") not in {"ahead","identical"} or canon(merge_base.get("sha"),"main/candidate merge base")!=main_sha:
-                  raise GoError("candidate does not contain the exact current main authority")
-              subjects=[]
-          '''
-          if source.count(old) != 1:
-              raise SystemExit('public main-admission anchor drift')
-          source = source.replace(old, new, 1)
+          # Port exact-current-main admission as one reviewed function, leaving the newer
+          # control-plane, path, signed-artifact and environment custody code untouched.
+          c0 = current.index('def public(')
+          c1 = current.index('\ndef control_plane(', c0)
+          h0 = hardened.index('def public(')
+          h1 = hardened.index('\ndef control_plane(', h0)
+          current = current[:c0] + hardened[h0:h1] + current[c1:]
 
-          old = '''    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":state,"merged":merged,"draft":draft},subjects
-          '''
-          new = '''    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","mainSHA":main_sha,"state":state,"merged":merged,"draft":draft},subjects
-          '''
-          if source.count(old) != 1:
-              raise SystemExit('public return anchor drift')
-          source = source.replace(old, new, 1)
-
-          old = '''def candidate(repo:Path,source:str):
-              root=repo.expanduser().resolve(strict=True)
-              if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
-              blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in (("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))}
-              if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
-              paths=[root/INSTALLER,root/RUNBOOK,root/IDENTITY]
-              if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")
-              ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()
-              if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
-              return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
-          '''
-          new = '''def _git_blob_hash(root:Path,raw:bytes)->str:
-              try:
-                  p=subprocess.run(["/usr/bin/git","-C",str(root),"hash-object","--no-filters","--stdin"],check=True,input=raw,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={"PATH":"/usr/bin:/bin"})
-              except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate worktree Git blob hashing failed") from e
-              try:value=p.stdout.decode().strip().lower()
-              except UnicodeDecodeError as e: raise GoError("candidate worktree Git blob hash invalid") from e
-              if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value): raise GoError("candidate worktree Git blob hash invalid")
-              return value
-
-          def _tracked_worktree_bytes(root:Path,relative:str,expected_blob:str)->bytes:
-              tag=git(root,"ls-files","-v","--",relative)
-              if tag!=f"H {relative}": raise GoError(f"candidate authority path has non-default Git index flags: {relative}")
-              path=root/relative; current=root
-              for part in Path(relative).parts:
-                  current/=part
-                  try:s=current.lstat()
-                  except OSError as e: raise GoError(f"candidate authority path unavailable: {relative}") from e
-                  if stat.S_ISLNK(s.st_mode): raise GoError(f"candidate authority path contains symlink component: {relative}")
-              raw=regular(path,f"candidate authority path {relative}")
-              if _git_blob_hash(root,raw)!=expected_blob: raise GoError(f"candidate worktree bytes differ from accepted Git blob: {relative}")
-              return raw
-
-          def candidate(repo:Path,source:str):
-              root=repo.expanduser().resolve(strict=True)
-              if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
-              entries=(("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))
-              blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in entries}
-              if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
-              raws={k:_tracked_worktree_bytes(root,p,blobs[k]) for k,p in entries}
-              try: ins=raws["installer"].decode(); rb=raws["runbook"].decode(); ident=raws["buildIdentity"].decode()
-              except UnicodeDecodeError as e: raise GoError("candidate authority source is not UTF-8") from e
-              if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
-              return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
-          '''
-          if source.count(old) != 1:
-              raise SystemExit('candidate custody anchor drift')
-          source = source.replace(old, new, 1)
+          # Port only the hidden-index/worktree-byte candidate custody block. Stop before
+          # device_hash so the newer component-wise private-device no-symlink contract survives.
+          c0 = current.index('def candidate(')
+          c1 = current.index('\ndef device_hash(', c0)
+          h0 = hardened.index('def _tracked_worktree_bytes(')
+          h1 = hardened.index('\ndef device_hash(', h0)
+          current = current[:c0] + hardened[h0:h1] + current[c1:]
 
           old = '    stable_pr=("number","headSHA","headBranch","base","state","merged","draft")\n'
           new = '    stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")\n'
-          if source.count(old) != 1:
-              raise SystemExit('post-install stable PR anchor drift')
-          source = source.replace(old, new, 1)
-          issuer.write_text(source)
+          if current.count(old) != 1:
+              raise SystemExit('stable PR anchor drift')
+          current = current.replace(old, new, 1)
+          issuer_path.write_text(current)
 
-          tests = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
-          text = tests.read_text()
-          old = '  self.write_review()\n'
-          new = '  self.main=\'0\'*40;self.compare_status=\'ahead\'\n  self.write_review()\n'
-          if text.count(old) != 1:
-              raise SystemExit('fixture state anchor drift')
-          text = text.replace(old, new, 1)
+          test_path = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
+          tests = test_path.read_text()
+          hardened_tests = Path('/tmp/hardened_tests.py').read_text()
 
-          old = ' def get(self,p):v=self.map[p];return json.dumps(v).encode(),v\n'
-          new = ''' def get(self,p):
-              if p==\'/branches/main\':v={\'commit\':{\'sha\':self.main}}
-              elif p.startswith(\'/compare/\'):
-               base=p.split(\'/compare/\',1)[1].split(\'...\',1)[0];v={\'status\':self.compare_status,\'merge_base_commit\':{\'sha\':base}}
-              else:v=self.map[p]
-              return json.dumps(v).encode(),v
-          '''
-          if text.count(old) != 1:
-              raise SystemExit('fixture get anchor drift')
-          text = text.replace(old, new, 1)
+          # The hardened fixture knows how to answer exact-main and compare API calls.
+          c0 = tests.index(' def get(self,p):')
+          c1 = tests.index(' def control(', c0)
+          h0 = hardened_tests.index(' def get(self,p):')
+          h1 = hardened_tests.index(' def control(', h0)
+          tests = tests[:c0] + hardened_tests[h0:h1] + tests[c1:]
 
-          marker = " def test_post_install_revalidation_rejects_pr_artifact_review_or_device_drift(self):\n"
-          addition = ''' def test_current_main_is_bound_and_must_be_candidate_ancestor(self):
-              r=self.f.build();self.assertEqual(r['acceptedPR']['mainSHA'],'0'*40)
-              self.f.compare_status='diverged';self.no(self.f.build)
-             def test_post_install_current_main_drift_is_rejected(self):
-              def move_main(r,s,d):x=self.f.inst(r,s,d);self.f.main='1'*40;return x
-              self.no(lambda:self.f.build(run_installer=move_main))
-             def test_candidate_rejects_hidden_index_flags_and_worktree_byte_drift(self):
-              path=self.f.repo/go.INSTALLER;original=path.read_text()
-              for flag,clear in [('--assume-unchanged','--no-assume-unchanged'),('--skip-worktree','--no-skip-worktree')]:
-               subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index',flag,go.INSTALLER],check=True)
-               try:
-                path.write_text(original+'# hidden byte drift\\n');self.no(lambda:go.candidate(self.f.repo,self.f.s))
-               finally:
-                path.write_text(original);subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'update-index',clear,go.INSTALLER],check=True)
-          '''
-          if text.count(marker) != 1:
+          # Port the three focused adversarial cases: current-main ancestry, post-install main
+          # drift, and hidden assume-unchanged/skip-worktree byte replacement.
+          h0 = hardened_tests.index(' def test_current_main_is_bound_and_must_be_candidate_ancestor')
+          h1 = hardened_tests.index(' def test_installer_ignores_inherited_bash_startup_environment', h0)
+          addition = hardened_tests[h0:h1]
+          marker = ' def test_post_install_revalidation_rejects_pr_artifact_review_or_device_drift(self):\n'
+          if tests.count(marker) != 1:
               raise SystemExit('test insertion anchor drift')
-          text = text.replace(marker, addition + marker, 1)
-          tests.write_text(text)
+          tests = tests.replace(marker, addition + marker, 1)
+          test_path.write_text(tests)
           PY
 
       - name: Validate composed authority repair
@@ -167,9 +95,11 @@ jobs:
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
           grep -Fq 'mainSHA' scripts/ci/es80_authenticated_stationary_final_go.py
-          grep -Fq 'hash-object","--no-filters","--stdin"' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'candidate authority path has non-default Git index flags' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'candidate worktree bytes differ from accepted Git blob' scripts/ci/es80_authenticated_stationary_final_go.py
           grep -Fq 'canonical_private_path(device,"private intended-device identifier")' scripts/ci/es80_authenticated_stationary_final_go.py
           grep -Fq 'env=installer_environment(device)' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq '["/bin/bash","--noprofile","--norc","-p"' scripts/ci/es80_authenticated_stationary_final_go.py
           grep -Fq 'stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")' scripts/ci/es80_authenticated_stationary_final_go.py
           git diff --check
 
