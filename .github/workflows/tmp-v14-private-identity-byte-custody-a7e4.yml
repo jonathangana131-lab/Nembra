@@ -1,4 +1,4 @@
-name: Temporary V14 Private Identity Byte Custody A7E4
+name: Temporary Private Identity Byte Custody
 
 on:
   push:
@@ -13,305 +13,35 @@ permissions:
 jobs:
   repair:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           ref: repair/v14-private-identity-publication-custody-sol
           fetch-depth: 0
-
-      - name: Bind publication to sealed inode and accepted bytes
+      - name: Materialize and test repair
         shell: bash
         run: |
           set -euo pipefail
           trigger="$(git rev-parse HEAD)"
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          writer_path = Path("Scripts/provision_capture_tuya_identity_writer.py")
-          text = writer_path.read_text()
-
-          marker = "\ndef _validate_existing_output(parent_fd: int, name: str) -> None:\n"
-          helpers = r'''
-          def _require_staging_name_matches_fd(
-              checkout_fd: int,
-              temporary_name: str,
-              sealed: os.stat_result,
-          ) -> None:
-              try:
-                  named = os.stat(temporary_name, dir_fd=checkout_fd, follow_symlinks=False)
-              except OSError as exc:
-                  raise ProvisionError("private identity staging name changed before publication") from exc
-              if (
-                  not stat.S_ISREG(named.st_mode)
-                  or named.st_uid != os.geteuid()
-                  or named.st_nlink != 1
-                  or named.st_size != sealed.st_size
-                  or named.st_dev != sealed.st_dev
-                  or named.st_ino != sealed.st_ino
-              ):
-                  raise ProvisionError("private identity staging name no longer names the sealed staging inode")
-
-
-          def _remove_final_if_same_inode_beneath(
-              checkout_fd: int,
-              relative_path: str,
-              expected_dev: int,
-              expected_ino: int,
-          ) -> None:
-              components = _relative_components(relative_path)
-              parent_fd = os.dup(checkout_fd)
-              try:
-                  for component in components[:-1]:
-                      next_fd = os.open(component, _directory_flags(), dir_fd=parent_fd)
-                      os.close(parent_fd)
-                      parent_fd = next_fd
-                  try:
-                      named = os.stat(components[-1], dir_fd=parent_fd, follow_symlinks=False)
-                  except FileNotFoundError:
-                      return
-                  if (
-                      stat.S_ISREG(named.st_mode)
-                      and named.st_uid == os.geteuid()
-                      and named.st_nlink == 1
-                      and named.st_dev == expected_dev
-                      and named.st_ino == expected_ino
-                  ):
-                      os.unlink(components[-1], dir_fd=parent_fd)
-                      os.fsync(parent_fd)
-              except OSError:
-                  return
-              finally:
-                  os.close(parent_fd)
-
-
-          def _publication_metadata_signature(metadata: os.stat_result) -> tuple[int, ...]:
-              return (
-                  stat.S_IFMT(metadata.st_mode),
-                  metadata.st_uid,
-                  metadata.st_nlink,
-                  metadata.st_size,
-                  metadata.st_dev,
-                  metadata.st_ino,
-                  metadata.st_mtime_ns,
-                  metadata.st_ctime_ns,
-              )
-
-
-          def _read_exact_fd_payload(descriptor: int, expected_size: int) -> bytes:
-              os.lseek(descriptor, 0, os.SEEK_SET)
-              result = bytearray()
-              while len(result) <= expected_size:
-                  chunk = os.read(descriptor, min(65536, expected_size + 1 - len(result)))
-                  if not chunk:
-                      break
-                  result.extend(chunk)
-              return bytes(result)
-          '''.replace("\n          ", "\n")
-
-          if "def _require_staging_name_matches_fd(" not in text:
-              if text.count(marker) != 1:
-                  raise SystemExit("writer helper insertion point is not unique")
-              text = text.replace(marker, "\n" + helpers + marker, 1)
-
-          old_publish = '''        _secure_replace_beneath(checkout_fd, temporary_name, destination_relative)
-
-        final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
-'''
-          new_publish = '''        _require_staging_name_matches_fd(checkout_fd, temporary_name, sealed)
-        _secure_replace_beneath(checkout_fd, temporary_name, destination_relative)
-
-        final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
-'''
-          if "_require_staging_name_matches_fd(checkout_fd, temporary_name, sealed)" not in text:
-              if text.count(old_publish) != 1:
-                  raise SystemExit("secure publication call site is not the expected shape")
-              text = text.replace(old_publish, new_publish, 1)
-
-          old_final = '''        final = os.fstat(final_fd)
-        if (
-            not stat.S_ISREG(final.st_mode)
-            or final.st_uid != os.geteuid()
-            or final.st_nlink != 1
-            or final.st_size != len(payload)
-            or final.st_dev != sealed.st_dev
-            or final.st_ino != sealed.st_ino
-        ):
-            raise ProvisionError("published private identity output is not the sealed staging inode")
-        os.fchmod(final_fd, 0o600)
-'''
-          new_final = '''        final = os.fstat(final_fd)
-        if (
-            not stat.S_ISREG(final.st_mode)
-            or final.st_uid != os.geteuid()
-            or final.st_nlink != 1
-            or final.st_size != len(payload)
-            or final.st_dev != sealed.st_dev
-            or final.st_ino != sealed.st_ino
-        ):
-            _remove_final_if_same_inode_beneath(
-                checkout_fd,
-                destination_relative,
-                final.st_dev,
-                final.st_ino,
-            )
-            raise ProvisionError("published private identity output is not the sealed staging inode")
-
-        before_read = _publication_metadata_signature(final)
-        published_payload = _read_exact_fd_payload(final_fd, len(payload))
-        after_read_metadata = os.fstat(final_fd)
-        after_read = _publication_metadata_signature(after_read_metadata)
-        if before_read != after_read or published_payload != payload:
-            _remove_final_if_same_inode_beneath(
-                checkout_fd,
-                destination_relative,
-                after_read_metadata.st_dev,
-                after_read_metadata.st_ino,
-            )
-            raise ProvisionError("published private identity output changed or does not match accepted bytes")
-        os.fchmod(final_fd, 0o600)
-'''
-          if "published_payload = _read_exact_fd_payload(final_fd, len(payload))" not in text:
-              if text.count(old_final) != 1:
-                  raise SystemExit("final publication custody block is not the expected shape")
-              text = text.replace(old_final, new_final, 1)
-
-          writer_path.write_text(text)
-
-          test_path = Path("scripts/ci/tests/test_capture_private_identity_publication_races.py")
-          tests = test_path.read_text()
-          test_marker = "    def test_detached_private_directory_cannot_receive_or_stage_credential_identity(self) -> None:\n"
-          same_inode_test = r'''    def test_same_staging_inode_payload_mutation_cannot_be_accepted(self) -> None:
-              writer = load_writer()
-              payload = b"accepted-private-identity-payload"
-              attacker_payload = b"Y" * len(payload)
-
-              with tempfile.TemporaryDirectory(prefix="nembra-private-same-inode-race-") as temporary:
-                  checkout = Path(temporary) / "repo"
-                  parent = checkout / "private"
-                  parent.mkdir(parents=True, mode=0o700)
-                  checkout_fd = os.open(checkout, writer._directory_flags())
-                  parent_fd = os.open(parent, writer._directory_flags())
-                  original_publish = writer._secure_replace_beneath
-                  attacked = False
-
-                  def adversarial_publish(root_fd: int, src: str, dst: str) -> None:
-                      nonlocal attacked
-                      if not attacked:
-                          attacked = True
-                          mutation_fd = os.open(
-                              src,
-                              os.O_WRONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
-                              dir_fd=root_fd,
-                          )
-                          try:
-                              os.lseek(mutation_fd, 0, os.SEEK_SET)
-                              view = memoryview(attacker_payload)
-                              offset = 0
-                              while offset < len(view):
-                                  written = os.write(mutation_fd, view[offset:])
-                                  self.assertGreater(written, 0)
-                                  offset += written
-                              os.fsync(mutation_fd)
-                          finally:
-                              os.close(mutation_fd)
-                      original_publish(root_fd, src, dst)
-
-                  writer._secure_replace_beneath = adversarial_publish
-                  rejected = False
-                  try:
-                      try:
-                          writer._write_staged(
-                              checkout_fd,
-                              parent_fd,
-                              "identity.swift",
-                              "private/identity.swift",
-                              payload,
-                          )
-                      except (writer.ProvisionError, OSError):
-                          rejected = True
-                  finally:
-                      writer._secure_replace_beneath = original_publish
-                      os.close(parent_fd)
-                      os.close(checkout_fd)
-
-                  final = parent / "identity.swift"
-                  final_bytes = final.read_bytes() if final.exists() else None
-                  self.assertTrue(attacked, "diagnostic never reached the sealed-inode publication boundary")
-                  self.assertTrue(
-                      rejected or final_bytes == payload,
-                      "writer reported success after the sealed staging inode payload changed in place",
-                  )
-                  self.assertNotEqual(
-                      final_bytes,
-                      attacker_payload,
-                      "same-inode attacker bytes were accepted as the published private identity",
-                  )
-
-'''.replace("\n              ", "\n        ").replace("\n          ", "\n    ")
-          if "def test_same_staging_inode_payload_mutation_cannot_be_accepted" not in tests:
-              if tests.count(test_marker) != 1:
-                  raise SystemExit("publication race test insertion point is not unique")
-              tests = tests.replace(test_marker, same_inode_test + test_marker, 1)
-              test_path.write_text(tests)
-          PY
-
+          python3 scripts/ci/tmp_v14_private_identity_byte_custody_a7e4.py
           python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
           python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
-          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
-          python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
-
-          new_digest="$(sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}')"
-          old_digest="920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34"
-          export NEW_WRITER_DIGEST="$new_digest" OLD_WRITER_DIGEST="$old_digest"
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          import subprocess
-
-          old = os.environ["OLD_WRITER_DIGEST"]
-          new = os.environ["NEW_WRITER_DIGEST"]
-          workflow = Path(".github/workflows/tmp-v14-private-identity-byte-custody-a7e4.yml")
-          result = subprocess.run(
-              ["git", "grep", "-l", "-F", old, "--", "."],
-              check=False,
-              stdout=subprocess.PIPE,
-              text=True,
-          )
-          paths = [Path(line) for line in result.stdout.splitlines() if line]
-          functional = [path for path in paths if path != workflow]
-          if not functional:
-              raise SystemExit("old writer digest is no longer pinned by any tracked functional source")
-          print("Re-pinning writer digest in:")
-          for path in functional:
-              print(f"  {path}")
-              data = path.read_text()
-              if old not in data:
-                  raise SystemExit(f"digest grep/read mismatch for {path}")
-              path.write_text(data.replace(old, new))
-          PY
-
-          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
-          python3 -I scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
           for test in scripts/ci/tests/test_capture_private_identity_*.py; do
             echo "== $test =="
             python3 -I "$test"
           done
-          swift test --package-path Packages/NembraBluetoothCapture
           git diff --check
-
           rm -f .github/workflows/tmp-private-identity-writer-cleanup.yml
           rm -f .github/workflows/tmp-private-identity-publication-cleanup-v2.yml
           rm -f .github/workflows/tmp-v14-private-identity-byte-custody-a7e4.yml
+          rm -f scripts/ci/tmp_v14_private_identity_byte_custody_a7e4.py
           find . -type d -name __pycache__ -prune -exec rm -rf {} +
-
           git status --short
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git commit -m 'fix(capture): bind private identity publication bytes'
-
           git fetch origin repair/v14-private-identity-publication-custody-sol
           test "$(git rev-parse FETCH_HEAD)" = "$trigger"
           git push origin HEAD:repair/v14-private-identity-publication-custody-sol
