@@ -1,0 +1,81 @@
+name: TEMP Capture Vnode Convergence Guard
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-authority-vnode-converged-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-vnode-convergence-guard.yml
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-authority-vnode-converged-sol-20260811
+          fetch-depth: 0
+      - name: Bind exact convergence input
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Add vnode attribute custody to current guard only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Scripts/capture_tuya_private_input_build_guard.py')
+          text = path.read_text(encoding='utf-8')
+          required_old = '            "KQ_NOTE_EXTEND",\n            "KQ_NOTE_LINK",'
+          required_new = '            "KQ_NOTE_EXTEND",\n            "KQ_NOTE_ATTRIB",\n            "KQ_NOTE_LINK",'
+          flags_old = '            | select.KQ_NOTE_EXTEND\n            | select.KQ_NOTE_LINK'
+          flags_new = '            | select.KQ_NOTE_EXTEND\n            | select.KQ_NOTE_ATTRIB\n            | select.KQ_NOTE_LINK'
+          if required_new not in text:
+              if text.count(required_old) != 1:
+                  raise SystemExit(f'vnode capability anchor changed: {text.count(required_old)} matches')
+              text = text.replace(required_old, required_new, 1)
+          if flags_new not in text:
+              if text.count(flags_old) != 1:
+                  raise SystemExit(f'vnode subscription anchor changed: {text.count(flags_old)} matches')
+              text = text.replace(flags_old, flags_new, 1)
+          if text.count('"KQ_NOTE_ATTRIB"') != 1 or text.count('| select.KQ_NOTE_ATTRIB') != 1:
+              raise SystemExit('KQ_NOTE_ATTRIB custody must appear exactly once in capability and fflags contracts')
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate converged authority surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py \
+            scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py \
+            scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          python3 -m unittest -v \
+            scripts.ci.tests.test_capture_cocoapods_vnode_attribute_custody \
+            scripts.ci.tests.test_capture_private_review_exception_proxy_custody \
+            scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody \
+            scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody \
+            scripts.ci.tests.test_capture_field_accepted_source_path_contract
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+      - name: Publish only current-guard vnode delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Scripts/capture_tuya_private_input_build_guard.py
+          git diff --cached --quiet && { echo 'ERROR: vnode convergence produced no guard delta' >&2; exit 1; }
+          git commit -m 'Capture: watch vnode attribute mutations during field build'
+          git push origin HEAD:repair/v14-capture-authority-vnode-converged-sol-20260811
