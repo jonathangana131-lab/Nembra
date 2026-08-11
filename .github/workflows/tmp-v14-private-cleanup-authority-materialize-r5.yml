@@ -1,0 +1,98 @@
+name: tmp V14 Private Cleanup Authority Materializer R5
+
+on:
+  push:
+    branches:
+      - repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811
+    paths:
+      - .github/workflows/tmp-v14-private-cleanup-authority-materialize-r5.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 16
+
+      - name: Bind reconciled expected-red construction lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='2f8f3aa939dab85c8231d44047dcfc42b0064da5'
+          git merge-base --is-ancestor "$base" HEAD
+          changed="$(git diff --name-only "$base"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/tmp-v14-private-cleanup-authority-diagnostic.yml' \
+            '.github/workflows/tmp-v14-private-cleanup-authority-materialize-r2.yml' \
+            '.github/workflows/tmp-v14-private-cleanup-authority-materialize-r3.yml' \
+            '.github/workflows/tmp-v14-private-cleanup-authority-materialize-r4.yml' \
+            '.github/workflows/tmp-v14-private-cleanup-authority-materialize-r5.yml' \
+            '.github/workflows/tmp-v14-private-cleanup-authority-materialize.yml' \
+            'scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py' \
+            'scripts/ci/tests/test_capture_private_identity_publication_races.py' \
+            'scripts/ci/tmp_v14_private_cleanup_authority_materialize.py' | sort)"
+          test "$changed" = "$expected"
+
+      - name: Materialize descriptor-only failure sanitation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_v14_private_cleanup_authority_materialize.py
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+          git diff --check
+
+      - name: Writer self-test
+        run: /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+      - name: Publication races
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+      - name: Same-inode payload races
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+      - name: Destination ancestor swap
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+      - name: Crash residue
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+      - name: Recovery and cleanup authority
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+      - name: Final-name binding
+        run: /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+
+      - name: Verify digest and source-contract pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          writer = Path('Scripts/provision_capture_tuya_identity_writer.py').read_bytes()
+          digest = hashlib.sha256(writer).hexdigest()
+          shell = Path('Scripts/provision_capture_tuya_identity.sh').read_text(encoding='utf-8')
+          swift = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift').read_text(encoding='utf-8')
+          assert f'WRITER_SHA256="{digest}"' in shell
+          assert digest in swift
+          PY
+
+      - name: Publish durable repair bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Nembra Swarm'
+          git config user.email 'noreply@users.noreply.github.com'
+          git add \
+            Scripts/provision_capture_tuya_identity_writer.py \
+            Scripts/provision_capture_tuya_identity.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift \
+            scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Capture P0: keep failure cleanup on held inode authority'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
