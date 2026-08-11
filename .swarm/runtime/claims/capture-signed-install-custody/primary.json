@@ -9,7 +9,7 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:37:36Z",
-  "lastHeartbeatAt": "2026-08-11T22:10:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:16:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-custody-recovery-gpt56-sol-20260811",
   "pr": 3056,
@@ -17,5 +17,5 @@
   "currentHeadSHA": "7e7ac8b97306cb52439daae15c371b570b0d0701",
   "takeoverFromWorkerId": "sol-20260811-1312n8",
   "takeoverReason": "Generation-4 primary last heartbeat 2026-08-11T20:34:04Z plus 2700-second lease expired before recovery. Recover the same Capture P0 signed-install compiler-output-origin lane from live #2995 exact a71cc55 without touching active review/tests. Preserve #2998 detached-FD blocker and all protected-stage/signature/intended-device custody. PHYSICAL NO-GO.",
-  "checkpoint": "Draft #3056 exact 7e7ac8b9 is the production successor. Production rejects root UID/GID/ambient root-group authority, models the real invoking non-root groups for sudo revocation, and gives the compiler only primary GID + the fresh capability GID. The real-Xcode acceptance oracle is now aligned: it independently rejects root user/group/normal-group authority and records fieldNormalGroups for semantic acceptance. All earlier #3056 gate results are stale; fresh exact-head gates are required. Detached FD/dirfd/mmap freeze, inherited private-Tuya provenance, and final composition remain blockers. PHYSICAL NO-GO."
+  "checkpoint": "Draft #3056 exact 7e7ac8b9 remains the production successor. Exact-head Capture Signed App Install Custody run 31541166405 has one completed green job: portable source/fingerprint regressions plus protected-stage same-UID rejection passed on this head. macOS ACL, compiler capability, real-Xcode, and runner-transport jobs remain queued, so the PR is not accepted. Field Build Provenance run 31541166287 is also queued; inherited private-Tuya provenance debt is not waived. Detached FD/dirfd/mmap freeze and final composed Final-GO authority remain blockers. PHYSICAL NO-GO."
 }
