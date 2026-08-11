@@ -132,8 +132,8 @@ if [[ ! -d NembraCapture.xcworkspace || ! -d Pods ]]; then
   exit 9
 fi
 
-if [[ ! -f Podfile.lock ]]; then
-  echo "ERROR: CocoaPods did not create Podfile.lock; exact field dependency provenance is unavailable." >&2
+if [[ ! -f Podfile.lock || ! -f Pods/Manifest.lock ]]; then
+  echo "ERROR: CocoaPods did not create Podfile.lock plus its Pods/Manifest.lock mirror; exact field dependency provenance is unavailable." >&2
   exit 10
 fi
 
@@ -147,6 +147,15 @@ do
   fi
 done
 
+# CocoaPods' standard [CP] manifest check consumes both files. Before adding our
+# generated-subject attestation they must already describe the same resolution.
+# Manifest.lock is excluded from the generated graph hash to avoid making the
+# graph digest recursively depend on the attestation that is about to be added.
+if ! cmp -s Podfile.lock Pods/Manifest.lock; then
+  echo "ERROR: CocoaPods produced divergent Podfile.lock and Pods/Manifest.lock before generated-build attestation." >&2
+  exit 17
+fi
+
 if ! OBSERVED_GENERATED_BUILD_SUBJECT="$(/usr/bin/python3 -I "$BUILD_SUBJECT_HELPER" fingerprint \
   --pods "$REPO_ROOT/Pods" \
   --workspace "$REPO_ROOT/NembraCapture.xcworkspace")"; then
@@ -159,18 +168,26 @@ fi
 }
 
 # Review-only creates the authority candidate. Normal bootstrap restores the
-# exact accepted attestation even on a mismatch so the accepted lock bytes do
-# not silently mutate; the command still fails before xcodebuild below.
+# exact accepted attestation even on a generated-graph mismatch so the accepted
+# lock bytes do not silently mutate; the command still fails before xcodebuild.
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   ATTESTED_GENERATED_BUILD_SUBJECT="$OBSERVED_GENERATED_BUILD_SUBJECT"
 else
   ATTESTED_GENERATED_BUILD_SUBJECT="$EXPECTED_GENERATED_BUILD_SUBJECT"
 fi
-if ! /usr/bin/python3 -I "$BUILD_SUBJECT_HELPER" attest-lock \
-  --lockfile "$REPO_ROOT/Podfile.lock" \
-  --digest "$ATTESTED_GENERATED_BUILD_SUBJECT" >/dev/null
-then
-  echo "ERROR: Podfile.lock could not be bound to the generated CocoaPods build subject." >&2
+for LOCK_MIRROR in "$REPO_ROOT/Podfile.lock" "$REPO_ROOT/Pods/Manifest.lock"; do
+  if ! /usr/bin/python3 -I "$BUILD_SUBJECT_HELPER" attest-lock \
+    --lockfile "$LOCK_MIRROR" \
+    --digest "$ATTESTED_GENERATED_BUILD_SUBJECT" >/dev/null
+  then
+    echo "ERROR: CocoaPods dependency lock/mirror could not be bound to the generated build subject." >&2
+    exit 17
+  fi
+done
+unset LOCK_MIRROR
+
+if ! cmp -s Podfile.lock Pods/Manifest.lock; then
+  echo "ERROR: attested Podfile.lock and Pods/Manifest.lock are not byte-for-byte identical; Xcode manifest custody would be ambiguous." >&2
   exit 17
 fi
 
@@ -222,6 +239,7 @@ if [[ "$REVIEW_ONLY" == "1" ]]; then
 DEPENDENCY + GENERATED BUILD SUBJECT CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
   Attested Podfile.lock SHA-256: $LOCK_SHA256
   Generated CocoaPods build subject SHA-256: $OBSERVED_GENERATED_BUILD_SUBJECT
+  Mirrored Pods/Manifest.lock: exact byte match
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
 
 Review and bind this exact attested lock digest to the exact accepted Capture
@@ -246,6 +264,7 @@ ThingSmartCryption package and local-only app identity pod.
 Resolved dependency provenance:
   Attested Podfile.lock SHA-256: $LOCK_SHA256
   Generated CocoaPods build subject SHA-256: $OBSERVED_GENERATED_BUILD_SUBJECT
+  Mirrored Pods/Manifest.lock: exact byte match
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
 
 NEXT BUILD RULE:
