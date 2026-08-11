@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607q4",
   "leaseId": "capture-runtime-accessibility-primary-1607q4-20260811-2322",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:22:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:22:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:23:00Z",
+  "releasedAt": "2026-08-11T23:23:00Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-runtime-voiceover-firstfold-sol-gpt56-20260811",
   "pr": 3073,
@@ -17,10 +18,10 @@
   "currentHeadSHA": "dd204e1e943af853e02857db145127810791b04b",
   "takeoverFromWorkerId": "sol-20260811-1607r4",
   "takeoverFromLeaseId": "capture-runtime-accessibility-primary-1607r4-20260811-2318",
-  "takeoverReason": "Generation-5 explicitly released while waiting on the decisive xcode-27 runtime VoiceOver run. Generation-6 refreshes that exact evidence and, only if red is classified, will perform the smallest truth-preserving non-conflicting closure action.",
+  "takeoverReason": "Generation-5 explicitly released while waiting on the decisive xcode-27 runtime VoiceOver run. Generation-6 refreshed the exact evidence and found no terminal result yet.",
   "ownedPaths": [
     ".github/workflows/capture-runtime-voiceover.yml",
     "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
   ],
-  "checkpoint": "Claimed released runtime-accessibility lane on exact #3073@dd204e1e. Product/base visual preconditions are already accepted; inspect decisive runtime run 31542656345 before changing any bytes. Simulator-only; PHYSICAL NO-GO."
+  "checkpoint": "Exact runtime job 31542656345 / job 93948350981 remains QUEUED on unchanged #3073@dd204e1e. Base/product visual preconditions remain accepted, and no new runtime evidence justifies harness or product mutation. Released instead of idling or consuming runner capacity. Simulator-only; PHYSICAL NO-GO."
 }
