@@ -17,6 +17,24 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(!installer.contains("DEVICE_COUNT"))
     }
 
+    @Test("intended-device identity is bound to Final GO digest before device discovery")
+    func intendedDeviceIdentityMustMatchFinalGoDigest() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(installer.contains("NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"))
+        #expect(installer.contains("hashlib.sha256(value.encode(\"utf-8\")).hexdigest()"))
+        #expect(installer.contains("hmac.compare_digest(actual_digest, expected_digest)"))
+        #expect(installer.contains("private intended-device identifier does not match Final GO authority"))
+        #expect(installer.contains("unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"))
+        let digestCheck = installer.range(of: "hmac.compare_digest(actual_digest, expected_digest)")
+        let deviceDiscovery = installer.range(of: "Verifying the intended iPhone 12 / iOS 27 baseline")
+        #expect(digestCheck != nil)
+        #expect(deviceDiscovery != nil)
+        if let digestCheck, let deviceDiscovery {
+            #expect(digestCheck.lowerBound < deviceDiscovery.lowerBound)
+        }
+    }
+
     @Test("accepted source carries the hardened private intended-device reader")
     func privateDeviceReaderExistsAndFailsClosed() throws {
         let helper = try readRepositoryFile("scripts/ci/es80_signed_field_artifact_private_runner.py")
