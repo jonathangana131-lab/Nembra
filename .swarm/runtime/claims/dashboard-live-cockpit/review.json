@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "dashboard-review-1607ax-20260811-2337",
   "generation": 11,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:37:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:37:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:40:00Z",
+  "releasedAt": "2026-08-11T23:40:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3117,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1",
   "takeoverFromWorkerId": "sol-20260811-1611dn",
   "takeoverFromLeaseId": "dashboard-review-1611dn-20260811-2328",
-  "takeoverReason": "Generation-10 explicitly released after independent performance-child source review. Capture P0 is currently saturated; claim free Dashboard review slot to independently review primary-owned #3117 one-file AX5 Connected readability repair without touching owned DashboardView/UI-test paths. Simulator-only; ES80 PHYSICAL NO-GO."
+  "takeoverReason": "Generation-10 explicitly released after performance-child review; generation-11 independently reviewed primary-owned AX5 connection readability patch during Capture saturation.",
+  "outcome": "SOURCE_ACCEPTABLE_RUNTIME_PIXEL_EVIDENCE_QUEUED",
+  "checkpoint": "Review 4911631877 posted on #3117 exact e9c0dab7. One-file AX-only titleOnly repair is source acceptable; standard cockpit/truth/control semantics untouched. Trusted command resolver green; exact xcode-27 build/test/capture job 93959225474 queued. Fresh AX5 stopped+riding pixel inspection still required. Simulator-only; ES80 PHYSICAL NO-GO."
 }
