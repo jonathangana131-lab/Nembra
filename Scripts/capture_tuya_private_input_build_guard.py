@@ -498,7 +498,12 @@ def run_guarded_build(
     if not command:
         raise BuildGuardError("no build command was supplied")
 
-    if require_accepted_authority_helpers:
+    accepted_authority_requested = (
+        require_accepted_authority_helpers
+        or require_accepted_generated_subject
+        or require_accepted_private_review_commitment
+    )
+    if accepted_authority_requested:
         provenance.require_accepted()
         generated_build.require_accepted()
 

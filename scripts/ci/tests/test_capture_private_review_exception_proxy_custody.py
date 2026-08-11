@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -84,6 +86,40 @@ class ExceptionProxyCustodyTests(unittest.TestCase):
         self.assertEqual(guard.main([]), 77)
         self.assertFalse(provenance_sentinel.exists())
         self.assertFalse(generated_sentinel.exists())
+
+    def test_accepted_subject_flags_cannot_omit_helper_execution_custody(self) -> None:
+        accepted_provenance = hashlib.sha256(PROVENANCE.read_bytes()).hexdigest()
+        accepted_generated = hashlib.sha256(GENERATED.read_bytes()).hexdigest()
+        for flag in (
+            "require_accepted_private_review_commitment",
+            "require_accepted_generated_subject",
+        ):
+            with self.subTest(flag=flag):
+                guard, provenance_sentinel, generated_sentinel = self._guard_with_malicious_neighbors()
+                previous_provenance = os.environ.get(guard.PROVENANCE_HELPER_ENV)
+                previous_generated = os.environ.get(guard.GENERATED_BUILD_SUBJECT_HELPER_ENV)
+                os.environ[guard.PROVENANCE_HELPER_ENV] = accepted_provenance
+                os.environ[guard.GENERATED_BUILD_SUBJECT_HELPER_ENV] = accepted_generated
+                try:
+                    with self.assertRaises(guard.BuildGuardError):
+                        guard.run_guarded_build(None, ["/usr/bin/true"], **{flag: True})
+                finally:
+                    if previous_provenance is None:
+                        os.environ.pop(guard.PROVENANCE_HELPER_ENV, None)
+                    else:
+                        os.environ[guard.PROVENANCE_HELPER_ENV] = previous_provenance
+                    if previous_generated is None:
+                        os.environ.pop(guard.GENERATED_BUILD_SUBJECT_HELPER_ENV, None)
+                    else:
+                        os.environ[guard.GENERATED_BUILD_SUBJECT_HELPER_ENV] = previous_generated
+                self.assertFalse(
+                    provenance_sentinel.exists(),
+                    "accepted-subject API flag executed a mutable provenance helper before accepted helper custody",
+                )
+                self.assertFalse(
+                    generated_sentinel.exists(),
+                    "accepted-subject API flag executed a mutable generated helper before accepted helper custody",
+                )
 
 
 if __name__ == "__main__":
