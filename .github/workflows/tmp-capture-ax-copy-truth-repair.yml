@@ -1,0 +1,68 @@
+name: Temporary Capture AX copy truth repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-live-main-visual-acceptance-sol
+    paths:
+      - '.github/workflows/tmp-capture-ax-copy-truth-repair.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Verify exact helper parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "73af943aef4e32d8924d06ea52c6e432306a8b3f"
+
+      - name: Scope AX copy to actual build authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = app.read_text()
+          old = 'Text("Account setup only in this public build.")'
+          new = 'Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one AX copy occurrence, found {source.count(old)}')
+          app.write_text(source.replace(old, new, 1))
+
+          test_file = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift')
+          tests = test_file.read_text()
+          old_test = '#expect(root.contains("Account setup only in this public build."))'
+          new_test = '#expect(root.contains("fieldBuildIsAuthoritative ? \\"Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority.\\" : \\"Account setup only in this public build.\\""))'
+          if tests.count(old_test) != 1:
+              raise SystemExit(f'expected exactly one AX copy assertion, found {tests.count(old_test)}')
+          test_file.write_text(tests.replace(old_test, new_test, 1))
+          PY
+
+          git diff --check
+          grep -Fq 'Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'fieldBuildIsAuthoritative ? \"Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority.\" : \"Account setup only in this public build.\"' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+
+      - name: Commit product truth repair and remove temporary helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/tmp-capture-ax-copy-truth.yml
+          git rm .github/workflows/tmp-capture-ax-copy-truth-repair.yml
+          git diff --check
+          git config user.name 'Nembra Capture Closure'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+          git commit -m 'fix(capture): scope AX account copy to build authority'
+          git push origin HEAD:agent/v14-capture-live-main-visual-acceptance-sol
