@@ -265,7 +265,7 @@ class GeneratedSubjectFinalGoR3Tests(unittest.TestCase):
                 SOURCE,
                 DIGEST,
                 base=base,
-                derive_subject=lambda _: DIGEST,
+                derive_subject=lambda _root, _source: DIGEST,
             )
             self.assertEqual(record["implementation"], MODULE.GENERATED_HELPER_PATH)
             self.assertEqual(record[MODULE.GENERATED_KEY], DIGEST)
@@ -275,7 +275,7 @@ class GeneratedSubjectFinalGoR3Tests(unittest.TestCase):
                     SOURCE,
                     DIGEST,
                     base=base,
-                    derive_subject=lambda _: "ef" * 32,
+                    derive_subject=lambda _root, _source: "ef" * 32,
                 )
 
     def test_parent_extension_preserves_sealed_installer_and_default_module_functions(self):
