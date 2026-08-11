@@ -415,7 +415,7 @@ enum AppBootstrap {
             simulatorService: service,
             initialState: state,
             scenario: scenario,
-            shouldAutoConnectOnLaunch: scenario.shouldAutoConnectOnLaunch,
+            shouldAutoConnectOnStart: scenario.shouldAutoConnectOnLaunch,
             speedInterpolationPolicy: .simulatorQA
         )
     }
