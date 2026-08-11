@@ -9,11 +9,12 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:16:41Z",
-  "lastHeartbeatAt": "2026-08-11T20:16:41Z",
+  "lastHeartbeatAt": "2026-08-11T20:25:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "takeoverFromWorkerId": "sol-20260811-c4d8f1",
-  "takeoverReason": "generation-2 reconciliation review lease expired at 2026-08-11T09:31:00Z; independently review current Capture reconciliation against live #2944/#2968/#2921/#2871/#2940 state and ensure durable lane routing does not promote stale heads or physical authority"
+  "takeoverReason": "generation-2 reconciliation review lease expired at 2026-08-11T09:31:00Z; independently review current Capture reconciliation against live #2944/#2968/#2921/#2871/#2940 state and ensure durable lane routing does not promote stale heads or physical authority",
+  "checkpoint": "Durable exact-head reconciliation evidence written at swarm-state 528140f3571377e9f9771360ca56f1be6a875b0f. Confirmed stale PR-body head references on #2968/#2921/#2944, exact red gate locations on #2968/#2921, expected-red dependencies #2969/#2964/#2955, and PHYSICAL_NO_GO routing. Refreshing live heads before release."
 }
