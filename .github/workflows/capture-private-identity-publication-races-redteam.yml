@@ -1,55 +1,72 @@
 name: Capture Private Identity Publication Races Red Team
 
-# Temporary bootstrap head for PR #2943; self-restored by the materializer.
 on:
+  push:
+    branches:
+      - adversarial/v14-private-identity-publication-races-sol
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - scripts/ci/tests/test_capture_private_identity_publication_races.py
+      - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+      - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+      - scripts/ci/tests/test_capture_private_identity_crash_residue.py
+      - scripts/ci/tests/test_capture_private_identity_recovery_neutralization.py
+      - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+      - .github/workflows/capture-private-identity-publication-races-redteam.yml
   pull_request:
     paths:
       - Scripts/provision_capture_tuya_identity_writer.py
-      - Scripts/provision_capture_tuya_identity.sh
-      - scripts/ci/materialize_private_identity_recovery_neutralization_4c47a9.py
-      - .github/workflows/one-shot-private-identity-recovery-neutralization-4c47a9.yml
+      - scripts/ci/tests/test_capture_private_identity_publication_races.py
+      - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+      - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+      - scripts/ci/tests/test_capture_private_identity_crash_residue.py
+      - scripts/ci/tests/test_capture_private_identity_recovery_neutralization.py
+      - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
       - .github/workflows/capture-private-identity-publication-races-redteam.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  materialize-private-recovery:
-    name: Materialize exact-inode recovery repair
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'repair/v14-private-identity-recovery-neutralization-sol-4c47a9-20260811'
+  publication-custody:
+    name: Reject staging substitution, detached ancestry, crash residue, and final-name swaps
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - name: Bind bootstrap checkout
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind diagnostic to exact checked-out head
         shell: bash
         env:
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Materialize and locally validate repair
+
+      - name: Compile adversarial diagnostic
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/materialize_private_identity_recovery_neutralization_4c47a9.py
-          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
-          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py
-          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_recovery_neutralization.py
-          python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
-          python3 -I scripts/ci/tests/test_capture_private_identity_recovery_neutralization.py
-          test -z "$(git diff --check)"
-      - name: Publish clean successor head
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_recovery_neutralization.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+
+      - name: Reject publication races and hard-exit residue
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'Nembra Swarm Sol'
-          git config user.email 'actions@users.noreply.github.com'
-          git add -A
-          git commit -m 'fix(capture): neutralize crash residue by exact descriptor'
-          git push origin HEAD:repair/v14-private-identity-recovery-neutralization-sol-4c47a9-20260811
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_neutralization.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
