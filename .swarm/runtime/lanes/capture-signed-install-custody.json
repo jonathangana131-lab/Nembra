@@ -13,7 +13,7 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy signed-install repair PR #2789 is still active and must finish its exact macOS/field/graft/Xcode acceptance before V15 takeover.",
+      "reason": "Legacy signed-install repair PR #2789 is still active. On exact head 050cf02d the Signed App Install Custody, Field Build Provenance, Main Selective Graft, and Xcode workflows all concluded action_required with no runnable jobs, so there is no terminal exact-head acceptance to compose.",
       "pr": 2789,
       "headSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3"
     }
@@ -40,7 +40,8 @@
   "legacy": {
     "primaryPR": 2789,
     "primaryHeadSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3",
-    "lineagePRs": [2688, 2741, 2754, 2789]
+    "lineagePRs": [2688, 2741, 2754, 2789],
+    "exactHeadGateState": "ACTION_REQUIRED_NO_JOBS"
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "legacy-import"]
 }
