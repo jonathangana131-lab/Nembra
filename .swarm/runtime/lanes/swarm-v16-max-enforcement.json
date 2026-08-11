@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "swarm-v16-max-enforcement",
+  "epic": "swarm",
+  "title": "V16 maximum-development control-plane hardening",
+  "objective": "Promote Nembra from shadow-only swarm coordination to trusted-base, digest-fenced enforcement for all new controlled work while grandfathering the pre-V16 Capture backlog; add atomic live-state projection, main-health binding, mechanical stop proof, reconciliation/orphan auditing, and stronger metrics without changing product or physical authority.",
+  "priority": 0,
+  "state": "READY",
+  "dependencies": [],
+  "blockers": [],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    ".swarm/config.json",
+    ".github/workflows/swarm-control-plane-shadow.yml",
+    "scripts/swarm_control.py",
+    "scripts/swarmcp"
+  ],
+  "adjacentWriteAreas": [
+    "scripts/ci/tests",
+    "docs/SWARM_CONTROL_PLANE.md",
+    "docs/adr/ADR-0015-github-native-swarm-control-plane.md",
+    "SWARM_GO.md"
+  ],
+  "slots": [
+    {
+      "name": "primary",
+      "role": "implementation",
+      "exclusive": true,
+      "leaseSeconds": 3600,
+      "resources": ["HIGH_CONTENTION_FILE"]
+    },
+    {
+      "name": "review",
+      "role": "adversarial-review",
+      "exclusive": true,
+      "leaseSeconds": 1800,
+      "resources": []
+    },
+    {
+      "name": "integration",
+      "role": "integration",
+      "exclusive": true,
+      "leaseSeconds": 1800,
+      "resources": ["RELEASE_INTEGRATION"]
+    }
+  ],
+  "acceptance": {
+    "independentReview": true
+  },
+  "physical": {
+    "required": false,
+    "state": "SOURCE_READY"
+  },
+  "tags": ["control-plane", "enforcement", "reconciliation", "observability"]
+}
