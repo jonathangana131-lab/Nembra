@@ -1,0 +1,542 @@
+diff --git a/Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift b/Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift
+index daf7f7df9..d83305cd9 100644
+--- a/Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift
++++ b/Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift
+@@ -30,7 +30,9 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
+         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
+         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
+ 
+-        #expect(script.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
++        #expect(script.contains("run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot"))
++        #expect(script.contains("NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"))
++        #expect(script.contains("NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"))
+         #expect(script.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
+         #expect(script.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
+         #expect(script.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))
+diff --git a/Scripts/bootstrap_capture_tuya_sdk.sh b/Scripts/bootstrap_capture_tuya_sdk.sh
+index 4da486f32..cd441df5b 100755
+--- a/Scripts/bootstrap_capture_tuya_sdk.sh
++++ b/Scripts/bootstrap_capture_tuya_sdk.sh
+@@ -26,6 +26,8 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
+   : "${NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 to the preaccepted 64-hex generated CocoaPods build-subject SHA-256 before field bootstrap.}"
+   : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 to the preaccepted 64-hex opaque private review commitment before field bootstrap.}"
+   : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 to the preaccepted 64-hex private-review verifier source SHA-256 before field bootstrap.}"
++  : "${NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256 to the preaccepted 64-hex private-input provenance helper source SHA-256 before field bootstrap.}"
++  : "${NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 to the preaccepted 64-hex generated-build-subject helper source SHA-256 before field bootstrap.}"
+   [[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+     echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 must be exactly 64 hex characters." >&2
+     exit 1
+@@ -42,19 +44,33 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
+     echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 must be exactly 64 hex characters." >&2
+     exit 1
+   }
++  [[ "$NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
++    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256 must be exactly 64 hex characters." >&2
++    exit 1
++  }
++  [[ "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
++    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 must be exactly 64 hex characters." >&2
++    exit 1
++  }
+   ACCEPTED_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
+   ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" | tr '[:upper:]' '[:lower:]')"
+   ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" | tr '[:upper:]' '[:lower:]')"
+   ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" | tr '[:upper:]' '[:lower:]')"
++  ACCEPTED_PROVENANCE_HELPER_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256" | tr '[:upper:]' '[:lower:]')"
++  ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256" | tr '[:upper:]' '[:lower:]')"
+ else
+   unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \
+     NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \
+     NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \
+-    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 || true
++    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 \
++    NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256 \
++    NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 || true
+   ACCEPTED_LOCK_SHA256=""
+   ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256=""
+   ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256=""
+   ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256=""
++  ACCEPTED_PROVENANCE_HELPER_SHA256=""
++  ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256=""
+ fi
+ 
+ [[ -x /usr/bin/python3 ]] || {
+@@ -71,10 +87,12 @@ done
+ unset required_source
+ 
+ 
+-run_accepted_private_review_helper() {
++run_accepted_python_helper() {
++  local helper_path="$1"
++  shift
+   local expected_sha256="$1"
+   shift
+-  /usr/bin/python3 -I - "$PRIVATE_REVIEW_HELPER" "$expected_sha256" "$@" <<'PY'
++  /usr/bin/python3 -I - "$helper_path" "$expected_sha256" "$@" <<'PY'
+ import hashlib
+ import hmac
+ import os
+@@ -198,7 +216,10 @@ do
+ done
+ 
+ if [[ "$REVIEW_ONLY" == "1" ]]; then
+-  /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
++  PROVENANCE_HELPER_SHA256="$(shasum -a 256 "$PROVENANCE_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
++  PRIVATE_REVIEW_HELPER_SHA256="$(shasum -a 256 "$PRIVATE_REVIEW_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
++  GENERATED_BUILD_SUBJECT_HELPER_SHA256="$(shasum -a 256 "$GENERATED_BUILD_SUBJECT_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
++  run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" snapshot \
+     --lockfile "$REPO_ROOT/Podfile.lock" \
+     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+     --security-build "$TUYA_PRIVATE_SDK/Build" \
+@@ -209,24 +230,24 @@ if [[ "$REVIEW_ONLY" == "1" ]]; then
+       exit 12
+     }
+ 
+-  PRIVATE_REVIEW_COMMITMENT_SHA256="$(/usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" create \
++  PRIVATE_REVIEW_COMMITMENT_SHA256="$(run_accepted_python_helper "$PRIVATE_REVIEW_HELPER" "$PRIVATE_REVIEW_HELPER_SHA256" create \
+     --witness "$DEPENDENCY_PROVENANCE" \
+     --key "$PRIVATE_REVIEW_KEY")" || {
+       echo "ERROR: opaque private-input review commitment could not be created." >&2
+       exit 18
+     }
+-  PRIVATE_REVIEW_HELPER_SHA256="$(shasum -a 256 "$PRIVATE_REVIEW_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+ else
+-  run_accepted_private_review_helper "$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" verify \
++  PRIVATE_REVIEW_HELPER_SHA256="$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
++  PROVENANCE_HELPER_SHA256="$ACCEPTED_PROVENANCE_HELPER_SHA256"
++  GENERATED_BUILD_SUBJECT_HELPER_SHA256="$ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"
++  run_accepted_python_helper "$PRIVATE_REVIEW_HELPER" "$PRIVATE_REVIEW_HELPER_SHA256" verify \
+     --witness "$DEPENDENCY_PROVENANCE" \
+     --key "$PRIVATE_REVIEW_KEY" \
+     --expected "$ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" >/dev/null || {
+       echo "ERROR: local private-input witness/key do not match the externally accepted private review commitment, or verifier source does not match the externally accepted private review authority." >&2
+       exit 18
+     }
+-  PRIVATE_REVIEW_HELPER_SHA256="$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
+-
+-  /usr/bin/python3 -I "$PROVENANCE_HELPER" verify \
++  run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" verify \
+     --lockfile "$REPO_ROOT/Podfile.lock" \
+     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+     --security-build "$TUYA_PRIVATE_SDK/Build" \
+@@ -257,7 +278,7 @@ fi
+   exit 15
+ }
+ 
+-GENERATED_BUILD_SUBJECT_SHA256="$(/usr/bin/python3 -I "$GENERATED_BUILD_SUBJECT_HELPER" \
++GENERATED_BUILD_SUBJECT_SHA256="$(run_accepted_python_helper "$GENERATED_BUILD_SUBJECT_HELPER" "$GENERATED_BUILD_SUBJECT_HELPER_SHA256" \
+   --lockfile "$REPO_ROOT/Podfile.lock" \
+   --pods "$REPO_ROOT/Pods" \
+   --workspace "$REPO_ROOT/NembraCapture.xcworkspace")" || {
+@@ -278,10 +299,12 @@ DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
+   Private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256
+   Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256
++  Private-input provenance helper source SHA-256: $PROVENANCE_HELPER_SHA256
++  Generated-build-subject helper source SHA-256: $GENERATED_BUILD_SUBJECT_HELPER_SHA256
+   Local private-input fingerprint record (review witness): $DEPENDENCY_PROVENANCE
+   Local private commitment key: retained privately; never publish or export
+ 
+-Review and bind all FOUR public authority values to the exact accepted Capture
++Review and bind all SIX public authority values to the exact accepted Capture
+ source through Final GO. Keep the witness/key/generated workspace unchanged.
+ Normal field bootstrap requires those accepted values, never reruns CocoaPods,
+ never rewrites the witness/key, and verifies private bytes against the committed
+@@ -301,11 +324,15 @@ printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
+ printf 'Preaccepted CocoaPods generated build subject matched: %s\n' "$GENERATED_BUILD_SUBJECT_SHA256"
+ printf 'Externally accepted opaque private review commitment matched: %s\n' "$PRIVATE_REVIEW_COMMITMENT_SHA256"
+ printf 'Externally accepted private review verifier source matched: %s\n' "$PRIVATE_REVIEW_HELPER_SHA256"
+-unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 \
++printf 'Externally accepted private-input provenance helper source matched: %s\n' "$PROVENANCE_HELPER_SHA256"
++printf 'Externally accepted generated-build-subject helper source matched: %s\n' "$GENERATED_BUILD_SUBJECT_HELPER_SHA256"
++unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 ACCEPTED_PROVENANCE_HELPER_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 \
+   NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \
+   NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \
+   NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \
+-  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 || true
++  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 \
++  NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256 \
++  NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256 || true
+ 
+ cat <<EOF
+ 
+@@ -318,6 +345,8 @@ Verified public authority:
+   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
+   Opaque private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256
+   Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256
++  Private-input provenance helper source SHA-256: $PROVENANCE_HELPER_SHA256
++  Generated-build-subject helper source SHA-256: $GENERATED_BUILD_SUBJECT_HELPER_SHA256
+ 
+ NEXT BUILD RULE:
+   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.
+@@ -329,4 +358,4 @@ This bootstrap still does NOT authorize the physical experiment. The exact app
+ must consume the private identity pod, authorize the user's own SDK session,
+ prove exact scooter membership, receive genuine structured application evidence,
+ and survive the canonical authenticated 45-second stationary gate.
+-EOF
+\ No newline at end of file
++EOF
+diff --git a/Scripts/capture_tuya_private_input_build_guard.py b/Scripts/capture_tuya_private_input_build_guard.py
+index fe4eee4f3..6816cb352 100755
+--- a/Scripts/capture_tuya_private_input_build_guard.py
++++ b/Scripts/capture_tuya_private_input_build_guard.py
+@@ -21,6 +21,10 @@ class BuildGuardError(RuntimeError):
+     pass
+ 
+ 
++def _stat_identity(metadata: os.stat_result) -> tuple[int, ...]:
++    return (metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid, metadata.st_gid, metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns)
++
++
+ def _load_neighbor_module(filename: str, module_name: str):
+     helper = Path(__file__).with_name(filename)
+     spec = importlib.util.spec_from_file_location(module_name, helper)
+@@ -31,62 +35,95 @@ def _load_neighbor_module(filename: str, module_name: str):
+     return module
+ 
+ 
+-provenance = _load_neighbor_module(
+-    "capture_tuya_private_input_provenance.py",
+-    "capture_tuya_private_input_provenance",
+-)
+-generated_build = _load_neighbor_module(
+-    "capture_cocoapods_generated_build_subject.py",
+-    "capture_cocoapods_generated_build_subject",
+-)
+ PRIVATE_REVIEW_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
+-PRIVATE_REVIEW_HELPER_MAX_BYTES = 262_144
++PROVENANCE_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"
++GENERATED_BUILD_SUBJECT_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"
++AUTHORITY_HELPER_MAX_BYTES = 262_144
+ 
+ 
+-def _load_accepted_private_review_module():
+-    expected = os.environ.get(PRIVATE_REVIEW_HELPER_ENV, "").lower()
++def _load_accepted_helper_module(filename: str, module_name: str, environment_name: str):
++    expected = os.environ.get(environment_name, "").lower()
+     if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
+-        raise BuildGuardError(
+-            f"{PRIVATE_REVIEW_HELPER_ENV} must remain available as exactly 64 hex characters through build-window admission"
+-        )
+-    helper = Path(__file__).with_name("capture_private_review_commitment.py")
++        raise BuildGuardError(f"{environment_name} must remain available as exactly 64 hex characters through build-window admission")
++    helper = Path(__file__).with_name(filename)
+     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+     try:
+         descriptor = os.open(helper, flags)
+     except OSError as error:
+-        raise BuildGuardError("private-review verifier source could not be opened under descriptor custody") from error
++        raise BuildGuardError(f"accepted authority helper could not be opened under descriptor custody: {filename}") from error
+     try:
+         before = os.fstat(descriptor)
+         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+-            raise BuildGuardError("private-review verifier source is not one regular single-link file")
+-        if before.st_size <= 0 or before.st_size > PRIVATE_REVIEW_HELPER_MAX_BYTES:
+-            raise BuildGuardError("private-review verifier source size is outside the accepted bound")
++  raise BuildGuardError(f"accepted authority helper is not one regular single-link file: {filename}")
++        if before.st_size <= 0 or before.st_size > AUTHORITY_HELPER_MAX_BYTES:
++  raise BuildGuardError(f"accepted authority helper size is outside the accepted bound: {filename}")
+         chunks: list[bytes] = []
+         remaining = before.st_size
+         while remaining:
+-            chunk = os.read(descriptor, min(65_536, remaining))
+-            if not chunk:
+-                raise BuildGuardError("private-review verifier source changed during descriptor read")
+-            chunks.append(chunk)
+-            remaining -= len(chunk)
++  chunk = os.read(descriptor, min(65_536, remaining))
++  if not chunk:
++      raise BuildGuardError(f"accepted authority helper changed during descriptor read: {filename}")
++  chunks.append(chunk)
++  remaining -= len(chunk)
+         source = b"".join(chunks)
+         after = os.fstat(descriptor)
+-        if provenance._stat_identity(before) != provenance._stat_identity(after):
+-            raise BuildGuardError("private-review verifier source changed during descriptor custody")
++        if _stat_identity(before) != _stat_identity(after):
++  raise BuildGuardError(f"accepted authority helper changed during descriptor custody: {filename}")
+     finally:
+         os.close(descriptor)
+     actual = hashlib.sha256(source).hexdigest()
+     if not hmac.compare_digest(actual, expected):
+-        raise BuildGuardError("private-review verifier source does not match externally accepted authority")
+-    module = types.ModuleType("capture_private_review_commitment_accepted")
+-    module.__file__ = "<accepted-private-review-verifier>"
++        raise BuildGuardError(f"accepted authority helper source does not match externally reviewed authority: {filename}")
++    module = types.ModuleType(module_name)
++    module.__file__ = f"<accepted-{filename}>"
+     try:
+         exec(compile(source, module.__file__, "exec"), module.__dict__)
+     except Exception as error:
+-        raise BuildGuardError("accepted private-review verifier source could not be loaded") from error
++        raise BuildGuardError(f"accepted authority helper source could not be loaded: {filename}") from error
+     return module
+ 
+ 
++class _AuthorityHelperProxy:
++    def __init__(self, filename: str, module_name: str, environment_name: str) -> None:
++        self._filename = filename
++        self._module_name = module_name
++        self._environment_name = environment_name
++        self._module = None
++        self._accepted = False
++
++    def require_accepted(self):
++        self._module = _load_accepted_helper_module(self._filename, self._module_name, self._environment_name)
++        self._accepted = True
++        return self._module
++
++    def __getattr__(self, name: str):
++        if self._module is None:
++  # Compatibility only for isolated package/unit callers. The physical
++  # field CLI requires accepted authority helpers before any access.
++  self._module = _load_neighbor_module(self._filename, self._module_name)
++        return getattr(self._module, name)
++
++
++provenance = _AuthorityHelperProxy(
++    "capture_tuya_private_input_provenance.py",
++    "capture_tuya_private_input_provenance",
++    PROVENANCE_HELPER_ENV,
++)
++generated_build = _AuthorityHelperProxy(
++    "capture_cocoapods_generated_build_subject.py",
++    "capture_cocoapods_generated_build_subject",
++    GENERATED_BUILD_SUBJECT_HELPER_ENV,
++)
++
++
++def _load_accepted_private_review_module():
++    return _load_accepted_helper_module(
++        "capture_private_review_commitment.py",
++        "capture_private_review_commitment_accepted",
++        PRIVATE_REVIEW_HELPER_ENV,
++    )
++
++
+ @dataclass(frozen=True)
+ class PrivateInputs:
+     lockfile: Path
+@@ -190,7 +227,7 @@ def _lstat_identity(path: Path) -> tuple[int, ...]:
+         metadata = path.lstat()
+     except OSError as error:
+         raise BuildGuardError(f"build input disappeared before vnode admission: {path}") from error
+-    return provenance._stat_identity(metadata)
++    return _stat_identity(metadata)
+ 
+ 
+ def _add_parent_watch_chain(paths: set[Path], path: Path, *, repository_root: Path) -> None:
+@@ -354,7 +391,7 @@ def _open_watched_inputs(paths: Iterable[Path], backend: EventBackend) -> tuple[
+             except OSError as error:
+                 raise BuildGuardError(f"build input could not be opened for build-window custody: {path}") from error
+             try:
+-                after = provenance._stat_identity(os.fstat(descriptor))
++                after = _stat_identity(os.fstat(descriptor))
+                 if before != after:
+                     raise BuildGuardError(f"build input changed while vnode custody was armed: {path}")
+                 mode = os.fstat(descriptor).st_mode
+@@ -456,10 +493,15 @@ def run_guarded_build(
+     poll_interval: float = 0.10,
+     require_accepted_generated_subject: bool = False,
+     require_accepted_private_review_commitment: bool = False,
++    require_accepted_authority_helpers: bool = False,
+ ) -> int:
+     if not command:
+         raise BuildGuardError("no build command was supplied")
+ 
++    if require_accepted_authority_helpers:
++        provenance.require_accepted()
++        generated_build.require_accepted()
++
+     if require_accepted_generated_subject:
+         _verify_accepted_generated_build_subject(inputs)
+     if require_accepted_private_review_commitment:
+@@ -585,6 +627,7 @@ def main(argv: Sequence[str] | None = None) -> int:
+             command,
+             require_accepted_generated_subject=True,
+             require_accepted_private_review_commitment=True,
++            require_accepted_authority_helpers=True,
+         )
+     except BuildGuardError as error:
+         print(f"ERROR: {error}", file=sys.stderr)
+diff --git a/scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py b/scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+index abdd58995..f2700b089 100644
+--- a/scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
++++ b/scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+@@ -52,6 +52,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
+         for source in (BOOTSTRAP, PROVENANCE, PRIVATE_REVIEW, SUBJECT_HELPER):
+             shutil.copy2(source, scripts / source.name)
+         self.accepted_private_review_helper = hashlib.sha256((scripts / PRIVATE_REVIEW.name).read_bytes()).hexdigest()
++        self.accepted_provenance_helper = hashlib.sha256((scripts / PROVENANCE.name).read_bytes()).hexdigest()
++        self.accepted_generated_helper = hashlib.sha256((scripts / SUBJECT_HELPER.name).read_bytes()).hexdigest()
+ 
+         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
+         (self.root / "NembraCapture.xcodeproj").mkdir()
+@@ -132,6 +134,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
+         if accepted_private is not None:
+             environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256"] = accepted_private
+             environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"] = self.accepted_private_review_helper
++            environment["NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"] = self.accepted_provenance_helper
++            environment["NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"] = self.accepted_generated_helper
+         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
+         if review_only:
+             command.append("--resolve-lock-for-review")
+diff --git a/scripts/ci/tests/test_capture_private_review_commitment.py b/scripts/ci/tests/test_capture_private_review_commitment.py
+index cad5c0da0..1068660bc 100644
+--- a/scripts/ci/tests/test_capture_private_review_commitment.py
++++ b/scripts/ci/tests/test_capture_private_review_commitment.py
+@@ -42,6 +42,8 @@ class PrivateReviewCommitmentTests(unittest.TestCase):
+         for source in (BOOTSTRAP, PROVENANCE, COMMITMENT, GENERATED):
+             shutil.copy2(source, scripts / source.name)
+         self.accepted_helper = hashlib.sha256((scripts / COMMITMENT.name).read_bytes()).hexdigest()
++        self.accepted_provenance_helper = hashlib.sha256((scripts / PROVENANCE.name).read_bytes()).hexdigest()
++        self.accepted_generated_helper = hashlib.sha256((scripts / SUBJECT_HELPER.name).read_bytes()).hexdigest()
+ 
+         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
+         (self.root / "NembraCapture.xcodeproj").mkdir()
+@@ -127,6 +129,8 @@ class PrivateReviewCommitmentTests(unittest.TestCase):
+         if accepted_private is not None:
+             environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256"] = accepted_private
+             environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"] = self.accepted_helper
++            environment["NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"] = self.accepted_provenance_helper
++            environment["NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"] = self.accepted_generated_helper
+         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
+         if review_only:
+             command.append("--resolve-lock-for-review")
+@@ -266,6 +270,8 @@ class PrivateReviewCommitmentTests(unittest.TestCase):
+                 "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": generated,
+                 "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256": private,
+                 "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256": self.accepted_helper,
++                "NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256": self.accepted_provenance_helper,
++                "NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256": self.accepted_generated_helper,
+             },
+             clear=False,
+         ):
+diff --git a/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py b/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+index 43efeefbb..1ab34ffa5 100644
+--- a/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
++++ b/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+@@ -23,6 +23,8 @@ LOCK_ENV = "NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"
+ GENERATED_ENV = "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"
+ PRIVATE_ENV = "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256"
+ PRIVATE_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
++PROVENANCE_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"
++GENERATED_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"
+ 
+ 
+ def load_module(path: Path, name: str):
+@@ -113,7 +115,7 @@ class DownstreamBootstrapHelperExecutionCustodyTests(unittest.TestCase):
+             check=False,
+         )
+ 
+-    def reviewed_subjects(self) -> tuple[str, str, str, str]:
++    def reviewed_subjects(self) -> tuple[str, str, str, str, str, str]:
+         snapshot = self._python(
+             self.provenance,
+             "snapshot",
+@@ -144,10 +146,12 @@ class DownstreamBootstrapHelperExecutionCustodyTests(unittest.TestCase):
+ 
+         lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
+         private_helper = hashlib.sha256(self.commitment.read_bytes()).hexdigest()
+-        return lock, generated_digest, private, private_helper
++        provenance_helper = hashlib.sha256(self.provenance.read_bytes()).hexdigest()
++        generated_helper = hashlib.sha256(self.generated.read_bytes()).hexdigest()
++        return lock, generated_digest, private, private_helper, provenance_helper, generated_helper
+ 
+     def run_field(self, subjects: tuple[str, str, str, str]) -> subprocess.CompletedProcess[str]:
+-        lock, generated, private, private_helper = subjects
++        lock, generated, private, private_helper, provenance_helper, generated_helper = subjects
+         env = {
+             "PATH": f"{self.fake_bin}:/usr/bin:/bin",
+             "HOME": str(self.root),
+@@ -157,6 +161,8 @@ class DownstreamBootstrapHelperExecutionCustodyTests(unittest.TestCase):
+             GENERATED_ENV: generated,
+             PRIVATE_ENV: private,
+             PRIVATE_HELPER_ENV: private_helper,
++            PROVENANCE_HELPER_ENV: provenance_helper,
++            GENERATED_HELPER_ENV: generated_helper,
+         }
+         return subprocess.run(
+             ["/bin/bash", str(self.bootstrap)],
+diff --git a/scripts/ci/tests/test_capture_private_review_helper_execution_custody.py b/scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+index d7572d7c8..2d0385619 100644
+--- a/scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
++++ b/scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+@@ -45,6 +45,8 @@ class PrivateReviewHelperExecutionCustodyTests(unittest.TestCase):
+             shutil.copy2(source, scripts / source.name)
+         self.helper = scripts / COMMITMENT.name
+         self.accepted_helper = hashlib.sha256(self.helper.read_bytes()).hexdigest()
++        self.accepted_provenance_helper = hashlib.sha256((scripts / PROVENANCE.name).read_bytes()).hexdigest()
++        self.accepted_generated_helper = hashlib.sha256((scripts / SUBJECT_HELPER.name).read_bytes()).hexdigest()
+ 
+         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
+         (self.root / "NembraCapture.xcodeproj").mkdir()
+@@ -120,6 +122,8 @@ class PrivateReviewHelperExecutionCustodyTests(unittest.TestCase):
+         if private is not None:
+             env[PRIVATE_ENV] = private
+             env[HELPER_ENV] = self.accepted_helper
++            env["NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"] = self.accepted_provenance_helper
++            env["NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"] = self.accepted_generated_helper
+         argv = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
+         if review:
+             argv.append("--resolve-lock-for-review")
+diff --git a/scripts/field/install_one_time_capture.command b/scripts/field/install_one_time_capture.command
+index a7d0a0ab2..ee132369a 100755
+--- a/scripts/field/install_one_time_capture.command
++++ b/scripts/field/install_one_time_capture.command
+@@ -83,14 +83,43 @@ TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock" | awk '{print
+ [[ "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Could not compute a valid SHA-256 fingerprint for the resolved Tuya dependency lock."
+ say "Resolved Tuya dependency lock fingerprint captured for compiled provenance"
+ 
+-TUYA_PROVENANCE_HELPER="$ROOT/Scripts/capture_tuya_private_input_provenance.py"
+-TUYA_BUILD_WINDOW_GUARD="$ROOT/Scripts/capture_tuya_private_input_build_guard.py"
++TUYA_PROVENANCE_HELPER_RELATIVE="Scripts/capture_tuya_private_input_provenance.py"
++TUYA_BUILD_WINDOW_GUARD_RELATIVE="Scripts/capture_tuya_private_input_build_guard.py"
++run_accepted_source_python() {
++    local relative_path="$1"
++    shift
++    /usr/bin/python3 -I - "$ROOT" "$SOURCE_SHA" "$relative_path" "$@" <<'PY'
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++root = Path(sys.argv[1])
++source_sha = sys.argv[2]
++relative_path = sys.argv[3]
++helper_argv = sys.argv[4:]
++try:
++    git_environment = os.environ.copy()
++    git_environment["GIT_NO_REPLACE_OBJECTS"] = "1"
++    source = subprocess.check_output(
++        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
++        cwd=root,
++        env=git_environment,
++        stderr=subprocess.DEVNULL,
++    )
++except subprocess.CalledProcessError as error:
++    raise SystemExit(f"accepted source helper is unavailable from exact Git authority: {relative_path}") from error
++namespace = {"__name__": "__main__", "__file__": str(root / relative_path)}
++sys.argv = [str(root / relative_path), *helper_argv]
++exec(compile(source, f"<accepted-{source_sha}:{relative_path}>", "exec"), namespace)
++PY
++}
+ [[ -f "$TUYA_BUILD_WINDOW_GUARD" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."
+ TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
+ TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
+ TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
+ verify_private_tuya_inputs() {
+-    /usr/bin/python3 -I "$TUYA_PROVENANCE_HELPER" verify \
++    run_accepted_source_python "$TUYA_PROVENANCE_HELPER_RELATIVE" verify \
+         --lockfile "$ROOT/Podfile.lock" \
+         --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+         --security-build "$TUYA_PRIVATE_SDK/Build" \
+@@ -224,7 +253,7 @@ say "Building SDK-integrated Nembra Capture for the intended iPhone"
+ # was not consumed by the compiler and restored before the post-build verify.
+ # Keep macOS vnode custody armed for every admitted private file/directory across
+ # the complete compiler/linker window, then retain the cryptographic verify below.
+-/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \
++run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \
+     --lockfile "$ROOT/Podfile.lock" \
+     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+     --security-build "$TUYA_PRIVATE_SDK/Build" \
