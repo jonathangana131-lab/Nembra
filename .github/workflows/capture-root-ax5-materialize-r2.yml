@@ -15,15 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 3
           persist-credentials: true
 
       - name: Verify exact current parent
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "b4ba45d095a6c125c18f4dbc556e0717232ed4a8"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-root-ax5-materialize-r2.yml"
+          test "$(git rev-parse HEAD~2)" = "b4ba45d095a6c125c18f4dbc556e0717232ed4a8"
+          test "$(git diff --name-only HEAD~2 HEAD)" = ".github/workflows/capture-root-ax5-materialize-r2.yml"
 
       - name: Apply narrow Accessibility Dynamic Type recompose
         shell: bash
@@ -69,7 +69,7 @@ jobs:
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-'''
+          '''
           new_header = '''                        if dynamicTypeSize.isAccessibilitySize {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("NEMBRA CAPTURE")
@@ -94,13 +94,13 @@ jobs:
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-'''
+          '''
           root = replace_once(root, old_header, new_header, 'header')
 
           account_end = '''                        }
 
                         if tuya.isLinked {
-'''
+          '''
           account_with_context = '''                        }
 
                         if dynamicTypeSize.isAccessibilitySize {
@@ -112,7 +112,7 @@ jobs:
                         }
 
                         if tuya.isLinked {
-'''
+          '''
           root = replace_once(root, account_end, account_with_context, 'post-account context')
           root = replace_once(
               root,
@@ -154,5 +154,5 @@ jobs:
           git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-root-ax5-materialize-r2.yml
           git diff --cached --check
           git commit -m 'fix(capture): prioritize account setup at Accessibility sizes'
-          test "$(git diff --name-only HEAD^^ HEAD)" = "NembraApp/App/NembraCaptureEntrypoint.swift"
+          test "$(git diff --name-only HEAD~3 HEAD)" = "NembraApp/App/NembraCaptureEntrypoint.swift"
           git push origin HEAD:agent/v14-capture-root-ax5-recompose-r2
