@@ -24,55 +24,24 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           installer = Path("scripts/field/install_one_time_capture.command")
           source = installer.read_text(encoding="utf-8")
-          old = '''SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" --digest-only --app "$APP")" || \\
-    die "Could not seal the exact signed Capture app install subject. Discard this candidate."
-[[ "$SIGNED_APP_SUBJECT_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Signed Capture app install-subject fingerprint is malformed. Discard this candidate."
-say "Final signed Capture app install subject sealed for devicectl custody"
-'''
-          new = '''SIGNED_APP_SUBJECT_SHA256="$(
-    /usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" \\
-        --verify-authority-only \\
-        --app "$APP" \\
-        --expected-build-identifier "$BUILD_LABEL" \\
-        --expected-source-sha "$SOURCE_SHA" \\
-        --expected-tuya-lock-sha256 "$TUYA_DEPENDENCY_LOCK_SHA256" \\
-        --expected-procedure-id "$PROCEDURE_ID" \\
-        --expected-bundle-id "$BUNDLE_ID" \\
-        --expected-team-id "$TEAM_ID"
-)" || die "Could not continuously verify and seal the exact signed Capture app install subject. Discard this candidate."
-[[ "$SIGNED_APP_SUBJECT_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Signed Capture app install-subject fingerprint is malformed. Discard this candidate."
-say "Final signed Capture app authority verified and sealed under continuous vnode custody"
-'''
-          if source.count(old) != 1:
+          old_line = 'SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" --digest-only --app "$APP")" || \\\n'
+          new_line = 'SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" --verify-authority-only --app "$APP" --expected-build-identifier "$BUILD_LABEL" --expected-source-sha "$SOURCE_SHA" --expected-tuya-lock-sha256 "$TUYA_DEPENDENCY_LOCK_SHA256" --expected-procedure-id "$PROCEDURE_ID" --expected-bundle-id "$BUNDLE_ID" --expected-team-id "$TEAM_ID")" || \\\n'
+          if source.count(old_line) != 1:
               raise SystemExit("installer signed-app sealing marker drifted")
-          installer.write_text(source.replace(old, new, 1), encoding="utf-8")
-
-          workflow = Path(".github/workflows/capture-signed-app-install-custody.yml")
-          workflow_source = workflow.read_text(encoding="utf-8")
-          workflow_source = workflow_source.replace(
-              "      - scripts/ci/tests/test_capture_signed_app_install_subject.py\n",
-              "      - scripts/ci/tests/test_capture_signed_app_install_subject.py\n      - scripts/ci/tests/test_capture_signed_app_verification_seal_window.py\n",
+          source = source.replace(old_line, new_line, 1)
+          source = source.replace(
+              '    die "Could not seal the exact signed Capture app install subject. Discard this candidate."\n',
+              '    die "Could not continuously verify and seal the exact signed Capture app install subject. Discard this candidate."\n',
               1,
           )
-          workflow_source = workflow_source.replace(
-              "          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_install_subject.py\n",
-              "          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_install_subject.py\n          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_verification_seal_window.py\n",
+          source = source.replace(
+              'say "Final signed Capture app install subject sealed for devicectl custody"\n',
+              'say "Final signed Capture app authority verified and sealed under continuous vnode custody"\n',
               1,
           )
-          workflow_source = workflow_source.replace(
-              "          /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_subject.py\n",
-              "          /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_subject.py\n          /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_verification_seal_window.py\n",
-              1,
-          )
-          old_grep = "          grep -Fq 'SIGNED_APP_SUBJECT_SHA256=\"$(/usr/bin/python3 -I \"$SIGNED_APP_INSTALL_GUARD\" --digest-only --app \"$APP\")\"' scripts/field/install_one_time_capture.command\n"
-          new_grep = "          grep -Fq -- '--verify-authority-only' scripts/field/install_one_time_capture.command\n          grep -Fq -- '--expected-source-sha \"$SOURCE_SHA\"' scripts/field/install_one_time_capture.command\n"
-          if old_grep not in workflow_source:
-              raise SystemExit("custody workflow digest grep drifted")
-          workflow.write_text(workflow_source.replace(old_grep, new_grep, 1), encoding="utf-8")
-
+          installer.write_text(source, encoding="utf-8")
           Path(".github/workflows/materialize-signed-app-continuous-authority-r2.yml").unlink()
           PY
 
@@ -85,14 +54,13 @@ say "Final signed Capture app authority verified and sealed under continuous vno
           python3 -I scripts/ci/tests/test_capture_signed_app_verification_seal_window.py
           bash -n scripts/field/install_one_time_capture.command
           grep -Fq -- '--verify-authority-only' scripts/field/install_one_time_capture.command
+          grep -Fq -- '--expected-source-sha "$SOURCE_SHA"' scripts/field/install_one_time_capture.command
           grep -Fq -- '--expected-sha256 "$SIGNED_APP_SUBJECT_SHA256"' scripts/field/install_one_time_capture.command
           git diff --check
           git status --short
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/field/install_one_time_capture.command \
-                  .github/workflows/capture-signed-app-install-custody.yml \
-                  .github/workflows/materialize-signed-app-continuous-authority-r2.yml
+          git add scripts/field/install_one_time_capture.command .github/workflows/materialize-signed-app-continuous-authority-r2.yml
           git commit -m "capture: span signed app verification through install custody"
           git push origin HEAD:repair/v14-capture-signed-app-install-custody-r2-sol
