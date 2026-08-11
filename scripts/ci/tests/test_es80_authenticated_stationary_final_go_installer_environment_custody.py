@@ -105,6 +105,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             self.assertEqual(env["BASH_ENV"], "/dev/null")
             self.assertEqual(env["ENV"], "/dev/null")
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"], str(device))
+            self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"], GO.device_hash(device))
             forbidden = {
                 "GITHUB_TOKEN", "GH_TOKEN", "PYTHONPATH", "PYTHONHOME",
                 "NEMBRA_TUYA_APP_KEY", "NEMBRA_TUYA_APP_SECRET",

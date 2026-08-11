@@ -203,7 +203,8 @@ def device_hash(path:Path):
 
 def installer_environment(device:Path)->dict[str,str]:
     account=pwd.getpwuid(os.getuid()); device_path=canonical_private_path(device,"private intended-device identifier")
-    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path)}
+    intended_device_digest=device_hash(device_path)
+    return {"PATH":TRUSTED_INSTALLER_PATH,"HOME":account.pw_dir,"USER":account.pw_name,"LOGNAME":account.pw_name,"LANG":"en_US.UTF-8","LC_ALL":"en_US.UTF-8","BASH_ENV":"/dev/null","ENV":"/dev/null","NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE":str(device_path),"NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256":intended_device_digest}
 
 def installer(repo:Path,source:str,device:Path):
     root=repo.expanduser().resolve(strict=True); env=installer_environment(device)
