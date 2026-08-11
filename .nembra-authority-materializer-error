@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "<stdin>", line 11, in <module>
+  File "<capture-authority-chain-materializer>", line 1
+    from pathlib import Path
+IndentationError: unexpected indent
