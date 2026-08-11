@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""Expected-red: private Tuya credential publication must stay bound to the checkout opened before input.
+"""Adversarial custody checks for private Tuya credential publication.
 
-The provisioner resolves its checkout path and captures/pins the writer before asking for credentials,
-but the writer currently reopens that checkout by pathname only after the operator has entered those
-credentials. A same-UID process can rename the admitted checkout and place a different directory at
-the same pathname during that input window. Descendant O_NOFOLLOW/dir_fd custody then protects the
-replacement tree rather than the originally admitted checkout.
-
-This diagnostic uses a PTY so the real hidden-input prompts become deterministic race boundaries. It
-swaps the checkout after the AppKey prompt, then requires publication to fail closed and forbids any
-private identity output under the replacement path.
+The checkout root must be admitted immediately after canonical resolution, before
+any mutable writer path beneath it is used, and that same admitted identity must
+still be authoritative after the operator enters hidden credentials. The PTY
+case makes the credential-input race boundary deterministic.
 """
 
 from __future__ import annotations
@@ -101,6 +96,23 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
             captured.extend(chunk)
         return bytes(captured)
 
+    def test_root_admission_precedes_every_writer_path_use(self) -> None:
+        source = PROVISIONER.read_text(encoding="utf-8")
+        root_resolution = source.index('ROOT="$(cd "$(/usr/bin/dirname')
+        root_admission = source.index('ROOT_IDENTITY_CAPTURE="$(/usr/bin/python3 -I - "$ROOT"')
+        writer_assignment = source.index('WRITER="$ROOT/Scripts/provision_capture_tuya_identity_writer.py"')
+        writer_capture = source.index('WRITER_CAPTURE="$({ /bin/cat -- "$WRITER"')
+        credential_read = source.index('builtin read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY')
+
+        self.assertLess(root_resolution, root_admission)
+        self.assertLess(
+            root_admission,
+            writer_assignment,
+            "checkout-root identity must be admitted before a mutable writer pathname under that root is selected",
+        )
+        self.assertLess(writer_assignment, writer_capture)
+        self.assertLess(writer_capture, credential_read)
+
     def test_checkout_root_swap_after_admission_cannot_redirect_credentials(self) -> None:
         script = self.checkout / "Scripts" / PROVISIONER.name
         master_fd, slave_fd = pty.openpty()
@@ -141,7 +153,7 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
             self.assertNotEqual(
                 process.returncode,
                 0,
-                "credential publication succeeded after the admitted checkout pathname was replaced; bind the checkout root identity before credential input",
+                "credential publication succeeded after the admitted checkout pathname was replaced",
             )
             self.assertFalse(
                 replacement_identity.exists() or replacement_podspec.exists(),
