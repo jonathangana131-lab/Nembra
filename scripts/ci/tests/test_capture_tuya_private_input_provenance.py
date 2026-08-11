@@ -91,7 +91,7 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         retired_bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
         accepted_source_read = 'run_authority_git show "$SOURCE_SHA:$relative_path"'
         hardened_bash = "/bin/bash --noprofile --norc -p -c 'source /dev/stdin' \"$ROOT/$relative_path\""
-        build_call = "-- xcodebuild"
+        build_call = "-- /usr/bin/xcodebuild"
 
         for required in (
             review_mode,
