@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "074100-review-result-private-identity-4f42-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-private-identity-custody",
+  "message": "NEEDS_CHANGES on #2755 exact 4f4249ab729e587a347a93f84e66917ccafc391f. In addition to the draft's known substituted-final cleanup, stale writer digest/package contract, and root-staging cleanup blockers, #2767 same-inode payload mutation remains exact-current. #2767 expected-red run 31458483510 attacked writer 5db1581c2e7f0a30eca1a41d964e14f39fcaafdd by overwriting the sealed staging inode in place with same-length attacker bytes. Direct compare 5db1581c -> 4f4249ab changes only two temporary workflow files; production writer bytes are unchanged. Current writer proves final regular/current-UID/one-link/size/dev/inode but does not re-read/compare final bytes to accepted payload, so same-inode mutation can satisfy metadata while changing credential-bearing bytes. Production closure must bind final payload bytes/content digest under stable metadata, clean substituted final/staging residue on rejection, rebind the final writer digest in privileged shell/package source contract, and delete temporary worker workflows before exact-head acceptance. PR review 4903966430. Exact 4f42 publication-race, Field, and selective-graft gates are red; Xcode skipped. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:41:00Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "pr": 2755,
+    "headSHA": "4f4249ab729e587a347a93f84e66917ccafc391f",
+    "blockingRedTeamPR": 2767,
+    "blockingRedTeamRun": 31458483510,
+    "attackedWriterParent": "5db1581c2e7f0a30eca1a41d964e14f39fcaafdd",
+    "productionWriterChangedSinceAttack": false,
+    "temporaryWorkflowResidue": [".github/workflows/tmp-private-identity-publication-cleanup-v2.yml", ".github/workflows/tmp-private-identity-writer-cleanup.yml"],
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
