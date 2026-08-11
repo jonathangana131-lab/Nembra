@@ -119,7 +119,7 @@ def validate_slot(s):
 def validate_lane(r):
     lane=dict(_dict(r,'lane')); validate_data_only(lane); _schema(lane)
     if lane.get('kind')!='lane': raise ValidationError('lane.kind must be lane')
-    _id(lane.get('laneId'),'laneId'); _str(lane.get('title'),'title',300); _str(lane.get('objective'),'objective',3000)
+    _id(lane.get('laneId'),'laneId'); lane['epic']=_id(lane.get('epic','general'),'epic'); _str(lane.get('title'),'title',300); _str(lane.get('objective'),'objective',3000)
     if lane.get('state') not in LANE_STATES: raise ValidationError('invalid lane state')
     mode=lane.get('mode','exclusive')
     if mode not in LANE_MODES: raise ValidationError('invalid lane mode')
@@ -189,7 +189,7 @@ def validate_config(r):
     for k in ('maxPrimaryLanes','maxPrimaryPerEpic','reviewBacklogThreshold','integrationBacklogThreshold'):
         if not isinstance(w.get(k),int) or not 0<=w[k]<=100: raise ValidationError(f'invalid wip {k}')
     order=_list(x.get('resourceOrder',[]),'resourceOrder')
-    if len(order)!=len(set(order)) or any(r not in RESOURCE_CLASSES for r in order): raise ValidationError('invalid resourceOrder')
+    if len(order)!=len(RESOURCE_CLASSES) or len(order)!=len(set(order)) or set(order)!=RESOURCE_CLASSES: raise ValidationError('resourceOrder must contain every supported resource exactly once')
     return x
 
 def default_config():
