@@ -1,0 +1,26 @@
+name: Capture Field Verified Git Payload R3 Neighbors
+on:
+  push:
+    branches: [validation/v14-field-git-payload-2937-r3-sol-20260811]
+    paths: [.github/workflows/capture-field-verified-git-payload-r3-neighbors.yml]
+permissions:
+  contents: read
+jobs:
+  neighbors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/v14-field-git-payload-2937-r3-sol-20260811
+          fetch-depth: 0
+      - name: Materialize unchanged repair
+        run: |
+          python3 scripts/ci/tmp_v14_field_git_payload_identity_materialize.py
+          bash -n scripts/field/install_one_time_capture.command
+      - name: Accepted source path
+        run: python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+      - name: Private provenance
+        run: python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+      - name: Diff hygiene
+        run: git diff --check
