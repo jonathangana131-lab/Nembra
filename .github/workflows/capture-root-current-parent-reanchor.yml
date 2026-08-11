@@ -1,0 +1,68 @@
+name: Capture Root Current-Parent Reanchor
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-root-ax-truth-convergence-sol
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_PARENT_SHA: 1bfdb77bd1bdeb97a434570e7c23c5dbefe72c82
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Merge exact current final parent and resolve owned files from it
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$EXPECTED_PARENT_SHA"
+          set +e
+          git merge --no-commit --no-ff "$EXPECTED_PARENT_SHA"
+          rc=$?
+          set -e
+          if [[ "$rc" -ne 0 ]]; then
+            unresolved="$(git diff --name-only --diff-filter=U | sort)"
+            expected="$(printf '%s\n' \
+              NembraApp/App/NembraCaptureEntrypoint.swift \
+              Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift \
+              Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift | sort)"
+            test "$unresolved" = "$expected"
+            git checkout "$EXPECTED_PARENT_SHA" -- \
+              NembraApp/App/NembraCaptureEntrypoint.swift \
+              Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift \
+              Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+            git add \
+              NembraApp/App/NembraCaptureEntrypoint.swift \
+              Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift \
+              Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+          fi
+      - name: Reapply reviewed AX truth correction
+        run: python3 scripts/ci/reanchor_capture_root_ax_truth.py
+      - name: Remove bootstrap and verify final scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/reanchor_capture_root_ax_truth.py
+          rm -f .github/workflows/capture-root-current-parent-reanchor.yml
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --name-only --diff-filter=U)"
+          parent_tree="$(git rev-parse "$EXPECTED_PARENT_SHA^{tree}")"
+          printf 'Reanchored parent tree: %s\n' "$parent_tree"
+      - name: Commit convergence merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(capture): converge AX action on current final parent'
+          git push origin HEAD:fix/v14-capture-root-ax-truth-convergence-sol
