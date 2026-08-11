@@ -7,18 +7,16 @@
   "workerId": "gpt56-sol-20260811-runtime-ax-reconcile",
   "leaseId": "capture-runtime-accessibility-primary-runtime-ax-reconcile-20260811-2134",
   "generation": 3,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:34:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:38:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:39:30Z",
+  "releasedAt": "2026-08-11T21:39:30Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-runtime-voiceover-evidence-convergence-sol-gpt56-20260811",
   "pr": 3018,
   "sourceSHA": "fe6b7fce71a9cbf07586ea54df61bed650056fd9",
-  "currentHeadSHA": "8b01db75cbe37566a899e10198c4c75d1ef6e442",
+  "currentHeadSHA": "140c99e02cc1f70363b0912794ce967592b437b6",
   "takeoverFromWorkerId": "sol-20260811-gpt56-transcript-retention",
-  "takeoverReason": "Generation-2 runtime-accessibility claim was explicitly RELEASED after identifying #3018 as the preferred convergence carrier. Recover the free slot to reconcile #3018's one-file transcript-retention delta onto live #3007 exact fe6b7fce, preserve the fail-closed VoiceOver oracle and zero-test/toolchain evidence contract, then earn fresh exact-head runtime evidence. No product or physical-authority paths are owned.",
-  "ownedPaths": [
-    "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
-  ],
-  "checkpoint": "#3018 was reconstructed as one clean commit 8b01db75 directly on live #3007 fe6b7fce. Fresh compare is ahead 1 / behind 0 and exactly one validation-only path (+23/-5). Strict 64-step throwing VoiceOver traversal, accessibility audit, required semantic order, and forbidden Start capture / Scan for scooter assertions are unchanged; only keep-always transcript retention and bounded 16 KiB job-log mirroring were added. Exact Capture Runtime VoiceOver run 31538706611 and Main Selective Graft 31538706568 are queued; Xcode policy skipped and is not counted. PHYSICAL NO-GO."
+  "outcome": "CURRENT_LINEAGE_RECONCILED_AND_UTF8_BOUND_HARDENED",
+  "checkpoint": "#3018 is now a clean two-commit descendant of live #3007 fe6b7fce at exact 140c99e0, changing exactly one validation-only witness path. 8b01db75 reconciled transcript retention onto the live parent; concurrent exact-head review then added 140c99e0, correcting the advertised 16 KiB mirror from a Character count to a true UTF-8 byte ceiling while preserving complete Character boundaries. Strict 64-step throwing traversal, audit, semantic order, and forbidden Start capture / Scan for scooter assertions remain fail-closed. Fresh Capture Runtime VoiceOver run 31538775729 and Main Selective Graft 31538775708 are queued; Xcode policy skipped and is not counted. Release this slot to avoid colliding with the concurrent runtime-AX reviewer/author on the same branch. PHYSICAL NO-GO."
 }
