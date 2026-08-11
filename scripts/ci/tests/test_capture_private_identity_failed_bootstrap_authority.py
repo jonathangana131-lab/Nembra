@@ -45,6 +45,22 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
             source,
         )
 
+    def test_dependency_resolution_and_snapshot_are_vnode_guarded(self) -> None:
+        source = BOOTSTRAP_PATH.read_text(encoding="utf-8")
+        guard_call = '/usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD"'
+        first_guard = source.index(guard_call)
+        second_guard = source.index(guard_call, first_guard + 1)
+        pod_exec = source.index('"$POD_BIN" install --repo-update')
+        snapshot_exec = source.index('/usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot')
+
+        self.assertLess(first_guard, pod_exec)
+        self.assertLess(pod_exec, second_guard)
+        self.assertLess(second_guard, snapshot_exec)
+        self.assertEqual(source.count(guard_call), 2)
+        self.assertIn('--lockfile "$REPO_ROOT/Podfile"', source)
+        self.assertIn('verify "$REPO_ROOT_INNER" "$WRITER_SHA_INNER"', source)
+        self.assertNotIn("\npod install --repo-update\n", source)
+
     def test_failed_publication_attacker_source_is_blocked_before_pod(self) -> None:
         writer = load_writer()
         with tempfile.TemporaryDirectory(prefix="nembra-private-failed-bootstrap-") as temporary:
