@@ -1,0 +1,189 @@
+name: TEMP Materialize selected-Xcode ACL + provenance repair
+
+on:
+  push:
+    branches:
+      - repair/v14-selected-xcode-acl-provenance-convergence-sol-gpt56-20260811
+    paths:
+      - .github/workflows/tmp-v14-selected-xcode-acl-provenance-materialize-gpt56.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-selected-xcode-acl-provenance-convergence-sol-gpt56-20260811
+          fetch-depth: 0
+
+      - name: Bind construction input
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize ACL authority and permanent provenance contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          installer_path = Path('scripts/field/install_one_time_capture.command')
+          installer = installer_path.read_text(encoding='utf-8')
+
+          old_imports = '''import os
+          from pathlib import Path
+          import stat
+          '''
+          new_imports = '''import os
+          from pathlib import Path
+          import re
+          import stat
+          import subprocess
+          '''
+          if installer.count(old_imports) != 1:
+              raise SystemExit('selected-tool custody import anchor cardinality changed')
+          installer = installer.replace(old_imports, new_imports, 1)
+
+          kind_anchor = '''if kind not in {"directory", "file"}:
+              raise SystemExit("selected Xcode custody kind is unsupported")
+          try:
+          '''
+          acl_helper = '''if kind not in {"directory", "file"}:
+              raise SystemExit("selected Xcode custody kind is unsupported")
+
+          def require_no_extended_acl(subject: Path) -> None:
+              try:
+                  probe = subprocess.run(
+                      ["/bin/ls", "-lde", os.fspath(subject)],
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      env={"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"},
+                      check=False,
+                  )
+              except OSError as error:
+                  raise SystemExit("selected Xcode custody could not inspect extended ACL authority") from error
+              if probe.returncode != 0:
+                  raise SystemExit("selected Xcode custody could not inspect extended ACL authority")
+              lines = probe.stdout.splitlines()
+              if not lines:
+                  raise SystemExit("selected Xcode custody could not inspect extended ACL authority")
+              mode_field = lines[0].split(maxsplit=1)[0]
+              numbered_acl_entry = any(re.match(r"^\\s*\\d+:", line) for line in lines[1:])
+              if mode_field.endswith("+") or numbered_acl_entry:
+                  raise SystemExit("selected Xcode custody requires no extended ACL authority")
+
+          try:
+          '''
+          if installer.count(kind_anchor) != 1:
+              raise SystemExit('selected-tool custody kind anchor cardinality changed')
+          installer = installer.replace(kind_anchor, acl_helper, 1)
+
+          root_anchor = '''if resolved != path:
+              raise SystemExit("selected Xcode custody refuses symlink/alias resolution")
+          current = Path(path.anchor)
+          '''
+          root_repair = '''if resolved != path:
+              raise SystemExit("selected Xcode custody refuses symlink/alias resolution")
+          require_no_extended_acl(Path(path.anchor))
+          current = Path(path.anchor)
+          '''
+          if installer.count(root_anchor) != 1:
+              raise SystemExit('selected-tool custody root anchor cardinality changed')
+          installer = installer.replace(root_anchor, root_repair, 1)
+
+          component_anchor = '''    if stat.S_ISLNK(metadata.st_mode):
+                  raise SystemExit("selected Xcode custody refuses symlink ancestry or subjects")
+              if leaf and kind == "file":
+          '''
+          component_repair = '''    if stat.S_ISLNK(metadata.st_mode):
+                  raise SystemExit("selected Xcode custody refuses symlink ancestry or subjects")
+              require_no_extended_acl(current)
+              if leaf and kind == "file":
+          '''
+          if installer.count(component_anchor) != 1:
+              raise SystemExit('selected-tool custody component anchor cardinality changed')
+          installer = installer.replace(component_anchor, component_repair, 1)
+          installer_path.write_text(installer, encoding='utf-8')
+
+          workflow_path = Path('.github/workflows/capture-field-build-provenance.yml')
+          lines = workflow_path.read_text(encoding='utf-8').splitlines(keepends=True)
+          counts = {'discovery': 0, 'install': 0, 'build': 0}
+          repaired = []
+          for line in lines:
+              if "grep -Fq 'devicectl list devices --hide-headers'" in line:
+                  line = line.replace(
+                      "grep -Fq 'devicectl list devices --hide-headers'",
+                      "grep -Fq '\"$SELECTED_DEVICECTL\" list devices --hide-headers'",
+                      1,
+                  )
+                  counts['discovery'] += 1
+              if "grep -Fq 'devicectl device install app --device \"$COREDEVICE_ID\"'" in line:
+                  line = line.replace(
+                      "grep -Fq 'devicectl device install app --device \"$COREDEVICE_ID\"'",
+                      "grep -Fq '\"$SELECTED_DEVICECTL\" device install app --device \"$COREDEVICE_ID\"'",
+                      1,
+                  )
+                  counts['install'] += 1
+              if 'build_line=' in line and '/usr/bin/xcodebuild' in line:
+                  line = line.replace('/usr/bin/xcodebuild', '"$SELECTED_XCODEBUILD"', 1)
+                  counts['build'] += 1
+              repaired.append(line)
+          if counts != {'discovery': 1, 'install': 1, 'build': 1}:
+              raise SystemExit(f'stale provenance assertion cardinality changed: {counts}')
+          workflow = ''.join(repaired)
+          if "grep -Fq 'devicectl list devices --hide-headers'" in workflow:
+              raise SystemExit('stale raw devicectl discovery assertion remains')
+          if "grep -Fq 'devicectl device install app --device \"$COREDEVICE_ID\"'" in workflow:
+              raise SystemExit('stale raw devicectl install assertion remains')
+          if any('build_line=' in line and '/usr/bin/xcodebuild' in line for line in workflow.splitlines()):
+              raise SystemExit('stale raw xcodebuild guarded-build assertion remains')
+          workflow_path.write_text(workflow, encoding='utf-8')
+
+          # Compile the embedded production Python body without executing platform
+          # probes on this Linux construction runner.
+          match = re.search(
+              r"validate_root_custodied_path\\(\\)\\s*\\{.*?<<'PY_CUSTODY'\\n(?P<body>.*?)\\nPY_CUSTODY\\n\\}",
+              installer,
+              re.DOTALL,
+          )
+          if match is None:
+              raise SystemExit('could not recover production custody Python after repair')
+          compile(match.group('body'), '<selected-xcode-custody>', 'exec')
+          PY
+
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py
+          grep -Fq 'requires no extended ACL authority' scripts/field/install_one_time_capture.command
+          grep -Fq '"$SELECTED_DEVICECTL" list devices --hide-headers' scripts/field/install_one_time_capture.command
+          grep -Fq '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"' scripts/field/install_one_time_capture.command
+          grep -Fq -- '-- "$SELECTED_XCODEBUILD" \' scripts/field/install_one_time_capture.command
+          grep -Fq '"$SELECTED_DEVICECTL" list devices --hide-headers' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq -- '-- "$SELECTED_XCODEBUILD" \' .github/workflows/capture-field-build-provenance.yml
+          test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf '%s\n' '.github/workflows/capture-field-build-provenance.yml' 'scripts/field/install_one_time_capture.command')"
+          git diff --check
+
+      - name: Publish permanent repair and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/tmp-v14-selected-xcode-acl-provenance-materialize-gpt56.yml
+          git add .github/workflows/capture-field-build-provenance.yml scripts/field/install_one_time_capture.command
+          git diff --cached --check
+          git config user.name "nembra-swarm-materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Capture: reject selected-Xcode ACL authority"
+          git push origin HEAD:repair/v14-selected-xcode-acl-provenance-convergence-sol-gpt56-20260811
