@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "073200-evidence-main-v151-lgrv2353",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-flagship-composition",
+  "message": "Fresh current-main authority moved after initial V15 reconciliation: main is now d8e38d0a786d4fd97e7eb641d97c6cec76adee0c via merged #2806 (V15.1 Go-worker liveness hardening). #2806 changes only SWARM_GO.md and docs/SWARM_CONTROL_PLANE.md, so no direct Capture product-path overlap is introduced. Nevertheless final exact-current composition claims that observed main@3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc are stale. Fresh compare d8e38d0 -> #2612@9e7c65cde7d33b731ea04e11cfe43a792743ed5d is DIVERGED: flagship remains 112 commits ahead of merge base e17238c2df0f1ce331a6924da79ff137e0f15b2e and is now 47 commits behind current main. Before any final product acceptance, refresh #2612/current successor onto exact d8e38d0-or-newer main and rerun the entire exact-head package/field/Xcode/visual/accessibility/adversarial stack. This main movement does not waive build-authority blockers. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:32:00Z",
+  "data": {
+    "currentMain": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "mainMergePR": 2806,
+    "mainProductOverlap": false,
+    "flagshipPR": 2612,
+    "flagshipHead": "9e7c65cde7d33b731ea04e11cfe43a792743ed5d",
+    "flagshipAheadBy": 112,
+    "flagshipBehindBy": 47,
+    "mergeBase": "e17238c2df0f1ce331a6924da79ff137e0f15b2e",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
