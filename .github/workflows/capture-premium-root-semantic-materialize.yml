@@ -1,0 +1,79 @@
+name: Capture Premium Root Semantic Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-premium-root-semantic-closure-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 3
+          persist-credentials: true
+
+      - name: Verify exact premium parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='3c1d4394b7b443936240131e6d0d91ca01e49383'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only "$parent" HEAD)" = ".github/workflows/capture-premium-root-semantic-materialize.yml"
+
+      - name: Preserve premium pixels and repair hero semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          start = source.index('    @ViewBuilder\n    private var rootHero: some View {')
+          end = source.index('\n    private var buildAuthorityStatus: some View {', start)
+          hero = source[start:end]
+
+          font_anchor = '            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())\n            .fixedSize(horizontal: false, vertical: true)'
+          if hero.count(font_anchor) != 1:
+              raise SystemExit(f'hero title anchor moved: {hero.count(font_anchor)} matches')
+          if '.accessibilityAddTraits(.isHeader)' in hero:
+              raise SystemExit('hero heading semantics already present')
+          combine = '\n        .accessibilityElement(children: .combine)'
+          if hero.count(combine) != 1:
+              raise SystemExit(f'hero combine contract moved: {hero.count(combine)} matches')
+
+          hero = hero.replace(font_anchor, font_anchor + '\n            .accessibilityAddTraits(.isHeader)', 1)
+          hero = hero.replace(combine, '', 1)
+          if hero.count('.accessibilityAddTraits(.isHeader)') != 1:
+              raise SystemExit('hero heading trait not materialized exactly once')
+          if '.accessibilityElement(children: .combine)' in hero:
+              raise SystemExit('hero still flattens title and explanatory copy')
+
+          path.write_text(source[:start] + hero + source[end:], encoding='utf-8')
+          print('premium root hero semantic transform: PASS')
+          PY
+          git diff --check
+          grep -Fq '.accessibilityAddTraits(.isHeader)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'NavigationLink(fieldBuildIsAuthoritative ? "Continue to preflight" : "View locked preflight")' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Publish product-only semantic descendant
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='3c1d4394b7b443936240131e6d0d91ca01e49383'
+          rm .github/workflows/capture-premium-root-semantic-materialize.yml
+          git config user.name 'nembra-v14-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-premium-root-semantic-materialize.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): preserve premium hero accessibility semantics'
+          test "$(git diff --name-only "$parent" HEAD)" = "NembraApp/App/NembraCaptureEntrypoint.swift"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git push origin HEAD:recovery/v14-capture-premium-root-semantic-closure-sol
