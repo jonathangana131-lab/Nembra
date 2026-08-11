@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import inspect
 from pathlib import Path
 import sys
 from typing import Sequence
@@ -26,6 +27,15 @@ from typing import Sequence
 
 class ResolutionGuardError(RuntimeError):
     pass
+
+
+_EXPECTED_RUN_GUARDED_BUILD_PARAMETERS = (
+    "inputs",
+    "command",
+    "backend_factory",
+    "popen_factory",
+    "poll_interval",
+)
 
 
 def _load_guard():
@@ -41,6 +51,26 @@ def _load_guard():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _require_private_only_guard_api(guard) -> None:
+    """Fail closed if the canonical callable surface drifts under this adapter.
+
+    The current canonical guard is itself the narrow private-input vnode-custody
+    primitive. This adapter deliberately calls only its two positional authority
+    inputs and relies on the three test-injection parameters retaining their
+    current defaults. Any signature change requires an explicit adapter review
+    instead of silently inheriting a broader or differently gated authority mode.
+    """
+
+    try:
+        parameters = tuple(inspect.signature(guard.run_guarded_build).parameters)
+    except (TypeError, ValueError, AttributeError) as error:
+        raise ResolutionGuardError("canonical private-input guard API is unavailable") from error
+    if parameters != _EXPECTED_RUN_GUARDED_BUILD_PARAMETERS:
+        raise ResolutionGuardError(
+            "canonical private-input guard API drifted; dependency-resolution authority requires review"
+        )
 
 
 def _parse_args(guard, argv: Sequence[str]):
@@ -93,18 +123,9 @@ def _parse_args(guard, argv: Sequence[str]):
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         guard = _load_guard()
+        _require_private_only_guard_api(guard)
         inputs, command = _parse_args(guard, sys.argv[1:] if argv is None else argv)
-        # Explicitly name every authority toggle so a future default change in
-        # the canonical guard cannot silently promote this pre-generated adapter
-        # into physical build authority or make it depend on generated subjects.
-        return guard.run_guarded_build(
-            inputs,
-            command,
-            require_accepted_generated_subject=False,
-            require_accepted_private_review_commitment=False,
-            require_accepted_authority_helpers=False,
-            require_accepted_tracked_source=False,
-        )
+        return guard.run_guarded_build(inputs, command)
     except ResolutionGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
