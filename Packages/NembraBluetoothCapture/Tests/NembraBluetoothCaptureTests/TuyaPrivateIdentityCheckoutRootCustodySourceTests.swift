@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture private Tuya checkout-root custody")
 struct TuyaPrivateIdentityCheckoutRootCustodySourceTests {
-    @Test("checkout root is admitted before writer capture, credentials, and publication")
+    @Test("checkout root is resolved, admitted, and pinned before writer capture and credentials")
     func rootDescriptorPrecedesWriterCaptureAndCredentialInput() throws {
         let shell = try readRepositoryFile("Scripts/provision_capture_tuya_identity.sh")
         let writer = try readRepositoryFile("Scripts/provision_capture_tuya_identity_writer.py")
@@ -15,15 +15,18 @@ struct TuyaPrivateIdentityCheckoutRootCustodySourceTests {
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
         #expect(!shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT\""))
 
+        let rootResolution = shell.range(of: "ROOT=\"$(cd \"$(/usr/bin/dirname")
         let admission = shell.range(of: "exec 9<\"$ROOT\"")
         let writerCapture = shell.range(of: "WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\"")
         let digestFence = shell.range(of: "[[ \"$CAPTURED_WRITER_SHA256\" == \"$WRITER_SHA256\" ]]")
         let credentialRead = shell.range(of: "builtin read -r -s -p \"Tuya SmartLife SDK AppKey (input hidden): \" APP_KEY")
+        #expect(rootResolution != nil)
         #expect(admission != nil)
         #expect(writerCapture != nil)
         #expect(digestFence != nil)
         #expect(credentialRead != nil)
-        if let admission, let writerCapture, let digestFence, let credentialRead {
+        if let rootResolution, let admission, let writerCapture, let digestFence, let credentialRead {
+            #expect(rootResolution.lowerBound < admission.lowerBound)
             #expect(
                 admission.lowerBound < writerCapture.lowerBound,
                 "the checkout destination must be admitted before mutable writer bytes are selected from beneath it"
