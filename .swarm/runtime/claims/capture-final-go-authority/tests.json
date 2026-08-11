@@ -9,14 +9,14 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:20:30Z",
+  "lastHeartbeatAt": "2026-08-11T20:21:30Z",
   "leaseSeconds": 1800,
   "branch": "agent/capture-final-go-pack-index-test-contract-1316vk",
-  "pr": 2921,
+  "pr": 2976,
   "sourceBranch": "repair/v14-final-go-raw-candidate-tree-sol-4f7a2c-20260811",
   "sourceSHA": "8242722c0b0e4ff2bcd117419fe405db191a5985",
   "currentHeadSHA": "0b25ee5419bd822f2bd71379d907110fd0fd403a",
   "parentPR": 2921,
   "takeoverFromWorkerId": "sol-20260811-1e59e0",
-  "checkpoint": "Exact child 0b25ee5419bd822f2bd71379d907110fd0fd403a changes one test file only. It preserves corrupt pack-index alias construction, proves cat-file resolves the forged accepted name to attacker object bytes, removes only invalid ambient ls-tree traversal expectations, and still requires Final-GO _tree_entries plus verify-pack to reject the corruption. Production source remains byte-identical to parent #2921 exact 8242722c. PHYSICAL NO-GO."
+  "checkpoint": "Draft PR #2976 exact 0b25ee5419bd822f2bd71379d907110fd0fd403a changes one test file only. It preserves corrupt pack-index alias construction, proves cat-file resolves the forged accepted name to attacker object bytes, removes only invalid ambient ls-tree traversal expectations, and still requires Final-GO _tree_entries plus verify-pack to reject corruption. Workflow path explicitly includes this test file; exact-head CI is now required. Production source remains byte-identical to parent #2921 exact 8242722c. PHYSICAL NO-GO."
 }
