@@ -325,6 +325,11 @@ final class NembraUITests: XCTestCase {
 
     @MainActor
     func testLandscapeDashboardLaunchPerformance() {
+        // XCTest measures one warm-up plus five responsive launches. Hosted
+        // CoreSimulator can spend about 60s resolving the first orientation idle
+        // before measurement begins, so this one performance case needs a larger
+        // case budget without weakening assertion-level waits or other UI tests.
+        executionTimeAllowance = 180
         defer { XCUIDevice.shared.orientation = .portrait }
         XCUIDevice.shared.orientation = .landscapeRight
 
