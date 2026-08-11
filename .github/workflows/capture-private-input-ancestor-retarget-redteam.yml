@@ -1,0 +1,35 @@
+name: Capture Private Input Ancestor Retarget Red Team
+
+on:
+  pull_request:
+    branches:
+      - repair/v14-capture-cocoapods-generated-build-subject-sol
+    paths:
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - Scripts/capture_cocoapods_generated_build_subject.py
+      - scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
+      - .github/workflows/capture-private-input-ancestor-retarget-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  require-private-input-ancestor-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout diagnostic subject
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Compile guard and regression
+        run: |
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            Scripts/capture_cocoapods_generated_build_subject.py \
+            scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
+
+      - name: Require private-input ancestry through compiler window
+        run: python3 scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
