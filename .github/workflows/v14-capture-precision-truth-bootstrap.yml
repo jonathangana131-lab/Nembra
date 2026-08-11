@@ -1,0 +1,46 @@
+name: V14 Capture Precision Truth Bootstrap
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-final-precision-truth-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: recovery/v14-capture-final-precision-truth-sol
+          fetch-depth: 0
+      - name: Fetch exact reviewed visual ingredient
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin recovery/v14-capture-final-truth-visual-convergence-sol
+          test "$(git rev-parse FETCH_HEAD)" = "3f085d6b3ebba064f104ba13ab434db04a1769f0"
+      - name: Materialize current-parent convergence
+        run: python3 scripts/ci/v14_materialize_capture_precision_truth.py
+      - name: Verify scoped final diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e scripts/ci/v14_materialize_capture_precision_truth.py
+          test ! -e .github/workflows/v14-capture-precision-truth-bootstrap.yml
+          git diff --name-only HEAD | sort > /tmp/paths
+          printf '%s\n' \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootPrecisionLayoutAcceptanceTests.swift | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/paths
+      - name: Commit product/test-only result
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): converge precision root with provenance truth'
+          git push origin HEAD:recovery/v14-capture-final-precision-truth-sol
