@@ -7,25 +7,15 @@
   "workerId": "gpt56-sol-20260811-firstfold-recovery",
   "leaseId": "capture-flagship-primary-firstfold-recovery-20260811-2141",
   "generation": 4,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:41:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:41:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:59:30Z",
+  "releasedAt": "2026-08-11T21:59:30Z",
   "leaseSeconds": 2700,
   "branch": "polish/v14-capture-root-first-fold-sol-1311jx-20260811",
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
   "pr": 2979,
-  "takeoverFromWorkerId": "sol-20260811-1311jx",
-  "takeoverFromLeaseId": "capture-flagship-primary-copy-density-20260811-2011",
-  "takeoverReason": "Generation-3 heartbeat expired at 2026-08-11T21:34:40Z with #2979 still frozen at ce9e2bac. Recover the same app-visible Capture closure lane without changing accepted product intent. Fresh live state now shows exact Field 31537418087 SUCCESS, Main Graft 31537418120 SUCCESS, Standalone Visual 31537417996 SUCCESS, prior exact Xcode 31534132605 SUCCESS, and a newer exact Xcode rerun 31537418106 in progress. Finish exact visual/human evidence classification and latest Xcode status before promotion. Final-GO remains separately blocked and PHYSICAL NO-GO.",
-  "ownedPaths": [
-    "NembraApp/App/NembraCaptureEntrypoint.swift",
-    "NembraCapture.xcodeproj/project.pbxproj",
-    "NembraApp/Resources/Localizable.strings",
-    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFirstFoldCopySourceTests.swift",
-    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFirstFoldVoiceOverSourceTests.swift",
-    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
-    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
-  ],
-  "checkpoint": "Recovered unchanged #2979 exact ce9e2bac. Do not edit product bytes unless fresh visual/source review exposes a defect. Current task is acceptance closure: inspect exact Standalone Visual artifact/screenshots, compare standard + Accessibility XXXL to accepted #2940 baseline and stated first-fold goal, verify #2990 spoken-authority source contract remains satisfied, classify latest exact Xcode rerun, then either accept unchanged head or repair only a demonstrated defect. PHYSICAL NO-GO."
+  "outcome": "BLOCKED_BY_INVALID_STANDARD_VISUAL_EVIDENCE",
+  "checkpoint": "Human inspection of exact Standalone Visual run 31537417996 artifact 9119812244 found standalone-unprovisioned-dark-iphone12.png is black app content with only the status bar while AX5 renders the Capture root. The workflow is structurally green but cannot visually accept #2979. scripts/ci/capture_standalone_visual_evidence.sh uses fixed sleep 2 / one screenshot for standard and fixed sleep 1 / one screenshot after AX5 relaunch, with no rendered-content readiness proof. Release product ownership unchanged at ce9e2bac and move to the free tests/harness slot to make screenshot acquisition bounded, deterministic, and fail-closed before product promotion. Product bytes are not rejected by this evidence; the evidence gate is. PHYSICAL NO-GO."
 }
