@@ -9,12 +9,15 @@
   "state": "NEEDS_CHANGES",
   "dependencies": [],
   "blockers": [
-    "#2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b / Capture Signed App Install Custody run 31491053333 mechanically confirms that current #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2 first defines signed-app authority only after xcodebuild returns by fingerprinting a same-UID-mutable DerivedData pathname. A post-build substitute can therefore become the faithfully protected stage. Production must bind the accepted xcodebuild-produced bundle continuously through the first protected snapshot, replay #2955 green, and re-earn all moved-parent exact-head gates."
+    "#2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b mechanically confirmed that #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2 could first define signed-app authority only after xcodebuild returned from same-UID-mutable DerivedData. #2995 is the active production repair and has moved beyond its PR-body checkpoint to live head a71cc55dbc2281791e327888cf89ce0db6cf6193.",
+    "#2995 live a71cc55 adds real-Xcode supplementary-GID isolation evidence, but the production helper remains byte-identical to ccaa93c for the capability-retirement path: after root-locking DerivedData it calls _terminate_remaining_process_group(process.pid). That mechanically drains only the original process group, not an escaped setsid descendant or an already-open writable output FD. #2998 exact 678bf8a9aa09068b2b9e674578d83e55fabac553 is the validation-only detached-FD attack against that unchanged production boundary; its Capture Signed Origin Detached FD Red Team run 31535483234 is queued, so queued is not evidence. Until this authority question is resolved on the production exact head, signed-origin custody remains NEEDS_CHANGES.",
+    "#2995 current exact a71cc55 acceptance is not earned: Capture Main Selective Graft 31535634310, Field Build Provenance 31535634319, and Signed App Install Custody 31535634324 are queued; Xcode 27 run 31535634318 is skipped because the PR remains draft. If the head moves, all exact-head acceptance resets again."
   ],
   "mode": "exclusive",
   "allowedWriteAreas": [
     "scripts/field/install_one_time_capture.command",
     "scripts/ci/capture_signed_app_install_custody.py",
+    "scripts/ci/capture_signed_app_build_origin_custody.py",
     "scripts/ci/es80_signed_field_artifact_private_runner.py"
   ],
   "adjacentWriteAreas": [
@@ -29,28 +32,27 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
+  "sourceSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
   "legacy": {
     "primaryPR": 2789,
     "selectedSecurityParentPR": 2871,
     "selectedSecurityParentHeadSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
-    "currentQAChildPR": 2911,
-    "currentQAChildLaneMetadata": "capture-signed-install-current-source-contracts",
-    "currentQAHeadSHA": "83110a6af6220355092ed730cd28892a90c72fef",
-    "currentQAChildState": "MERGED_INTO_SELECTED_SECURITY_PARENT",
-    "activeRedTeamPR": 2955,
-    "activeRedTeamHeadSHA": "afdd329d8041f909c4d77fc86d78f73953bba81b",
-    "activeRedTeamRun": 31491053333,
-    "lineagePRs": [2688,2741,2754,2789,2863,2871,2911,2955],
-    "exactHeadGateState": "BLOCKED_BY_CONFIRMED_COMPILER_OUTPUT_ORIGIN_RED_2955",
-    "acceptedChildFieldRun": 31488849076,
-    "acceptedChildMainGraftRun": 31488848988,
-    "acceptedChildXcodeRun": 31488849061,
-    "movedParentSignedAppRun": 31490454614,
-    "movedParentFieldRun": 31490454631,
-    "movedParentMainGraftRun": 31490454719,
-    "movedParentXcodeRun": 31490454623,
-    "knownExactHeadFinding": "After #2911 composition, moved parent #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2 earned terminal SUCCESS on Signed App 31490454614, Field 31490454631, and Main Graft 31490454719 while Xcode 31490454623 remained pending at the time of this reconciliation. Those gates do not include the later-discovered origin invariant. Draft red-team #2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b then ran the permanent Signed App custody suite at 31491053333: inherited fingerprint mutation, external-symlink, protected-stage ordering/codesign boundary, and ACL contracts passed, while the new build-produced-origin invariant failed as intended after proving a substituted post-build DerivedData bundle can be fingerprinted and faithfully protected while differing from the actual xcodebuild output. Therefore f76e6ae is not acceptable regardless of its legacy gate results. Production must close compiler-output -> first protected snapshot origin without weakening protected staging, signatures, provenance, entitlements/profile, exact helper custody, or intended-device authority. PHYSICAL NO-GO."
+    "confirmedOriginRedTeamPR": 2955,
+    "confirmedOriginRedTeamHeadSHA": "afdd329d8041f909c4d77fc86d78f73953bba81b",
+    "activeRepairPR": 2995,
+    "activeRepairHeadSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
+    "activeRepairPreviousCheckpointSHA": "ccaa93c5019797697144f8f7613b9e64c123ef53",
+    "activeDetachedFDRedTeamPR": 2998,
+    "activeDetachedFDRedTeamHeadSHA": "678bf8a9aa09068b2b9e674578d83e55fabac553",
+    "activeDetachedFDRun": 31535483234,
+    "exactHeadGateState": "BLOCKED_BY_DETACHED_WRITER_AUTHORITY_QUESTION_AND_QUEUED_EXACT_HEAD_GATES",
+    "currentRepairRuns": {
+      "mainGraft": 31535634310,
+      "field": 31535634319,
+      "signedApp": 31535634324,
+      "xcode": 31535634318
+    },
+    "knownExactHeadFinding": "Reconciled 2026-08-11T21:03Z by sol-20260811-1400q7. Live GitHub outranks #2995's stale PR-body exact-head text: the repair branch is now a71cc55dbc2281791e327888cf89ce0db6cf6193, two commits ahead of ccaa93c and differing only by the permanent Signed App workflow plus a new real-Xcode group-isolation test. The real-Xcode witness proves the intended supplementary-GID capability can produce a product while a same-UID sibling without the capability cannot mutate it, but it does not prove all writers/capability holders are gone after the direct xcodebuild process returns. The production build-origin helper on a71cc55 still root-locks DerivedData then retires only process.pid's original process group. #2998 is an exact validation child of ccaa93c that attacks an escaped setsid descendant retaining an already-open writable product FD; the production helper is unchanged across ccaa93c -> a71cc55, so the authority question remains materially applicable, but its queued run is not yet mechanical evidence. Preserve PHYSICAL NO-GO until the final composed exact build earns all authority gates."
   },
-  "tags": ["capture", "p0", "signed-app", "device-install", "compiler-output-origin", "git-authority", "legacy-import"]
+  "tags": ["capture", "p0", "signed-app", "device-install", "compiler-output-origin", "open-fd", "git-authority", "legacy-import"]
 }
