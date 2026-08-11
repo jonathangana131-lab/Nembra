@@ -1,0 +1,34 @@
+name: TEMP Final GO Current Main Ancestry Materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-final-go-current-main-lock-custody-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v14-final-go-current-main-lock-custody-sol
+      - name: Materialize and validate exact-current-main repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tmp_final_go_current_main_lock_materialize.py
+          python3 scripts/ci/tmp_final_go_current_main_lock_materialize.py
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          rm .github/workflows/tmp-final-go-current-main-lock-materialize.yml
+          rm scripts/ci/tmp_final_go_current_main_lock_materialize.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet && { echo 'materializer produced no changes' >&2; exit 1; }
+          git commit -m 'fix(capture): bind Final GO to exact current main ancestry'
+          git push origin HEAD:agent/v14-final-go-current-main-lock-custody-sol
