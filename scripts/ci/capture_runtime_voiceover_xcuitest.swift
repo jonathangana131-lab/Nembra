@@ -43,12 +43,12 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             "Public/unprovisioned runtime hierarchy must not expose Bluetooth scan authority anywhere, including offscreen or under a non-button element type."
         )
 
-        // Run the toolchain's complete supported audit set instead of spelling
-        // individual enum members. Xcode 27 beta 4 does not expose the newer
-        // `.parentChild` / `.action` spellings as public enum members; asking
-        // XCTest for its default `.all` set keeps this witness fail-closed as the
-        // SDK evolves and avoids silently reducing coverage to a hand-picked list.
-        try app.performAccessibilityAudit()
+        // Use the runner's complete supported audit set instead of naming
+        // individual cases. Xcode 27 beta 4's Swift overlay does not expose
+        // every case documented by newer Apple SDKs, while `.all` remains the
+        // fail-closed contract: every audit category supported by this exact
+        // runner executes, including any categories added by a later SDK.
+        try app.performAccessibilityAudit(for: .all)
 
         let service = XCUIDevice.shared.voiceOverService
         if service.isEnabled {
@@ -78,24 +78,13 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
 
         // Traverse a bounded horizon even after the required phrases appear so
         // later forbidden authority cannot hide behind an early success break.
-        // VoiceOver navigation is a throwing API; after all required semantics
-        // are proven, a boundary/no-speech failure may terminate the horizon
-        // without converting infrastructure behavior into a product failure.
+        // Until retained runtime evidence demonstrates a specific terminal
+        // VoiceOver boundary error, every moveForward failure is fail-closed.
         for _ in 0..<64 {
-            do {
-                let output = try service.moveForward()
-                let utterance = output.utterance
-                if !utterance.isEmpty {
-                    utterances.append(utterance)
-                }
-            } catch {
-                let requiredAlreadyObserved = requiredSpeech.allSatisfy { phrase in
-                    utterances.contains(where: { $0.localizedCaseInsensitiveContains(phrase) })
-                }
-                if requiredAlreadyObserved {
-                    break
-                }
-                throw error
+            let output = try service.moveForward()
+            let utterance = output.utterance
+            if !utterance.isEmpty {
+                utterances.append(utterance)
             }
         }
 
