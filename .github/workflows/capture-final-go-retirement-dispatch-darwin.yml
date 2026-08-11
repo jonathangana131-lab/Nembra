@@ -3,7 +3,7 @@ name: Capture Final GO Retirement Dispatch Darwin Kqueue
 on:
   push:
     branches:
-      - test/v14-final-go-retirement-dispatch-darwin-r2-sol-20260811
+      - test/v14-final-go-darwin-race-diagnostics-sol-20260811
     paths:
       - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
   pull_request:
@@ -83,8 +83,27 @@ jobs:
       - name: Replay whole-tree races through real kqueue custody
         shell: bash
         run: |
-          set -euo pipefail
-          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-finalgo-darwin-whole-tree.log"
+          set +e
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py >"$log" 2>&1
+          status=$?
+          set -e
+          cat "$log"
+          if [ "$status" -ne 0 ]; then
+            python3 - "$log" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8", errors="replace")
+          if len(text) > 12000:
+              text = "[truncated to final 12000 characters]\n" + text[-12000:]
+          text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Darwin whole-tree custody regression::{text}")
+          PY
+            exit "$status"
+          fi
 
       - name: Prove sealed retirement dispatch on Darwin
         shell: bash
