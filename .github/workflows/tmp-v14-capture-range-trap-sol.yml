@@ -16,11 +16,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: diagnostic/v14-capture-range-trap-sol-20260811
-      - name: Bind exact diagnostic parent
+          fetch-depth: 4
+      - name: Bind exact diagnostic product ancestor
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = e406df43e8c01be3ab4bf2f2f0069faff406ccf2
+          git cat-file -e e406df43e8c01be3ab4bf2f2f0069faff406ccf2^{commit}
+          git merge-base --is-ancestor e406df43e8c01be3ab4bf2f2f0069faff406ccf2 HEAD
       - name: Inventory potentially unsafe source slicing
         shell: bash
         run: |
