@@ -90,3 +90,54 @@ jobs:
             --app "$stage_root/Nembra Capture.app" \
             --expected "$source_sha")"
           test "$final_sha" = "$source_sha"
+
+  accepted-runner-transport:
+    name: Require exact private-device runner Git blob transport
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind transport test to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove accepted runner bytes survive exact macOS transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          relative='scripts/ci/es80_signed_field_artifact_private_runner.py'
+          blob="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git rev-parse "$source_sha:$relative")"
+          [[ "$blob" =~ ^[0-9a-f]{40}$ ]]
+          encoded="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git cat-file blob "$blob" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+          test -n "$encoded"
+          decoded_blob="$(printf '%s' "$encoded" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git hash-object --stdin)"
+          test "$decoded_blob" = "$blob"
+          /usr/bin/python3 -B -I - "$encoded" <<'PY'
+          import base64
+          import sys
+
+          runner_source = base64.b64decode(sys.argv[1], validate=True)
+          namespace = {
+              "__name__": "nembra_private_device_reader",
+              "__file__": "<accepted-private-device-runner>",
+          }
+          exec(
+              compile(runner_source, "<accepted-private-device-runner>", "exec", dont_inherit=True),
+              namespace,
+          )
+          if not callable(namespace.get("read_private_identifier")):
+              raise SystemExit("accepted private-device runner did not expose read_private_identifier")
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
