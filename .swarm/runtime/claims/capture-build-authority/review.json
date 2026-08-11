@@ -7,13 +7,15 @@
   "workerId": "sol-20260811-1311qy",
   "leaseId": "capture-build-review-1311qy-20260811-2045",
   "generation": 8,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:45:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:45:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:48:00Z",
+  "releasedAt": "2026-08-11T20:48:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2988,
   "sourceSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
   "currentHeadSHA": "0f23ebe4aec1f69a9102d2d242a30d66de2e931e",
-  "reviewTarget": "Adversarially review current #2988 exact selected Xcode tool-file custody against #2989 ACL mutation hypothesis. Determine whether current root-owner/BSD-mode file and ancestry checks reject POSIX ACL write/delete-child authority, and publish a current-head blocker or accepted evidence without modifying the active implementation branch. PHYSICAL NO-GO."
+  "outcome": "BLOCKED_POSIX_ACL_MUTATION_AUTHORITY",
+  "releaseReason": "Blocking review 4910593174: current validate_root_custodied_path proves root uid/BSD 022/symlink/type only and performs no ACL admission. Apple's macOS filesystem model allows ACLs to supplement BSD permissions with file write and directory namespace rights, so exact selected xcodebuild/xctrace/devicectl byte and ancestry custody is not established. #2989 real-macOS behavioral witness is queued and not promoted yet. Current #2988 has many green inherited gates but Field/Main queued and Xcode skipped; none test ACL authority. Production repair + current-head macOS regression required. PHYSICAL NO-GO."
 }
