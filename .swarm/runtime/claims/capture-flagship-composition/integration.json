@@ -9,7 +9,7 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:04:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:13:52Z",
+  "lastHeartbeatAt": "2026-08-11T21:15:30Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-accepted-final-go-spine-sol-1404m2",
   "pr": 3013,
@@ -17,5 +17,5 @@
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
   "takeoverReason": "Generation-3 integration claim was explicitly released. Recover the flagship integration role, refresh #2979 exact gates, and reduce later composition debt by staging only independently accepted Final-GO control bytes onto the accepted app-visible #2940 baseline while #2979 visual evidence remains queued. No unaccepted build/private/signed-install bytes are composed. PHYSICAL NO-GO.",
-  "checkpoint": "Draft integration PR #3013 now stages accepted Final-GO exact 471cc025b332f4df8b43a98d709710aeb4e0698f onto accepted app-visible base 005b7c4aaf27fabb442a65599b4538ebcc09ae27. GitHub reports mergeable=true; diff is exactly 23 Final-GO authority-family workflow/control/test paths. Fresh PR-context Private Review Final GO, Final GO, Generated Subject Final GO, and R3 custody gates are terminal SUCCESS; Main Selective Graft remains queued; Xcode is policy-skipped for this CI-only slice and is not counted green. Independent integration review event has been posted. #2979 is not promoted while exact Standalone Visual/review remain incomplete. PHYSICAL NO-GO."
+  "checkpoint": "Draft integration PR #3013 stages accepted Final-GO exact 471cc025b332f4df8b43a98d709710aeb4e0698f onto accepted app-visible base 005b7c4aaf27fabb442a65599b4538ebcc09ae27. Mergeable=true; diff exactly 23 Final-GO authority-family workflow/control/test paths. Fresh Private Review Final GO, Final GO, Generated Subject Final GO, and R3 custody gates were terminal SUCCESS; Main Selective Graft was queued; Xcode is policy-skipped and not counted green. Independent review requested. Separately, #2973 runtime VoiceOver reached traversal and failed after successful build/setup; failure classification is being investigated without weakening the oracle. #2979 remains unpromoted until visual/review evidence closes. PHYSICAL NO-GO."
 }
