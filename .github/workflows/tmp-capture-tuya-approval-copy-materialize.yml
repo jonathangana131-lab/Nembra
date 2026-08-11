@@ -21,9 +21,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "646c7fd91350bbbc5a3a589bbfcdeef0defcb7bd"
+          test "$(git rev-parse HEAD^)" = "383f72757e1cc7d64a0d3ea476ae8a864082f021"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-capture-tuya-approval-copy-materialize.yml"
-      - name: Align recovery copy with the actual failed-state action
+      - name: Align both recovery messages with the actual failed-state action
         shell: bash
         run: |
           set -euo pipefail
@@ -34,14 +34,17 @@ jobs:
           text = bridge.read_text(encoding="utf-8")
           old = "Tap Try again to make a fresh QR."
           new = "Reset the account link, then create a fresh QR."
-          if text.count(old) != 1:
-              raise SystemExit("approved-session recovery copy drifted")
-          bridge.write_text(text.replace(old, new, 1), encoding="utf-8")
+          if text.count(old) != 2:
+              raise SystemExit(f"expected two stale recovery instructions, found {text.count(old)}")
+          text = text.replace(old, new)
+          if text.count(new) != 2 or old in text:
+              raise SystemExit("truthful recovery-copy replacement was incomplete")
+          bridge.write_text(text, encoding="utf-8")
 
           test = Path("scripts/ci/tests/test_tuya_account_transport_source.py")
           source = test.read_text(encoding="utf-8")
           old_assert = "        self.assertIn('account session was rejected:', SOURCE)\n        self.assertIn('pollTask?.cancel()', SOURCE)"
-          new_assert = "        self.assertIn('account session was rejected:', SOURCE)\n        self.assertIn('Reset the account link, then create a fresh QR.', SOURCE)\n        self.assertNotIn('Tap Try again to make a fresh QR.', SOURCE)\n        self.assertIn('pollTask?.cancel()', SOURCE)"
+          new_assert = "        self.assertIn('account session was rejected:', SOURCE)\n        self.assertEqual(SOURCE.count('Reset the account link, then create a fresh QR.'), 2)\n        self.assertNotIn('Tap Try again to make a fresh QR.', SOURCE)\n        self.assertIn('pollTask?.cancel()', SOURCE)"
           if source.count(old_assert) != 1:
               raise SystemExit("transport regression anchor drifted")
           test.write_text(source.replace(old_assert, new_assert, 1), encoding="utf-8")
@@ -56,5 +59,5 @@ jobs:
           git config user.email "jonathangana131@gmail.com"
           git add NembraApp/Features/Research/TuyaAccountBridge.swift scripts/ci/tests/test_tuya_account_transport_source.py .github/workflows/tmp-capture-tuya-approval-copy-materialize.yml
           test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' '.github/workflows/tmp-capture-tuya-approval-copy-materialize.yml' 'NembraApp/Features/Research/TuyaAccountBridge.swift' 'scripts/ci/tests/test_tuya_account_transport_source.py' | sort)"
-          git commit -m "fix(capture): align rejected-session recovery copy"
+          git commit -m "fix(capture): align Tuya recovery copy with UI"
           git push origin HEAD:agent/v14-capture-tuya-approval-failclosed-sol
