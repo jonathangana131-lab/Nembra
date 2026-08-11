@@ -9,13 +9,12 @@ on:
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
       - scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
       - scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
-      - scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
+      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
       - .github/workflows/capture-cocoapods-build-subject-redteam.yml
   push:
     branches:
       - repair/v14-capture-cocoapods-generated-subject-sol-20260810
       - repair/v14-capture-2709-coherent-generation-sol
-      - repair/v14-capture-2709-private-ancestry-convergence-sol
   workflow_dispatch:
 
 permissions:
@@ -50,7 +49,7 @@ jobs:
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
-          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
           /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
 
       - name: Require lock-preserving generated substitutions to fail closed
@@ -71,8 +70,8 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
 
-      - name: Require private build-input ancestry to remain pinned
+      - name: Require vnode custody for generated metadata changes
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
