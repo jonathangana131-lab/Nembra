@@ -9,11 +9,11 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:58:00Z",
-  "lastHeartbeatAt": "2026-08-11T11:58:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:03:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
-  "pr": 2899,
-  "sourceSHA": "3f662b7a3f3da667ce3f916ee3f0a65629269c8a",
+  "pr": null,
+  "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
   "takeoverFromWorkerId": null,
-  "takeoverReason": "No durable convergence claim existed. Fresh expected-red #2918 demonstrates that crash-residue cleanup can unlink a replacement inode after the admitted held inode is renamed. Take the narrow production repair on current #2899 while preserving its canonical-name, mode/UID/link/size, descriptor payload/publication, and final-name authority."
+  "takeoverReason": "No durable convergence claim existed. #2899 merged at 9e14bdf0813fe6d3fe930692f75e7060efa58889; fresh expected-red #2918 demonstrates that crash-residue cleanup can unlink a replacement inode after the admitted held inode is renamed. Repair from the moved merged lineage while preserving canonical-name, mode/UID/link/size, descriptor payload/publication, and final-name authority."
 }
