@@ -9,15 +9,15 @@
   "generation": 3,
   "status": "NEEDS_CHANGES",
   "claimedAt": "2026-08-11T12:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:06:15Z",
+  "lastHeartbeatAt": "2026-08-11T12:13:00Z",
   "leaseSeconds": 1800,
-  "branch": "",
+  "branch": "repair/v14-private-identity-recovery-neutralization-sol-4c47a9-20260811",
   "pr": 2899,
   "sourceSHA": "3f662b7a3f3da667ce3f916ee3f0a65629269c8a",
-  "currentHeadSHA": "3f662b7a3f3da667ce3f916ee3f0a65629269c8a",
+  "currentHeadSHA": "b7615652500a04731fb88bdde666c25ce010d7be",
   "findingPR": 2918,
   "findingHeadSHA": "d8c069069daa32da048e3fb02426c81776f38de0",
   "findingRun": 31488913742,
-  "findingState": "EXPECTED_RED_CONFIRMED",
-  "reviewFinding": "Blocking final check-to-unlink race in _recover_private_stage_residue: same-UID pathname replacement can be deleted before held-inode link-count detection. Existing #2899 exact greens do not accept this defect; #2918 mechanically confirms terminal expected-red. #2899 merged before this blocker was reconciled. PHYSICAL NO-GO."
+  "findingState": "EXPECTED_RED_CONFIRMED_AND_PROPOSED_REPAIR_INTEGRATION_BLOCKED",
+  "reviewFinding": "#2918 remains a blocking final check-to-unlink race on merged #2899. Current production materializer b761565 proposes descriptor ftruncate neutralization and intentionally retains zero-length canonical .nembra-private-stage-* tombstones at checkout root. That avoids deleting a swapped replacement but is not yet a composable field candidate: current Build-authority raw-tree admission rejects every untracked root file outside the explicit generated/private field-input allowlist, so a retained root tombstone would make authenticated build admission fail closed. Repair must close wrong-inode deletion without leaving a persistent untracked root subject that conflicts with selected field-build raw-tree authority, or deliberately move/represent neutralized custody inside an accepted narrow authenticated input surface without broadening generic untracked authority. Preserve #2899 crash/final-name/payload contracts and #2918 replacement-preservation invariant. PHYSICAL NO-GO."
 }
