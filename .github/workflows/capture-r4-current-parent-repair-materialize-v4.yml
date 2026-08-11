@@ -1,0 +1,216 @@
+name: Capture R4 Current Parent Repair Materializer V4
+
+on:
+  push:
+    branches:
+      - repair/v14-r4-private-review-current-parent-exec-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-r4-private-review-current-parent-exec-sol-20260811
+          fetch-depth: 0
+
+      - name: Transplant stale R4 and red team
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin control/v14-auth-stationary-private-review-r4-sol:refs/remotes/origin/r4-source
+          git fetch --no-tags origin adversarial/v14-private-review-parent-module-exec-sol:refs/remotes/origin/r4-red
+          git show refs/remotes/origin/r4-source:scripts/ci/es80_authenticated_stationary_private_review_final_go.py > scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          git show refs/remotes/origin/r4-source:scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py > scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+          git show refs/remotes/origin/r4-source:.github/workflows/capture-authenticated-stationary-private-review-final-go.yml > .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+          git show refs/remotes/origin/r4-red:scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py > scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py
+
+      - name: Pin generated parent execution to exact accepted Git blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/es80_authenticated_stationary_private_review_final_go.py')
+          text = path.read_text(encoding='utf-8')
+          if text.count('import importlib.util\n') != 1:
+              raise SystemExit('R4 import anchor drifted')
+          text = text.replace('import importlib.util\n', 'import subprocess\nimport types\n', 1)
+          start = text.index('def _load_generated_module():\n')
+          end = text.index('\n\ngenerated = _load_generated_module()', start)
+          replacement = '''GENERATED_PARENT_PATH = "scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py"
+          GENERATED_PARENT_GIT_BLOB = "13720f812498d86f55c0f1ca4e98b873f0793cb9"
+
+
+          def _load_generated_module():
+              root = Path(__file__).resolve().parents[2]
+              environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
+              try:
+                  source = subprocess.run(
+                      ["/usr/bin/git", "-C", str(root), "rev-parse", "HEAD"],
+                      check=True,
+                      text=True,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      env=environment,
+                  ).stdout.strip().lower()
+                  blob = subprocess.run(
+                      ["/usr/bin/git", "-C", str(root), "rev-parse", f"{source}:{GENERATED_PARENT_PATH}"],
+                      check=True,
+                      text=True,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      env=environment,
+                  ).stdout.strip().lower()
+                  if blob != GENERATED_PARENT_GIT_BLOB:
+                      raise PrivateReviewGoError("generated-subject Final-GO parent does not match exact accepted parent authority")
+                  payload = subprocess.run(
+                      ["/usr/bin/git", "-C", str(root), "cat-file", "blob", blob],
+                      check=True,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      env=environment,
+                  ).stdout
+                  verified = subprocess.run(
+                      ["/usr/bin/git", "-C", str(root), "hash-object", "--stdin"],
+                      input=payload,
+                      check=True,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      env=environment,
+                  ).stdout.decode("ascii").strip().lower()
+              except PrivateReviewGoError:
+                  raise
+              except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
+                  raise PrivateReviewGoError("generated-subject Final-GO parent Git custody failed") from error
+              if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source):
+                  raise PrivateReviewGoError("private-review control source is invalid")
+              if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", blob) or verified != blob or not payload:
+                  raise PrivateReviewGoError("generated-subject Final-GO parent Git bytes failed identity verification")
+              filename = f"git:{source}:{GENERATED_PARENT_PATH}"
+              module = types.ModuleType("nembra_generated_subject_final_go_parent")
+              module.__file__ = filename
+              module.__nembra_accepted_control_source__ = source
+              module.__nembra_accepted_control_blob__ = blob
+              try:
+                  exec(compile(payload, filename, "exec", dont_inherit=True), module.__dict__)
+              except Exception as error:
+                  raise PrivateReviewGoError("accepted generated-subject Final-GO parent could not execute") from error
+              return module'''
+          text = text[:start] + replacement + text[end:]
+          authority = '    "scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py",\n)'
+          if text.count(authority) != 1:
+              raise SystemExit('R4 authority path anchor drifted')
+          text = text.replace(
+              authority,
+              '    "scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py",\n    "scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py",\n)',
+              1,
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Bind red-team fixture to its committed safe parent blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py')
+          text = path.read_text(encoding='utf-8')
+          if text.count('import importlib.util\n') != 1:
+              raise SystemExit('red-team import anchor drifted')
+          text = text.replace('import importlib.util\n', 'import importlib.util\nimport re\n', 1)
+          anchor = '            subprocess.run(["/usr/bin/git", "-C", str(root), "add", "."], check=True)\n'
+          if text.count(anchor) != 1:
+              raise SystemExit('red-team git-add anchor drifted')
+          insertion = '''            accepted_fixture_blob = subprocess.check_output(
+              ["/usr/bin/git", "-C", str(root), "hash-object", "--", PARENT_RELATIVE],
+              text=True,
+          ).strip()
+          child_text = child.read_text(encoding="utf-8")
+          child_text, replacements = re.subn(
+              r'GENERATED_PARENT_GIT_BLOB = "[0-9a-f]{40,64}"',
+              f'GENERATED_PARENT_GIT_BLOB = "{accepted_fixture_blob}"',
+              child_text,
+              count=1,
+          )
+          self.assertEqual(replacements, 1, "fixture could not bind child to its committed safe parent blob")
+          child.write_text(child_text, encoding="utf-8")
+'''
+          text = text.replace(anchor, insertion + anchor, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Integrate parent execution regression into canonical R4 workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-authenticated-stationary-private-review-final-go.yml')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('control/v14-auth-stationary-private-review-r4-sol', 'repair/v14-r4-private-review-current-parent-exec-sol-20260811')
+          trigger = '      - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py\n'
+          if text.count(trigger) != 2:
+              raise SystemExit(f'R4 trigger anchor drifted: {text.count(trigger)}')
+          text = text.replace(trigger, trigger + '      - scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py\n')
+          compile_line = '            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py\n'
+          if text.count(compile_line) != 1:
+              raise SystemExit('R4 compile anchor drifted')
+          text = text.replace(
+              compile_line,
+              '            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \\\n            scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py\n',
+              1,
+          )
+          run_line = '          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py\n'
+          if text.count(run_line) != 1:
+              raise SystemExit('R4 run anchor drifted')
+          text = text.replace(run_line, run_line + '          python3 scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py\n', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Compile R4 recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py
+
+      - name: Replay parent execution red team
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py
+
+      - name: Replay R4 authority suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+          git diff --check
+
+      - name: Publish validated R4 recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_private_review_parent_module_execution_custody.py \
+            .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+          git commit -m 'Capture: re-anchor R4 and pin generated parent execution'
+          git push origin HEAD:repair/v14-r4-private-review-current-parent-exec-sol-20260811
