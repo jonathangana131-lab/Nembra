@@ -180,6 +180,58 @@ class PrivateReviewFinalGoCurrentTests(unittest.TestCase):
             self.assertFalse(sentinel.exists(), "mutable generated-parent worktree bytes executed")
             self.assertEqual(fixture.generated.__nembra_accepted_control_blob__, accepted_blob)
 
+    def test_candidate_git_custody_ignores_repository_core_worktree_decoy(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-private-core-worktree-") as temporary:
+            root = Path(temporary).resolve(strict=True)
+            candidate = root / "candidate"
+            decoy = root / "decoy"
+            candidate.mkdir()
+            decoy.mkdir()
+            subprocess.run(["/usr/bin/git", "-C", str(candidate), "init", "-q"], check=True)
+            subprocess.run(["/usr/bin/git", "-C", str(candidate), "config", "user.email", "capture@nembra.invalid"], check=True)
+            subprocess.run(["/usr/bin/git", "-C", str(candidate), "config", "user.name", "Nembra Capture QA"], check=True)
+            authority = candidate / "authority.txt"
+            authority.write_text("accepted\n", encoding="utf-8")
+            subprocess.run(["/usr/bin/git", "-C", str(candidate), "add", "authority.txt"], check=True)
+            subprocess.run(["/usr/bin/git", "-C", str(candidate), "commit", "-qm", "accepted candidate"], check=True)
+            accepted_blob = subprocess.check_output(
+                ["/usr/bin/git", "-C", str(candidate), "rev-parse", "HEAD:authority.txt"], text=True
+            ).strip()
+            (decoy / "authority.txt").write_text("accepted\n", encoding="utf-8")
+            authority.write_text("attacker\n", encoding="utf-8")
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(candidate), "config", "core.worktree", str(decoy)], check=True
+            )
+            self.assertEqual(
+                subprocess.check_output(
+                    ["/usr/bin/git", "-C", str(candidate), "status", "--porcelain=v1", "--untracked-files=all"],
+                    text=True,
+                ),
+                "",
+                "fixture must prove ambient Git is looking at the decoy worktree",
+            )
+
+            original_git = lambda *_args: "ambient"
+            original_git_bytes = lambda *_args: b"ambient"
+            base = SimpleNamespace(git=original_git, git_bytes=original_git_bytes)
+            with MODULE._physical_worktree_git(base):
+                status = base.git(candidate, "status", "--porcelain=v1", "--untracked-files=all")
+                self.assertIn("authority.txt", status)
+                self.assertEqual(base.git(candidate, "rev-parse", "HEAD:authority.txt"), accepted_blob)
+                self.assertNotEqual(
+                    base.git(candidate, "hash-object", "--no-filters", "--", "authority.txt"), accepted_blob
+                )
+                self.assertEqual(base.git_bytes(candidate, "show", "HEAD:authority.txt"), b"accepted\n")
+            self.assertIs(base.git, original_git)
+            self.assertIs(base.git_bytes, original_git_bytes)
+
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "with _generated_extensions(review=pre_review), _physical_worktree_git(base):",
+            source,
+            "Final-GO composition must keep inherited candidate Git calls inside physical worktree custody",
+        )
+
     def test_v5_owner_review_binds_pixels_generated_private_hmac_and_all_helper_sources(self):
         result = MODULE.review_v5(2612, 77, SOURCE, visual(), review_get(), base=TinyBase)
         self.assertEqual(result["authority"], MODULE.REVIEW_AUTHORITY)
