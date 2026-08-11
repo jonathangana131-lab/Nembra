@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "navigation-app-visible",
+  "epic": "navigation",
+  "title": "Navigation app-visible recovery",
+  "objective": "Recover the existing Navigation accessibility product delta from legacy PR #2509 onto current main, preserve provider-backed data as provider data, and require exact-head app runtime and accessibility acceptance before integration.",
+  "priority": 4,
+  "state": "READY",
+  "dependencies": [],
+  "blockers": [],
+  "mode": "exclusive",
+  "allowedWriteAreas": ["NembraApp/App/NembraApp.swift", "Packages/NembraCore/Tests/NembraCoreTests/NavigationVisualSurfaceSourceTests.swift"],
+  "adjacentWriteAreas": ["NembraUITests/NembraUITests.swift", "scripts/ci/xcode27_simulator_capture.sh"],
+  "slots": [
+    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"visual-review","role":"review","exclusive":true,"leaseSeconds":1800,"resources":["IOS_SIMULATOR"]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":["RELEASE_INTEGRATION"]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": false, "state": "SOURCE_READY"},
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "legacy": {
+    "primaryPR": 2509,
+    "primaryHeadSHA": "69bd2dc61ea29429413ce20399a3bbb08e29a00e",
+    "mergeBaseSHA": "969428349de610282fca3cc3a9b82cab636d3f5a",
+    "mainAheadBy": 49,
+    "legacyAheadBy": 3,
+    "changedFileOverlapWithNewMain": 0,
+    "knownExactHeadFinding": "Legacy PR #2509 is open, draft, non-mergeable, and 49 current-main commits behind. It changes two paths and current-main movement since the merge base touches neither path. Historical exact-head run 31436805256 was skipped and is not acceptance."
+  },
+  "tags": ["navigation", "p4", "app-visible", "accessibility", "legacy-import"]
+}
