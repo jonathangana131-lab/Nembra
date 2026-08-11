@@ -1,0 +1,78 @@
+name: TEMP V14 Build Guard Authority Implication (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/tmp-v14-build-guard-authority-implication-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Make accepted subject flags imply accepted helper custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Scripts/capture_tuya_private_input_build_guard.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    if require_accepted_authority_helpers:\n        provenance.require_accepted()\n        generated_build.require_accepted()\n\n    if require_accepted_generated_subject:\n'''
+          new = '''    accepted_authority_requested = (\n        require_accepted_authority_helpers\n        or require_accepted_generated_subject\n        or require_accepted_private_review_commitment\n    )\n    if accepted_authority_requested:\n        provenance.require_accepted()\n        generated_build.require_accepted()\n\n    if require_accepted_generated_subject:\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'build-guard authority flag block: expected one match, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+      - name: Extend caller-constructible authority red team
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('import importlib.util\n', 'import hashlib\nimport importlib.util\nimport os\n', 1)
+          marker = '''\n\nif __name__ == "__main__":\n    unittest.main(verbosity=2)\n'''
+          addition = '''\n    def test_accepted_subject_flags_cannot_omit_helper_execution_custody(self) -> None:\n        accepted_provenance = hashlib.sha256(PROVENANCE.read_bytes()).hexdigest()\n        accepted_generated = hashlib.sha256(GENERATED.read_bytes()).hexdigest()\n        for flag in (\n            "require_accepted_private_review_commitment",\n            "require_accepted_generated_subject",\n        ):\n            with self.subTest(flag=flag):\n                guard, provenance_sentinel, generated_sentinel = self._guard_with_malicious_neighbors()\n                previous_provenance = os.environ.get(guard.PROVENANCE_HELPER_ENV)\n                previous_generated = os.environ.get(guard.GENERATED_BUILD_SUBJECT_HELPER_ENV)\n                os.environ[guard.PROVENANCE_HELPER_ENV] = accepted_provenance\n                os.environ[guard.GENERATED_BUILD_SUBJECT_HELPER_ENV] = accepted_generated\n                try:\n                    with self.assertRaises(guard.BuildGuardError):\n                        guard.run_guarded_build(None, ["/usr/bin/true"], **{flag: True})\n                finally:\n                    if previous_provenance is None:\n                        os.environ.pop(guard.PROVENANCE_HELPER_ENV, None)\n                    else:\n                        os.environ[guard.PROVENANCE_HELPER_ENV] = previous_provenance\n                    if previous_generated is None:\n                        os.environ.pop(guard.GENERATED_BUILD_SUBJECT_HELPER_ENV, None)\n                    else:\n                        os.environ[guard.GENERATED_BUILD_SUBJECT_HELPER_ENV] = previous_generated\n                self.assertFalse(\n                    provenance_sentinel.exists(),\n                    "accepted-subject API flag executed a mutable provenance helper before accepted helper custody",\n                )\n                self.assertFalse(\n                    generated_sentinel.exists(),\n                    "accepted-subject API flag executed a mutable generated helper before accepted helper custody",\n                )\n'''
+          if text.count(marker) != 1:
+              raise SystemExit(f'exception-proxy test footer: expected one match, found {text.count(marker)}')
+          path.write_text(text.replace(marker, addition + marker, 1), encoding='utf-8')
+          PY
+          python3 -m py_compile scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
+      - name: Run focused authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v \
+            scripts.ci.tests.test_capture_private_review_exception_proxy_custody \
+            scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody \
+            scripts.ci.tests.test_capture_private_review_helper_execution_custody \
+            scripts.ci.tests.test_capture_private_review_commitment \
+            scripts.ci.tests.test_capture_cocoapods_generated_build_subject
+          git diff --check
+      - name: Publish source and permanent regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
+          git diff --cached --quiet && { echo 'ERROR: authority implication hardening produced no source/test diff' >&2; exit 1; }
+          git commit -m 'Capture: make accepted subjects imply helper custody'
+          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
