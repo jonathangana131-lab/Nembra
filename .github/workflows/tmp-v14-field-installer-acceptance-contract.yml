@@ -1,0 +1,75 @@
+name: tmp V14 field installer acceptance contract materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-field-installer-acceptance-contract-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-field-installer-acceptance-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Patch stale canonical Field acceptance contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          source = path.read_text(encoding='utf-8')
+          old = '''          grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
+          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"
+          grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"
+          grep -Fq 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA' "$installer"
+          grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' "$installer"
+'''
+          new = '''          grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
+          grep -Fq 'AUTHORITY_GIT_DIR="$ROOT/.git"' "$installer"
+          grep -Fq 'SOURCE_SHA="$(run_authority_git rev-parse --verify '\''HEAD^{commit}'\'' | tr ' "$installer"
+          grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"
+          grep -Fq 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA' "$installer"
+          grep -Fq 'verify_accepted_checkout_source "Current checkout is not the exact accepted Capture source."' "$installer"
+          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' "$installer"
+          if grep -Fq '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' "$installer"; then
+            echo 'ERROR: field bootstrap must execute from exact accepted Git bytes, not a mutable checkout pathname.' >&2
+            exit 1
+          fi
+          grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' "$installer"
+'''
+          if source.count(old) != 1:
+              raise SystemExit('stale Field source-authority block was not found exactly once')
+          updated = source.replace(old, new, 1)
+          if updated == source:
+              raise SystemExit('canonical Field workflow was not changed')
+          path.write_text(updated, encoding='utf-8')
+          PY
+
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          bash -n scripts/field/install_one_time_capture.command
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          git diff --check
+
+      - name: Publish permanent QA repair and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add .github/workflows/capture-field-build-provenance.yml
+          git rm .github/workflows/tmp-v14-field-installer-acceptance-contract.yml
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' '.github/workflows/capture-field-build-provenance.yml' '.github/workflows/tmp-v14-field-installer-acceptance-contract.yml' | sort)"
+          git commit -m 'Align Field gate with accepted Git bootstrap authority'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
