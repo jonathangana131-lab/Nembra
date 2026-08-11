@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "swarm-takeover-proof",
+  "epic": "swarm-control-plane",
+  "title": "Atomic stale-lease takeover proof",
+  "objective": "Exercise real GitHub compare-and-swap takeover semantics, then retire this proof lane.",
+  "priority": 9,
+  "state": "IMPLEMENTING",
+  "dependencies": [],
+  "blockers": [],
+  "mode": "exclusive",
+  "allowedWriteAreas": [".swarm/runtime"],
+  "adjacentWriteAreas": [],
+  "slots": [
+    {"name": "primary", "role": "implementation", "exclusive": true, "leaseSeconds": 300, "resources": []}
+  ],
+  "acceptance": {"independentReview": false},
+  "physical": {"required": false, "state": "SOURCE_READY"},
+  "tags": ["proof"]
+}
