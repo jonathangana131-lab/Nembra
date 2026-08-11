@@ -14,11 +14,17 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(!podfile.contains("pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'"))
     }
 
-    @Test("bootstrap preserves lock state instead of silently upgrading dependencies")
-    func bootstrapUsesInstallAndRequiresResolvedLock() throws {
+    @Test("bootstrap preserves lock state and runs CocoaPods only under private-input custody")
+    func bootstrapUsesGuardedInstallAndRequiresResolvedLock() throws {
         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
 
-        #expect(script.contains("pod install --repo-update"))
+        let acceptedDigest = try #require(script.range(of: ": \"${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?"))
+        let resolutionGuard = try #require(script.range(of: "/usr/bin/python3 -I \"$PRIVATE_INPUT_RESOLUTION_GUARD\" \\\n"))
+        let guardedInstall = try #require(script.range(of: "     \"$POD_BIN\" install --repo-update"))
+
+        #expect(acceptedDigest.lowerBound < resolutionGuard.lowerBound)
+        #expect(resolutionGuard.lowerBound < guardedInstall.lowerBound)
+        #expect(!script.contains("\npod install --repo-update\n"))
         #expect(!script.contains("\npod update\n"))
         #expect(script.contains("[[ ! -f Podfile.lock ]]"))
         #expect(script.contains("ThingSmartHomeKit (7.8.0)"))
