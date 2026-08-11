@@ -169,6 +169,7 @@ private struct CaptureP0Root: View {
                                 : (isAccessibilityLayout ? "Account metadata" : "Prepare account metadata")
                         )
                         .font(isAccessibilityLayout ? .headline : .title3.bold())
+                        .accessibilityAddTraits(.isHeader)
                         .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
 
                         if !isAccessibilityLayout || tuya.isLinked {
@@ -345,6 +346,7 @@ private struct CaptureP0Root: View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Choose this scooter")
                 .font(.title3.bold())
+                .accessibilityAddTraits(.isHeader)
             Text("Nembra verifies the selected device again inside the official SDK before Bluetooth discovery.")
                 .font(.footnote)
                 .foregroundStyle(Color.white.opacity(0.72))
