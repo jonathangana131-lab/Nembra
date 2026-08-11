@@ -9,15 +9,15 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:42:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:47:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
-  "currentHeadSHA": "9126c34d609be02f793e3d108a5f9578c32f036e",
+  "currentHeadSHA": "1834a39ac44e09cf12426cf28cb95ed3c008e9a2",
   "findingPR": 2918,
   "findingHeadSHA": "d8c069069daa32da048e3fb02426c81776f38de0",
   "findingRun": 31488913742,
-  "findingState": "DESIGN_DIRECTION_SOURCE_SOUND_PENDING_CLEAN_EXACT_DESCENDANT",
-  "reviewFinding": "#2944 inode-reuse direction avoids #2918 pathname unlink and avoids the competing root-tombstone Build incompatibility. Live 9126c34 also fixes the 462d4d3 pre-rebind sanitation omission by sanitizing the exact held inode on any post-acquisition failure. Current head is not acceptable: PR prose is stale, temp-v14-private-prebind-sanitize-materialize workflow remains in final tree, and Private Identity/Field/Main-Graft/Xcode exact runs are terminal action_required, not green. Durable review comment 5253303278 requests a clean descendant, exact-head truth update, four canonical gates, then re-review. PHYSICAL NO-GO."
+  "findingState": "SOURCE_ACCEPTED_PENDING_EXACT_HEAD_GATES",
+  "reviewFinding": "Clean #2944 exact 1834a39 is behind 0 with seven durable paths and no temp materializer. Independent source review found no blocker for declared scope: recovery/reuse and all failure sanitation remain exact-held-descriptor authority; pre-rebind gap is closed; obsolete pathname cleanup helpers are gone; replacement survival, payload/final-name/admitted-ancestry contracts remain; recovered successful reuse removes the root tombstone and composes with Build raw-tree authority. Exact Private Identity run 31492412384 is terminal SUCCESS. Field 31492412374, Main Graft 31492412380, and Xcode 31492412413 remain pending and must all become terminal SUCCESS on unchanged head before review acceptance can release. Durable review comment 5253345790. PHYSICAL NO-GO."
 }
