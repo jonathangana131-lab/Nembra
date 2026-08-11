@@ -9,17 +9,17 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T13:03:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:03:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:07:20Z",
   "leaseSeconds": 2700,
   "branch": "test/v14-capture-runtime-voiceover-sol-0458-20260811",
-  "pr": null,
+  "pr": 2967,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+  "currentHeadSHA": "771dce5df08db4ba4fec5b869309ba2077adea20",
   "ownedPaths": [
-    "NembraUITests/NembraUITests.swift",
+    "scripts/ci/capture_runtime_voiceover_xcuitest.swift",
     ".github/workflows/capture-runtime-voiceover.yml"
   ],
-  "durableEvidence": "Parent 005b7c4 is accepted app-visible large-type/accessibility-semantic ingredient via Main Selective Graft 31490540822, Field Build Provenance 31490540890, Standalone Visual 31490540910 + human exact pixels, and Xcode 27 31490540888. Existing Xcode suite does not directly exercise standalone-root VoiceOver traversal. Apple Xcode 27 XCUIAutomation exposes XCUIDevice.shared.voiceOverService enable/currentSpeech/moveForward plus XCUIApplication(bundleIdentifier:) and performAccessibilityAudit, allowing direct runtime speech/traversal evidence against the already-installed standalone Capture app without changing production/UI bytes.",
-  "acceptance": "Test-only child must build/install exact standalone Capture app on iPhone 12 / iOS 27, launch bundle com.jonathangana131.nembra.capturelearn through XCUIApplication(bundleIdentifier:), run strict runtime accessibility audit, enable real VoiceOver service, collect actual spoken utterances, and mechanically prove required semantic sequence includes Physical capture locked -> Tuya Smart user code -> Create approval QR -> Engineering details without activating physical Capture. No production/UI bytes may change. Exact test head and parent source identities must be recorded; any head move resets evidence.",
-  "intent": "Close the runtime VoiceOver/traversal gap explicitly left open by #2940 while preserving accepted product bytes and PHYSICAL NO-GO. If the runtime witness exposes a real semantic/order defect, keep expected-red evidence and repair only in a separately owned app-visible production successor before re-acceptance."
+  "durableEvidence": "Parent 005b7c4 is accepted app-visible large-type/accessibility-semantic ingredient via Main Selective Graft 31490540822, Field Build Provenance 31490540890, Standalone Visual 31490540910 + human exact pixels, and Xcode 27 31490540888. Existing Xcode suite does not directly exercise standalone-root VoiceOver traversal. Apple Xcode 27 XCUIAutomation exposes XCUIDevice.shared.voiceOverService enable/currentSpeech/moveForward plus XCUIApplication(bundleIdentifier:) and performAccessibilityAudit. PR #2967 exact head 771dce5 contains exactly two test-only permanent paths relative to accepted product parent: the committed runtime XCTest witness and dedicated xcode-27 workflow. The workflow mechanically rejects any other path delta, builds/stamps/installs the exact public standalone Capture app, uses exact iPhone 12 / iOS 27 at Accessibility XXXL, injects the committed witness only into the runner worktree's existing UI-test target, and retains xcresult + manifest. No product/UI bytes changed.",
+  "acceptance": "On unchanged 771dce5df08db4ba4fec5b869309ba2077adea20, dedicated Capture Runtime VoiceOver must terminal-green: exact test-only diff bind, exact standalone app build/stamp with no Tuya dependency authority, iPhone 12 / iOS 27 AX XXXL baseline, XCUIApplication(bundleIdentifier:) runtime launch, strict accessibility audit, real VoiceOver service speech traversal proving ordered Physical capture locked -> Tuya Smart user code -> Create approval QR -> Engineering details, and no Start capture/Scan for scooter speech. Artifact manifest + xcresult retained. Any head move resets evidence.",
+  "intent": "Close the runtime VoiceOver/traversal gap explicitly left open by #2940 while preserving accepted product bytes and PHYSICAL NO-GO. If the runtime witness exposes a real semantic/order defect or audit failure, keep exact red evidence and repair only in a separate app-visible production successor before re-acceptance."
 }
