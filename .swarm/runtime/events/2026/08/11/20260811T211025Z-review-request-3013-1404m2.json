@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "211025-review-request-3013-1404m2",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-1404m2",
+  "laneId": "capture-flagship-composition",
+  "message": "Independent integration review requested for draft PR #3013. It composes accepted Final-GO exact 471cc025b332f4df8b43a98d709710aeb4e0698f onto accepted app-visible #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27. Diff is exactly the 23-file Final-GO authority family; fresh Private Review Final GO 31536495629, Final GO 31536495751, Generated Subject 31536495644, and R3 custody 31536495642 are terminal SUCCESS. Main Graft 31536495624 remains queued; Xcode is policy-skipped. Review must verify no authority regression or unexpected composition scope before merge. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T21:10:25Z"
+}
