@@ -6,7 +6,7 @@ on:
       - repair/v14-field-developer-dir-authority-sol56-20260811
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   compile-patch:
@@ -15,8 +15,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: repair/v14-field-developer-dir-authority-sol56-20260811
-      - name: Patch and verify exact regression
+      - name: Patch, verify, and store immutable tested blob
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -32,6 +34,28 @@ jobs:
           /bin/bash -n scripts/field/install_one_time_capture.command
           python3 scripts/ci/tests/test_capture_field_developer_dir_authority.py
           git diff --check -- scripts/field/install_one_time_capture.command
-          printf '%s\n' '---NEMBRA_BLOB_BEGIN---'
-          base64 -w 0 scripts/field/install_one_time_capture.command
-          printf '\n%s\n' '---NEMBRA_BLOB_END---'
+          python3 - <<'PY'
+          import base64, json
+          from pathlib import Path
+          payload = {
+              'content': base64.b64encode(Path('scripts/field/install_one_time_capture.command').read_bytes()).decode('ascii'),
+              'encoding': 'base64',
+          }
+          Path('/tmp/blob.json').write_text(json.dumps(payload), encoding='utf-8')
+          PY
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/blobs" \
+            --data-binary @/tmp/blob.json > /tmp/blob-response.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          response = json.loads(Path('/tmp/blob-response.json').read_text(encoding='utf-8'))
+          sha = response.get('sha', '')
+          if len(sha) != 40:
+              raise SystemExit('GitHub did not return one immutable blob SHA')
+          print('NEMBRA_TESTED_INSTALLER_BLOB=' + sha)
+          PY
