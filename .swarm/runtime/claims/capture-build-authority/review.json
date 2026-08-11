@@ -7,13 +7,16 @@
   "workerId": "sol-20260811-1316vk",
   "leaseId": "capture-build-review-1316vk-20260811-2055",
   "generation": 10,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:55:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:55:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:57:00Z",
+  "releasedAt": "2026-08-11T20:57:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2994,
   "sourceSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
   "currentHeadSHA": "7d853bece1bdd47488fea0a557a5c6cccc2794bd",
-  "reviewTarget": "Independent expected-red review of accepted Bash source identity diagnostic #2994. Verify it models the current verified-Git Bash execution shape exactly, proves BASH_SOURCE[0] loses reviewed path identity while $0 retains it, and states a repair boundary that preserves verified payload bytes. Cross-check impact on current private-identity convergence #2993. Validation-only; no build production edits. PHYSICAL NO-GO."
+  "outcome": "EXPECTED_RED_CONFIRMED_ACCEPTED_BASH_SOURCE_IDENTITY",
+  "reviewId": 4910650745,
+  "releaseReason": "Independent exact-head review confirmed validation-only #2994 models current verified-Git Bash execution exactly and exposes a real path-semantics blocker: reviewed path survives only as $0 while sourced BASH_SOURCE[0] becomes /dev/stdin, so accepted bootstrap derives /dev rather than reviewed repo/Scripts. Run 31534532629 passed checkout/exact-head bind and failed only the intended authority step. Repair must preserve verified Git bytes and deliberate reviewed-root semantics; mutable worktree execution is forbidden. Direct upstream dependency of #2993, but separate from #2993 private adapter source acceptance. PHYSICAL NO-GO."
 }
