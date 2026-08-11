@@ -477,7 +477,7 @@ def _tracked_source_watch_paths(
 
 
 
-def _accepted_source_field_allowlist(inputs: object, repository_root: Path) -> tuple[set[str], set[str]]:
+def _accepted_source_field_allowlist(inputs: object, repository_root: Path) -> tuple[set[str], set[str], set[str]]:
     """Return only the separately authenticated field-input roots admitted beside Git source."""
 
     authority_root = _lexical_absolute(repository_root)
@@ -504,6 +504,7 @@ def _accepted_source_field_allowlist(inputs: object, repository_root: Path) -> t
     if generated_workspace is not None and generated_workspace.as_posix() == "NembraCapture.xcworkspace":
         allowed_directories.add("NembraCapture.xcworkspace")
 
+    private_roots: set[str] = set()
     for attribute in (
         "security_podspec",
         "security_build",
@@ -511,14 +512,25 @@ def _accepted_source_field_allowlist(inputs: object, repository_root: Path) -> t
         "identity_sources",
     ):
         private_subject = relative_if_inside(getattr(inputs, attribute, None))
-        if private_subject is not None and private_subject.parts[0] == "LocalSecrets":
-            allowed_directories.add("LocalSecrets")
+        if (
+            private_subject is not None
+            and len(private_subject.parts) >= 2
+            and private_subject.parts[0] == "LocalSecrets"
+        ):
+            private_roots.add(PurePosixPath(*private_subject.parts[:2]).as_posix())
+    allowed_directories.update(private_roots)
+
+    allowed_directory_ancestors: set[str] = set()
+    for relative in allowed_directories:
+        pure = PurePosixPath(relative)
+        for depth in range(1, len(pure.parts)):
+            allowed_directory_ancestors.add(PurePosixPath(*pure.parts[:depth]).as_posix())
 
     lockfile = relative_if_inside(getattr(inputs, "lockfile", None))
     if lockfile is not None and lockfile.as_posix() == "Podfile.lock":
         allowed_files.add("Podfile.lock")
 
-    return allowed_directories, allowed_files
+    return allowed_directories, allowed_directory_ancestors, allowed_files
 
 
 def _verify_accepted_source_physical_tree(
@@ -552,7 +564,7 @@ def _verify_accepted_source_physical_tree(
         for depth in range(1, len(relative.parts)):
             tracked_directories.add(PurePosixPath(*relative.parts[:depth]).as_posix())
 
-    allowed_directories, allowed_files = _accepted_source_field_allowlist(inputs, authority_root)
+    allowed_directories, allowed_directory_ancestors, allowed_files = _accepted_source_field_allowlist(inputs, authority_root)
     for relative in sorted(allowed_directories):
         candidate = authority_root / relative
         try:
@@ -600,17 +612,19 @@ def _verify_accepted_source_physical_tree(
                 if not current_relative.parts and name == ".git":
                     directories.remove(name)
                     continue
-                if not current_relative.parts and name in allowed_directories:
-                    directories.remove(name)
-                    continue
                 candidate = current / name
                 relative = candidate.relative_to(authority_root).as_posix()
+                if relative in allowed_directories:
+                    directories.remove(name)
+                    continue
                 metadata = candidate.lstat()
                 if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
                     directories.remove(name)
                     raise BuildGuardError(
                         f"unexpected/non-directory accepted-source path before xcodebuild: {relative}"
                     )
+                if relative in allowed_directory_ancestors:
+                    continue
                 if relative not in tracked_directories:
                     directories.remove(name)
                     raise BuildGuardError(
