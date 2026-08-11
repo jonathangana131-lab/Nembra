@@ -267,7 +267,100 @@ HELPER_ACCEPTED_BLOB="$(git rev-parse "HEAD:$SIGNED_APP_CUSTODY_HELPER_RELATIVE"
 HELPER_ACTUAL_BLOB="$(git hash-object --no-filters -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE" 2>/dev/null || true)"
 [[ "$HELPER_ACCEPTED_BLOB" =~ ^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$ ]] || die "Signed-app install custody helper has no valid accepted Git blob."
 [[ "$HELPER_ACTUAL_BLOB" == "$HELPER_ACCEPTED_BLOB" ]] || die "Signed-app install custody helper worktree bytes differ from the exact accepted Git blob."
-SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" fingerprint --app "$APP")" || \
+
+# The helper itself participates in physical install authority. A one-time worktree
+# hash check is not enough if the pathname is later reopened. Descriptor-read the
+# helper at every authority invocation, recompute the exact accepted Git blob OID
+# from those bytes, then execute only that already-read byte string in memory.
+# A replacement before admission fails the OID check; a replacement after the read
+# cannot affect execution; mutation during the read fails stable-descriptor custody.
+run_accepted_signed_app_custody_helper() {
+    /usr/bin/python3 -I -B - "$SIGNED_APP_CUSTODY_HELPER" "$HELPER_ACCEPTED_BLOB" "$@" <<'PY_ACCEPTED_CUSTODY_HELPER'
+# BEGIN ACCEPTED SIGNED-APP CUSTODY HELPER EXECUTOR
+import hashlib
+import hmac
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+helper = Path(sys.argv[1])
+accepted_oid = sys.argv[2].lower()
+helper_argv = sys.argv[3:]
+if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_oid) is None:
+    raise SystemExit("accepted custody-helper Git blob OID is malformed")
+
+nofollow = getattr(os, "O_NOFOLLOW", None)
+if nofollow is None:
+    raise SystemExit("accepted custody-helper execution requires O_NOFOLLOW support")
+flags = os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0)
+try:
+    fd = os.open(helper, flags)
+except OSError as error:
+    raise SystemExit("accepted custody-helper bytes are unavailable or unsafe") from error
+
+try:
+    before = os.fstat(fd)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        raise SystemExit("accepted custody-helper subject must be one regular one-link file")
+    identity = (
+        before.st_dev,
+        before.st_ino,
+        before.st_mode,
+        before.st_uid,
+        before.st_gid,
+        before.st_nlink,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    )
+    chunks = []
+    total = 0
+    while True:
+        chunk = os.read(fd, 1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    after = os.fstat(fd)
+finally:
+    os.close(fd)
+
+after_identity = (
+    after.st_dev,
+    after.st_ino,
+    after.st_mode,
+    after.st_uid,
+    after.st_gid,
+    after.st_nlink,
+    after.st_size,
+    after.st_mtime_ns,
+    after.st_ctime_ns,
+)
+if after_identity != identity or total != after.st_size:
+    raise SystemExit("accepted custody-helper bytes changed while being read")
+
+raw = b"".join(chunks)
+hash_factory = hashlib.sha1 if len(accepted_oid) == 40 else hashlib.sha256
+git_object = b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw
+actual_oid = hash_factory(git_object).hexdigest()
+if not hmac.compare_digest(actual_oid, accepted_oid):
+    raise SystemExit("custody-helper execution bytes differ from the exact accepted Git blob")
+
+sys.argv = [str(helper), *helper_argv]
+scope = {
+    "__name__": "__main__",
+    "__file__": str(helper),
+    "__package__": None,
+    "__cached__": None,
+}
+exec(compile(raw, str(helper), "exec"), scope, scope)
+# END ACCEPTED SIGNED-APP CUSTODY HELPER EXECUTOR
+PY_ACCEPTED_CUSTODY_HELPER
+}
+
+SOURCE_APP_TREE_SHA256="$(run_accepted_signed_app_custody_helper fingerprint --app "$APP")" || \
     die "Could not bind the exact post-build signed-app tree before protected staging."
 [[ "$SOURCE_APP_TREE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Signed-app tree fingerprint is malformed."
 
@@ -302,7 +395,7 @@ APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"
     die "Could not root-own every protected signed-app install entry."
 /usr/bin/sudo /bin/chmod 0755 "$APP_INSTALL_STAGE_ROOT" || \
     die "Could not expose read-only traversal of the protected signed-app install stage."
-STAGED_APP_TREE_SHA256="$(/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py" verify-stage \
+STAGED_APP_TREE_SHA256="$(run_accepted_signed_app_custody_helper verify-stage \
     --stage-root "$APP_INSTALL_STAGE_ROOT" \
     --app "$APP_INSTALL_STAGE" \
     --expected "$SOURCE_APP_TREE_SHA256")" || \
@@ -428,7 +521,7 @@ if [[ "$INSTALLED" != "1" ]]; then
 import re
 import sys
 from pathlib import Path
-payload = sys.stdin.buffer.read()
+payload=sys.stdin.buffer.read()
 try:
     private_udid_raw, selector_raw = payload.split(b"\0", 1)
     private_udid = private_udid_raw.decode("utf-8")
