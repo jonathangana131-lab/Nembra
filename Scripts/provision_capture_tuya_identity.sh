@@ -18,7 +18,7 @@ LOCAL_SECRETS="$ROOT/LocalSecrets"
 # output is fixed to the checkout-owned ignored LocalSecrets tree.
 DEST="$LOCAL_SECRETS/TuyaRuntime"
 WRITER="$ROOT/Scripts/provision_capture_tuya_identity_writer.py"
-WRITER_SHA256="ded4d8e44934a5ecdea492746b4777259f7fb23723b51f9768dfd3fa6841fabe"
+WRITER_SHA256="6d5172bc1f75ce3dec1d7bd783e5de63b4173f1ed42797988f2ad14b82a5fb35"
 ROOT_FD=9
 
 umask 077
