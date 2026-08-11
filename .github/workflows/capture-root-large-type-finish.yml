@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Normalize source hierarchy and accessibility copy
+      - name: Normalize source hierarchy
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -111,59 +111,6 @@ jobs:
               ],
           )
 
-          account_start_marker = "    private var accountSetupPanel: some View {"
-          account_end_marker = "    private var statusText: some View {"
-          account_start = text.index(account_start_marker)
-          account_end = text.index(account_end_marker, account_start)
-          account = text[account_start:account_end]
-          old = '''                    if isAccessibilityLayout {
-                          Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")
-                              .font(.footnote.weight(.semibold))
-                              .foregroundStyle(Color.white.opacity(0.78))
-                              .fixedSize(horizontal: false, vertical: true)
-                          Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
-                              .font(.footnote)
-                              .foregroundStyle(Color.white.opacity(0.72))
-                              .fixedSize(horizontal: false, vertical: true)
-                          statusText
-                      }
-          '''
-          # YAML removes the common run-block indentation, leaving four fewer spaces than shown above.
-          old = old.replace("\n    ", "\n")
-          if account.count(old) != 1:
-              # Fall back to exact source indentation captured after the first materializer.
-              old = '''                    if isAccessibilityLayout {
-                        Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(0.78))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
-                            .font(.footnote)
-                            .foregroundStyle(Color.white.opacity(0.72))
-                            .fixedSize(horizontal: false, vertical: true)
-                        statusText
-                    }
-          '''
-          new = '''                    if isAccessibilityLayout {
-                        Text(
-                            fieldBuildIsAuthoritative
-                                ? "Metadata setup only here. Bluetooth stays locked until preflight verifies account and scooter authority."
-                                : "Metadata setup only. Bluetooth and physical evidence stay locked in this public build."
-                        )
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Color.white.opacity(0.78))
-                        .fixedSize(horizontal: false, vertical: true)
-
-                        if tuya.phase != .needsUserCode {
-                            statusText
-                        }
-                    }
-          '''
-          if account.count(old) != 1:
-              raise SystemExit(f"accessibility account footer: expected one match, found {account.count(old)}")
-          account = account.replace(old, new, 1)
-          text = text[:account_start] + account + text[account_end:]
-
           path.write_text(text, encoding="utf-8")
           PY
 
@@ -175,5 +122,5 @@ jobs:
           git add NembraApp/App/NembraCaptureEntrypoint.swift
           git config user.name "nembra-capture-bot"
           git config user.email "capture@nembra.invalid"
-          git commit -m "Capture: finish locked-root large-type composition"
+          git commit -m "Capture: normalize locked-root visual source"
           git push origin HEAD:visual/v14-capture-root-large-type-hierarchy-sol-20260811
