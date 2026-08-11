@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072700-go54f-capture-2809-downstream-helper-custody",
+  "type": "FINDING",
+  "workerId": "sol-20260811-go54f",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Fresh exact-current red-team #2809 on parent #2805@76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab demonstrates four independent downstream helper execution-custody failures. Exact diagnostic d75bece39357624cf730b5c005b4217ac42d896a run 31468539665/job 93706527286: bootstrap accepts changed private SDK/identity when mutable provenance verifier is substituted; bootstrap accepts changed generated Pods when mutable generated-subject helper returns accepted digest; build-guard import executes substituted provenance neighbor before accepted authority; build-guard import executes substituted generated-subject neighbor before accepted authority. All four intended assertions fail after exact-head bind/compile. This supersedes any plan to promote #2805 merely by reconciling its three inherited package source-contract assertions. Production must bind every authority-bearing downstream helper execution subject before field admission, then replay #2809 green on a repaired exact head. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:27:00Z",
+  "data": {
+    "parentPr": 2805,
+    "parentExactHead": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab",
+    "redTeamPr": 2809,
+    "redTeamHead": "d75bece39357624cf730b5c005b4217ac42d896a",
+    "runId": 31468539665,
+    "jobId": 93706527286,
+    "intendedFailures": 4,
+    "severity": "BLOCKING_FIELD_AUTHORITY",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
