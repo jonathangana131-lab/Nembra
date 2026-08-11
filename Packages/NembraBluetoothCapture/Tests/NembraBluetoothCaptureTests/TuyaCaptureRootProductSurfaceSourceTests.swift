@@ -15,7 +15,11 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         let body = String(root)
 
         #expect(body.contains("NEMBRA CAPTURE"))
-        #expect(body.contains("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins."))
+        #expect(body.contains("Set up Capture"))
+        #expect(body.contains("Prepare the scooter link"))
+        #expect(body.contains("Bluetooth stays off until account and device checks are complete."))
+        #expect(body.contains("Nembra verifies the account and device again before any passive Bluetooth correlation begins."))
+        #expect(!body.contains("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins."))
         #expect(!body.contains("proves the account and scooter"))
         #expect(body.contains("Engineering details"))
         #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
