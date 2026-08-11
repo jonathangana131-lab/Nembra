@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072000-review-result-final-go-lineage-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-final-go-authority",
+  "message": "NEEDS_CHANGES in imported lineage metadata. Fresh GitHub confirms selected generated-subject control ingredient #2775 is exact head 71aee681d12e353ec54111e066e26598a735ca64 and its PR body explicitly says control green is ingredient evidence only. Imported lane instead names #2791@61dc8330f770e8378c3e92fe1b5dd481fc1ce981 as primary. Fresh #2791 GitHub base_sha is 40f835a28e3f61b125c47c1922d7da2af20eba63, an older #2775 state, while current #2775 is 71aee681d12e353ec54111e066e26598a735ca64. Therefore #2791 is stale-parent and cannot be the selected current control primary. Keep #2775@71aee681 as current generated-subject ingredient; keep #2803 as expected-red blocker evidence for mutable parent-module execution on that current lineage; then create/compose a fresh private-review Final-GO successor only after current build-authority/private-review authority is selected. Do not resurrect stale #2791/#2798 as an accepted active spine. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:20:00Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "selectedGeneratedControlPR": 2775,
+    "selectedGeneratedControlHead": "71aee681d12e353ec54111e066e26598a735ca64",
+    "stalePrivateControlPR": 2791,
+    "stalePrivateControlHead": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981",
+    "stalePrivateControlBase": "40f835a28e3f61b125c47c1922d7da2af20eba63",
+    "redTeamCurrentLineagePR": 2803,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
