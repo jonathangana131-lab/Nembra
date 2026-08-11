@@ -9,8 +9,10 @@ on:
       - Scripts/provision_capture_tuya_identity.sh
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_tuya_private_identity_authority.py
+      - Scripts/capture_tuya_private_dependency_resolution_guard.py
       - scripts/ci/tests/test_capture_private_identity_authority_receipt.py
       - scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+      - scripts/ci/tests/test_capture_private_dependency_resolution_guard_adapter.py
       - scripts/ci/tests/test_capture_private_identity_publication_races.py
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
       - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
@@ -24,8 +26,10 @@ on:
       - Scripts/provision_capture_tuya_identity.sh
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_tuya_private_identity_authority.py
+      - Scripts/capture_tuya_private_dependency_resolution_guard.py
       - scripts/ci/tests/test_capture_private_identity_authority_receipt.py
       - scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+      - scripts/ci/tests/test_capture_private_dependency_resolution_guard_adapter.py
       - scripts/ci/tests/test_capture_private_identity_publication_races.py
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
       - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
@@ -64,8 +68,10 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_identity_authority.py
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_dependency_resolution_guard.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_authority_receipt.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_dependency_resolution_guard_adapter.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
@@ -86,9 +92,10 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
 
-      - name: Reject failed transaction as later bootstrap authority
+      - name: Reject failed transaction and dependency adapter authority drift
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_authority_receipt.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_dependency_resolution_guard_adapter.py
