@@ -1,0 +1,84 @@
+name: Capture Signed App Install Custody
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-signed-app-install-custody-gpt56-sol
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/capture_signed_app_install_custody.py
+      - scripts/ci/tests/test_capture_signed_app_install_custody.py
+      - .github/workflows/capture-signed-app-install-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-install-subject:
+    name: Require protected exact app at devicectl boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind QA to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact install-custody source: %s\n' "$actual"
+
+      - name: Run portable source and fingerprint regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/capture_signed_app_install_custody.py scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+
+      - name: Prove root-owned stage rejects same-UID mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$(mktemp -d)"
+          stage_root=""
+          cleanup() {
+            rm -rf -- "$source_root"
+            if [[ -n "$stage_root" ]]; then sudo /bin/rm -rf -- "$stage_root"; fi
+          }
+          trap cleanup EXIT
+
+          mkdir -p "$source_root/Nembra Capture.app"
+          printf 'accepted signed subject\n' > "$source_root/Nembra Capture.app/subject.txt"
+          source_sha="$(/usr/bin/python3 -I scripts/ci/capture_signed_app_install_custody.py fingerprint --app "$source_root/Nembra Capture.app")"
+
+          sudo /bin/mkdir -p /private/tmp
+          stage_root="$(sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX)"
+          sudo /bin/cp -a "$source_root/Nembra Capture.app" "$stage_root/Nembra Capture.app"
+          sudo /usr/bin/chown -R root:root "$stage_root"
+          sudo /bin/chmod 0755 "$stage_root"
+
+          staged_sha="$(/usr/bin/python3 -I scripts/ci/capture_signed_app_install_custody.py verify-stage \
+            --stage-root "$stage_root" \
+            --app "$stage_root/Nembra Capture.app" \
+            --expected "$source_sha")"
+          test "$staged_sha" = "$source_sha"
+
+          if printf 'substituted\n' > "$stage_root/Nembra Capture.app/subject.txt" 2>/dev/null; then
+            echo 'ERROR: non-root runner mutated the protected install subject' >&2
+            exit 1
+          fi
+          final_sha="$(/usr/bin/python3 -I scripts/ci/capture_signed_app_install_custody.py verify-stage \
+            --stage-root "$stage_root" \
+            --app "$stage_root/Nembra Capture.app" \
+            --expected "$source_sha")"
+          test "$final_sha" = "$source_sha"
