@@ -112,6 +112,19 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             self.assertTrue(forbidden.isdisjoint(env))
             self.assertTrue(all(not key.startswith("BASH_FUNC_") for key in env))
 
+    def test_installer_environment_rejects_symlinked_private_device_parent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-env-symlink-") as temporary:
+            root = Path(temporary).resolve(strict=True)
+            real_parent = root / "private"
+            real_parent.mkdir()
+            device = real_parent / "device"
+            device.write_text("device", encoding="utf-8")
+            device.chmod(0o600)
+            alias = root / "alias"
+            alias.symlink_to(real_parent, target_is_directory=True)
+            with self.assertRaises(GO.GoError):
+                GO.installer_environment(alias / "device")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
