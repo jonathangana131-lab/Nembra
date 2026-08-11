@@ -1,0 +1,213 @@
+name: TEMP Capture Current Authority Clean Compose
+
+on:
+  push:
+    branches:
+      - repair/v14-field-provenance-current-2805-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-current-authority-clean-compose.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-field-provenance-current-2805-sol-20260811
+          fetch-depth: 0
+      - name: Bind exact clean QA input
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Remove proxy-loading CLI exception classifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Scripts/capture_tuya_private_input_build_guard.py')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          expected = [
+              '    except provenance.ProvenanceError as error:',
+              '        print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)',
+              '        return 75',
+              '    except generated_build.GeneratedBuildSubjectError as error:',
+              '        print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)',
+              '        return 76',
+          ]
+          replacement = [
+              '    except Exception:',
+              '        print("ERROR: unexpected build-window custody failure; field build refused", file=sys.stderr)',
+              '        return 77',
+          ]
+          hits = [index for index in range(len(lines)) if lines[index:index + len(expected)] == expected]
+          if len(hits) != 1:
+              raise SystemExit(f'expected one proxy-loading CLI exception block, found {len(hits)}')
+          index = hits[0]
+          lines[index:index + len(expected)] = replacement
+          text = '\n'.join(lines) + '\n'
+          if 'except provenance.ProvenanceError' in text or 'except generated_build.GeneratedBuildSubjectError' in text:
+              raise SystemExit('proxy-loading exception classifier remains')
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Add permanent exception-matching red team
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py <<'PYTEST'
+          #!/usr/bin/env python3
+          from __future__ import annotations
+
+          import importlib.util
+          from pathlib import Path
+          import shutil
+          import sys
+          import tempfile
+          import types
+          import unittest
+
+          REPOSITORY = Path(__file__).resolve().parents[3]
+          GUARD = REPOSITORY / "Scripts/capture_tuya_private_input_build_guard.py"
+          PROVENANCE = REPOSITORY / "Scripts/capture_tuya_private_input_provenance.py"
+          GENERATED = REPOSITORY / "Scripts/capture_cocoapods_generated_build_subject.py"
+
+
+          def load_module(path: Path, name: str):
+              spec = importlib.util.spec_from_file_location(name, path)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError(f"could not load {path.name}")
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[name] = module
+              spec.loader.exec_module(module)
+              return module
+
+
+          def raise_oserror(label: str):
+              raise OSError(label)
+
+
+          class ExceptionProxyCustodyTests(unittest.TestCase):
+              def _guard_with_malicious_neighbors(self):
+                  temporary = tempfile.TemporaryDirectory(prefix="nembra-exception-proxy-")
+                  self.addCleanup(temporary.cleanup)
+                  root = Path(temporary.name)
+                  scripts = root / "Scripts"
+                  scripts.mkdir()
+                  shutil.copy2(GUARD, scripts / GUARD.name)
+
+                  provenance_sentinel = root / "provenance-executed.txt"
+                  generated_sentinel = root / "generated-executed.txt"
+                  (scripts / PROVENANCE.name).write_text(
+                      "from pathlib import Path\n"
+                      f"Path({str(provenance_sentinel)!r}).write_text('executed', encoding='utf-8')\n"
+                      "class ProvenanceError(Exception): pass\n",
+                      encoding="utf-8",
+                  )
+                  (scripts / GENERATED.name).write_text(
+                      "from pathlib import Path\n"
+                      f"Path({str(generated_sentinel)!r}).write_text('executed', encoding='utf-8')\n"
+                      "class GeneratedBuildSubjectError(Exception): pass\n",
+                      encoding="utf-8",
+                  )
+
+                  guard = load_module(scripts / GUARD.name, f"nembra_exception_proxy_{id(self)}")
+                  guard._parse_args = lambda argv: (None, ["/usr/bin/true"])
+                  return guard, provenance_sentinel, generated_sentinel
+
+              def test_provenance_preaccept_failure_does_not_execute_mutable_neighbor_for_exception_matching(self) -> None:
+                  guard, provenance_sentinel, generated_sentinel = self._guard_with_malicious_neighbors()
+                  guard.provenance.require_accepted = lambda: raise_oserror("synthetic provenance descriptor failure")
+
+                  self.assertEqual(guard.main([]), 77)
+                  self.assertFalse(provenance_sentinel.exists())
+                  self.assertFalse(generated_sentinel.exists())
+
+              def test_generated_preaccept_failure_does_not_execute_mutable_neighbor_for_exception_matching(self) -> None:
+                  guard, provenance_sentinel, generated_sentinel = self._guard_with_malicious_neighbors()
+
+                  class AcceptedProvenance(types.SimpleNamespace):
+                      class ProvenanceError(Exception):
+                          pass
+
+                  def accept_provenance():
+                      module = AcceptedProvenance()
+                      guard.provenance._module = module
+                      guard.provenance._accepted = True
+                      return module
+
+                  guard.provenance.require_accepted = accept_provenance
+                  guard.generated_build.require_accepted = lambda: raise_oserror("synthetic generated descriptor failure")
+
+                  self.assertEqual(guard.main([]), 77)
+                  self.assertFalse(provenance_sentinel.exists())
+                  self.assertFalse(generated_sentinel.exists())
+
+
+          if __name__ == "__main__":
+              unittest.main(verbosity=2)
+          PYTEST
+          sed -i 's/^          //' scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
+      - name: Wire permanent downstream authority red team
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-private-review-downstream-helper-execution-redteam.yml')
+          text = path.read_text(encoding='utf-8')
+          path_anchor = '      - scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py\n'
+          path_line = '      - scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py\n'
+          if path_line not in text:
+              if text.count(path_anchor) != 1:
+                  raise SystemExit(f'paths anchor changed: {text.count(path_anchor)} matches')
+              text = text.replace(path_anchor, path_anchor + path_line, 1)
+          compile_anchor = '          scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py\n          scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py\n'
+          compile_new = '          scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py\n          scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py\n          scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py\n'
+          if compile_new not in text:
+              if text.count(compile_anchor) != 1:
+                  raise SystemExit(f'compile anchor changed: {text.count(compile_anchor)} matches')
+              text = text.replace(compile_anchor, compile_new, 1)
+          run_anchor = '          scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody\n          scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody\n'
+          run_new = '          scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody\n          scripts.ci.tests.test_capture_private_review_exception_proxy_custody\n          scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody\n'
+          if run_new not in text:
+              if text.count(run_anchor) != 1:
+                  raise SystemExit(f'run anchor changed: {text.count(run_anchor)} matches')
+              text = text.replace(run_anchor, run_new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate clean composed authority candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py \
+            scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          python3 -m unittest -v \
+            scripts.ci.tests.test_capture_private_review_exception_proxy_custody \
+            scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody \
+            scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody \
+            scripts.ci.tests.test_capture_field_accepted_source_path_contract
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+      - name: Publish clean composed successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-current-authority-clean-compose.yml
+          find scripts Scripts -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet && { echo 'ERROR: no clean authority composition delta' >&2; exit 1; }
+          git commit -m 'Capture: close proxy exception authority custody'
+          git push origin HEAD:repair/v14-field-provenance-current-2805-sol-20260811
