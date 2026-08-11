@@ -21,18 +21,32 @@ jobs:
       - name: Materialize repaired authority chain
         shell: bash
         run: |
-          set -euo pipefail
-          python3 scripts/ci/capture_authority_chain_recovery_sol.py
-          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
-          bash -n scripts/field/install_one_time_capture.command
-          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
-          python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
-          python3 scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
-          python3 scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
-          python3 scripts/ci/tests/test_capture_private_review_commitment.py
-          python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
-          grep -Fq 'GIT_NO_REPLACE_OBJECTS' scripts/field/install_one_time_capture.command
-          git diff --check
+          set -uo pipefail
+          rm -f .nembra-authority-recovery-error
+          {
+            set -e
+            python3 scripts/ci/capture_authority_chain_recovery_sol.py
+            bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+            bash -n scripts/field/install_one_time_capture.command
+            python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+            python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+            python3 scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+            python3 scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+            python3 scripts/ci/tests/test_capture_private_review_commitment.py
+            python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+            grep -Fq 'GIT_NO_REPLACE_OBJECTS' scripts/field/install_one_time_capture.command
+            git diff --check
+          } > >(tee /tmp/nembra-recovery.out) 2>&1
+          status=$?
+          if [[ "$status" != "0" ]]; then
+            cp /tmp/nembra-recovery.out .nembra-authority-recovery-error
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add .nembra-authority-recovery-error
+            git commit -m 'Capture: retain recovery failure evidence'
+            git push origin HEAD:recovery/v14-capture-authority-chain-materializer-sol-20260811
+            exit "$status"
+          fi
       - name: Commit recovered production repair
         shell: bash
         run: |
