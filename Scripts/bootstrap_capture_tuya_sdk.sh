@@ -153,16 +153,38 @@ do
   fi
 done
 
-if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
-  --lockfile "$REPO_ROOT/Podfile.lock" \
-  --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
-  --security-build "$TUYA_PRIVATE_SDK/Build" \
-  --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
-  --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-  --record "$DEPENDENCY_PROVENANCE"
-then
-  echo "ERROR: exact private Tuya build-input provenance could not be snapshotted." >&2
-  exit 12
+# Only review-only candidate generation may create/replace the private-input
+# witness. Normal field admission is verification-only: it must consume the
+# already-reviewed local witness and must never promote then-current private
+# bytes by snapshotting them into a new record.
+if [[ "$REVIEW_ONLY" == "1" ]]; then
+  if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
+    --lockfile "$REPO_ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    --record "$DEPENDENCY_PROVENANCE"
+  then
+    echo "ERROR: exact private Tuya build-input provenance could not be snapshotted for review." >&2
+    exit 12
+  fi
+else
+  [[ -f "$DEPENDENCY_PROVENANCE" ]] || {
+    echo "ERROR: reviewed private Tuya dependency provenance record is missing. Normal field bootstrap will not create one; review a new candidate explicitly." >&2
+    exit 12
+  }
+  if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" verify \
+    --lockfile "$REPO_ROOT/Podfile.lock" \
+    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+    --security-build "$TUYA_PRIVATE_SDK/Build" \
+    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+    --record "$DEPENDENCY_PROVENANCE"
+  then
+    echo "ERROR: current private Tuya inputs do not match the reviewed private-input witness. Normal field bootstrap will not rewrite that witness; review a new candidate explicitly." >&2
+    exit 12
+  fi
 fi
 
 if ! GENERATED_BUILD_SUBJECT_SHA256="$(/usr/bin/python3 -I "$GENERATED_BUILD_SUBJECT_HELPER" \
@@ -179,7 +201,7 @@ fi
 }
 
 [[ -f "$DEPENDENCY_PROVENANCE" ]] || {
-  echo "ERROR: private Tuya dependency provenance record was not created." >&2
+  echo "ERROR: private Tuya dependency provenance record is unavailable." >&2
   exit 14
 }
 [[ "$(stat -f '%Lp' "$DEPENDENCY_PROVENANCE" 2>/dev/null || true)" == "600" ]] || {
@@ -197,12 +219,13 @@ DEPENDENCY + GENERATED BUILD CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
 
 Review and bind BOTH exact digests to the exact accepted Capture source through
 the current Final-GO control plane before any field build/install. Preserve this
-same generated workspace. Then rerun the normal bootstrap/installer with those
-accepted digests supplied as NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 and
+same generated workspace and private-input witness. Then rerun the normal
+bootstrap/installer with those accepted digests supplied as
+NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 and
 NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256. Normal field bootstrap
-will verify this exact subject in place and will not invoke CocoaPods again.
-This review-only mode never invokes xcodebuild, installs Nembra, scans Bluetooth,
-or authorizes a physical attempt.
+will verify this exact subject in place, will not invoke CocoaPods, and will not
+replace the private-input witness. This review-only mode never invokes xcodebuild,
+installs Nembra, scans Bluetooth, or authorizes a physical attempt.
 EOF
   exit 0
 fi
@@ -221,7 +244,8 @@ cat <<EOF
 
 The exact pre-reviewed Tuya SDK/CocoaPods field subject is present locally,
 including the app-specific ThingSmartCryption package and local-only app identity
-pod. Normal field bootstrap did not run CocoaPods or regenerate dependency bytes.
+pod. Normal field bootstrap did not run CocoaPods, regenerate dependency bytes,
+or rewrite the reviewed private-input witness.
 
 Verified dependency provenance:
   Podfile.lock SHA-256: $LOCK_SHA256
@@ -233,9 +257,10 @@ NEXT BUILD RULE:
   Preserve this exact private-input fingerprint record and accepted generated
   build-subject digest with the field workspace.
   Do not run 'pod install', 'pod update', replace ThingSmartCryption, regenerate
-  the private identity, or regenerate CocoaPods inputs before an accepted
-  physical capture; any input change is a new reviewed field-build candidate and
-  must earn new exact-head authority through review-only candidate generation.
+  the private identity, regenerate the provenance witness, or regenerate CocoaPods
+  inputs before an accepted physical capture; any input change is a new reviewed
+  field-build candidate and must earn new exact-head authority through review-only
+  candidate generation.
 
 This bootstrap still does NOT authorize the physical experiment. The exact app
 must consume the private identity pod, authorize the user's own SDK session,
