@@ -9,11 +9,11 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:38:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:42:30Z",
+  "lastHeartbeatAt": "2026-08-11T12:50:00Z",
   "leaseSeconds": 1200,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
   "currentHeadSHA": "1834a39ac44e09cf12426cf28cb95ed3c008e9a2",
-  "notes": "Exact-head review rebound after 462d4d moved. Delta 462d4d..1834a39 is a hardening: delete obsolete pathname cleanup helpers; sanitize any held staging descriptor on failure, including admitted crash residue before successful rebind; strengthen pre-rebind race regression to require admitted credential inode == empty while attacker replacement survives; repin shell + Swift writer SHA to 683865d663d98295a0a60498e42d579cef8b3588aae091bbafe8b4431343badc. Canonical Private Identity Publication Races run 31492412384 / job 93781822853 is terminal SUCCESS on exact 1834a39. Source review finds the replacement-inode cleanup-authority defect closed and the reconciled publication/ancestor tests stronger, not weakened. Field 31492412374, Main Graft 31492412380, Xcode 31492412413 remain nonterminal and are required. No production edits. Any head move resets review. PHYSICAL NO-GO."
+  "notes": "BLOCKED after deeper exact review. 1834a39 closes replacement-inode cleanup authority and pre/post-rebind sanitation, and canonical Publication Races 31492412384 is green, but it leaves one earlier confidentiality seam. _write_staged validates existing output before recovered_stage.take_descriptor and before its sanitation try; provision finally only closes an unconsumed admitted residue. Test-only expected-red #2964 on exact reviewed parent adds test_early_existing_output_rejection_sanitizes_admitted_inode to the permanent recovery suite. Canonical run 31492962368 / job 93783616601 bound/compiled cleanly; all inherited tests passed; exactly the new witness failed because admitted residue remained b'credential-bearing-crash-residue-must-not-survive-rejection' instead of b''. Blocking review 4906372857 revokes prior source acceptance. Required repair: once crash residue is safely admitted/held, any subsequent fail-closed exit including invalid existing-output validation must descriptor-sanitize that held inode while leaving attacker destination untouched; then promote the witness permanently, repin writer SHA/source contract, and re-earn exact gates. No production edits by review worker. PHYSICAL NO-GO."
 }
