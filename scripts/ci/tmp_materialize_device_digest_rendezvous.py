@@ -63,11 +63,3 @@ test_method = '''    @Test("intended-device identity is bound to Final GO digest
 if test_anchor not in test or "intendedDeviceIdentityMustMatchFinalGoDigest" in test:
     raise SystemExit("intended-device source-test anchor missing or already transformed")
 test_path.write_text(test.replace(test_anchor, test_method + test_anchor, 1))
-
-workflow_path = Path(".github/workflows/capture-field-build-provenance.yml")
-workflow = workflow_path.read_text()
-workflow_anchor = "          grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' \"$installer\"\n"
-workflow_extra = "          grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256' \"$installer\"\n          grep -Fq 'hmac.compare_digest(actual_digest, expected_digest)' \"$installer\"\n"
-if workflow_anchor not in workflow or "hmac.compare_digest(actual_digest, expected_digest)" in workflow:
-    raise SystemExit("field-provenance digest anchor missing or already transformed")
-workflow_path.write_text(workflow.replace(workflow_anchor, workflow_anchor + workflow_extra, 1))
