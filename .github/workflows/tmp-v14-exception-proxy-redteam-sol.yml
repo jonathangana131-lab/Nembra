@@ -28,28 +28,28 @@ jobs:
 
           guard = Path('Scripts/capture_tuya_private_input_build_guard.py')
           text = guard.read_text(encoding='utf-8')
-          old = '''    except BuildGuardError as error:
-                  print(f"ERROR: {error}", file=sys.stderr)
-                  return 74
-              except provenance.ProvenanceError as error:
-                  print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)
-                  return 75
-              except generated_build.GeneratedBuildSubjectError as error:
-                  print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)
-                  return 76
-          '''
-          # The workflow block itself adds YAML indentation; normalize the source contract explicitly.
-          old = old.replace('              ', '')
+          start_marker = '    except BuildGuardError as error:\n'
+          end_marker = '\n\n\nif __name__ == "__main__":'
+          start = text.rfind(start_marker)
+          if start < 0:
+              raise SystemExit('BuildGuardError CLI exception marker not found')
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('CLI exception block end marker not found')
+          old = text[start:end]
+          if 'except provenance.ProvenanceError' not in old or 'except generated_build.GeneratedBuildSubjectError' not in old:
+              raise SystemExit('proxy-loading exception classifiers changed unexpectedly')
           new = '''    except BuildGuardError as error:
               print(f"ERROR: {error}", file=sys.stderr)
               return 74
           except Exception:
               print("ERROR: unexpected build-window custody failure; field build refused", file=sys.stderr)
-              return 77
-          '''.replace('          ', '')
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one proxy-loading CLI exception block, found {text.count(old)}')
-          guard.write_text(text.replace(old, new, 1), encoding='utf-8')
+              return 77'''
+          new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines())
+          text = text[:start] + new + text[end:]
+          if 'except provenance.ProvenanceError' in text or 'except generated_build.GeneratedBuildSubjectError' in text:
+              raise SystemExit('proxy-loading exception classifier remains')
+          guard.write_text(text, encoding='utf-8')
           PY
           python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
       - name: Add runtime exception-matching red team
