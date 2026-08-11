@@ -175,11 +175,13 @@ jobs:
             echo 'ERROR: private intended-device reader must execute from accepted Git bytes, not a mutable worktree pathname.' >&2
             exit 1
           fi
-          grep -Fq 'devicectl list devices --hide-headers' "$installer"
+          grep -Fq '"$SELECTED_XCTRACE" list devices' "$installer"
+          grep -Fq '"$SELECTED_DEVICECTL" list devices --hide-headers' "$installer"
           grep -Fq '.coredevice.local' "$installer"
           grep -Fq '[[ "$DEVICE_OS_VERSION" == 27.* ]]' "$installer"
           grep -Fq '[[ "$DEVICE_MODEL" == "iPhone13,2" ]]' "$installer"
-          grep -Fq 'devicectl device install app --device "$COREDEVICE_ID"' "$installer"
+          grep -Fq '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"' "$installer"
+          grep -Fq '"$SELECTED_DEVICECTL" device process launch \' "$installer"
           grep -Fq -- '--device "$COREDEVICE_ID"' "$installer"
           if grep -Fq -- '--device "$DEVICE_UDID"' "$installer"; then
             echo 'ERROR: private intended-device UDID must not be placed in devicectl argv; use the correlated CoreDevice selector.' >&2
@@ -214,7 +216,7 @@ jobs:
             echo 'ERROR: build-window guard must execute from the exact accepted Git source subject, not a mutable worktree pathname.' >&2
             exit 1
           fi
-          build_line="$(grep -nF -- '-- /usr/bin/xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
+          build_line="$(grep -nF -- '-- "$SELECTED_XCODEBUILD" \' "$installer" | sed -n '1s/:.*//p')"
           second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
           test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
           test "$first_private_verify_line" -lt "$guard_line"
