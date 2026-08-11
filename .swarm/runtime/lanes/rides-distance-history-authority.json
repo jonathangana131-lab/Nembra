@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "rides-distance-history-authority",
+  "epic": "rides-records",
+  "title": "Rides selected-distance truth and immutable-history attachment",
+  "objective": "Converge selected-source distance coverage truth and the mechanically bound immutable RideHistoryRecord attachment onto current main, preserving source coverage, exact record identity, non-authoritative persisted checkpoint bytes, and trusted re-reconciliation before statistics consumption.",
+  "priority": 3,
+  "state": "BLOCKED_EXTERNAL",
+  "dependencies": [],
+  "blockers": [
+    {
+      "id": "legacy-parent-not-current",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Legacy parent PR #438 remains draft and GitHub reports it non-mergeable. Its exact head f23407fd3f66881e95da8097b389510cc741b593 is based on old main 8f5c90fd8fbf753d7b277ed85d6a178d7aac8c12. Because its direct-source access fence has both SwiftPM and Nembra.app compilation semantics, current-main reconciliation plus exact NembraCore and Xcode acceptance are required before promotion.",
+      "pr": 438,
+      "headSHA": "f23407fd3f66881e95da8097b389510cc741b593"
+    },
+    {
+      "id": "stacked-child-waits-parent",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Legacy child PR #443 is stacked exactly on #438 and remains draft. Its durable checkpoint is intentionally non-authoritative and the new source is not yet manually wired into Nembra.app. Historical/validation-mirror greens are supporting evidence only; after parent convergence the child must be replayed onto the accepted current lineage and rerun on the final exact head.",
+      "pr": 443,
+      "headSHA": "c213118e482fbd862725b4a07cfd13a743651374"
+    }
+  ],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "Packages/NembraCore/Sources/NembraCore/RideDistanceReconciliation.swift",
+    "Packages/NembraCore/Sources/NembraCore/RideHistoryDistanceAttachment.swift"
+  ],
+  "adjacentWriteAreas": [
+    "Packages/NembraCore/Tests/NembraCoreTests/RideDistanceFinalCoverageTruthTests.swift",
+    "Packages/NembraCore/Tests/NembraCoreTests/RideHistoryDistanceAttachmentTests.swift",
+    "NembraApp",
+    "Nembra.xcodeproj"
+  ],
+  "slots": [
+    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":["XCODE_BUILD","IOS_SIMULATOR"]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":[]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": false, "state": "SOFTWARE_ONLY"},
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "legacy": {
+    "parentPR": 438,
+    "parentHeadSHA": "f23407fd3f66881e95da8097b389510cc741b593",
+    "childPR": 443,
+    "childHeadSHA": "c213118e482fbd862725b4a07cfd13a743651374",
+    "supersededPredecessorPRs": [204],
+    "knownExactHeadFinding": "#438 preserves the selected source's own coverage and seals UUID-only convenience composition; #443 persists only reconciliation inputs and remints trusted runtime distance by re-running reconciliation against exact immutable history. Neither lineage is current-main accepted or final app wiring."
+  },
+  "tags": ["rides", "p3", "distance", "history", "authority", "legacy-import"]
+}
