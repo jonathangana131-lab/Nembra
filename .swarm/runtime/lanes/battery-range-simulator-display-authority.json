@@ -5,13 +5,29 @@
   "feature": "Battery + Range",
   "subdomain": "app-visible Simulator battery display authority recovery",
   "priority": "P2",
-  "state": "READY",
+  "state": "NEEDS_CHANGES",
   "riskClass": "B",
   "truthClass": "SIMULATOR DISPLAY ONLY",
   "appVisible": true,
   "physicalRequired": false,
   "eligibleRoles": ["primary", "review"],
   "dependencies": ["main contains merged owner-bound battery currentness authority"],
+  "blockers": [
+    {
+      "id": "simulator-retained-storage-isolation-regression",
+      "state": "ACTIVE",
+      "reason": "Exact-head source review confirms the shipping runtime currently isolates Simulator scenarios from UserDefaultsRetainedBatterySnapshotStorage, which prevents synthetic .displayOnly battery observations from crossing into production LAST KNOWN continuity. Because .displayOnly is intentionally persistable in the generic storage model, PR #2815 must add a focused regression proving Simulator runtime construction cannot receive the production retained-battery store while production remains the only path that can. Review 4904273113 records this requirement.",
+      "pr": 2815,
+      "headSHA": "0d874412fb7e0479792c46e06128e1c749bd2a2c"
+    },
+    {
+      "id": "exact-head-xcode-not-accepted",
+      "state": "ACTIVE",
+      "reason": "On exact head 0d874412fb7e0479792c46e06128e1c749bd2a2c the trusted-head resolver succeeded, but Xcode run 31472582221 Build, test, and capture exact PR head was cancelled rather than green. Fresh final-head Xcode, screenshot, accessibility, Reduce Motion and visual evidence remain required.",
+      "pr": 2815,
+      "headSHA": "0d874412fb7e0479792c46e06128e1c749bd2a2c"
+    }
+  ],
   "allowedPaths": [
     "NembraApp/App/AppBootstrap.swift",
     "Packages/NembraCore/Tests/NembraCoreTests/SimulatorBatteryDisplayAuthorityAppSourceTests.swift",
@@ -21,10 +37,13 @@
   "acceptance": [
     "production/no-scenario bootstrap has no battery measurement authority",
     "Simulator scenarios receive display-only battery authority",
+    "Simulator scenarios cannot persist synthetic display-only battery evidence into production retained-battery storage",
     "display-only battery cannot train learned range or become physical SoC",
     "exact-head iPhone 12 / iOS 27 Simulator screenshots cover connected-stopped, riding, low-battery, accessibility and Reduce Motion states",
     "physical ES80 battery/range truth remains explicitly unavailable"
   ],
   "legacySourcePR": 2222,
-  "reconciliation": "PR #2222 is non-mergeable and 49 main commits behind; its AppBootstrap product intent is still absent on current main and requires a current-main recovery, not a stale-branch merge."
+  "reconciliation": "PR #2222 is non-mergeable and 49 main commits behind; its AppBootstrap product intent is still absent on current main and requires a current-main recovery, not a stale-branch merge.",
+  "recoveryPR": 2815,
+  "recoveryHeadSHA": "0d874412fb7e0479792c46e06128e1c749bd2a2c"
 }
