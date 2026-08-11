@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse, hashlib, importlib.util, json, os, re, stat, subprocess, sys, urllib.request, zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 REPO="jonathangana131-lab/Nembra"; PROC="ES80-AUTHENTICATED-STATIONARY-v1"
 BUNDLE="com.jonathangana131.nembra.capturelearn"; DEVICE="iPhone 12"; PRODUCT="iPhone13,2"
@@ -74,14 +74,16 @@ def api(path:str):
 
 def public(source:str,pr:int,runs:dict[str,int],get=api):
     if set(runs)!=set(WORKFLOWS): raise GoError("exact required workflow set mismatch")
-    _,p=get(f"/pulls/{pr}"); head=p.get("head",{}); base=p.get("base",{})
-    if canon(head.get("sha"),"PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main": raise GoError("canonical PR subject mismatch")
+    _,p=get(f"/pulls/{pr}"); head=p.get("head",{}); base=p.get("base",{}); head_ref=head.get("ref")
+    if canon(head.get("sha"),"PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main" or not isinstance(head_ref,str) or not head_ref: raise GoError("canonical PR subject mismatch")
     subjects=[]
     for name in WORKFLOWS:
         rid=pos(runs[name],name); _,r=get(f"/actions/runs/{rid}")
-        if r.get("name")!=name or canon(r.get("head_sha"),name)!=source or r.get("status")!="completed" or r.get("conclusion")!="success" or r.get("event")!="pull_request" or not any(isinstance(x,dict) and x.get("number")==pr for x in r.get("pull_requests",[])): raise GoError(f"{name} is not exact terminal SUCCESS for PR #{pr}")
+        pulls=r.get("pull_requests",[])
+        bound=(isinstance(pulls,list) and any(isinstance(x,dict) and x.get("number")==pr for x in pulls)) or (pulls==[] and r.get("head_branch")==head_ref)
+        if r.get("name")!=name or canon(r.get("head_sha"),name)!=source or r.get("status")!="completed" or r.get("conclusion")!="success" or r.get("event")!="pull_request" or not bound: raise GoError(f"{name} is not exact terminal SUCCESS for PR #{pr}")
         subjects.append({"name":name,"runID":rid,"headSHA":source,"conclusion":"success"})
-    return {"number":pr,"headSHA":source,"base":"main","state":p.get("state"),"merged":bool(p.get("merged_at"))},subjects
+    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":p.get("state"),"merged":bool(p.get("merged_at"))},subjects
 
 def visual(source:str,run:int,aid:int,archive:Path,get=api):
     _,a=get(f"/actions/artifacts/{aid}"); m=DIGEST.fullmatch(a.get("digest","") if isinstance(a.get("digest"),str) else "")
@@ -90,9 +92,12 @@ def visual(source:str,run:int,aid:int,archive:Path,get=api):
     if sha(raw)!=m.group(1): raise GoError("visual artifact digest mismatch")
     try:
         with zipfile.ZipFile(archive) as z:
-            if z.namelist().count(MANIFEST)!=1: raise GoError("visual manifest count mismatch")
-            mr=z.read(MANIFEST); man=obj(mr,"visual manifest"); shots={}
-            for x in man.get("screenshots",[]):
+            names=z.namelist()
+            if len(names)!=len(set(names)) or names.count(MANIFEST)!=1: raise GoError("visual archive has duplicate names or manifest count mismatch")
+            mr=z.read(MANIFEST); man=obj(mr,"visual manifest"); shots={}; entries=man.get("screenshots")
+            if not isinstance(entries,list) or len(entries)!=2: raise GoError("visual screenshot list mismatch")
+            for x in entries:
+                if not isinstance(x,dict): raise GoError("visual screenshot entry invalid")
                 st=x.get("state"); rel=x.get("relativePath"); hx=x.get("sha256")
                 if st not in STATES or st in shots or not isinstance(rel,str) or not isinstance(hx,str) or not HEX64.fullmatch(hx): raise GoError("visual screenshot entry invalid")
                 if sha(z.read(rel))!=hx: raise GoError(f"visual screenshot digest mismatch: {st}")
@@ -106,7 +111,9 @@ def review(path:Path,source:str,v:dict[str,Any]):
     raw=regular(path,"human visual review"); r=obj(raw,"human visual review")
     keys={"schemaVersion","authority","sourceCommitSHA","visualRunID","visualArtifactID","standardScreenshotSHA256","accessibilityScreenshotSHA256","verdict","reviewedAtUTC","reviewer"}
     if set(r)!=keys or r.get("schemaVersion")!=1 or r.get("authority")!="human-visual-review-v1" or canon(r.get("sourceCommitSHA"),"visual review source")!=source or r.get("visualRunID")!=v["runID"] or r.get("visualArtifactID")!=v["artifactID"] or r.get("verdict")!="accepted" or not str(r.get("reviewer","")).strip(): raise GoError("human visual review authority mismatch")
-    try: datetime.fromisoformat(str(r["reviewedAtUTC"]).replace("Z","+00:00"))
+    stamp=r.get("reviewedAtUTC")
+    if not isinstance(stamp,str) or not stamp.endswith("Z"): raise GoError("visual review timestamp must be UTC Z")
+    try: datetime.fromisoformat(stamp[:-1]+"+00:00")
     except ValueError as e: raise GoError("visual review timestamp invalid") from e
     s=v["screenshots"]; std=s["unprovisioned-dark-standard"]["sha256"]; ax=s["unprovisioned-dark-accessibility-xxxl"]["sha256"]
     if r["standardScreenshotSHA256"]!=std or r["accessibilityScreenshotSHA256"]!=ax: raise GoError("visual review screenshot mismatch")
@@ -121,7 +128,9 @@ def candidate(repo:Path,source:str):
     if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
     blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in (("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
-    ins=(root/INSTALLER).read_text(); rb=(root/RUNBOOK).read_text(); ident=(root/IDENTITY).read_text()
+    paths=[root/INSTALLER,root/RUNBOOK,root/IDENTITY]
+    if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")
+    ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()
     if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
     return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
 
