@@ -83,14 +83,47 @@ TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock" | awk '{print 
 [[ "$TUYA_DEPENDENCY_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Could not compute a valid SHA-256 fingerprint for the resolved Tuya dependency lock."
 say "Resolved Tuya dependency lock fingerprint captured for compiled provenance"
 
-TUYA_PROVENANCE_HELPER="$ROOT/Scripts/capture_tuya_private_input_provenance.py"
-TUYA_BUILD_WINDOW_GUARD="$ROOT/Scripts/capture_tuya_private_input_build_guard.py"
+TUYA_PROVENANCE_HELPER_RELATIVE="Scripts/capture_tuya_private_input_provenance.py"
+TUYA_BUILD_WINDOW_GUARD_RELATIVE="Scripts/capture_tuya_private_input_build_guard.py"
+run_accepted_source_python() {
+    local relative_path="$1"
+    shift
+    /usr/bin/python3 -I - "$ROOT" "$SOURCE_SHA" "$relative_path" "$@" <<'PY'
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+source_sha = sys.argv[2]
+relative_path = sys.argv[3]
+helper_argv = sys.argv[4:]
+try:
+    git_environment = {
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
+    source = subprocess.check_output(
+        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
+        cwd=root,
+        env=git_environment,
+        stderr=subprocess.DEVNULL,
+    )
+except subprocess.CalledProcessError as error:
+    raise SystemExit(f"accepted source helper is unavailable from exact Git authority: {relative_path}") from error
+namespace = {"__name__": "__main__", "__file__": str(root / relative_path)}
+sys.argv = [str(root / relative_path), *helper_argv]
+exec(compile(source, f"<accepted-{source_sha}:{relative_path}>", "exec"), namespace)
+PY
+}
 [[ -f "$TUYA_BUILD_WINDOW_GUARD" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."
 TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
 TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 verify_private_tuya_inputs() {
-    /usr/bin/python3 -I "$TUYA_PROVENANCE_HELPER" verify \
+    run_accepted_source_python "$TUYA_PROVENANCE_HELPER_RELATIVE" verify \
         --lockfile "$ROOT/Podfile.lock" \
         --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
         --security-build "$TUYA_PRIVATE_SDK/Build" \
@@ -224,7 +257,7 @@ say "Building SDK-integrated Nembra Capture for the intended iPhone"
 # was not consumed by the compiler and restored before the post-build verify.
 # Keep macOS vnode custody armed for every admitted private file/directory across
 # the complete compiler/linker window, then retain the cryptographic verify below.
-/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \
+run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \
     --lockfile "$ROOT/Podfile.lock" \
     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
     --security-build "$TUYA_PRIVATE_SDK/Build" \
