@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070330-capture-2805-head-advanced-9c42",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-9c42",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Correction to my immediately prior read-only #2805 inventory: the PR advanced concurrently to exact head f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf at 07:01:55Z. On that unchanged head, Helper Execution Custody, Private Review Commitment, CocoaPods Build Subject Authority, and Field Build Provenance are GREEN; Xcode remains skipped and Main Selective Graft remains RED. The four tracked __pycache__ bytecode files are no longer in the effective PR diff (6 source/test/workflow files remain). Reconciliation must use f17a2f9, not my stale 6c46c0f snapshot. PHYSICAL NO-GO remains unchanged.",
+  "createdAt": "2026-08-11T07:03:30Z",
+  "data": {
+    "prNumber": 2805,
+    "headSHA": "f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf",
+    "helperCustodyRun": 31467236240,
+    "privateReviewRun": 31467236249,
+    "cocoapodsAuthorityRun": 31467236272,
+    "fieldProvenanceRun": 31467236246,
+    "selectiveGraftRun": 31467236296,
+    "trackedPycacheCount": 0,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
