@@ -7,14 +7,16 @@
   "workerId": "sol-20260811-c4d2",
   "leaseId": "capture-flagship-review-c4d2-20260811-1000",
   "generation": 3,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T10:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T10:04:00Z",
+  "lastHeartbeatAt": "2026-08-11T10:09:00Z",
+  "releasedAt": "2026-08-11T10:09:00Z",
   "leaseSeconds": 1800,
   "branch": "visual/v14-capture-root-large-type-hierarchy-sol-20260811",
   "pr": 2841,
   "sourceSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
   "currentHeadSHA": "899e0bf4de07401e2e036895aaf684373142253a",
-  "takeoverFromWorkerId": "sol-20260811-2d7a6b",
-  "takeoverReason": "Prior generation-2 review explicitly released after recording current blockers. Continue exact-current independent flagship review on #2841 to determine whether 899e0bf4 is actually a clean two-file product/test delta as claimed, reconcile exact CI, and preserve the requirement for fresh standard + Accessibility XXXL runtime pixels and VoiceOver evidence before visual acceptance."
+  "outcome": "NEEDS_CHANGES",
+  "reviewId": 4905000389,
+  "reviewNote": "Exact head retains an active contents:write self-mutating materializer workflow, contradicts the claimed final two-file tree, and exact Xcode 27 QA fails Capture authority package before Simulator/screenshots. Durable event 100800-review-result-capture-flagship-c4d2.json."
 }
