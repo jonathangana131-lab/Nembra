@@ -83,13 +83,16 @@ class AcceptedGeneratedSubjectAdmissionTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def inputs(self):
+    def inputs_from_current_environment(self):
         return guard.PrivateInputs(
             lockfile=self.lock,
             security_podspec=self.security_podspec,
             security_build=self.security_build,
             identity_podspec=self.identity_podspec,
             identity_sources=self.identity_sources,
+            accepted_generated_subject_sha256=os.environ.get(
+                "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"
+            ),
         )
 
     def run_with_accepted_environment(self, popen):
@@ -99,7 +102,7 @@ class AcceptedGeneratedSubjectAdmissionTests(unittest.TestCase):
             clear=False,
         ):
             return guard.run_guarded_build(
-                self.inputs(),
+                self.inputs_from_current_environment(),
                 ["fake-xcodebuild"],
                 backend_factory=QuietBackend,
                 popen_factory=popen,
@@ -123,6 +126,24 @@ class AcceptedGeneratedSubjectAdmissionTests(unittest.TestCase):
             self.run_with_accepted_environment(lambda _command: FinishedProcess()),
             0,
         )
+
+    def test_cli_parser_carries_closed_environment_authority(self) -> None:
+        argv = [
+            "--lockfile", str(self.lock),
+            "--security-podspec", str(self.security_podspec),
+            "--security-build", str(self.security_build),
+            "--identity-podspec", str(self.identity_podspec),
+            "--identity-sources", str(self.identity_sources),
+            "--", "fake-xcodebuild",
+        ]
+        with mock.patch.dict(
+            os.environ,
+            {"NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": self.accepted},
+            clear=False,
+        ):
+            inputs, command = guard._parse_args(argv)
+        self.assertEqual(inputs.accepted_generated_subject_sha256, self.accepted)
+        self.assertEqual(command, ["fake-xcodebuild"])
 
 
 if __name__ == "__main__":
