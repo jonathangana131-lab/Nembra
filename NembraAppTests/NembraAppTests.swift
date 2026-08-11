@@ -292,103 +292,78 @@ final class NembraAppTests: XCTestCase {
     }
 }
 
-/// V14 app-visible Experiment One authority regression. These source checks intentionally live in
-/// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
-/// physical scooter identity or runtime BLE behavior.
+/// V14 Capture authority regression for the current authenticated stationary field target.
+/// These source checks live in the already-wired NembraAppTests target, but they intentionally
+/// inspect the separate standalone Nembra Capture target rather than recreating the retired
+/// ES80-FINGERPRINT launch router inside the normal Nembra app.
 extension NembraAppTests {
     func testCaptureShellUsesBoundedPresentationPolling() {
         XCTAssertEqual(ES80CaptureRefreshPolicy.statusPollInterval, 0.5)
     }
 
-    @MainActor
-    func testSignedFieldRecipeRoutesHomeScreenLaunchIntoCapture() {
-        let mode = NembraApp.resolveLaunchMode(
-            arguments: ["Nembra"],
-            environment: [:],
-            infoDictionary: [
-                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v1"
-            ]
-        )
-        XCTAssertEqual(mode, .es80PassiveCapture)
-    }
-
-    @MainActor
-    func testUnknownFieldRecipeDoesNotRouteIntoCapture() {
-        let mode = NembraApp.resolveLaunchMode(
-            arguments: ["Nembra"],
-            environment: [:],
-            infoDictionary: [
-                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v999"
-            ]
-        )
-        XCTAssertEqual(mode, .standard)
-    }
-
-    func testCaptureFieldLaunchUsesPackageOwnedExperimentOneCoordinator() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let app = try String(
-            contentsOf: root.appendingPathComponent("NembraApp/App/NembraApp.swift"),
+    func testStandaloneCaptureTargetOwnsAuthenticatedStationaryEntrypoint() throws {
+        let root = repositoryRoot()
+        let project = try String(
+            contentsOf: root.appendingPathComponent("NembraCapture.xcodeproj/project.pbxproj"),
             encoding: .utf8
         )
-        XCTAssertTrue(app.contains("PassiveBluetoothExperimentOneCoordinator"))
-        XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
-        XCTAssertTrue(
-            app.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"),
-            "Fresh Experiment One must return through parent-owned stationary preflight."
+        let entrypoint = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"),
+            encoding: .utf8
         )
-        XCTAssertTrue(app.contains("selectedChargerState = nil"))
-        XCTAssertTrue(app.contains("disconnectedDeclarationAccepted = false"))
-    }
-
-    func testCaptureShellContinuesSameAuthorityThroughFinalShareIntegrity() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let shell = try String(
-            contentsOf: root.appendingPathComponent("NembraApp/Features/Research/ES80CaptureShellView.swift"),
+        let identity = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/App/NembraCaptureBuildIdentity.swift"),
             encoding: .utf8
         )
 
-        XCTAssertFalse(shell.contains("PassiveBluetoothPowerCycleObservationSession("))
-        XCTAssertFalse(shell.contains("Passive capture binding not available in this build"))
-        XCTAssertTrue(shell.contains("coordinator.confirmCorrelatedTargetAndBeginRediscovery()"))
-        XCTAssertTrue(shell.contains("coordinator.connectPreparedCapture()"))
-        XCTAssertTrue(shell.contains("coordinator.finalizeObservationHorizon()"))
-        XCTAssertTrue(shell.contains("coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)"))
-        XCTAssertTrue(shell.contains("PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)"))
-        XCTAssertTrue(shell.contains("artifact.suggestedFilename"))
-        XCTAssertTrue(shell.contains("VerifiedFinalShareTransfer"))
-        XCTAssertTrue(shell.contains("item: finalShareTransfer"))
-        XCTAssertTrue(shell.contains("finalShareData = artifact.json"))
-        XCTAssertFalse(shell.contains("ShareLink(item: shareURL)"))
-        XCTAssertTrue(shell.contains("finalShareIntegrityReport != nil"))
-        XCTAssertTrue(shell.contains("Integrity check required"))
-        XCTAssertTrue(shell.contains("Ready for analysis"))
-        XCTAssertTrue(
-            shell.contains("coordinator = try onFreshExperimentRequested()"),
-            "Shell restart must delegate fresh-run ownership to stationary preflight."
-        )
-        XCTAssertFalse(
-            shell.contains("coordinator = try PassiveBluetoothExperimentOneCoordinator()"),
-            "The shell must not mint a fresh run behind an already-accepted charger declaration."
-        )
-        XCTAssertTrue(shell.contains("ES80CaptureRefreshPolicy.statusPollInterval"))
-        XCTAssertTrue(shell.contains("This timer is guidance only. Nembra verifies the required observation before accepting this check."))
-        XCTAssertTrue(shell.contains("seconds of display guidance remaining"))
-        XCTAssertTrue(shell.contains("finishing early cannot create a valid result"))
-        XCTAssertTrue(shell.contains("Unavailable; waiting for the required observation period"))
+        XCTAssertTrue(project.contains("NembraCaptureEntrypoint.swift in Sources"))
+        XCTAssertTrue(project.contains("NembraCaptureBuildIdentity.swift in Sources"))
+        XCTAssertTrue(project.contains("ES80CaptureShellView.swift in Sources"))
+        XCTAssertTrue(project.contains("NembraBluetoothCapture in Frameworks"))
+        XCTAssertFalse(project.contains("NembraApp.swift in Sources"))
 
-        XCTAssertFalse(
-            shell.contains("encodedFinalizedObservationHorizonJSON"),
-            "The app primary Share must not stop at raw Horizon JSON once the final V14 wrapper exists."
+        XCTAssertTrue(entrypoint.contains("struct NembraCaptureApp: App"))
+        XCTAssertTrue(entrypoint.contains("WindowGroup { CaptureP0Root().preferredColorScheme(.dark) }"))
+        XCTAssertTrue(entrypoint.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        XCTAssertTrue(identity.contains("static let requiredFieldProcedureIdentifier = \"ES80-AUTHENTICATED-STATIONARY-v1\""))
+        XCTAssertFalse(entrypoint.contains("NembraCaptureFieldRecipe"))
+    }
+
+    func testAuthenticatedStationaryPreflightFailsClosedBeforeOff1() throws {
+        let entrypoint = try String(
+            contentsOf: repositoryRoot().appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"),
+            encoding: .utf8
         )
-        XCTAssertFalse(
-            shell.contains("encodedFinalizedSoftwareExportForCurrentApplication"),
-            "The app primary Share must not stop at the inner SoftwareExport once the final V14 wrapper exists."
+
+        XCTAssertTrue(entrypoint.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+        XCTAssertTrue(entrypoint.contains("guard buildIdentity.isAuthoritativeFieldBuild else"))
+        XCTAssertTrue(entrypoint.contains("field_build_identity_unavailable"))
+        XCTAssertTrue(entrypoint.contains("sdkDeviceMembershipVerified"))
+        XCTAssertTrue(entrypoint.contains("accountIdentityLeaseIsAuthorized"))
+        XCTAssertTrue(entrypoint.contains("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt."))
+        XCTAssertTrue(entrypoint.contains("Nembra can now open the secure Tuya link. Capture stays read-only and cannot send scooter commands."))
+    }
+
+    func testAuthenticatedStationaryAcceptedExportIsSealedBeforeSharePreparation() throws {
+        let entrypoint = try String(
+            contentsOf: repositoryRoot().appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"),
+            encoding: .utf8
         )
-        XCTAssertFalse(
-            shell.contains("persistShareArtifact(artifact.captureJSON"),
-            "Raw sealed controller JSON must never masquerade as the final analysis Share artifact."
-        )
+
+        XCTAssertTrue(entrypoint.contains("self.sealedAcceptedExport = self.makeExport("))
+        XCTAssertTrue(entrypoint.contains("phase: .accepted"))
+        XCTAssertTrue(entrypoint.contains("self.exportData = nil"))
+        XCTAssertTrue(entrypoint.contains("self.phase = .accepted"))
+        XCTAssertTrue(entrypoint.contains("self.prepareExport()"))
+        XCTAssertTrue(entrypoint.contains("CAPTURE COMPLETE"))
+        XCTAssertTrue(entrypoint.contains("Ready for analysis"))
+        XCTAssertTrue(entrypoint.contains("Label(\"Share Capture\""))
+        XCTAssertFalse(entrypoint.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
+    }
+
+    private func repositoryRoot() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 }
