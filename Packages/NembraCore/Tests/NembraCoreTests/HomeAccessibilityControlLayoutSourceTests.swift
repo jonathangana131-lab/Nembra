@@ -23,6 +23,8 @@ struct HomeAccessibilityControlLayoutSourceTests {
         #expect(source.contains("@State private var pendingLockConfirmation: Bool?"))
         #expect(source.contains("pendingLockConfirmation = !locked"))
         #expect(source.contains("isLockConfirmationStillValid(requestedLocked)"))
+        #expect(source.contains("vehicle.state.connection == .connected"))
+        #expect(source.contains("!vehicle.isVehicleCommandPending"))
         #expect(source.contains("vehicle.canLockFromCurrentSpeedEvidence"))
         #expect(source.contains("vehicle.simulatorQualifiedLiveSpeedKilometersPerHour"))
         #expect(source.contains("Requesting confirmation"))
