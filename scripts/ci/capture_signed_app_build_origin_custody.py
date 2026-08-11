@@ -318,17 +318,17 @@ def run_custodied_build(
             preexec_fn=_drop_credentials(uid, gid, child_groups),
         )
         returncode = process.wait()
-        _terminate_remaining_process_group(process.pid)
         if returncode != 0:
             raise BuildOriginCustodyError(
                 f"guarded field build failed with exit status {returncode}"
             )
 
-        # Revoke the transient filesystem capability before any bundle bytes are hashed or copied.
-        # External same-UID processes never possessed the supplementary gid, and ordinary build
-        # descendants have been retired before root closes traversal of the output root.
+        # Revoke the transient filesystem capability at the first privileged instruction after the
+        # guarded build returns. The group-owner change removes the one-run gid from the root
+        # traversal decision; mode 0700 makes that closure explicit before descendant cleanup.
         os.chown(derived_root, 0, 0)
         os.chmod(derived_root, 0o700)
+        _terminate_remaining_process_group(process.pid)
 
         source_app = _assert_real_ancestry(
             derived_root,
