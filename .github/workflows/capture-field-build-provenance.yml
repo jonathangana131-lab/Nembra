@@ -30,8 +30,10 @@ on:
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/provision_capture_tuya_identity.sh
       - Scripts/provision_capture_tuya_identity_writer.py
+      - Scripts/capture_tuya_private_dependency_resolution_guard.py
       - Scripts/capture_tuya_private_input_provenance.py
       - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_closure.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
       - scripts/ci/tests/test_tuya_account_transport_source.py
@@ -72,7 +74,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_dependency_resolution_guard.py
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_closure.py
           /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 -I scripts/ci/tests/test_tuya_account_transport_source.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
@@ -105,6 +110,8 @@ jobs:
           installer='scripts/field/install_one_time_capture.command'
           procedure_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'
           bootstrap='Scripts/bootstrap_capture_tuya_sdk.sh'
+          private_resolution_guard='Scripts/capture_tuya_private_dependency_resolution_guard.py'
+          private_build_guard='Scripts/capture_tuya_private_input_build_guard.py'
           private_provenance='Scripts/capture_tuya_private_input_provenance.py'
           private_device_runner='scripts/ci/es80_signed_field_artifact_private_runner.py'
           signed_field_inspector='scripts/ci/es80_signed_field_artifact_evidence.py'
@@ -118,6 +125,8 @@ jobs:
           test -f "$signed_field_inspector"
           test -f "$private_identity_provisioner"
           test -f "$private_identity_writer"
+          test -f "$private_resolution_guard"
+          test -f "$private_build_guard"
           grep -Fq 'RECIPE_ID = "ES80-FINGERPRINT-v1"' "$signed_field_inspector"
           grep -Fq 'INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"' "$signed_field_inspector"
           grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' "$private_identity_provisioner"
@@ -179,7 +188,34 @@ jobs:
           grep -Fq 'private_identity_podspec_sha256' "$private_provenance"
           grep -Fq 'private_identity_sources_tree_sha256' "$private_provenance"
           grep -Fq 'O_NOFOLLOW' "$private_provenance"
-          grep -Fq '"$PROVENANCE_HELPER" snapshot' "$bootstrap"
+
+          adapter_blob="$(git hash-object "$private_resolution_guard")"
+          build_guard_blob="$(git hash-object "$private_build_guard")"
+          provenance_blob="$(git hash-object "$private_provenance")"
+          [[ "$adapter_blob" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$build_guard_blob" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$provenance_blob" =~ ^[0-9a-f]{40}$ ]]
+          grep -Fq "PRIVATE_INPUT_RESOLUTION_GUARD_GIT_BLOB_OID=\"$adapter_blob\"" "$bootstrap"
+          grep -Fq "PROVENANCE_HELPER_GIT_BLOB_OID=\"$provenance_blob\"" "$bootstrap"
+          grep -Fq "_CANONICAL_GUARD_GIT_BLOB_OID = \"$build_guard_blob\"" "$private_resolution_guard"
+          grep -Fq "_PROVENANCE_HELPER_GIT_BLOB_OID = \"$provenance_blob\"" "$private_resolution_guard"
+          grep -Fq "_PINNED_PROVENANCE_GIT_BLOB_OID = \"$provenance_blob\"" "$private_build_guard"
+          grep -Fq 'RESOLUTION_GUARD_CAPTURE="$({ /bin/cat -- "$PRIVATE_INPUT_RESOLUTION_GUARD";' "$bootstrap"
+          grep -Fq 'printf '\''%s'\'' "$RESOLUTION_GUARD_SOURCE" | /usr/bin/python3 -I -' "$bootstrap"
+          grep -Fq 'PROVENANCE_CAPTURE="$({ /bin/cat -- "$PROVENANCE_HELPER";' "$bootstrap"
+          grep -Fq '/usr/bin/python3 -I -c "$PROVENANCE_SOURCE" snapshot' "$bootstrap"
+          if grep -Fq '/usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD"' "$bootstrap"; then
+            echo 'ERROR: dependency custody adapter must execute only from accepted captured bytes.' >&2
+            exit 1
+          fi
+          if grep -Fq '/usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot' "$bootstrap"; then
+            echo 'ERROR: dependency provenance snapshot must execute only from accepted captured bytes.' >&2
+            exit 1
+          fi
+          grep -Fq '_capture_accepted_python_source(' "$private_resolution_guard"
+          grep -Fq 'backend_factory=lambda: _AncestryCustodyBackend(checkout, inputs)' "$private_resolution_guard"
+          grep -Fq '_PINNED_PROVENANCE_FD_ENV' "$private_build_guard"
+
           grep -Fq -- '--security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec"' "$bootstrap"
           grep -Fq -- '--security-build "$TUYA_PRIVATE_SDK/Build"' "$bootstrap"
           grep -Fq -- '--identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec"' "$bootstrap"
