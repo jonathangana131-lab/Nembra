@@ -1,0 +1,112 @@
+import Foundation
+import Testing
+
+@Suite("ES80 Capture accessibility source acceptance")
+struct ES80CaptureAccessibilitySourceAcceptanceTests {
+    private static func shellSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repositoryRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("NembraApp")
+                .appendingPathComponent("Features")
+                .appendingPathComponent("Research")
+                .appendingPathComponent("ES80CaptureShellView.swift"),
+            encoding: .utf8
+        )
+    }
+
+    @Test("Capture does not require custom spatial motion or transparency effects")
+    func captureHasNoCustomMotionOrTransparencyDependency() throws {
+        let source = try Self.shellSource()
+
+        let forbiddenPresentationDependencies = [
+            "withAnimation",
+            ".animation(",
+            ".blur(",
+            ".ultraThinMaterial",
+            ".thinMaterial",
+            ".regularMaterial",
+            ".thickMaterial",
+            ".ultraThickMaterial",
+            ".glassEffect("
+        ]
+
+        for dependency in forbiddenPresentationDependencies {
+            #expect(
+                !source.contains(dependency),
+                "Capture gained a custom motion/transparency dependency that needs explicit accessibility treatment: \(dependency)"
+            )
+        }
+
+        #expect(source.contains(".background(Color.black.ignoresSafeArea())"))
+        #expect(source.contains(".foregroundStyle(.white)"))
+    }
+
+    @Test("high-frequency presentation collapses decorative children into stable rider semantics")
+    func pollingPresentationDoesNotExposeEveryChildAsAnAccessibilityElement() throws {
+        let source = try Self.shellSource()
+
+        #expect(source.contains("TimelineView(.periodic("))
+        #expect(source.contains("static let statusPollInterval: TimeInterval = 0.5"))
+
+        let progressStart = try #require(source.range(of: "private func progressRail("))
+        let progressEnd = try #require(
+            source.range(
+                of: "private func primaryContent(",
+                range: progressStart.lowerBound..<source.endIndex
+            )
+        )
+        let progressSource = source[progressStart.lowerBound..<progressEnd.lowerBound]
+        #expect(progressSource.contains(".accessibilityElement(children: .ignore)"))
+        #expect(progressSource.contains("progressAccessibilityLabel("))
+        #expect(progressSource.contains(".accessibilityIdentifier(\"es80.capture.experiment-progress\")"))
+
+        let primaryStart = try #require(source.range(of: "private func primaryContent("))
+        let primaryEnd = try #require(
+            source.range(
+                of: "private func correlationReadyPanel(",
+                range: primaryStart.lowerBound..<source.endIndex
+            )
+        )
+        let primarySource = source[primaryStart.lowerBound..<primaryEnd.lowerBound]
+        #expect(primarySource.contains("case let .correlationObserving(window):"))
+        #expect(primarySource.contains(".accessibilityElement(children: .ignore)"))
+        #expect(primarySource.contains(".accessibilityLabel(\"\\(phaseShortName(window)) observation\")"))
+        #expect(primarySource.contains(".accessibilityHint("))
+
+        let implementationTermsThatMustStayOutOfPrimaryVoiceOver = [
+            "bounded Bluetooth observation window",
+            "Bluetooth observation",
+            "CoreBluetooth",
+            "finite acquisition",
+            "package-owned"
+        ]
+        for term in implementationTermsThatMustStayOutOfPrimaryVoiceOver {
+            #expect(
+                !primarySource.contains(term),
+                "Primary VoiceOver copy still exposes implementation vocabulary: \(term)"
+            )
+        }
+    }
+
+    @Test("accessibility semantics remain presentation-only and cannot mint evidence")
+    func accessibilityLayerDoesNotBecomeCaptureAuthority() throws {
+        let source = try Self.shellSource()
+
+        #expect(source.contains("This timer is guidance only. Nembra verifies the required observation before accepting this check."))
+        #expect(source.contains("This countdown is guidance only. Nembra accepts the check only after the required observation time is recorded; finishing early cannot create a valid result."))
+        #expect(source.contains("The displayed timer is guidance only."))
+
+        let bodyStart = try #require(source.range(of: "var body: some View"))
+        let shellBody = source[bodyStart.lowerBound..<source.endIndex]
+        #expect(!shellBody.contains("PassiveBluetoothCaptureRecorder("))
+        #expect(!shellBody.contains("PassiveBluetoothCaptureEvent("))
+        #expect(!shellBody.contains("PassiveBluetoothCaptureArtifact("))
+    }
+}
