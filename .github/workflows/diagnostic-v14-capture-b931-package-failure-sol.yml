@@ -1,0 +1,56 @@
+name: Diagnostic V14 Capture b931 Package Failure Sol
+
+on:
+  push:
+    branches:
+      - diagnostic/v14-capture-b931-package-failure-sol-20260811
+
+permissions:
+  contents: read
+
+jobs:
+  capture-package-diagnostic:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnostic/v14-capture-b931-package-failure-sol-20260811
+          fetch-depth: 2
+      - name: Bind exact product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = b9311fb105981c2a098f682fb4a95f1b7fdff9e5
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/diagnostic-v14-capture-b931-package-failure-sol.yml
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Run Capture package and publish failure diagnostics
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-b931-package.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test --no-parallel) >"$log" 2>&1
+          status="$?"
+          set -e
+          echo "Capture package status=$status"
+          if [[ "$status" == "0" ]]; then
+            echo 'Package passed on the diagnostic rerun; earlier failure is not reproduced.'
+            exit 0
+          fi
+          /usr/bin/python3 -I - "$log" <<'PY'
+          import sys
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors="replace").splitlines()
+          needles = (" error:", "error:", "failed", "FAIL", "recorded an issue", "Caught error", "fatal error")
+          selected = [line for line in lines if any(needle in line for needle in needles)]
+          if not selected:
+              selected = lines[-80:]
+          else:
+              selected = selected[-80:]
+          for line in selected:
+              safe = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Capture package diagnostic::{safe[:900]}")
+          print(f"::error title=Capture package diagnostic::swift test --no-parallel failed with status {sys.argv and 'nonzero'}; product parent b9311fb105981c2a098f682fb4a95f1b7fdff9e5 remains unaccepted")
+          PY
+          exit "$status"
