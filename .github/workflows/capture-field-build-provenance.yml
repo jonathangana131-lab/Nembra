@@ -29,6 +29,7 @@ on:
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/provision_capture_tuya_identity.sh
+      - Scripts/provision_capture_tuya_identity_writer.py
       - Scripts/capture_tuya_private_input_provenance.py
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
@@ -75,6 +76,8 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_tuya_account_transport_source.py
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n Scripts/provision_capture_tuya_identity.sh
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
 
       - name: Validate signed Apple application identity custody
         shell: bash
@@ -103,6 +106,7 @@ jobs:
           private_device_runner='scripts/ci/es80_signed_field_artifact_private_runner.py'
           signed_field_inspector='scripts/ci/es80_signed_field_artifact_evidence.py'
           private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'
+          private_identity_writer='Scripts/provision_capture_tuya_identity_writer.py'
           ignore='.gitignore'
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
 
@@ -110,9 +114,15 @@ jobs:
           test -f "$private_device_runner"
           test -f "$signed_field_inspector"
           test -f "$private_identity_provisioner"
+          test -f "$private_identity_writer"
           grep -Fq 'RECIPE_ID = "ES80-FINGERPRINT-v1"' "$signed_field_inspector"
           grep -Fq 'INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"' "$signed_field_inspector"
           grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' "$private_identity_provisioner"
+          grep -Fq 'provision_capture_tuya_identity_writer.py' "$private_identity_provisioner"
+          grep -Fq 'O_NOFOLLOW' "$private_identity_writer"
+          grep -Fq 'O_DIRECTORY' "$private_identity_writer"
+          grep -Fq 'O_EXCL' "$private_identity_writer"
+          grep -Fq 'dir_fd=parent_fd' "$private_identity_writer"
           grep -Fq 'read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET' "$private_identity_provisioner"
           grep -Fq 'def read_private_identifier(' "$private_device_runner"
           grep -Fq 'O_NOFOLLOW' "$private_device_runner"
