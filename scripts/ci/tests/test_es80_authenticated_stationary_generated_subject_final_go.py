@@ -282,7 +282,7 @@ class GeneratedSubjectFinalGoR3Tests(unittest.TestCase):
                 SOURCE,
                 DIGEST,
                 base=base,
-                derive_subject=lambda _: DIGEST,
+                derive_subject=lambda _root, _source: DIGEST,
             )
             self.assertEqual(record["implementation"], MODULE.GENERATED_HELPER_PATH)
             self.assertEqual(record[MODULE.GENERATED_KEY], DIGEST)
@@ -300,7 +300,7 @@ class GeneratedSubjectFinalGoR3Tests(unittest.TestCase):
                     SOURCE,
                     DIGEST,
                     base=base,
-                    derive_subject=lambda _: DIGEST,
+                    derive_subject=lambda _root, _source: DIGEST,
                 )
 
     def test_candidate_workflow_requirements_extend_and_restore_parent_exact_set(self):
