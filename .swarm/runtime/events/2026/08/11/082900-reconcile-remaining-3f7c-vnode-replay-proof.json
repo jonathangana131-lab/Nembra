@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "082900-reconcile-remaining-3f7c-vnode-replay-proof",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Verified #2778 is a live, replayable Capture build-authority repair rather than stale PR residue. Exact head c6c611b340e3f9a30f995a5f0ee356fe6600bc48 passed Capture CocoaPods Vnode Attribute Convergence run 31458826214: both portable vnode/mode/capacity custody and real macos-15 chmod/kqueue attribute-delivery jobs terminal SUCCESS. Current #2805/#2830 source still omits KQ_NOTE_ATTRIB, so the remaining task is composition onto the eventual winning authority descendant followed by fresh descendant gates; old-head success does not accept the moved composition. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:29:00Z",
+  "data": {
+    "repairPR": 2778,
+    "repairHeadSHA": "c6c611b340e3f9a30f995a5f0ee356fe6600bc48",
+    "convergenceRun": 31458826214,
+    "portableJobConclusion": "SUCCESS",
+    "macOSChmodKqueueConclusion": "SUCCESS",
+    "compositionPending": true,
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
