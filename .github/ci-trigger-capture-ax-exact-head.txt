@@ -1,0 +1,1 @@
+Temporary CI trigger for Capture AX closure. This file is deleted immediately; it must not exist in the acceptance tree.
