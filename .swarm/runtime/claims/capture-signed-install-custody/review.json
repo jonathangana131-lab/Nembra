@@ -9,13 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:51:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:08:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:14:00Z",
   "leaseSeconds": 1800,
   "branch": "review/v14-signed-install-contracts-2911-sol-4f50qa",
   "pr": 2911,
   "sourceSHA": "83110a6af6220355092ed730cd28892a90c72fef",
   "takeoverFromWorkerId": "sol-20260811-c4d2",
   "takeoverReason": "Generation-3 review lease expired at 2026-08-11T10:41Z without heartbeat. Recover independent review on the active signed-install acceptance repair #2911 before composition into #2871.",
-  "durableEvidence": "Old head 8dbc60e6 exposed stale canonical Field workflow contract; review 4905936642 recorded it. Current exact head 83110a6a adds the workflow repair without production-path changes. Independent review 4905970453 finds the five-path acceptance-only scope clean: canonical Field workflow now mirrors protected root-owned app stage + distinct mode-0600 install log + cleanup_install_subject and rejects retired simple trap/predictable log; metadata/range source tests match current production truth. Current exact-head Field Build Provenance 31488849076 and Main Selective Graft 31488848988 are terminal SUCCESS. Xcode 27 31488849061 is still in progress; immutable-head/project/core/Capture-package stages are green and Simulator build/test/state capture is running. Build-authority #2907 is a separate actively owned lane and is not treated as this child exact-head evidence.",
-  "acceptance": "SOURCE_ACCEPTED_PENDING_EXACT_HEAD_XCODE. Require Xcode 27 run 31488849061 terminal SUCCESS on unchanged 83110a6a before child acceptance/composition. PHYSICAL NO-GO."
+  "durableEvidence": "Old head 8dbc60e6 exposed stale canonical Field workflow contract; review 4905936642 recorded it. Current exact head 83110a6a adds the workflow repair without production-path changes. Independent review 4905970453 finds the five-path acceptance-only scope clean. Integration review 4906029352 requires later #2907 composition to preserve both stronger accepted-source authority and stronger signed-install custody. Exact-head Field Build Provenance 31488849076, Main Selective Graft 31488848988, and Xcode 27 31488849061 are all terminal SUCCESS on unchanged 83110a6a. Review 4906078063 records child acceptance for its declared QA scope. Review 4906057134 records a separate unconfirmed post-build/pre-fingerprint signed-app substitution seam for the active tests owner to mechanize or dismiss by a concrete trust-boundary proof.",
+  "acceptance": "CHILD_EXACT_HEAD_ACCEPTED_FOR_DECLARED_QA_SCOPE. Signed-install lane still has an unconfirmed compiler-output-to-protected-stage custody question under active tests ownership. Any composition into #2871 moves the parent and requires fresh exact-head gates. PHYSICAL NO-GO."
 }
