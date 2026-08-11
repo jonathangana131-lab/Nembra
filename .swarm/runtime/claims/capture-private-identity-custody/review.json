@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607m9",
   "leaseId": "capture-private-identity-review-1607m9-20260811-2314",
   "generation": 11,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:14:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:23:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:27:00Z",
+  "releasedAt": "2026-08-11T23:27:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3086,
@@ -17,7 +18,7 @@
   "currentHeadSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb",
   "takeoverFromWorkerId": "sol-20260811-brv7",
   "takeoverFromLeaseId": "capture-private-identity-review-brv7-20260811-2206",
-  "takeoverReason": "Generation-10 review lease expired at 2026-08-11T22:36:00Z. Fresh GO took over independent review on the live current private-convergence successor #3086. Read-only review scope; preserve PHYSICAL NO-GO.",
-  "intent": "Independently review #3086 current exact head for verified-stdin explicit-root custody, accepted provenance execution, temporary-publisher exclusion, current package/source contracts, exact-head gate truth, and composition safety. Do not modify implementation paths or self-promote queued/skipped evidence.",
-  "checkpoint": "Reviewed exact e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb and submitted GitHub review 4911591658. Six-path convergence repair supersedes the earlier stale five-path failure. Source review found no authority broadening: explicit root is absolute + physical-cwd-bound + unset; captured provenance remains isolated; helper ancestry has full-history checkout. Exact-head convergence/helper/publication-race checks green. Xcode/package, Field Build Provenance, and Main Selective Graft were queued at checkpoint, so no approval/acceptance promotion. PHYSICAL NO-GO. Next: refresh exact head/gates; if unchanged and all required terminal gates succeed, perform final exact-head review disposition; otherwise retain first current blocker."
+  "takeoverReason": "Generation-10 review lease expired at 2026-08-11T22:36:00Z. Fresh GO took over independent review on the live current private-convergence successor #3086.",
+  "outcome": "SOURCE_ACCEPTABLE_EXACT_GATES_PENDING_CROSS_LINEAGE_CONSUMER_REQUIRED",
+  "checkpoint": "Exact e454b1e9 source/adversarial review completed. GitHub reviews 4911591658 and 4911606145 are durable. Six-path convergence/root/provenance/helper changes show no authority broadening; dedicated convergence, helper-execution, and publication-race checks were green. Fresh Xcode/package, Field Build Provenance, and Main Selective Graft were still queued at last refresh, so no acceptance promotion. Cross-lineage inspection proved selected-Xcode installer #3072@3e41ecd0 still calls verified stdin Bash without NEMBRA_ACCEPTED_SOURCE_ROOT=ROOT; future private->build composition must deliberately consume the new root interface and re-earn all exact-head gates. This is a composition blocker, not a request to weaken either ingredient. PHYSICAL NO-GO."
 }
