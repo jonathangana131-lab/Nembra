@@ -1,0 +1,239 @@
+name: TEMP V14 Materialize Field Installer Git Authority (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-field-installer-git-authority-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-materialize-field-installer-git-authority-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Patch exact current installer and bootstrap authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          installer_path = Path('scripts/field/install_one_time_capture.command')
+          installer = installer_path.read_text(encoding='utf-8')
+
+          old_authority = '''EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "Pass the exact software-accepted Capture source SHA as the first argument (40 hex characters)."
+          EXPECTED_SOURCE_SHA="$(printf '%s' "$EXPECTED_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
+          SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || die "Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA. Checkout the exact accepted SHA before building."
+          [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
+          say "Exact requested Capture source matched: $SOURCE_SHA"
+          '''
+
+          new_authority = '''EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "Pass the exact software-accepted Capture source SHA as the first argument (40 hex characters)."
+          EXPECTED_SOURCE_SHA="$(printf '%s' "$EXPECTED_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
+
+          AUTHORITY_GIT_DIR="$ROOT/.git"
+          [[ -d "$AUTHORITY_GIT_DIR" && ! -L "$AUTHORITY_GIT_DIR" ]] || die "Field source authority requires one real checkout .git directory."
+          authority_git() {
+              /usr/bin/env -i \\
+                  HOME="${HOME:-/var/empty}" \\
+                  PATH="/usr/bin:/bin" \\
+                  LANG=C LC_ALL=C \\
+                  GIT_NO_REPLACE_OBJECTS=1 \\
+                  GIT_CONFIG_NOSYSTEM=1 \\
+                  GIT_CONFIG_GLOBAL=/dev/null \\
+                  /usr/bin/git \\
+                  --git-dir="$AUTHORITY_GIT_DIR" \\
+                  --work-tree="$ROOT" \\
+                  -c core.worktree="$ROOT" \\
+                  -c core.fsmonitor=false \\
+                  -c core.untrackedCache=false \\
+                  -c core.fileMode=true \\
+                  -c core.excludesFile=/dev/null \\
+                  "$@"
+          }
+          authority_git_with_index() {
+              local authority_index="$1"
+              shift
+              /usr/bin/env -i \\
+                  HOME="${HOME:-/var/empty}" \\
+                  PATH="/usr/bin:/bin" \\
+                  LANG=C LC_ALL=C \\
+                  GIT_NO_REPLACE_OBJECTS=1 \\
+                  GIT_CONFIG_NOSYSTEM=1 \\
+                  GIT_CONFIG_GLOBAL=/dev/null \\
+                  GIT_INDEX_FILE="$authority_index" \\
+                  /usr/bin/git \\
+                  --git-dir="$AUTHORITY_GIT_DIR" \\
+                  --work-tree="$ROOT" \\
+                  -c core.worktree="$ROOT" \\
+                  -c core.fsmonitor=false \\
+                  -c core.untrackedCache=false \\
+                  -c core.fileMode=true \\
+                  -c core.excludesFile=/dev/null \\
+                  "$@"
+          }
+          authority_git_status() {
+              local authority_index status
+              authority_index="$(mktemp "${TMPDIR:-/tmp}/nembra-capture-authority-index.XXXXXX")" || return 70
+              rm -f -- "$authority_index"
+              if ! authority_git_with_index "$authority_index" read-tree "$SOURCE_SHA" >/dev/null 2>&1; then
+                  rm -f -- "$authority_index"
+                  return 71
+              fi
+              if ! status="$(authority_git_with_index "$authority_index" status --porcelain=v1 --untracked-files=all)"; then
+                  rm -f -- "$authority_index"
+                  return 72
+              fi
+              rm -f -- "$authority_index"
+              printf '%s' "$status"
+          }
+
+          SOURCE_SHA="$(authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')"
+          [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || die "Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA. Checkout the exact accepted SHA before building."
+          [[ -z "$(authority_git_status)" ]] || die "Working tree has local changes under the fenced field-source authority index. Commit/stash them first."
+          say "Exact requested Capture source matched under real-checkout Git authority: $SOURCE_SHA"
+
+          run_accepted_source_bash() {
+              local relative_path="$1"
+              shift
+              /usr/bin/python3 -I - "$ROOT" "$SOURCE_SHA" "$relative_path" "$@" <<'PY_ACCEPTED_BASH'
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path, PurePosixPath
+
+          root = Path(sys.argv[1])
+          source_sha = sys.argv[2]
+          relative_path = sys.argv[3]
+          helper_argv = sys.argv[4:]
+          relative = PurePosixPath(relative_path)
+          if relative.is_absolute() or '..' in relative.parts or '.' in relative.parts:
+              raise SystemExit('accepted Bash source path must remain canonical and repository-relative')
+          git_environment = {
+              'HOME': '/var/empty',
+              'PATH': '/usr/bin:/bin',
+              'LANG': 'C',
+              'LC_ALL': 'C',
+              'GIT_NO_REPLACE_OBJECTS': '1',
+              'GIT_CONFIG_NOSYSTEM': '1',
+              'GIT_CONFIG_GLOBAL': '/dev/null',
+          }
+          try:
+              source = subprocess.check_output(
+                  [
+                      '/usr/bin/git',
+                      f'--git-dir={root / ".git"}',
+                      f'--work-tree={root}',
+                      '-c', f'core.worktree={root}',
+                      'show', f'{source_sha}:{relative_path}',
+                  ],
+                  env=git_environment,
+                  stderr=subprocess.DEVNULL,
+              )
+          except subprocess.CalledProcessError as error:
+              raise SystemExit(f'accepted Bash source is unavailable from exact Git authority: {relative_path}') from error
+          child_environment = os.environ.copy()
+          child_environment.pop('BASH_ENV', None)
+          child_environment.pop('ENV', None)
+          child_environment['NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT'] = str(root)
+          completed = subprocess.run(
+              ['/bin/bash', '--noprofile', '--norc', '-p', '-s', '--', *helper_argv],
+              input=source,
+              env=child_environment,
+              check=False,
+          )
+          raise SystemExit(completed.returncode)
+          PY_ACCEPTED_BASH
+          }
+          '''
+
+          if installer.count(old_authority) != 1:
+              raise SystemExit(f'installer authority anchor count was {installer.count(old_authority)}, expected 1')
+          installer = installer.replace(old_authority, new_authority, 1)
+
+          old_bootstrap_call = '''say "Validating official Tuya SDK and private app-identity provisioning"
+          "$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"
+          [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
+          [[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
+          [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs. Review and re-accept before building."
+          '''
+          new_bootstrap_call = '''say "Validating official Tuya SDK and private app-identity provisioning"
+          run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"
+          [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
+          [[ "$(authority_git rev-parse --verify 'HEAD^{commit}' | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
+          [[ -z "$(authority_git_status)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs under fenced Git authority. Review and re-accept before building."
+          '''
+          if installer.count(old_bootstrap_call) != 1:
+              raise SystemExit(f'bootstrap invocation anchor count was {installer.count(old_bootstrap_call)}, expected 1')
+          installer = installer.replace(old_bootstrap_call, new_bootstrap_call, 1)
+          installer_path.write_text(installer, encoding='utf-8')
+
+          bootstrap_path = Path('Scripts/bootstrap_capture_tuya_sdk.sh')
+          bootstrap = bootstrap_path.read_text(encoding='utf-8')
+          old_root = '''SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+          '''
+          new_root = '''if [[ -n "${NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT:-}" ]]; then
+            [[ "$NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT" == /* ]] || {
+              echo "ERROR: accepted Capture repository root must be absolute." >&2
+              exit 2
+            }
+            REPO_ROOT="$(cd "$NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT" && pwd -P)"
+            SCRIPT_DIR="$REPO_ROOT/Scripts"
+            [[ -d "$SCRIPT_DIR" && ! -L "$SCRIPT_DIR" ]] || {
+              echo "ERROR: accepted Capture Scripts directory is unavailable beneath the admitted repository root." >&2
+              exit 2
+            }
+            unset NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT
+          else
+            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+          fi
+          '''
+          if bootstrap.count(old_root) != 1:
+              raise SystemExit(f'bootstrap root anchor count was {bootstrap.count(old_root)}, expected 1')
+          bootstrap_path.write_text(bootstrap.replace(old_root, new_root, 1), encoding='utf-8')
+          PY
+
+      - name: Validate repaired authority contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          python3 -m py_compile scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/field/install_one_time_capture.command
+          grep -Fq 'authority_git_status' scripts/field/install_one_time_capture.command
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT' Scripts/bootstrap_capture_tuya_sdk.sh
+          if grep -Fq '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"' scripts/field/install_one_time_capture.command; then
+            echo 'ERROR: mutable bootstrap pathname execution remains.' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Publish clean production delta and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          find Scripts scripts -type d -name __pycache__ -prune -exec rm -rf {} + || true
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-v14-materialize-field-installer-git-authority-sol.yml
+          git add scripts/field/install_one_time_capture.command Scripts/bootstrap_capture_tuya_sdk.sh scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          git diff --cached --check
+          git commit -m 'Capture: bind field installer Git authority to executed source'
+          git push origin HEAD:repair/v14-field-installer-git-authority-sol-20260811
