@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "232900-review-result-finalgo-darwin-current-1607ax",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-final-go-authority",
+  "message": "Consumed #3100 real-Darwin red: exact annotations showed 3/4 permanent continuous-tree cases pass and the sole error occurred before the attack seam because the fixture passed a non-canonical macOS TemporaryDirectory path into direct _tree_entries(), triggering strict _real_git_dir containment. Correct fixture-only canonicalization was independently derived and then found already absorbed by concurrent workers. Selected production #3082 has advanced to exact 4a2c2002e872b294a86c4a2feecbff43b80505a1 with Final-GO 31546213562 SUCCESS, Retirement Dispatch 31546213542 SUCCESS, Sealed Handoff 31546213399 SUCCESS; Xcode skipped/not counted. Independent source review 4911600676 posted on preferred one-path current Darwin descendant #3120 exact 5b9dab6d9ab5fb456222e955fd20a144c230d2d6. Source acceptable; retained bounded race diagnostics preserved; exact Darwin run 31546285366 remains QUEUED. Duplicate #3122 exists on the same production parent but has weaker failure retention; do not double-count duplicate validators. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T23:29:00Z"
+}
