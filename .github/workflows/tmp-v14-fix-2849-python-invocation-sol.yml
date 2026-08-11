@@ -1,0 +1,65 @@
+name: TEMP V14 Fix 2849 Python Invocation (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-field-gate-negative-contract-2840-r2-sol
+    paths:
+      - .github/workflows/tmp-v14-fix-2849-python-invocation-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-capture-field-gate-negative-contract-2840-r2-sol
+          fetch-depth: 0
+
+      - name: Repair canonical Field test invocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '          /usr/bin/python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract\n'
+          new = '          /usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale module invocation, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          git diff --check
+          grep -Fq '/usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py' .github/workflows/capture-field-build-provenance.yml
+          if grep -Fq '/usr/bin/python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract' .github/workflows/capture-field-build-provenance.yml; then
+            echo 'ERROR: stale package-module invocation remains.' >&2
+            exit 1
+          fi
+
+      - name: Publish clean repair and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-v14-fix-2849-python-invocation-sol.yml
+          git add .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'Capture: run field path contract directly on Mac runner'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin repair/v14-capture-field-gate-negative-contract-2840-r2-sol
+            if git push origin HEAD:repair/v14-capture-field-gate-negative-contract-2840-r2-sol; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'ERROR: could not publish #2849 invocation repair after safe rebase retries.' >&2
+          exit 1
