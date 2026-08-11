@@ -9,9 +9,9 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T08:03:20Z",
-  "lastHeartbeatAt": "2026-08-11T08:03:20Z",
+  "lastHeartbeatAt": "2026-08-11T08:10:43Z",
   "leaseSeconds": 3600,
   "branch": "agent/swarm-v16-max-enforcement-sol56",
-  "pr": null,
+  "pr": 2823,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
 }
