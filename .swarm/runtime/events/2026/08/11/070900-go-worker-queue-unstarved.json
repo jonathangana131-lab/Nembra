@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070900-go-worker-queue-unstarved",
+  "type": "DECISION",
+  "workerId": "sol-20260811-rv2804",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Removed the single-slot reconciliation bottleneck observed after V15 rollout. Legacy reconciliation now exposes six additional objective-family scheduler-reconciler slots so fresh Go workers have claimable state-only work while the original reconciliation owner continues. Green CI alone is not completion; workers should advance a claimable shard or another scheduler recommendation and only idle after reconciliation plus a refreshed empty queue.",
+  "createdAt": "2026-08-11T07:09:00Z",
+  "data": {
+    "reason": "fresh Go workers were exiting after observing green V15/CI because the only reconciliation slot was already owned and the V15 queue had not yet been populated",
+    "additionalReconciliationSlots": 6,
+    "mainSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+    "physicalAuthorityChanged": false
+  }
+}
