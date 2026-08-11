@@ -11,6 +11,8 @@ from unittest import mock
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 HELPER_PATH = REPOSITORY_ROOT / "Scripts" / "capture_tuya_private_input_provenance.py"
+BOOTSTRAP_PATH = REPOSITORY_ROOT / "Scripts" / "bootstrap_capture_tuya_sdk.sh"
+FIELD_INSTALLER_PATH = REPOSITORY_ROOT / "scripts" / "field" / "install_one_time_capture.command"
 SPEC = importlib.util.spec_from_file_location("capture_tuya_private_input_provenance", HELPER_PATH)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("could not load Capture private-input provenance helper")
@@ -75,6 +77,32 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
 
     def test_hardened_intended_device_runner_executes_its_adversarial_self_test(self) -> None:
         private_device_runner.self_test()
+
+    def test_field_build_requires_preaccepted_lock_before_xcodebuild(self) -> None:
+        bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
+        installer = FIELD_INSTALLER_PATH.read_text(encoding="utf-8")
+
+        review_mode = 'if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then'
+        required_digest = ': "${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?'
+        digest_shape = '[[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]'
+        lock_compare = '[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]]'
+        review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
+        bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
+        build_call = "-- xcodebuild"
+
+        for required in (
+            review_mode,
+            required_digest,
+            digest_shape,
+            lock_compare,
+            review_only_stop,
+        ):
+            self.assertIn(required, bootstrap)
+        self.assertLess(bootstrap.index(required_digest), bootstrap.index("pod install --repo-update"))
+        self.assertLess(bootstrap.index(lock_compare), bootstrap.index("NEXT BUILD RULE:"))
+        self.assertIn(bootstrap_call, installer)
+        self.assertIn(build_call, installer)
+        self.assertLess(installer.index(bootstrap_call), installer.index(build_call))
 
     def test_snapshot_contains_only_fingerprints_and_is_private(self) -> None:
         current = self.snapshot()
