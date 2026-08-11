@@ -38,24 +38,33 @@ jobs:
           new = 'Label(dynamicTypeSize.isAccessibilitySize ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")'
           if secure.count(old) != 1:
               raise SystemExit(f'unexpected SecureLinkView disclosure source shape: {secure.count(old)} matches')
-          secure = secure.replace(old, new, 1)
-          s = prefix + secure
+          s = prefix + secure.replace(old, new, 1)
 
-          old = '''                    VStack(alignment: .leading, spacing: 7) {
-                        if !isAccessibilityLayout {
-                            Text("Tuya Smart user code")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)'''
-          new = '''                    VStack(alignment: .leading, spacing: 7) {
-                        Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")
-                            .font(.subheadline.weight(.semibold))
-                            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-                            .accessibilityHidden(true)
-                        TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)'''
-          if s.count(old) != 1:
-              raise SystemExit(f'unexpected Tuya user-code field source shape: {s.count(old)} matches')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          trailing_newline = s.endswith('\n')
+          lines = s.splitlines()
+          needle = 'TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)'
+          matches = [i for i, line in enumerate(lines) if needle in line]
+          if len(matches) != 1:
+              raise SystemExit(f'unexpected Tuya TextField source shape: {len(matches)} matches')
+          i = matches[0]
+          indent = lines[i][:-len(lines[i].lstrip())]
+          expected = [
+              indent + 'if !isAccessibilityLayout {',
+              indent + '    Text("Tuya Smart user code")',
+              indent + '        .font(.subheadline.weight(.semibold))',
+              indent + '}',
+          ]
+          if lines[i-4:i] != expected:
+              raise SystemExit('unexpected four-line Tuya sighted-label source shape')
+          replacement = [
+              indent + 'Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")',
+              indent + '    .font(.subheadline.weight(.semibold))',
+              indent + '    .dynamicTypeSize(...DynamicTypeSize.accessibility1)',
+              indent + '    .accessibilityHidden(true)',
+          ]
+          lines[i-4:i] = replacement
+          s = '\n'.join(lines) + ('\n' if trailing_newline else '')
+          p.write_text(s, encoding='utf-8')
           PY
           git diff --check
           grep -Fq 'Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")' NembraApp/App/NembraCaptureEntrypoint.swift
