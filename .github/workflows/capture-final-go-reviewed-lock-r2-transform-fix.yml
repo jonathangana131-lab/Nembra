@@ -22,14 +22,14 @@ jobs:
           from pathlib import Path
           p=Path('.github/workflows/capture-final-go-reviewed-lock-r2-materializer.yml')
           lines=p.read_text().splitlines()
-          needle="                  tests = tests.replace(marker, '\\n' + method(parent_tests, name) + marker, 1)"
-          hits=[i for i,line in enumerate(lines) if line==needle]
+          hits=[i for i,line in enumerate(lines) if 'tests = tests.replace(marker' in line and 'method(parent_tests, name)' in line]
           if len(hits)!=1: raise SystemExit(f'recovery insertion line drift: {hits}')
           i=hits[0]
+          indent=lines[i][:len(lines[i])-len(lines[i].lstrip())]
           lines[i:i+1]=[
-              '                  recovered = method(parent_tests, name)',
-              "                  recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):').replace('self.f.inst(r,s,d)', 'self.f.inst(r,s,d,lock)')",
-              "                  tests = tests.replace(marker, '\\n' + recovered + marker, 1)",
+              indent + 'recovered = method(parent_tests, name)',
+              indent + "recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):').replace('self.f.inst(r,s,d)', 'self.f.inst(r,s,d,lock)')",
+              indent + "tests = tests.replace(marker, '\\n' + recovered + marker, 1)",
           ]
           p.write_text('\n'.join(lines)+'\n')
           PY
