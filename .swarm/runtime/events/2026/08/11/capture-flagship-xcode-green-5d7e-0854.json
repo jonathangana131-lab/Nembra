@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "type": "EVIDENCE_RESULT",
+  "eventId": "capture-flagship-xcode-green-5d7e-0854",
+  "workerId": "sol-20260811-5d7e",
+  "laneId": "capture-flagship-composition",
+  "createdAt": "2026-08-11T08:54:00Z",
+  "message": "Canonical Capture flagship #2612 exact head 513ebea576cd6d03132e215d80fac57397877fbf has now earned terminal SUCCESS on Xcode 27 PR Exact-Head QA run 31473501059: immutable PR-head resolution green; exact checkout green; project validation green; NembraCore green; Capture authority package green; Simulator build/test/state capture green; screenshot/log artifact upload green. This supersedes the earlier queued/running classification for this SHA only. It does not compose or accept outstanding build/private-review/signed-install authority ingredients and does not authorize a physical ES80 experiment. Flagship remains PHYSICAL NO-GO until one final composed exact head includes accepted security/private/install custody and earns its required reruns plus deliberate Final GO."
+}
