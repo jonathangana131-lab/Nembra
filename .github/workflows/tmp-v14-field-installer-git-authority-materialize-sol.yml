@@ -30,18 +30,32 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 scripts/ci/tmp_materialize_field_installer_git_authority_sol.py
-      - name: Publish permanent result and self-delete materializer
+      - name: Verify materializer self-deletion
         shell: bash
         run: |
           set -euo pipefail
           test ! -e scripts/ci/tmp_materialize_field_installer_git_authority_sol.py
           test ! -e .github/workflows/tmp-v14-field-installer-git-authority-materialize-sol.yml
+      - name: Verify repaired shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
           bash -n scripts/field/install_one_time_capture.command
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+      - name: Verify permanent Git authority regression
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+      - name: Verify diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
           git diff --check
-          git config user.name "Nembra V14 Sol"
-          git config user.email "nembra-v14-sol@users.noreply.github.com"
+      - name: Verify exact materialized path set
+        shell: bash
+        run: |
+          set -euo pipefail
           git add -A
           /usr/bin/python3 - <<'PY'
           import subprocess
@@ -57,5 +71,11 @@ jobs:
           if actual != expected:
               raise SystemExit(f"unexpected materialized path set: {sorted(actual)}")
           PY
+      - name: Publish permanent result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra V14 Sol"
+          git config user.email "nembra-v14-sol@users.noreply.github.com"
           git commit -m "Capture: bind field installer Git authority to executed source"
           git push origin HEAD:repair/v14-capture-field-installer-git-authority-sol-20260811
