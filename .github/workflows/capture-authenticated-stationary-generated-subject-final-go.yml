@@ -30,6 +30,7 @@ permissions:
 
 jobs:
   authority-tests:
+    # This gate is release authority for replacement-blind execution of the pinned R3 parent module.
     name: Generated subject Final-GO R3 authority tests
     runs-on: ubuntu-latest
     timeout-minutes: 5
