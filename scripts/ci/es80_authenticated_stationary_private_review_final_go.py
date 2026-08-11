@@ -127,6 +127,9 @@ def _load_predecessor() -> types.ModuleType:
 
 _previous = _load_predecessor()
 
+# Preserve the #3042/#2921 compatibility surface so existing exact authority
+# regressions continue to exercise the accepted implementation rather than a
+# rewritten approximation.
 _direct_parent = _previous._direct_parent
 _parent = _previous._parent
 generated = _previous.generated
@@ -232,6 +235,9 @@ class _CandidateRetirementBoundary:
                 raise _retired_candidate_error()
             return self.original_git_bytes(*args, **kwargs)
 
+        # These stable dispatchers are installed before inherited custody enters.
+        # That means an inner finally can only restore retirement-aware functions,
+        # never the raw candidate-capable callables captured by this boundary.
         self.dispatch_git = dispatch_git
         self.dispatch_git_bytes = dispatch_git_bytes
 
@@ -247,6 +253,12 @@ class _CandidateRetirementBoundary:
         accepted = _require_sealed_final_go_record(record)
         self.retired = True
         _CANDIDATE_RETIRED.set(True)
+
+        # Reinstall the same stable dispatchers immediately. The currently active
+        # inherited candidate context may have replaced base.git/base.git_bytes
+        # with its guarded views, but its saved "originals" are these dispatchers
+        # because they were present before that context entered. Its finally can
+        # therefore restore only retirement-aware functions during outer teardown.
         self.base.git = self.dispatch_git
         self.base.git_bytes = self.dispatch_git_bytes
         return accepted
@@ -266,7 +278,14 @@ def build(
     base_module: Any | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Complete every candidate consumer, then retire the checkout before release."""
+    """Complete every candidate consumer, then retire the checkout before release.
+
+    #3057 exact validation proved that the accepted semantic stack performs the
+    private installer, retained signed-artifact inspection/reinspection, and all
+    candidate postchecks before `_SEMANTIC_BUILD` returns; later publication takes
+    only the completed record/control outputs. Therefore the mutable checkout is
+    no longer an authority input once `retirement.retire(record)` succeeds.
+    """
     base = base_module or generated._load_base_module()
     source = base.canon(source, "source")
     candidate_repo = candidate_repo.expanduser().resolve(strict=True)
