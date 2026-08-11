@@ -85,7 +85,8 @@ def _runtime_lanes(store: Store, target_lane):
     for _, stored in store.list(".swarm/runtime/lanes"):
         lane = validate_lane(stored.value)
         by_id[lane["laneId"]] = lane
-    by_id[target["laneId"]] = target
+    if target["laneId"] not in by_id:
+        by_id[target["laneId"]] = target
     return [by_id[key] for key in sorted(by_id)]
 
 
@@ -144,18 +145,22 @@ def _review_subject_claims(store: Store, lane):
 
 def _enforce_claim_policy(store: Store, lane, slot_name: str, worker: str, now: dt.datetime, config):
     lane = validate_lane(lane)
+    target_lane_id = lane["laneId"]
     _worker(worker)
     config = validate_config(config)
+
+    lanes = _runtime_lanes(store, lane)
+    lane_map = {item["laneId"]: item for item in lanes}
+    lane = lane_map[target_lane_id]
+
     if lane["state"] in TERMINAL_LANE_STATES | {"BLOCKED", "BLOCKED_EXTERNAL"}:
         raise ValidationError("lane not claimable")
 
-    lanes = _runtime_lanes(store, lane)
     blockers = effective_blockers(lane, lanes)
     if blockers:
         scopes = sorted({blocker.get("scope", "lane") for blocker in blockers})
         raise ValidationError("claim blocked by active " + ",".join(scopes) + " blocker")
 
-    lane_map = {item["laneId"]: item for item in lanes}
     ready, reason = _engine.dependency_ready(lane, lane_map)
     if not ready:
         raise ValidationError(reason)
