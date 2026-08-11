@@ -1,0 +1,109 @@
+name: Capture Signed Origin Real Xcode Capability Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_capability_propagation.py
+      - .github/workflows/capture-signed-origin-real-xcode-capability-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify-real-xcode-capability:
+    name: Classify protected APFS authority through real Xcode
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact diagnostic child to real-Xcode red
+        shell: bash
+        env:
+          PARENT: 7d05714e3ba6a9cc4259963780cc71d97ecb42f7
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${PARENT}^{commit}"
+          test "$(git merge-base HEAD "$PARENT")" = "$PARENT"
+          changed="$(git diff --name-only "$PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-signed-origin-real-xcode-capability-diagnostic.yml' \
+            'scripts/ci/tests/test_capture_signed_app_real_xcode_capability_propagation.py')"
+          test "$changed" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-real-xcode-capability-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_unmount_freeze.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_capability_propagation.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Classify authority propagation without weakening isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/nembra-real-xcode-capability-diagnostic.log"
+          /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_capability_propagation.py \
+            2>&1 | tee "$output"
+          grep -q '^NEMBRA_REAL_XCODE_CAPABILITY_DIAGNOSTIC_JSON=' "$output"
+          if grep -q '^NEMBRA_REAL_XCODE_CAPABILITY_DIAGNOSTIC_ERROR=' "$output"; then
+            printf 'Diagnostic emitted an error record.\n' >&2
+            exit 20
+          fi
+          /usr/bin/python3 - "$output" <<'PY'
+          import json, pathlib, sys
+          marker = "NEMBRA_REAL_XCODE_CAPABILITY_DIAGNOSTIC_JSON="
+          rows = [line[len(marker):] for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines() if line.startswith(marker)]
+          if len(rows) != 1:
+              raise SystemExit("expected exactly one diagnostic record")
+          evidence = json.loads(rows[0])
+          if evidence.get("physicalAuthorityCreated") is not False:
+              raise SystemExit("diagnostic must not create physical authority")
+          if evidence.get("ordinaryControlReturnCode") == 0:
+              raise SystemExit("ordinary same-UID process entered protected output tree")
+          cap = evidence.get("capabilityControlIdentity") or {}
+          if evidence.get("capabilityGID") not in cap.get("groups", []):
+              raise SystemExit("capability control did not retain the fresh supplementary group")
+          classification = evidence.get("classification")
+          allowed = {
+              "xcode-capability-compatible",
+              "xcode-internal-authority-propagation-loss",
+              "protected-path-permission-failure",
+              "other-xcode-failure",
+          }
+          if classification not in allowed:
+              raise SystemExit(f"unknown classification: {classification}")
+          print(f"NEMBRA_REAL_XCODE_CAPABILITY_CLASSIFICATION={classification}")
+          PY
+
+      - name: Retain diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-real-xcode-capability-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/nembra-real-xcode-capability-diagnostic.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          PARENT: 7d05714e3ba6a9cc4259963780cc71d97ecb42f7
+        run: |
+          set -euo pipefail
+          git diff --check "$PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Validation only: no signing identity, install, launch, device, Bluetooth/Tuya, scooter, or physical experiment occurred.\n'
