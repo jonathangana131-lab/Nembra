@@ -9,11 +9,13 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:45:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:45:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:49:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v15-dashboard-dark-landscape-sol-hl6k",
-  "pr": null,
+  "pr": 2963,
   "sourceSHA": "616746f18c63801a484aa6d394fc6770c8b22cce",
+  "currentHeadSHA": "3b10ccf4721356e02eb57ad9f712dfa50ddf5e96",
   "takeoverFromWorkerId": "sol-20260811-4f50x",
-  "intent": "Close the remaining authoritative dark-landscape cockpit visual-evidence gap on a new child of frozen combined QA head 616746f1 without moving or invalidating its queued exact-head Xcode run. Harness-only unless a real runtime defect is exposed. Simulator evidence only; Capture physical NO-GO."
+  "intent": "Close the remaining authoritative dark-landscape cockpit visual-evidence gap on a new child of frozen combined QA head 616746f1 without moving or invalidating its queued exact-head Xcode run. Harness-only unless a real runtime defect is exposed. Simulator evidence only; Capture physical NO-GO.",
+  "checkpoint": "#2963 is a one-file harness-only direct child of 616746f1. It requires real CoreSimulator dark appearance, reruns live + retained-power landscape XCUITests, exports a dedicated xcresult/attachment set, proves reset to light, and fails ordinary captures closed on appearance-switch failure. New shell fragment passes local bash -n syntax. Do not dispatch its expensive exact-head Xcode until parent combined run 31492094434 proves the inherited app/package head can execute; parent remains frozen and queued."
 }
