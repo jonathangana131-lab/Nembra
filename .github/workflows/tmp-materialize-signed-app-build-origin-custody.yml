@@ -24,21 +24,20 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          printf 'expected=%s actual=%s\n' "$EXPECTED_HEAD_SHA" "$(git rev-parse HEAD)"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-
-      - name: Require clean construction tree
-        shell: bash
-        run: |
-          set -euo pipefail
-          git status --short
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Compile materializer
         shell: bash
         run: |
-          set -euo pipefail
-          /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_signed_app_build_origin_custody.py
+          set -uo pipefail
+          diagnostic="$(/usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_signed_app_build_origin_custody.py 2>&1)"
+          rc=$?
+          if [[ "$rc" != 0 ]]; then
+            single="$(printf '%s' "$diagnostic" | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            printf '::error file=scripts/ci/tmp_materialize_signed_app_build_origin_custody.py::%s\n' "$single"
+            exit "$rc"
+          fi
 
       - name: Materialize production repair
         shell: bash
