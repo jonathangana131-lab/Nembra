@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-REPO="jonathangana131-lab/Nembra"; PROC="ES80-AUTHENTICATED-STATIONARY-v1"
+REPO="jonathangana131-lab/Nembra"; OWNER="jonathangana131-lab"; PROC="ES80-AUTHENTICATED-STATIONARY-v1"
 BUNDLE="com.jonathangana131.nembra.capturelearn"; DEVICE="iPhone 12"; PRODUCT="iPhone13,2"
 WORKFLOWS=("Capture Main Selective Graft Diagnostic","Capture Field Build Provenance","Xcode 27 PR Exact-Head QA","Capture Standalone Visual Evidence")
 VISUAL=WORKFLOWS[-1]; MANIFEST="NembraCaptureStandaloneVisualEvidence.json"
@@ -109,17 +109,22 @@ def visual(source:str,run:int,aid:int,archive:Path,get=api):
     if any(man.get(k)!=v for k,v in required.items()) or set(shots)!=STATES: raise GoError("visual manifest authority mismatch")
     return {"runID":run,"artifactID":aid,"artifactDigest":a["digest"],"manifestSHA256":sha(mr),"screenshots":shots}
 
-def review(path:Path,source:str,v:dict[str,Any]):
-    raw=regular(path,"human visual review"); r=obj(raw,"human visual review")
-    keys={"schemaVersion","authority","sourceCommitSHA","visualRunID","visualArtifactID","standardScreenshotSHA256","accessibilityScreenshotSHA256","verdict","reviewedAtUTC","reviewer"}
-    if set(r)!=keys or r.get("schemaVersion")!=1 or r.get("authority")!="human-visual-review-v1" or canon(r.get("sourceCommitSHA"),"visual review source")!=source or r.get("visualRunID")!=v["runID"] or r.get("visualArtifactID")!=v["artifactID"] or r.get("verdict")!="accepted" or not str(r.get("reviewer","")).strip(): raise GoError("human visual review authority mismatch")
-    stamp=r.get("reviewedAtUTC")
-    if not isinstance(stamp,str) or not stamp.endswith("Z"): raise GoError("visual review timestamp must be UTC Z")
+def review(pr:int,review_id:int,source:str,v:dict[str,Any],get=api):
+    review_id=pos(review_id,"visual review ID"); raw,r=get(f"/pulls/{pr}/reviews/{review_id}")
+    body=r.get("body")
+    if not isinstance(body,str) or not body.strip(): raise GoError("GitHub visual review body missing")
+    b=obj(body.encode(),"GitHub visual review body")
+    keys={"schemaVersion","authority","sourceCommitSHA","visualRunID","visualArtifactID","standardScreenshotSHA256","accessibilityScreenshotSHA256","verdict"}
+    user=r.get("user",{})
+    if set(b)!=keys or b.get("schemaVersion")!=1 or b.get("authority")!="nembra-visual-human-review-github-v1" or canon(b.get("sourceCommitSHA"),"visual review source")!=source or b.get("visualRunID")!=v["runID"] or b.get("visualArtifactID")!=v["artifactID"] or b.get("verdict")!="accepted": raise GoError("GitHub visual review authority mismatch")
+    if r.get("id")!=review_id or r.get("state") not in {"COMMENTED","APPROVED"} or canon(r.get("commit_id"),"visual review commit")!=source or user.get("login")!=OWNER or r.get("author_association")!="OWNER": raise GoError("GitHub visual review custody mismatch")
+    stamp=r.get("submitted_at")
+    if not isinstance(stamp,str) or not stamp.endswith("Z"): raise GoError("GitHub visual review timestamp invalid")
     try: datetime.fromisoformat(stamp[:-1]+"+00:00")
-    except ValueError as e: raise GoError("visual review timestamp invalid") from e
+    except ValueError as e: raise GoError("GitHub visual review timestamp invalid") from e
     s=v["screenshots"]; std=s["unprovisioned-dark-standard"]["sha256"]; ax=s["unprovisioned-dark-accessibility-xxxl"]["sha256"]
-    if r["standardScreenshotSHA256"]!=std or r["accessibilityScreenshotSHA256"]!=ax: raise GoError("visual review screenshot mismatch")
-    return {"authority":r["authority"],"attestationSHA256":sha(raw),"reviewedAtUTC":r["reviewedAtUTC"],"reviewer":r["reviewer"].strip(),"verdict":"accepted","standardScreenshotSHA256":std,"accessibilityScreenshotSHA256":ax}
+    if b["standardScreenshotSHA256"]!=std or b["accessibilityScreenshotSHA256"]!=ax: raise GoError("GitHub visual review screenshot mismatch")
+    return {"authority":b["authority"],"reviewID":review_id,"reviewNodeID":r.get("node_id"),"reviewBodySHA256":sha(body.encode()),"reviewedAtUTC":stamp,"reviewer":OWNER,"state":r["state"],"verdict":"accepted","standardScreenshotSHA256":std,"accessibilityScreenshotSHA256":ax}
 
 def git(repo:Path,*args):
     try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={"PATH":"/usr/bin:/bin"}).stdout.strip()
@@ -150,17 +155,13 @@ def installer(repo:Path,source:str,device:Path):
     if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
     return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
 
-def build(*,candidate_repo:Path,source:str,pr:int,runs:dict[str,int],artifact_id:int,archive:Path,attestation:Path,device_file:Path,get=api,run_installer=installer,now=None):
+def build(*,candidate_repo:Path,source:str,pr:int,runs:dict[str,int],artifact_id:int,review_id:int,archive:Path,device_file:Path,get=api,run_installer=installer,now=None):
     source=canon(source,"source"); pr=pos(pr,"PR")
-    ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(attestation,source,vs); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
+    ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(pr,review_id,source,vs,get); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
     got=run_installer(candidate_repo,source,device_file); expected={"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
     if got!=expected: raise GoError("private installer result drifted")
 
-    # Installation is intentionally the last side effect, but it may take long enough for the
-    # canonical PR or retained acceptance evidence to move underneath us. Re-read every mutable
-    # authority subject after launch and require it to be byte/identity-equivalent before GO is
-    # published. PR state may legitimately move open -> closed/merged; its exact head/branch/base may not.
-    post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(attestation,source,post_vs); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file)
+    post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file)
     stable_pr=("number","headSHA","headBranch","base")
     if any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh:
         raise GoError("GO authority changed during private install; re-run from fresh exact evidence")
@@ -175,7 +176,7 @@ def publication():
     m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
 
 def main(argv=None):
-    p=argparse.ArgumentParser(); p.add_argument("--candidate-repo",type=Path,required=True); p.add_argument("--source-sha",required=True); p.add_argument("--pr-number",type=int,required=True); p.add_argument("--workflow",action="append",required=True); p.add_argument("--visual-artifact-id",type=int,required=True); p.add_argument("--visual-artifact-archive",type=Path,required=True); p.add_argument("--visual-review-attestation",type=Path,required=True); p.add_argument("--intended-device-udid-file",type=Path,required=True); p.add_argument("--output",type=Path,required=True); p.add_argument("--run-private-installer",action="store_true"); a=p.parse_args(argv)
+    p=argparse.ArgumentParser(); p.add_argument("--candidate-repo",type=Path,required=True); p.add_argument("--source-sha",required=True); p.add_argument("--pr-number",type=int,required=True); p.add_argument("--workflow",action="append",required=True); p.add_argument("--visual-artifact-id",type=int,required=True); p.add_argument("--visual-artifact-archive",type=Path,required=True); p.add_argument("--visual-review-id",type=int,required=True); p.add_argument("--intended-device-udid-file",type=Path,required=True); p.add_argument("--output",type=Path,required=True); p.add_argument("--run-private-installer",action="store_true"); a=p.parse_args(argv)
     if not a.run_private_installer: p.error("--run-private-installer is required")
     try:
         runs={}
@@ -183,7 +184,7 @@ def main(argv=None):
             n,sep,i=x.rpartition("=")
             if not sep or n in runs: raise GoError("--workflow must be unique NAME=RUN_ID")
             runs[n]=pos(int(i),n)
-        r=build(candidate_repo=a.candidate_repo,source=a.source_sha,pr=a.pr_number,runs=runs,artifact_id=a.visual_artifact_id,archive=a.visual_artifact_archive,attestation=a.visual_review_attestation,device_file=a.intended_device_udid_file)
+        r=build(candidate_repo=a.candidate_repo,source=a.source_sha,pr=a.pr_number,runs=runs,artifact_id=a.visual_artifact_id,review_id=a.visual_review_id,archive=a.visual_artifact_archive,device_file=a.intended_device_udid_file)
         raw=(json.dumps(r,indent=2,sort_keys=True)+"\n").encode(); d=publication().publish_record_no_replace(a.output,raw)
     except (GoError,OSError,ValueError) as e: print(f"AUTHENTICATED STATIONARY FINAL GO: NO-GO: {e}",file=sys.stderr); return 2
     print(f"AUTHENTICATED STATIONARY FINAL GO: GO: {a.output.resolve(strict=True)}\nrecord_sha256={d}\nPHYSICAL RESULT COLLECTED: NO"); return 0
