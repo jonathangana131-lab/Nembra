@@ -1,0 +1,174 @@
+name: TEMP V14 Capture HTTPS transport repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-https-transport-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch Tuya authenticated transport boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/Features/Research/TuyaAccountBridge.swift")
+          text = path.read_text(encoding="utf-8")
+
+          import_anchor = '''import UniformTypeIdentifiers
+
+/// Official Tuya Smart account-link preflight for the one-time Nembra Capture utility.
+'''
+          delegate = '''import UniformTypeIdentifiers
+
+private final class TuyaHTTPSOnlyRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        guard let url = request.url,
+              url.scheme?.lowercased() == "https",
+              let host = url.host,
+              !host.isEmpty else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+}
+
+/// Official Tuya Smart account-link preflight for the one-time Nembra Capture utility.
+'''
+          if text.count(import_anchor) != 1:
+              raise SystemExit("unexpected TuyaAccountBridge import/header shape")
+          text = text.replace(import_anchor, delegate, 1)
+
+          old_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+            let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\\(rawEndpoint)"
+            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
+                throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
+            }
+'''
+          new_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty else {
+                throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
+            }
+            guard let endpoint = Self.normalizedAuthenticatedEndpoint(rawEndpoint) else {
+                throw BridgeError.malformed("Tuya approval returned an insecure account endpoint.")
+            }
+'''
+          if text.count(old_endpoint) != 1:
+              raise SystemExit("unexpected Tuya approval endpoint shape")
+          text = text.replace(old_endpoint, new_endpoint, 1)
+
+          old_signed_endpoint = '''        var endpoint = session.endpoint
+        while endpoint.hasSuffix("/") { endpoint.removeLast() }
+        guard var components = URLComponents(string: endpoint + path) else { throw BridgeError.invalidURL }
+'''
+          new_signed_endpoint = '''        guard let endpoint = Self.normalizedAuthenticatedEndpoint(session.endpoint) else {
+            throw BridgeError.invalidURL
+        }
+        guard var components = URLComponents(string: endpoint + path) else { throw BridgeError.invalidURL }
+'''
+          if text.count(old_signed_endpoint) != 1:
+              raise SystemExit("unexpected signedGET endpoint shape")
+          text = text.replace(old_signed_endpoint, new_signed_endpoint, 1)
+
+          request_anchor = '''    private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
+        let (data, response) = try await URLSession.shared.data(for: request)
+'''
+          secure_request = '''    private static func normalizedAuthenticatedEndpoint(_ rawEndpoint: String) -> String? {
+        let trimmed = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let candidate = trimmed.contains("://") ? trimmed : "https://\\(trimmed)"
+        guard let components = URLComponents(string: candidate),
+              components.scheme?.lowercased() == "https",
+              let host = components.host,
+              !host.isEmpty,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              let url = components.url else { return nil }
+        var normalized = url.absoluteString
+        while normalized.hasSuffix("/") { normalized.removeLast() }
+        return normalized
+    }
+
+    private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
+        guard let requestURL = request.url,
+              requestURL.scheme?.lowercased() == "https",
+              let requestHost = requestURL.host,
+              !requestHost.isEmpty else {
+            throw BridgeError.invalidURL
+        }
+        let redirectDelegate = TuyaHTTPSOnlyRedirectDelegate()
+        let (data, response) = try await URLSession.shared.data(for: request, delegate: redirectDelegate)
+'''
+          if text.count(request_anchor) != 1:
+              raise SystemExit("unexpected requestJSON shape")
+          text = text.replace(request_anchor, secure_request, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate HTTPS source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/Features/Research/TuyaAccountBridge.swift").read_text(encoding="utf-8")
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountBridgeTransportSecuritySourceTests.swift").read_text(encoding="utf-8")
+
+          required_source = (
+              "private final class TuyaHTTPSOnlyRedirectDelegate",
+              'url.scheme?.lowercased() == "https"',
+              "completionHandler(nil)",
+              "guard let endpoint = Self.normalizedAuthenticatedEndpoint(rawEndpoint) else",
+              "guard let endpoint = Self.normalizedAuthenticatedEndpoint(session.endpoint) else",
+              "private static func normalizedAuthenticatedEndpoint",
+              'components.scheme?.lowercased() == "https"',
+              "components.user == nil",
+              "components.password == nil",
+              'requestURL.scheme?.lowercased() == "https"',
+              "URLSession.shared.data(for: request, delegate: redirectDelegate)",
+          )
+          for sentinel in required_source:
+              if sentinel not in source:
+                  raise SystemExit(f"missing HTTPS source sentinel: {sentinel}")
+          if 'rawEndpoint.hasPrefix("http")' in source:
+              raise SystemExit("legacy prefix-based endpoint admission remains")
+          if "URLSession.shared.data(for: request)" in source:
+              raise SystemExit("authenticated request path can bypass redirect delegate")
+          if "approvalEndpointRejectsPlaintextTransport" not in test or "authenticatedRequestsRejectTransportDowngrade" not in test:
+              raise SystemExit("HTTPS regression source tests are incomplete")
+          PY
+          git diff --check
+
+      - name: Commit durable repair and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/temp-v14-capture-https-transport-repair.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "nembra-v14-sol"
+          git config user.email "nembra-v14-sol@users.noreply.github.com"
+          git commit -m "fix(capture): require HTTPS for Tuya account transport"
+          git push origin HEAD:repair/v14-capture-https-transport-sol
