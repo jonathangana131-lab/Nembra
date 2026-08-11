@@ -33,6 +33,10 @@ provenance = _load_neighbor_module(
     "capture_tuya_private_input_provenance.py",
     "capture_tuya_private_input_provenance",
 )
+private_review = _load_neighbor_module(
+    "capture_tuya_private_input_review.py",
+    "capture_tuya_private_input_review",
+)
 generated_build = _load_neighbor_module(
     "capture_cocoapods_generated_build_subject.py",
     "capture_cocoapods_generated_build_subject",
@@ -48,6 +52,18 @@ class PrivateInputs:
     identity_sources: Path
     generated_pods: Path | None = None
     generated_workspace: Path | None = None
+
+    @property
+    def private_review_root(self) -> Path:
+        return self.identity_sources.parent.parent
+
+    @property
+    def private_provenance_record(self) -> Path:
+        return self.private_review_root / "ResolvedTuyaDependencyProvenance.txt"
+
+    @property
+    def private_review_key(self) -> Path:
+        return self.private_review_root / "PrivateInputReviewKey.bin"
 
     def generated_build_subject(self) -> str:
         if self.generated_pods is None or self.generated_workspace is None:
@@ -354,6 +370,55 @@ def _verify_accepted_generated_build_subject(inputs: PrivateInputs) -> None:
         )
 
 
+def _accepted_private_input_commitment_from_environment() -> str:
+    value = os.environ.get("NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_INPUT_COMMITMENT", "")
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise BuildGuardError(
+            "NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_INPUT_COMMITMENT must remain available as the exact reviewed lowercase 64-hex private-input authority through build-window admission"
+        )
+    return value
+
+
+def _verify_accepted_private_input_subject(inputs: PrivateInputs) -> None:
+    accepted = _accepted_private_input_commitment_from_environment()
+    try:
+        private_review.verify_review_paths(
+            record_path=inputs.private_provenance_record,
+            key_path=inputs.private_review_key,
+            accepted=accepted,
+            lockfile=inputs.lockfile,
+            security_podspec=inputs.security_podspec,
+            security_build=inputs.security_build,
+            identity_podspec=inputs.identity_podspec,
+            identity_sources=inputs.identity_sources,
+        )
+    except (private_review.PrivateReviewError, provenance.ProvenanceError) as error:
+        raise BuildGuardError(
+            f"private Tuya review authority rejected build-window admission: {error}"
+        ) from error
+
+
+def _authority_bound_initial_snapshot(
+    inputs: PrivateInputs,
+    *,
+    require_accepted_generated_subject: bool,
+    require_accepted_private_subject: bool,
+):
+    """Create the only initial baseline after rebinding all external authority."""
+
+    before = inputs.generation_snapshot()
+    if require_accepted_generated_subject:
+        _verify_accepted_generated_build_subject(inputs)
+    if require_accepted_private_subject:
+        _verify_accepted_private_input_subject(inputs)
+    after = inputs.generation_snapshot()
+    if after != before:
+        raise BuildGuardError(
+            "build inputs changed while external field-build authority was rebound before vnode admission"
+        )
+    return after
+
+
 def run_guarded_build(
     inputs: PrivateInputs,
     command: Sequence[str],
@@ -362,13 +427,16 @@ def run_guarded_build(
     popen_factory: Callable[..., subprocess.Popen] = subprocess.Popen,
     poll_interval: float = 0.10,
     require_accepted_generated_subject: bool = False,
+    require_accepted_private_subject: bool = False,
 ) -> int:
     if not command:
         raise BuildGuardError("no build command was supplied")
 
-    if require_accepted_generated_subject:
-        _verify_accepted_generated_build_subject(inputs)
-    initial_snapshot = inputs.generation_snapshot()
+    initial_snapshot = _authority_bound_initial_snapshot(
+        inputs,
+        require_accepted_generated_subject=require_accepted_generated_subject,
+        require_accepted_private_subject=require_accepted_private_subject,
+    )
     watch_paths = _watch_paths(inputs)
     _ensure_fd_budget(len(watch_paths))
     backend = backend_factory()
@@ -382,6 +450,8 @@ def run_guarded_build(
             raise BuildGuardError("build inputs changed while build-window monitoring was armed")
         if require_accepted_generated_subject:
             _verify_accepted_generated_build_subject(inputs)
+        if require_accepted_private_subject:
+            _verify_accepted_private_input_subject(inputs)
         queued = backend.events(0)
         if queued:
             raise BuildGuardError(
@@ -411,6 +481,8 @@ def run_guarded_build(
             raise BuildGuardError("build inputs changed across the guarded xcodebuild window")
         if require_accepted_generated_subject:
             _verify_accepted_generated_build_subject(inputs)
+        if require_accepted_private_subject:
+            _verify_accepted_private_input_subject(inputs)
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
@@ -484,12 +556,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             inputs,
             command,
             require_accepted_generated_subject=True,
+            require_accepted_private_subject=True,
         )
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
-    except provenance.ProvenanceError as error:
-        print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)
+    except (provenance.ProvenanceError, private_review.PrivateReviewError) as error:
+        print(f"ERROR: private-input authority rejected build-window custody: {error}", file=sys.stderr)
         return 75
     except generated_build.GeneratedBuildSubjectError as error:
         print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)
