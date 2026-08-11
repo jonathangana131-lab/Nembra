@@ -1,0 +1,71 @@
+name: Capture Final GO Continuous Release Race Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_es80_final_go_continuous_release_race_red_team.py
+      - .github/workflows/capture-final-go-continuous-release-race-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-race:
+    name: Continuous custody release race (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact red-team child to continuous-custody successor
+        shell: bash
+        env:
+          PARENT: 1e40f490cc95bf851f3ccf17a5fb44fd6d656d2c
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${PARENT}^{commit}"
+          changed_paths="$(git diff --name-only "$PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-final-go-continuous-release-race-redteam.yml' \
+            'scripts/ci/tests/test_es80_final_go_continuous_release_race_red_team.py')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Continuous release-race red team must remain exactly two-path. Changed:\n' >&2
+            printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile release-race witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_es80_final_go_continuous_release_race_red_team.py
+
+      - name: Reproduce last-event-poll authority escape
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 \
+            scripts/ci/tests/test_es80_final_go_continuous_release_race_red_team.py
+
+      - name: Preserve expected-red interpretation
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Attacked production successor: 1e40f490cc95bf851f3ccf17a5fb44fd6d656d2c\n'
+          printf 'This workflow is exploit-positive: SUCCESS means the last event poll can be followed by an unobserved mutation before watcher release.\n'
+          printf 'A repair must hand authority to an immutable/exclusive subject or otherwise eliminate the unobserved release interval; do not add a merely finite extra poll.\n'
+          printf 'No credentials, Xcode device operation, Bluetooth/Tuya action, install, launch, or physical experiment occurs.\n'
