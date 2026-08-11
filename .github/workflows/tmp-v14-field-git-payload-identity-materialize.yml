@@ -1,0 +1,71 @@
+name: TEMP V14 Field Git Payload Identity Materialize
+
+on:
+  push:
+    branches:
+      - repair/v14-field-git-payload-identity-sol-20260811
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact construction head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test -f scripts/ci/tmp_v14_field_git_payload_identity_materialize.py
+          test -f scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+
+      - name: Materialize accepted Git payload identity repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_v14_field_git_payload_identity_materialize.py
+          bash -n scripts/field/install_one_time_capture.command
+
+      - name: Flip packed-blob witness green
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+
+      - name: Replay neighboring portable authority suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in \
+            scripts/ci/tests/test_capture_field_compiler_window_authority.py \
+            scripts/ci/tests/test_capture_field_private_runner_execution_red_team.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          do
+            if [[ -f "$test" ]]; then
+              python3 "$test"
+            fi
+          done
+          git diff --check
+
+      - name: Publish clean production successor
+        shell: bash
+        env:
+          BRANCH: repair/v14-field-git-payload-identity-sol-20260811
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-materializer[bot]"
+          git config user.email "nembra-capture-materializer[bot]@users.noreply.github.com"
+          git add scripts/field/install_one_time_capture.command
+          git rm scripts/ci/tmp_v14_field_git_payload_identity_materialize.py
+          git rm .github/workflows/tmp-v14-field-git-payload-identity-materialize.yml
+          git diff --cached --check
+          git commit -m "Bind accepted Git execution bytes to blob identity"
+          git push origin "HEAD:${BRANCH}"
