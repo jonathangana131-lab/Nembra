@@ -1,0 +1,147 @@
+name: TEMP Capture Installer Pin Materializer
+
+on:
+  pull_request:
+    branches:
+      - control-temp/v14-installer-pin-materializer-base-sol
+    paths:
+      - scripts/ci/.installer-pin-materialize-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'repair/v14-final-go-installer-execution-subject-sol'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: repair/v14-final-go-installer-execution-subject-sol
+
+      - name: Bind exact current control parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='a1f5a90414b5ca26bdd6bebb485189b6bcbe227f'
+          marker='scripts/ci/.installer-pin-materialize-trigger'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          test "$(git diff --name-only "$parent"..HEAD)" = "$marker"
+          git diff --check "$parent" HEAD
+
+      - name: Materialize immutable installer execution subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          source = source_path.read_text()
+
+          old_import = 'import argparse, hashlib, importlib.util, json, os, pwd, re, stat, subprocess, sys, urllib.request, zipfile\n'
+          new_import = 'import argparse, hashlib, importlib.util, json, os, pwd, re, stat, subprocess, sys, tempfile, urllib.request, zipfile\n'
+          if source.count(old_import) != 1:
+              raise SystemExit('issuer import anchor drifted')
+          source = source.replace(old_import, new_import, 1)
+
+          old_git = '''def git(repo:Path,*args):
+              try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={"PATH":"/usr/bin:/bin"}).stdout.strip()
+              except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate Git custody failed") from e
+          '''.replace('              ', '    ')
+          new_git = '''def git(repo:Path,*args):
+              try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={"PATH":"/usr/bin:/bin"}).stdout.strip()
+              except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate Git custody failed") from e
+
+          def git_blob_hash(repo:Path,raw:bytes)->str:
+              env={"PATH":"/usr/bin:/bin","GIT_CONFIG_NOSYSTEM":"1","GIT_CONFIG_GLOBAL":"/dev/null","GIT_NO_REPLACE_OBJECTS":"1"}
+              try:r=subprocess.run(["/usr/bin/git","-C",str(repo),"hash-object","--stdin"],check=True,input=raw,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
+              except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate installer byte identity failed") from e
+              try:value=r.stdout.decode("ascii").strip().lower()
+              except UnicodeDecodeError as e: raise GoError("candidate installer Git blob invalid") from e
+              if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value): raise GoError("candidate installer Git blob invalid")
+              return value
+          '''.replace('              ', '    ')
+          if source.count(old_git) != 1:
+              raise SystemExit('issuer git helper anchor drifted')
+          source = source.replace(old_git, new_git, 1)
+
+          old_installer = '''def installer(repo:Path,source:str,device:Path,device_digest:str,accepted_lock_sha256:str):
+              root=repo.expanduser().resolve(strict=True); env=installer_environment(device,device_digest,accepted_lock_sha256)
+              try:p=subprocess.run(["/bin/bash","--noprofile","--norc","-p",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+              except OSError as e: raise GoError("private installer execution failed") from e
+              if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
+              return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
+          '''.replace('              ', '    ')
+          new_installer = '''def installer(repo:Path,source:str,device:Path,device_digest:str,accepted_lock_sha256:str):
+              root=repo.expanduser().resolve(strict=True); env=installer_environment(device,device_digest,accepted_lock_sha256)
+              accepted_blob=git(root,"rev-parse",f"{source}:{INSTALLER}").lower()
+              installer_bytes=regular(root/INSTALLER,"candidate installer")
+              if git_blob_hash(root,installer_bytes)!=accepted_blob: raise GoError("candidate installer bytes differ from accepted Git blob at execution")
+              try:
+                  with tempfile.TemporaryFile(mode="w+b") as sealed:
+                      sealed.write(installer_bytes); sealed.flush(); sealed.seek(0); fd=sealed.fileno()
+                      command=f"source /dev/fd/{fd}"
+                      p=subprocess.run(["/bin/bash","--noprofile","--norc","-p","-c",command,str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,pass_fds=(fd,))
+              except OSError as e: raise GoError("private installer execution failed") from e
+              if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
+              return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
+          '''.replace('              ', '    ')
+          if source.count(old_installer) != 1:
+              raise SystemExit('issuer installer anchor drifted')
+          source = source.replace(old_installer, new_installer, 1)
+          source_path.write_text(source)
+
+          test_path = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
+          tests = test_path.read_text()
+          anchor = "if __name__=='__main__':unittest.main(verbosity=2)"
+          regression = r''' def test_installer_executes_only_reviewed_bytes_even_if_path_is_swapped(self):
+              path=self.f.repo/go.INSTALLER
+              accepted=f'#!/bin/bash\nset -euo pipefail\nPROCEDURE_ID="{go.PROC}"\nBUNDLE_ID="{go.BUNDLE}"\n# NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256\n# hmac.compare_digest(actual_digest, expected_digest)\nprintf \'SDK-INTEGRATED CAPTURE LAUNCHED\\n\'\n'
+              path.write_text(accepted)
+              subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'add',go.INSTALLER],check=True)
+              subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'commit','-qm','accepted-installer'],check=True)
+              source=subprocess.check_output(['/usr/bin/git','-C',str(self.f.repo),'rev-parse','HEAD'],text=True).strip()
+              go.candidate(self.f.repo,source)
+              backup=self.f.r/'accepted-installer.command';backup.write_text(accepted)
+              malicious=f'''#!/bin/bash
+          set -euo pipefail
+          trap '/bin/cp "{backup}" "$0"' EXIT
+          printf 'SDK-INTEGRATED CAPTURE LAUNCHED\\n'
+          '''
+              path.write_text(malicious)
+              with self.assertRaises(go.GoError):go.installer(self.f.repo,source,self.f.dev,go.device_hash(self.f.dev),'a'*64)
+          '''.replace('\n          ', '\n').rstrip() + '\n'
+          if tests.count(anchor) != 1:
+              raise SystemExit('issuer test tail anchor drifted')
+          tests = tests.replace(anchor, regression + anchor, 1)
+          test_path.write_text(tests)
+          PY
+
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py
+          git diff --check
+
+      - name: Publish clean production repair
+        shell: bash
+        env:
+          BRANCH: repair/v14-final-go-installer-execution-subject-sol
+        run: |
+          set -euo pipefail
+          parent='a1f5a90414b5ca26bdd6bebb485189b6bcbe227f'
+          rm -f scripts/ci/.installer-pin-materialize-trigger
+          git reset --soft "$parent"
+          git add -A
+          expected="$({ printf '%s\n' scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py; } | sort)"
+          actual="$(git diff --cached --name-only | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): pin Final-GO installer execution bytes'
+          git push --force-with-lease origin "HEAD:$BRANCH"
