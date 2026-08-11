@@ -84,7 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           git rm .github/workflows/tmp-v14-private-bootstrap-explicit-root-materialize.yml
-          changed="$(git diff --name-only | LC_ALL=C sort)"
+          changed="$(git diff HEAD --name-only | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             '.github/workflows/tmp-v14-private-bootstrap-explicit-root-materialize.yml' \
             'Scripts/bootstrap_capture_tuya_sdk.sh' | LC_ALL=C sort)"
