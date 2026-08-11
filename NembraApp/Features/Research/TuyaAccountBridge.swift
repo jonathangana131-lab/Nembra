@@ -353,7 +353,7 @@ final class TuyaAccountBridge: ObservableObject {
                   qrToken == token,
                   session == nil else { return }
             phase = .failed
-            statusMessage = "Tuya approval timed out. Tap Try again to make a fresh QR."
+            statusMessage = "Tuya approval timed out. Reset the account link, then create a fresh QR."
         }
     }
 
@@ -428,7 +428,7 @@ final class TuyaAccountBridge: ObservableObject {
                   session == nil else { return }
             if approvalSucceeded {
                 phase = .failed
-                statusMessage = "Tuya approved, but the account session was rejected: \(Self.readable(error)) Tap Try again to make a fresh QR."
+                statusMessage = "Tuya approved, but the account session was rejected: \(Self.readable(error)) Reset the account link, then create a fresh QR."
                 pollTask?.cancel()
                 pollTask = nil
             } else if phase == .waitingForApproval {
