@@ -100,9 +100,17 @@ class CaptureFieldInstallerGitAuthorityRedTeamTests(unittest.TestCase):
     def test_physical_tool_execution_ignores_caller_path(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
         self.assertTrue(source.startswith("#!/bin/bash -p\n"))
-        self.assertIn('PATH="/usr/bin:/bin:/usr/sbin:/sbin"', source)
+        path_fence = 'PATH="/usr/bin:/bin:/usr/sbin:/sbin"'
+        environment_fence = "unset BASH_ENV ENV CDPATH"
+        root_derivation = 'ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"'
+        self.assertIn(path_fence, source)
         self.assertIn("export PATH", source)
-        self.assertIn("unset BASH_ENV ENV CDPATH", source)
+        self.assertIn(environment_fence, source)
+        self.assertIn(root_derivation, source)
+        self.assertLess(source.index(path_fence), source.index(root_derivation))
+        self.assertLess(source.index("export PATH"), source.index(root_derivation))
+        self.assertLess(source.index(environment_fence), source.index(root_derivation))
+        self.assertLess(source.index("hash -r"), source.index(root_derivation))
         self.assertNotIn("command -v pod", source)
         self.assertIn("[[ -x /usr/bin/xcodebuild ]]", source)
         self.assertIn("[[ -x /usr/bin/xcrun ]]", source)
