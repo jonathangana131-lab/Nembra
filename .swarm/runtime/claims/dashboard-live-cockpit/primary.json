@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1611dn",
   "leaseId": "dashboard-primary-1611dn-20260811-2320",
   "generation": 4,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:20:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:44:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:51:00Z",
+  "releasedAt": "2026-08-11T23:51:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-connection-sol-1611dn",
   "pr": 3117,
@@ -17,10 +18,11 @@
   "currentHeadSHA": "e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1",
   "takeoverFromWorkerId": "sol-20260811-c84e",
   "takeoverFromLeaseId": "dashboard-primary-c84e-20260811-2023",
-  "takeoverReason": "Generation-3 primary lease expired long before takeover (last heartbeat 2026-08-11T21:46:00Z with 2700s TTL) and worker heartbeat never advanced after boot. Exact f55 AX5 artifact 9121216069 proved the remaining blocker: Connected still rendered as Connect- / ed in stopped and riding pixels. Recover the same Dashboard lineage on a clean successor branch without overwriting the stale predecessor.",
+  "takeoverReason": "Generation-3 primary lease expired long before takeover (last heartbeat 2026-08-11T21:46:00Z with 2700s TTL) and worker heartbeat never advanced after boot. Exact f55 AX5 artifact 9121216069 proved the remaining blocker: Connected still rendered as Connect- / ed in stopped and riding pixels. Recovered the same Dashboard lineage on a clean successor branch without overwriting the stale predecessor.",
   "ownedPaths": [
     "NembraApp/Features/Dashboard/DashboardView.swift",
     "NembraUITests/NembraUITests.swift"
   ],
-  "checkpoint": "PR #3117 exact e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1 remains frozen/mergeable at one file +4/-0. Independent review generation 11 posted exact-head source clearance as review 4911631877; source clearance does not replace pixels. Surviving exact Xcode 27 run 31546215731 resolver SUCCESS; build/test/capture job 93959225474 still QUEUED, so no runtime promotion yet and no duplicate trigger. Deferred dark-landscape #2963 was preflighted against e9c: current lineage is ahead-only but capture harness gained newer AX logic on same path, so regenerate that one-file evidence delta from the accepted AX head rather than merge stale ancestry; durable comment 5260060852. Performance #3118 independently moved to c300ed2 and received refreshed source/evidence-contract review 4911647412; its exact runtime remains separate/pending. P0 Capture remains saturated/NO-GO. If #3117 AX5 pixels pass, fast-forward the Dashboard stacked product lineage to the same accepted SHA before next dark-landscape/composition rung; if pixels fail, repair same primary lineage. Simulator-only; ES80 PHYSICAL NO-GO."
+  "checkpoint": "HOT-SWAP READY. #3117 exact e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1 is frozen/mergeable, exactly one file +4/-0, with independent exact-head source review 4911631877. The narrow AX-only titleOnly repair removes decorative symbol width from accessibility connection state; parent #2991 f55 remains explicitly pixel-blocked and has durable supersession warning comment 5260094709. Surviving exact Xcode 27 run 31546215731 resolver SUCCESS; build/test/capture job 93959225474 remains QUEUED at release, so QUEUED != green and no duplicate trigger should be sent. When terminal: download retained artifact and inspect real AX5 stopped+riding pixels for full Nembra Simulator + Connected, center speed/Energy Rail separation, 2x2 >=44pt stopped controls, exact mode semantics. If pass, converge stacked Dashboard product lineage forward to the SAME accepted SHA, then regenerate deferred dark-landscape #2963 from that accepted head (preflight comment 5260060852) instead of stale ancestry. If fail, repair same lineage without shrinking Dynamic Type. Performance #3118 exact c300ed2 has refreshed source/evidence review 4911647412 but separate runtime pending. P0 Capture remains saturated and PHYSICAL NO-GO."
+  ,"releaseReason": "All safe source/review/integration work on the exact AX5 repair is complete; decisive xcode-27 runtime/pixel gate is externally queued. Release rather than strand ownership or poll meaninglessly."
 }
