@@ -307,7 +307,9 @@ struct HomeView: View {
         enabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let displayedState = available ? subtitle : "Unavailable"
+
+        return Button(action: action) {
             HStack(spacing: 11) {
                 ZStack {
                     Circle()
@@ -317,6 +319,7 @@ struct HomeView: View {
                     if pending {
                         ProgressView()
                             .controlSize(.small)
+                            .accessibilityHidden(true)
                     } else {
                         Image(systemName: icon)
                             .font(.system(size: 15, weight: .semibold))
@@ -327,7 +330,7 @@ struct HomeView: View {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    Text(available ? subtitle : "Unavailable")
+                    Text(displayedState)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
@@ -351,14 +354,8 @@ struct HomeView: View {
             !enabled
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue(actionControlAccessibilityValue(subtitle: subtitle, pending: pending, available: available))
-    }
-
-    private func actionControlAccessibilityValue(subtitle: String, pending: Bool, available: Bool) -> String {
-        if pending { return "Requesting confirmation" }
-        if !available { return "Unavailable" }
-        return subtitle
+        .accessibilityLabel("\(title), \(displayedState)")
+        .accessibilityValue(pending ? "Requesting confirmation" : "")
     }
 
     private var modeSection: some View {
