@@ -34,6 +34,7 @@ on:
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
       - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
       - scripts/ci/tests/test_tuya_account_transport_source.py
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
@@ -90,6 +91,13 @@ jobs:
           bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
           /usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+
+      - name: Validate compiler-window vnode attribute custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
 
       - name: Verify source contract
         shell: bash
@@ -154,8 +162,14 @@ jobs:
           fi
 
           grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' "$installer"
-          grep -Fq '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"' "$installer"
+          grep -Fq 'run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py"' "$installer"
+          grep -Fq '/usr/bin/env -i' "$installer"
+          grep -Fq '/usr/bin/python3 -I -B -c' "$installer"
           grep -Fq 'read_private_identifier' "$installer"
+          if grep -Fq '"$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"' "$installer"; then
+            echo 'ERROR: private intended-device reader must execute from accepted Git bytes, not a mutable worktree pathname.' >&2
+            exit 1
+          fi
           grep -Fq 'devicectl list devices --hide-headers' "$installer"
           grep -Fq '.coredevice.local' "$installer"
           grep -Fq '[[ "$DEVICE_OS_VERSION" == 27.* ]]' "$installer"
@@ -189,11 +203,13 @@ jobs:
           grep -Fq -- '--record "$TUYA_DEPENDENCY_PROVENANCE"' "$installer"
           first_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '1s/:.*//p')"
           guard_line="$(grep -nF 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \' "$installer" | sed -n '1s/:.*//p')"
+          grep -Fq -- '--accepted-source-root "$ROOT"' "$installer"
+          grep -Fq -- '--accepted-source-sha "$SOURCE_SHA"' "$installer"
           if grep -Fq '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"' "$installer"; then
             echo 'ERROR: build-window guard must execute from the exact accepted Git source subject, not a mutable worktree pathname.' >&2
             exit 1
           fi
-          build_line="$(grep -nF -- '-- xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
+          build_line="$(grep -nF -- '-- /usr/bin/xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
           second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
           test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
           test "$first_private_verify_line" -lt "$guard_line"

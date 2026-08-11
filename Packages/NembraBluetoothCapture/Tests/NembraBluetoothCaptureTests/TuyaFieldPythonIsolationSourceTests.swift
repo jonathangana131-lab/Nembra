@@ -29,8 +29,17 @@ struct TuyaFieldPythonIsolationSourceTests {
         #expect(!executablePythonLines.isEmpty)
         for line in executablePythonLines { #expect(line.contains("/usr/bin/python3 -I")) }
         #expect(!installer.contains("/usr/bin/python3 -c"))
-        #expect(installer.contains("/usr/bin/python3 -I -B - \"$PRIVATE_DEVICE_RUNNER\" \"$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE\" \"$ROOT\""))
-        #expect(!installer.contains("/usr/bin/python3 -I - \"$PRIVATE_DEVICE_RUNNER\""))
+
+        // Intended-device reader source must come from the exact accepted Git object,
+        // not from the retained compatibility pathname in the mutable checkout.
+        #expect(installer.contains("run_authority_git show \"$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py\""))
+        #expect(installer.contains("/usr/bin/env -i"))
+        #expect(installer.contains("/usr/bin/python3 -I -B -c"))
+        #expect(installer.contains("\"$PRIVATE_DEVICE_RUNNER_RELATIVE\" \"$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE\" \"$ROOT\""))
+        #expect(!installer.contains("/usr/bin/python3 -I -B - \"$PRIVATE_DEVICE_RUNNER\""))
+        #expect(!installer.contains("spec_from_file_location(\"nembra_private_device_reader\""))
+        #expect(!installer.contains("exec_module(module)"))
+
         #expect(installer.contains("DEVICE_ROWS=\"$(/usr/bin/xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c"))
         #expect(installer.contains("COREDEVICE_MATCH=\"$(printf '%s\\0%s' \"$DEVICE_UDID\" \"$COREDEVICE_ROWS\" | /usr/bin/python3 -I -c"))
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V14 expected-red attack witness for tracked checkout source during field xcodebuild."""
+"""V14 attack witness and closure regression for tracked source during field xcodebuild."""
 from __future__ import annotations
 
 import hashlib
@@ -41,7 +41,7 @@ class CaptureFieldTrackedSourceCompilerWindowRedTeamTests(unittest.TestCase):
             self.assertEqual(artifact.read_bytes(), attacker)
             self.assertNotEqual(git_blob_oid(artifact.read_bytes()), accepted_oid)
 
-    def test_current_field_build_is_endpoint_only_for_tracked_checkout_source(self) -> None:
+    def test_current_field_build_holds_tracked_checkout_source_through_guard(self) -> None:
         installer = INSTALLER.read_text(encoding="utf-8")
         guard = BUILD_GUARD.read_text(encoding="utf-8")
 
@@ -58,12 +58,16 @@ class CaptureFieldTrackedSourceCompilerWindowRedTeamTests(unittest.TestCase):
         end = installer.index('verify_private_tuya_inputs\nverify_accepted_checkout_source', start)
         build_window = installer[start:end]
         self.assertIn('run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"', build_window)
+        self.assertIn('--accepted-source-root "$ROOT"', build_window)
+        self.assertIn('--accepted-source-sha "$SOURCE_SHA"', build_window)
         self.assertIn('-workspace NembraCapture.xcworkspace', build_window)
 
-        self.assertIn("def _watch_paths(inputs: PrivateInputs)", guard)
-        self.assertIn("generated CocoaPods workspace tree", guard)
-        self.assertNotIn("accepted_source_root", guard)
-        self.assertNotIn("accepted_source_sha", guard)
+        self.assertIn("def _accepted_tracked_source_manifest", guard)
+        self.assertIn("def _verify_tracked_source_manifest", guard)
+        self.assertIn("def _tracked_source_watch_paths", guard)
+        self.assertIn("accepted_source_root", guard)
+        self.assertIn("accepted_source_sha", guard)
+        self.assertIn("KQ_NOTE_ATTRIB", guard)
 
     def test_field_build_must_hold_tracked_source_authority_across_compiler_window(self) -> None:
         """EXPECTED RED until xcodebuild cannot consume transient tracked checkout bytes."""
