@@ -1,0 +1,88 @@
+name: tmp V14 Signed Origin GID Diagnostic
+
+on:
+  push:
+    branches:
+      - research/v14-signed-origin-normalization-4f51fg
+    paths:
+      - .github/workflows/tmp-v14-signed-origin-gid-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Diagnose transient GID access semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          uid="$(id -u)"
+          gid="$(id -g)"
+          eph=61000
+          while id -G | tr ' ' '\n' | grep -Fxq "$eph"; do eph=$((eph + 1)); done
+          sudo /usr/bin/python3 - "$uid" "$gid" "$eph" <<'PY'
+          import os, shutil, stat, sys
+          from pathlib import Path
+
+          uid, normal_gid, eph = map(int, sys.argv[1:])
+          root = Path('/tmp/nembra-v14-gid-diagnostic')
+          shutil.rmtree(root, ignore_errors=True)
+          root.mkdir(mode=0o711)
+          os.chown(root, 0, 0); os.chmod(root, 0o711)
+          protected = root / 'protected'
+          protected.mkdir(mode=0o770)
+          os.chown(protected, 0, eph); os.chmod(protected, 0o770)
+
+          def child_result(target_gid: int, action: str) -> bytes:
+              r, w = os.pipe()
+              pid = os.fork()
+              if pid == 0:
+                  try:
+                      os.close(r)
+                      os.setgroups([])
+                      os.setgid(target_gid)
+                      os.setuid(uid)
+                      if action == 'write':
+                          (protected / 'Build').mkdir()
+                          payload = b'WRITE_OK'
+                      else:
+                          try:
+                              (protected / 'Build').stat()
+                          except PermissionError:
+                              payload = b'DENIED_OK'
+                          else:
+                              payload = b'UNEXPECTED_ACCESS'
+                      os.write(w, payload)
+                  except BaseException as exc:
+                      os.write(w, ('ERR:' + type(exc).__name__ + ':' + str(exc)).encode('utf-8', 'replace'))
+                  finally:
+                      os._exit(0)
+              os.close(w)
+              payload = os.read(r, 4096)
+              os.close(r)
+              os.waitpid(pid, 0)
+              return payload
+
+          builder = child_result(eph, 'write')
+          if builder != b'WRITE_OK':
+              print(f'::error title=Transient GID builder failed::{builder.decode("utf-8", "replace")}', flush=True)
+              raise SystemExit(21)
+          sibling = child_result(normal_gid, 'read')
+          if sibling != b'DENIED_OK':
+              print(f'::error title=Same-UID sibling isolation failed::{sibling.decode("utf-8", "replace")}', flush=True)
+              raise SystemExit(22)
+
+          os.chmod(protected, 0o700)
+          print(
+              f'::notice title=Transient GID isolation primitive passed::uid={uid} normal_gid={normal_gid} ephemeral_gid={eph} protected_mode=0700',
+              flush=True,
+          )
+          shutil.rmtree(root)
+          PY
