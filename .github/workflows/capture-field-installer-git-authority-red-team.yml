@@ -1,0 +1,34 @@
+name: Capture Field Installer Git Authority Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+      - .github/workflows/capture-field-installer-git-authority-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  field-installer-git-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Bind diagnostic checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+      - name: Reproduce field installer Git authority split
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
