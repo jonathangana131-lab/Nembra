@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "081330-reconcile-remaining-3f7c-2808-superseded",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Closed diagnostic-only Capture PR #2808 after its explicit recovery successor #2811 took ownership of the Range-abort repair and proved the full Capture package plus selective-graft consumer on its current lineage. #2808 changed only a diagnostic workflow and was never a product/physical authority candidate. #2811 still requires exact app/Simulator acceptance and independent review; Field Build Provenance remains separately red. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:13:30Z",
+  "data": {
+    "closedPR": 2808,
+    "successorPR": 2811,
+    "successorHeadSHA": "7728078452894ac327007ddab18a99d65c4ca3a1",
+    "packageRun": 31471913296,
+    "packageConclusion": "SUCCESS",
+    "selectiveGraftRun": 31471913342,
+    "selectiveGraftConclusion": "SUCCESS",
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
