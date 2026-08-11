@@ -36,54 +36,14 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
+          import re
+          from textwrap import dedent
 
           path = Path("scripts/field/install_one_time_capture.command")
           source = path.read_text(encoding="utf-8")
 
-          old_helper = r'''validate_root_custodied_path() {
-              local candidate="$1"
-              local expected_kind="$2"
-              /usr/bin/env -i \
-                  PATH=/usr/bin:/bin \
-                  HOME=/tmp \
-                  LANG=C \
-                  LC_ALL=C \
-                  NEMBRA_CUSTODY_PATH="$candidate" \
-                  NEMBRA_CUSTODY_KIND="$expected_kind" \
-                  /usr/bin/python3 -I - <<'PY_CUSTODY'
-          import os
-          from pathlib import Path
-          import stat
-
-          raw = os.environ.get("NEMBRA_CUSTODY_PATH", "")
-          kind = os.environ.get("NEMBRA_CUSTODY_KIND", "")
-          path = Path(raw)
-          if not raw or "\x00" in raw or not path.is_absolute():
-              raise SystemExit("selected Xcode custody requires one absolute path")
-          try:
-              resolved = path.resolve(strict=True)
-          except OSError as error:
-              raise SystemExit("selected Xcode custody path is unavailable") from error
-          if resolved != path:
-              raise SystemExit("selected Xcode custody refuses symlink/alias resolution")
-          current = Path(path.anchor)
-          for component in path.parts[1:]:
-              current = current / component
-              try:
-                  metadata = os.lstat(current)
-              except OSError as error:
-                  raise SystemExit("selected Xcode custody ancestry is unavailable") from error
-              if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-                  raise SystemExit("selected Xcode custody requires real directory ancestry")
-              if metadata.st_uid != 0 or metadata.st_mode & 0o022:
-                  raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable ancestry")
-          if kind != "directory" or not path.is_dir():
-              raise SystemExit("selected Xcode custody expected one directory")
-          PY_CUSTODY
-          }
-          '''
-
-          new_helper = r'''validate_root_custodied_path() {
+          new_helper = dedent(r'''\
+          validate_root_custodied_path() {
               local candidate="$1"
               local expected_kind="$2"
               /usr/bin/env -i \
@@ -134,26 +94,15 @@ jobs:
               raise SystemExit("selected Xcode custody expected one real regular file")
           PY_CUSTODY
           }
-          '''
+          ''')
 
-          old_selection = r'''SELECTED_DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"
-          [[ -n "$SELECTED_DEVELOPER_DIR" ]] || die "Could not resolve the system-selected Xcode developer directory."
-          readonly SELECTED_DEVELOPER_DIR
-          [[ "$SELECTED_DEVELOPER_DIR" == /* ]] || die "System-selected Xcode developer directory is not absolute."
-          validate_root_custodied_path "$SELECTED_DEVELOPER_DIR" directory || die "System-selected Xcode developer tree is not under trusted root custody."
-          SELECTED_XCODE_VERSION="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcodebuild -version 2>/dev/null)" || die "Could not interrogate the selected Xcode toolchain."
-          SELECTED_XCODE_FIRST_LINE="${SELECTED_XCODE_VERSION%%$'\n'*}"
-          [[ "$SELECTED_XCODE_FIRST_LINE" =~ ^Xcode[[:space:]]27([.]|$) ]] || die "Selected developer tree must identify as Xcode 27 before physical device discovery or build admission."
-          SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)" || die "Could not resolve xcodebuild from the selected Xcode 27 developer tree."
-          readonly SELECTED_XCODEBUILD
-          [[ "$SELECTED_XCODEBUILD" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected xcodebuild escaped the admitted Xcode developer tree."
-          validate_root_custodied_path "$(dirname "$SELECTED_XCODEBUILD")" directory || die "Selected xcodebuild parent escaped trusted root custody."
-          [[ -f "$SELECTED_XCODEBUILD" && -x "$SELECTED_XCODEBUILD" && ! -L "$SELECTED_XCODEBUILD" ]] || die "Selected xcodebuild is not one real executable under the admitted Xcode tree."
-          say "Selected Xcode 27 developer tree admitted under root custody"
-          unset SELECTED_XCODE_VERSION SELECTED_XCODE_FIRST_LINE || true
-          '''
+          helper_pattern = re.compile(r'(?ms)^validate_root_custodied_path\(\) \{.*?^\}\n')
+          source, helper_count = helper_pattern.subn(new_helper, source, count=1)
+          if helper_count != 1:
+              raise SystemExit(f"materializer expected one custody helper, found {helper_count}")
 
-          new_selection = r'''SELECTED_DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"
+          new_selection = dedent(r'''\
+          SELECTED_DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"
           [[ -n "$SELECTED_DEVELOPER_DIR" ]] || die "Could not resolve the system-selected Xcode developer directory."
           readonly SELECTED_DEVELOPER_DIR
           [[ "$SELECTED_DEVELOPER_DIR" == /* ]] || die "System-selected Xcode developer directory is not absolute."
@@ -179,11 +128,16 @@ jobs:
           [[ -x "$SELECTED_DEVICECTL" ]] || die "Selected devicectl is not executable."
           say "Selected Xcode 27 developer tree and exact physical tool files admitted under root custody"
           unset SELECTED_XCODE_VERSION SELECTED_XCODE_FIRST_LINE || true
-          '''
+          ''')
+
+          selection_pattern = re.compile(
+              r'(?ms)^SELECTED_DEVELOPER_DIR="\$\(/usr/bin/xcode-select -p\)"\n.*?^unset SELECTED_XCODE_VERSION SELECTED_XCODE_FIRST_LINE \|\| true\n'
+          )
+          source, selection_count = selection_pattern.subn(new_selection, source, count=1)
+          if selection_count != 1:
+              raise SystemExit(f"materializer expected one selected-Xcode admission block, found {selection_count}")
 
           replacements = (
-              (old_helper, new_helper, "custody helper"),
-              (old_selection, new_selection, "selected Xcode tool admission"),
               ('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun xctrace list devices', '"$SELECTED_XCTRACE" list devices', "xctrace execution"),
               ('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl list devices', '"$SELECTED_DEVICECTL" list devices', "devicectl discovery execution"),
               ('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl device install app', '"$SELECTED_DEVICECTL" device install app', "devicectl install execution"),
