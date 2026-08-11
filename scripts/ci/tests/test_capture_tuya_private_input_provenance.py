@@ -85,6 +85,8 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         review_mode = 'if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then'
         required_digest = ': "${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?'
         digest_shape = '[[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]'
+        resolution_guard = '/usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD" \\\n'
+        guarded_pod_install = '     "$POD_BIN" install --repo-update'
         lock_compare = '[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]]'
         review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
         bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
@@ -94,11 +96,14 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
             review_mode,
             required_digest,
             digest_shape,
+            resolution_guard,
+            guarded_pod_install,
             lock_compare,
             review_only_stop,
         ):
             self.assertIn(required, bootstrap)
-        self.assertLess(bootstrap.index(required_digest), bootstrap.index("pod install --repo-update"))
+        self.assertLess(bootstrap.index(required_digest), bootstrap.index(resolution_guard))
+        self.assertLess(bootstrap.index(resolution_guard), bootstrap.index(guarded_pod_install))
         self.assertLess(bootstrap.index(lock_compare), bootstrap.index("NEXT BUILD RULE:"))
         self.assertIn(bootstrap_call, installer)
         self.assertIn(build_call, installer)
