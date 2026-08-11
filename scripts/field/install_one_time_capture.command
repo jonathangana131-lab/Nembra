@@ -3,6 +3,7 @@ set -euo pipefail
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 export PATH
 unset BASH_ENV ENV CDPATH || true
+unset DEVELOPER_DIR || true
 hash -r
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
