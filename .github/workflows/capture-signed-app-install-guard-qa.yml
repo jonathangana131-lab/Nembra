@@ -37,15 +37,25 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile install custody helper and tests
+      - name: Compile and syntax-check custody implementation
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -m py_compile scripts/ci/capture_signed_app_install_guard.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_install_guard.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_install_subject.py
+          bash -n scripts/field/install_one_time_capture.command
+          bash -n scripts/field/verify_install_capture_app.command
+          git diff --check
 
       - name: Exercise install-window custody adversarially
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_guard.py
+
+      - name: Require exact-source guarded installer wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_subject.py
