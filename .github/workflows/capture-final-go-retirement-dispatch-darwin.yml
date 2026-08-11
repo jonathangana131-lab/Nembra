@@ -6,9 +6,11 @@ on:
       - test/v14-final-go-retirement-darwin-r3-sol-20260811
     paths:
       - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
+      - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
   pull_request:
     paths:
       - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
+      - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
   workflow_dispatch:
 
 permissions:
@@ -31,7 +33,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact repaired production parent and one-path validation delta
+      - name: Bind exact repaired production parent and two-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -40,7 +42,10 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           test "$(git merge-base "$EXACT_PRODUCTION_PARENT" HEAD)" = "$EXACT_PRODUCTION_PARENT"
           git diff --name-only "$EXACT_PRODUCTION_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
-          printf '%s\n' .github/workflows/capture-final-go-retirement-dispatch-darwin.yml > "$RUNNER_TEMP/expected"
+          printf '%s\n' \
+            .github/workflows/capture-final-go-retirement-dispatch-darwin.yml \
+            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
           diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
