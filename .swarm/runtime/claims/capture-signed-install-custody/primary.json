@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-signed-install-custody",
+  "slot": "primary",
+  "role": "implementation",
+  "workerId": "sol-20260811-c7e19a",
+  "leaseId": "signed-install-recovery-c7e19a-20260811-0903",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T09:03:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:03:00Z",
+  "leaseSeconds": 2700,
+  "branch": "recovery/v14-capture-signed-install-clean-050cf-c7e19a",
+  "pr": null,
+  "sourceSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3",
+  "takeoverFromWorkerId": null,
+  "takeoverReason": "No swarm claim exists; legacy #2789 is stalled on bot-authored action_required exact-head runs with only worker-only ACL materializer residue preventing a clean acceptance candidate. Recover without overwriting predecessor branch."
+}
