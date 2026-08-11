@@ -18,7 +18,7 @@ class F:
  def write_review(self,**x):
   d={'id':self.rid,'node_id':'PRR_test','state':'COMMENTED','commit_id':self.s,'user':{'login':go.OWNER},'author_association':'OWNER','submitted_at':'2026-08-11T02:00:00Z','body':self.body()};d.update(x);self.map[f'/pulls/{self.pr}/reviews/{self.rid}']=d
  def get(self,p):v=self.map[p];return json.dumps(v).encode(),v
- def control(self,repo,pr,run,get):return {'authority':'nembra-authenticated-stationary-go-control-plane-v1','sourceCommitSHA':'e'*40,'prNumber':2638,'workflowRunID':900,'workflowName':go.AUTH_WORKFLOW_NAME,'workflowPath':go.AUTH_WORKFLOW_PATH,'gitBlobs':{}}
+ def control(self,repo,pr,run,get):return {'authority':'nembra-authenticated-stationary-go-control-plane-v1','sourceCommitSHA':'e'*40,'prNumber':2638,'headBranch':'control/final','state':'open','merged':False,'draft':False,'workflowRunID':900,'workflowName':go.AUTH_WORKFLOW_NAME,'workflowPath':go.AUTH_WORKFLOW_PATH,'gitBlobs':{}}
  def inst(self,repo,s,dev):return {'authority':'accepted-candidate-private-installer-execution-v1','result':'success','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'baselineDevice':go.DEVICE,'baselineProductType':go.PRODUCT,'baselineOS':'iOS 27'}
  def signed(self,repo,s,dev,install,output):return {'authority':'nembra-authenticated-stationary-retained-signed-artifact-v1','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'tuyaDependencyLockSHA256':'a'*64,'retainedIPASHA256':'b'*64,'retainedAppTreeSHA256':'c'*64,'embeddedProvisioningProfileSHA256':'d'*64,'signingTeamIdentifier':'TEAM','applicationIdentifier':'TEAM.'+go.BUNDLE,'codesignVerified':True,'intendedDeviceIncluded':True,'physicalAuthorityCreated':False}
  def build(self,**x):
@@ -76,8 +76,15 @@ class T(unittest.TestCase):
   def moving(repo,pr,run,get):
    nonlocal calls;calls+=1;x=self.f.control(repo,pr,run,get);return x if calls==1 else {**x,"sourceCommitSHA":"f"*40}
   self.no(lambda:self.f.build(control_authority=moving))
+ def test_post_install_revalidation_rejects_control_plane_pr_state_drift(self):
+  calls=0
+  def moving(repo,pr,run,get):
+   nonlocal calls;calls+=1;x=self.f.control(repo,pr,run,get);return x if calls==1 else {**x,"state":"closed","merged":True}
+  self.no(lambda:self.f.build(control_authority=moving))
  def test_post_install_revalidation_rejects_pr_artifact_review_or_device_drift(self):
   pull=f'/pulls/{self.f.pr}';review=f'/pulls/{self.f.pr}/reviews/{self.f.rid}';artifact=f'/actions/artifacts/{self.f.aid}'
+  def merge_pr(r,s,d):x=self.f.inst(r,s,d);self.f.map[pull]['state']='closed';self.f.map[pull]['merged_at']='2026-08-11T02:10:00Z';return x
+  self.no(lambda:self.f.build(run_installer=merge_pr));self.f.map[pull]['state']='open';self.f.map[pull]['merged_at']=None
   def move_pr(r,s,d):x=self.f.inst(r,s,d);self.f.map[pull]['head']['sha']='1'*40;return x
   self.no(lambda:self.f.build(run_installer=move_pr));self.f.map[pull]['head']['sha']=self.f.s
   def expire(r,s,d):x=self.f.inst(r,s,d);self.f.map[artifact]['expired']=True;return x

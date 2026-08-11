@@ -110,7 +110,7 @@ def control_plane(authority_repo:Path,pr:int,run_id:int,get=api):
     paths=("scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py",AUTH_WORKFLOW_PATH,"scripts/ci/tests/test_es80_authenticated_stationary_final_go.py")
     blobs={path:git(root,"rev-parse",f"HEAD:{path}").lower() for path in paths}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) for value in blobs.values()): raise GoError("GO control-plane Git blob identity invalid")
-    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
+    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
 
 def visual(source:str,run:int,aid:int,archive:Path,get=api):
     _,a=get(f"/actions/artifacts/{aid}"); m=DIGEST.fullmatch(a.get("digest","") if isinstance(a.get("digest"),str) else "")
@@ -211,7 +211,7 @@ def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_rep
     if not HEX64.fullmatch(signed["tuyaDependencyLockSHA256"]) or not HEX64.fullmatch(signed["retainedIPASHA256"]) or not HEX64.fullmatch(signed["retainedAppTreeSHA256"]) or not HEX64.fullmatch(signed["embeddedProvisioningProfileSHA256"]): raise GoError("retained signed artifact digest invalid")
 
     post_control=control_authority(authority_repo,authority_pr,authority_run,get); post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file); post_signed=reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)
-    stable_pr=("number","headSHA","headBranch","base")
+    stable_pr=("number","headSHA","headBranch","base","state","merged","draft")
     if post_control!=control or any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh or post_signed!=signed:
         raise GoError("GO authority changed during private install; re-run from fresh exact evidence")
     ps,ws,vs,rv,cs,dh=post_ps,post_ws,post_vs,post_rv,post_cs,post_dh
