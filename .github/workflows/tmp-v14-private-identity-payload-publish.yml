@@ -1,0 +1,60 @@
+name: TEMP Capture Private Identity Payload Publish
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-payload-publication-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-private-identity-payload-publish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-private-identity-payload-publication-sol-20260811
+          fetch-depth: 0
+      - name: Bind exact publish input
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Materialize already-proven repair
+        run: python3 scripts/tmp_v14_private_identity_payload_patch.py
+      - name: Revalidate security closure before commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          python3 Scripts/provision_capture_tuya_identity_writer.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+          python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          git diff --check
+      - name: Publish clean exact-head candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/tmp-v14-private-identity-payload-publication.yml \
+            .github/workflows/tmp-v14-private-identity-payload-diagnostic.yml \
+            .github/workflows/tmp-v14-private-identity-payload-publish.yml \
+            scripts/tmp_v14_private_identity_payload_patch.py
+          find Scripts scripts -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet && { echo 'ERROR: no clean identity publication repair delta' >&2; exit 1; }
+          git commit -m 'Capture: bind private identity payload across publication'
+          git push origin HEAD:repair/v14-private-identity-payload-publication-sol-20260811
