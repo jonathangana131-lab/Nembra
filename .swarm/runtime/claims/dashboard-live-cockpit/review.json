@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1611dn",
   "leaseId": "dashboard-review-1611dn-20260811-2312",
   "generation": 9,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:12:30Z",
-  "lastHeartbeatAt": "2026-08-11T23:12:30Z",
+  "lastHeartbeatAt": "2026-08-11T23:18:17Z",
+  "releasedAt": "2026-08-11T23:18:17Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2991,
@@ -17,6 +18,6 @@
   "currentHeadSHA": "f55f61772138dfdf271cb2952e9cf7c6b86ab050",
   "takeoverFromWorkerId": "sol-20260811-1402vo",
   "takeoverFromLeaseId": "dashboard-review-1402vo-20260811-2121",
-  "takeoverReason": "Generation-8 explicitly released after reviewing ancestor 844a144. Current PR #2991 moved to f55f61772138dfdf271cb2952e9cf7c6b86ab050, so generation-9 independently reviews the exact descendant and current exact-head evidence without duplicating active visual-review ownership.",
-  "checkpoint": "Claimed released Dashboard adversarial-review slot on exact #2991 head f55f61772138dfdf271cb2952e9cf7c6b86ab050. Reviewing the four-file diff, semantic/truth boundaries, AX layout repair, current exact-head CI, and whether prior review remains valid across the moved head. Simulator-only product authority; ES80 PHYSICAL NO-GO."
+  "takeoverReason": "Generation-8 explicitly released after reviewing ancestor 844a144. Generation-9 independently inspected current exact descendant f55f617 and its fresh runtime artifact.",
+  "checkpoint": "BLOCKING PIXEL FINDING on exact #2991 head f55f61772138dfdf271cb2952e9cf7c6b86ab050. Fresh Xcode 27/iPhone 12 run 31539532255 produced artifact 9121216069 sha256:f157143dbfb77000659c3d4bc8e4ce8c96d22dc629e7247a9ec34d4425b850c0; accepted content size is accessibility-extra-extra-extra-large and selected AX tests pass. Retained stopped and riding screenshots show Nembra Simulator fully visible but Connected still awkwardly hyphenated as Connect- / ed, so exact head is runtime-green but PRODUCT BLOCKED by its stated visual acceptance gate. Durable PR review COMMENT 4911568683 records the blocker because GitHub rejects REQUEST_CHANGES on own PR. No telemetry/command authority issue found. Simulator-only; ES80 PHYSICAL NO-GO. Next: primary owner repairs connection treatment, reruns exact-head AX5, pixel-inspects stopped+riding before acceptance."
 }
