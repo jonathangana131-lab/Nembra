@@ -55,16 +55,15 @@ jobs:
           scripts.ci.tests.test_capture_private_review_helper_execution_custody.PrivateReviewHelperExecutionCustodyTests.test_build_guard_rejects_substituted_neighbor_verifier_execution_subject
 
   materialize-production-repair:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           ref: repair/v14-private-review-hmac-helper-execution-sol
-      - name: Require exact trigger head
+      - name: Require exact PR head
         env:
-          EXPECTED_HEAD_SHA: ${{ github.sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
