@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "073000-review-result-downstream-helper-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-build-authority",
+  "message": "EXPECTED_RED_VALID on diagnostic #2809 exact d75bece39357624cf730b5c005b4217ac42d896a, parent #2805@76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab. Source review confirms current normal bootstrap executes capture_tuya_private_input_provenance.py and capture_cocoapods_generated_build_subject.py from mutable checkout pathnames, while capture_tuya_private_input_build_guard.py eagerly executes both neighbors through _load_neighbor_module at import time before its accepted private-review verifier loader. Aggregate exact run 31468539665 is expected-red and consistent with real downstream helper execution-subject defects. Do not merge #2809 alone. Expand the selected build-authority successor so every authority-bearing normal-field helper executes from one coherent externally reviewed/captured exact subject (or equally strong mechanism), replay all four #2809 invariants green, preserve #2805 package-contract fixes, then rerun field/selective-graft/Xcode gates on the unchanged head. PR review 4903900184. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:30:00Z",
+  "data": {
+    "result": "EXPECTED_RED_VALID",
+    "diagnosticPR": 2809,
+    "diagnosticHead": "d75bece39357624cf730b5c005b4217ac42d896a",
+    "parentPR": 2805,
+    "parentHead": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab",
+    "expectedRedRun": 31468539665,
+    "affectedHelpers": ["capture_tuya_private_input_provenance.py", "capture_cocoapods_generated_build_subject.py"],
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
