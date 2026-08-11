@@ -1,0 +1,54 @@
+bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+bash -n scripts/field/install_one_time_capture.command
+python compile checks
+Sorry: IndentationError: unindent does not match any outer indentation level (capture_tuya_private_input_build_guard.py, line 57)downstream authority red-team
+test_bootstrap_rejects_substituted_generated_subject_helper (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBootstrapHelperExecutionCustodyTests.test_bootstrap_rejects_substituted_generated_subject_helper) ... ok
+test_bootstrap_rejects_substituted_provenance_verifier (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBootstrapHelperExecutionCustodyTests.test_bootstrap_rejects_substituted_provenance_verifier) ... ok
+test_build_guard_does_not_execute_mutable_generated_subject_neighbor (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBuildGuardHelperExecutionCustodyTests.test_build_guard_does_not_execute_mutable_generated_subject_neighbor) ... ERROR
+test_build_guard_does_not_execute_mutable_provenance_neighbor (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBuildGuardHelperExecutionCustodyTests.test_build_guard_does_not_execute_mutable_provenance_neighbor) ... ERROR
+
+======================================================================
+ERROR: test_build_guard_does_not_execute_mutable_generated_subject_neighbor (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBuildGuardHelperExecutionCustodyTests.test_build_guard_does_not_execute_mutable_generated_subject_neighbor)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py", line 241, in test_build_guard_does_not_execute_mutable_generated_subject_neighbor
+    sentinel = self._load_guard_with_replacement(replace=GENERATED)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py", line 230, in _load_guard_with_replacement
+    load_module(scripts / GUARD.name, f"nembra_guard_downstream_{replace.stem}")
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py", line 36, in load_module
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 991, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1129, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1059, in source_to_code
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/tmp/nembra-downstream-guard-helper-3nnqpoot/Scripts/capture_tuya_private_input_build_guard.py", line 57
+    raise BuildGuardError(f"accepted authority helper is not one regular single-link file: {filename}")
+                                                                                                       ^
+IndentationError: unindent does not match any outer indentation level
+
+======================================================================
+ERROR: test_build_guard_does_not_execute_mutable_provenance_neighbor (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBuildGuardHelperExecutionCustodyTests.test_build_guard_does_not_execute_mutable_provenance_neighbor)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py", line 234, in test_build_guard_does_not_execute_mutable_provenance_neighbor
+    sentinel = self._load_guard_with_replacement(replace=PROVENANCE)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py", line 230, in _load_guard_with_replacement
+    load_module(scripts / GUARD.name, f"nembra_guard_downstream_{replace.stem}")
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py", line 36, in load_module
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 991, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1129, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1059, in source_to_code
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/tmp/nembra-downstream-guard-helper-q3hm62sb/Scripts/capture_tuya_private_input_build_guard.py", line 57
+    raise BuildGuardError(f"accepted authority helper is not one regular single-link file: {filename}")
+                                                                                                       ^
+IndentationError: unindent does not match any outer indentation level
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.591s
+
+FAILED (errors=2)
+VALIDATION_STATUS=1
