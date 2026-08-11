@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "capture-signed-install-custody",
+  "epic": "capture",
+  "title": "Capture signed-app install custody",
+  "objective": "Close the intended-device helper and protected signed-app install execution boundary, including ACL stripping/rejection and accepted-runner byte custody, then hand one clean exact descendant to flagship composition.",
+  "priority": 1,
+  "state": "BLOCKED_EXTERNAL",
+  "dependencies": [],
+  "blockers": [
+    {
+      "id": "legacy-pr-active",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Legacy signed-install repair PR #2789 is still active and must finish its exact macOS/field/graft/Xcode acceptance before V15 takeover.",
+      "pr": 2789,
+      "headSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3"
+    }
+  ],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "scripts/field/install_one_time_capture.command",
+    "scripts/ci/capture_signed_app_install_custody.py",
+    "scripts/ci/es80_signed_field_artifact_private_runner.py"
+  ],
+  "adjacentWriteAreas": [
+    "scripts/ci/tests",
+    ".github/workflows"
+  ],
+  "slots": [
+    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":["SIGNING","IOS_DEVICE"]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "legacy": {
+    "primaryPR": 2789,
+    "primaryHeadSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3",
+    "lineagePRs": [2688, 2741, 2754, 2789]
+  },
+  "tags": ["capture", "p0", "signed-app", "device-install", "legacy-import"]
+}
