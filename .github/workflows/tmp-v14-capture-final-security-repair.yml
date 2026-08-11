@@ -1,0 +1,128 @@
+name: TEMP V14 Capture final security repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-final-security-repair-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply exact fail-closed repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          installer = Path('scripts/field/install_one_time_capture.command')
+          installer_text = installer.read_text()
+          old_loader = '/usr/bin/python3 -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          new_loader = '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          if installer_text.count(old_loader) != 1:
+              raise SystemExit('expected exactly one private-reader loader without -B')
+          installer.write_text(installer_text.replace(old_loader, new_loader, 1))
+
+          bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
+          bridge_text = bridge.read_text()
+          old_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\\(rawEndpoint)"
+                      guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
+                          throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
+                      }
+          '''
+          new_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpointCandidate = rawEndpoint.contains("://") ? rawEndpoint : "https://\\(rawEndpoint)"
+                      guard let endpointComponents = URLComponents(string: endpointCandidate),
+                            endpointComponents.scheme?.lowercased() == "https",
+                            let endpointHost = endpointComponents.host,
+                            !endpointHost.isEmpty,
+                            endpointComponents.user == nil,
+                            endpointComponents.password == nil,
+                            let endpointURL = endpointComponents.url else {
+                          throw BridgeError.malformed("Tuya approval returned an invalid secure account endpoint.")
+                      }
+                      let endpoint = endpointURL.absoluteString
+                      guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty else {
+                          throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
+                      }
+          '''
+          if bridge_text.count(old_endpoint) != 1:
+              raise SystemExit('expected exactly one insecure Tuya endpoint normalization block')
+          bridge_text = bridge_text.replace(old_endpoint, new_endpoint, 1)
+
+          old_signed_url = '        guard let url = components.url else { throw BridgeError.invalidURL }\n\n        var request = URLRequest(url: url)'
+          new_signed_url = '''        guard let url = components.url,
+                url.scheme?.lowercased() == "https",
+                let host = url.host,
+                !host.isEmpty else { throw BridgeError.invalidURL }
+
+              var request = URLRequest(url: url)'''
+          if bridge_text.count(old_signed_url) < 1:
+              raise SystemExit('expected signed GET URL construction guard')
+          bridge_text = bridge_text.replace(old_signed_url, new_signed_url, 1)
+          bridge.write_text(bridge_text)
+
+          test_path = Path('scripts/ci/tests/test_capture_final_field_security_contract.py')
+          test_path.write_text(r'''#!/usr/bin/env python3
+          import pathlib
+          import unittest
+
+          ROOT = pathlib.Path(__file__).resolve().parents[3]
+
+
+          class CaptureFinalFieldSecurityContractTests(unittest.TestCase):
+              def test_private_reader_loader_disables_bytecode_writes(self):
+                  text = (ROOT / "scripts/field/install_one_time_capture.command").read_text()
+                  self.assertIn('/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"', text)
+                  self.assertNotIn('/usr/bin/python3 -I - "$PRIVATE_DEVICE_RUNNER"', text)
+
+              def test_tuya_approval_endpoint_requires_https_host_without_userinfo(self):
+                  text = (ROOT / "NembraApp/Features/Research/TuyaAccountBridge.swift").read_text()
+                  self.assertNotIn('rawEndpoint.hasPrefix("http")', text)
+                  self.assertIn('endpointComponents.scheme?.lowercased() == "https"', text)
+                  self.assertIn('let endpointHost = endpointComponents.host', text)
+                  self.assertIn('endpointComponents.user == nil', text)
+                  self.assertIn('endpointComponents.password == nil', text)
+                  self.assertIn('Tuya approval returned an invalid secure account endpoint.', text)
+
+              def test_signed_api_url_is_revalidated_before_x_token_request(self):
+                  text = (ROOT / "NembraApp/Features/Research/TuyaAccountBridge.swift").read_text()
+                  signed_get = text.split('private func signedGET', 1)[1].split('private static func makeDevice', 1)[0]
+                  self.assertIn('url.scheme?.lowercased() == "https"', signed_get)
+                  self.assertIn('let host = url.host', signed_get)
+                  self.assertIn('request.setValue(value, forHTTPHeaderField: key)', signed_get)
+
+
+          if __name__ == "__main__":
+              unittest.main()
+          ''').replace('\n          ', '\n'))
+          test_path.chmod(0o755)
+          PY
+
+      - name: Run focused source-contract regression
+        run: python3 scripts/ci/tests/test_capture_final_field_security_contract.py
+
+      - name: Commit durable repair and remove temporary materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-repair'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/field/install_one_time_capture.command \
+                  NembraApp/Features/Research/TuyaAccountBridge.swift \
+                  scripts/ci/tests/test_capture_final_field_security_contract.py
+          git rm .github/workflows/tmp-v14-capture-final-security-repair.yml
+          test -z "$(git status --porcelain --untracked-files=all | grep '^??' || true)"
+          git commit -m 'fix(capture): fail close final field security gaps'
+          git push origin HEAD:agent/v14-capture-final-security-repair-sol
