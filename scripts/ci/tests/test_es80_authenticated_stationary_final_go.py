@@ -56,6 +56,10 @@ class T(unittest.TestCase):
   self.f.dev.chmod(0o644);self.no(self.f.build);self.f.dev.chmod(0o600)
   def bad(r,s,d):x=self.f.inst(r,s,d);x['bundleIdentifier']='bad';return x
   self.no(lambda:self.f.build(run_installer=bad))
+ def test_private_device_path_rejects_symlinked_parent_and_noncanonical_paths(self):
+  root=Path(self.t.name);real=root/'private';real.mkdir();dev=real/'device';dev.write_text('device-token');dev.chmod(0o600);alias=root/'alias';alias.symlink_to(real,target_is_directory=True)
+  self.no(lambda:go.device_hash(alias/'device'))
+  self.no(lambda:go.device_hash(Path('relative-device')))
  def test_installer_never_runs_before_public_visual_acceptance(self):
   calls=[]
   def run(r,s,d):calls.append(s);return self.f.inst(r,s,d)
