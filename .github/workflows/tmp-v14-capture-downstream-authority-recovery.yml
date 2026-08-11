@@ -70,12 +70,13 @@ jobs:
               print(f'::error title=Authority materializer failure::{message}')
               raise
           PY
-      - name: Normalize recovered authority loader
+      - name: Normalize recovered authority loader and fixture
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+
           path = Path('Scripts/capture_tuya_private_input_build_guard.py')
           text = path.read_text()
           start_marker = 'def _load_accepted_helper_module(filename: str, module_name: str, environment_name: str):\n'
@@ -165,6 +166,13 @@ jobs:
 
           """
           path.write_text(text[:start] + replacement + text[end:])
+
+          fixture = Path('scripts/ci/tests/test_capture_private_review_helper_execution_custody.py')
+          fixture_text = fixture.read_text()
+          stale = '(scripts / SUBJECT_HELPER.name)'
+          if fixture_text.count(stale) != 1:
+              raise SystemExit(f'expected one stale helper fixture name, found {fixture_text.count(stale)}')
+          fixture.write_text(fixture_text.replace(stale, '(scripts / GENERATED.name)', 1))
           PY
       - name: Shell syntax
         run: |
@@ -186,14 +194,7 @@ jobs:
       - name: Downstream authority red team
         run: python3 -m unittest -v scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
       - name: Existing private-review helper custody
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! output="$(python3 -m unittest -v scripts.ci.tests.test_capture_private_review_helper_execution_custody 2>&1)"; then
-            message="$(printf '%s' "$output" | tail -80 | tr '\n' '|' | sed 's/%/%25/g; s/\r/%0D/g')"
-            echo "::error title=Private-review helper custody regression::$message"
-            exit 1
-          fi
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_private_review_helper_execution_custody
       - name: Diff hygiene
         run: git diff --check
       - name: Publish clean recovery head
