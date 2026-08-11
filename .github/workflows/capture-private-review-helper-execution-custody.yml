@@ -78,74 +78,16 @@ jobs:
             scripts/ci/tests/test_capture_private_review_commitment.py \
             scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py \
             scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
-      - name: Restore read-only custody workflow and remove staging files
-        run: |
-          set -euo pipefail
-          rm -f scripts/ci/_materialize_private_review_helper_execution.py
-          rm -f .github/workflows/_materialize-private-review-helper-execution.yml
-          cat > .github/workflows/capture-private-review-helper-execution-custody.yml <<'YAML'
-          name: Capture Private Review Helper Execution Custody
-
-          on:
-            push:
-              branches:
-                - repair/v14-private-review-hmac-helper-execution-sol
-            pull_request:
-              paths:
-                - Scripts/bootstrap_capture_tuya_sdk.sh
-                - Scripts/capture_private_review_commitment.py
-                - Scripts/capture_tuya_private_input_build_guard.py
-                - scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
-                - .github/workflows/capture-private-review-helper-execution-custody.yml
-
-          permissions:
-            contents: read
-
-          jobs:
-            bootstrap-helper-execution:
-              runs-on: ubuntu-latest
-              timeout-minutes: 5
-              steps:
-                - uses: actions/checkout@v4
-                  with:
-                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
-                - name: Bind to exact checked-out head
-                  env:
-                    EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-                  run: |
-                    set -euo pipefail
-                    test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
-                - name: Reject substituted bootstrap verifier
-                  run: >-
-                    python3 -m unittest -v
-                    scripts.ci.tests.test_capture_private_review_helper_execution_custody.PrivateReviewHelperExecutionCustodyTests.test_bootstrap_rejects_substituted_verifier_execution_subject
-
-            build-guard-helper-execution:
-              runs-on: ubuntu-latest
-              timeout-minutes: 5
-              steps:
-                - uses: actions/checkout@v4
-                  with:
-                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
-                - name: Bind to exact checked-out head
-                  env:
-                    EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-                  run: |
-                    set -euo pipefail
-                    test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
-                - name: Reject substituted build-guard verifier neighbor
-                  run: >-
-                    python3 -m unittest -v
-                    scripts.ci.tests.test_capture_private_review_helper_execution_custody.PrivateReviewHelperExecutionCustodyTests.test_build_guard_rejects_substituted_neighbor_verifier_execution_subject
-          YAML
-      - name: Commit verified production repair
+      - name: Commit only verified production and acceptance files
         run: |
           set -euo pipefail
           git config user.name 'nembra-go-materializer'
           git config user.email 'nembra-go-materializer@users.noreply.github.com'
-          git add -A
+          git add -- \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_review_commitment.py \
+            scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
           git diff --cached --check
           git commit -m 'fix(capture): pin private-review verifier execution bytes'
           git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
