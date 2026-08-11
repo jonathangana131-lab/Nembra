@@ -9,15 +9,15 @@
   "generation": 9,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:57:10Z",
-  "lastHeartbeatAt": "2026-08-11T21:57:10Z",
+  "lastHeartbeatAt": "2026-08-11T21:59:20Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-private-captured-provenance-swift-contract-gpt56-sol-20260811",
-  "pr": null,
+  "pr": 3068,
   "sourceSHA": "2fe097af9c625ea0abbdb89372f95c8b8acc78fb",
-  "currentHeadSHA": "2fe097af9c625ea0abbdb89372f95c8b8acc78fb",
+  "currentHeadSHA": "818533c3a2b4642a15a752a561bedf08350eac4d",
   "parentPR": 3026,
   "ownedPaths": ["Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift"],
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
-  "takeoverReason": "Generation-8 tests claim is explicitly RELEASED. Recover the free tests slot against exact-current #3026 after Main Selective Graft run 31539286682 went terminal red. Source inspection found the Swift package contract still requires direct mutable provenance-helper pathname execution even though #3026 intentionally replaced it with captured accepted bytes. Repair validation only; do not touch active production/review paths. PHYSICAL NO-GO.",
-  "checkpoint": "Claimed exact #3026@2fe097af for a one-file Swift source-contract correction. Preserve the captured adapter/provenance execution authority: require captured provenance source plus python -I -c execution and explicitly forbid direct $PROVENANCE_HELPER snapshot pathname execution. Re-run exact package/Main gates; queued/skipped never count."
+  "takeoverReason": "Generation-8 tests claim was explicitly RELEASED. Recovered the free tests slot against exact-current #3026 after Main Selective Graft run 31539286682 went terminal red. Source inspection found the Swift package contract still required direct mutable provenance-helper pathname execution even though #3026 intentionally replaced it with captured accepted bytes. Validation only; active production/review paths untouched. PHYSICAL NO-GO.",
+  "checkpoint": "Published validation-only PR #3068 exact 818533c3 as a one-file child of #3026 exact 2fe097af (+4/-1). Swift package contract now requires provenance Git-blob identity, complete PROVENANCE_CAPTURE, isolated python -I -c $PROVENANCE_SOURCE snapshot execution, and rejects direct $PROVENANCE_HELPER pathname snapshot. Await exact-head package/Main evidence; queued/skipped never count. PHYSICAL NO-GO."
 }
