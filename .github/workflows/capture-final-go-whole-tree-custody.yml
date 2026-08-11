@@ -63,5 +63,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
           git diff --check
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
