@@ -34,6 +34,7 @@ on:
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
       - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
       - scripts/ci/tests/test_tuya_account_transport_source.py
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-field-build-provenance.yml
@@ -90,6 +91,13 @@ jobs:
           bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
           /usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+
+      - name: Validate compiler-window vnode attribute custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
 
       - name: Verify source contract
         shell: bash
