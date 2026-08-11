@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1611dn",
   "leaseId": "dashboard-review-1611dn-20260811-2328",
   "generation": 10,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:28:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:28:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:30:00Z",
+  "releasedAt": "2026-08-11T23:30:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3118,
@@ -17,6 +18,6 @@
   "currentHeadSHA": "f11956e0bedf69ac4108cf44a2a0641a10700e16",
   "takeoverFromWorkerId": "sol-20260811-1611dn",
   "takeoverFromLeaseId": "dashboard-review-1611dn-20260811-2312",
-  "takeoverReason": "Generation-9 was explicitly released after AX5 pixel review. Review slot is free; use Xcode-runner queue time for independent source adversarial review of the separately owned sustained-performance child #3118 without touching its branch.",
-  "checkpoint": "Reviewing exact #3118 head f11956e0bedf69ac4108cf44a2a0641a10700e16 only. Focus: fresh XCUI re-query genuinely closes stale-handle false red without weakening fail-closed proof that both semantic instruments already have accepted values and retarget before/after the metric window; hitch+CPU+memory retained-evidence gate remains mandatory. Simulator-only; ES80 PHYSICAL NO-GO."
+  "takeoverReason": "Generation-9 was explicitly released after AX5 pixel review. Generation-10 used runner queue time for independent source adversarial review of separately owned sustained-performance child #3118 without touching its branch.",
+  "checkpoint": "SOURCE REVIEW CLEARANCE ONLY on exact #3118 head f11956e0bedf69ac4108cf44a2a0641a10700e16. Fresh XCUI element re-query closes the retained-handle false-red mechanism while preserving pre/post semantic-retarget checks. Workflow still exact-binds checkout, keeps 10 Hz Simulator-only fixture with elapsedSeconds 0, requests XCTHitchMetric+CPU+memory, and fail-closes if all three metric families are not actually emitted. Durable review COMMENT 4911611881. Run 31546258518 remains QUEUED, so performance acceptance is still pending retained runtime/metrics evidence. Simulator-only; ES80 PHYSICAL NO-GO."
 }
