@@ -497,6 +497,8 @@ say "Building SDK-integrated Nembra Capture for the intended iPhone"
 # Keep macOS vnode custody armed for every admitted private file/directory across
 # the complete compiler/linker window, then retain the cryptographic verify below.
 run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \
+    --accepted-source-root "$ROOT" \
+    --accepted-source-sha "$SOURCE_SHA" \
     --lockfile "$ROOT/Podfile.lock" \
     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
     --security-build "$TUYA_PRIVATE_SDK/Build" \
