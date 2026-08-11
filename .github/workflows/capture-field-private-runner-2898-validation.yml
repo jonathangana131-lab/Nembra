@@ -1,0 +1,37 @@
+name: Capture Field Private Runner 2898 Validation
+
+on:
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_private_runner_execution_authority_2898.py
+      - .github/workflows/capture-field-private-runner-2898-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-accepted-runner-execution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Bind exact validation checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Replay mutable-path attack against accepted-byte repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_private_runner_execution_authority_2898.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_private_runner_execution_authority_2898.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
