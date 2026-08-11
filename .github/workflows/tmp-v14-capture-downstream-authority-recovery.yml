@@ -31,7 +31,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           workflow_path = Path('.github/workflows/capture-authority-chain-materialize.yml')
           lines = workflow_path.read_text().splitlines()
           marker = "          python3 - <<'PY'"
@@ -65,27 +64,31 @@ jobs:
               raise SystemExit('recovery replace_once definition is not unique')
           payload = payload.replace(old_helper, new_helper, 1)
           try:
-              code = compile(payload, '<capture-authority-materializer>', 'exec')
-              exec(code, {})
+              exec(compile(payload, '<capture-authority-materializer>', 'exec'), {})
           except BaseException as error:
               message = f'{type(error).__name__}: {error}'.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print(f'::error title=Authority materializer failure::{message}')
               raise
           PY
-      - name: Validate materialized production repair
-        shell: bash
+      - name: Shell syntax
         run: |
           set -euo pipefail
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n scripts/field/install_one_time_capture.command
+      - name: Python syntax
+        run: |
+          set -euo pipefail
           python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
           python3 -m py_compile scripts/ci/tests/test_capture_private_review_commitment.py
           python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
           python3 -m py_compile scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
-          python3 -m unittest -v scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
-          python3 -m unittest -v scripts.ci.tests.test_capture_private_review_helper_execution_custody
-          git diff --check
+      - name: Downstream authority red team
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
+      - name: Existing private-review helper custody
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_private_review_helper_execution_custody
+      - name: Diff hygiene
+        run: git diff --check
       - name: Publish clean recovery head
         shell: bash
         run: |
