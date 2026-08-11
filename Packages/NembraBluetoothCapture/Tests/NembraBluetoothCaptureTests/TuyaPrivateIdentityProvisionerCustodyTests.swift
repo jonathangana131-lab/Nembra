@@ -179,7 +179,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"e3a123907373e10d333eb8fafda6ef1e869e1c67494513fa05ef589764f0ae44\""))
+        #expect(shell.contains("WRITER_SHA256=\"a49c6fbe38eabe4983875e2291ce97911ba82d4c4ccfe7c8d7b69ade61edeaf1\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
@@ -203,6 +203,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("_require_descriptor_payload"))
         #expect(writer.contains("_unlink_owned_relative_inode_if_named"))
         #expect(writer.contains("_require_final_relative_name_binding"))
+        #expect(writer.contains("os.path.realpath(temporary)"))
         #expect(writer.contains("private identity canonical destination no longer names the accepted sealed inode"))
         #expect(writer.contains("hashlib.sha256"))
         #expect(writer.contains("dir_fd=checkout_fd"))

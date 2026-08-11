@@ -701,7 +701,7 @@ def _self_test() -> None:
     encoded_key = base64.b64encode(b"dummy-key").decode("ascii")
     encoded_secret = base64.b64encode(b"dummy-secret").decode("ascii")
     with tempfile.TemporaryDirectory(prefix="nembra-tuya-writer-") as temporary:
-        root = Path(temporary)
+        root = Path(os.path.realpath(temporary))
         checkout = root / "repo"
         checkout.mkdir()
         checkout_fd = os.open(checkout, _directory_flags())
