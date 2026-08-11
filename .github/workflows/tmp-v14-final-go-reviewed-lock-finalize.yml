@@ -1,0 +1,131 @@
+name: TEMP V14 Final-GO Reviewed Lock Recovery Finalizer
+
+on:
+  push:
+    branches:
+      - recovery/v14-final-go-reviewed-lock-current-bcc-sol
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-final-go-reviewed-lock-current-bcc-sol
+          fetch-depth: 0
+      - name: Verify exact debug evidence parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "c85771a6fe0b591fbc17c82ce4db656b65a51af9"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-v14-final-go-reviewed-lock-finalize.yml"
+      - name: Materialize semantic three-way resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp recovery-debug/es80_authenticated_stationary_final_go.py scripts/ci/es80_authenticated_stationary_final_go.py
+          cp recovery-debug/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('recovery-debug/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').read_text()
+          conflict='''<<<<<<< current-bcc
+              def test_installer_environment_rejects_symlinked_private_device_parent(self) -> None:
+                  with tempfile.TemporaryDirectory(prefix="nembra-final-go-env-symlink-") as temporary:
+                      root = Path(temporary).resolve(strict=True)
+                      real_parent = root / "private"
+                      real_parent.mkdir()
+                      device = real_parent / "device"
+                      device.write_text("device", encoding="utf-8")
+                      device.chmod(0o600)
+                      alias = root / "alias"
+                      alias.symlink_to(real_parent, target_is_directory=True)
+                      with self.assertRaises(GO.GoError):
+                          GO.installer_environment(alias / "device")
+          =======
+              def test_noncanonical_tuya_lock_digest_is_rejected_before_installer(self) -> None:
+                  with tempfile.TemporaryDirectory(prefix="nembra-final-go-lock-shape-") as temporary:
+                      device = Path(temporary).resolve(strict=True) / "device"
+                      device.write_text("device", encoding="utf-8")
+                      device.chmod(0o600)
+                      for digest in ("A" * 64, "a" * 63, "not-a-digest"):
+                          with self.assertRaises(GO.GoError):
+                              GO.installer_environment(device, digest)
+          >>>>>>> reviewed-lock-d841'''.replace('          ','')
+          resolved='''    def test_installer_environment_rejects_symlinked_private_device_parent(self) -> None:
+                  with tempfile.TemporaryDirectory(prefix="nembra-final-go-env-symlink-") as temporary:
+                      root = Path(temporary).resolve(strict=True)
+                      real_parent = root / "private"
+                      real_parent.mkdir()
+                      device = real_parent / "device"
+                      device.write_text("device", encoding="utf-8")
+                      device.chmod(0o600)
+                      alias = root / "alias"
+                      alias.symlink_to(real_parent, target_is_directory=True)
+                      with self.assertRaises(GO.GoError):
+                          GO.installer_environment(alias / "device", "d" * 64)
+
+              def test_noncanonical_tuya_lock_digest_is_rejected_before_installer(self) -> None:
+                  with tempfile.TemporaryDirectory(prefix="nembra-final-go-lock-shape-") as temporary:
+                      device = Path(temporary).resolve(strict=True) / "device"
+                      device.write_text("device", encoding="utf-8")
+                      device.chmod(0o600)
+                      for digest in ("A" * 64, "a" * 63, "not-a-digest"):
+                          with self.assertRaises(GO.GoError):
+                              GO.installer_environment(device, digest)'''.replace('              ','')
+          if src.count(conflict) != 1:
+              raise SystemExit('localized environment-custody conflict drifted')
+          out=src.replace(conflict,resolved,1)
+          if any(marker in out for marker in ('<<<<<<<','=======','>>>>>>>')):
+              raise SystemExit('unresolved merge marker remains')
+          Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').write_text(out)
+          PY
+          rm -rf recovery-debug
+          git diff --check
+      - name: Validate complete composed control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+      - name: Prove reviewed lock and newer custody fences coexist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
+          must=(
+            'nembra-capture-human-review-github-v2',
+            'tuyaDependencyLockSHA256',
+            'NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256',
+            'acceptedTuyaDependencyLockSHA256',
+            'retained signed artifact Tuya dependency lock does not match prebuild GitHub review',
+            'mainSHA',
+            'candidate authority path has suppressed index worktree tracking',
+            'hash-object","--no-filters',
+            'BASH_ENV":"/dev/null',
+          )
+          missing=[x for x in must if x not in s]
+          if missing: raise SystemExit(f'missing authority markers: {missing}')
+          t=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').read_text()
+          for name in ('test_installer_environment_rejects_symlinked_private_device_parent','test_noncanonical_tuya_lock_digest_is_rejected_before_installer'):
+              if name not in t: raise SystemExit(f'missing composed regression: {name}')
+          PY
+      - name: Commit clean three-file recovery and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-final-go-reviewed-lock-finalize.yml
+          git config user.name "jonathangana131-lab"
+          git config user.email "jonathangana131@gmail.com"
+          git add -A
+          git commit -m "fix(capture): recover reviewed lock authority on current Final-GO"
+          test "$(git diff --name-only bccdab041235982ee95a9a4bd366d7b1ec50ccda...HEAD | sort)" = "$(printf '%s\n' 'scripts/ci/es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py' | sort)"
+          git push origin HEAD:recovery/v14-final-go-reviewed-lock-current-bcc-sol
