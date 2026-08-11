@@ -1,0 +1,185 @@
+name: Dashboard Sustained Performance
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/AppBootstrap.swift
+      - scripts/ci/dashboard_sustained_performance_xcuitest.swift
+      - .github/workflows/dashboard-sustained-performance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sustained-performance:
+    name: Exact iPhone 12 sustained cockpit metrics
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact performance head to current Dashboard product bytes
+        shell: bash
+        env:
+          DASHBOARD_PRODUCT_PARENT_SHA: c150a8287463231ee9af174c38564738bab576a3
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          git cat-file -e "${DASHBOARD_PRODUCT_PARENT_SHA}^{commit}"
+          changed_paths="$(git diff --name-only "$DASHBOARD_PRODUCT_PARENT_SHA"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/dashboard-sustained-performance.yml' \
+            'NembraApp/App/AppBootstrap.swift' \
+            'scripts/ci/dashboard_sustained_performance_xcuitest.swift' | LC_ALL=C sort)"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Dashboard sustained-performance lane has unexpected paths:\n' >&2
+            if [[ -n "$changed_paths" ]]; then
+              printf '%s\n' "$changed_paths" | /usr/bin/sed 's/^/  /' >&2
+            fi
+            exit 20
+          fi
+          git diff --check "$DASHBOARD_PRODUCT_PARENT_SHA"...HEAD
+          grep -Fq 'NEMBRA_SIMULATION_DASHBOARD_STRESS' NembraApp/App/AppBootstrap.swift
+          grep -Fq 'elapsedSeconds: 0' NembraApp/App/AppBootstrap.swift
+          grep -Fq 'XCTHitchMetric(application: app)' scripts/ci/dashboard_sustained_performance_xcuitest.swift
+          grep -Fq 'XCTCPUMetric(application: app)' scripts/ci/dashboard_sustained_performance_xcuitest.swift
+          grep -Fq 'XCTMemoryMetric(application: app)' scripts/ci/dashboard_sustained_performance_xcuitest.swift
+          printf 'NEMBRA_DASH_PERF_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+          printf 'NEMBRA_DASH_PERF_PRODUCT_PARENT=%s\n' "$DASHBOARD_PRODUCT_PARENT_SHA" >> "$GITHUB_ENV"
+
+      - name: Create exact iPhone 12 / iOS 27 performance baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$({ xcrun simctl list runtimes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=json.load(sys.stdin)["runtimes"]
+          rows=[r for r in rows if r.get("isAvailable", True) and str(r.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          if not rows: raise SystemExit(1)
+          rows.sort(key=lambda r: tuple(int(p) for p in str(r.get("version","0")).split(".") if p.isdigit()), reverse=True)
+          print(rows[0]["identifier"])
+          '; } 2>/dev/null)"
+          device_type="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
+          import json,sys
+          for row in json.load(sys.stdin)["devicetypes"]:
+              if row.get("name") == "iPhone 12":
+                  print(row["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)
+          '; } 2>/dev/null)"
+          test "$device_type" = 'com.apple.CoreSimulator.SimDeviceType.iPhone-12'
+          udid="$(xcrun simctl create "Nembra Dashboard Perf ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$device_type" "$runtime")"
+          printf 'NEMBRA_DASH_PERF_UDID=%s\n' "$udid" >> "$GITHUB_ENV"
+          printf 'NEMBRA_DASH_PERF_RUNTIME=%s\n' "$runtime" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl ui "$udid" appearance dark
+          xcrun simctl ui "$udid" content_size large
+
+      - name: Inject committed sustained-performance witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f NembraUITests/NembraUITests.swift
+          test -f scripts/ci/dashboard_sustained_performance_xcuitest.swift
+          printf '\n' >> NembraUITests/NembraUITests.swift
+          cat scripts/ci/dashboard_sustained_performance_xcuitest.swift >> NembraUITests/NembraUITests.swift
+          grep -Fq 'final class DashboardSustainedPerformanceUITests: XCTestCase' NembraUITests/NembraUITests.swift
+          git diff --check -- NembraUITests/NembraUITests.swift
+
+      - name: Measure real landscape cockpit under sustained source retargeting
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived="$RUNNER_TEMP/NembraDashboardSustainedPerfDerived"
+          result="$RUNNER_TEMP/NembraDashboardSustainedPerformance.xcresult"
+          log="$RUNNER_TEMP/NembraDashboardSustainedPerformance.log"
+          rm -rf "$derived" "$result" "$log"
+          set +e
+          set -o pipefail
+          xcodebuild test -project Nembra.xcodeproj -scheme Nembra -configuration Debug \
+            -destination "platform=iOS Simulator,id=$NEMBRA_DASH_PERF_UDID" \
+            -derivedDataPath "$derived" \
+            -resultBundlePath "$result" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 120 \
+            -collect-test-diagnostics never \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            -only-testing:NembraUITests/DashboardSustainedPerformanceUITests/testLandscapeDashboardSustainedSpeedPowerStressMetrics \
+            | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'NEMBRA_DASH_PERF_TEST_STATUS=%s\n' "$status" >> "$GITHUB_ENV"
+          exit "$status"
+
+      - name: Seal sustained-performance evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/NembraDashboardSustainedPerformanceEvidence"
+          result="$RUNNER_TEMP/NembraDashboardSustainedPerformance.xcresult"
+          mkdir -p "$evidence/attachments"
+          witness_sha="$(shasum -a 256 scripts/ci/dashboard_sustained_performance_xcuitest.swift | awk '{print $1}')"
+          cp "$RUNNER_TEMP/NembraDashboardSustainedPerformance.log" "$evidence/xcodebuild.log" 2>/dev/null || true
+          if [[ -d "$result" ]]; then
+            if ! xcrun xcresulttool export attachments --path "$result" --output-path "$evidence/attachments" > "$evidence/xcresult-attachments.log" 2>&1; then
+              printf '%s\n' 'Attachment export failed; complete xcresult is still preserved.' >> "$evidence/xcresult-attachments.log"
+            fi
+            ditto -c -k --sequesterRsrc --keepParent "$result" "$evidence/NembraDashboardSustainedPerformance.xcresult.zip"
+          fi
+          /usr/bin/python3 - "$evidence/manifest.json" "$witness_sha" <<'PY'
+          import json,os,platform,sys
+          path,witness=sys.argv[1:]
+          record={
+              "schemaVersion": 1,
+              "authority": "dashboard-sustained-performance-simulator-only",
+              "sourceCommitSHA": os.environ.get("NEMBRA_DASH_PERF_SOURCE_SHA", "unavailable"),
+              "productParentSHA": os.environ.get("NEMBRA_DASH_PERF_PRODUCT_PARENT", "c150a8287463231ee9af174c38564738bab576a3"),
+              "baselineDevice": "iPhone 12",
+              "baselineOS": "iOS 27",
+              "simulatorRuntime": os.environ.get("NEMBRA_DASH_PERF_RUNTIME", "unavailable"),
+              "hostArchitecture": platform.machine(),
+              "sourceStressCadenceHz": 10,
+              "sourceStressUpdateCount": 120,
+              "sourceStressElapsedSecondsPerUpdate": 0,
+              "requestedMetrics": ["XCTHitchMetric", "XCTCPUMetric", "XCTMemoryMetric"],
+              "metricThresholdsApplied": False,
+              "runtimeWitnessSHA256": witness,
+              "testExitStatus": os.environ.get("NEMBRA_DASH_PERF_TEST_STATUS", "unavailable"),
+              "renderFramesAreTelemetryEvidence": False,
+              "physicalAuthorityCreated": False,
+              "protocolAuthorityCreated": False,
+          }
+          with open(path,"w",encoding="utf-8") as f:
+              json.dump(record,f,indent=2,sort_keys=True); f.write("\n")
+          PY
+
+      - name: Upload sustained-performance evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-dashboard-sustained-performance-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraDashboardSustainedPerformanceEvidence
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Delete temporary Simulator
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${NEMBRA_DASH_PERF_UDID:-}" ]]; then
+            xcrun simctl shutdown "$NEMBRA_DASH_PERF_UDID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$NEMBRA_DASH_PERF_UDID" >/dev/null 2>&1 || true
+          fi
