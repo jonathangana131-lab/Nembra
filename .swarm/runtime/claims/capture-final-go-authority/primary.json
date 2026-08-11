@@ -9,9 +9,9 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:47:14Z",
-  "lastHeartbeatAt": "2026-08-11T09:47:14Z",
+  "lastHeartbeatAt": "2026-08-11T09:58:17Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-final-go-candidate-worktree-authority-sol-20260811",
-  "pr": 2873,
-  "sourceSHA": "3c8711f8520b93e2647ec9e3b52d50894193bc30"
+  "pr": 2890,
+  "sourceSHA": "778630c979cfd19fee9b8549f79eccbb58876a24"
 }
