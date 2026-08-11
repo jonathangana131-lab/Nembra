@@ -13,23 +13,23 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy Capture implementation is actively moving on PR #2805. Current head 4467bc07 only stages/triggers an authority-chain materializer; the materializer run failed before creating any job, so no production helper-custody repair is accepted yet. V15 workers must not duplicate product edits until the legacy owner hands off or becomes stale.",
+      "reason": "Legacy Capture authority work is still actively moving outside a swarm claim. PR #2805 is now at 4cc394a3bba954e1458426100e97ca4c877ed925. Clean authority successor #2825 is at 008d8cb3d782b6f112b476bca2a22aecfd7d62e5 with exact QA child #2829 at 16571ff9a69a6da727d2f65d027a60b53c7c64d3; #2829 Field Provenance and Xcode gates are queued, not green. Post-materialization closure #2830 is a separate active child at 0d59c48afc23d9109ce0f42caf53eb4d7a0e617b with no current-head workflow evidence yet. Do not duplicate product edits; reconcile the winning exact descendant after these active owners checkpoint.",
       "pr": 2805,
-      "headSHA": "4467bc0717d58be2b7e7780ed02527748325f582"
+      "headSHA": "4cc394a3bba954e1458426100e97ca4c877ed925"
     },
     {
       "id": "downstream-helper-execution",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "The co-located downstream-helper red team remains exact-head red: normal field provenance/generated-subject helper execution and build-guard neighbor execution are not yet bound to accepted captured bytes. Production repair must make those invariants green before promotion.",
-      "pr": 2805,
-      "headSHA": "4467bc0717d58be2b7e7780ed02527748325f582"
+      "reason": "The helper-execution authority family has multiple moving descendants. #2825 previously made focused private-review/downstream/CocoaPods gates green but Field Build Provenance failed a stale source contract; #2829 repairs that QA contract and is currently queued on exact head 16571ff9.... #2830 separately closes post-materialization undefined-path/fixture regressions but has no exact-head PR CI yet. No descendant is accepted until required exact-head gates are terminal green on one unchanged composed candidate.",
+      "pr": 2829,
+      "headSHA": "16571ff9a69a6da727d2f65d027a60b53c7c64d3"
     },
     {
       "id": "vnode-attribute-custody",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Selected #2805 still omits KQ_NOTE_ATTRIB from the macOS vnode build-window fence. Replay the focused #2778 repair and require its portable plus real-macOS chmod/kqueue evidence green on the moved exact head.",
+      "reason": "KQ_NOTE_ATTRIB remains absent from the macOS vnode build-window fence on current #2805 exact 4cc394a3... and #2830 exact 0d59c48a.... The focused #2778 repair is therefore still uncomposed and must remain live; require portable plus real-macOS chmod/kqueue evidence green on the eventual winning descendant.",
       "pr": 2778,
       "headSHA": "c6c611b340e3f9a30f995a5f0ee356fe6600bc48"
     }
@@ -61,9 +61,9 @@
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "primaryPR": 2805,
-    "primaryHeadSHA": "4467bc0717d58be2b7e7780ed02527748325f582",
-    "lineagePRs": [2709, 2778, 2799, 2794, 2805, 2809],
-    "knownExactHeadFinding": "At 4467bc07, focused private-review/CocoaPods gates are green, downstream-helper execution red team is FAILURE as expected, Field and Main Selective Graft are in progress, and Xcode is skipped. Commit 3020f39 staged only a materializer workflow; 4467bc07 triggered it, but workflow run 31470428052 failed with zero jobs, so the proposed production repair did not materialize. Separately #2778 KQ_NOTE_ATTRIB remains missing from current #2805 production source. Re-evaluate all exact-head gates after every move."
+    "primaryHeadSHA": "4cc394a3bba954e1458426100e97ca4c877ed925",
+    "lineagePRs": [2709,2778,2799,2794,2805,2809,2825,2829,2830],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T08:27Z: #2805 moved far beyond the imported 4467bc07 snapshot. #2825/#2829 and #2830 are concurrent authority-closure descendants, not yet one accepted exact lineage. #2829 exact 16571ff9 has Field Provenance and Xcode queued. #2830 exact 0d59c48a has no current-head workflow runs yet. Direct source inspection confirms KQ_NOTE_ATTRIB is still missing from current #2805/#2830 build guard, so #2778 remains a live required repair. Re-evaluate all exact-head gates and ancestry after every move; queued/skipped/old-head green is not acceptance."
   },
-  "tags": ["capture", "p0", "security", "build-authority", "legacy-import"]
+  "tags": ["capture","p0","security","build-authority","legacy-import"]
 }
