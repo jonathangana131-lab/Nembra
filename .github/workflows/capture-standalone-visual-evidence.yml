@@ -5,6 +5,7 @@ on:
     paths:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraApp/Features/Research/TuyaAccountBridge.swift
       - NembraCapture.xcodeproj/project.pbxproj
       - scripts/ci/capture_standalone_visual_evidence.sh
       - scripts/ci/tests/test_capture_standalone_visual_evidence.py
@@ -17,6 +18,7 @@ permissions:
 jobs:
   standalone-visual:
     name: Exact iPhone 12 standalone Capture evidence
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
     timeout-minutes: 25
     steps:
