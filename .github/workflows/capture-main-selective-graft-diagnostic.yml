@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/capture-main-selective-graft-diagnostic.yml'
       - 'Packages/NembraBluetoothCapture/**'
+      - 'Packages/NembraCore/**'
       - 'NembraCapture.xcodeproj/**'
       - 'NembraCapture-Info.plist'
       - 'NembraCapture.entitlements'
