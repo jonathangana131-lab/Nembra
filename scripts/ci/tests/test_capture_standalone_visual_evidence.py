@@ -57,6 +57,7 @@ for forbidden in [
         raise SystemExit(f"visual readiness must not be authorized by a fixed launch delay: {forbidden}")
 
 for needle in [
+    '- NembraApp/Resources/Localizable.strings',
     '- scripts/ci/capture_visual_png_content_guard.py',
     '- scripts/ci/tests/test_capture_visual_png_content_guard.py',
     '/usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py',
