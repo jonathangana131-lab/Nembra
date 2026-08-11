@@ -7,11 +7,12 @@
   "workerId": "sol-20260811-goidle",
   "leaseId": "goidle-20260811-0710",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T07:10:00Z",
-  "lastHeartbeatAt": "2026-08-11T07:18:00Z",
+  "lastHeartbeatAt": "2026-08-11T07:20:00Z",
   "leaseSeconds": 1800,
   "branch": "agent/go-worker-persistence-hardening-sol",
   "pr": 2806,
-  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc"
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "releasedAt": "2026-08-11T07:20:00Z"
 }
