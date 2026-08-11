@@ -169,6 +169,11 @@ class PrivateReviewHelperExecutionCustodyTests(unittest.TestCase):
         self.assertEqual(self.pod_counter.read_text(encoding="utf-8").splitlines(), ["pod"])
 
     def test_build_guard_rejects_substituted_neighbor_verifier_execution_subject(self) -> None:
+        guard_source = GUARD.read_text(encoding="utf-8")
+        main_source = guard_source[guard_source.index("def main("):]
+        self.assertIn("except BuildGuardError as error:", main_source)
+        self.assertNotIn("except private_review.PrivateReviewCommitmentError", main_source)
+
         with tempfile.TemporaryDirectory(prefix="nembra-private-review-guard-helper-") as temporary:
             root = Path(temporary)
             scripts = root / "Scripts"
