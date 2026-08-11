@@ -10,172 +10,27 @@ permissions:
 
 jobs:
   materialize:
-    if: github.repository == 'jonathangana131-lab/Nembra'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: repair/v14-field-prearmed-untracked-admission-sol56-20260811
-
-      - name: Materialize permanent regression and production repair
+      - name: Materialize, test, and self-delete
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "nembra-sol56"
           git config user.email "nembra-sol56@users.noreply.github.com"
-
-          # Consume the already-durable #2912 expected-red witness exactly rather
-          # than inventing a competing tests lane.
           git fetch --no-tags origin c57e9bf0a168c66075faecf007ec7d43eb6a21c5
           git checkout FETCH_HEAD -- scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("Scripts/capture_tuya_private_input_build_guard.py")
-          source = path.read_text(encoding="utf-8")
-
-          needle = '''def _verify_tracked_source_manifest(manifest: Sequence[AcceptedTrackedSource]) -> None:
-              for item in manifest:
-                  actual_oid, actual_executable = _tracked_blob_identity(item.path)
-                  if not hmac.compare_digest(actual_oid, item.expected_oid):
-                      raise BuildGuardError(f"accepted tracked source changed across xcodebuild custody: {item.path}")
-                  if actual_executable != item.expected_executable:
-                      raise BuildGuardError(f"accepted tracked source mode changed across xcodebuild custody: {item.path}")
-
-
-def _tracked_source_watch_paths(
-          '''
-          replacement = '''def _verify_tracked_source_manifest(manifest: Sequence[AcceptedTrackedSource]) -> None:
-              for item in manifest:
-                  actual_oid, actual_executable = _tracked_blob_identity(item.path)
-                  if not hmac.compare_digest(actual_oid, item.expected_oid):
-                      raise BuildGuardError(f"accepted tracked source changed across xcodebuild custody: {item.path}")
-                  if actual_executable != item.expected_executable:
-                      raise BuildGuardError(f"accepted tracked source mode changed across xcodebuild custody: {item.path}")
-
-
-def _verify_accepted_source_physical_tree(
-              manifest: Sequence[AcceptedTrackedSource], repository_root: Path
-          ) -> None:
-              """Reject pre-armed build-visible paths that are absent from the accepted Git tree.
-
-              Tracked bytes/modes are independently re-proven by the manifest verifier. This raw
-              walk closes the complementary creation-before-watch race: a same-UID actor must not
-              be able to place an untracked compiler input after the outer installer audit but
-              before vnode custody arms. The only excluded roots are the existing separately
-              authenticated field inputs; `.git` is source-authority metadata, not product input.
-              """
-
-              authority_root = _lexical_absolute(repository_root)
-              tracked: set[str] = set()
-              tracked_directories: set[str] = set()
-              for item in manifest:
-                  admitted = _require_real_checkout_ancestry(
-                      item.path,
-                      authority_root,
-                      label="accepted tracked physical-tree subject",
-                  )
-                  relative = admitted.relative_to(authority_root).as_posix()
-                  tracked.add(relative)
-                  parts = PurePosixPath(relative).parts
-                  for depth in range(1, len(parts)):
-                      tracked_directories.add(PurePosixPath(*parts[:depth]).as_posix())
-
-              allowed_roots = {"LocalSecrets", "Pods", "NembraCapture.xcworkspace"}
-              allowed_files = {"Podfile.lock"}
-              for current_raw, directories, files in os.walk(
-                  authority_root, topdown=True, followlinks=False
-              ):
-                  current = Path(current_raw)
-                  current_relative = current.relative_to(authority_root)
-                  if current_relative.parts and current_relative.parts[0] in allowed_roots:
-                      directories[:] = []
-                      continue
-
-                  if not current_relative.parts:
-                      directories[:] = [
-                          name
-                          for name in directories
-                          if name != ".git" and name not in allowed_roots
-                      ]
-
-                  for name in list(directories):
-                      candidate = current / name
-                      relative = candidate.relative_to(authority_root).as_posix()
-                      try:
-                          metadata = candidate.lstat()
-                      except OSError as error:
-                          raise BuildGuardError(
-                              f"accepted source path disappeared during physical-tree admission: {relative}"
-                          ) from error
-                      if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-                          directories.remove(name)
-                          raise BuildGuardError(
-                              f"unexpected build-visible source path before xcodebuild admission: {relative}"
-                          )
-                      if relative not in tracked_directories:
-                          directories.remove(name)
-                          raise BuildGuardError(
-                              f"untracked build-visible source path before xcodebuild admission: {relative}"
-                          )
-
-                  for name in files:
-                      candidate = current / name
-                      relative = candidate.relative_to(authority_root).as_posix()
-                      if relative in tracked or relative in allowed_files:
-                          continue
-                      raise BuildGuardError(
-                          f"untracked build-visible source path before xcodebuild admission: {relative}"
-                      )
-
-
-def _tracked_source_watch_paths(
-          '''
-          if source.count(needle) != 1:
-              raise SystemExit("expected tracked-manifest insertion point exactly once")
-          source = source.replace(needle, replacement, 1)
-
-          armed = '''        if tracked_manifest:
-              _verify_tracked_source_manifest(tracked_manifest)
-          armed_snapshot = inputs.generation_snapshot()
-          '''
-          armed_replacement = '''        if tracked_manifest:
-              _verify_tracked_source_manifest(tracked_manifest)
-              _verify_accepted_source_physical_tree(
-                  tracked_manifest, inputs.accepted_source_root  # type: ignore[arg-type]
-              )
-          armed_snapshot = inputs.generation_snapshot()
-          '''
-          if source.count(armed) != 1:
-              raise SystemExit("expected armed-admission insertion point exactly once")
-          source = source.replace(armed, armed_replacement, 1)
-
-          final = '''        if tracked_manifest:
-              _verify_tracked_source_manifest(tracked_manifest)
-          final_snapshot = inputs.generation_snapshot()
-          '''
-          final_replacement = '''        if tracked_manifest:
-              _verify_tracked_source_manifest(tracked_manifest)
-              _verify_accepted_source_physical_tree(
-                  tracked_manifest, inputs.accepted_source_root  # type: ignore[arg-type]
-              )
-          final_snapshot = inputs.generation_snapshot()
-          '''
-          if source.count(final) != 1:
-              raise SystemExit("expected final-admission insertion point exactly once")
-          source = source.replace(final, final_replacement, 1)
-
-          path.write_text(source, encoding="utf-8")
-          PY
-
+          printf '%s' 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnBhdGggPSBQYXRoKCJTY3JpcHRzL2NhcHR1cmVfdHV5YV9wcml2YXRlX2lucHV0X2J1aWxkX2d1YXJkLnB5IikKc291cmNlID0gcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKbmVlZGxlID0gJ2RlZiBfdmVyaWZ5X3RyYWNrZWRfc291cmNlX21hbmlmZXN0KG1hbmlmZXN0OiBTZXF1ZW5jZVtBY2NlcHRlZFRyYWNrZWRTb3VyY2VdKSAtPiBOb25lOlxuICAgIGZvciBpdGVtIGluIG1hbmlmZXN0OlxuICAgICAgICBhY3R1YWxfb2lkLCBhY3R1YWxfZXhlY3V0YWJsZSA9IF90cmFja2VkX2Jsb2JfaWRlbnRpdHkoaXRlbS5wYXRoKVxuICAgICAgICBpZiBub3QgaG1hYy5jb21wYXJlX2RpZ2VzdChhY3R1YWxfb2lkLCBpdGVtLmV4cGVjdGVkX29pZCk6XG4gICAgICAgICAgICByYWlzZSBCdWlsZEd1YXJkRXJyb3IoZiJhY2NlcHRlZCB0cmFja2VkIHNvdXJjZSBjaGFuZ2VkIGFjcm9zcyB4Y29kZWJ1aWxkIGN1c3RvZHk6IHtpdGVtLnBhdGh9IilcbiAgICAgICAgaWYgYWN0dWFsX2V4ZWN1dGFibGUgIT0gaXRlbS5leHBlY3RlZF9leGVjdXRhYmxlOlxuICAgICAgICAgICAgcmFpc2UgQnVpbGRHdWFyZEVycm9yKGYiYWNjZXB0ZWQgdHJhY2tlZCBzb3VyY2UgbW9kZSBjaGFuZ2VkIGFjcm9zcyB4Y29kZWJ1aWxkIGN1c3RvZHk6IHtpdGVtLnBhdGh9IilcblxuXG5kZWYgX3RyYWNrZWRfc291cmNlX3dhdGNoX3BhdGhzKFxuJwpyZXBsYWNlbWVudCA9ICdkZWYgX3ZlcmlmeV90cmFja2VkX3NvdXJjZV9tYW5pZmVzdChtYW5pZmVzdDogU2VxdWVuY2VbQWNjZXB0ZWRUcmFja2VkU291cmNlXSkgLT4gTm9uZTpcbiAgICBmb3IgaXRlbSBpbiBtYW5pZmVzdDpcbiAgICAgICAgYWN0dWFsX29pZCwgYWN0dWFsX2V4ZWN1dGFibGUgPSBfdHJhY2tlZF9ibG9iX2lkZW50aXR5KGl0ZW0ucGF0aClcbiAgICAgICAgaWYgbm90IGhtYWMuY29tcGFyZV9kaWdlc3QoYWN0dWFsX29pZCwgaXRlbS5leHBlY3RlZF9vaWQpOlxuICAgICAgICAgICAgcmFpc2UgQnVpbGRHdWFyZEVycm9yKGYiYWNjZXB0ZWQgdHJhY2tlZCBzb3VyY2UgY2hhbmdlZCBhY3Jvc3MgeGNvZGVidWlsZCBjdXN0b2R5OiB7aXRlbS5wYXRofSIpXG4gICAgICAgIGlmIGFjdHVhbF9leGVjdXRhYmxlICE9IGl0ZW0uZXhwZWN0ZWRfZXhlY3V0YWJsZTpcbiAgICAgICAgICAgIHJhaXNlIEJ1aWxkR3VhcmRFcnJvcihmImFjY2VwdGVkIHRyYWNrZWQgc291cmNlIG1vZGUgY2hhbmdlZCBhY3Jvc3MgeGNvZGVidWlsZCBjdXN0b2R5OiB7aXRlbS5wYXRofSIpXG5cblxuZGVmIF92ZXJpZnlfYWNjZXB0ZWRfc291cmNlX3BoeXNpY2FsX3RyZWUoXG4gICAgbWFuaWZlc3Q6IFNlcXVlbmNlW0FjY2VwdGVkVHJhY2tlZFNvdXJjZV0sIHJlcG9zaXRvcnlfcm9vdDogUGF0aFxuKSAtPiBOb25lOlxuICAgICIiIlJlamVjdCBwcmUtYXJtZWQgYnVpbGQtdmlzaWJsZSBwYXRocyBhYnNlbnQgZnJvbSB0aGUgYWNjZXB0ZWQgR2l0IHRyZWUuIiIiXG5cbiAgICBhdXRob3JpdHlfcm9vdCA9IF9sZXhpY2FsX2Fic29sdXRlKHJlcG9zaXRvcnlfcm9vdClcbiAgICB0cmFja2VkOiBzZXRbc3RyXSA9IHNldCgpXG4gICAgdHJhY2tlZF9kaXJlY3Rvcmllczogc2V0W3N0cl0gPSBzZXQoKVxuICAgIGZvciBpdGVtIGluIG1hbmlmZXN0OlxuICAgICAgICBhZG1pdHRlZCA9IF9yZXF1aXJlX3JlYWxfY2hlY2tvdXRfYW5jZXN0cnkoXG4gICAgICAgICAgICBpdGVtLnBhdGgsXG4gICAgICAgICAgICBhdXRob3JpdHlfcm9vdCxcbiAgICAgICAgICAgIGxhYmVsPSJhY2NlcHRlZCB0cmFja2VkIHBoeXNpY2FsLXRyZWUgc3ViamVjdCIsXG4gICAgICAgIClcbiAgICAgICAgcmVsYXRpdmUgPSBhZG1pdHRlZC5yZWxhdGl2ZV90byhhdXRob3JpdHlfcm9vdCkuYXNfcG9zaXgoKVxuICAgICAgICB0cmFja2VkLmFkZChyZWxhdGl2ZSlcbiAgICAgICAgcGFydHMgPSBQdXJlUG9zaXhQYXRoKHJlbGF0aXZlKS5wYXJ0c1xuICAgICAgICBmb3IgZGVwdGggaW4gcmFuZ2UoMSwgbGVuKHBhcnRzKSk6XG4gICAgICAgICAgICB0cmFja2VkX2RpcmVjdG9yaWVzLmFkZChQdXJlUG9zaXhQYXRoKCpwYXJ0c1s6ZGVwdGhdKS5hc19wb3NpeCgpKVxuXG4gICAgIyBUaGVzZSBhcmUgdGhlIHNhbWUgc2VwYXJhdGVseSBhdXRoZW50aWNhdGVkIGZpZWxkLWlucHV0IHJvb3RzIGFkbWl0dGVkIGJ5XG4gICAgIyB0aGUgb25lLXRpbWUgaW5zdGFsbGVyLiBUaGV5IGFyZSBub3QgYWNjZXB0ZWQgdHJhY2tlZCBzb3VyY2UuXG4gICAgYWxsb3dlZF9yb290cyA9IHsiTG9jYWxTZWNyZXRzIiwgIlBvZHMiLCAiTmVtYnJhQ2FwdHVyZS54Y3dvcmtzcGFjZSJ9XG4gICAgYWxsb3dlZF9maWxlcyA9IHsiUG9kZmlsZS5sb2NrIn1cbiAgICBmb3IgY3VycmVudF9yYXcsIGRpcmVjdG9yaWVzLCBmaWxlcyBpbiBvcy53YWxrKFxuICAgICAgICBhdXRob3JpdHlfcm9vdCwgdG9wZG93bj1UcnVlLCBmb2xsb3dsaW5rcz1GYWxzZVxuICAgICk6XG4gICAgICAgIGN1cnJlbnQgPSBQYXRoKGN1cnJlbnRfcmF3KVxuICAgICAgICBjdXJyZW50X3JlbGF0aXZlID0gY3VycmVudC5yZWxhdGl2ZV90byhhdXRob3JpdHlfcm9vdClcbiAgICAgICAgaWYgY3VycmVudF9yZWxhdGl2ZS5wYXJ0cyBhbmQgY3VycmVudF9yZWxhdGl2ZS5wYXJ0c1swXSBpbiBhbGxvd2VkX3Jvb3RzOlxuICAgICAgICAgICAgZGlyZWN0b3JpZXNbOl0gPSBbXVxuICAgICAgICAgICAgY29udGludWVcblxuICAgICAgICBpZiBub3QgY3VycmVudF9yZWxhdGl2ZS5wYXJ0czpcbiAgICAgICAgICAgIGRpcmVjdG9yaWVzWzpdID0gW1xuICAgICAgICAgICAgICAgIG5hbWVcbiAgICAgICAgICAgICAgICBmb3IgbmFtZSBpbiBkaXJlY3Rvcmllc1xuICAgICAgICAgICAgICAgIGlmIG5hbWUgIT0gIi5naXQiIGFuZCBuYW1lIG5vdCBpbiBhbGxvd2VkX3Jvb3RzXG4gICAgICAgICAgICBdXG5cbiAgICAgICAgZm9yIG5hbWUgaW4gbGlzdChkaXJlY3Rvcmllcyk6XG4gICAgICAgICAgICBjYW5kaWRhdGUgPSBjdXJyZW50IC8gbmFtZVxuICAgICAgICAgICAgcmVsYXRpdmUgPSBjYW5kaWRhdGUucmVsYXRpdmVfdG8oYXV0aG9yaXR5X3Jvb3QpLmFzX3Bvc2l4KClcbiAgICAgICAgICAgIHRyeTpcbiAgICAgICAgICAgICAgICBtZXRhZGF0YSA9IGNhbmRpZGF0ZS5sc3RhdCgpXG4gICAgICAgICAgICBleGNlcHQgT1NFcnJvciBhcyBlcnJvcjpcbiAgICAgICAgICAgICAgICByYWlzZSBCdWlsZEd1YXJkRXJyb3IoXG4gICAgICAgICAgICAgICAgICAgIGYiYWNjZXB0ZWQgc291cmNlIHBhdGggZGlzYXBwZWFyZWQgZHVyaW5nIHBoeXNpY2FsLXRyZWUgYWRtaXNzaW9uOiB7cmVsYXRpdmV9IlxuICAgICAgICAgICAgICAgICkgZnJvbSBlcnJvclxuICAgICAgICAgICAgaWYgc3RhdC5TX0lTTE5LKG1ldGFkYXRhLnN0X21vZGUpIG9yIG5vdCBzdGF0LlNfSVNESVIobWV0YWRhLnN0X21vZGUpOlxuICAgICAgICAgICAgICAgIGRpcmVjdG9yaWVzLnJlbW92ZShuYW1lKVxuICAgICAgICAgICAgICAgIHJhaXNlIEJ1aWxkR3VhcmRFcnJvcihcbiAgICAgICAgICAgICAgICAgICAgZiJ1bmV4cGVjdGVkIGJ1aWxkLXZpc2libGUgc291cmNlIHBhdGggYmVmb3JlIHhjb2RlYnVpbGQgYWRtaXNzaW9uOiB7cmVsYXRpdmV9IlxuICAgICAgICAgICAgICAgIClcbiAgICAgICAgICAgIGlmIHJlbGF0aXZlIG5vdCBpbiB0cmFja2VkX2RpcmVjdG9yaWVzOlxuICAgICAgICAgICAgICAgIGRpcmVjdG9yaWVzLnJlbW92ZShuYW1lKVxuICAgICAgICAgICAgICAgIHJhaXNlIEJ1aWxkR3VhcmRFcnJvcihcbiAgICAgICAgICAgICAgICAgICAgZiJ1bnRyYWNrZWQgYnVpbGQtdmlzaWJsZSBzb3VyY2UgcGF0aCBiZWZvcmUgeGNvZGVidWlsZCBhZG1pc3Npb246IHtyZWxhdGl2ZX0iXG4gICAgICAgICAgICAgICAgKVxuXG4gICAgICAgIGZvciBuYW1lIGluIGZpbGVzOlxuICAgICAgICAgICAgY2FuZGlkYXRlID0gY3VycmVudCAvIG5hbWVcbiAgICAgICAgICAgIHJlbGF0aXZlID0gY2FuZGlkYXRlLnJlbGF0aXZlX3RvKGF1dGhvcml0eV9yb290KS5hc19wb3NpeCgpXG4gICAgICAgICAgICBpZiByZWxhdGl2ZSBpbiB0cmFja2VkIG9yIHJlbGF0aXZlIGluIGFsbG93ZWRfZmlsZXM6XG4gICAgICAgICAgICAgICAgY29udGludWVcbiAgICAgICAgICAgIHJhaXNlIEJ1aWxkR3VhcmRFcnJvcihcbiAgICAgICAgICAgICAgICBmInVudHJhY2tlZCBidWlsZC12aXNpYmxlIHNvdXJjZSBwYXRoIGJlZm9yZSB4Y29kZWJ1aWxkIGFkbWlzc2lvbjoge3JlbGF0aXZlfSJcbiAgICAgICAgICAgIClcblxuXG5kZWYgX3RyYWNrZWRfc291cmNlX3dhdGNoX3BhdGhzKFxuJwppZiBzb3VyY2UuY291bnQobmVlZGxlKSAhPSAxOgogICAgcmFpc2UgU3lzdGVtRXhpdCgiZXhwZWN0ZWQgdHJhY2tlZC1tYW5pZmVzdCBpbnNlcnRpb24gcG9pbnQgZXhhY3RseSBvbmNlIikKc291cmNlID0gc291cmNlLnJlcGxhY2UobmVlZGxlLCByZXBsYWNlbWVudCwgMSkKYXJtZWQgPSAnICAgICAgICBpZiB0cmFja2VkX21hbmlmZXN0OlxuICAgICAgICAgICAgX3ZlcmlmeV90cmFja2VkX3NvdXJjZV9tYW5pZmVzdCh0cmFja2VkX21hbmlmZXN0KVxuICAgICAgICBhcm1lZF9zbmFwc2hvdCA9IGlucHV0cy5nZW5lcmF0aW9uX3NuYXBzaG90KClcbicKYXJtZWRfcmVwbGFjZW1lbnQgPSAnICAgICAgICBpZiB0cmFja2VkX21hbmlmZXN0OlxuICAgICAgICAgICAgX3ZlcmlmeV90cmFja2VkX3NvdXJjZV9tYW5pZmVzdCh0cmFja2VkX21hbmlmZXN0KVxuICAgICAgICAgICAgX3ZlcmlmeV9hY2NlcHRlZF9zb3VyY2VfcGh5c2ljYWxfdHJlZShcbiAgICAgICAgICAgICAgICB0cmFja2VkX21hbmlmZXN0LCBpbnB1dHMuYWNjZXB0ZWRfc291cmNlX3Jvb3QgICMgdHlwZTogaWdub3JlW2FyZy10eXBlXVxuICAgICAgICAgICAgKVxuICAgICAgICBhcm1lZF9zbmFwc2hvdCA9IGlucHV0cy5nZW5lcmF0aW9uX3NuYXBzaG90KClcbicKaWYgc291cmNlLmNvdW50KGFybWVkKSAhPSAxOgogICAgcmFpc2UgU3lzdGVtRXhpdCgiZXhwZWN0ZWQgYXJtZWQtYWRtaXNzaW9uIGluc2VydGlvbiBwb2ludCBleGFjdGx5IG9uY2UiKQpzb3VyY2UgPSBzb3VyY2UucmVwbGFjZShhcm1lZCwgYXJtZWRfcmVwbGFjZW1lbnQsIDEpCmZpbmFsID0gJyAgICAgICAgaWYgdHJhY2tlZF9tYW5pZmVzdDpcbiAgICAgICAgICAgIF92ZXJpZnlfdHJhY2tlZF9zb3VyY2VfbWFuaWZlc3QodHJhY2tlZF9tYW5pZmVzdClcbiAgICAgICAgZmluYWxfc25hcHNob3QgPSBpbnB1dHMuZ2VuZXJhdGlvbl9zbmFwc2hvdCgpXG4nCmZpbmFsX3JlcGxhY2VtZW50ID0gJyAgICAgICAgaWYgdHJhY2tlZF9tYW5pZmVzdDpcbiAgICAgICAgICAgIF92ZXJpZnlfdHJhY2tlZF9zb3VyY2VfbWFuaWZlc3QodHJhY2tlZF9tYW5pZmVzdClcbiAgICAgICAgICAgIF92ZXJpZnlfYWNjZXB0ZWRfc291cmNlX3BoeXNpY2FsX3RyZWUoXG4gICAgICAgICAgICAgICAgdHJhY2tlZF9tYW5pZmVzdCwgaW5wdXRzLmFjY2VwdGVkX3NvdXJjZV9yb290ICAjIHR5cGU6IGlnbm9yZVthcmctdHlwZV1cbiAgICAgICAgICAgIClcbiAgICAgICAgZmluYWxfc25hcHNob3QgPSBpbnB1dHMuZ2VuZXJhdGlvbl9zbmFwc2hvdCgpXG4nCmlmIHNvdXJjZS5jb3VudChmaW5hbCkgIT0gMToKICAgIHJhaXNlIFN5c3RlbUV4aXQoImV4cGVjdGVkIGZpbmFsLWFkbWlzc2lvbiBpbnNlcnRpb24gcG9pbnQgZXhhY3RseSBvbmNlIikKc291cmNlID0gc291cmNlLnJlcGxhY2UoZmluYWwsIGZpbmFsX3JlcGxhY2VtZW50LCAxKQpwYXRoLndyaXRlX3RleHQoc291cmNlLCBlbmNvZGluZz0idXRmLTgiKQo=' | base64 -d > /tmp/nembra-patch.py
+          python3 /tmp/nembra-patch.py
           python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
           python3 scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
           python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
           git diff --check
-
           rm -f .github/workflows/tmp-v14-prearmed-untracked-repair-sol56.yml
           git add -A
           git diff --cached --check
