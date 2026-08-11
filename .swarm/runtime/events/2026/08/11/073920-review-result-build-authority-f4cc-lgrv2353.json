@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "073920-review-result-build-authority-f4cc-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-build-authority",
+  "message": "NEEDS_CHANGES on #2805 exact f4cc31eb7ed2886587b1cf839a640e359ff4492c despite the standard gate recovery. Exact-head Private Review Helper Execution Custody, Private Review Commitment, CocoaPods Build Subject Authority, Field Build Provenance, and Main Selective Graft are terminal SUCCESS; fresh Xcode run 31469616054 is IN_PROGRESS. However direct compare from #2809's attacked parent 76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab to f4cc changes only three package source-contract tests, removes the unbound private_review exception handler, and extends that regression; bootstrap is unchanged. Fresh f4cc source still executes PROVENANCE_HELPER and GENERATED_BUILD_SUBJECT_HELPER by mutable checkout pathname, and build guard still eagerly executes both neighbors through spec_from_file_location/exec_module before accepted private-review verifier custody. Therefore #2809's four expected-red execution-custody invariants remain structurally applicable. Standard green cannot promote this head. Repair all authority-bearing normal-field helper execution subjects, replay #2809 green on the repaired exact head, then rerun applicable field/selective-graft/Xcode gates unchanged. PR review 4903957427. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:39:20Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "pr": 2805,
+    "headSHA": "f4cc31eb7ed2886587b1cf839a640e359ff4492c",
+    "standardGreenRuns": [31469431835,31469431910,31469431870,31469431861,31469431848],
+    "xcodeRun": 31469616054,
+    "xcodeState": "IN_PROGRESS",
+    "blockingRedTeamPR": 2809,
+    "attackedParent": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
