@@ -85,7 +85,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             os.environ["NEMBRA_TUYA_APP_KEY"] = "caller-key-must-not-cross"
             os.environ["PATH"] = "/caller/prepended/path:/usr/bin:/bin"
             try:
-                result = GO.installer(repository, source, private_device, GO.device_hash(private_device))
+                result = GO.installer(repository, source, private_device, GO.device_hash(private_device), "a" * 64)
             finally:
                 os.environ.clear()
                 os.environ.update(old)
@@ -103,12 +103,13 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             device.write_text("device", encoding="utf-8")
             device.chmod(0o600)
             digest = GO.device_hash(device)
-            env = GO.installer_environment(device, digest)
+            env = GO.installer_environment(device, digest, "a" * 64)
             self.assertEqual(env["PATH"], GO.TRUSTED_INSTALLER_PATH)
             self.assertEqual(env["BASH_ENV"], "/dev/null")
             self.assertEqual(env["ENV"], "/dev/null")
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"], str(device))
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"], digest)
+            self.assertEqual(env["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"], "a" * 64)
             forbidden = {
                 "GITHUB_TOKEN", "GH_TOKEN", "PYTHONPATH", "PYTHONHOME",
                 "NEMBRA_TUYA_APP_KEY", "NEMBRA_TUYA_APP_SECRET",
@@ -127,7 +128,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             alias = root / "alias"
             alias.symlink_to(real_parent, target_is_directory=True)
             with self.assertRaises(GO.GoError):
-                GO.installer_environment(alias / "device", "a" * 64)
+                GO.installer_environment(alias / "device", "a" * 64, "b" * 64)
 
 
 if __name__ == "__main__":
