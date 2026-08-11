@@ -6,6 +6,7 @@ on:
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
       - scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py
+      - .github/workflows/capture-private-dependency-helper-execution-closure.yml
       - .github/workflows/capture-private-current-convergence.yml
   workflow_dispatch:
 
@@ -24,7 +25,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Bind exact current parent and four-path delta
+      - name: Bind exact current parent and five-path delta
         shell: bash
         env:
           PARENT: 2fe097af9c625ea0abbdb89372f95c8b8acc78fb
@@ -37,11 +38,12 @@ jobs:
           changed_paths="$(git diff --name-only "$PARENT"...HEAD | LC_ALL=C sort)"
           expected_paths="$(printf '%s\n' \
             '.github/workflows/capture-private-current-convergence.yml' \
+            '.github/workflows/capture-private-dependency-helper-execution-closure.yml' \
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift' \
             'Scripts/bootstrap_capture_tuya_sdk.sh' \
             'scripts/ci/tests/test_capture_private_bootstrap_verified_stdin_root.py' | LC_ALL=C sort)"
           if [[ "$changed_paths" != "$expected_paths" ]]; then
-            printf 'Current private convergence must remain exactly four-path. Changed:\n' >&2
+            printf 'Current private convergence must remain exactly five-path. Changed:\n' >&2
             printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
             exit 20
           fi
@@ -72,6 +74,18 @@ jobs:
           grep -Fq 'PROVENANCE_SOURCE' \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
 
+      - name: Preserve composable helper-closure ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/capture-private-dependency-helper-execution-closure.yml
+          grep -Fq 'git merge-base --is-ancestor "$SELECTED_PARENT_SHA" "$PR_BASE_SHA"' "$workflow"
+          grep -Fq 'git merge-base --is-ancestor "$PR_BASE_SHA" HEAD' "$workflow"
+          if grep -Fq 'test "$(git rev-parse'"'"' ${{ github.event.pull_request.base.sha }}'"'"')" = "$SELECTED_PARENT_SHA"' "$workflow"; then
+            printf 'Helper closure regressed to exact-base-only and is no longer composable.\n' >&2
+            exit 22
+          fi
+
       - name: Preserve explicit source-root authority boundary
         shell: bash
         run: |
@@ -82,7 +96,7 @@ jobs:
           grep -Fq '[[ "$NEMBRA_ACCEPTED_SOURCE_ROOT" == "$PHYSICAL_CWD" ]]' Scripts/bootstrap_capture_tuya_sdk.sh
           if grep -Fq 'eval ' Scripts/bootstrap_capture_tuya_sdk.sh; then
             printf 'Bootstrap must not regain source identity through eval.\n' >&2
-            exit 22
+            exit 23
           fi
 
       - name: Diff hygiene
