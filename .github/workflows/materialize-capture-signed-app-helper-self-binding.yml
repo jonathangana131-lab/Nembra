@@ -1,0 +1,51 @@
+name: Materialize Capture Signed App Helper Self Binding
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-signed-app-install-custody-gpt56-sol
+    paths:
+      - .github/workflows/materialize-capture-signed-app-helper-self-binding.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-signed-app-install-custody-gpt56-sol
+          fetch-depth: 0
+      - name: Apply exact helper self-binding delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/materialize_capture_signed_app_helper_self_binding.py
+      - name: Validate without bytecode residue
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          test -z "$(find scripts -type d -name __pycache__ -print -quit)"
+          test ! -e .github/workflows/materialize-capture-signed-app-helper-self-binding.yml
+          test ! -e scripts/ci/materialize_capture_signed_app_helper_self_binding.py
+      - name: Commit durable hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra Capture Sol"
+          git config user.email "nembra-capture-sol@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          if git diff --cached --name-only | grep -E '(^|/)__pycache__/|\.pyc$'; then
+            echo "ERROR: bytecode residue entered the exact repair" >&2
+            exit 1
+          fi
+          git commit -m "fix(capture): bind install custody helper to accepted Git blob"
+          git push origin HEAD:repair/v14-capture-signed-app-install-custody-gpt56-sol
