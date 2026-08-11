@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "081145-reconcile-remaining-3f7c-diagnostics-prune",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Retired five stale validation/diagnostic-only Capture PRs: #2521 old dfd3 package baseline (body explicitly says retire after differential diagnosis), #2510 old provenance failure diagnostic, #2724 validation-only root/writer replay, #2763 old generated-child worktree red team now subsumed by current R3 control-worktree/Git-blob custody, and #2803 expected-red R3 parent-module execution diagnostic whose production defect is now closed on current #2775 exact b4a2172... with canonical and focused loader gates terminal SUCCESS. Unresolved red-team/control/product lanes remain open. No product bytes or physical authority changed.",
+  "createdAt": "2026-08-11T08:11:45Z",
+  "data": {
+    "closedPRs": [2510, 2521, 2724, 2763, 2803],
+    "currentR3PR": 2775,
+    "currentR3HeadSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f",
+    "currentR3CanonicalRun": 31471815137,
+    "currentR3LoaderRun": 31471815121,
+    "keptOpenUnresolved": [2798, 2809, 2812, 2820, 2821],
+    "productBytesChanged": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
