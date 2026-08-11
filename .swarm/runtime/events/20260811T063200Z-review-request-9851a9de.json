@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "063200-review-request-9851a9de",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-fix07",
+  "laneId": "swarm-control-plane-foundation",
+  "message": "Final exact-head review requested for PR #2804 at 9851a9de62cfc3a0be1fcb5014063bc52a2f84db after repair-WIP, resource-heartbeat ownership, and strict WIP-config findings were fixed; 110/110 swarm tests and the 30-worker simulation passed. Generation 8 repair ownership released; await independent review and exact-head Xcode gate before integration.",
+  "createdAt": "2026-08-11T06:32:00Z"
+}
