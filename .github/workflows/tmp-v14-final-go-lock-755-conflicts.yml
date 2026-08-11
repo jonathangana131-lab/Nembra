@@ -1,0 +1,57 @@
+name: TEMP V14 Final-GO Lock 755 Conflict Inspector
+
+on:
+  push:
+    branches:
+      - recovery/v14-final-go-reviewed-lock-current-755-sol
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-final-go-reviewed-lock-current-755-sol
+          fetch-depth: 0
+      - name: Verify exact current parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "7557c5502c25cbcd0c44984eb19e8c62145d8435"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-v14-final-go-lock-755-conflicts.yml"
+      - name: Capture deterministic merge subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=da86226ba36bb2d4f441cc3cb876244af17853cb
+          OURS=7557c5502c25cbcd0c44984eb19e8c62145d8435
+          THEIRS=d8416aeba19b826cfb50bde9e0b3e2778766a286
+          mkdir -p recovery-debug-755
+          paths=(
+            scripts/ci/es80_authenticated_stationary_final_go.py
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          )
+          for path in "${paths[@]}"; do
+            name="$(basename "$path")"
+            git show "$OURS:$path" > /tmp/ours
+            git show "$BASE:$path" > /tmp/base
+            git show "$THEIRS:$path" > /tmp/theirs
+            git merge-file -p -L current-755 -L common-da862 -L reviewed-lock-d841 /tmp/ours /tmp/base /tmp/theirs > "recovery-debug-755/$name" || true
+          done
+          grep -R -n '^<<<<<<<\|^=======\|^>>>>>>>' recovery-debug-755 > recovery-debug-755/conflict-index.txt || true
+          printf '%s\n' "THREE-WAY SUBJECTS: 7557c550 + d8416aeb over da86226b" > recovery-debug-755/README.txt
+      - name: Publish disposable merge evidence and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-final-go-lock-755-conflicts.yml
+          git config user.name "jonathangana131-lab"
+          git config user.email "jonathangana131@gmail.com"
+          git add recovery-debug-755 .github/workflows/tmp-v14-final-go-lock-755-conflicts.yml
+          git commit -m "debug(capture): retain current reviewed-lock merge evidence"
+          git push origin HEAD:recovery/v14-final-go-reviewed-lock-current-755-sol
