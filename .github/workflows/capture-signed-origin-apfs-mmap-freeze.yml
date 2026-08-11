@@ -111,12 +111,91 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          witness='scripts/ci/tests/test_capture_signed_app_apfs_mmap_freeze.py'
+          backup="$RUNNER_TEMP/nembra-apfs-mmap-witness.original.py"
           output_file="$RUNNER_TEMP/nembra-apfs-mmap-output.txt"
+          cp "$witness" "$backup"
+          restore_witness() { cp "$backup" "$witness"; }
+          trap restore_witness EXIT
+
+          # Diagnostics-only instrumentation. The committed witness remains byte-identical to #3064.
+          # If the mapped writer dies before READY, retain the exact credentials and path metadata
+          # visible to that child before its first open so fixture/credential failures are separable
+          # from filesystem-authority evidence.
+          /usr/bin/python3 -I - "$witness" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          needle = '''import mmap
+          import os
+          import sys
+
+          target = sys.argv[1]
+          fd = os.open(target, os.O_RDWR)
+          '''
+          replacement = '''import json
+          import mmap
+          import os
+          import sys
+
+          target = sys.argv[1]
+
+          def _nembra_path_state(path):
+              try:
+                  metadata = os.stat(path)
+                  return {
+                      "path": path,
+                      "uid": metadata.st_uid,
+                      "gid": metadata.st_gid,
+                      "mode": oct(metadata.st_mode & 0o7777),
+                      "readable": os.access(path, os.R_OK),
+                      "writable": os.access(path, os.W_OK),
+                      "executable": os.access(path, os.X_OK),
+                  }
+              except OSError as error:
+                  return {
+                      "path": path,
+                      "statError": type(error).__name__,
+                      "errno": error.errno,
+                      "message": str(error),
+                  }
+
+          parent = os.path.dirname(target)
+          workspace = os.path.dirname(parent)
+          print(
+              "NEMBRA_MMAP_CHILD_PREOPEN="
+              + json.dumps(
+                  {
+                      "uid": os.getuid(),
+                      "euid": os.geteuid(),
+                      "gid": os.getgid(),
+                      "egid": os.getegid(),
+                      "groups": sorted(os.getgroups()),
+                      "workspace": _nembra_path_state(workspace),
+                      "mount": _nembra_path_state(parent),
+                      "target": _nembra_path_state(target),
+                  },
+                  sort_keys=True,
+              ),
+              file=sys.stderr,
+              flush=True,
+          )
+          fd = os.open(target, os.O_RDWR)
+          '''
+          if source.count(needle) != 1:
+              raise SystemExit("diagnostic patch target is missing or ambiguous")
+          path.write_text(source.replace(needle, replacement), encoding="utf-8")
+          PY
+          /usr/bin/python3 -m py_compile "$witness"
+
           set +e
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_apfs_mmap_freeze.py \
-            >"$output_file" 2>&1
+          /usr/bin/python3 -B -I "$witness" >"$output_file" 2>&1
           rc=$?
           set -e
+          restore_witness
+          trap - EXIT
           cat "$output_file"
           if [[ "$rc" != 0 ]]; then
             diagnostic="$(tail -n 200 "$output_file" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
@@ -169,7 +248,7 @@ jobs:
 
       - name: Retain APFS mmap diagnostic
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nembra-apfs-mmap-${{ github.event.pull_request.number || github.run_id }}
           path: ${{ runner.temp }}/nembra-apfs-mmap-output.txt
