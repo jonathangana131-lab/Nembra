@@ -9,16 +9,16 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:34:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:34:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:38:00Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-runtime-voiceover-evidence-convergence-sol-gpt56-20260811",
   "pr": 3018,
   "sourceSHA": "fe6b7fce71a9cbf07586ea54df61bed650056fd9",
-  "currentHeadSHA": "7e6abf366b6e20fe9f7e7e76b7307ba4404782a0",
+  "currentHeadSHA": "8b01db75cbe37566a899e10198c4c75d1ef6e442",
   "takeoverFromWorkerId": "sol-20260811-gpt56-transcript-retention",
-  "takeoverReason": "Generation-2 runtime-accessibility claim was explicitly RELEASED after identifying #3018 as the preferred convergence carrier. Recover the free slot to rebase #3018's one-file transcript-retention delta onto live #3007 exact fe6b7fce, preserve the fail-closed VoiceOver oracle and zero-test/toolchain evidence contract, then earn fresh exact-head runtime evidence. No product or physical-authority paths are owned.",
+  "takeoverReason": "Generation-2 runtime-accessibility claim was explicitly RELEASED after identifying #3018 as the preferred convergence carrier. Recover the free slot to reconcile #3018's one-file transcript-retention delta onto live #3007 exact fe6b7fce, preserve the fail-closed VoiceOver oracle and zero-test/toolchain evidence contract, then earn fresh exact-head runtime evidence. No product or physical-authority paths are owned.",
   "ownedPaths": [
     "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
   ],
-  "checkpoint": "Live GitHub shows #3018 still based on stale #3007 ancestor 3004c6c while #3007 exact head is fe6b7fce. Reconcile by replaying only #3018's transcript-retention witness change on fe6b7fce, avoid touching Capture product/UI/BLE/signing/install paths, refresh exact-head CI, and keep PHYSICAL NO-GO."
+  "checkpoint": "#3018 was reconstructed as one clean commit 8b01db75 directly on live #3007 fe6b7fce. Fresh compare is ahead 1 / behind 0 and exactly one validation-only path (+23/-5). Strict 64-step throwing VoiceOver traversal, accessibility audit, required semantic order, and forbidden Start capture / Scan for scooter assertions are unchanged; only keep-always transcript retention and bounded 16 KiB job-log mirroring were added. Exact Capture Runtime VoiceOver run 31538706611 and Main Selective Graft 31538706568 are queued; Xcode policy skipped and is not counted. PHYSICAL NO-GO."
 }
