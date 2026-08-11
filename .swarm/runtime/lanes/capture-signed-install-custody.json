@@ -6,7 +6,7 @@
   "title": "Capture signed-app install custody",
   "objective": "Close intended-device helper and protected signed-app install execution custody, then align exact acceptance contracts with the selected protected-stage and private-log lifecycle before flagship composition.",
   "priority": 1,
-  "state": "NEEDS_CHANGES",
+  "state": "VERIFYING",
   "dependencies": [],
   "blockers": [],
   "mode": "exclusive",
@@ -27,18 +27,21 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "8dbc60e68b38c23b95a7885e262e363b786e5820",
+  "sourceSHA": "83110a6af6220355092ed730cd28892a90c72fef",
   "legacy": {
     "primaryPR": 2789,
     "selectedSecurityParentPR": 2871,
     "selectedSecurityParentHeadSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e",
     "currentQAChildPR": 2911,
     "currentQAChildLaneMetadata": "capture-signed-install-current-source-contracts",
-    "currentQAHeadSHA": "8dbc60e68b38c23b95a7885e262e363b786e5820",
+    "currentQAHeadSHA": "83110a6af6220355092ed730cd28892a90c72fef",
     "lineagePRs": [2688,2741,2754,2789,2863,2871,2911],
-    "exactHeadGateState": "QA_MAIN_GRAFT_AND_XCODE_GREEN_FIELD_CONTRACT_RED",
-    "fieldFailureRun": 31484031852,
-    "knownExactHeadFinding": "Reconciled 2026-08-11T11:54Z. #2911 exact 8dbc60e6 is the live tests-only acceptance child over selected signed-install #2871. Main Selective Graft 31484032164 and Xcode 27 31484031811 are terminal SUCCESS. Field Build Provenance 31484031852 fails only in Verify source contract because the workflow still greps for retired mktemp nembra-authenticated-capture-install.XXXXXX plus the old simple INSTALL_LOG trap. The selected installer already uses the stronger protected signed-app stage and separate unpredictable private diagnostic log; align the canonical Field workflow contract without weakening that custody, then rerun exact head. PHYSICAL NO-GO."
+    "exactHeadGateState": "FIELD_AND_MAIN_GRAFT_GREEN_XCODE_IN_PROGRESS",
+    "fieldSuccessRun": 31488849076,
+    "mainGraftSuccessRun": 31488848988,
+    "xcodeRun": 31488849061,
+    "priorFieldFailureRun": 31484031852,
+    "knownExactHeadFinding": "Reconciled 2026-08-11T12:04Z. #2911 moved to exact 83110a6af6220355092ed730cd28892a90c72fef and now repairs the canonical Field source contract while leaving production installer custody unchanged. On this exact head, Capture Field Build Provenance 31488849076 and Main Selective Graft 31488848988 are terminal SUCCESS; fresh Xcode 27 run 31488849061 remains in progress, so acceptance is not yet earned. Active tests/review/production owners are already attached; do not duplicate. If Xcode succeeds unchanged, fresh independent review still gates composition into #2871 and moved-parent exact-head acceptance. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "git-authority", "legacy-import"]
 }
