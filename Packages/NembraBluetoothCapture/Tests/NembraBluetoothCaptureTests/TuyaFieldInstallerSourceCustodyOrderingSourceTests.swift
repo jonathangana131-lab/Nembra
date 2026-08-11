@@ -41,7 +41,7 @@ struct TuyaFieldInstallerSourceCustodyOrderingSourceTests {
               let postBootstrapHead = installer.range(of: "Repository HEAD changed during private workspace bootstrap", range: bootstrap.upperBound..<installer.endIndex),
               let postBootstrapTree = installer.range(of: "Private workspace bootstrap changed tracked or unignored accepted-source inputs", range: postBootstrapHead.upperBound..<installer.endIndex),
               let baseline = installer.range(of: "say \"Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION\"", range: postBootstrapTree.upperBound..<installer.endIndex),
-              let buildStage = installer.range(of: "say \"Building SDK-integrated Nembra Capture for the intended iPhone\"", range: baseline.upperBound..<installer.endIndex),
+              let buildStage = installer.range(of: "say \"Building SDK-integrated Nembra Capture inside protected compiler-output custody\"", range: baseline.upperBound..<installer.endIndex),
               let postBuildHead = installer.range(of: "Repository HEAD changed while the accepted field build was compiling", range: buildStage.upperBound..<installer.endIndex),
               let postBuildTree = installer.range(of: "Accepted-source inputs changed while the field build was compiling", range: postBuildHead.upperBound..<installer.endIndex),
               let appReadback = installer.range(of: "APP_INFO_PLIST=\"$APP/Info.plist\"", range: postBuildTree.upperBound..<installer.endIndex),
