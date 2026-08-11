@@ -1,0 +1,50 @@
+name: Temporary Capture Accessibility Recompose
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-accessibility-recompose-sol-helper
+
+permissions:
+  contents: write
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded Dynamic Type recompose
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='e27218e7bdc04c2c37ba8460d10c7848e82bbf66'
+          git merge-base --is-ancestor "$base" HEAD
+          before="$(git diff --name-only "$base"...HEAD | sort)"
+          expected=$'.github/workflows/tmp-v14-capture-accessibility-recompose-sol.yml\nscripts/ci/tmp_v14_capture_accessibility_recompose_sol.py'
+          test "$before" = "$expected"
+
+          python3 scripts/ci/tmp_v14_capture_accessibility_recompose_sol.py
+          git diff --check
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
+
+          git rm .github/workflows/tmp-v14-capture-accessibility-recompose-sol.yml
+          git rm scripts/ci/tmp_v14_capture_accessibility_recompose_sol.py
+
+          after="$(git diff --name-only "$base" | sort)"
+          test "$after" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          grep -Fq '@Environment(\.dynamicTypeSize) private var dynamicTypeSize' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '.accessibilityIdentifier("nembra.capture.account.create-approval")' NembraApp/App/NembraCaptureEntrypoint.swift
+          if grep -Fq '.dynamicTypeSize(' NembraApp/App/NembraCaptureEntrypoint.swift; then
+            echo 'Dynamic Type cap detected; refusing product commit.' >&2
+            exit 1
+          fi
+
+          git config user.name 'nembra-v14-accessibility-sol'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m 'fix(capture): recompose account setup for large text'
+          git push origin HEAD:${GITHUB_REF_NAME}
