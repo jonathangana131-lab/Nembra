@@ -399,9 +399,26 @@ def _parse_args(
     )
 
 
+def _build_subject_from_final_go_environment(inputs: PrivateInputs) -> CocoaPodsBuildSubject:
+    expected_digest = os.environ.get(
+        "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256",
+        "",
+    ).lower()
+    if len(expected_digest) != 64 or any(character not in "0123456789abcdef" for character in expected_digest):
+        raise BuildGuardError(
+            "Final GO did not provide a valid NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 for build-window custody"
+        )
+    return CocoaPodsBuildSubject(
+        root=inputs.lockfile.parent,
+        expected_digest=expected_digest,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     inputs, build_subject, command = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
+        if build_subject is None:
+            build_subject = _build_subject_from_final_go_environment(inputs)
         return run_guarded_build(inputs, command, build_subject=build_subject)
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
