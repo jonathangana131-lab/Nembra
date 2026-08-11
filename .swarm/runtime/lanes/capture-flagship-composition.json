@@ -13,25 +13,33 @@
       "id": "physical-security-lineages-uncomposed",
       "state": "ACTIVE",
       "scope": "dependency",
-      "reason": "Final-GO software ingredient #2921 exact 471cc025 is accepted in its own lane, but build authority, private-identity custody, and signed-install custody are still independently active. In particular signed-install #2995 live a71cc55 remains blocked on the detached/open-FD writer authority question and private identity still requires #2993 + #2977 selective convergence. No app-visible head can authorize hardware until those lineages are deliberately composed and the new exact SHA re-earns every applicable gate.",
+      "reason": "The current security ingredients are still independently moving. Final-GO #3082 exact d4a44db4 has three terminal software-authority greens but its current Darwin child #3100 exact 8eec90d4 is queued. Build authority #3072 exact 3e41ecd0 has an unresolved selected-Xcode ACL red with diagnostic #3093 queued. Private convergence #3086 exact b62c59b requires the one-file #3102 source-contract correction and fresh exact gates. Signed-install #3056 exact 51b8e6b still lacks an accepted compiler-output freeze; dedicated-UID real-Xcode probe #3089 is queued. None may be inferred accepted from ancestor/child/sibling results, and none has yet been deliberately composed into one final app-visible physical-authority head.",
       "pr": null,
       "headSHA": null
     },
     {
-      "id": "standard-first-fold-successor-verification",
+      "id": "current-first-fold-evidence-hardened-human-review-boundary",
       "state": "ACTIVE",
       "scope": "product-quality",
-      "reason": "The accepted app-visible baseline remains #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27. The live density/accessibility successor is #2979 exact ce9e2bac253fedf6a61f79614519058fc6da116f, which consumes #2990's spoken-authority red-team. On ce9e2bac Main Graft 31534132595, Field Build Provenance 31534132593, and Xcode 27 31534132605 are terminal SUCCESS, while Standalone Visual 31534132613 is still queued. Do not promote the successor or its ancestor pixel evidence until exact-head visual evidence terminates and is human-reviewed.",
+      "reason": "The accepted app-visible first-fold product checkpoint is #2979 commit ce9e2bac253fedf6a61f79614519058fc6da116f, which has terminal Main/Field/Xcode/Standalone Visual success and independent human standard+Accessibility-XXXL review on retained artifact 9119075830. The same product bytes later exposed that the old visual harness could false-green a blank standard screenshot. Current #2979 head 6bb2e3cba5b2587626a184518dad09669817f43b is validation-hardened only and has terminal SUCCESS for Xcode 31539959295, Field 31539959359, Main Graft 31539959336 and hardened Standalone Visual 31539959311. Those exact current screenshots still need explicit retained-artifact human inspection before the hardened evidence instrument itself is treated as visually accepted; workflow green alone does not substitute for pixel review.",
       "pr": 2979,
-      "headSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f"
+      "headSHA": "6bb2e3cba5b2587626a184518dad09669817f43b"
     },
     {
-      "id": "runtime-voiceover-diagnostic-evidence-pending",
+      "id": "runtime-voiceover-current-exact-run-pending",
       "state": "ACTIVE",
       "scope": "accessibility",
-      "reason": "#2973 exact 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9 is terminal runtime RED, not accessibility-accepted: Main Selective Graft 31533392699 succeeded, but Capture Runtime VoiceOver 31533392572 failed with xcodebuild exit 65 after exact bind/build/iPhone 12+iOS 27 Accessibility XXXL baseline/witness injection. The same job then failed artifact upload with runner/network ENOTFOUND, so no retained xcresult/transcript exists and the direct XCTest red cannot truthfully be classified as a product semantic defect. Source review also found the strict 64-step moveForward oracle attached its speech transcript only after all moves completed. Active non-conflicting recovery #3012 exact b7c746d063bb53660c8157c652c2e64e246967b8 preserves fail-closed traversal but retains accumulated speech on every exit; its Runtime VoiceOver run 31536488987 and Main Graft 31536488971 are queued. Require #3012 exact retained runtime evidence before accessibility classification; queued is not acceptance.",
-      "pr": 3012,
-      "headSHA": "b7c746d063bb53660c8157c652c2e64e246967b8"
+      "reason": "Current runtime accessibility witness is #3073 exact dd204e1e943af853e02857db145127810791b04b. Main Selective Graft run 31542656351 is terminal SUCCESS, Xcode 31542656316 is SKIPPED, and the actual Capture Runtime VoiceOver run 31542656345 is QUEUED. This witness deliberately keeps real VoiceOver traversal strict and filters only the two exact known semantic-label .textClipped candidates at Accessibility XXXL while requiring zero filtered issues at standard size. Until the unchanged exact runtime run is terminal successful with targeted test execution and retained evidence, accessibility remains unaccepted.",
+      "pr": 3073,
+      "headSHA": "dd204e1e943af853e02857db145127810791b04b"
+    },
+    {
+      "id": "final-composed-exact-head-absent",
+      "state": "ACTIVE",
+      "scope": "flagship",
+      "reason": "No current single exact app-visible head contains all accepted Final-GO, selected-Xcode/build authority, signed compiler-output/install custody, private identity, first-fold product, and runtime accessibility results. After the independent lanes close, a deliberate minimal composition must create a new exact SHA and rerun all applicable Main, Field, Xcode, Final-GO, visual, runtime accessibility, adversarial, performance and physical procedure gates. Only that final unchanged exact build may decide GO/NO-GO.",
+      "pr": null,
+      "headSHA": null
     }
   ],
   "mode": "exclusive",
@@ -45,40 +53,35 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+  "sourceSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
   "legacy": {
-    "acceptedAppVisibleBaselinePR": 2940,
-    "acceptedAppVisibleBaselineHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-    "candidateAppVisibleSuccessorPR": 2979,
-    "candidateAppVisibleSuccessorHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
-    "candidateSuccessorRuns": {
-      "mainGraft": 31534132595,
-      "field": 31534132593,
-      "standaloneVisual": 31534132613,
-      "xcode": 31534132605
+    "reconciledAt": "2026-08-11T23:17:38Z",
+    "acceptedAppVisibleProductCheckpointPR": 2979,
+    "acceptedAppVisibleProductCheckpointSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
+    "acceptedProductVisualArtifact": 9119075830,
+    "currentVisualEvidenceHardenedPR": 2979,
+    "currentVisualEvidenceHardenedHeadSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
+    "currentVisualEvidenceHardenedRuns": {
+      "mainGraft": 31539959336,
+      "field": 31539959359,
+      "standaloneVisual": 31539959311,
+      "xcode": 31539959295
     },
-    "candidateSuccessorGateState": "SOFTWARE_GREEN_VISUAL_QUEUED",
-    "runtimeVoiceOverFailedPR": 2973,
-    "runtimeVoiceOverFailedHeadSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
-    "runtimeVoiceOverFailedRun": 31533392572,
-    "runtimeVoiceOverMainGraftRun": 31533392699,
-    "runtimeVoiceOverFailureClass": "UNRESOLVED_XCTEST_RED_PLUS_ARTIFACT_UPLOAD_INFRA_FAILURE",
-    "runtimeVoiceOverRecoveryPR": 3012,
-    "runtimeVoiceOverRecoveryHeadSHA": "b7c746d063bb53660c8157c652c2e64e246967b8",
-    "runtimeVoiceOverRecoveryRun": 31536488987,
-    "runtimeVoiceOverRecoveryMainGraftRun": 31536488971,
-    "runtimeVoiceOverGateState": "DIAGNOSTIC_EVIDENCE_PENDING",
-    "previousAcceptedAppVisibleBaselinePR": 2612,
-    "previousAcceptedAppVisibleBaselineHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
-    "supersededVisualPRs": [2612, 2841, 2891],
-    "acceptedBaselineRuns": {"mainGraft": 31490540822, "field": 31490540890, "standaloneVisual": 31490540910, "xcode": 31490540888},
-    "acceptedBaselineVisualArtifact": {
-      "id": 9101029285,
-      "standardPixelReview": "PASS_TARGETED_AX_REPAIR",
-      "accessibilityXXXLReview": "PASS"
-    },
+    "runtimeAccessibilityPR": 3073,
+    "runtimeAccessibilityHeadSHA": "dd204e1e943af853e02857db145127810791b04b",
+    "runtimeAccessibilityMainSuccessRun": 31542656351,
+    "runtimeAccessibilityRun": 31542656345,
+    "runtimeAccessibilitySkippedXcodeRun": 31542656316,
+    "finalGoPR": 3082,
+    "finalGoHeadSHA": "d4a44db4ad69947dede5b20e91e506297514a0bb",
+    "buildAuthorityPR": 3072,
+    "buildAuthorityHeadSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
+    "privateConvergencePR": 3086,
+    "privateConvergenceHeadSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca",
+    "signedInstallPR": 3056,
+    "signedInstallHeadSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f",
     "baseMainAtObservation": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-    "note": "Reconciled 2026-08-11T21:13Z by sol-20260811-1400q7. #2973 exact 4ed3c579 is now terminal red: the direct runtime XCTest exited 65 and the evidence upload independently failed ENOTFOUND, leaving no retained xcresult/transcript and therefore no truthful product-vs-harness semantic classification. #3012 exact b7c746d is the selected test-only evidence-retention recovery and is queued. #2979 exact ce9e2bac remains the preferred app-visible product successor with exact Main/Field/Xcode success but visual queued, so #2940 remains accepted baseline. Final-GO is accepted software ingredient only; build/private/signed authority remain uncomposed. PHYSICAL NO-GO."
+    "note": "Reconciled generation 10 on 2026-08-11. The old composition snapshot was stale. ce9e2bac is an independently human-reviewed accepted first-fold product checkpoint. Current 6bb2e3cb hardens visual evidence and is green on all four exact software/visual workflows, but its new retained pixels still require human inspection. Runtime VoiceOver #3073 is queued. Final-GO, build authority, private identity and signed-install remain independently unfinished/uncomposed. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "flagship", "app-visible", "composition", "accessibility"]
 }
