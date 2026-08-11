@@ -21,27 +21,46 @@ jobs:
       - name: Normalize and execute reviewed repair payload
         shell: bash
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
+          set -uo pipefail
+          status=0
+          python3 - <<'PY' || status=$?
           from pathlib import Path
+          import traceback
 
-          workflow_path = Path('.github/workflows/capture-authority-chain-materialize.yml')
-          workflow = workflow_path.read_text(encoding='utf-8')
-          start = "          python3 - <<'PY'\n"
-          end = "\n          PY\n"
-          if workflow.count(start) != 1:
-              raise SystemExit('reviewed materializer payload start is not unique')
-          encoded = workflow.split(start, 1)[1].split(end, 1)[0]
-          prefix = '          '
-          lines = encoded.splitlines()
-          payload = '\n'.join(
-              line[len(prefix):] if line.startswith(prefix) else line
-              for line in lines
-          ) + '\n'
-          compile(payload, '<capture-authority-recovery-materializer>', 'exec')
-          exec(compile(payload, '<capture-authority-recovery-materializer>', 'exec'), {})
+          diagnostic = Path('.github/capture-downstream-authority-recovery-error.txt')
+          try:
+              workflow_path = Path('.github/workflows/capture-authority-chain-materialize.yml')
+              workflow = workflow_path.read_text(encoding='utf-8')
+              start = "          python3 - <<'PY'\n"
+              end = "\n          PY\n"
+              if workflow.count(start) != 1:
+                  raise RuntimeError('reviewed materializer payload start is not unique')
+              encoded = workflow.split(start, 1)[1].split(end, 1)[0]
+              prefix = '          '
+              lines = encoded.splitlines()
+              payload = '\n'.join(
+                  line[len(prefix):] if line.startswith(prefix) else line
+                  for line in lines
+              ) + '\n'
+              compile(payload, '<capture-authority-recovery-materializer>', 'exec')
+              exec(compile(payload, '<capture-authority-recovery-materializer>', 'exec'), {})
+              diagnostic.unlink(missing_ok=True)
+          except BaseException:
+              diagnostic.write_text(traceback.format_exc(), encoding='utf-8')
+              raise
           PY
 
+          if [[ "$status" -ne 0 ]]; then
+            cat .github/capture-downstream-authority-recovery-error.txt || true
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add .github/capture-downstream-authority-recovery-error.txt
+            git commit -m 'Capture: retain downstream recovery exception'
+            git push origin HEAD:repair/v14-downstream-authority-recovery-gpt56-sol-20260811
+            exit 0
+          fi
+
+          set -e
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n scripts/field/install_one_time_capture.command
           python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
@@ -55,6 +74,7 @@ jobs:
           rm -f \
             .github/capture-authority-chain-materialize-trigger \
             .github/capture-authority-chain-materializer-error.txt \
+            .github/capture-downstream-authority-recovery-error.txt \
             .github/workflows/capture-authority-chain-materialize.yml \
             .github/workflows/capture-authority-chain-materialize-runner.yml \
             .github/workflows/capture-authority-chain-materialize-runner-v2.yml \
