@@ -20,6 +20,7 @@ import base64
 import grp
 import os
 import pwd
+import re
 import secrets
 import shutil
 import signal
@@ -121,17 +122,89 @@ def _structured_credentials(
     }
 
 
+def _group_names(groups: Sequence[int]) -> tuple[str, ...]:
+    names: list[str] = []
+    for gid in sorted(set(int(value) for value in groups)):
+        if gid <= 0:
+            raise BuildOriginCustodyError("cannot inspect sudo policy for root or invalid group authority")
+        try:
+            names.append(grp.getgrgid(gid).gr_name)
+        except KeyError as error:
+            raise BuildOriginCustodyError(
+                f"could not resolve invoking group {gid} while inspecting sudo policy"
+            ) from error
+    return tuple(names)
+
+
+def _sudo_policy_exposes_passwordless_authority(
+    policy_output: str,
+    invoking_group_names: Sequence[str],
+) -> bool:
+    """Conservatively classify sudo's own long-list policy output."""
+
+    if "NOPASSWD:" in policy_output or "!authenticate" in policy_output:
+        return True
+    exempt_groups = {
+        match.group(1).strip("'\"")
+        for match in re.finditer(
+            r"(?:^|[\s,])exempt_group\s*=\s*([^\s,]+)",
+            policy_output,
+            flags=re.MULTILINE,
+        )
+    }
+    return bool(exempt_groups.intersection(invoking_group_names))
+
+
+def _inspect_invoker_sudo_policy(
+    user: str,
+    groups: Sequence[int],
+    environment: dict[str, str],
+) -> None:
+    """Ask sudo's root-authorized policy engine about passwordless caller authority."""
+
+    policy_environment = dict(environment)
+    policy_environment["LANG"] = "C"
+    policy_environment["LC_ALL"] = "C"
+    listing = subprocess.run(
+        ["/usr/bin/sudo", "-ll", "-U", user],
+        env=policy_environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if listing.returncode != 0:
+        detail = (listing.stderr or "").strip()
+        raise BuildOriginCustodyError(
+            "could not inspect invoking-user sudo policy before build custody"
+            + (f": {detail}" if detail else "")
+        )
+    policy_output = (listing.stdout or "") + "\n" + (listing.stderr or "")
+    if _sudo_policy_exposes_passwordless_authority(policy_output, _group_names(groups)):
+        raise BuildOriginCustodyError(
+            "invoking-user sudo policy exposes passwordless privileged authority; "
+            "build-origin isolation cannot be established"
+        )
+
+
 def _invalidate_invoker_sudo(
+    user: str,
     uid: int,
     gid: int,
     groups: Sequence[int],
     environment: dict[str, str],
 ) -> None:
-    """Revoke caller-side cached sudo under the caller's real group authority."""
+    """Reject passwordless policy and revoke cached sudo under real caller authority."""
 
-    # This probe must model the actual invoking account, including ambient supplementary groups.
-    # Minimizing this subprocess would under-model policies such as admin-group sudo and could
-    # falsely report that the real caller lost noninteractive privilege when it did not.
+    # Root can ask sudo's policy engine to list another user's privileges. Inspect that policy
+    # before relying on timestamp invalidation so a command-specific NOPASSWD rule, !authenticate,
+    # or an applicable exempt_group cannot hide behind a negative probe for /usr/bin/true.
+    _inspect_invoker_sudo_policy(user, groups, environment)
+
+    # These subprocesses must model the actual invoking account, including ambient supplementary
+    # groups. Minimizing them would under-model policies such as admin-group sudo and could falsely
+    # report that the real caller lost noninteractive privilege when it did not.
     credentials = _structured_credentials(uid, gid, groups)
     revoke = subprocess.run(
         ["/usr/bin/sudo", "-K"],
@@ -144,7 +217,11 @@ def _invalidate_invoker_sudo(
     )
     if revoke.returncode != 0:
         raise BuildOriginCustodyError("could not invalidate invoking-user sudo timestamp before build custody")
-    probe = subprocess.run(
+
+    # Retain direct probes as a second independent check of the live policy/timestamp state. The
+    # policy listing above is the broad sudoers check; neither one negative command probe nor a
+    # failed noninteractive list is treated as universal proof by itself.
+    command_probe = subprocess.run(
         ["/usr/bin/sudo", "-n", "/usr/bin/true"],
         env=environment,
         stdin=subprocess.DEVNULL,
@@ -153,7 +230,16 @@ def _invalidate_invoker_sudo(
         check=False,
         **credentials,
     )
-    if probe.returncode == 0:
+    list_probe = subprocess.run(
+        ["/usr/bin/sudo", "-n", "-l"],
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        **credentials,
+    )
+    if command_probe.returncode == 0 or list_probe.returncode == 0:
         raise BuildOriginCustodyError(
             "noninteractive sudo remains available after invalidation; build-origin isolation cannot be established"
         )
@@ -315,10 +401,10 @@ def run_custodied_build(
     user, uid, gid, home, invoking_groups = _invoking_identity()
     child_env = _child_environment(user, home)
 
-    # The outer sudo invocation is needed only to establish this supervisor. Revoke its caller-side
-    # cached authority before creating the protected output root. A passwordless/noninteractive sudo
-    # policy is deliberately rejected because it defeats the intended same-UID isolation boundary.
-    _invalidate_invoker_sudo(uid, gid, invoking_groups, child_env)
+    # The outer sudo invocation is needed only to establish this supervisor. Reject known
+    # passwordless sudo policy, revoke caller-side cached authority, and require live
+    # noninteractive probes to remain unavailable before creating protected compiler output.
+    _invalidate_invoker_sudo(user, uid, gid, invoking_groups, child_env)
 
     capability_gid = _choose_capability_gid(invoking_groups)
     derived_root: Path | None = None
