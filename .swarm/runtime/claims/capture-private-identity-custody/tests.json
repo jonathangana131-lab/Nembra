@@ -9,11 +9,12 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:11:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:13:00Z",
   "leaseSeconds": 1800,
   "branch": "adversarial/v14-private-identity-crash-residue-sol-20260811",
-  "pr": null,
+  "pr": 2870,
   "sourceSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc",
+  "currentHeadSHA": "3d154de42cc879bd06128098771b06aa10e57b44",
   "takeoverFromWorkerId": null,
-  "takeoverReason": "Released tests slot reused for a non-conflicting crash/power-loss residue diagnostic while primary implementation remains owned by sol-20260811-a7e4."
+  "takeoverReason": "Released tests slot reused for a non-conflicting hard-exit crash-residue diagnostic while primary implementation remains owned by sol-20260811-a7e4."
 }
