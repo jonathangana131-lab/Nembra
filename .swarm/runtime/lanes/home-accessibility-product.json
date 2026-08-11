@@ -28,25 +28,25 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOURCE_READY"},
-  "sourceSHA": "258ea4897e6cf0fa92a082fbfa4e24a5c2ea8dae",
+  "sourceSHA": "e387b5d0b7d743abe06818e9d19910a1f73f13ee",
   "recovery": {
     "pr": 2842,
     "baseSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-    "headSHA": "258ea4897e6cf0fa92a082fbfa4e24a5c2ea8dae",
-    "aheadBy": 5,
+    "headSHA": "e387b5d0b7d743abe06818e9d19910a1f73f13ee",
+    "aheadBy": 7,
     "behindBy": 0,
     "changedFiles": 3,
     "legacyIntentRecovered": true,
-    "truthHardening": "Captured lock intent is revalidated at confirmation using current-main canLockFromCurrentSpeedEvidence; causally ambiguous ride-mode state haptic removed; current simulator-qualified speed authority preserved.",
+    "truthHardening": "Captured lock intent is revalidated at confirmation using current-main canLockFromCurrentSpeedEvidence; confirmation is revoked unless connection remains connected and no competing vehicle command is pending; causally ambiguous ride-mode state haptic removed; current simulator-qualified speed authority preserved.",
     "accessibilityHardening": "AX metrics, action controls, Ride Mode, header, recovery and detail rows recompose; action semantics preserve confirmed-state labels and separate pending confirmation; low battery has non-color VoiceOver wording.",
-    "runtimeAcceptance": "PENDING"
+    "runtimeAcceptance": "PENDING_FINAL_HEAD_XCODE_AND_SYSTEM_AX"
   },
   "legacy": {
     "primaryPR": 2400,
     "primaryHeadSHA": "5d03a1dcac4a5684dc8142343c59673166f798cb",
     "strongerLargeTextPR": 165,
     "truthChildPR": 242,
-    "knownExactHeadFinding": "Legacy Home branches are historical inputs only. PR #2842 rebuilds their still-valid intent on current main while preserving newer Home source authority. Historical #170 green is normal-size compatibility evidence; #2400 Xcode skipped and is not acceptance."
+    "knownExactHeadFinding": "Legacy Home branches are historical inputs only. PR #2842 rebuilds their still-valid intent on current main while preserving newer Home source authority and adds fail-closed stale confirmation revocation. Historical #170 green is normal-size compatibility evidence; #2400 Xcode skipped and is not acceptance."
   },
   "tags": ["home", "p5", "app-visible", "dynamic-type", "voiceover", "outdoor-readability", "legacy-import"]
 }
