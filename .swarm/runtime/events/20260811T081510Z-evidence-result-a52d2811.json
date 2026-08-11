@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "081510-evidence-result-a52d2811",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-a52d",
+  "laneId": "capture-package-test-runner-recovery",
+  "message": "Exact head 7728078452894ac327007ddab18a99d65c4ca3a1: repaired diagnostic run 31471913296 SUCCESS; retained artifact 9093733614 inspected with serial 944 tests/229 suites green, explicit-parallel 944/229 green, Range fatal count 0/0. Canonical selective-graft run 31471913342 SUCCESS; retained artifact 9093742852 inspected with 944/229 package green and standalone Nembra Capture BUILD SUCCEEDED. Independent generation-2 truth review found no blocker but requires terminal exact-head Xcode; run 31471913283 remains in progress. Field provenance run 31471913284 remains inherited red in private Tuya provenance helper. PR #2805 already contains equivalent Range repair, so #2811 is recovery/diagnostic evidence unless live composition changes. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T08:15:10Z"
+}
