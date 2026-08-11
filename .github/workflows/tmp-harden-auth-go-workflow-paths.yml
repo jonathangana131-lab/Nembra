@@ -1,0 +1,70 @@
+name: Temporary authenticated GO workflow-path hardener
+
+on:
+  push:
+    branches:
+      - control/v14-auth-stationary-final-go-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Bind accepted runs to canonical workflow paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='1042825e96f81f1283648a43153e603e24aedaae'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          issuer_path = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          issuer = issuer_path.read_text()
+          workflows = 'WORKFLOWS=("Capture Main Selective Graft Diagnostic","Capture Field Build Provenance","Xcode 27 PR Exact-Head QA","Capture Standalone Visual Evidence")\n'
+          mapping = workflows + 'WORKFLOW_PATHS={\n    "Capture Main Selective Graft Diagnostic":".github/workflows/capture-main-selective-graft-diagnostic.yml",\n    "Capture Field Build Provenance":".github/workflows/capture-field-build-provenance.yml",\n    "Xcode 27 PR Exact-Head QA":".github/workflows/xcode27-pr-command.yml",\n    "Capture Standalone Visual Evidence":".github/workflows/capture-standalone-visual-evidence.yml",\n}\n'
+          if issuer.count(workflows) != 1:
+              raise SystemExit('workflow declaration seam changed')
+          issuer = issuer.replace(workflows, mapping, 1)
+          old = '        if r.get("name")!=name or canon(r.get("head_sha"),name)!=source or r.get("status")!="completed" or r.get("conclusion")!="success" or r.get("event")!="pull_request" or not bound: raise GoError(f"{name} is not exact terminal SUCCESS for PR #{pr}")\n        subjects.append({"name":name,"runID":rid,"headSHA":source,"conclusion":"success"})\n'
+          new = '        if r.get("name")!=name or r.get("path")!=WORKFLOW_PATHS[name] or canon(r.get("head_sha"),name)!=source or r.get("status")!="completed" or r.get("conclusion")!="success" or r.get("event")!="pull_request" or not bound: raise GoError(f"{name} is not exact terminal SUCCESS from its canonical workflow for PR #{pr}")\n        subjects.append({"name":name,"path":WORKFLOW_PATHS[name],"runID":rid,"headSHA":source,"conclusion":"success"})\n'
+          if issuer.count(old) != 1:
+              raise SystemExit('public workflow authority seam changed')
+          issuer_path.write_text(issuer.replace(old, new, 1))
+
+          test_path = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
+          test = test_path.read_text()
+          fixture_old = "  for n,i in self.ids.items():self.map[f'/actions/runs/{i}']={'name':n,'head_sha':self.s,'status':'completed','conclusion':'success','event':'pull_request','head_branch':'feature/final','pull_requests':[{'number':self.pr}]}\n"
+          fixture_new = "  for n,i in self.ids.items():self.map[f'/actions/runs/{i}']={'name':n,'path':go.WORKFLOW_PATHS[n],'head_sha':self.s,'status':'completed','conclusion':'success','event':'pull_request','head_branch':'feature/final','pull_requests':[{'number':self.pr}]}\n"
+          if test.count(fixture_old) != 1:
+              raise SystemExit('test workflow fixture seam changed')
+          test = test.replace(fixture_old, fixture_new, 1)
+          anchor = " def test_empty_pull_list_requires_exact_head_branch(self):\n"
+          addition = " def test_duplicate_display_name_from_wrong_workflow_path_is_rejected(self):\n  i=self.f.ids['Capture Field Build Provenance'];self.f.map[f'/actions/runs/{i}']['path']='.github/workflows/fake-green.yml';self.no(self.f.build)\n" + anchor
+          if test.count(anchor) != 1:
+              raise SystemExit('test insertion seam changed')
+          test_path.write_text(test.replace(anchor, addition, 1))
+          PY
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' 'scripts/ci/es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' | sort)"
+
+      - name: Commit hardening and self-delete helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-closure-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/tmp-harden-auth-go-workflow-paths.yml
+          git add scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          git diff --cached --check
+          git commit -m 'fix(capture): bind GO acceptance to canonical workflows'
+          git push origin HEAD:control/v14-auth-stationary-final-go-sol
