@@ -137,7 +137,8 @@ class GeneratedSubjectHelperExecutionCustodyTests(unittest.TestCase):
             )
 
     def test_default_deriver_rejects_unpinned_direct_use(self) -> None:
-        GO._current_generated_subject(Path("."), helper_source=None)
+        with self.assertRaises(GO.GeneratedSubjectGoError):
+            GO._current_generated_subject(Path("."), helper_source=None)
 
 
 if __name__ == "__main__":
