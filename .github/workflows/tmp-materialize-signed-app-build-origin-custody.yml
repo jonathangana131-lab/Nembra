@@ -106,7 +106,7 @@ jobs:
             .swarm/tmp_origin_patch_error.txt
           git add -A
           git diff --cached --check
-          if git diff --cached --name-only | grep -E '(^|/)(tmp_|tmp-materialize)' >/dev/null; then
+          if git diff --cached --diff-filter=ACMR --name-only | grep -E '(^|/)(tmp_|tmp-materialize)' >/dev/null; then
             echo 'ERROR: temporary construction files would survive production commit' >&2
             exit 1
           fi
