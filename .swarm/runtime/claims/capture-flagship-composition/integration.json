@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607r4",
   "leaseId": "capture-flagship-integration-1607r4-20260811-2324",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:24:34Z",
-  "lastHeartbeatAt": "2026-08-11T23:24:34Z",
+  "lastHeartbeatAt": "2026-08-11T23:27:00Z",
+  "releasedAt": "2026-08-11T23:27:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1",
   "takeoverFromWorkerId": "sol-20260811-1607r4",
   "takeoverFromLeaseId": "capture-flagship-integration-1607r4-20260811-2315",
-  "takeoverReason": "Generation-5 was explicitly released after stale carrier #3023 was closed. P0 Final-GO has since advanced to selected #3082 exact 4a2c2002 with all Linux/canonical/sealed/retirement gates green and fresh exact Darwin revalidation active. Reacquire the free flagship integration slot to reconcile that moved ingredient with current build/private/runtime/signed-install blockers and ensure no stale composition carrier is promoted. Read-only composition work only while dependencies remain owned. PHYSICAL NO-GO.",
-  "intent": "Refresh exact flagship closure graph after Final-GO moved to 4a2c2002. Verify current heads/gates for build authority, private identity, runtime accessibility, signed-install, and app-visible first-fold. Preserve previously found verified-stdin caller-interface dependency. Do not create a composed product head until every prerequisite is exact-current accepted."
+  "takeoverReason": "Generation-5 was explicitly released after stale carrier #3023 was closed. Reacquired after Final-GO advanced to exact 4a2c2002 to reconcile the current flagship dependency graph without product writes.",
+  "intent": "Refresh exact flagship closure graph and refuse composition until every prerequisite is exact-current accepted.",
+  "checkpoint": "FLAGSHIP COMPOSITION REMAINS BLOCKED; no truthful composed-head write exists. Current selected Final-GO #3082@4a2c2002 has exact canonical 31546213562 SUCCESS, retirement 31546213542 SUCCESS, sealed 31546213399 SUCCESS; Xcode 31546213293 SKIPPED/not evidence; fresh Darwin/kqueue exact-descendant validation is actively owned by Final-GO tests gen8, so prior Darwin green is stale. App-visible first-fold #2979@6bb2e3cb retains Xcode/Field/Main/Visual SUCCESS. Runtime #3073@dd204e1e has Main 31542656351 SUCCESS but decisive VoiceOver 31542656345 QUEUED and Xcode skipped. Build #3072@3e41ecd0 remains RED at selected-Xcode ACL 31540635879, Xcode 31540655430, Main 31540635890 and old Field 31540635877; active build review gen17 owns classification. Private #3086 has moved to exact e454b1e9: private convergence 31546075745 SUCCESS, publication races 31546075814 SUCCESS, dependency helper 31546075874 SUCCESS; exact Field 31546075937, Main 31546075878 and Xcode 31546075785 are QUEUED, with active private review gen11. Signed-install #3056@51b8e6b3 has install custody 31542155759 QUEUED; its production primary explicitly released pending retained-writer/kernel/Xcode architecture evidence, and inherited Field/Main are red. Previously proven composition dependency remains: when final build launcher consumes #3086 bootstrap through verified stdin, it must deliberately pass NEMBRA_ACCEPTED_SOURCE_ROOT=$ROOT on the accepted physical checkout; do not compose naïvely or reopen mutable pathname execution. Old carrier #3023 is already CLOSED UNMERGED as SUPERSEDED. All current blockers are either fresh-owned or externally queued, so release integration rather than manufacture a stale/partial flagship. PHYSICAL NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT RIDE."
 }
