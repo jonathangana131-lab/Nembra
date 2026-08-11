@@ -201,14 +201,29 @@ jobs:
           test "$procedure_check_line" -lt "$install_line"
           test "$second_private_verify_line" -lt "$readback_line"
 
-          grep -Fq 'mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX"' "$installer"
-          grep -Fq 'trap '\''rm -f -- "$INSTALL_LOG"'\'' EXIT' "$installer"
+          grep -Fq 'cleanup_install_subject()' "$installer"
+          grep -Fq 'trap cleanup_install_subject EXIT' "$installer"
+          grep -Fq 'APP_INSTALL_STAGE_ROOT="$(/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX)"' "$installer"
+          grep -Fq 'APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"' "$installer"
+          grep -Fq '/usr/bin/sudo /usr/bin/ditto --noacl "$APP" "$APP_INSTALL_STAGE"' "$installer"
+          grep -Fq 'APP="$APP_INSTALL_STAGE"' "$installer"
+          grep -Fq 'INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install-log.XXXXXX")"' "$installer"
           grep -Fq 'chmod 600 "$INSTALL_LOG"' "$installer"
+          grep -Fq '/bin/rm -f -- "$INSTALL_LOG" || true' "$installer"
+          grep -Fq '/usr/bin/sudo -n /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"' "$installer"
+          grep -Fq 'rm -f -- "$INSTALL_LOG"' "$installer"
+          grep -Fq 'INSTALL_LOG=""' "$installer"
+          grep -Fq 'APP_INSTALL_STAGE_ROOT=""' "$installer"
+          grep -Fq 'devicectl device install app --device "$COREDEVICE_ID" "$APP"' "$installer"
           grep -Fq 'payload = sys.stdin.buffer.read()' "$installer"
           grep -Fq 'private_udid_raw, selector_raw = payload.split(b"\0", 1)' "$installer"
           grep -Fq 'secret.replace("-", "")' "$installer"
           grep -Fq 'flags=re.IGNORECASE' "$installer"
           grep -Fq 'trap - EXIT' "$installer"
+          if grep -Fq 'trap '\''rm -f -- "$INSTALL_LOG"'\'' EXIT' "$installer"; then
+            echo 'ERROR: signed-app stage and private install log must share the canonical cleanup lifecycle; do not restore the retired log-only trap.' >&2
+            exit 1
+          fi
           if grep -Fq 'nembra-authenticated-capture-install.log' "$installer"; then
             echo 'ERROR: raw devicectl diagnostics must not use a predictable retained temporary pathname.' >&2
             exit 1
