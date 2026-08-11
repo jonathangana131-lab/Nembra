@@ -63,7 +63,11 @@ class PrivateInputAncestorRetargetTests(unittest.TestCase):
             pods.mkdir(); workspace.mkdir()
             (pods / "generated.xcconfig").write_text("SETTING = ACCEPTED\n", encoding="utf-8")
             (workspace / "contents.xcworkspacedata").write_text("ACCEPTED\n", encoding="utf-8")
-            accepted_generated = guard.generated_build.build_subject(lockfile=lockfile, pods=pods, workspace=workspace)
+            accepted_generated = guard.generated_subject.subject_digest(
+                lockfile=lockfile,
+                pods=pods,
+                workspace=workspace,
+            )
             consumed: list[str] = []
             def launch(_command):
                 sdk_link.unlink(); sdk_link.symlink_to(substituted_sdk, target_is_directory=True)
@@ -73,7 +77,13 @@ class PrivateInputAncestorRetargetTests(unittest.TestCase):
             def attempt() -> None:
                 with patch.dict(os.environ,{"NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256":accepted_generated},clear=False):
                     inputs, command = guard._parse_args(argv)
-                    guard.run_guarded_build(inputs,command,backend_factory=QuietBackend,popen_factory=launch,poll_interval=0.0,require_accepted_generated_subject=True)
+                    guard.run_guarded_build(
+                        inputs,
+                        command,
+                        backend_factory=QuietBackend,
+                        popen_factory=launch,
+                        poll_interval=0.0,
+                    )
             with self.assertRaises(guard.BuildGuardError):
                 attempt()
             self.assertEqual(consumed, [], "substituted private SDK bytes reached the fake build")
