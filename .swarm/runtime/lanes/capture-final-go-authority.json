@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "capture-final-go-authority",
+  "epic": "capture",
+  "title": "Capture Final-GO control authority",
+  "objective": "Converge the authenticated-stationary Final-GO lineage so reviewed generated/private build authority and all parent-module execution subjects are bound to exact accepted Git bytes without regressing the sealed installer or signed-artifact custody.",
+  "priority": 0,
+  "state": "BLOCKED_EXTERNAL",
+  "dependencies": ["capture-build-authority"],
+  "blockers": [
+    {
+      "id": "legacy-pr-active",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Legacy Final-GO/control descendants are still active; red-team PRs #2798 and #2803 demonstrate parent-module execution-before-authority defects that must be repaired on the selected control lineage.",
+      "pr": 2791,
+      "headSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981"
+    }
+  ],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "scripts/ci/es80_authenticated_stationary_final_go.py",
+    "scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py",
+    "scripts/ci/es80_authenticated_stationary_private_review_final_go.py"
+  ],
+  "adjacentWriteAreas": [
+    "scripts/ci/tests",
+    ".github/workflows"
+  ],
+  "slots": [
+    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":["RELEASE_INTEGRATION"]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "legacy": {
+    "primaryPR": 2791,
+    "primaryHeadSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981",
+    "lineagePRs": [2638, 2775, 2791, 2798, 2803],
+    "redTeamPRs": [2798, 2803]
+  },
+  "tags": ["capture", "p0", "physical-go", "control-authority", "legacy-import"]
+}
