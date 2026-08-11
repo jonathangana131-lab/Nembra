@@ -1,0 +1,52 @@
+name: Capture Private Review Commitment
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_private_review_commitment.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - Scripts/capture_tuya_private_input_provenance.py
+      - Scripts/capture_cocoapods_generated_build_subject.py
+      - scripts/ci/tests/test_capture_private_review_commitment.py
+      - .github/workflows/capture-private-review-commitment.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-review-commitment:
+    name: Validate external private review authority
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind validation to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile authority tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_private_review_commitment.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_review_commitment.py
+
+      - name: Prove external private review commitment
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_private_review_commitment.py
