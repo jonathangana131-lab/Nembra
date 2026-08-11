@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "kind": "handoff",
+  "laneId": "swarm-control-plane-foundation",
+  "workerId": "sol-20260811-cp001",
+  "branch": "agent/swarm-control-plane-v15-sol",
+  "headSHA": "8282696f7845a590a7070ab839c488a98f3cdbb1",
+  "pr": 2804,
+  "completed": [
+    "phase-zero live repository inspection",
+    "ADR and architecture selection",
+    "versioned control-plane model and validation",
+    "GitHub Contents API atomic claim/CAS store",
+    "claims, leases, heartbeats, release and stale takeover",
+    "dependency/blocker scheduler and WIP controls",
+    "resource leases and deterministic ordering",
+    "independent-review and scope/PR metadata checks",
+    "physical NO-GO fencing",
+    "generated dashboard",
+    "67 deterministic adversarial tests",
+    "30-worker simulation",
+    "real GitHub duplicate-create, stale-SHA and takeover proof",
+    "exact-head shadow GitHub Actions validation"
+  ],
+  "remaining": [
+    "genuinely independent adversarial review by a different GPT-5.6 Sol worker ID",
+    "address any requested changes",
+    "claim integration role, revalidate exact head and merge only after independent approval",
+    "observe main after merge before advancing rollout beyond shadow"
+  ],
+  "testsRun": [
+    "python3 -m unittest -q scripts.ci.tests.test_swarm_control_plane — 67 passed locally",
+    "python3 scripts/swarm_control.py simulate --workers 30 — passed with 29 prevented collisions",
+    "GitHub Actions run 31460491323 deterministic-control-plane — success on exact head 8282696f7845a590a7070ab839c488a98f3cdbb1",
+    "GitHub Actions run 31460491323 pr-metadata-shadow — success"
+  ],
+  "knownFailures": [],
+  "evidence": [
+    "duplicate deterministic claim create rejected by GitHub with HTTP 422",
+    "stale blob-SHA mutation rejected by GitHub with HTTP 409",
+    "expired generation-1 proof claim advanced to generation 2",
+    "competing generation-2 stale-SHA takeover rejected by GitHub with HTTP 409"
+  ],
+  "importantFindings": [
+    "live Capture work contains fast-moving overlapping/superseded lineages",
+    "V13 current swarm rules coexist with older open V11 lock/control artifacts",
+    "human routing Markdown was stale relative to live PR lineage",
+    "existing exact-head/Xcode/queue-janitor/safety machinery is valuable and was preserved"
+  ],
+  "recommendedNextAction": "A fresh Sol worker should inspect live PR #2804 and swarm-state, atomically claim the review slot, perform adversarial review without reimplementing the primary, and publish REVIEW_RESULT.",
+  "takeoverNotes": "Primary implementation slot was intentionally released after exact-head CI success. Do not create a second implementation unless review requests changes or the lane is explicitly changed to tournament mode.",
+  "createdAt": "2026-08-11T05:07:00Z"
+}
