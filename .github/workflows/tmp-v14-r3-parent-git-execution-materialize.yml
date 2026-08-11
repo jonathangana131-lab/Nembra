@@ -143,6 +143,7 @@ jobs:
           python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
           python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Remove temporary materializer and publish clean repair
