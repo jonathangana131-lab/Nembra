@@ -33,6 +33,57 @@ jobs:
           test "$(git hash-object scripts/field/install_one_time_capture.command)" = "87430680649f9eb3160f30162f2c78f75809af68"
           test "$(git hash-object scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py)" = "514dc57300f6f6987248a09e20f307a18fa43b76"
 
+      - name: Diagnose reader insertion marker
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/field/install_one_time_capture.command').read_text()
+          assert s.count('run_accepted_source_bash() {\n') == 1
+          PY
+
+      - name: Diagnose accepted Bash execution marker
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/field/install_one_time_capture.command').read_text()
+          old='    if ! run_authority_git show "$SOURCE_SHA:$relative_path" |\n        /bin/bash --noprofile --norc -p -c \'source /dev/stdin\' "$ROOT/$relative_path"; then\n'
+          assert s.count(old) == 1
+          PY
+
+      - name: Diagnose private runner execution marker
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/field/install_one_time_capture.command').read_text()
+          old='    run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py" |\n        /usr/bin/env -i \\\n'
+          assert s.count(old) == 1
+          PY
+
+      - name: Diagnose accepted Python helper span
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/field/install_one_time_capture.command').read_text()
+          assert s.count('run_accepted_source_python() {\n') == 1
+          marker='GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e "$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE"'
+          assert s.count(marker) == 1
+          assert s.index(marker) > s.index('run_accepted_source_python() {\n')
+          PY
+
+      - name: Diagnose authority test replacement marker
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py').read_text()
+          old='        self.assertIn(\'run_authority_git show "$SOURCE_SHA:$relative_path"\', installer)\n'
+          assert s.count(old) == 1
+          PY
+
       - name: Run checked-in materializer unchanged
         shell: bash
         run: |
