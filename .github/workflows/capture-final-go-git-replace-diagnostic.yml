@@ -1,0 +1,36 @@
+name: Capture Final GO Git Replace Custody Diagnostic
+
+on:
+  push:
+    branches:
+      - adversarial/v14-final-go-git-replace-custody-sol
+    paths:
+      - scripts/ci/tests/test_es80_final_go_git_replace_custody.py
+      - .github/workflows/capture-final-go-git-replace-diagnostic.yml
+  pull_request:
+    branches:
+      - control/v14-auth-stationary-final-go-sol
+    paths:
+      - scripts/ci/tests/test_es80_final_go_git_replace_custody.py
+      - .github/workflows/capture-final-go-git-replace-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Prove replacement-aware Git can substitute accepted candidate authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_final_go_git_replace_custody.py
+          python3 scripts/ci/tests/test_es80_final_go_git_replace_custody.py
