@@ -1,0 +1,73 @@
+name: Temporary Capture Secure Link AX hero materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-live-main-visual-acceptance-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Recompose Secure Link hero at accessibility sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='2495f51030b9a80859635df6d48cb7074b9eea6e'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          test "$(git diff --name-only "$expected_parent"..HEAD)" = '.github/workflows/tmp-capture-securelink-ax-hero.yml'
+          python3 - <<'PY'
+          from pathlib import Path
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app = app_path.read_text()
+          start_old = "                ZStack {\n                    Circle()\n"
+          start_new = "                if !dynamicTypeSize.isAccessibilitySize {\n                    ZStack {\n                    Circle()\n"
+          if app.count(start_old) != 1:
+              raise SystemExit(f'Secure Link hero icon seam changed: {app.count(start_old)} matches')
+          app = app.replace(start_old, start_new, 1)
+          end_old = "                .accessibilityHidden(true)\n\n                VStack(alignment: .leading, spacing: 4) {\n"
+          end_new = "                .accessibilityHidden(true)\n                }\n\n                VStack(alignment: .leading, spacing: 4) {\n"
+          if app.count(end_old) != 1:
+              raise SystemExit(f'Secure Link hero icon close seam changed: {app.count(end_old)} matches')
+          app = app.replace(end_old, end_new, 1)
+          font_old = "                    .font(.system(.largeTitle, design: .rounded, weight: .bold))\n"
+          font_new = "                    .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .system(.largeTitle, design: .rounded, weight: .bold))\n"
+          if app.count(font_old) != 1:
+              raise SystemExit(f'Secure Link phase title font seam changed: {app.count(font_old)} matches')
+          app = app.replace(font_old, font_new, 1)
+          semantic_old = "        .accessibilityElement(children: .combine)\n    }\n\n    @ViewBuilder\n    private var stageRail: some View {\n"
+          semantic_new = "        .accessibilityElement(children: .combine)\n        .accessibilityAddTraits(.isHeader)\n    }\n\n    @ViewBuilder\n    private var stageRail: some View {\n"
+          if app.count(semantic_old) != 1:
+              raise SystemExit(f'Secure Link hero semantic seam changed: {app.count(semantic_old)} matches')
+          app_path.write_text(app.replace(semantic_old, semantic_new, 1))
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift')
+          test = test_path.read_text()
+          anchor = "        #expect(field.lowerBound < action.lowerBound)\n        #expect(action.lowerBound < accessibilitySupport.lowerBound)\n    }\n\n    @Test(\"metadata preparation bridge remains cloud-only and command-free\")\n"
+          addition = "        #expect(field.lowerBound < action.lowerBound)\n        #expect(action.lowerBound < accessibilitySupport.lowerBound)\n\n        let secureLink = String(try section(\n            in: app,\n            from: \"private struct SecureLinkView: View\",\n            to: \"private struct SecureTransfer: Transferable\"\n        ))\n        #expect(secureLink.contains(\"if !dynamicTypeSize.isAccessibilitySize {\\n                    ZStack {\"))\n        #expect(secureLink.contains(\".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .system(.largeTitle, design: .rounded, weight: .bold))\"))\n        #expect(secureLink.contains(\".accessibilityElement(children: .combine)\\n        .accessibilityAddTraits(.isHeader)\"))\n    }\n\n    @Test(\"metadata preparation bridge remains cloud-only and command-free\")\n"
+          if test.count(anchor) != 1:
+              raise SystemExit(f'Secure Link accessibility source-test seam changed: {test.count(anchor)} matches')
+          test_path.write_text(test.replace(anchor, addition, 1))
+          PY
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' 'NembraApp/App/NembraCaptureEntrypoint.swift' 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift' | sort)"
+
+      - name: Commit repair and self-delete helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-closure-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/tmp-capture-securelink-ax-hero.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): recompose Secure Link hero for Accessibility'
+          git push origin HEAD:agent/v14-capture-live-main-visual-acceptance-sol
