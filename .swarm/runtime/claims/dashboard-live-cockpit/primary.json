@@ -9,18 +9,19 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:23:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:23:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:28:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-status-sol-c84e",
-  "pr": 2971,
+  "pr": 2981,
   "sourceSHA": "c150a8287463231ee9af174c38564738bab576a3",
-  "currentHeadSHA": "c150a8287463231ee9af174c38564738bab576a3",
+  "currentHeadSHA": "c200cba0c072051a3dc84457bd73612a851ef815",
   "takeoverFromWorkerId": "sol-20260811-hl6k",
-  "takeoverReason": "Generation-2 lease expired many hours ago. Fresh independent evidence review of exact c150a828 / Xcode run 31510207367 found the former vertical overflow closed but critical AX5 vehicle/connection labels visibly ellipsized in the fixed 188-pt status rail and no AX5 stopped-control bounds witness. Continue the same Dashboard accessibility closure with a narrow product+test successor; preserve telemetry truth and Simulator-only authority.",
+  "takeoverReason": "Generation-2 lease expired many hours ago. Fresh independent evidence review of exact c150a828 / Xcode run 31510207367 found the former vertical overflow closed but critical AX5 vehicle/connection labels visibly ellipsized in the fixed 188-pt status rail and no AX5 stopped-control runtime witness. Continue the same Dashboard accessibility closure with a narrow product+acceptance successor; preserve telemetry truth and Simulator-only authority.",
   "ownedPaths": [
     "NembraApp/Features/Dashboard/DashboardView.swift",
     "NembraUITests/NembraUITests.swift",
     "scripts/ci/xcode27_simulator_capture.sh"
   ],
-  "acceptance": "Successor must keep speed/Energy Rail semantics, make critical left status intelligible at AX5 without disabling Dynamic Type, add exact AX5 connected-stopped in-window control evidence, and re-earn exact-head Xcode/screenshots plus independent review. ES80 physical NO-GO."
+  "checkpoint": "Opened #2981 exact c200cba as a two-file successor: accessibility status identity/connection now reflow to two lines instead of scaling/ellipsis; real AX content-size harness now reruns both riding and the existing stopped-controls mode/touch-target screenshot test. /xcode27 requested. Parent c150 green does not accept moved head.",
+  "acceptance": "Exact c200cba must keep speed/Energy Rail semantics, make critical left status intelligible at AX5 without disabling Dynamic Type, prove stopped controls under the same real AX content-size setting, and re-earn exact-head Xcode/screenshots plus independent review. ES80 physical NO-GO."
 }
