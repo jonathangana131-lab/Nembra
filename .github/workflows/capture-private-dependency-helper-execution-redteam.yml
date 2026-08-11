@@ -1,0 +1,78 @@
+name: Capture Private Dependency Helper Execution Red Team
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_dependency_resolution_guard.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_red_team.py
+      - .github/workflows/capture-private-dependency-helper-execution-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-private-dependency-helper-execution-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  transient-helper-substitution:
+    name: Demonstrate mutable dependency-custody execution subjects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind exact red-team head to current private convergence parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRODUCTION_PARENT_SHA: c20484aec3c003143c9ebf034a40166a6d0ff94f
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$PRODUCTION_PARENT_SHA" HEAD
+
+          actual_paths="$RUNNER_TEMP/nembra-private-helper-redteam-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-private-helper-redteam-expected.txt"
+          git diff --name-only "$PRODUCTION_PARENT_SHA"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-private-dependency-helper-execution-redteam.yml
+          scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_red_team.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile expected-red witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-helper-redteam-pycache"
+          python3 -m py_compile scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Demonstrate transient execution-subject substitution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          PRODUCTION_PARENT_SHA: c20484aec3c003143c9ebf034a40166a6d0ff94f
+        run: |
+          set -euo pipefail
+          git diff --check "$PRODUCTION_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
