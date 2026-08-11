@@ -16,11 +16,13 @@ struct NembraApp: App {
                     .environment(runtime.rideRouteStore)
                     .task { await runtime.start() }
             }
+            .environment(runtime.vehicleStore)
         }
     }
 }
 
 private struct NembraNavigationHost<Content: View>: View {
+    @Environment(VehicleStore.self) private var vehicle
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -34,46 +36,15 @@ private struct NembraNavigationHost<Content: View>: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack {
             content
 
-            if verticalSizeClass != .compact {
-                Button {
-                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.28)) {
-                        isNavigationPresented = true
-                    }
-                } label: {
-                    Group {
-                        if dynamicTypeSize.isAccessibilitySize {
-                            Label("Navigation", systemImage: "location.north.circle.fill")
-                                .font(.headline)
-                                .padding(.horizontal, 18)
-                        } else {
-                            Image(systemName: "location.north.circle.fill")
-                                .font(.system(size: 24, weight: .semibold))
-                        }
-                    }
-                    .frame(minWidth: 54, minHeight: 54)
-                    .background {
-                        if reduceTransparency {
-                            Color(uiColor: .secondarySystemBackground)
-                        } else {
-                            Rectangle().fill(.regularMaterial)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 27, style: .continuous)
-                            .strokeBorder(.primary.opacity(0.12))
-                    }
-                    .shadow(radius: reduceTransparency ? 3 : 8, y: reduceTransparency ? 2 : 4)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 18)
-                .padding(.bottom, 92)
-                .accessibilityLabel("Navigation")
-                .accessibilityHint("Search for a destination and preview it on the map.")
-                .accessibilityIdentifier("navigation.launch")
+            if shouldShowNavigationLauncher {
+                navigationLauncher
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: launcherAlignment)
+                    .padding(.top, verticalSizeClass == .compact ? 10 : 0)
+                    .padding(.trailing, verticalSizeClass == .compact ? 0 : 18)
+                    .padding(.bottom, verticalSizeClass == .compact ? 0 : 92)
             }
         }
         .sheet(isPresented: $isNavigationPresented) {
@@ -81,6 +52,57 @@ private struct NembraNavigationHost<Content: View>: View {
                 NembraNavigationView()
             }
         }
+    }
+
+    private var shouldShowNavigationLauncher: Bool {
+        guard verticalSizeClass == .compact else { return true }
+        guard let speed = vehicle.simulatorQualifiedLiveSpeedKilometersPerHour else { return false }
+        return speed < 0.5
+    }
+
+    private var launcherAlignment: Alignment {
+        verticalSizeClass == .compact ? .top : .bottomTrailing
+    }
+
+    private var navigationLauncher: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.28)) {
+                isNavigationPresented = true
+            }
+        } label: {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    Label("Navigation", systemImage: "location.north.circle.fill")
+                        .font(.headline)
+                        .padding(.horizontal, 18)
+                } else {
+                    Image(systemName: "location.north.circle.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                }
+            }
+            .frame(minWidth: 54, minHeight: 54)
+            .background {
+                if reduceTransparency {
+                    Color(uiColor: .secondarySystemBackground)
+                } else {
+                    Rectangle().fill(.regularMaterial)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 27, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.12))
+            }
+            .shadow(radius: reduceTransparency ? 3 : 8, y: reduceTransparency ? 2 : 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Navigation")
+        .accessibilityHint(
+            verticalSizeClass == .compact
+                ? "Available while current stopped speed is confirmed. Search for a destination and preview it on the map."
+                : "Search for a destination and preview it on the map."
+        )
+        .accessibilityIdentifier("navigation.launch")
     }
 }
 
@@ -124,6 +146,7 @@ private extension Double {
 
 private struct NembraNavigationView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @AppStorage("navigation.recentDestinations.v1") private var recentDestinationsJSON = ""
@@ -202,7 +225,7 @@ private struct NembraNavigationView: View {
                 showsTraffic: true
             )
         )
-        .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 220 : 280)
+        .frame(height: navigationMapHeight)
         .overlay(alignment: .topLeading) {
             if let selectedItem {
                 VStack(alignment: .leading, spacing: 4) {
@@ -234,9 +257,37 @@ private struct NembraNavigationView: View {
                 }
                 .padding(16)
                 .accessibilityElement(children: .combine)
+            } else {
+                Label("MAP PREVIEW", systemImage: "scope")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.4)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 8)
+                    .background {
+                        if reduceTransparency {
+                            Capsule(style: .continuous)
+                                .fill(Color(uiColor: .secondarySystemBackground))
+                        } else {
+                            Capsule(style: .continuous)
+                                .fill(.regularMaterial)
+                        }
+                    }
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(.primary.opacity(0.10))
+                    }
+                    .padding(14)
+                    .accessibilityHidden(true)
             }
         }
         .accessibilityIdentifier("navigation.map")
+    }
+
+    private var navigationMapHeight: CGFloat {
+        if verticalSizeClass == .compact {
+            return dynamicTypeSize.isAccessibilitySize ? 160 : 180
+        }
+        return dynamicTypeSize.isAccessibilitySize ? 220 : 280
     }
 
     @ViewBuilder
@@ -245,32 +296,35 @@ private struct NembraNavigationView: View {
             selectedDestinationCard(selectedItem)
         } else if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             if recentDestinations.isEmpty {
-                ContentUnavailableView(
-                    "Find a destination",
-                    systemImage: "magnifyingglass",
-                    description: Text("Search for a place or address. Nembra will preview it here without using scooter telemetry.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 230)
-                .accessibilityIdentifier("navigation.empty")
+                navigationEmptyState
             } else {
                 recentDestinationList
             }
         } else if isSearching {
-            ProgressView("Searching…")
-                .frame(maxWidth: .infinity, minHeight: 230)
-                .accessibilityIdentifier("navigation.searching")
-        } else if let searchError {
-            ContentUnavailableView(
-                "Navigation unavailable",
-                systemImage: "exclamationmark.triangle",
-                description: Text(searchError)
+            navigationStatusSurface(
+                eyebrow: "SEARCHING MAP",
+                title: "Looking for places",
+                detail: "Map results stay separate from scooter telemetry.",
+                systemImage: "location.magnifyingglass",
+                showsProgress: true,
+                identifier: "navigation.searching"
             )
-            .frame(maxWidth: .infinity, minHeight: 230)
-            .accessibilityIdentifier("navigation.error")
+        } else if let searchError {
+            navigationStatusSurface(
+                eyebrow: "MAP SEARCH",
+                title: "Navigation unavailable",
+                detail: searchError,
+                systemImage: "exclamationmark.triangle",
+                identifier: "navigation.error"
+            )
         } else if results.isEmpty {
-            ContentUnavailableView.search(text: query)
-                .frame(maxWidth: .infinity, minHeight: 230)
-                .accessibilityIdentifier("navigation.no-results")
+            navigationStatusSurface(
+                eyebrow: "MAP SEARCH",
+                title: "No destination found",
+                detail: "Try a more specific place or address.",
+                systemImage: "location.slash",
+                identifier: "navigation.no-results"
+            )
         } else {
             List(results, id: \.self) { item in
                 Button {
@@ -286,6 +340,94 @@ private struct NembraNavigationView: View {
             }
             .listStyle(.plain)
         }
+    }
+
+    private var navigationEmptyState: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("NAVIGATION")
+                .font(.caption2.weight(.bold))
+                .tracking(1.8)
+                .foregroundStyle(.secondary)
+
+            Text("Find a destination")
+                .font(.largeTitle.weight(.semibold))
+                .tracking(-0.7)
+
+            Text("Search for a place or address. Nembra will preview it here without using scooter telemetry.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 9) {
+                Circle()
+                    .fill(.primary)
+                    .frame(width: 6, height: 6)
+
+                Capsule(style: .continuous)
+                    .fill(.primary.opacity(0.16))
+                    .frame(height: 2)
+
+                Image(systemName: "location.north.fill")
+                    .font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
+
+            Label("Choose a destination before riding.", systemImage: "hand.raised.fill")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, verticalSizeClass == .compact ? 14 : 22)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: verticalSizeClass == .compact ? 150 : 230,
+            alignment: .topLeading
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("navigation.empty")
+    }
+
+    private func navigationStatusSurface(
+        eyebrow: String,
+        title: String,
+        detail: String,
+        systemImage: String,
+        showsProgress: Bool = false,
+        identifier: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(spacing: 8) {
+                if showsProgress {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: systemImage)
+                }
+
+                Text(eyebrow)
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.5)
+            }
+            .foregroundStyle(.secondary)
+
+            Text(title)
+                .font(.title2.weight(.semibold))
+
+            Text(detail)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, verticalSizeClass == .compact ? 14 : 22)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: verticalSizeClass == .compact ? 150 : 230,
+            alignment: .topLeading
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(identifier)
     }
 
     private var recentDestinationList: some View {
