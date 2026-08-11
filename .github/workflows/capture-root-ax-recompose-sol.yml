@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch-root:
-    if: ${{ !contains(github.event.head_commit.message, 'product(capture): recompose root for Accessibility XXXL') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -19,9 +18,15 @@ jobs:
           fetch-depth: 1
 
       - name: Apply exact root-only accessibility recompose
+        id: patch
         shell: bash
         run: |
           set -euo pipefail
+          if grep -Fq '@Environment(\.dynamicTypeSize) private var dynamicTypeSize' NembraApp/App/NembraCaptureEntrypoint.swift; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Root accessibility recompose is already present.'
+            exit 0
+          fi
           python3 - <<'PY'
           from pathlib import Path
 
@@ -278,14 +283,16 @@ jobs:
           grep -Fq 'Link the Tuya account that owns this scooter before passive target correlation begins.' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'private func scooterActions' NembraApp/App/NembraCaptureEntrypoint.swift
           git diff --check
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
 
       - name: Commit root-only product repair
+        if: steps.patch.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'nembra-v14-sol'
           git config user.email 'nembra-v14-sol@users.noreply.github.com'
           git add NembraApp/App/NembraCaptureEntrypoint.swift
-          git diff --cached --exit-code && { echo 'expected root patch missing' >&2; exit 1; } || true
+          git diff --cached --quiet && { echo 'expected root patch missing' >&2; exit 1; }
           git commit -m 'product(capture): recompose root for Accessibility XXXL'
           git push origin HEAD:${{ github.ref_name }}
