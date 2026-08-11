@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -47,16 +48,6 @@ class _CompatibleGuard:
     PrivateInputs = _PrivateInputs
     BuildGuardError = RuntimeError
     last_call = None
-
-    @staticmethod
-    def _lexical_absolute(path: Path) -> Path:
-        return path.absolute()
-
-    @staticmethod
-    def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Path:
-        if path != root and root not in path.parents:
-            raise RuntimeError(f"{label} escaped fixture root")
-        return path
 
     @staticmethod
     def run_guarded_build(
@@ -119,7 +110,19 @@ class DependencyResolutionGuardAdapterTests(unittest.TestCase):
             "/usr/bin/true",
         ]
 
-    def test_adapter_invokes_current_canonical_private_only_signature(self) -> None:
+    def test_exact_canonical_guard_api_and_parser_are_compatible(self) -> None:
+        adapter = load_adapter()
+        guard = adapter._load_guard()
+        adapter._require_private_only_guard_api(guard)
+        with tempfile.TemporaryDirectory(prefix="nembra-private-resolution-canonical-") as temporary:
+            root = Path(temporary)
+            inputs, command = adapter._parse_args(guard, self._fixture_arguments(root))
+
+        self.assertIsInstance(inputs, guard.PrivateInputs)
+        self.assertEqual(command, ["/usr/bin/true"])
+        self.assertEqual(inputs.lockfile.name, "Podfile")
+
+    def test_adapter_invokes_current_private_only_signature_without_unknown_keywords(self) -> None:
         adapter = load_adapter()
         with tempfile.TemporaryDirectory(prefix="nembra-private-resolution-adapter-") as temporary:
             root = Path(temporary)
@@ -139,6 +142,21 @@ class DependencyResolutionGuardAdapterTests(unittest.TestCase):
             root = Path(temporary)
             arguments = self._fixture_arguments(root)
             with mock.patch.object(adapter, "_load_guard", return_value=_DriftedGuard):
+                result = adapter.main(arguments)
+
+        self.assertEqual(result, 74)
+        self.assertIsNone(_CompatibleGuard.last_call)
+
+    def test_private_input_symlink_ancestry_is_rejected_before_guard_invocation(self) -> None:
+        adapter = load_adapter()
+        with tempfile.TemporaryDirectory(prefix="nembra-private-resolution-symlink-") as temporary:
+            root = Path(temporary)
+            arguments = self._fixture_arguments(root)
+            real_sdk = root / "LocalSecrets/TuyaSDK"
+            moved_sdk = root / "LocalSecrets/TuyaSDK.real"
+            os.rename(real_sdk, moved_sdk)
+            os.symlink(moved_sdk.name, real_sdk)
+            with mock.patch.object(adapter, "_load_guard", return_value=_CompatibleGuard):
                 result = adapter.main(arguments)
 
         self.assertEqual(result, 74)
