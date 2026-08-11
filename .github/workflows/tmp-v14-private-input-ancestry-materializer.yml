@@ -23,12 +23,12 @@ jobs:
           python3 scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
           python3 scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
           git diff --check
-      - name: Checkpoint real repair only
+      - name: Checkpoint product and regression only
         shell: bash
         run: |
           set -euo pipefail
           git config user.name nembra-v14-go
           git config user.email nembra-v14-go@users.noreply.github.com
-          git add Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_private_input_ancestor_retarget.py .github/workflows/capture-cocoapods-build-subject-redteam.yml
+          git add Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
           git commit -m 'fix(capture): pin private build-input ancestry'
           git push origin HEAD:repair/v14-capture-private-input-ancestry-sol
