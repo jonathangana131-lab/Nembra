@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  recover:
+  capture-conflicts:
     if: github.repository == 'jonathangana131-lab/Nembra'
     runs-on: ubuntu-latest
     steps:
@@ -17,75 +17,42 @@ jobs:
         with:
           ref: recovery/v14-final-go-reviewed-lock-current-bcc-sol
           fetch-depth: 0
-      - name: Verify failed attempt changed no product bytes
+      - name: Verify second failed attempt changed no product bytes
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "04ab504b41a8b3980252e26f17a9812327253819"
+          test "$(git rev-parse HEAD^)" = "5240d10596b8418288167899eb1094e8cc2db198"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml"
           test "$(git diff --name-only bccdab041235982ee95a9a4bd366d7b1ec50ccda...HEAD)" = ".github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml"
-      - name: Three-way compose accepted authority contracts
+      - name: Capture deterministic three-way conflict subjects
         shell: bash
         run: |
           set -euo pipefail
           BASE=da86226ba36bb2d4f441cc3cb876244af17853cb
           OURS=bccdab041235982ee95a9a4bd366d7b1ec50ccda
           THEIRS=d8416aeba19b826cfb50bde9e0b3e2778766a286
+          mkdir -p recovery-debug
           paths=(
             scripts/ci/es80_authenticated_stationary_final_go.py
             scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
             scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
           )
           for path in "${paths[@]}"; do
-            mkdir -p "$(dirname "$path")"
+            name="$(basename "$path")"
             git show "$OURS:$path" > /tmp/ours
             git show "$BASE:$path" > /tmp/base
             git show "$THEIRS:$path" > /tmp/theirs
-            git merge-file -p /tmp/ours /tmp/base /tmp/theirs > "$path"
-            ! grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$path"
+            git merge-file -p -L current-bcc -L common-da862 -L reviewed-lock-d841 /tmp/ours /tmp/base /tmp/theirs > "recovery-debug/$name" || true
           done
-          git diff --check
-          git add "${paths[@]}"
-          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' "${paths[@]}" | sort)"
-          git config user.name "jonathangana131-lab"
-          git config user.email "jonathangana131@gmail.com"
-          git commit -m "fix(capture): compose reviewed Tuya lock authority"
-      - name: Validate composed authority
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
-          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
-      - name: Prove both authority halves survived composition
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
-          required=(
-            'NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256',
-            'nembra-capture-human-review-github-v2',
-            'acceptedTuyaDependencyLockSHA256',
-            'retained signed artifact Tuya dependency lock does not match prebuild GitHub review',
-            'mainSHA',
-            'candidate authority path has suppressed index worktree tracking',
-            'hash-object","--no-filters',
-            'BASH_ENV":"/dev/null',
-          )
-          missing=[x for x in required if x not in s]
-          if missing: raise SystemExit(f'missing composed authority markers: {missing}')
-          PY
-      - name: Remove temporary recovery workflow and publish clean head
+          grep -R -n '^<<<<<<<\|^=======\|^>>>>>>>' recovery-debug > recovery-debug/conflict-index.txt || true
+          test -s recovery-debug/conflict-index.txt
+      - name: Publish disposable conflict evidence and remove workflow
         shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml
-          git add -A
-          test "$(git diff --cached --name-only)" = ".github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml"
-          git commit -m "chore(capture): remove temporary reviewed-lock recovery"
-          test "$(git diff --name-only bccdab041235982ee95a9a4bd366d7b1ec50ccda...HEAD | sort)" = "$(printf '%s\n' 'scripts/ci/es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py' | sort)"
+          git config user.name "jonathangana131-lab"
+          git config user.email "jonathangana131@gmail.com"
+          git add recovery-debug .github/workflows/tmp-v14-final-go-reviewed-lock-recovery.yml
+          git commit -m "debug(capture): retain reviewed-lock merge conflict evidence"
           git push origin HEAD:recovery/v14-final-go-reviewed-lock-current-bcc-sol
