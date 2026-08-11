@@ -376,7 +376,14 @@ final class TuyaAccountBridge: ObservableObject {
             let terminal = result["terminal_id"] as? String ?? ""
             let expire = Self.int64(result["expire_time"]) ?? 0
             let rawEndpoint = result["endpoint"] as? String ?? ""
-            let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\(rawEndpoint)"
+            let endpointCandidate = rawEndpoint.contains("://") ? rawEndpoint : "https://\(rawEndpoint)"
+            guard let endpointURL = URL(string: endpointCandidate),
+                  endpointURL.scheme?.lowercased() == "https",
+                  let endpointHost = endpointURL.host,
+                  !endpointHost.isEmpty else {
+                throw BridgeError.malformed("Tuya approval returned an invalid secure API endpoint.")
+            }
+            let endpoint = endpointURL.absoluteString
             guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
                 throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
             }
@@ -584,7 +591,13 @@ final class TuyaAccountBridge: ObservableObject {
     }
 
     private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let requestURL = request.url,
+      requestURL.scheme?.lowercased() == "https",
+      let requestHost = requestURL.host,
+      !requestHost.isEmpty else {
+    throw BridgeError.invalidURL
+}
+let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw BridgeError.remote("HTTP request failed.")
         }
