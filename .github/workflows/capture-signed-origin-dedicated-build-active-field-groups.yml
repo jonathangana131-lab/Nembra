@@ -1,6 +1,10 @@
 name: Capture Signed Origin Dedicated Build Active Field Groups
 
 on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
+      - .github/workflows/capture-signed-origin-dedicated-build-active-field-groups.yml
   push:
     branches:
       - validation/v14-real-xcode-active-field-groups-sol-20260811
@@ -10,25 +14,26 @@ permissions:
   contents: read
 
 concurrency:
-  group: capture-signed-origin-dedicated-active-groups-${{ github.ref }}
+  group: capture-signed-origin-dedicated-active-groups-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   active-field-authority:
     name: Prove dedicated UID against actual pre-sudo field groups
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
       - name: Bind exact failed parent and one-workflow diagnostic delta
         shell: bash
         env:
-          EXPECTED_HEAD_SHA: ${{ github.sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           FAILED_PARENT_SHA: ecca5b2925c336269b400f1d65de7224d36607b5
         run: |
           set -euo pipefail
