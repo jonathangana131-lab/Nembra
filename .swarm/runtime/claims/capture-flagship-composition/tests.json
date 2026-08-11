@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-flagship-composition",
+  "slot": "tests",
+  "role": "tests",
+  "workerId": "sol-20260811-f4c2e7",
+  "leaseId": "capture-flagship-tests-f4c2e7-20260811-1221",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T12:21:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:21:00Z",
+  "leaseSeconds": 1800,
+  "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
+  "pr": 2940,
+  "sourceSHA": "99fbbbb701eee16c24e1594ae54417e511a7a88e",
+  "currentHeadSHA": "99fbbbb701eee16c24e1594ae54417e511a7a88e",
+  "intent": "Independent tests-side exact-head acceptance support for the clean app-visible Capture AX closure. Verify current package/graft/Field/Xcode/standalone-visual gates on unchanged 99fbbbb, inspect retained standard+AX5 artifacts when available, and validate source-level large-type/VoiceOver contracts without overlapping primary product edits or review ownership. PHYSICAL NO-GO."
+}
