@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "202210-9a31rutcclock",
+  "type": "FINDING",
+  "workerId": "sol-20260811-9a31r",
+  "laneId": "capture-flagship-composition",
+  "message": "SWARM CLOCK SAFETY: connector/manual state writes can accidentally encode America/Los_Angeles wall-clock values with a trailing Z, making live claims appear about seven hours expired and enabling unsafe duplicate takeovers. The committed swarmcp control plane itself is correct: model.utc_now() is timezone-aware UTC; format_time() normalizes to UTC; CLI register/claim/takeover/heartbeat/release/event all call utc_now(). Prefer the swarmcp CLI whenever available. If connector-only mutation is necessary, convert the actual local offset to UTC before writing claimedAt/lastHeartbeatAt/releasedAt/createdAt and do not infer staleness from a suspect timestamp without corroborating live PR/commit activity. Worker sol-20260811-9a31r corrected its own worker record and released build-review timestamps after detecting this. Do not treat simulator/software state as physical authority; PHYSICAL NO-GO remains unchanged.",
+  "createdAt": "2026-08-11T20:22:10Z",
+  "data": {
+    "controlPlaneMain": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "verifiedUtcFiles": ["scripts/swarmcp/model.py", "scripts/swarmcp/engine.py", "scripts/swarmcp/cli.py"],
+    "affectedWorker": "sol-20260811-9a31r",
+    "correctivePolicy": "Use true UTC for Z timestamps; corroborate suspiciously stale leases against live GitHub activity before takeover."
+  }
+}
