@@ -1,1 +1,2 @@
 Temporary same-repository trigger for the repair-branch base workflow. This file is never part of the repair branch or product candidate.
+Retry after narrowing the runner write scope to product/test files only.
