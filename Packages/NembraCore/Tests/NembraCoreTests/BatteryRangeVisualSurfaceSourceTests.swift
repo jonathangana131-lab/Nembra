@@ -45,8 +45,8 @@ struct BatteryRangeVisualSurfaceSourceTests {
     }
 
     private func batteryRangeSection(in source: String) throws -> Substring {
-        guard let start = source.range(of: "private struct BatteryRangeView: View") else {
-            Issue.record("BatteryRangeView source was not found")
+        guard let start = source.range(of: "/// Product-facing Battery/Range surface.") else {
+            Issue.record("BatteryRangeView product surface was not found")
             throw SourceContractError.sectionMissing
         }
         return source[start.lowerBound..<source.endIndex]
