@@ -9,13 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:04:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:20:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:21:40Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-final-go-combined-sol-1404m2",
   "pr": 3023,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "currentHeadSHA": "19fe3a39ddf2d30f737b5cf50ead4712081ac308",
+  "currentHeadSHA": "29f58fd3919ea2035a9cf6846b2e3e8a2ecaf226",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
   "takeoverReason": "Generation-3 integration claim was explicitly released. Recover the flagship integration role, continuously compose independently accepted Capture ingredients, and preserve exact-head acceptance. PHYSICAL NO-GO.",
-  "checkpoint": "Independent review found #3013 could only retest ingredient head 471cc025 rather than a combined exact head. Fixed the topology without changing accepted payload: pinned GitHub's clean two-parent merge commit 19fe3a39ddf2d30f737b5cf50ead4712081ac308 (parents accepted app-visible 005b7c4 and accepted Final-GO 471cc025; tree f517e9831da53c728cee7caddffbaa5a5ccc145e) to durable integration/v14-capture-final-go-combined-sol-1404m2 and opened ready PR #3023 against the unchanged 005b7c4 staging base. Relative payload remains exactly 23 Final-GO authority-family files, +5273/-0. Fresh exact-head Final-GO-family gates are running; Xcode policy must be re-evaluated after ready transition; independent exact-head review requested. #3013 closed superseded with no implementation loss. #2979/runtime-AX/build/private/signed-install successors remain excluded until independently accepted. PHYSICAL NO-GO."
+  "checkpoint": "#2979 exact ce9e2bac independently earned Main, Field Provenance, Xcode 27, Standalone Visual, and pixel/source review, then integration-only PR #3025 cleanly grafted its exact five files into the durable app+Final-GO spine. #3023 is now exact durable head 29f58fd3919ea2035a9cf6846b2e3e8a2ecaf226. Fresh compare from accepted app base 005b7c4 is ahead-only, exactly 28 paths / +5413 -2: prior 23-file Final-GO family plus the five accepted first-fold files; no BLE/Tuya/private/signed-install/physical paths. All previous #3023 greens/review on 19fe3a39 are ancestor evidence only. Moved-head independent review requested and fresh Main/Final-GO/Xcode/Field/Standalone Visual must re-earn acceptance. Runtime VoiceOver remains separate. PHYSICAL NO-GO."
 }
