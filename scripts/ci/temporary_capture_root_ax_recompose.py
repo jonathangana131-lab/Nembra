@@ -18,6 +18,13 @@ def replace_once(old: str, new: str, label: str) -> None:
     source = source.replace(old, new, 1)
 
 
+def replace_slice(start: int, end: int, new: str, label: str) -> None:
+    global source
+    if start < 0 or end <= start:
+        raise SystemExit(f"{label}: invalid source slice")
+    source = source[:start] + new + source[end:]
+
+
 replace_once(
     """    @StateObject private var tuya = TuyaAccountBridge()
     @State private var showEngineeringDetails = false
@@ -54,45 +61,28 @@ replace_once(
     "root hero composition",
 )
 
-replace_once(
-    """                                HStack {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(\"Choose this scooter\")
-                                            .font(.title3.bold())
-                                        Text(\"Nembra will verify the selected device again inside the official SDK before Bluetooth discovery.\")
-                                            .font(.footnote)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer(minLength: 8)
-                                    if tuya.devices.isEmpty {
-                                        Button(\"Refresh\") { tuya.refreshDevices() }
-                                            .buttonStyle(.bordered)
-                                    }
-                                }
-""",
-    """                                scooterChooserHeader
-""",
+choose_title = source.index('Text("Choose this scooter")', root_start)
+chooser_start = source.rfind("                                    HStack {", root_start, choose_title)
+chooser_end = source.index("\n\n                                    ForEach(tuya.devices)", choose_title)
+replace_slice(
+    chooser_start,
+    chooser_end,
+    "                                    scooterChooserHeader()",
     "scooter chooser header",
 )
 
-replace_once(
-    """                                    HStack(spacing: 10) {
-                                        Button(tuya.selectedDeviceID == device.id ? \"Refresh metadata\" : \"Use this scooter\") {
-                                            tuya.selectDevice(device)
-                                        }
-                                        .buttonStyle(.bordered)
-
-                                        if tuya.selectedDeviceID == device.id,
-                                           tuya.phase == .ready,
-                                           !device.productID.isEmpty,
-                                           !device.uuid.isEmpty {
-                                            NavigationLink(\"Continue to Capture\") { SecureLinkView(device: device) }
-                                                .buttonStyle(.borderedProminent)
-                                        }
-                                    }
-""",
-    """                                    scooterActions(for: device)
-""",
+action_button = source.index(
+    'Button(tuya.selectedDeviceID == device.id ? "Refresh metadata" : "Use this scooter")',
+    root_start,
+)
+action_start = source.rfind("                                            HStack(spacing: 10) {", root_start, action_button)
+action_end_marker = "\n                                            }\n                                        }\n                                        .padding(14)"
+action_close = source.index(action_end_marker, action_button)
+action_end = action_close + len("\n                                            }")
+replace_slice(
+    action_start,
+    action_end,
+    "                                            scooterActions(for: device)",
     "scooter action layout",
 )
 
@@ -161,7 +151,7 @@ replace_once(
     }
 
     @ViewBuilder
-    private var scooterChooserHeader: some View {
+    private func scooterChooserHeader() -> some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 10) {
                 scooterChooserCopy
