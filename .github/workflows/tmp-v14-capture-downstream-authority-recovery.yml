@@ -88,8 +88,12 @@ jobs:
           )
           for file in "${files[@]}"; do
             if ! output="$(python3 -m py_compile "$file" 2>&1)"; then
+              context=""
+              if [[ "$file" == "Scripts/capture_tuya_private_input_build_guard.py" ]]; then
+                context="$(nl -ba "$file" | sed -n '45,72p' | tr '\n' '|' | sed 's/%/%25/g; s/\r/%0D/g')"
+              fi
               message="$(printf '%s' "$output" | tail -20 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
-              echo "::error title=Python syntax failure::$file :: $message"
+              echo "::error title=Python syntax failure::$file :: $message :: $context"
               exit 1
             fi
           done
