@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072030-capture-package-focused-isolation-9c42",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-9c42",
+  "laneId": "capture-package-test-runner-recovery",
+  "message": "Diagnostic PR #2808 exact head be29d23a1218ca14ef8bbe70a241af32edb6d61b ran nine suspect/new/source-slicing/metadata-custody suites independently on Xcode 27. Every focused suite completed status 0 with no Range abort. The immediately following full package run still exited nonzero with Swift Testing signal 5 / 'Range requires lowerBound <= upperBound'. This rules out a simple independent failure in any of those nine suites and shifts the next evidence rung to serial-vs-default full-package execution before any runner/acceptance behavior is changed. PHYSICAL NO-GO unchanged.",
+  "createdAt": "2026-08-11T07:20:30Z",
+  "data": {
+    "diagnosticPR": 2808,
+    "headSHA": "be29d23a1218ca14ef8bbe70a241af32edb6d61b",
+    "workflowRun": 31468363225,
+    "artifactId": 9092387847,
+    "focusedSuiteCount": 9,
+    "focusedFailures": 0,
+    "focusedRangeAborts": 0,
+    "fullPackageRangeAbort": true,
+    "nextEvidence": "SERIAL_VS_DEFAULT_FULL_PACKAGE",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
