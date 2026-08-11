@@ -1,0 +1,65 @@
+name: TEMP Align Field Build Provenance Contract GPT56
+
+on:
+  push:
+    branches:
+      - repair/v14-field-source-contract-gpt56-20260811-r2
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-field-source-contract-gpt56-20260811-r2
+          fetch-depth: 0
+      - name: Bind exact accepted parent lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor bb66267cf29a061071d29dda81d3ed5d607d25ef HEAD
+      - name: Materialize workflow contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_align_field_build_provenance_contract_gpt56.py
+      - name: Validate strengthened inline contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/capture-field-build-provenance.yml'
+          grep -Fq 'run_authority_git() {' "$workflow"
+          grep -Fq 'status --porcelain=v1 --untracked-files=no' "$workflow"
+          grep -Fq 'Raw accepted-source byte audit failed.' "$workflow"
+          grep -Fq 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"' "$workflow"
+          grep -Fq -- '-- /usr/bin/xcodebuild \' "$workflow"
+          if grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$workflow"; then
+            echo 'stale ambient Git source contract remains' >&2
+            exit 1
+          fi
+          if grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' "$workflow"; then
+            echo 'stale requested-source wording remains' >&2
+            exit 1
+          fi
+          if grep -Fq -- '-- xcodebuild \' "$workflow"; then
+            echo 'stale PATH-resolved xcodebuild ordering contract remains' >&2
+            exit 1
+          fi
+          git diff --check
+      - name: Publish only permanent workflow repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/tmp_align_field_build_provenance_contract_gpt56.py
+          rm -f .github/workflows/tmp-align-field-build-provenance-contract-gpt56.yml
+          git add .github/workflows/capture-field-build-provenance.yml
+          git add -u scripts/ci/tmp_align_field_build_provenance_contract_gpt56.py .github/workflows/tmp-align-field-build-provenance-contract-gpt56.yml
+          git diff --cached --check
+          git config user.name "Nembra V14 GPT56"
+          git config user.email "nembra-v14-gpt56@users.noreply.github.com"
+          git commit -m "Capture: align provenance workflow source authority"
+          git push origin HEAD:repair/v14-field-source-contract-gpt56-20260811-r2
