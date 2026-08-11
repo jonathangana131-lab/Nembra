@@ -1,0 +1,33 @@
+name: TMP V14 Private Identity Final Name Binding Sol
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-final-name-binding-sol-20260811
+    paths:
+      - scripts/ci/tmp_materialize_private_identity_final_name_binding_sol.py
+      - .github/workflows/tmp-v14-private-identity-final-name-binding-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Bind exact construction head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Materialize, validate, clean construction files, and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tmp_materialize_private_identity_final_name_binding_sol.py
