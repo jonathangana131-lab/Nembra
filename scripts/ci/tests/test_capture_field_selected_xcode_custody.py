@@ -33,6 +33,16 @@ class CaptureFieldSelectedXcodeCustodyTests(unittest.TestCase):
         assert selection is not None
         return selection.group("name"), selection.start()
 
+    def _selected_xcodebuild(self) -> tuple[str, int]:
+        selection = re.search(
+            r'(?m)^(?:readonly\s+)?(?P<name>SELECTED_[A-Z0-9_]*XCODEBUILD[A-Z0-9_]*)='
+            r'"?\$\(DEVELOPER_DIR="?\$SELECTED_DEVELOPER_DIR"?\s+/usr/bin/xcrun\s+--find\s+xcodebuild\)"?\s*$',
+            self.source,
+        )
+        self.assertIsNotNone(selection, "field authority must resolve one exact selected xcodebuild executable")
+        assert selection is not None
+        return selection.group("name"), selection.start()
+
     def test_system_selected_developer_tree_is_explicit_authority_subject(self) -> None:
         name, selection_index = self._selected_developer_dir()
         device_discovery = self.source.find("list devices")
@@ -54,19 +64,27 @@ class CaptureFieldSelectedXcodeCustodyTests(unittest.TestCase):
             "the exact xcode-select developer tree must pass an explicit root-owned/non-group-or-world-writable ancestry custody check before field Xcode use",
         )
 
-    def test_selected_toolchain_is_admitted_as_xcode_27_before_device_or_build_use(self) -> None:
+    def test_selected_toolchain_is_admitted_as_xcode_27_through_exact_custodied_xcodebuild(self) -> None:
         _, selection_index = self._selected_developer_dir()
+        xcodebuild, xcodebuild_index = self._selected_xcodebuild()
         device_discovery = self.source.find("list devices")
-        preflight = self.source[selection_index:device_discovery]
-        self.assertRegex(
+        self.assertGreater(xcodebuild_index, selection_index)
+        self.assertGreater(device_discovery, xcodebuild_index)
+        preflight = self.source[xcodebuild_index:device_discovery]
+        custody_marker = f'validate_root_custodied_path "${xcodebuild}" file'
+        version_marker = f'SELECTED_XCODE_VERSION="$("${xcodebuild}" -version'
+        self.assertIn(custody_marker, preflight, "exact selected xcodebuild must be file-custodied before version admission")
+        self.assertIn(version_marker, preflight, "Xcode 27 version admission must interrogate the exact custodied xcodebuild executable")
+        self.assertLess(preflight.index(custody_marker), preflight.index(version_marker))
+        self.assertNotIn(
+            'DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcodebuild -version',
             preflight,
-            re.compile(r'/usr/bin/xcodebuild[^\n]*-version|run_[A-Za-z0-9_]*xcodebuild[^\n]*-version'),
-            "the selected system toolchain must be interrogated before field device/build work",
+            "version admission must not use the mutable system xcodebuild dispatcher before exact executable custody",
         )
         self.assertRegex(
             preflight,
             re.compile(r'Xcode[^\n]*27|27[^\n]*Xcode', re.IGNORECASE),
-            "field admission must fail closed unless the selected toolchain identifies as Xcode 27",
+            "field admission must fail closed unless the exact selected toolchain identifies as Xcode 27",
         )
 
     def test_caller_fence_alone_is_not_misrepresented_as_selected_toolchain_custody(self) -> None:
