@@ -42,6 +42,8 @@ kind = os.environ.get("NEMBRA_CUSTODY_KIND", "")
 path = Path(raw)
 if not raw or "\x00" in raw or not path.is_absolute():
     raise SystemExit("selected Xcode custody requires one absolute path")
+if kind not in {"directory", "file"}:
+    raise SystemExit("selected Xcode custody kind is unsupported")
 try:
     resolved = path.resolve(strict=True)
 except OSError as error:
@@ -55,12 +57,20 @@ for component in path.parts[1:]:
         metadata = os.lstat(current)
     except OSError as error:
         raise SystemExit("selected Xcode custody ancestry is unavailable") from error
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+    leaf = current == path
+    if stat.S_ISLNK(metadata.st_mode):
+        raise SystemExit("selected Xcode custody refuses symlink ancestry or subjects")
+    if leaf and kind == "file":
+        if not stat.S_ISREG(metadata.st_mode):
+            raise SystemExit("selected Xcode custody expected one regular file")
+    elif not stat.S_ISDIR(metadata.st_mode):
         raise SystemExit("selected Xcode custody requires real directory ancestry")
     if metadata.st_uid != 0 or metadata.st_mode & 0o022:
-        raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable ancestry")
-if kind != "directory" or not path.is_dir():
+        raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable metadata")
+if kind == "directory" and not path.is_dir():
     raise SystemExit("selected Xcode custody expected one directory")
+if kind == "file" and (not path.is_file() or path.is_symlink()):
+    raise SystemExit("selected Xcode custody expected one real regular file")
 PY_CUSTODY
 }
 
@@ -69,15 +79,29 @@ SELECTED_DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"
 readonly SELECTED_DEVELOPER_DIR
 [[ "$SELECTED_DEVELOPER_DIR" == /* ]] || die "System-selected Xcode developer directory is not absolute."
 validate_root_custodied_path "$SELECTED_DEVELOPER_DIR" directory || die "System-selected Xcode developer tree is not under trusted root custody."
-SELECTED_XCODE_VERSION="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcodebuild -version 2>/dev/null)" || die "Could not interrogate the selected Xcode toolchain."
-SELECTED_XCODE_FIRST_LINE="${SELECTED_XCODE_VERSION%%$'\n'*}"
-[[ "$SELECTED_XCODE_FIRST_LINE" =~ ^Xcode[[:space:]]27([.]|$) ]] || die "Selected developer tree must identify as Xcode 27 before physical device discovery or build admission."
-SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)" || die "Could not resolve xcodebuild from the selected Xcode 27 developer tree."
+SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)"
+[[ -n "$SELECTED_XCODEBUILD" ]] || die "Could not resolve xcodebuild from the selected Xcode 27 developer tree."
 readonly SELECTED_XCODEBUILD
 [[ "$SELECTED_XCODEBUILD" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected xcodebuild escaped the admitted Xcode developer tree."
 validate_root_custodied_path "$(dirname "$SELECTED_XCODEBUILD")" directory || die "Selected xcodebuild parent escaped trusted root custody."
-[[ -f "$SELECTED_XCODEBUILD" && -x "$SELECTED_XCODEBUILD" && ! -L "$SELECTED_XCODEBUILD" ]] || die "Selected xcodebuild is not one real executable under the admitted Xcode tree."
-say "Selected Xcode 27 developer tree admitted under root custody"
+validate_root_custodied_path "$SELECTED_XCODEBUILD" file || die "Selected xcodebuild executable is not under exact root-owned non-group/world-writable file custody."
+[[ -x "$SELECTED_XCODEBUILD" ]] || die "Selected xcodebuild is not executable."
+SELECTED_XCODE_VERSION="$("$SELECTED_XCODEBUILD" -version 2>/dev/null)" || die "Could not interrogate the exact selected Xcode toolchain."
+SELECTED_XCODE_FIRST_LINE="${SELECTED_XCODE_VERSION%%$'\n'*}"
+[[ "$SELECTED_XCODE_FIRST_LINE" =~ ^Xcode[[:space:]]27([.]|$) ]] || die "Selected developer tree must identify as Xcode 27 before physical device discovery or build admission."
+SELECTED_XCTRACE="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xctrace)"
+[[ -n "$SELECTED_XCTRACE" ]] || die "Could not resolve xctrace from the selected Xcode 27 developer tree."
+readonly SELECTED_XCTRACE
+[[ "$SELECTED_XCTRACE" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected xctrace escaped the admitted Xcode developer tree."
+validate_root_custodied_path "$SELECTED_XCTRACE" file || die "Selected xctrace executable is not under exact root-owned non-group/world-writable file custody."
+[[ -x "$SELECTED_XCTRACE" ]] || die "Selected xctrace is not executable."
+SELECTED_DEVICECTL="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find devicectl)"
+[[ -n "$SELECTED_DEVICECTL" ]] || die "Could not resolve devicectl from the selected Xcode 27 developer tree."
+readonly SELECTED_DEVICECTL
+[[ "$SELECTED_DEVICECTL" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected devicectl escaped the admitted Xcode developer tree."
+validate_root_custodied_path "$SELECTED_DEVICECTL" file || die "Selected devicectl executable is not under exact root-owned non-group/world-writable file custody."
+[[ -x "$SELECTED_DEVICECTL" ]] || die "Selected devicectl is not executable."
+say "Selected Xcode 27 developer tree and exact physical tool files admitted under root custody"
 unset SELECTED_XCODE_VERSION SELECTED_XCODE_FIRST_LINE || true
 
 EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"
@@ -553,7 +577,7 @@ verify_private_tuya_inputs() {
 unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
 
 say "Verifying the intended iPhone 12 / iOS 27 baseline"
-DEVICE_ROWS="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c '
+DEVICE_ROWS="$("$SELECTED_XCTRACE" list devices 2>/dev/null | /usr/bin/python3 -I -c '
 import re,sys
 section=False
 for raw in sys.stdin:
@@ -593,7 +617,7 @@ unset INTENDED_NORMALIZED ROW_NORMALIZED ROW_UDID
 # Correlate it to the private UDID through the device hostname, then use only the
 # CoreDevice identifier for install/launch so the private UDID never enters
 # devicectl argv. `--hide-headers` is an Xcode-supported textual-output option.
-COREDEVICE_ROWS="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
+COREDEVICE_ROWS="$("$SELECTED_DEVICECTL" list devices --hide-headers 2>/dev/null || true)"
 [[ -n "$COREDEVICE_ROWS" ]] || die "CoreDevice did not report the intended iPhone. Keep it connected/unlocked and allow Xcode device preparation to finish."
 COREDEVICE_MATCH="$(printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -I -c '
 import re,sys
@@ -801,7 +825,7 @@ trap 'rm -f -- "$INSTALL_LOG"' EXIT
 chmod 600 "$INSTALL_LOG"
 INSTALLED=0
 for ATTEMPT in $(seq 1 60); do
-    if DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
+    if "$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
         INSTALLED=1
         break
     fi
@@ -844,7 +868,7 @@ sys.stdout.write(text)
 fi
 
 say "Launching privately provisioned Capture on the intended iPhone"
-if ! DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl device process launch \
+if ! "$SELECTED_DEVICECTL" device process launch \
     --device "$COREDEVICE_ID" \
     --activate \
     "$BUNDLE_ID" >/dev/null 2>&1; then
