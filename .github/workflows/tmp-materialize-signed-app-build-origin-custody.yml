@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   materialize:
-    if: github.event.head_commit.message == 'Bootstrap signed app build-origin custody workflow'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -19,14 +18,26 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Bind materialization to exact construction head
+      - name: Bind exact construction head
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          printf 'expected=%s actual=%s\n' "$EXPECTED_HEAD_SHA" "$(git rev-parse HEAD)"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Require clean construction tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile materializer
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_signed_app_build_origin_custody.py
 
       - name: Materialize production repair
