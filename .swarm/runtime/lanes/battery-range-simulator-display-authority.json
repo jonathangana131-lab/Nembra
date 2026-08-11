@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "battery-range-simulator-display-authority",
+  "feature": "Battery + Range",
+  "subdomain": "app-visible Simulator battery display authority recovery",
+  "priority": "P2",
+  "state": "READY",
+  "riskClass": "B",
+  "truthClass": "SIMULATOR DISPLAY ONLY",
+  "appVisible": true,
+  "physicalRequired": false,
+  "eligibleRoles": ["primary", "review"],
+  "dependencies": ["main contains merged owner-bound battery currentness authority"],
+  "allowedPaths": [
+    "NembraApp/App/AppBootstrap.swift",
+    "Packages/NembraCore/Tests/NembraCoreTests/SimulatorBatteryDisplayAuthorityAppSourceTests.swift",
+    "Packages/NembraCore/Tests/NembraCoreTests/BatteryRangeVisualSurfaceSourceTests.swift"
+  ],
+  "resourceNeeds": ["xcode-27 final app-visible acceptance after source is frozen"],
+  "acceptance": [
+    "production/no-scenario bootstrap has no battery measurement authority",
+    "Simulator scenarios receive display-only battery authority",
+    "display-only battery cannot train learned range or become physical SoC",
+    "exact-head iPhone 12 / iOS 27 Simulator screenshots cover connected-stopped, riding, low-battery, accessibility and Reduce Motion states",
+    "physical ES80 battery/range truth remains explicitly unavailable"
+  ],
+  "legacySourcePR": 2222,
+  "reconciliation": "PR #2222 is non-mergeable and 49 main commits behind; its AppBootstrap product intent is still absent on current main and requires a current-main recovery, not a stale-branch merge."
+}
