@@ -36,6 +36,7 @@ class ProvisionError(RuntimeError):
 
 _DARWIN_RENAME_NOFOLLOW_ANY = 0x00000010
 _DARWIN_RENAME_RESOLVE_BENEATH = 0x00000020
+_PRIVATE_STAGE_PREFIX = ".nembra-private-stage-"
 
 
 def _directory_flags() -> int:
@@ -274,6 +275,71 @@ def _unlink_owned_relative_inode_if_named(
         return
 
 
+def _reserved_staging_names(checkout_fd: int) -> list[str]:
+    try:
+        names = os.listdir(checkout_fd)
+    except OSError as exc:
+        raise ProvisionError("could not inspect reserved private identity staging namespace") from exc
+    result: list[str] = []
+    for name in names:
+        if not isinstance(name, str):
+            raise ProvisionError("reserved private identity staging namespace returned a non-text name")
+        if name.startswith(_PRIVATE_STAGE_PREFIX):
+            result.append(name)
+    return sorted(result)
+
+
+def _recover_private_staging_residue(checkout_fd: int) -> None:
+    removed_any = False
+    for name in _reserved_staging_names(checkout_fd):
+        descriptor = -1
+        try:
+            try:
+                named = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+            except OSError as exc:
+                raise ProvisionError("reserved private identity staging entry changed during recovery") from exc
+            if (
+                not stat.S_ISREG(named.st_mode)
+                or named.st_uid != os.geteuid()
+                or named.st_nlink != 1
+                or stat.S_IMODE(named.st_mode) != 0o600
+            ):
+                raise ProvisionError(
+                    "reserved private identity staging entry is not one recoverable writer-owned 0600 regular file"
+                )
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=checkout_fd,
+            )
+            held = os.fstat(descriptor)
+            rebound = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+            if (
+                not stat.S_ISREG(held.st_mode)
+                or held.st_uid != os.geteuid()
+                or held.st_nlink != 1
+                or stat.S_IMODE(held.st_mode) != 0o600
+                or held.st_dev != named.st_dev
+                or held.st_ino != named.st_ino
+                or rebound.st_dev != held.st_dev
+                or rebound.st_ino != held.st_ino
+                or rebound.st_nlink != 1
+            ):
+                raise ProvisionError("reserved private identity staging entry lost exact inode custody during recovery")
+            os.unlink(name, dir_fd=checkout_fd)
+            removed = os.fstat(descriptor)
+            if removed.st_dev != held.st_dev or removed.st_ino != held.st_ino or removed.st_nlink != 0:
+                raise ProvisionError("reserved private identity staging unlink did not retire the admitted inode")
+            removed_any = True
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+    if removed_any:
+        os.fsync(checkout_fd)
+    if _reserved_staging_names(checkout_fd):
+        raise ProvisionError("reserved private identity staging namespace is not clean after recovery")
+
+
 class _SealedStaging:
     def __init__(self, metadata: os.stat_result, descriptor: int, payload: bytes) -> None:
         self.metadata = metadata
@@ -394,7 +460,7 @@ def _write_staged(
         raise ProvisionError("private identity final name does not match its admitted relative path")
     _validate_existing_output(destination_parent_fd, final_name)
 
-    temporary_name = f".nembra-private-stage-{os.getpid()}-{secrets.token_hex(12)}"
+    temporary_name = f"{_PRIVATE_STAGE_PREFIX}{os.getpid()}-{secrets.token_hex(12)}"
     staging_fd = final_fd = -1
     sealed: os.stat_result | None = None
     try:
@@ -515,6 +581,8 @@ public enum NembraTuyaPrivateIdentity {{
 
     local_secrets_fd = runtime_fd = sources_fd = module_fd = -1
     try:
+        _require_checkout_path_identity(checkout_fd, checkout_root)
+        _recover_private_staging_residue(checkout_fd)
         _require_checkout_path_identity(checkout_fd, checkout_root)
         local_secrets_fd = _ensure_private_directory(checkout_fd, "LocalSecrets")
         runtime_fd = _ensure_private_directory(local_secrets_fd, "TuyaRuntime")
