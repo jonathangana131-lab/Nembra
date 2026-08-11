@@ -11,11 +11,11 @@
   "blockers": [
     {
       "id": "simulator-runtime-public-authority-mint",
-      "state": "ACTIVE",
+      "state": "REPAIR_CANDIDATE",
       "scope": "lane",
-      "reason": "Independent adversarial review of PR #2817 exact head 182dd4b97a121c13fc9c99d3b5c078b6267d3652 found that public PropulsionEnergyRailSimulatorRuntime.acceptLiveSource/retainSource accept caller-provided watts plus receipt chronology and then mint accepted .simulator propulsion samples. This bypasses the source-file-sealed SimulatorPowerObservation/SimulatorPowerEvidenceAvailability provenance boundary. Repair must mechanically prevent arbitrary NembraCore consumers from minting positive Simulator power from raw scalars and add an adversarial external-consumer/API regression test. GitHub review 4904145233 records the finding.",
+      "reason": "Independent adversarial review of PR #2817 exact head 182dd4b97a121c13fc9c99d3b5c078b6267d3652 found that public PropulsionEnergyRailSimulatorRuntime.acceptLiveSource/retainSource accepted caller-provided watts plus receipt chronology and minted accepted .simulator propulsion samples. Repair candidate 28c7e886f1152ab92a673029b4a1e966f2610e01 removes those raw methods from the public API, admits positive authority only through source-file-sealed SimulatorPowerEvidenceAvailability, preserves Store transport fencing as negative-only retainCurrentSource, and adds a public-boundary regression. Independent re-review and fresh exact-head Xcode are required before this blocker may close.",
       "pr": 2817,
-      "headSHA": "182dd4b97a121c13fc9c99d3b5c078b6267d3652"
+      "headSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01"
     }
   ],
   "mode": "exclusive",
@@ -36,6 +36,7 @@
     "Packages/NembraCore/Sources/NembraCore/ScooterService.swift",
     "Packages/NembraCore/Tests/NembraCoreTests/PropulsionEnergyRailAccessibilityTests.swift",
     "Packages/NembraCore/Tests/NembraCoreTests/PropulsionEnergyRailAppProjectionTests.swift",
+    "Packages/NembraCore/Tests/NembraCoreTests/PropulsionEnergyRailPublicAuthorityTests.swift",
     "Packages/NembraCore/Tests/NembraCoreTests/PropulsionEnergyRailRenderPresentationTests.swift",
     "Packages/NembraCore/Tests/NembraCoreTests/PropulsionEnergyRailSimulatorRuntimeTests.swift",
     "scripts/ci/xcode27_simulator_capture.sh"
@@ -59,7 +60,7 @@
     "changedFileOverlapWithNewMain": 0,
     "knownExactHeadFinding": "Legacy head is eight commits ahead of its merge base and 64 commits behind current main. The 64 newer main commits touch none of the 19 Dashboard changed paths, so an exact selective graft onto current main is structurally safe. Prior Xcode run 31463695136 failed at an obsolete Capture-authority workflow step before Simulator execution; current main workflow no longer contains that step. A fresh /xcode27 request was issued but does not authorize acceptance until terminal exact-head success and artifact review.",
     "recoveryPR": 2817,
-    "recoveryHeadSHA": "182dd4b97a121c13fc9c99d3b5c078b6267d3652"
+    "recoveryHeadSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01"
   },
   "tags": ["dashboard", "p1", "energy-rail", "app-visible", "accessibility", "performance", "legacy-import"]
 }
