@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "legacy-github-reconciliation",
+  "slot": "reconcile-ci-xcode",
+  "role": "scheduler-reconciler",
+  "workerId": "sol-20260811-9c42",
+  "leaseId": "recon-ci-xcode-sol-20260811-0712",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T07:12:30Z",
+  "lastHeartbeatAt": "2026-08-11T07:12:30Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": null,
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc"
+}
