@@ -51,7 +51,7 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         fingerprint_marker = 'capture_signed_app_install_custody.py" fingerprint --app "$APP"'
         stage_marker = '/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX'
         copy_marker = '/usr/bin/sudo /usr/bin/ditto "$APP" "$APP_INSTALL_STAGE"'
-        owner_marker = '/usr/bin/sudo /usr/sbin/chown -R root:wheel "$APP_INSTALL_STAGE_ROOT"'
+        owner_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -exec /usr/sbin/chown -h root:wheel {} +'
         verify_stage_marker = 'capture_signed_app_install_custody.py" verify-stage'
         switch_marker = 'APP="$APP_INSTALL_STAGE"'
         codesign_marker = '/usr/bin/codesign --verify --deep --strict "$APP"'
