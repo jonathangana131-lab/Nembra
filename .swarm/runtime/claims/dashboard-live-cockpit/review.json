@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1611dn",
   "leaseId": "dashboard-review-1611dn-20260811-2341",
   "generation": 12,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:41:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:41:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:43:00Z",
+  "releasedAt": "2026-08-11T23:43:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3118,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "c300ed2bb9e3a4c02d0185b071572bc3d6ecb624",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "dashboard-review-1607ax-20260811-2337",
-  "takeoverReason": "Generation-11 explicitly released after independent exact #3117 source review. Performance #3118 then moved one commit from previously reviewed f11956e0 to c300ed2, changing only the metric-retention workflow. Re-review the exact descendant rather than carrying old-head clearance forward while #3117 waits for Xcode runner capacity.",
-  "checkpoint": "Reviewing only c300ed2 descendant delta on #3118: workflow finite numeric metric evidence, row-family classification, manifest semantics, fail-closed behavior, and whether product-performance claims remain correctly unearned. No branch edits. Simulator-only; ES80 PHYSICAL NO-GO."
+  "takeoverReason": "Generation-11 explicitly released after independent exact #3117 source review. Generation-12 reviewed only the one-commit finite metric-retention descendant on #3118.",
+  "outcome": "SOURCE_EVIDENCE_CONTRACT_ACCEPTABLE_RUNTIME_PENDING",
+  "checkpoint": "Exact #3118 c300ed2 source/evidence-contract review posted as review COMMENT 4911647412. Direct inspection of retained ancestor artifact 9118077730 xcresult confirmed PerformanceMetrics.measurements is scalar text for emitted CPU/memory rows and Hitch was absent, so float+isfinite matches the actual retained schema. Current gate now requires finite hitch+CPU+memory, retains invalid rows, and explicitly keeps performanceAccepted=false / no thresholds / final combined-load iPhone 12 profiling required. Exact run 31546627916 remains QUEUED; source clearance is not performance acceptance. Simulator-only; ES80 PHYSICAL NO-GO."
 }
