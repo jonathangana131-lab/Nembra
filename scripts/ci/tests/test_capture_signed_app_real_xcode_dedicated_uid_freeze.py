@@ -334,7 +334,7 @@ def root_probe(package_root: Path) -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            **structured_credentials(field_uid, field_gid, field_groups),
+            **structured_credentials(field_uid, field_gid, []),
             check=False,
         )
         if field_attack.returncode == 0 or sha256(product) != before:
