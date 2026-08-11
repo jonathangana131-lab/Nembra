@@ -1,0 +1,52 @@
+name: Capture Final GO Retirement Nested Restore Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_retirement_nested_restore_red_team.py
+      - .github/workflows/capture-final-go-retirement-nested-restore-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nested-restore:
+    name: Exploit inherited Git restore after retirement
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Bind exact attacked parent and scope
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ATTACKED_PARENT_SHA: 899e5dc5cc5e71617bfe4151cdb1da20c576fbc2
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          test "$(git merge-base "$ATTACKED_PARENT_SHA" HEAD)" = "$ATTACKED_PARENT_SHA"
+          git diff --name-only "$ATTACKED_PARENT_SHA"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-final-go-retirement-nested-restore-redteam.yml \
+            scripts/ci/tests/test_es80_final_go_retirement_nested_restore_red_team.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+      - name: Compile and reproduce nested restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-nested-restore-pycache"
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_retirement_nested_restore_red_team.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_retirement_nested_restore_red_team.py
+          git diff --check
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
