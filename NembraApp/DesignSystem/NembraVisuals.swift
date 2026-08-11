@@ -631,11 +631,11 @@ struct NembraEnergyRailView: View {
     }
 
     private var componentMinimumHeight: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 156 : 94
+        dynamicTypeSize.isAccessibilitySize ? 164 : 94
     }
 
     private var railTopPadding: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 76 : 22
+        dynamicTypeSize.isAccessibilitySize ? 92 : 22
     }
 
     private var baseRailOpacity: Double {
