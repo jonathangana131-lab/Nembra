@@ -179,7 +179,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"a49c6fbe38eabe4983875e2291ce97911ba82d4c4ccfe7c8d7b69ade61edeaf1\""))
+        #expect(shell.contains("WRITER_SHA256=\"6d5172bc1f75ce3dec1d7bd783e5de63b4173f1ed42797988f2ad14b82a5fb35\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
@@ -206,8 +206,9 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("os.path.realpath(temporary)"))
         #expect(writer.contains("private identity canonical destination no longer names the accepted sealed inode"))
         #expect(writer.contains("hashlib.sha256"))
-        #expect(writer.contains("dir_fd=checkout_fd"))
-        #expect(writer.contains("src_dir_fd=checkout_fd"))
+        #expect(writer.contains("staging_parent_fd=local_secrets_fd"))
+        #expect(writer.contains("_recover_private_stage_residue(local_secrets_fd)"))
+        #expect(writer.contains("src_dir_fd=source_parent_fd"))
         #expect(writer.contains("dst_dir_fd=checkout_fd"))
     }
 
