@@ -6,24 +6,24 @@
   "title": "Capture build and private-review execution authority",
   "objective": "Converge the selected CocoaPods/private-input field-build authority lineage onto one exact descendant, preserving reviewed lock/generated/private subjects and closing every authority-helper execution subject plus macOS vnode-attribute custody before flagship composition.",
   "priority": 0,
-  "state": "BLOCKED_EXTERNAL",
+  "state": "VERIFYING",
   "dependencies": [],
   "blockers": [
     {
-      "id": "current-complete-security-spine-minus-vnode",
+      "id": "current-vnode-security-convergence-heavy-gates",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Live authority owner #2805 has advanced to exact 642c10758c55e730fb1583fdf4545207f5147952. Direct source proves it now carries the three previously non-duplicated security/QA debts: exact accepted-Git guard-presence authority via replacement-blind/ambient-config-isolated `git cat-file -e`, canonical Field path-contract wiring/rejection with `test_capture_field_accepted_source_path_contract.py`, and the exception-proxy execution-custody production+permanent regression. Its exact Private Review Commitment, Helper Execution Custody, Downstream Helper Red Team, and CocoaPods Build Subject gates are terminal SUCCESS; Field Provenance, Selective Graft, and Xcode are queued. The remaining known product-security gap on this otherwise richer current spine is vnode metadata custody: direct `capture_tuya_private_input_build_guard.py` still omits KQ_NOTE_ATTRIB from required capabilities and fflags. Do not use the stale PR body SHA over live GitHub.",
-      "pr": 2805,
-      "headSHA": "642c10758c55e730fb1583fdf4545207f5147952"
+      "reason": "Live clean synthesis is #2856 exact 757b35222ab33210d872993df1e50426fb59aff3, rebased directly onto current #2805 parent efd668b46ad1b7b9375e4dca767625ced3cad023. Direct source/review confirms this exact head combines #2805 exception-proxy + accepted-source/helper custody with KQ_NOTE_ATTRIB vnode metadata custody. Exact Private Review Commitment, Helper Execution Custody, Downstream Helper Red Team, CocoaPods Build Subject Authority, and CocoaPods Vnode Attribute Current are terminal SUCCESS; the vnode workflow includes exact-bound real macos-15 chmod/kqueue delivery. Remaining blockers are exact-head Capture Field Build Provenance, Capture Main Selective Graft Diagnostic, and Xcode 27 PR Exact-Head QA, which are queued and therefore not accepted. Any merge/rebase moves the head and requires the full applicable gate set again.",
+      "pr": 2856,
+      "headSHA": "757b35222ab33210d872993df1e50426fb59aff3"
     },
     {
-      "id": "vnode-successor-not-clean-convergence",
+      "id": "private-identity-publication-authority-separate-blocker",
       "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "#2840 carries the KQ_NOTE_ATTRIB vnode repair on the older clean #2825/#2838 line and has moved again to actual exact head bc1a75bbd75829ecdc9477b42fad2422a47f9296 even though its body still names ce5dfa53. On bc1a75, Field Source Custody Current, Field Provenance, CocoaPods Vnode Attribute Current, Private Review Commitment/Helper/Downstream, and CocoaPods Build Subject are terminal SUCCESS; Selective Graft is in progress and Xcode queued. However compare from first #2840 head shows the exact tree now contains worker-only `.github/workflows/tmp-v14-capture-field-path-converge.yml`, and #2840 remains behind the latest #2805 exception-proxy/current security spine. Therefore #2840 is useful vnode/current-source evidence but not the clean final convergence candidate. Prefer the minimal accepted vnode production+permanent-test delta replayed onto the latest #2805 exact lineage after its moving head stabilizes, rather than whole-branch ancestry grafting.",
-      "pr": 2840,
-      "headSHA": "bc1a75bbd75829ecdc9477b42fad2422a47f9296"
+      "scope": "epic",
+      "reason": "Separate Capture private-identity recovery #2858 exact cb72a47ee2489235febd40ac440bc9f8462ba432 remains blocked by durable adversarial findings: post-publication destination substitution cleanup is not race-safe and same-inode equal-length payload mutation is not byte-bound across publication. Do not let build-authority convergence imply identity-publication authority or physical GO.",
+      "pr": 2858,
+      "headSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432"
     }
   ],
   "mode": "exclusive",
@@ -50,12 +50,12 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "sourceSHA": "757b35222ab33210d872993df1e50426fb59aff3",
   "legacy": {
-    "primaryPR": 2805,
-    "primaryHeadSHA": "642c10758c55e730fb1583fdf4545207f5147952",
-    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T08:57Z. Live #2805 642c107 now includes exact-Git guard presence, canonical Field path-contract negative custody, and exception-proxy execution custody; its focused security/build gates are green and heavy gates queued. Direct source still lacks KQ_NOTE_ATTRIB. #2840 bc1a75 has the vnode repair and current-source gates green but carries a temporary field-path materializer workflow and older security ancestry. The cleanest remaining synthesis is the narrow vnode production+permanent regression delta onto the latest stabilized #2805 lineage, followed by exact vnode/security/Field/Graft/Xcode reruns and clean-tree review. No current successor PR for that exact synthesis was found at the latest search. PHYSICAL NO-GO remains."
+    "primaryPR": 2856,
+    "primaryHeadSHA": "757b35222ab33210d872993df1e50426fb59aff3",
+    "lineagePRs": [2709,2778,2794,2805,2809,2825,2829,2830,2834,2836,2837,2838,2840,2843,2844,2845,2850,2856],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:06Z. #2856 is the first live clean synthesis found that combines the current #2805 exception-proxy/exact-source authority spine with KQ_NOTE_ATTRIB vnode metadata custody. Exact focused authority gates and real macOS chmod/kqueue evidence are green on 757b3522; Field, selective-graft, and Xcode remain queued. #2858 remains a separate private-identity publication blocker. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","security","build-authority","legacy-import"]
 }
