@@ -59,24 +59,28 @@ jobs:
           from pathlib import Path
           path = Path('scripts/field/install_one_time_capture.command')
           text = path.read_text()
-          old = '''    source = subprocess.check_output(
-              ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
-              cwd=root,
-              stderr=subprocess.DEVNULL,
-          )'''
-          new = '''    git_environment = {
-              "GIT_NO_REPLACE_OBJECTS": "1",
-              "GIT_CONFIG_NOSYSTEM": "1",
-              "GIT_CONFIG_GLOBAL": "/dev/null",
-              "LANG": "C",
-              "LC_ALL": "C",
-          }
-          source = subprocess.check_output(
-              ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
-              cwd=root,
-              env=git_environment,
-              stderr=subprocess.DEVNULL,
-          )'''
+          old = (
+              '    source = subprocess.check_output(\n'
+              '        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],\n'
+              '        cwd=root,\n'
+              '        stderr=subprocess.DEVNULL,\n'
+              '    )'
+          )
+          new = (
+              '    git_environment = {\n'
+              '        "GIT_NO_REPLACE_OBJECTS": "1",\n'
+              '        "GIT_CONFIG_NOSYSTEM": "1",\n'
+              '        "GIT_CONFIG_GLOBAL": "/dev/null",\n'
+              '        "LANG": "C",\n'
+              '        "LC_ALL": "C",\n'
+              '    }\n'
+              '    source = subprocess.check_output(\n'
+              '        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],\n'
+              '        cwd=root,\n'
+              '        env=git_environment,\n'
+              '        stderr=subprocess.DEVNULL,\n'
+              '    )'
+          )
           if text.count(old) != 1:
               raise SystemExit(f'accepted-source Git runner changed unexpectedly: {text.count(old)} matches')
           path.write_text(text.replace(old, new, 1))
