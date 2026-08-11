@@ -277,6 +277,8 @@ final class NembraUITests: XCTestCase {
         let lock = app.buttons["dashboard.control.lock"]
         assertMinimumTouchTarget(light, named: "Dashboard light")
         assertMinimumTouchTarget(lock, named: "Dashboard lock")
+        assertContainedInAppWindow(light, in: app, named: "Dashboard light")
+        assertContainedInAppWindow(lock, in: app, named: "Dashboard lock")
 
         let modeIdentifiers = [
             "dashboard.mode.walk",
@@ -285,7 +287,9 @@ final class NembraUITests: XCTestCase {
             "dashboard.mode.sport"
         ]
         for identifier in modeIdentifiers {
-            assertMinimumTouchTarget(app.buttons[identifier], named: identifier)
+            let modeButton = app.buttons[identifier]
+            assertMinimumTouchTarget(modeButton, named: identifier)
+            assertContainedInAppWindow(modeButton, in: app, named: identifier)
         }
 
         let confirmedMode = app.descendants(matching: .any)["dashboard.mode"]
@@ -407,6 +411,25 @@ final class NembraUITests: XCTestCase {
             element.frame.height,
             minimum,
             "\(name) touch target height must be at least \(minimum) pt.",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertContainedInAppWindow(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        named name: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(element.waitForExistence(timeout: 2), "\(name) control must exist.", file: file, line: line)
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 2), "App window must exist.", file: file, line: line)
+        XCTAssertTrue(
+            window.frame.contains(element.frame),
+            "\(name) must remain fully inside the app window. control=\(element.frame) window=\(window.frame)",
             file: file,
             line: line
         )
