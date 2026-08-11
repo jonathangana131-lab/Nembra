@@ -19,7 +19,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 SOURCE = "1" * 40
-DIGEST = "2" * 64
+DIGEST = "ab" * 32
 BLOB = "3" * 40
 
 
