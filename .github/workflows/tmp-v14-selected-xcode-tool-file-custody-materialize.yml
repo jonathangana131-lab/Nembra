@@ -107,7 +107,8 @@ jobs:
           readonly SELECTED_DEVELOPER_DIR
           [[ "$SELECTED_DEVELOPER_DIR" == /* ]] || die "System-selected Xcode developer directory is not absolute."
           validate_root_custodied_path "$SELECTED_DEVELOPER_DIR" directory || die "System-selected Xcode developer tree is not under trusted root custody."
-          SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)" || die "Could not resolve xcodebuild from the selected Xcode 27 developer tree."
+          SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)"
+          [[ -n "$SELECTED_XCODEBUILD" ]] || die "Could not resolve xcodebuild from the selected Xcode 27 developer tree."
           readonly SELECTED_XCODEBUILD
           [[ "$SELECTED_XCODEBUILD" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected xcodebuild escaped the admitted Xcode developer tree."
           validate_root_custodied_path "$(dirname "$SELECTED_XCODEBUILD")" directory || die "Selected xcodebuild parent escaped trusted root custody."
@@ -116,12 +117,14 @@ jobs:
           SELECTED_XCODE_VERSION="$("$SELECTED_XCODEBUILD" -version 2>/dev/null)" || die "Could not interrogate the exact selected Xcode toolchain."
           SELECTED_XCODE_FIRST_LINE="${SELECTED_XCODE_VERSION%%$'\n'*}"
           [[ "$SELECTED_XCODE_FIRST_LINE" =~ ^Xcode[[:space:]]27([.]|$) ]] || die "Selected developer tree must identify as Xcode 27 before physical device discovery or build admission."
-          SELECTED_XCTRACE="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xctrace)" || die "Could not resolve xctrace from the selected Xcode 27 developer tree."
+          SELECTED_XCTRACE="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xctrace)"
+          [[ -n "$SELECTED_XCTRACE" ]] || die "Could not resolve xctrace from the selected Xcode 27 developer tree."
           readonly SELECTED_XCTRACE
           [[ "$SELECTED_XCTRACE" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected xctrace escaped the admitted Xcode developer tree."
           validate_root_custodied_path "$SELECTED_XCTRACE" file || die "Selected xctrace executable is not under exact root-owned non-group/world-writable file custody."
           [[ -x "$SELECTED_XCTRACE" ]] || die "Selected xctrace is not executable."
-          SELECTED_DEVICECTL="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find devicectl)" || die "Could not resolve devicectl from the selected Xcode 27 developer tree."
+          SELECTED_DEVICECTL="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find devicectl)"
+          [[ -n "$SELECTED_DEVICECTL" ]] || die "Could not resolve devicectl from the selected Xcode 27 developer tree."
           readonly SELECTED_DEVICECTL
           [[ "$SELECTED_DEVICECTL" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected devicectl escaped the admitted Xcode developer tree."
           validate_root_custodied_path "$SELECTED_DEVICECTL" file || die "Selected devicectl executable is not under exact root-owned non-group/world-writable file custody."
