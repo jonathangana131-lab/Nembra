@@ -9,15 +9,15 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:13:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:36:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:48:00Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-apfs-mmap-ready-diagnostics-r2-sol-1607k9",
   "pr": 3116,
   "sourceSHA": "93feb6160ae053dbc71c9cb0919f78f59494eeba",
   "currentHeadSHA": "2e388a5dc6f7f63aeed893d548be214e64e94674",
-  "relatedValidationPRs": [3127, 3128],
+  "relatedValidationPRs": [3129, 3132],
   "takeoverFromWorkerId": "gpt56-sol-20260811-1437",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-sol-20260811-2154",
-  "takeoverReason": "Generation-5 tests lease expired at 2026-08-11T22:44:15Z. Recovered signed-install retained-writer validation, consumed exact Mac evidence, repaired current stale source contracts, and review adjacent actual-field-group validation without moving production authority speculatively.",
-  "checkpoint": "Primary #3116 exact 2e388a5d remains queued on macos-15 run 31546153450/job 93958988498; no mmap pre-READY diagnostic evidence yet. Dedicated-UID architecture: closed diagnostic #3125 exact ea89976b earned terminal SUCCESS run 31546372729/job 93959657937 and retained xcodebuild=0, fieldAttackReturnCode=1, nonForcedDetachReturnCode=0, root/former-build readonly attacks=1, byte-identical compiler/remount SHA, physicalAuthorityCreated=false; that run used the explicit empty-group diagnostics bypass and is architecture evidence only. Active stronger carrier #3128 exact 15142761 replays actual pre-sudo os.getgroups(), but source review found a blocking workflow-lifecycle defect: its patch step installs EXIT restore, so GitHub step exit restores the oracle before the next run step; comment 5260087749 records the finding and requires patch+run under one restore lifecycle. #3128 run 31546802720 remains queued and cannot accept the model. Current stale-test repair #3127 exact e657b789 changes only two Swift source-contract tests; Capture Main Selective Graft run 31546664269/job 93960546466 is terminal SUCCESS with full package, standalone Xcode build, and integration truth all green. Field Build Provenance run 31546664296 is still queued; Xcode 27 PR Exact-Head QA was skipped and is not acceptance. #3127 aligns the protected compiler-output build marker and supervisor-returned stage-root/tree-hash contract while rejecting retired caller-side sudo mktemp. No production bytes moved. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-5 tests lease expired at 2026-08-11T22:44:15Z. Recovered signed-install retained-writer validation, consumed exact Mac evidence, and repair stale acceptance contracts only when terminal evidence proves the product bytes are not the failure.",
+  "checkpoint": "Primary retained-writer diagnostic #3116 exact 2e388a5d remains queued on macos-15 run 31546153450/job 93958988498; no mmap pre-READY credential/path evidence yet. Dedicated-build identity validation is now accepted on #3129 exact 2c687bac: Xcode-27 run 31546911246/job 93961279965 and artifact 9122914932 prove real pre-sudo active field groups replayed, xcodebuild=0, no build-GID overlap, field attack=1, normal APFS detach=0, compiler/remount SHA equal, root/former-build readonly attacks=1, physicalAuthorityCreated=false. This is validation only; signed-iOS/keychain/private-input custody remains a production blocker. Fresh #3056 exact 9f813 Field Build Provenance run 31547042279/job 93961664688 failed only at stale test `test_field_build_requires_preaccepted_lock_before_xcodebuild`: expected literal '-- xcodebuild' is absent because current production correctly uses '-- /usr/bin/xcodebuild' behind the Tuya build-window guard. Test-only #3132 exact 9e0471fb changes exactly that one marker; Selective Graft run 31547730960 queued, Xcode Exact-Head run 31547731013 in progress. No product bytes moved. PHYSICAL NO-GO."
 }
