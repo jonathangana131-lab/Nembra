@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "231900-superseded-capture-package-review-1607ax",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-package-test-runner-recovery",
+  "message": "Reconciled stale generation-2 review ownership for PR #2811 exact 7728078452894ac327007ddab18a99d65c4ca3a1. The PR is closed unmerged and its durable discussion records terminal package diagnostic/selective-graft/Xcode success plus independent review, then explicitly supersedes this recovery lineage with canonical flagship-side #2824 rather than merging duplicate workflow/test history. No new product review or branch is needed here. Stale review ownership can be released as superseded; inherited build-authority debt continued on the selected authority lineage. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T23:19:00Z"
+}
