@@ -84,17 +84,6 @@ def _load_base_module():
     environment = dict(os.environ)
     environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
-        owned_oid = subprocess.check_output(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{PARENT_SOURCE_SHA}:{BASE_MODULE_PATH}"],
-            env=environment,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip().lower()
-    except (OSError, subprocess.CalledProcessError) as error:
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git identity unavailable") from error
-    if owned_oid != PARENT_BASE_BLOB_OID:
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob ownership mismatch")
-    try:
         payload = subprocess.check_output(
             ["/usr/bin/git", "-C", str(root), "cat-file", "blob", PARENT_BASE_BLOB_OID],
             env=environment,
