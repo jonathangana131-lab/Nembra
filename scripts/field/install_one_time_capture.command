@@ -282,7 +282,9 @@ cleanup_install_subject() {
         /bin/rm -f -- "$INSTALL_LOG" || true
     fi
     if [[ -n "${APP_INSTALL_STAGE_ROOT:-}" ]]; then
-        /usr/bin/sudo /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT" >/dev/null 2>&1 || true
+        if ! /usr/bin/sudo -n /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT" >/dev/null 2>&1; then
+            printf '%s\n' "Protected signed-app stage retained at $APP_INSTALL_STAGE_ROOT; remove it later with sudo after this run is no longer authoritative." >&2
+        fi
     fi
 }
 trap cleanup_install_subject EXIT
@@ -307,6 +309,13 @@ STAGED_APP_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr
     die "Protected signed-app install subject failed root-owned custody or exact-tree verification."
 [[ "$STAGED_APP_TREE_SHA256" == "$SOURCE_APP_TREE_SHA256" ]] || \
     die "Protected signed-app install subject differs from the exact post-build signed app."
+# The protected stage is now the only install subject. Revoke the successful staging
+# elevation before any signature/provenance review or CoreDevice side effect so a
+# same-UID actor cannot reuse this run's sudo timestamp to mutate the root-owned tree.
+/usr/bin/sudo -K || die "Could not invalidate staging elevation before signed-app admission."
+if /usr/bin/sudo -n /usr/bin/true >/dev/null 2>&1; then
+    die "Noninteractive sudo authority remained after invalidation; do not install from this stage."
+fi
 APP="$APP_INSTALL_STAGE"
 APP_INFO_PLIST="$APP/Info.plist"
 [[ -f "$APP_INFO_PLIST" ]] || die "Built Capture app is missing its Info.plist provenance subject. Discard this candidate."
@@ -461,8 +470,11 @@ fi
 unset DEVICE_UDID COREDEVICE_ID DEVICE_OS_VERSION
 rm -f -- "$INSTALL_LOG"
 INSTALL_LOG=""
-/usr/bin/sudo /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT" || die "Could not remove the protected signed-app install stage after successful launch."
-APP_INSTALL_STAGE_ROOT=""
+if /usr/bin/sudo -n /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT" >/dev/null 2>&1; then
+    APP_INSTALL_STAGE_ROOT=""
+else
+    printf '%s\n' "Protected signed-app stage retained at $APP_INSTALL_STAGE_ROOT; remove it later with sudo after this run is no longer authoritative." >&2
+fi
 trap - EXIT
 unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_BASE64 APP_INSTALL_STAGE
 

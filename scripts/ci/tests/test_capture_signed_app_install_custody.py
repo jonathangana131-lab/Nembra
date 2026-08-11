@@ -53,6 +53,8 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         copy_marker = '/usr/bin/sudo /usr/bin/ditto "$APP" "$APP_INSTALL_STAGE"'
         owner_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -exec /usr/sbin/chown -h root:wheel {} +'
         verify_stage_marker = '/usr/bin/python3 -I - verify-stage'
+        revoke_marker = '/usr/bin/sudo -K'
+        no_sudo_marker = '/usr/bin/sudo -n /usr/bin/true'
         switch_marker = 'APP="$APP_INSTALL_STAGE"'
         codesign_marker = '/usr/bin/codesign --verify --deep --strict "$APP"'
         install_marker = 'xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"'
@@ -65,6 +67,8 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
             ("copy", copy_marker),
             ("owner", owner_marker),
             ("verify_stage", verify_stage_marker),
+            ("revoke", revoke_marker),
+            ("no_sudo", no_sudo_marker),
             ("switch", switch_marker),
             ("codesign", codesign_marker),
             ("install", install_marker),
@@ -92,13 +96,17 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         self.assertLess(indexes["stage"], indexes["copy"])
         self.assertLess(indexes["copy"], indexes["owner"])
         self.assertLess(indexes["owner"], indexes["verify_stage"])
-        self.assertLess(indexes["verify_stage"], indexes["switch"])
+        self.assertLess(indexes["verify_stage"], indexes["revoke"])
+        self.assertLess(indexes["revoke"], indexes["no_sudo"])
+        self.assertLess(indexes["no_sudo"], indexes["switch"])
         self.assertLess(indexes["switch"], indexes["codesign"])
         self.assertLess(indexes["codesign"], indexes["install"])
         self.assertIn('[[ "$STAGED_APP_TREE_SHA256" == "$SOURCE_APP_TREE_SHA256" ]]', source)
         self.assertIn('APP_INSTALL_STAGE_ROOT=""', source)
         self.assertIn('cleanup_install_subject()', source)
-        self.assertIn('/usr/bin/sudo /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
+        self.assertNotIn('/usr/bin/sudo /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
+        self.assertIn('/usr/bin/sudo -n /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
+        self.assertIn('Noninteractive sudo authority remained after invalidation', source)
 
 
 if __name__ == "__main__":
