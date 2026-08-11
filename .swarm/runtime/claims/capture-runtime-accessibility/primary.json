@@ -9,17 +9,17 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T22:12:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:12:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:17:00Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-runtime-voiceover-firstfold-sol-gpt56-20260811",
-  "pr": null,
-  "sourceSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
-  "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
+  "pr": 3073,
+  "sourceSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
+  "currentHeadSHA": "e76ebdf4a2e2edf10faf3929cf33d6a9a783100b",
   "takeoverFromWorkerId": "gpt56-sol-20260811-runtime-ax-reconcile",
-  "takeoverReason": "Generation-3 was explicitly RELEASED. #3018 currently tests accepted #2940 product bytes, but the accepted first-fold product checkpoint ce9e2bac changed the exact hero accessibility semantic that runtime VoiceOver must exercise. Converge the already-reviewed workflow+witness onto ce9 without changing product bytes or the concurrently owned visual-evidence harness paths.",
+  "takeoverReason": "Generation-3 was explicitly RELEASED. #3018 remains pinned to #2940 and AX5-only traversal cannot exercise #2979's restored standard-size hero VoiceOver authority. Converge runtime AX onto #2979's current visual-hardened head without changing product, visual-harness, BLE/Tuya, signing/install, credential, or physical-authority files.",
   "ownedPaths": [
     ".github/workflows/capture-runtime-voiceover.yml",
     "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
   ],
-  "checkpoint": "Create a clean branch directly from accepted first-fold product ce9e2bac; transplant exact #3018 runtime witness and #3007 workflow, change only ACCEPTED_PRODUCT_SHA to ce9 so changed-path/test-only custody binds to current accepted product bytes, then require fresh exact iPhone 12/iOS 27 VoiceOver runtime evidence. No product/UI/visual-harness/BLE/signing/install/physical-authority paths owned. PHYSICAL NO-GO."
+  "checkpoint": "Opened draft #3073 as one clean commit e76ebdf4 directly on #2979 exact base 6bb2e3cb; compare is ahead 1 with exactly two runtime-validation files. Standard Dynamic Type now runtime-proves the compact Link this scooter hero plus the full restored account/Bluetooth/physical-evidence/reviewed-build/fresh-scooter spoken authority from #2990 before lock/field/QR/details. AX5 separately proves action-first hero absence, hierarchy, audit, and VoiceOver ordering. Both states preserve strict 64-step throwing traversal, forbidden Start capture/Scan for scooter negatives, keep-always transcripts, true 16 KiB UTF-8 log mirrors, exact test-count/identity evidence, per-state xcresults and exit status. Simulator content-size transitions are fail-fast; only xcodebuild calls temporarily disable shell -e so both red diagnostics can run. Fresh exact CI required; child green cannot rescue a red #2979 base. PHYSICAL NO-GO."
 }
