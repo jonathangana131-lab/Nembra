@@ -21,7 +21,7 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         let acceptedDigest = try #require(script.range(of: ": \"${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?"))
         let adapterIdentity = try #require(script.range(of: "PRIVATE_INPUT_RESOLUTION_GUARD_GIT_BLOB_OID=\""))
         let adapterCapture = try #require(script.range(of: "RESOLUTION_GUARD_CAPTURE=\"$({ /bin/cat -- \"$PRIVATE_INPUT_RESOLUTION_GUARD\";"))
-        let guardedInvocation = try #require(script.range(of: "run_private_resolution_guard \\\n"))
+        let guardedInvocation = try #require(script.range(of: "run_private_resolution_guard"))
         let guardedInstall = try #require(script.range(of: "     \"$POD_BIN\" install --repo-update"))
 
         #expect(acceptedDigest.lowerBound < adapterCapture.lowerBound)
