@@ -1,0 +1,30 @@
+name: TEMP V14 Final-GO Lock ccab Conflict Inspector
+on:
+  push:
+    branches: [recovery/v14-final-go-reviewed-lock-current-ccab-sol]
+permissions:
+  contents: write
+jobs:
+  inspect:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: recovery/v14-final-go-reviewed-lock-current-ccab-sol, fetch-depth: 0}
+      - name: Inspect merge
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "ccab1d76b2cfe7448f012d5df8e622cbaf8d371d"
+          BASE=da86226ba36bb2d4f441cc3cb876244af17853cb; OURS=ccab1d76b2cfe7448f012d5df8e622cbaf8d371d; THEIRS=d8416aeba19b826cfb50bde9e0b3e2778766a286
+          mkdir recovery-debug-ccab
+          for path in scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py; do
+            name="$(basename "$path")"; git show "$OURS:$path" >/tmp/o; git show "$BASE:$path" >/tmp/b; git show "$THEIRS:$path" >/tmp/t
+            git merge-file -p -L current-ccab -L common-da862 -L reviewed-lock-d841 /tmp/o /tmp/b /tmp/t >"recovery-debug-ccab/$name" || true
+          done
+          grep -R -n '^<<<<<<<\|^=======\|^>>>>>>>' recovery-debug-ccab > recovery-debug-ccab/conflict-index.txt || true
+      - name: Publish evidence and self-delete
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-final-go-lock-ccab-conflicts.yml
+          git config user.name jonathangana131-lab; git config user.email jonathangana131@gmail.com
+          git add -A; git commit -m "debug(capture): retain ccab reviewed-lock merge evidence"; git push origin HEAD:recovery/v14-final-go-reviewed-lock-current-ccab-sol
