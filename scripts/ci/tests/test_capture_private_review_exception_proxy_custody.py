@@ -96,6 +96,12 @@ class ExceptionProxyCustodyTests(unittest.TestCase):
         ):
             with self.subTest(flag=flag):
                 guard, provenance_sentinel, generated_sentinel = self._guard_with_malicious_neighbors()
+                # Remove unrelated subject-validation early exits. The invariant
+                # under test is that either accepted-subject flag itself must
+                # force provenance/generated helper custody *before* any later
+                # input/subject work can run.
+                guard._verify_accepted_generated_build_subject = lambda inputs: None
+                guard._verify_accepted_private_review_commitment = lambda inputs: None
                 previous_provenance = os.environ.get(guard.PROVENANCE_HELPER_ENV)
                 previous_generated = os.environ.get(guard.GENERATED_BUILD_SUBJECT_HELPER_ENV)
                 os.environ[guard.PROVENANCE_HELPER_ENV] = accepted_provenance
