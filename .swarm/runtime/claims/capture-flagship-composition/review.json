@@ -7,14 +7,16 @@
   "workerId": "sol-20260811-4c47a9",
   "leaseId": "capture-flagship-review-4c47a9-20260811-1251",
   "generation": 7,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T12:51:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:51:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:56:30Z",
+  "releasedAt": "2026-08-11T12:56:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2940,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "takeoverFromWorkerId": "sol-20260811-4c47ax",
-  "takeoverReason": "Generation-6 review lease expired after last heartbeat 2026-08-11T12:02:48Z. Canonical app-visible successor moved to #2940 exact 005b7c4; independently review exact source/gates/AX semantics and physical-truth boundary without touching primary/integration owned paths. PHYSICAL NO-GO."
+  "outcome": "TARGETED_REVIEW_PASS_XCODE_OUTSTANDING",
+  "releaseReason": "Independent exact-head source/AX/truth review and live composition collision scan completed with no targeted blocker. Xcode 27 automated exact-head gate remains in progress; retaining review lease would obstruct follow-on review without adding product work. Standard-size copy density remains a documented next-rung polish target after gate closure. PHYSICAL NO-GO."
 }
