@@ -105,6 +105,16 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(!bridge.contains("setDp"))
     }
 
+    @Test("cloud status is never mislabeled as local strategy evidence")
+    func metadataExportPreservesStatusTruth() throws {
+        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+        #expect(!bridge.contains("selectedDeviceLocalStrategy"))
+        #expect(!bridge.contains("\"localStrategy\""))
+        #expect(!bridge.contains("/status\")"))
+        #expect(bridge.contains("\"status\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
+        #expect(bridge.contains("\"specifications\": Self.redactSecrets(selectedDeviceSpecifications ?? [:])"))
+    }
+
     @Test("legacy card-based Capture root is retired from the metadata bridge")
     func legacyCardRootIsRetired() throws {
         let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")

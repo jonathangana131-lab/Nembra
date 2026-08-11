@@ -33,6 +33,24 @@ struct TuyaFieldDependencyProvenanceSourceTests {
         #expect(!app.contains("let localKey: String"))
     }
 
+    @Test("field provenance reruns for all standalone Capture sources and dependency inputs")
+    func workflowCoversCompiledFieldInputs() throws {
+        let workflow = try readRepositoryFile(".github/workflows/capture-field-build-provenance.yml")
+        for path in [
+            "NembraApp/App/NembraCaptureBuildIdentity.swift",
+            "NembraApp/App/NembraCaptureEntrypoint.swift",
+            "NembraApp/Features/Research/TuyaAccountBridge.swift",
+            "NembraApp/Features/Research/ES80CaptureShellView.swift",
+            "NembraCapture.xcodeproj/project.pbxproj",
+            "NembraCapture-Info.plist",
+            "Packages/NembraBluetoothCapture/**",
+            "Podfile",
+            "Podfile.lock"
+        ] {
+            #expect(workflow.contains("- \(path)"))
+        }
+    }
+
     @Test("dependency provenance never promotes private SDK credentials into evidence")
     func dependencyFingerprintIsNotASecretFingerprint() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
