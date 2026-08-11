@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tmp_patch_signed_app_origin_existing.py", line 301, in <module>
+    main()
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tmp_patch_signed_app_origin_existing.py", line 297, in main
+    patch_field_workflow()
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tmp_patch_signed_app_origin_existing.py", line 241, in patch_field_workflow
+    source = replace_once(
+             ^^^^^^^^^^^^^
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tmp_patch_signed_app_origin_existing.py", line 22, in replace_once
+    require_once(text, old, label)
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tmp_patch_signed_app_origin_existing.py", line 18, in require_once
+    raise RuntimeError(f"{label}: expected one match, found {count}")
+RuntimeError: field workflow guarded xcodebuild marker: expected one match, found 0
