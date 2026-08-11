@@ -4,11 +4,19 @@ from .model import *
 from .model import _dict
 from .store import *
 from .engine import *
-def store(args): return GitHubContentsStore(args.repo,args.token or os.getenv('GITHUB_TOKEN',''),args.state_branch)
+from .policy import claim_slot, takeover_claim, recommend_slots
+
+CONFIG_PATH='.swarm/config.json'
+
+def _token(args): return args.token or os.getenv('GITHUB_TOKEN','')
+def trusted_config_from_store(config_store): return validate_config(config_store.get(CONFIG_PATH).value)
+def trusted_config(args): return trusted_config_from_store(GitHubContentsStore(args.repo,_token(args),args.config_ref))
+def store(args,config): return GitHubContentsStore(args.repo,_token(args),args.state_branch or config['stateBranch'])
 def snapshot(s):
     vals=lambda p:[x.value for _,x in s.list(p)]
     return vals('.swarm/runtime/lanes'),vals('.swarm/runtime/claims'),vals('.swarm/runtime/workers'),vals('.swarm/runtime/events'),vals('.swarm/runtime/resources')
-def remote(p):p.add_argument('--repo',required=True);p.add_argument('--state-branch',default=DEFAULT_STATE_BRANCH);p.add_argument('--token')
+def remote(p):
+    p.add_argument('--repo',required=True);p.add_argument('--state-branch');p.add_argument('--config-ref',default='main');p.add_argument('--token')
 def parser():
     p=argparse.ArgumentParser(description='Nembra Swarm Control Plane');sub=p.add_subparsers(dest='cmd',required=True)
     q=sub.add_parser('simulate');q.add_argument('--workers',type=int,default=30)
@@ -25,17 +33,18 @@ def main(argv=None):
     try:
         a=parser().parse_args(argv)
         if a.cmd=='simulate':r=run_adversarial_simulation(a.workers);print(pretty_json(r),end='');return 0 if r['passed'] else 1
-        s=store(a)
+        config=trusted_config(a)
+        s=store(a,config)
         if a.cmd=='remote-validate':
             l,c,w,e,r=snapshot(s);errs=validate_state_snapshot(l,c,w,e,r,utc_now());print('\n'.join('ERROR: '+x for x in errs) if errs else f'validated lanes={len(l)} claims={len(c)} workers={len(w)} events={len(e)} resources={len(r)}');return 1 if errs else 0
         if a.cmd=='register':x=register_worker(s,a.worker,utc_now(),branch=a.branch)
-        elif a.cmd=='claim':x=claim_slot(s,validate_lane(s.get(lane_path(a.lane)).value),a.slot,a.worker,utc_now(),a.branch,a.pr,a.source_sha)
-        elif a.cmd=='takeover':x=takeover_claim(s,validate_lane(s.get(lane_path(a.lane)).value),a.slot,a.worker,utc_now(),a.branch,a.pr,a.source_sha)
+        elif a.cmd=='claim':x=claim_slot(s,validate_lane(s.get(lane_path(a.lane)).value),a.slot,a.worker,utc_now(),a.branch,a.pr,a.source_sha,config=config)
+        elif a.cmd=='takeover':x=takeover_claim(s,validate_lane(s.get(lane_path(a.lane)).value),a.slot,a.worker,utc_now(),a.branch,a.pr,a.source_sha,config=config)
         elif a.cmd=='heartbeat':x=heartbeat(s,a.lane,a.slot,a.worker,a.lease_id,a.generation,utc_now())
         elif a.cmd=='release':x=release_claim(s,a.lane,a.slot,a.worker,a.lease_id,a.generation,utc_now())
         elif a.cmd=='event':x=publish_event(s,a.type,a.worker,a.message,utc_now(),a.lane,_dict(json.loads(a.data),'data') if a.data else None)
         elif a.cmd=='recommend':
-            l,c,_,_,r=snapshot(s);print(pretty_json([asdict(x) for x in recommend_slots(l,c,r,default_config(),utc_now(),a.red_main)[:a.limit]]),end='');return 0
+            l,c,_,_,r=snapshot(s);print(pretty_json([asdict(x) for x in recommend_slots(l,c,r,config,utc_now(),a.red_main)[:a.limit]]),end='');return 0
         elif a.cmd=='board':
             l,c,w,e,r=snapshot(s);print(render_dashboard(l,c,w,r,e,utc_now(),a.red_main),end='');return 0
         else:raise ValidationError('unknown command')
