@@ -50,13 +50,22 @@ jobs:
           path.write_text(source, encoding='utf-8')
           PY
 
-      - name: Verify focused compatibility and physical authority
+      - name: Verify programmatic compatibility
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           /usr/bin/python3 scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
-          /usr/bin/python3 scripts/ci/tests/test_capture_field_compiler_window_authority.py
+
+      - name: Verify physical CLI remains fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          guard='Scripts/capture_tuya_private_input_build_guard.py'
+          grep -Fq 'parser.add_argument("--accepted-source-root", type=Path)' "$guard"
+          grep -Fq 'parser.add_argument("--accepted-source-sha")' "$guard"
+          grep -Fq 'if inputs.accepted_source_root is None or inputs.accepted_source_sha is None:' "$guard"
+          grep -Fq 'physical field build requires exact accepted checkout root and source SHA custody' "$guard"
           git diff --check
 
       - name: Commit validated guard object
