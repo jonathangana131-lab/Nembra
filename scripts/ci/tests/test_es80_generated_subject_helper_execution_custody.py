@@ -112,7 +112,17 @@ class GeneratedSubjectHelperExecutionCustodyTests(unittest.TestCase):
                         helper.write_text(accepted_helper_bytes, encoding="utf-8")
                 return real_run(args, *positional, **keyword)
 
-            with mock.patch.object(GO.subprocess, "run", side_effect=swap_at_helper_exec):
+            class SubprocessProxy:
+                PIPE = subprocess.PIPE
+
+                @staticmethod
+                def run(args, *positional, **keyword):
+                    return swap_at_helper_exec(args, *positional, **keyword)
+
+            # Patch the R3 module's subprocess reference itself. Patching
+            # subprocess.run would mutate the shared module object and contaminate
+            # the separately loaded base authority module's Git subprocess calls.
+            with mock.patch.object(GO, "subprocess", SubprocessProxy()):
                 authority = GO.candidate_generated_authority(
                     repository,
                     source,
