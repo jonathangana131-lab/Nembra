@@ -4,20 +4,18 @@
   "laneId": "dashboard-live-cockpit",
   "slot": "visual-review",
   "role": "review",
-  "workerId": "sol-20260811-1407vr",
-  "leaseId": "9122ca953d0e43d4bd233f4ea5139b3b",
-  "generation": 5,
-  "status": "RELEASED",
-  "claimedAt": "2026-08-11T21:07:03Z",
-  "lastHeartbeatAt": "2026-08-11T21:22:02Z",
+  "workerId": "sol-20260811-1435vr",
+  "leaseId": "dashboard-live-cockpit-visual-review-1435vr-20260811-2135",
+  "generation": 6,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T21:35:45Z",
+  "lastHeartbeatAt": "2026-08-11T21:35:45Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2991,
-  "sourceSHA": "844a144fd758ab4d54c7c2702f644794401bbe62",
-  "takeoverFromWorkerId": "sol-20260811-a91c7e",
-  "priorWorkerIds": [
-    "sol-20260811-a91c7e"
-  ],
-  "currentHeadSHA": "844a144fd758ab4d54c7c2702f644794401bbe62",
-  "intent": "Exact-head Dashboard AX5 review complete. Run 31535702144 / artifact 9119352441 mechanically green. Visual result NEEDS_CHANGES in review 4910882458: Energy Rail separation and 2x2 stopped controls improved, but exact AX5 riding/stopped pixels still ellipsize vehicle identity and connection state, violating the no-ellipsis acceptance requirement. Successor should recompose left AX rail and re-earn exact pixels. Simulator-only; ES80 PHYSICAL NO-GO."
+  "sourceSHA": "bdd37315ee476071f1f74c6c3c5198223ddd06c2",
+  "currentHeadSHA": "bdd37315ee476071f1f74c6c3c5198223ddd06c2",
+  "takeoverFromWorkerId": "sol-20260811-1407vr",
+  "takeoverReason": "Generation-5 visual review was explicitly released after predecessor 844a144 requested changes. Claim the free independent visual-review slot to inspect successor #2991 exact bdd37315 retained Xcode/AX pixels only; no product writes. Simulator-only evidence; ES80 PHYSICAL NO-GO.",
+  "intent": "Independently verify the exact bdd37315 AX5 successor against the prior no-ellipsis blocker and full visual acceptance matrix: vehicle identity/connection untruncated, no reintroduced vertical or center clipping, LIVE POWER separated from Energy Rail, deliberate in-window 2x2 stopped controls, and premium hierarchy. Publish APPROVE or REQUEST_CHANGES from exact retained artifact; do not edit active product paths."
 }
