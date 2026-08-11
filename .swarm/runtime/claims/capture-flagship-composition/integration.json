@@ -9,11 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:39:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:39:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:43:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
   "pr": 2940,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "intent": "Preflight clean convergence of the exact app-visible AX candidate into the canonical Capture product lineage without importing temporary authoring workflows or stale ancestor-only evidence. Determine exact ancestry/delta against #2612 and current main, identify overlap/conflicts with security/control lanes, and only compose after #2940 earns all required exact-head app gates. PHYSICAL NO-GO."
+  "intent": "Preflight clean convergence of the exact app-visible AX candidate into the canonical Capture product lineage without importing temporary authoring workflows or stale ancestor-only evidence. Only compose after #2940 earns all required exact-head app gates. PHYSICAL NO-GO.",
+  "checkpoint": "Integration preflight complete on unchanged 005b7c4. Canonical app-visible #2612 exact 513ebea is the exact merge base; #2940 is ahead 30 / behind 0 and net changes only five intended app/AX-test paths. No temp materializer/workflow survives in the #2612→005b tree. Current main d8e38d0 diverged before the long Capture product lineage and is not an appropriate app acceptance/rebase target. Current major physical-control PRs #2907 build authority, #2871 signed-install, #2921 Final-GO, and #2944 private identity have zero path overlap with the five #2940 net paths, so eventual security composition has low source-conflict pressure but retains separate truth gates. If unchanged 005b earns its remaining Xcode 27 + Field gates, it can directly supersede #2612 as canonical APP-VISIBLE lineage; no cherry-pick replay layer should be invented. Physical authority remains separate and NO-GO."
 }
