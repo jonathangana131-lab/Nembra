@@ -199,7 +199,7 @@ def remove_local_build_identity(name: str, uid: int | None) -> None:
     subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
 
 
-def root_probe(package_root: Path) -> int:
+def root_probe(package_root: Path, field_active_groups: list[int]) -> int:
     if sys.platform != "darwin" or os.geteuid() != 0:
         emit_error("environment", "dedicated-UID root probe requires sudo on real macOS")
         return 70
@@ -221,6 +221,18 @@ def root_probe(package_root: Path) -> int:
     if 0 in field_groups:
         emit_error("identity", "field identity carries root supplementary-group authority")
         return 71
+    if len(field_active_groups) != len(set(field_active_groups)):
+        emit_error("identity", "captured field supplementary-group vector is duplicated")
+        return 71
+    if any(group <= 0 for group in field_active_groups):
+        emit_error("identity", "captured field supplementary-group vector is invalid")
+        return 71
+    if field_gid in field_active_groups:
+        emit_error("identity", "captured field supplementary-group vector must keep the primary GID separate")
+        return 71
+    if not set(field_active_groups).issubset(field_groups):
+        emit_error("identity", "captured active field groups exceed directory-service membership")
+        return 71
 
     helper = load_freeze_helper()
     workspace = Path(tempfile.mkdtemp(prefix="nembra-real-xcode-dedicated-uid.", dir="/private/tmp"))
@@ -241,12 +253,12 @@ def root_probe(package_root: Path) -> int:
         mountpoint.mkdir()
 
         # Root workspace is traversable only by the dedicated build primary GID;
-        # the field user's ambient groups never include this freshly selected ID.
+        # the field user's actual active groups never include this freshly selected ID.
         os.chown(workspace, 0, build_gid)
         os.chmod(workspace, 0o710)
         create_local_build_identity(temp_name, build_uid, build_gid, home)
         identity_created = True
-        if build_uid == field_uid or build_gid in field_groups:
+        if build_uid == field_uid or build_gid in field_groups or build_gid in field_active_groups:
             emit_error("identity", "ephemeral build identity overlaps field authority")
             return 71
 
@@ -317,8 +329,9 @@ def root_probe(package_root: Path) -> int:
             return 73
         before = sha256(product)
 
-        # The actual field identity never receives the dedicated build UID/GID.
-        # It must be unable to open the live compiler output even before freeze.
+        # Replay the exact active kernel identity captured by the invoking field
+        # process before sudo. Directory-service memberships are used only as a
+        # fail-closed superset check, never inflated into the child credential set.
         field_attack = subprocess.run(
             ["/bin/sh", "-c", 'printf "FIELD_ATTACK\\n" >> "$1"', "sh", str(product)],
             env={
@@ -334,7 +347,7 @@ def root_probe(package_root: Path) -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            **structured_credentials(field_uid, field_gid, field_groups),
+            **structured_credentials(field_uid, field_gid, field_active_groups),
             check=False,
         )
         if field_attack.returncode == 0 or sha256(product) != before:
@@ -397,6 +410,9 @@ def root_probe(package_root: Path) -> int:
             "schemaVersion": 1,
             "fieldUID": field_uid,
             "fieldPrimaryGID": field_gid,
+            "fieldActiveSupplementaryGroups": field_active_groups,
+            "fieldActiveGroupsContainBuildGID": build_gid in field_active_groups,
+            "fieldActiveGroupsSubsetOfDirectoryService": set(field_active_groups).issubset(field_groups),
             "fieldGroupsContainBuildGID": build_gid in field_groups,
             "buildUID": build_uid,
             "buildPrimaryGID": build_gid,
@@ -430,6 +446,14 @@ def parent_probe() -> int:
     if sys.platform != "darwin":
         emit_error("environment", "dedicated-UID real-Xcode freeze probe requires macOS")
         return 80
+    if os.getuid() <= 0 or os.geteuid() != os.getuid() or os.getegid() != os.getgid():
+        emit_error("identity", "field probe requires one stable non-root invoking identity before sudo")
+        return 80
+    field_primary_gid = os.getgid()
+    field_active_groups = sorted({group for group in os.getgroups() if group != field_primary_gid})
+    if 0 in field_active_groups:
+        emit_error("identity", "field process carries active root supplementary-group authority")
+        return 80
     sudo = subprocess.run(
         ["/usr/bin/sudo", "-n", "/usr/bin/true"],
         stdin=subprocess.DEVNULL,
@@ -441,6 +465,11 @@ def parent_probe() -> int:
         emit_error("environment", "runner does not expose noninteractive sudo for validation")
         return 80
 
+    active_group_args = [
+        item
+        for group in field_active_groups
+        for item in ("--field-active-group", str(group))
+    ]
     with tempfile.TemporaryDirectory(prefix="nembra-real-xcode-dedicated-uid-package-") as temporary:
         package = Path(temporary)
         make_package(package)
@@ -455,6 +484,9 @@ def parent_probe() -> int:
                 "--root-probe",
                 "--package-root",
                 str(package),
+                "--field-active-group-count",
+                str(len(field_active_groups)),
+                *active_group_args,
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -475,6 +507,9 @@ def parent_probe() -> int:
             evidence.get("xcodebuildReturnCode") == 0
             and evidence.get("fieldAttackReturnCode") != 0
             and evidence.get("fieldGroupsContainBuildGID") is False
+            and evidence.get("fieldActiveGroupsContainBuildGID") is False
+            and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
+            and evidence.get("fieldActiveSupplementaryGroups") == field_active_groups
             and evidence.get("buildIdentityDistinctFromField") is True
             and evidence.get("nonForcedDetachReturnCode") == 0
             and evidence.get("rootReadonlyAttackReturnCode") != 0
@@ -492,12 +527,20 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root-probe", action="store_true")
     parser.add_argument("--package-root", type=Path)
+    parser.add_argument("--field-active-group", action="append", type=int, default=[])
+    parser.add_argument("--field-active-group-count", type=int)
     args = parser.parse_args()
     if args.root_probe:
         if args.package_root is None:
             emit_error("arguments", "--package-root is required for root probe")
             return 83
-        return root_probe(args.package_root)
+        if args.field_active_group_count is None or args.field_active_group_count != len(args.field_active_group):
+            emit_error("arguments", "root probe requires one explicit captured field supplementary-group vector")
+            return 83
+        return root_probe(args.package_root, args.field_active_group)
+    if args.package_root is not None or args.field_active_group or args.field_active_group_count is not None:
+        emit_error("arguments", "root-only fixture arguments are unavailable in parent mode")
+        return 83
     return parent_probe()
 
 
