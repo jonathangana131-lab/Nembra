@@ -1,0 +1,69 @@
+name: Temporary Capture Private Descriptor Custody Linux QA
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-tuya-private-descriptor-custody-linux-sol
+    paths:
+      - .github/workflows/tmp-capture-private-descriptor-custody-linux-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-tuya-private-descriptor-custody-linux-sol
+          fetch-depth: 0
+
+      - name: Bind workflow-only validation head
+        shell: bash
+        env:
+          EXPECTED_PRODUCT_HEAD: 80a334b2d4e59bd885a7817b901df69f8d800019
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_HEAD"
+          test "$(git diff --name-only "$EXPECTED_PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-capture-private-descriptor-custody-linux-qa.yml'
+          git diff --check "$EXPECTED_PRODUCT_HEAD" HEAD
+
+      - name: Exercise descriptor-bound writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/repo/Scripts"
+          cp Scripts/provision_capture_tuya_identity.sh Scripts/provision_capture_tuya_identity_writer.py "$tmp/repo/Scripts/"
+          chmod 700 "$tmp/repo/Scripts/provision_capture_tuya_identity.sh"
+          chmod 600 "$tmp/repo/Scripts/provision_capture_tuya_identity_writer.py"
+
+          output="$(printf 'nembra-dummy-app-key\nnembra-dummy-app-secret\n' | /bin/bash -p "$tmp/repo/Scripts/provision_capture_tuya_identity.sh" 2>&1)"
+          test -f "$tmp/repo/LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"
+          test -f "$tmp/repo/LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift"
+          test "$(stat -c '%a' "$tmp/repo/LocalSecrets")" = 700
+          test "$(stat -c '%a' "$tmp/repo/LocalSecrets/TuyaRuntime")" = 700
+          test "$(stat -c '%a' "$tmp/repo/LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec")" = 600
+          test "$(stat -c '%a' "$tmp/repo/LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")" = 600
+          ! grep -Fq 'nembra-dummy-app-key' <<< "$output"
+          ! grep -Fq 'nembra-dummy-app-secret' <<< "$output"
+          ! grep -R -Fq 'nembra-dummy-app-key' "$tmp/repo/LocalSecrets"
+          ! grep -R -Fq 'nembra-dummy-app-secret' "$tmp/repo/LocalSecrets"
+
+          printf 'nembra-dummy-app-key-2\nnembra-dummy-app-secret-2\n' | /bin/bash -p "$tmp/repo/Scripts/provision_capture_tuya_identity.sh" >/dev/null 2>&1
+          ! grep -R -Fq 'nembra-dummy-app-secret-2' "$tmp/repo/LocalSecrets"
+
+          mkdir "$tmp/outside"
+          rm -rf "$tmp/repo/LocalSecrets"
+          ln -s "$tmp/outside" "$tmp/repo/LocalSecrets"
+          if printf 'escape-key\nescape-secret\n' | /bin/bash -p "$tmp/repo/Scripts/provision_capture_tuya_identity.sh" >/dev/null 2>&1; then
+            echo 'ERROR: descriptor writer followed symlinked LocalSecrets.' >&2
+            exit 1
+          fi
+          test -z "$(find "$tmp/outside" -mindepth 1 -print -quit)"
