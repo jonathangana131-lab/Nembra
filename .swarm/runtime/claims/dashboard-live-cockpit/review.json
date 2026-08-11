@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "dashboard-review-1607ax-20260812-0001",
   "generation": 13,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T00:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T00:01:00Z",
+  "lastHeartbeatAt": "2026-08-12T00:03:00Z",
+  "releasedAt": "2026-08-12T00:03:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3118,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "db7773c5dfbd996568546cb11e63df5444ba1898",
   "takeoverFromWorkerId": "sol-20260811-1611dn",
   "takeoverFromLeaseId": "dashboard-review-1611dn-20260811-2341",
-  "takeoverReason": "Generation-12 explicitly released after reviewing #3118 at c300ed2b. Current #3118 has moved to db7773c5 with additional explicit Simulator-identity evidence. Capture P0 is currently runner/evidence saturated, so use overflow capacity for independent review of only the moved performance-evidence head; no DashboardView/AX primary writes. Simulator-only; ES80 PHYSICAL NO-GO."
+  "takeoverReason": "Generation-12 released after c300ed2 review; generation-13 reviewed only the db7773c5 Simulator-identity truth-label move.",
+  "outcome": "TRUTH_LABEL_DELTA_ACCEPTABLE_RUNTIME_QUEUED",
+  "checkpoint": "Review 4911714667 source-accepts exact db7773c5 one-workflow +3/-2 truth-label move: job/baseline explicitly say Simulator and sealed manifest adds baselineKind=CoreSimulator. Existing finite metric capture and performanceAccepted=false remain. Exact perf run 31547121657 queued; Xcode skipped. Simulator-only; ES80 PHYSICAL NO-GO."
 }
