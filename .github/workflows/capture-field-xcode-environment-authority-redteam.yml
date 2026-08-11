@@ -13,8 +13,8 @@ permissions:
 
 jobs:
   xcode-environment-authority:
-    runs-on: macos-15
-    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,7 +27,7 @@ jobs:
           expected='${{ github.event.pull_request.head.sha }}'
           test "$(git rev-parse HEAD)" = "$expected"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Run field Xcode environment regression
+      - name: Require closed residual Xcode build environment
         shell: bash
         run: |
           set -euo pipefail
