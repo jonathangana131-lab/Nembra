@@ -87,7 +87,8 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         digest_shape = '[[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]'
         lock_compare = '[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]]'
         review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
-        bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
+        bootstrap_call = 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"'
+        retired_bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
         build_call = "-- xcodebuild"
 
         for required in (
@@ -101,6 +102,11 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         self.assertLess(bootstrap.index(required_digest), bootstrap.index("pod install --repo-update"))
         self.assertLess(bootstrap.index(lock_compare), bootstrap.index("NEXT BUILD RULE:"))
         self.assertIn(bootstrap_call, installer)
+        self.assertNotIn(
+            retired_bootstrap_call,
+            installer,
+            "field bootstrap must not be reopened from the mutable checkout pathname",
+        )
         self.assertIn(build_call, installer)
         self.assertLess(installer.index(bootstrap_call), installer.index(build_call))
 
