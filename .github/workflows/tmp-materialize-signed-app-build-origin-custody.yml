@@ -1,0 +1,68 @@
+name: Temporary materialize signed app build-origin custody
+
+on:
+  push:
+    branches:
+      - repair/v14-signed-app-build-origin-custody-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.event.head_commit.message == 'Bootstrap signed app build-origin custody workflow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind materialization to exact construction head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_signed_app_build_origin_custody.py
+
+      - name: Materialize production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tmp_materialize_signed_app_build_origin_custody.py
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/capture_signed_app_install_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Commit clean production tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            scripts/ci/tmp_materialize_signed_app_build_origin_custody.py \
+            .github/workflows/tmp-materialize-signed-app-build-origin-custody.yml
+          git add \
+            scripts/field/install_one_time_capture.command \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/capture_signed_app_install_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_install_custody.py \
+            .github/workflows/capture-signed-app-install-custody.yml \
+            .github/workflows/capture-field-build-provenance.yml \
+            scripts/ci/tmp_materialize_signed_app_build_origin_custody.py \
+            .github/workflows/tmp-materialize-signed-app-build-origin-custody.yml
+          git diff --cached --check
+          git config user.name 'nembra-sol-swarm'
+          git config user.email 'nembra-sol-swarm@users.noreply.github.com'
+          git commit -m 'Bind signed app to build output custody'
+          git push origin HEAD:repair/v14-signed-app-build-origin-custody-sol-20260811
