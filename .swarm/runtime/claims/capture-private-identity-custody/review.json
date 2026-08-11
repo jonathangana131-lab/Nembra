@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-1402vo",
   "leaseId": "capture-private-identity-review-1402vo-20260811-2152",
   "generation": 9,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:52:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:52:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:01:00Z",
+  "releasedAt": "2026-08-11T22:01:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3026,
   "sourceSHA": "34091153f8bb4f9b024553ca628145bdec873e1e",
-  "currentHeadSHA": "118c1be7c3fec894da306d46844e48fc1bf7b241",
-  "takeoverFromWorkerId": "sol-20260811-1402vo",
-  "takeoverReason": "Generation-8 was explicitly released after publishing current-parent red. Production closure #3026 has since re-anchored onto live #2993 base 34091153 and moved to exact head 118c1be7 (body SHAs stale). Review the actual live 8-path successor without touching implementation/red-team paths.",
-  "intent": "Adversarially review #3026 exact 118c1be7 replacement-blind bootstrap->adapter->canonical-guard/provenance execution. Check exact Git blob identity derivation, shell capture/trailing-byte preservation, O_NOFOLLOW descriptor stability, in-memory module registration, temp-descriptor provenance handoff, post-capture pathname replacement, construction cleanliness, #3020/#3010 replay compatibility, and exact-head CI state. PHYSICAL NO-GO."
+  "currentHeadSHA": "8425d781b6eee4ea764defe2e5982db6df9b006c",
+  "outcome": "HELPER_EXECUTION_PRIMITIVE_ACCEPTABLE_EXACT_HEAD_NOT_ACCEPTED",
+  "reviewId": 4910932870,
+  "durableEvidence": "Live #3026 moved during review from 118c1be7 to exact 8425d781. Helper closure 31538184022 SUCCESS and Private Identity Publication Races 31538184103 SUCCESS. Exact adapter/canonical/provenance Git blob pins are internally consistent; sentinel preserves trailing newlines; canonical/provenance code is captured O_NOFOLLOW, descriptor-stabilized, pathname-rebound, independently Git-blob-hashed, then executed from captured bytes with pre-registered modules. Exact Field 31538184083 FAILURE is currently fixture drift: clean adapter fixture uses macOS /var symlink alias despite no-follow ancestry contract, and checkout-root fixture omits required authority helper. However exact tree still contains inherited tmp-v14-bootstrap-resolution-adapter.yml with permissions contents: write, so head is construction-contaminated. Cross-lineage #3010 BASH_SOURCE=/dev/stdin composition mismatch also remains; final convergence needs explicit admitted repo-root semantics rather than mutable pathname fallback. Review 4910932870 records required clean successor and replay. PHYSICAL NO-GO.",
+  "releaseReason": "Durable exact-head review published. Release slot for a clean successor/repaired Field fixtures; do not hold ownership while Main/Xcode queue or while another worker removes construction residue."
 }
