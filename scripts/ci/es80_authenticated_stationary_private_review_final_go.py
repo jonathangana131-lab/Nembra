@@ -7,6 +7,11 @@ only the candidate checkout's inherited Git view. Candidate cleanliness is
 proved by comparing the accepted Git tree to the physical filesystem directly;
 repository-local config, index flags, fsmonitor, filters, attributes, and ignore
 metadata never participate in candidate worktree authority.
+
+The historical generated-subject parent is also adapted narrowly at composition
+time to require the selected current CocoaPods vnode gate. The retired
+"Convergence" workflow/path is never recreated or accepted as a compatibility
+alias; all historical module globals are restored after the composition window.
 """
 from __future__ import annotations
 
@@ -18,7 +23,7 @@ import stat
 import subprocess
 import types
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 PARENT_SOURCE = "3c8711f8520b93e2647ec9e3b52d50894193bc30"
 PARENT_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_private_review_final_go.py"
@@ -312,6 +317,144 @@ candidate_private_authority = _parent.candidate_private_authority
 _private_environment_adapter = _parent._private_environment_adapter
 _generated_extensions = _parent._generated_extensions
 
+CURRENT_VNODE_WORKFLOW = "Capture CocoaPods Vnode Attribute Current"
+CURRENT_VNODE_WORKFLOW_PATH = ".github/workflows/capture-cocoapods-vnode-attribute-current.yml"
+RETIRED_VNODE_WORKFLOW = "Capture CocoaPods Vnode Attribute Convergence"
+RETIRED_VNODE_WORKFLOW_PATH = ".github/workflows/capture-cocoapods-vnode-attribute-convergence.yml"
+CURRENT_GENERATED_ACCEPTANCE_WORKFLOWS = (
+    (generated.GENERATED_BUILD_WORKFLOW, generated.GENERATED_BUILD_WORKFLOW_PATH),
+    (CURRENT_VNODE_WORKFLOW, CURRENT_VNODE_WORKFLOW_PATH),
+)
+CURRENT_GENERATED_AUTHORITY_PATHS = tuple(
+    CURRENT_VNODE_WORKFLOW_PATH if relative == RETIRED_VNODE_WORKFLOW_PATH else relative
+    for relative in generated.GENERATED_AUTHORITY_PATHS
+)
+
+
+def _current_generated_candidate_authority(
+    candidate_repo: Path,
+    source: str,
+    accepted_digest: str,
+    *,
+    base: Any,
+    derive_subject: Callable[[Path, str, Any], str] | None = None,
+) -> dict[str, Any]:
+    """Evaluate generated-build authority against the selected current vnode gate."""
+    root = candidate_repo.expanduser().resolve(strict=True)
+    accepted_digest = generated._canonical_digest(
+        accepted_digest, "accepted CocoaPods generated build subject"
+    )
+    derive = derive_subject or generated._current_generated_subject
+    if base.canon(base.git(root, "rev-parse", "HEAD"), "candidate HEAD") != source:
+        raise generated.GeneratedSubjectGoError("generated build-subject candidate is not exact accepted source")
+    if base.git(root, "status", "--porcelain=v1", "--untracked-files=all"):
+        raise generated.GeneratedSubjectGoError("generated build-subject candidate checkout is not clean")
+
+    blobs: dict[str, str] = {}
+    texts: dict[str, str] = {}
+    for relative in CURRENT_GENERATED_AUTHORITY_PATHS:
+        path = root / relative
+        if not path.is_file() or path.is_symlink():
+            raise generated.GeneratedSubjectGoError(
+                f"generated build authority path is not a regular file: {relative}"
+            )
+        blob = base.git(root, "rev-parse", f"{source}:{relative}").lower()
+        actual = base.git(root, "hash-object", "--no-filters", "--", relative).lower()
+        verbose = base.git(root, "ls-files", "-v", "--", relative)
+        tagged = base.git(root, "ls-files", "-t", "--", relative)
+        if (
+            blob != actual
+            or not OID.fullmatch(blob)
+            or not verbose
+            or verbose[:1].islower()
+            or tagged.startswith("S ")
+        ):
+            raise generated.GeneratedSubjectGoError(
+                f"generated build authority Git/worktree identity drifted: {relative}"
+            )
+        blobs[relative] = blob
+        try:
+            texts[relative] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            raise generated.GeneratedSubjectGoError(
+                f"generated build authority source is not readable UTF-8: {relative}"
+            ) from error
+
+    bootstrap = texts["Scripts/bootstrap_capture_tuya_sdk.sh"]
+    helper = texts[generated.GENERATED_HELPER_PATH]
+    guard = texts["Scripts/capture_tuya_private_input_build_guard.py"]
+    installer = texts["scripts/field/install_one_time_capture.command"]
+    generated_workflow = texts[generated.GENERATED_BUILD_WORKFLOW_PATH]
+    vnode_workflow = texts[CURRENT_VNODE_WORKFLOW_PATH]
+    required_fragments = (
+        (bootstrap, generated.GENERATED_ENV),
+        (bootstrap, "capture_cocoapods_generated_build_subject.py"),
+        (helper, generated.GENERATED_SCHEMA),
+        (guard, "capture_cocoapods_generated_build_subject.py"),
+        (guard, "_verify_accepted_generated_build_subject"),
+        (guard, "require_accepted_generated_subject=True"),
+        (guard, "_require_real_checkout_ancestry"),
+        (guard, "_ensure_fd_budget"),
+        (guard, "KQ_NOTE_ATTRIB"),
+        (installer, "bootstrap_capture_tuya_sdk.sh"),
+        (installer, "capture_tuya_private_input_build_guard.py"),
+        (generated_workflow, "name: Capture CocoaPods Build Subject Authority"),
+        (generated_workflow, "Require exact generated CocoaPods build authority"),
+        (generated_workflow, "test_capture_private_input_ancestor_retarget.py"),
+        (vnode_workflow, f"name: {CURRENT_VNODE_WORKFLOW}"),
+        (vnode_workflow, "Real macOS chmod vnode evidence"),
+        (vnode_workflow, "macos-15"),
+    )
+    if any(fragment not in text for text, fragment in required_fragments):
+        raise generated.GeneratedSubjectGoError(
+            "candidate source lacks current generated-build authority enforcement"
+        )
+
+    current = derive(root, source, base)
+    if current != accepted_digest:
+        raise generated.GeneratedSubjectGoError(
+            "candidate generated CocoaPods subject does not match reviewed authority"
+        )
+    return {
+        "authority": "nembra-cocoapods-generated-build-subject-candidate-v3",
+        "implementation": generated.GENERATED_HELPER_PATH,
+        "sourceCommitSHA": source,
+        generated.GENERATED_KEY: current,
+        "requiredCandidateWorkflows": [name for name, _ in CURRENT_GENERATED_ACCEPTANCE_WORKFLOWS],
+        "gitBlobs": blobs,
+    }
+
+
+@contextlib.contextmanager
+def _current_vnode_authority() -> Iterator[None]:
+    """Narrowly evolve #2775's retired vnode gate to the selected current gate."""
+    if (
+        generated.VNODE_WORKFLOW != RETIRED_VNODE_WORKFLOW
+        or generated.VNODE_WORKFLOW_PATH != RETIRED_VNODE_WORKFLOW_PATH
+        or (RETIRED_VNODE_WORKFLOW, RETIRED_VNODE_WORKFLOW_PATH)
+        not in generated.GENERATED_ACCEPTANCE_WORKFLOWS
+        or RETIRED_VNODE_WORKFLOW_PATH not in generated.GENERATED_AUTHORITY_PATHS
+    ):
+        raise PrivateReviewGoError("historical generated-subject vnode contract drifted before current adaptation")
+    original_workflow = generated.VNODE_WORKFLOW
+    original_path = generated.VNODE_WORKFLOW_PATH
+    original_acceptance = generated.GENERATED_ACCEPTANCE_WORKFLOWS
+    original_authority_paths = generated.GENERATED_AUTHORITY_PATHS
+    original_candidate = generated.candidate_generated_authority
+    generated.VNODE_WORKFLOW = CURRENT_VNODE_WORKFLOW
+    generated.VNODE_WORKFLOW_PATH = CURRENT_VNODE_WORKFLOW_PATH
+    generated.GENERATED_ACCEPTANCE_WORKFLOWS = CURRENT_GENERATED_ACCEPTANCE_WORKFLOWS
+    generated.GENERATED_AUTHORITY_PATHS = CURRENT_GENERATED_AUTHORITY_PATHS
+    generated.candidate_generated_authority = _current_generated_candidate_authority
+    try:
+        yield
+    finally:
+        generated.candidate_generated_authority = original_candidate
+        generated.GENERATED_AUTHORITY_PATHS = original_authority_paths
+        generated.GENERATED_ACCEPTANCE_WORKFLOWS = original_acceptance
+        generated.VNODE_WORKFLOW_PATH = original_path
+        generated.VNODE_WORKFLOW = original_workflow
+
 
 def _candidate_relative_oid(root: Path, source: str, relative: str) -> tuple[bytes, str]:
     entries = _tree_entries(root, source)
@@ -425,7 +568,7 @@ def _candidate_git_custody(base: Any, candidate_repo: Path, source: str) -> Iter
 def build(*, candidate_repo: Path, source: str, base_module: Any | None = None, **kwargs: Any) -> dict[str, Any]:
     base = base_module or generated._load_base_module()
     source = base.canon(source, "source")
-    with _candidate_git_custody(base, candidate_repo, source):
+    with _candidate_git_custody(base, candidate_repo, source), _current_vnode_authority():
         return _parent.build(
             candidate_repo=candidate_repo,
             source=source,
