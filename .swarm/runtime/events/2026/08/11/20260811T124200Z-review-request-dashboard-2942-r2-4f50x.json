@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "20260811T124200Z-review-request-dashboard-2942-r2-4f50x",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-4f50x",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent review requested for converged Dashboard QA #2942 exact 616746f18c63801a484aa6d394fc6770c8b22cce, now a direct ahead-1/behind-0 child of active module-identity production repair #2956 exact a3f2bd02e6921b82fbc806ee77bc7d27f4749f96. Unique delta remains one executable harness file (+9/-4): preserve accessibility xcresult/attachments and specific AX XCUITest failure, then fail status 9 before ordinary screenshots if Simulator content_size cannot be restored to Large. Old #2942 run 31490274180 was cancelled by PR concurrency after convergence. New trusted exact-head run 31492094434 resolver SUCCESS; Mac job 93780838018 queued. Require terminal exact-head Simulator/UI evidence and pixel inspection before acceptance. If composed upward, moved #2817 must rerun exact-head. Simulator only; Capture/ES80 PHYSICAL NO-GO."
+  ,"createdAt": "2026-08-11T12:42:00Z"
+}
