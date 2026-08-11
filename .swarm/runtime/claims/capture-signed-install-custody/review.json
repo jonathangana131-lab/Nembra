@@ -9,16 +9,16 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:05:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:05:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:07:15Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2995,
-  "sourceSHA": "ccaa93c5019797697144f8f7613b9e64c123ef53",
-  "currentHeadSHA": "ccaa93c5019797697144f8f7613b9e64c123ef53",
+  "sourceSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
+  "currentHeadSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
   "activeBlockerPR": 2998,
   "activeBlockerHeadSHA": "678bf8a9aa09068b2b9e674578d83e55fabac553",
   "takeoverFromWorkerId": "sol-20260811-8f3d",
-  "takeoverReason": "Generation-5 review lease expired at 2026-08-11T21:02:55Z. Recover the same P0 signed-install review lane against current production #2995 and independently inspect detached-descendant/open-FD authority without changing production implementation paths. PHYSICAL NO-GO.",
-  "durableEvidence": "Fresh source inspection: #2995 exact ccaa93c revokes future DerivedData pathname traversal with root:root 0700 and then calls _terminate_remaining_process_group(process.pid), but that helper targets only the original start_new_session process group. #2998 exact 678bf8a is a two-file validation-only child bound exactly to ccaa93c; its macOS witness forks a descendant that calls setsid() while retaining an already-open writable product descriptor, then writes after root lock and original-PGID retirement. The dedicated workflow is queued; queued is not evidence. Review remains open pending exact mechanical result and deeper source audit.",
-  "acceptance": "PHYSICAL NO-GO. Do not accept #2995 from pathname revocation or original-process-group drain alone. Determine whether every output-mutating capability holder is mechanically retired before fingerprint/stage admission, and require exact #2998-style behavioral evidence plus all normal moved-head gates."
+  "takeoverReason": "Generation-5 review lease expired at 2026-08-11T21:02:55Z. Recovered the same P0 signed-install review lane without touching active implementation/test paths. PHYSICAL NO-GO.",
+  "durableEvidence": "Review 4910755155 blocks former exact #2995 head ccaa93c on source: root:root 0700 revokes future pathname traversal but not an already-open writable descriptor; _terminate_remaining_process_group targets only the original start_new_session PGID; the nested private-input guard also waits/stops a direct child and does not prove escaped output-authority holders are gone. #2998 exact 678bf8a is a correctly scoped two-file detached-FD validation child of ccaa93c but its dedicated macOS workflow 31535483234 is queued, so queued is not evidence. #2995 then moved to exact a71cc55. GitHub compare ccaa93c...a71cc55 shows exactly two test/gate path changes; production build-origin helper is byte-unchanged. Review 4910761972 therefore re-anchors the blocking source verdict to a71cc55. The new real-Xcode group-custody probe proves only fresh same-UID pathname exclusion / root-lock snapshot prerequisites; it does not test escaped descendants or already-open writable FDs. #2998 must be rebound/replayed against the current exact head or its production-repair successor.",
+  "acceptance": "BLOCKED on exact a71cc55. Before fingerprint/stage admission production must mechanically revoke every surviving output-mutation authority, including inherited writable FDs held by escaped descendants; then the detached-FD oracle must be exact-head green and all moved-head signed-app/Field/Main/Xcode gates must re-earn acceptance. PHYSICAL NO-GO."
 }
