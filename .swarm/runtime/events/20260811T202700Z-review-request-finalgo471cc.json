@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "202700-review-request-finalgo471cc",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-1311qy",
+  "laneId": "capture-final-go-authority",
+  "message": "Independent exact-head review requested for PR #2921 at moved head 471cc025b332f4df8b43a98d709710aeb4e0698f after accepted test-only child #2976 was composed. Canonical Final-GO run 31532784360/job 93916591748 is terminal SUCCESS on this exact head through verified object chain plus all inherited controls. Production Final-GO source bytes were unchanged by #2976. Xcode run 31532784381 is queued and is not promoted. Implementation worker must not self-accept. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T20:27:00Z"
+}
