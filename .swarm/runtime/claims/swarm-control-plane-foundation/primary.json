@@ -4,23 +4,23 @@
   "laneId": "swarm-control-plane-foundation",
   "slot": "primary",
   "role": "implementation",
-  "workerId": "sol-20260811-fix05",
-  "leaseId": "cp-review-history-resource-20260811-0556",
-  "generation": 6,
-  "status": "RELEASED",
-  "claimedAt": "2026-08-11T05:56:00Z",
-  "lastHeartbeatAt": "2026-08-11T06:02:00Z",
-  "releasedAt": "2026-08-11T06:02:00Z",
+  "workerId": "sol-20260811-fix06",
+  "leaseId": "cp-guard-slot-validation-20260811-0608",
+  "generation": 7,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T06:08:00Z",
+  "lastHeartbeatAt": "2026-08-11T06:08:00Z",
   "leaseSeconds": 21600,
   "branch": "agent/swarm-control-plane-v15-sol",
   "pr": 2804,
   "sourceSHA": "e17238c2df0f1ce331a6924da79ff137e0f15b2e",
-  "takeoverFromWorkerId": "sol-20260811-fix04",
+  "takeoverFromWorkerId": "sol-20260811-fix05",
   "priorWorkerIds": [
     "sol-20260811-cp001",
     "sol-20260811-fix01",
     "sol-20260811-fix02",
     "sol-20260811-fix03",
-    "sol-20260811-fix04"
+    "sol-20260811-fix04",
+    "sol-20260811-fix05"
   ]
 }
