@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "swarm-control-plane-foundation",
+  "epic": "swarm-control-plane",
+  "title": "GitHub-native swarm control plane foundation",
+  "objective": "Implement, adversarially validate, and safely shadow-roll out atomic GitHub-native coordination without weakening Nembra product or physical-safety truth.",
+  "priority": 0,
+  "state": "IMPLEMENTING",
+  "dependencies": [],
+  "blockers": [],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    ".swarm",
+    "scripts/swarmcp",
+    "scripts/swarm_control.py",
+    "scripts/ci/tests/test_swarm_control_plane.py",
+    ".github/workflows/swarm-control-plane-shadow.yml",
+    "docs/SWARM_CONTROL_PLANE.md",
+    "docs/adr/ADR-0015-github-native-swarm-control-plane.md"
+  ],
+  "adjacentWriteAreas": [],
+  "slots": [
+    {"name": "primary", "role": "implementation", "exclusive": true, "leaseSeconds": 21600, "resources": []},
+    {"name": "tests", "role": "tests", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "review", "role": "adversarial-review", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "integration", "role": "integration", "exclusive": true, "leaseSeconds": 1800, "resources": ["RELEASE_INTEGRATION"]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": false, "state": "SOURCE_READY"},
+  "sourceSHA": "e17238c2df0f1ce331a6924da79ff137e0f15b2e",
+  "tags": ["control-plane", "shadow-rollout"]
+}
