@@ -43,6 +43,20 @@ class FinalGoDirectExecutionDisabledTests(unittest.TestCase):
     def test_public_foundation_path_is_non_authorizing(self):
         self.assert_non_authorizing("es80_today_final_go_foundation.py")
 
+    def test_retired_hardened_real_execution_is_non_authorizing(self):
+        completed = subprocess.run(
+            [sys.executable, str(CI_DIR / "es80_today_final_go_hardened.py"), "--output", "/tmp/retired-final-go.json"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn("retired ES80-FINGERPRINT-v1 Final GO authority is non-authorizing", completed.stderr)
+        self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", completed.stderr)
+        self.assertNotIn("TODAY Final GO record:", completed.stderr)
+
     def test_public_foundation_imported_builder_is_non_authorizing(self):
         foundation = self.load_module("es80_today_final_go_foundation.py")
         with self.assertRaisesRegex(
