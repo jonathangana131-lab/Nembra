@@ -7,13 +7,15 @@
   "workerId": "sol-20260811-1311qy",
   "leaseId": "capture-flagship-review-1311qy-20260811-2049",
   "generation": 12,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:49:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:49:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:51:30Z",
+  "releasedAt": "2026-08-11T20:51:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2979,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
-  "reviewTarget": "Review current first-fold product successor after it consumed #2990 via Text(verbatim:). Verify spoken-authority preservation without creating nonlocalizable accessibility semantics, exact visual/resource scope, and current exact-head gates. Runtime VoiceOver remains separate acceptance. PHYSICAL NO-GO."
+  "outcome": "PRODUCT_SEMANTICS_SOURCE_ACCEPTABLE_GATES_PENDING_TEST_CONTRACT_DEBT",
+  "releaseReason": "Review 4910607755: exact five-path first-fold successor restores full current-English spoken hero authority while keeping compact sighted resource; no truth/physical bytes move. VoiceOver source parser still over-prescribes Text(verbatim:) and should be generalized for future localized AX resources, but current English semantics are not false. Xcode/Main running, Visual/Field queued; ancestor pixels are ingredient evidence only. Runtime VoiceOver remains separate required acceptance. PHYSICAL NO-GO."
 }
