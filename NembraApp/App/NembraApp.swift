@@ -125,6 +125,7 @@ private extension Double {
 private struct NembraNavigationView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @AppStorage("navigation.recentDestinations.v1") private var recentDestinationsJSON = ""
     @State private var query = ""
     @State private var results: [MKMapItem] = []
@@ -218,7 +219,19 @@ private struct NembraNavigationView: View {
                     }
                 }
                 .padding(12)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background {
+                    if reduceTransparency {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color(uiColor: .secondarySystemBackground))
+                    } else {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.regularMaterial)
+                    }
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(.primary.opacity(0.10))
+                }
                 .padding(16)
                 .accessibilityElement(children: .combine)
             }
