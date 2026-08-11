@@ -9,12 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:21:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:27:30Z",
+  "lastHeartbeatAt": "2026-08-11T12:30:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
   "pr": 2940,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "intent": "Independent tests-side exact-head acceptance support for the clean app-visible Capture AX closure. Verify current package/graft/Field/Xcode/standalone-visual gates on unchanged current head, inspect retained standard+AX5 artifacts when available, and validate source-level large-type/VoiceOver contracts without overlapping primary product edits or review ownership. PHYSICAL NO-GO.",
-  "checkpoint": "#2940 exact 005b7c4 is one additive AX source-regression commit beyond unchanged app bytes 99fbbbb. Source review confirms SecureLinkView owns dynamicTypeSize and sighted/VoiceOver user-code/action semantics are ordered correctly. Main Graft run 31490540822 has exact-clean-head SUCCESS and full Capture package SUCCESS, proving the new regression compiles/runs green in the real package suite; its standalone target step remains in progress, so the overall run is not yet green. Standalone Visual run 31490540910 has exact-subject verification + public-unprovisioned app build SUCCESS and is capturing iPhone 12 standard/AX5 pixels. Field 31490540890 queued; Xcode 31490540888 pending. PHYSICAL NO-GO."
+  "checkpoint": "#2940 exact 005b7c4 is one additive AX source-regression commit beyond unchanged app bytes 99fbbbb. Independent source review found no test weakening: SecureLinkView owns dynamicTypeSize, semantic Engineering details remains intact, and Tuya field/action sighted+VoiceOver ordering is explicit. Main Graft run 31490540822 is now terminal SUCCESS on exact 005b7c4, including exact clean-head binding, full Capture package tests (new AX regression included), and standalone exact app target build. Standalone Visual 31490540910 remains in progress after exact-subject verification and public-unprovisioned build; retained standard+AX5 pixels still require human inspection. Field 31490540890 queued; Xcode 31490540888 queued. No queued/running gate is counted green. PHYSICAL NO-GO."
 }
