@@ -90,7 +90,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
     def test_supervisor_orders_revocation_build_lock_fingerprint_and_stage(self) -> None:
         source = ORIGIN_HELPER.read_text(encoding="utf-8")
         markers = {
-            "sudo_revoke": "_invalidate_invoker_sudo(uid, gid, invoking_groups, child_env)",
+            "sudo_revoke": "_invalidate_invoker_sudo(uid, gid, child_env)",
             "prepare": "derived_root = _prepare_derived(private_tmp, capability_gid)",
             "spawn": "process = subprocess.Popen(",
             "retire": "_terminate_remaining_process_group(process.pid)",
@@ -120,10 +120,10 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
 
         self.assertIn("os.chown(derived, 0, capability_gid)", source)
         self.assertIn("os.chmod(derived, 0o770)", source)
-        self.assertIn(
-            "child_groups = tuple(sorted(set(invoking_groups) | {capability_gid}))",
-            source,
-        )
+        self.assertIn("child_groups = (capability_gid,)", source)
+        self.assertIn("**_structured_credentials(uid, gid, child_groups)", source)
+        self.assertIn("credentials = _structured_credentials(uid, gid, ())", source)
+        self.assertNotIn("preexec_fn=", source)
         self.assertIn('["/usr/bin/sudo", "-K"]', source)
         self.assertIn('["/usr/bin/sudo", "-n", "/usr/bin/true"]', source)
         self.assertIn('["/usr/bin/ditto", "--noacl"', source)
@@ -163,6 +163,26 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertEqual(selected, candidate)
         self.assertNotIn(selected, occupied)
         self.assertNotIn(selected, invoking)
+
+    def test_structured_credentials_keep_only_explicit_supplementary_authority(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_credentials")
+        capability_gid = (1 << 29) + 12345
+        self.assertEqual(
+            helper._structured_credentials(501, 20, (20, capability_gid, capability_gid)),
+            {
+                "user": 501,
+                "group": 20,
+                "extra_groups": [capability_gid],
+            },
+        )
+        self.assertEqual(
+            helper._structured_credentials(501, 20, ()),
+            {"user": 501, "group": 20, "extra_groups": []},
+        )
+        with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._structured_credentials(501, 20, (0,))
+        with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._structured_credentials(0, 20, ())
 
     def test_post_handoff_replacement_cannot_change_promoted_stage_model(self) -> None:
         install = load(INSTALL_HELPER, "capture_signed_app_install_custody_for_origin")
@@ -206,17 +226,16 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         derived = helper._prepare_derived(helper._require_real_private_tmp(), capability_gid)
         target = derived / "proof.txt"
         try:
-            normal_preexec = helper._drop_credentials(uid, gid, groups)
-            capability_groups = tuple(sorted(set(groups) | {capability_gid}))
-            capability_preexec = helper._drop_credentials(uid, gid, capability_groups)
+            normal_credentials = helper._structured_credentials(uid, gid, ())
+            capability_credentials = helper._structured_credentials(uid, gid, (capability_gid,))
 
             denied = subprocess.run(
                 ["/usr/bin/touch", str(target)],
-                preexec_fn=normal_preexec,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
+                **normal_credentials,
             )
             self.assertNotEqual(
                 denied.returncode,
@@ -226,11 +245,11 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
 
             allowed = subprocess.run(
                 ["/usr/bin/touch", str(target)],
-                preexec_fn=capability_preexec,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
+                **capability_credentials,
             )
             self.assertEqual(allowed.returncode, 0)
 
@@ -238,11 +257,11 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             os.chmod(derived, 0o700)
             revoked = subprocess.run(
                 ["/bin/sh", "-c", f"printf changed > {target!s}"],
-                preexec_fn=capability_preexec,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
+                **capability_credentials,
             )
             self.assertNotEqual(
                 revoked.returncode,
