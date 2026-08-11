@@ -1,0 +1,33 @@
+name: Capture Final GO Device Ancestor Swap Diagnostic
+
+on:
+  push:
+    branches:
+      - adversarial/v14-final-go-device-ancestor-swap-sol
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_final_go_device_ancestor_swap.py
+      - .github/workflows/capture-final-go-device-ancestor-swap-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  adversarial-device-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile diagnostic and control modules
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_final_go_device_ancestor_swap.py
+      - name: Require descriptor-bound private-device custody
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_device_ancestor_swap.py
