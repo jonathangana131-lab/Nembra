@@ -22,37 +22,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('.github/workflows/capture-field-build-provenance.yml')
-          text = path.read_text(encoding='utf-8')
-          replacements = [
-              (
-                  "          grep -Fq '\"$PROVENANCE_HELPER\" snapshot' \"$bootstrap\"\n",
-                  "          grep -Fq 'run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot' \"$bootstrap\"\n",
-                  'bootstrap accepted provenance helper source contract',
-              ),
-              (
-                  "          guard_line=\"$(grep -nF '/usr/bin/python3 -I \"$TUYA_BUILD_WINDOW_GUARD\" \\\\' \"$installer\" | sed -n '1s/:.*//p')\"\n",
-                  "          guard_line=\"$(grep -nF 'run_accepted_source_python \"$TUYA_BUILD_WINDOW_GUARD_RELATIVE\" \\\\' \"$installer\" | sed -n '1s/:.*//p')\"\n",
-                  'installer accepted build-window guard ordering contract',
-              ),
-          ]
-          for old, new, label in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected one stale match, found {count}')
-              text = text.replace(old, new, 1)
-          path.write_text(text, encoding='utf-8')
-          PY
-          grep -Fq 'run_accepted_python_helper "$PROVENANCE_HELPER" "$PROVENANCE_HELPER_SHA256" snapshot' Scripts/bootstrap_capture_tuya_sdk.sh
-          grep -Fq 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \' scripts/field/install_one_time_capture.command
+          python3 scripts/ci/tmp_field_provenance_custody_contract_sol.py
           bash -n scripts/field/install_one_time_capture.command
           git diff --check
           rm -f .github/workflows/tmp-field-provenance-custody-contract-sol.yml
+          rm -f scripts/ci/tmp_field_provenance_custody_contract_sol.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/capture-field-build-provenance.yml .github/workflows/tmp-field-provenance-custody-contract-sol.yml
+          git add .github/workflows/capture-field-build-provenance.yml .github/workflows/tmp-field-provenance-custody-contract-sol.yml scripts/ci/tmp_field_provenance_custody_contract_sol.py
           git commit -m 'Capture: align provenance gate with accepted helper custody'
           git push origin HEAD:repair/v14-capture-field-provenance-custody-contract-sol
