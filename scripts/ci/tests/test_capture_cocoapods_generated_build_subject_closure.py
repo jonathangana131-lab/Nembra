@@ -49,10 +49,10 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         pod.write_text(
             "#!/bin/bash\nset -euo pipefail\n"
             "mkdir -p 'NembraCapture.xcworkspace' 'Pods/Target Support Files/Pods-NembraCapture'\n"
-            "cat > Podfile.lock <<'EOF'\n"
+            "cat > Pods/Manifest.lock <<'EOF'\n"
             "PODS:\n  - ThingSmartHomeKit (7.8.0)\n  - ThingSmartBusinessExtensionKit (7.8.0)\n"
             "DEPENDENCIES:\n  - ThingSmartHomeKit (= 7.8.0)\n  - ThingSmartBusinessExtensionKit (= 7.8.0)\nEOF\n"
-            "cp Podfile.lock Pods/Manifest.lock\n"
+            "if [[ ${NEMBRA_TEST_PRESERVE_LOCK:-0} != 1 || ! -f Podfile.lock ]]; then cp Pods/Manifest.lock Podfile.lock; fi\n"
             "printf '%s\\n' \"${NEMBRA_TEST_GRAPH:?}\" > 'Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig'\n"
             "printf '%s\\n' \"${NEMBRA_TEST_GRAPH:?}\" > NembraCapture.xcworkspace/contents.xcworkspacedata\n",
             encoding="utf-8",
@@ -70,7 +70,14 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def bootstrap(self, graph: str, *, review: bool, accepted: str = "") -> subprocess.CompletedProcess[str]:
+    def bootstrap(
+        self,
+        graph: str,
+        *,
+        review: bool,
+        accepted: str = "",
+        preserve_lock_comment: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
         env = {
             "PATH": f"{self.bin}:/usr/bin:/bin",
             "HOME": str(self.root),
@@ -80,6 +87,8 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         }
         if accepted:
             env["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"] = accepted
+        if preserve_lock_comment:
+            env["NEMBRA_TEST_PRESERVE_LOCK"] = "1"
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review:
             command.append("--resolve-lock-for-review")
@@ -114,6 +123,27 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         self.assertRegex(expected.stdout.strip(), r"^[0-9a-f]{64}$")
 
         field = self.bootstrap("GRAPH_A", review=False, accepted=accepted)
+        self.assertEqual(field.returncode, 0, field.stdout)
+        self.assertEqual(digest(lock), accepted)
+        self.assertEqual(lock.read_bytes(), manifest.read_bytes())
+
+    def test_normal_bootstrap_normalizes_cocoapods_comment_asymmetry(self) -> None:
+        review = self.bootstrap("GRAPH_A", review=True)
+        self.assertEqual(review.returncode, 0, review.stdout)
+        lock = self.root / "Podfile.lock"
+        manifest = self.root / "Pods/Manifest.lock"
+        accepted = digest(lock)
+
+        # Model CocoaPods keeping the existing attested Podfile.lock while
+        # regenerating Manifest.lock from canonical dependency data without the
+        # comment. Normalization after graph fingerprinting must restore exact
+        # equality without weakening the accepted lock digest.
+        field = self.bootstrap(
+            "GRAPH_A",
+            review=False,
+            accepted=accepted,
+            preserve_lock_comment=True,
+        )
         self.assertEqual(field.returncode, 0, field.stdout)
         self.assertEqual(digest(lock), accepted)
         self.assertEqual(lock.read_bytes(), manifest.read_bytes())
