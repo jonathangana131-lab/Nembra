@@ -31,9 +31,9 @@ jobs:
             local output
             output="$(mktemp)"
             if ! "$@" >"$output" 2>&1; then
-              while IFS= read -r line; do
+              tail -n 9 "$output" | while IFS= read -r line; do
                 printf '::error title=%s::%s\n' "$label" "$line"
-              done <"$output"
+              done
               rm -f "$output"
               exit 1
             fi
