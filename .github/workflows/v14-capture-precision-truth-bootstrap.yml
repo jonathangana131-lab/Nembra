@@ -5,13 +5,17 @@ on:
   push:
     branches:
       - recovery/v14-capture-final-precision-truth-sol
+  pull_request:
+    branches:
+      - recovery/v14-capture-final-precision-truth-sol
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: github.repository == 'jonathangana131-lab/Nembra'
+    if: github.repository == 'jonathangana131-lab/Nembra' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
