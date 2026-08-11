@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "capture-build-review-1607ax-20260811-2353",
   "generation": 18,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:53:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:53:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:56:00Z",
+  "releasedAt": "2026-08-11T23:56:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3093,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "49e51aef23b843f8790d36508b4f6d33025c2df4",
   "takeoverFromWorkerId": "sol-20260811-1606br",
   "takeoverFromLeaseId": "capture-build-review-1606br-20260811-2306",
-  "takeoverReason": "Generation-17 lease expired at 2026-08-11T23:50:20Z. Recover independent read-only build-authority review to consume current #3093 retained selected-Xcode ACL diagnostic evidence and classify the exact production #3072 blocker without modifying implementation paths. Preserve PHYSICAL NO-GO."
+  "takeoverReason": "Generation-17 expired; generation-18 refreshed exact build-authority evidence and blocker state.",
+  "outcome": "PRODUCTION_RED_ACL_DIAGNOSTIC_QUEUED_NO_SAFE_MUTATION",
+  "checkpoint": "Event 20260811T235600Z records #3072 exact red state, #3088 Field correction as a consumable green ingredient, and #3093 exact retained ACL diagnostic 31543820090 still queued. No production mutation until exact ACL failure is classified. PHYSICAL NO-GO."
 }
