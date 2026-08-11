@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "214910-build-integration-result-brv7",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-brv7",
+  "laneId": "capture-build-authority",
+  "message": "Recovered expired integration generation-3 and reconciled the current selected-Xcode build-authority lineage. #3008 exact 0807fc75a7edb51597d9e926c747cd5e6c400771 is construction-clean but Field run 31537323765 fails only at stale ambient `devicectl list devices --hide-headers` source-contract text after provenance/private/vnode steps pass. Sibling test-only #3016 exact a2f67790ac10376016d5c5b5e6280201e9fcc816 has terminal Field SUCCESS run 31537399365. Fresh source comparison shows #3008 already contains the verified-Git private-runner half of #3016; the minimal compatible convergence is only the selected `$SELECTED_XCTRACE`, `$SELECTED_DEVICECTL` list/install/launch and `$SELECTED_XCODEBUILD` compiler-order assertions. Durable handoff posted on #3008 comment 5259243079. Do not replay the whole sibling patch or ancestor green; re-earn Field on the final unchanged ACL-repaired production head. #3028 exact 4689d621a79430a570eb6d5466d3fa767155ff5a remains validation-only and blocked before witness execution because its workflow exact-scope gate expects four product paths while its diagnostic diff is exactly two validation paths. Active generation-5 primary owns the strict ACL production repair from #3008 and already intends to advance the permanent provenance assertions, so integration must not duplicate those writes. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T21:49:10Z"
+}
