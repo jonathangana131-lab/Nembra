@@ -171,7 +171,7 @@ def review(pr:int,review_id:int,source:str,v:dict[str,Any],get=api):
     return {"authority":b["authority"],"reviewID":review_id,"reviewNodeID":r.get("node_id"),"reviewBodySHA256":sha(body.encode()),"reviewedAtUTC":stamp,"reviewer":OWNER,"state":r["state"],"verdict":"accepted","standardScreenshotSHA256":std,"accessibilityScreenshotSHA256":ax,"tuyaDependencyLockSHA256":lock}
 
 def git(repo:Path,*args):
-    try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={"PATH":"/usr/bin:/bin"}).stdout.strip()
+    try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env={"PATH":"/usr/bin:/bin","GIT_NO_REPLACE_OBJECTS":"1"}).stdout.strip()
     except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate Git custody failed") from e
 
 def candidate(repo:Path,source:str):
