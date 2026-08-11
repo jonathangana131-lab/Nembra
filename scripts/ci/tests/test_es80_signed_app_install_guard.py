@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import threading
+import time
 import unittest
 
 REPOSITORY = Path(__file__).resolve().parents[3]
@@ -139,6 +143,44 @@ class SignedAppInstallGuardTests(unittest.TestCase):
                     popen_factory=lambda command: OneTickProcess(command),
                 )
             self.assertTrue(backend.closed)
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires macOS kqueue vnode semantics")
+    def test_macos_kqueue_rejects_swap_restore_during_consumer_window(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-signed-app-guard-") as temporary:
+            app = self.make_app(Path(temporary))
+            expected = guard.digest_app(app)
+            executable = app / "Nembra Capture"
+            backup = app / "Nembra Capture.authority"
+            mutation_finished = threading.Event()
+
+            def swap_restore() -> None:
+                time.sleep(0.10)
+                executable.rename(backup)
+                executable.write_bytes(b"substituted-executable-subject")
+                time.sleep(0.10)
+                executable.unlink()
+                backup.rename(executable)
+                mutation_finished.set()
+
+            mutation_thread = threading.Thread(target=swap_restore, daemon=True)
+
+            def launch(command):
+                process = subprocess.Popen(command)
+                mutation_thread.start()
+                return process
+
+            with self.assertRaisesRegex(guard.InstallSubjectError, "while devicectl was consuming"):
+                guard.guarded_install(
+                    app,
+                    expected,
+                    ["/bin/sleep", "2"],
+                    popen_factory=launch,
+                    poll_interval=0.02,
+                )
+
+            mutation_thread.join(timeout=2)
+            self.assertTrue(mutation_finished.is_set(), "swap/restore adversary did not complete")
+            self.assertEqual(guard.digest_app(app), expected, "adversary must restore the original pathname bytes")
 
 
 if __name__ == "__main__":
