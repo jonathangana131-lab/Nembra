@@ -69,6 +69,12 @@ def send(process: subprocess.Popen[str], command: str) -> None:
     if process.stdin is None: raise ProbeError("writer stdin unavailable")
     process.stdin.write(command); process.stdin.flush()
 
+def detach_is_resource_busy(completed: subprocess.CompletedProcess[str]) -> bool:
+    if completed.returncode == 0:
+        return False
+    diagnostic = ((completed.stdout or "") + "\n" + (completed.stderr or "")).casefold()
+    return "resource busy" in diagnostic
+
 def root_probe() -> int:
     if sys.platform != "darwin" or os.geteuid() != 0:
         emit_error("environment", "root probe requires sudo on real macOS"); return 70
@@ -97,34 +103,43 @@ def root_probe() -> int:
         if fresh.returncode == 0: emit_error("pathname-isolation", "fresh path write survived lock"); return 72
         send(writer, "W")
         if read_line(writer) != "WROTE": raise ProbeError("post-lock dirfd write not demonstrated")
-        first_detach = helper.hdiutil_detach(device); detach_was_busy = first_detach.returncode != 0
+        first_detach = helper.hdiutil_detach(device)
         detach_text = ((first_detach.stdout or "") + "\n" + (first_detach.stderr or "")).strip()
+        detach_was_busy = detach_is_resource_busy(first_detach)
+        if first_detach.returncode != 0 and not detach_was_busy:
+            emit_error(
+                "detach-classification",
+                "first non-forced detach failed for a non-busy reason",
+                firstDetachReturnCode=first_detach.returncode,
+                firstDetachOutput=detach_text,
+            )
+            return 73
         post_result = "NOT_ATTEMPTED_BUSY_DETACH"
         if detach_was_busy:
             send(writer, "C")
             if read_line(writer) != "CLOSED": raise ProbeError("writer did not close")
             writer.wait(timeout=5)
             closed_detach = helper.hdiutil_detach(device)
-            if closed_detach.returncode != 0: emit_error("quiescence", "detach remained busy after dirfd close"); return 73
+            if closed_detach.returncode != 0: emit_error("quiescence", "detach remained busy after dirfd close"); return 74
             device = None
         else:
             device = None; send(writer, "P"); post_result = read_line(writer); send(writer, "C")
             if read_line(writer) != "CLOSED": raise ProbeError("writer did not close after post-detach probe")
             writer.wait(timeout=5)
-        if writer.returncode != 0: emit_error("writer", f"writer exited {writer.returncode}"); return 74
+        if writer.returncode != 0: emit_error("writer", f"writer exited {writer.returncode}"); return 75
         device = helper.hdiutil_attach(image, mountpoint, readonly=True)
         frozen = mountpoint / "DerivedData/Build/Products/Debug-iphoneos/Nembra Capture.app"
-        if (frozen / "late-entry.bin").read_bytes() != b"DIRFD_POST_LOCK_WRITE\n": emit_error("readonly-remount", "pre-detach bytes changed"); return 75
+        if (frozen / "late-entry.bin").read_bytes() != b"DIRFD_POST_LOCK_WRITE\n": emit_error("readonly-remount", "pre-detach bytes changed"); return 76
         post_path = frozen / "post-detach-entry.bin"; persisted = post_path.exists()
         if post_result == "POSTDETACH_OK" or persisted:
             emit_error("authority-survived-detach", "retained dirfd preserved fd-relative mutation authority after detach", detachOutput=detach_text, postDetachResult=post_result, postDetachPersisted=persisted)
-            return 76
+            return 77
         if not detach_was_busy and not post_result.startswith("POSTDETACH_ERR:"):
-            emit_error("post-detach-probe", "ambiguous result", result=post_result); return 77
+            emit_error("post-detach-probe", "ambiguous result", result=post_result); return 78
         root_create = subprocess.run(["/bin/sh", "-c", 'printf x > "$1"', "sh", str(frozen / "root-after-freeze.bin")], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
         former = subprocess.run(["/bin/sh", "-c", 'printf x > "$1"', "sh", str(frozen / "cap-after-freeze.bin")], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=helper.drop(uid, gid, capability_groups), check=False)
-        if root_create.returncode == 0 or former.returncode == 0: emit_error("readonly-remount", "read-only remount admitted a new entry"); return 78
-        evidence = {"schemaVersion": 1, "capabilityGID": capability_gid, "normalGroupsContainCapability": capability_gid in normal_groups, "freshPathAttackReturnCode": fresh.returncode, "firstDetachReturnCode": first_detach.returncode, "detachWasBusy": detach_was_busy, "postDetachResult": post_result, "postDetachPersisted": persisted, "rootReadonlyCreateReturnCode": root_create.returncode, "formerCapabilityReadonlyCreateReturnCode": former.returncode, "physicalAuthorityCreated": False}
+        if root_create.returncode == 0 or former.returncode == 0: emit_error("readonly-remount", "read-only remount admitted a new entry"); return 79
+        evidence = {"schemaVersion": 1, "capabilityGID": capability_gid, "normalGroupsContainCapability": capability_gid in normal_groups, "freshPathAttackReturnCode": fresh.returncode, "firstDetachReturnCode": first_detach.returncode, "firstDetachOutput": detach_text, "detachWasBusy": detach_was_busy, "postDetachResult": post_result, "postDetachPersisted": persisted, "rootReadonlyCreateReturnCode": root_create.returncode, "formerCapabilityReadonlyCreateReturnCode": former.returncode, "physicalAuthorityCreated": False}
         print(MARKER + json.dumps(evidence, sort_keys=True)); return 0
     except (ProbeError, subprocess.TimeoutExpired, OSError) as error: emit_error("probe", str(error)); return 80
     finally:
@@ -146,7 +161,8 @@ def parent_probe() -> int:
     records = [line[len(MARKER):] for line in completed.stdout.splitlines() if line.startswith(MARKER)]
     if len(records) != 1: emit_error("evidence", "missing/ambiguous evidence"); return 82
     e = json.loads(records[0])
-    safe = e.get("freshPathAttackReturnCode") != 0 and e.get("postDetachPersisted") is False and e.get("rootReadonlyCreateReturnCode") != 0 and e.get("formerCapabilityReadonlyCreateReturnCode") != 0 and e.get("normalGroupsContainCapability") is False and e.get("physicalAuthorityCreated") is False and (e.get("detachWasBusy") is True or str(e.get("postDetachResult", "")).startswith("POSTDETACH_ERR:"))
+    busy_evidence = e.get("detachWasBusy") is True and "resource busy" in str(e.get("firstDetachOutput", "")).casefold()
+    safe = e.get("freshPathAttackReturnCode") != 0 and e.get("postDetachPersisted") is False and e.get("rootReadonlyCreateReturnCode") != 0 and e.get("formerCapabilityReadonlyCreateReturnCode") != 0 and e.get("normalGroupsContainCapability") is False and e.get("physicalAuthorityCreated") is False and (busy_evidence or (e.get("detachWasBusy") is False and str(e.get("postDetachResult", "")).startswith("POSTDETACH_ERR:")))
     if not safe: emit_error("evidence", f"semantic checks failed: {e}"); return 83
     return 0
 
