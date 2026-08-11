@@ -31,7 +31,9 @@ jobs:
             bash -n scripts/field/install_one_time_capture.command
             python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
             python3 -m py_compile scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+            python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py
             python3 scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+            python3 scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py
             python3 scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
             python3 scripts/ci/tests/test_capture_private_review_commitment.py
             python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
