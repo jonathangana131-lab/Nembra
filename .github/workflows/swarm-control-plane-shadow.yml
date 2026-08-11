@@ -7,9 +7,7 @@ on:
       - 'SWARM_GO.md'
       - 'scripts/swarm_control.py'
       - 'scripts/swarmcp/**'
-      - 'scripts/ci/tests/test_swarm_control_plane.py'
-      - 'scripts/ci/tests/test_swarm_control_plane_regressions.py'
-      - 'scripts/ci/tests/test_swarm_resource_lifecycle.py'
+      - 'scripts/ci/tests/test_swarm_*.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
       - '.github/workflows/swarm-control-plane-shadow.yml'
@@ -21,9 +19,7 @@ on:
       - 'SWARM_GO.md'
       - 'scripts/swarm_control.py'
       - 'scripts/swarmcp/**'
-      - 'scripts/ci/tests/test_swarm_control_plane.py'
-      - 'scripts/ci/tests/test_swarm_control_plane_regressions.py'
-      - 'scripts/ci/tests/test_swarm_resource_lifecycle.py'
+      - 'scripts/ci/tests/test_swarm_*.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
       - '.github/workflows/swarm-control-plane-shadow.yml'
@@ -52,16 +48,8 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             scripts/swarm_control.py \
-            scripts/swarmcp/__init__.py \
-            scripts/swarmcp/model.py \
-            scripts/swarmcp/store.py \
-            scripts/swarmcp/engine.py \
-            scripts/swarmcp/policy.py \
-            scripts/swarmcp/resources.py \
-            scripts/swarmcp/cli.py \
-            scripts/ci/tests/test_swarm_control_plane.py \
-            scripts/ci/tests/test_swarm_control_plane_regressions.py \
-            scripts/ci/tests/test_swarm_resource_lifecycle.py
+            scripts/swarmcp/*.py \
+            scripts/ci/tests/test_swarm_*.py
       - name: Validate trusted static config
         run: |
           set -euo pipefail
@@ -75,11 +63,7 @@ jobs:
           print('static swarm config valid')
           PY
       - name: Run adversarial control-plane tests
-        run: >-
-          python3 -m unittest -v
-          scripts.ci.tests.test_swarm_control_plane
-          scripts.ci.tests.test_swarm_control_plane_regressions
-          scripts.ci.tests.test_swarm_resource_lifecycle
+        run: python3 -m unittest discover -v scripts/ci/tests 'test_swarm_*.py'
       - name: Prove 30-worker deterministic race simulation
         run: python3 scripts/swarm_control.py simulate --workers 30
 
