@@ -41,6 +41,7 @@ GENERATED_ACCEPTANCE_WORKFLOWS = (
     (VNODE_WORKFLOW, VNODE_WORKFLOW_PATH),
 )
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+GIT_OID = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
 # These child paths are part of the external physical-authorization control plane.
 CHILD_AUTHORITY_PATHS = (
@@ -51,6 +52,7 @@ CHILD_AUTHORITY_PATHS = (
     WORKFLOW_PATH,
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py",
     "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py",
+    "scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_helper_execution.py",
 )
 PARENT_PINNED_PATHS = (
     "scripts/ci/es80_authenticated_stationary_final_go.py",
@@ -315,15 +317,85 @@ def review_v3(
     }
 
 
-def _current_generated_subject(root: Path) -> str:
-    helper = root / GENERATED_HELPER_PATH
+def _git_environment() -> dict[str, str]:
+    """Replacement/config-blind Git environment for accepted helper bytes."""
+    return {
+        "PATH": "/usr/bin:/bin",
+        "HOME": "/var/empty",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+    }
+
+
+def _git_bytes(root: Path, *args: str, input_bytes: bytes | None = None) -> bytes:
+    try:
+        process = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), *args],
+            cwd=root,
+            env=_git_environment(),
+            input=input_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as error:
+        raise GeneratedSubjectGoError("accepted generated-helper Git custody could not run") from error
+    if process.returncode != 0:
+        raise GeneratedSubjectGoError("accepted generated-helper Git custody failed closed")
+    return process.stdout
+
+
+def _accepted_generated_helper(root: Path, source: str) -> bytes:
+    if not isinstance(source, str) or not GIT_OID.fullmatch(source.lower()):
+        raise GeneratedSubjectGoError("accepted generated-helper source commit is malformed")
+    source = source.lower()
+    try:
+        accepted_blob = _git_bytes(
+            root, "rev-parse", f"{source}:{GENERATED_HELPER_PATH}"
+        ).decode("ascii", errors="strict").strip().lower()
+    except UnicodeDecodeError as error:
+        raise GeneratedSubjectGoError("accepted generated-helper Git blob identity is malformed") from error
+    if not GIT_OID.fullmatch(accepted_blob):
+        raise GeneratedSubjectGoError("accepted generated-helper Git blob identity is malformed")
+    raw = _git_bytes(root, "cat-file", "blob", accepted_blob)
+    try:
+        actual_blob = _git_bytes(root, "hash-object", "--stdin", input_bytes=raw).decode(
+            "ascii", errors="strict"
+        ).strip().lower()
+    except UnicodeDecodeError as error:
+        raise GeneratedSubjectGoError("accepted generated-helper Git blob revalidation is malformed") from error
+    if actual_blob != accepted_blob:
+        raise GeneratedSubjectGoError("accepted generated-helper bytes failed Git object revalidation")
+    return raw
+
+
+def _current_generated_subject(root: Path, source: str) -> str:
+    raw = _accepted_generated_helper(root, source)
+    helper_display_path = str(root / GENERATED_HELPER_PATH)
+    executor = r'''
+import sys
+raw = sys.stdin.buffer.read()
+path = sys.argv[1]
+helper_args = sys.argv[2:]
+sys.argv = [path, *helper_args]
+scope = {
+    "__name__": "__main__",
+    "__file__": path,
+    "__package__": None,
+    "__cached__": None,
+}
+exec(compile(raw, path, "exec"), scope, scope)
+'''
     try:
         process = subprocess.run(
             [
                 "/usr/bin/python3",
                 "-I",
                 "-B",
-                str(helper),
+                "-c",
+                executor,
+                helper_display_path,
                 "--lockfile",
                 str(root / "Podfile.lock"),
                 "--pods",
@@ -333,14 +405,17 @@ def _current_generated_subject(root: Path) -> str:
             ],
             cwd=root,
             env={"PATH": "/usr/bin:/bin"},
-            text=True,
+            input=raw,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
         )
     except OSError as error:
-        raise GeneratedSubjectGoError("generated CocoaPods build-subject helper could not run") from error
-    value = process.stdout.strip()
+        raise GeneratedSubjectGoError("accepted generated CocoaPods build-subject helper could not run") from error
+    try:
+        value = process.stdout.decode("utf-8", errors="strict").strip()
+    except UnicodeDecodeError as error:
+        raise GeneratedSubjectGoError("generated CocoaPods build subject output was not canonical UTF-8") from error
     if process.returncode != 0 or not HEX64.fullmatch(value) or value != value.lower():
         raise GeneratedSubjectGoError("generated CocoaPods build subject could not be re-derived exactly")
     return value
@@ -352,7 +427,7 @@ def candidate_generated_authority(
     accepted_digest: str,
     *,
     base: Any,
-    derive_subject: Callable[[Path], str] = _current_generated_subject,
+    derive_subject: Callable[[Path, str], str] = _current_generated_subject,
 ) -> dict[str, Any]:
     root = candidate_repo.expanduser().resolve(strict=True)
     accepted_digest = _canonical_digest(accepted_digest, "accepted CocoaPods generated build subject")
@@ -410,7 +485,7 @@ def candidate_generated_authority(
     if any(fragment not in text for text, fragment in required_fragments):
         raise GeneratedSubjectGoError("candidate source lacks converged generated-build authority enforcement")
 
-    current = derive_subject(root)
+    current = derive_subject(root, source)
     if current != accepted_digest:
         raise GeneratedSubjectGoError("candidate generated CocoaPods subject does not match reviewed authority")
     return {
@@ -506,7 +581,7 @@ def build(
     retained_ipa: Path,
     get: Callable[[str], tuple[bytes, dict[str, Any]]] | None = None,
     base_module: Any | None = None,
-    derive_subject: Callable[[Path], str] = _current_generated_subject,
+    derive_subject: Callable[[Path, str], str] = _current_generated_subject,
     now: Any = None,
 ) -> dict[str, Any]:
     base = base_module or _load_base_module()
