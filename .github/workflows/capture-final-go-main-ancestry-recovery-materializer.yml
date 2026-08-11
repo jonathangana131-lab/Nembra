@@ -25,78 +25,57 @@ jobs:
           test "$(git merge-base "$parent" HEAD)" = "$parent"
           test "$(git diff --name-only "$parent" HEAD)" = '.github/workflows/capture-final-go-main-ancestry-recovery-materializer.yml'
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git cat-file -e 36feddadc1b5bcfb28274b2e7e5f1d3d341e3335^{commit}
 
-      - name: Materialize exact-main ancestry custody only
+      - name: Recover validated exact-main slices only
         shell: bash
         run: |
           set -euo pipefail
+          git show 36feddadc1b5bcfb28274b2e7e5f1d3d341e3335:scripts/ci/es80_authenticated_stationary_final_go.py > /tmp/hardened_issuer.py
+          git show 36feddadc1b5bcfb28274b2e7e5f1d3d341e3335:scripts/ci/tests/test_es80_authenticated_stationary_final_go.py > /tmp/hardened_tests.py
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
 
           issuer=Path('scripts/ci/es80_authenticated_stationary_final_go.py')
-          s=issuer.read_text()
+          s=issuer.read_text(); h=Path('/tmp/hardened_issuer.py').read_text()
 
-          marker='def public(source:str,pr:int,runs:dict[str,int],get=api):\n'
-          helper='''def _require_current_main_ancestor(source:str,get,label:str)->str:
-              _,main=get("/branches/main"); main_sha=canon(main.get("commit",{}).get("sha"),"current main")
-              _,comparison=get(f"/compare/{main_sha}...{source}"); merge_base=comparison.get("merge_base_commit",{})
-              if comparison.get("status") not in {"ahead","identical"} or canon(merge_base.get("sha"),f"{label} main merge base")!=main_sha:
-                  raise GoError(f"{label} does not contain the exact current main authority")
-              return main_sha
+          # Exact software-main admission was already validated in #2659. Replace only public().
+          c0=s.index('def public('); c1=s.index('\ndef control_plane(',c0)
+          h0=h.index('def public('); h1=h.index('\ndef control_plane(',h0)
+          s=s[:c0]+h[h0:h1]+s[c1:]
 
-          '''
-          if s.count(marker)!=1: raise SystemExit('public function marker drift')
-          s=s.replace(marker,helper+marker,1)
-
-          old='''    if not ((state=="open" and draft is False) or (state=="closed" and merged)):
-              raise GoError("canonical PR is draft or closed without merge; software acceptance is not promotable")
-              subjects=[]
-          '''
-          # Use index insertion instead of relying on triple-string indentation.
-          needle='        raise GoError("canonical PR is draft or closed without merge; software acceptance is not promotable")\n'
-          if s.count(needle)!=1: raise SystemExit('software promotability marker drift')
-          s=s.replace(needle,needle+'    main_sha=_require_current_main_ancestor(source,get,"software candidate")\n',1)
-          ret='    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":state,"merged":merged,"draft":draft},subjects\n'
-          ret2='    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","mainSHA":main_sha,"state":state,"merged":merged,"draft":draft},subjects\n'
-          if s.count(ret)!=1: raise SystemExit('software authority return drift')
+          # Apply the same current-main ancestry rule to the control-plane subject itself.
+          guard='    if canon(head.get("sha"),"GO control-plane PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main" or not ((state=="open" and draft is False) or (state=="closed" and merged)): raise GoError("GO control-plane PR is not exact/promotable")\n'
+          insert=(
+              '    _,main=get("/branches/main"); main_sha=canon(main.get("commit",{}).get("sha"),"current main")\n'
+              '    _,comparison=get(f"/compare/{main_sha}...{source}"); merge_base=comparison.get("merge_base_commit",{})\n'
+              '    if comparison.get("status") not in {"ahead","identical"} or canon(merge_base.get("sha"),"GO control-plane main merge base")!=main_sha: raise GoError("GO control plane does not contain the exact current main authority")\n'
+          )
+          if s.count(guard)!=1: raise SystemExit('control-plane guard drift')
+          s=s.replace(guard,guard+insert,1)
+          ret='    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}\n'
+          ret2='    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"mainSHA":main_sha,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}\n'
+          if s.count(ret)!=1: raise SystemExit('control-plane return drift')
           s=s.replace(ret,ret2,1)
-
-          control_guard='    if canon(head.get("sha"),"GO control-plane PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main" or not ((state=="open" and draft is False) or (state=="closed" and merged)): raise GoError("GO control-plane PR is not exact/promotable")\n'
-          if s.count(control_guard)!=1: raise SystemExit('control-plane promotability marker drift')
-          s=s.replace(control_guard,control_guard+'    main_sha=_require_current_main_ancestor(source,get,"GO control plane")\n',1)
-          control_ret='    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}\n'
-          control_ret2='    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"mainSHA":main_sha,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}\n'
-          if s.count(control_ret)!=1: raise SystemExit('control-plane authority return drift')
-          s=s.replace(control_ret,control_ret2,1)
-
           stable='    stable_pr=("number","headSHA","headBranch","base","state","merged","draft")\n'
-          if s.count(stable)!=1: raise SystemExit('stable software PR marker drift')
+          if s.count(stable)!=1: raise SystemExit('stable PR drift')
           s=s.replace(stable,'    stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")\n',1)
           issuer.write_text(s)
 
           tests=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py')
-          t=tests.read_text()
-          get_line=' def get(self,p):v=self.map[p];return json.dumps(v).encode(),v\n'
-          get_block=''' def get(self,p):
-              if p=='/branches/main':v={'commit':{'sha':getattr(self,'main','0'*40)}}
-              elif p.startswith('/compare/'):
-               base=p.split('/compare/',1)[1].split('...',1)[0];v={'status':getattr(self,'compare_status','ahead'),'merge_base_commit':{'sha':base}}
-              else:v=self.map[p]
-              return json.dumps(v).encode(),v
-          '''
-          if t.count(get_line)!=1: raise SystemExit('fixture API marker drift')
-          t=t.replace(get_line,get_block,1)
+          t=tests.read_text(); ht=Path('/tmp/hardened_tests.py').read_text()
+          c0=t.index(' def get(self,p):'); c1=t.index(' def control(',c0)
+          h0=ht.index(' def get(self,p):'); h1=ht.index(' def control(',h0)
+          t=t[:c0]+ht[h0:h1]+t[c1:]
 
-          insert=' def test_post_install_revalidation_rejects_pr_artifact_review_or_device_drift(self):\n'
-          addition=''' def test_current_main_is_bound_and_must_be_candidate_ancestor(self):
-              r=self.f.build();self.assertEqual(r['acceptedPR']['mainSHA'],'0'*40)
-              self.f.compare_status='diverged';self.no(self.f.build)
-             def test_post_install_current_main_drift_is_rejected(self):
-              def move_main(r,s,d):x=self.f.inst(r,s,d);self.f.main='1'*40;return x
-              self.no(lambda:self.f.build(run_installer=move_main))
-          '''
-          if t.count(insert)!=1: raise SystemExit('test insertion marker drift')
-          t=t.replace(insert,addition+insert,1)
+          # Reuse the validated software-main + post-install-main drift tests, but not the
+          # older candidate-worktree test because #2668 already owns that implementation.
+          h0=ht.index(' def test_current_main_is_bound_and_must_be_candidate_ancestor')
+          h1=ht.index(' def test_candidate_rejects_hidden_index_flags_and_worktree_byte_drift',h0)
+          addition=ht[h0:h1]
+          marker=' def test_post_install_revalidation_rejects_pr_artifact_review_or_device_drift(self):\n'
+          if t.count(marker)!=1: raise SystemExit('test insertion drift')
+          t=t.replace(marker,addition+marker,1)
           tests.write_text(t)
           PY
 
@@ -108,7 +87,8 @@ jobs:
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
-          test "$(grep -c '_require_current_main_ancestor(source,get' scripts/ci/es80_authenticated_stationary_final_go.py)" -eq 2
+          grep -Fq 'mainSHA' scripts/ci/es80_authenticated_stationary_final_go.py
+          grep -Fq 'GO control plane does not contain the exact current main authority' scripts/ci/es80_authenticated_stationary_final_go.py
           grep -Fq 'candidate authority path has suppressed index worktree tracking' scripts/ci/es80_authenticated_stationary_final_go.py
           grep -Fq 'hash-object","--no-filters"' scripts/ci/es80_authenticated_stationary_final_go.py
           grep -Fq 'canonical_private_path(device,"private intended-device identifier")' scripts/ci/es80_authenticated_stationary_final_go.py
