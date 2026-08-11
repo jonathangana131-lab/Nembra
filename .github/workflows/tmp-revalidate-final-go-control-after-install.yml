@@ -1,0 +1,56 @@
+name: Temporary Final-GO post-install self-authority revalidation
+
+on:
+  push:
+    branches:
+      - control/v14-auth-stationary-final-go-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Revalidate GO control-plane authority after private install
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '46d275bad85aa5c6b7e89579dc41f1122db28fc4'
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/ci/es80_authenticated_stationary_final_go.py');s=p.read_text()
+          old='''    post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file); post_signed=reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)\n'''
+          new='''    post_control=control_authority(authority_repo,authority_pr,authority_run,get); post_ps,post_ws=public(source,pr,runs,get); post_vs=visual(source,runs[VISUAL],artifact_id,archive,get); post_rv=review(pr,review_id,source,post_vs,get); post_cs=candidate(candidate_repo,source); post_dh=device_hash(device_file); post_signed=reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)\n'''
+          if s.count(old)!=1: raise SystemExit('post-install authority seam changed')
+          s=s.replace(old,new,1)
+          old='''    if any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh or post_signed!=signed:\n'''
+          new='''    if post_control!=control or any(post_ps[k]!=ps[k] for k in stable_pr) or post_ws!=ws or post_vs!=vs or post_rv!=rv or post_cs!=cs or post_dh!=dh or post_signed!=signed:\n'''
+          if s.count(old)!=1: raise SystemExit('authority drift seam changed')
+          p.write_text(s.replace(old,new,1))
+
+          t=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py');q=t.read_text()
+          anchor=''' def test_post_install_revalidation_rejects_pr_artifact_review_or_device_drift(self):\n'''
+          addition=''' def test_post_install_revalidation_rejects_control_plane_drift(self):\n  calls=0\n  def moving(repo,pr,run,get):\n   nonlocal calls;calls+=1;x=self.f.control(repo,pr,run,get);return x if calls==1 else {**x,"sourceCommitSHA":"f"*40}\n  self.no(lambda:self.f.build(control_authority=moving))\n'''+anchor
+          if q.count(anchor)!=1: raise SystemExit('test insertion seam changed')
+          t.write_text(q.replace(anchor,addition,1))
+          PY
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/es80_authenticated_stationary_signed_artifact.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          git diff --check
+      - name: Commit revalidation and self-delete helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-closure-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/tmp-revalidate-final-go-control-after-install.yml
+          git add scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          git diff --cached --check
+          git commit -m 'fix(capture): revalidate Final-GO self-authority after install'
+          git push origin HEAD:control/v14-auth-stationary-final-go-sol
