@@ -63,7 +63,7 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(workflow.contains("github.event.pull_request.head.repo.full_name == github.repository"))
     }
 
-    @Test("private build outputs are narrowly ignored while arbitrary untracked state remains rejected")
+    @Test("private build outputs are narrowly admitted while arbitrary untracked state remains rejected")
     func generatedPrivateWorkspaceDoesNotTripAcceptedSourceGuard() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
         let ignore = try readRepositoryFile(".gitignore")
@@ -71,8 +71,12 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         for expected in ["LocalSecrets/", "Pods/", "NembraCapture.xcworkspace/", "Podfile.lock"] {
             #expect(ignore.split(separator: "\n").contains(Substring(expected)))
         }
-        #expect(installer.components(separatedBy: "git status --porcelain=v1 --untracked-files=all").count >= 3)
-        #expect(installer.contains("Private workspace bootstrap changed tracked or unignored accepted-source inputs"))
+        #expect(installer.contains("status --porcelain=v1 --untracked-files=no"))
+        #expect(installer.contains("raw accepted checkout blob mismatch"))
+        #expect(installer.contains("untracked accepted-source path outside field-input allowlist"))
+        #expect(installer.contains("field_input_directories = (\"LocalSecrets\", \"Pods\", \"NembraCapture.xcworkspace\")"))
+        #expect(installer.contains("field-input allowlist root must be one real directory"))
+        #expect(installer.contains("field-input allowlist lockfile must be one real regular file"))
         #expect(installer.contains("Accepted-source inputs changed while the field build was compiling"))
     }
 
@@ -119,10 +123,11 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
         #expect(installer.contains("Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA"))
-        #expect(installer.contains("Repository HEAD changed during private workspace bootstrap"))
-        #expect(installer.contains("Private workspace bootstrap changed tracked or unignored accepted-source inputs"))
-        #expect(installer.contains("Repository HEAD changed while the accepted field build was compiling"))
-        #expect(installer.contains("Accepted-source inputs changed while the field build was compiling"))
+        #expect(installer.contains("verify_accepted_checkout_source \"Private workspace bootstrap changed accepted-source inputs.\""))
+        #expect(installer.contains("verify_accepted_checkout_source \"Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart.\""))
+        #expect(installer.components(separatedBy: "verify_accepted_checkout_source").count >= 4)
+        #expect(installer.contains("Repository HEAD no longer matches the accepted source"))
+        #expect(installer.contains("Tracked source differs from the accepted commit"))
         #expect(installer.contains("NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA"))
         #expect(installer.contains("NembraCapture.xcworkspace"))
         #expect(installer.contains("-scheme \"Nembra Capture\""))
