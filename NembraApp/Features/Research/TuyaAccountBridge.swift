@@ -427,10 +427,10 @@ final class TuyaAccountBridge: ObservableObject {
                   qrToken == token,
                   session == nil else { return }
             if approvalSucceeded {
+                // Make every sibling approval callback stale before publishing the terminal.
+                invalidateAsyncOperations()
                 phase = .failed
                 statusMessage = "Tuya approved, but the account session was rejected: \(Self.readable(error)) Reset the account link, then create a fresh QR."
-                pollTask?.cancel()
-                pollTask = nil
             } else if phase == .waitingForApproval {
                 statusMessage = "Still waiting for Tuya approval…"
             }

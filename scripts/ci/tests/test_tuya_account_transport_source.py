@@ -29,7 +29,9 @@ class TuyaAccountTransportSourceTests(unittest.TestCase):
         self.assertIn('account session was rejected:', SOURCE)
         self.assertEqual(SOURCE.count('Reset the account link, then create a fresh QR.'), 2)
         self.assertNotIn('Tap Try again to make a fresh QR.', SOURCE)
-        self.assertIn('pollTask?.cancel()', SOURCE)
+        self.assertIn('if approvalSucceeded {\n                // Make every sibling approval callback stale', SOURCE)
+        self.assertIn('invalidateAsyncOperations()\n                phase = .failed', SOURCE)
+        self.assertNotIn('if approvalSucceeded {\n                phase = .failed', SOURCE)
 
 if __name__ == "__main__":
     unittest.main()
