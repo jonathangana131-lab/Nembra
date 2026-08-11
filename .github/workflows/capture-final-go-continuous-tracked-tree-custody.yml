@@ -1,4 +1,4 @@
-name: Capture Final GO Continuous Tracked Tree Custody
+name: Capture Final GO Sealed Candidate Handoff
 
 on:
   push:
@@ -8,12 +8,14 @@ on:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
       - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
   pull_request:
     paths:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
       - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
   workflow_dispatch:
 
@@ -22,8 +24,8 @@ permissions:
   pull-requests: read
 
 jobs:
-  continuous-tracked-tree-custody:
-    name: Reject whole-tree and finite-rehash mutation races
+  sealed-candidate-handoff:
+    name: Reject pre-handoff races and retire mutable candidate
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
@@ -36,7 +38,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Bind exact candidate and four-path production delta
+      - name: Bind exact candidate and five-path production delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -51,6 +53,7 @@ jobs:
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py
             scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
             scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
           )
           test "${#changed[@]}" -eq "${#expected[@]}"
           for index in "${!expected[@]}"; do
@@ -65,9 +68,16 @@ jobs:
           python3 -m py_compile \
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
-            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py \
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
 
-      - name: Reject post-subject and finite-rehash mutation races
+      - name: Prove one-way sealed candidate handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+
+      - name: Reject pre-handoff post-subject and finite-rehash races
         shell: bash
         run: |
           set -euo pipefail
