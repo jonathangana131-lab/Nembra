@@ -118,7 +118,7 @@ sys.argv = [str(root / relative_path), *helper_argv]
 exec(compile(source, f"<accepted-{source_sha}:{relative_path}>", "exec"), namespace)
 PY
 }
-[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."
+GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e "$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE" 2>/dev/null || die "Private Tuya build-window custody guard is missing from the exact accepted Git source."
 TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
 TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"

@@ -14,8 +14,13 @@ class CaptureFieldAcceptedSourcePathContractTests(unittest.TestCase):
   source,
         )
         self.assertIn(
+  'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e "$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE"',
+  source,
+        )
+        self.assertNotIn(
   '[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]]',
   source,
+  "field installer must not gate exact-source execution on mutable worktree guard presence",
         )
         self.assertNotIn(
   '[[ -f "$TUYA_BUILD_WINDOW_GUARD" ]]',
