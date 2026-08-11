@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "go-worker-persistence-hardening",
+  "epic": "swarm-control-plane",
+  "title": "Prevent Go workers from treating green checks as completion",
+  "objective": "Harden the trusted Go bootstrap so a worker keeps advancing claims after green CI or a completed slice, and may stop only after a refreshed live-GitHub reconciliation plus a refreshed empty scheduler queue; make queue starvation and blocked work explicit rather than silently equating green with done.",
+  "priority": 0,
+  "state": "READY",
+  "dependencies": ["swarm-control-plane-foundation"],
+  "blockers": [],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "SWARM_GO.md",
+    "docs/SWARM_CONTROL_PLANE.md"
+  ],
+  "adjacentWriteAreas": [],
+  "slots": [
+    {"name": "primary", "role": "repair", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "review", "role": "adversarial-review", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "integration", "role": "integration", "exclusive": true, "leaseSeconds": 1800, "resources": ["RELEASE_INTEGRATION"]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": false, "state": "SOURCE_READY"},
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "tags": ["control-plane", "go-bootstrap", "scheduler-liveness", "repair"]
+}
