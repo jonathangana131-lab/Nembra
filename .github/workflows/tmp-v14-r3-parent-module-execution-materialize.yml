@@ -17,7 +17,8 @@ jobs:
         with:
           ref: repair/v14-r3-parent-module-execution-sol
           fetch-depth: 0
-      - name: Materialize and validate repair
+
+      - name: Repair one-shot materializer workflow insertion
         shell: bash
         run: |
           set -euo pipefail
@@ -48,10 +49,42 @@ jobs:
           '''
           path.write_text(source[:start] + replacement + source[end:], encoding='utf-8')
           PY
+          python3 -m py_compile scripts/ci/tmp_materialize_r3_parent_execution.py
+
+      - name: Materialize production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
           python3 scripts/ci/tmp_materialize_r3_parent_execution.py
-          python3 -m py_compile scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+
+      - name: Compile production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+
+      - name: Prove parent execution custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
           python3 scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+
+      - name: Preserve helper execution custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
           python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+
+      - name: Validate and publish repair checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
           git diff --check
           test ! -e .github/workflows/tmp-v14-r3-parent-module-execution-materialize.yml
           test ! -e scripts/ci/tmp_materialize_r3_parent_execution.py
