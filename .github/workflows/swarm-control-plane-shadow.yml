@@ -9,6 +9,7 @@ on:
       - 'scripts/swarmcp/**'
       - 'scripts/ci/tests/test_swarm_control_plane.py'
       - 'scripts/ci/tests/test_swarm_control_plane_regressions.py'
+      - 'scripts/ci/tests/test_swarm_resource_lifecycle.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
       - '.github/workflows/swarm-control-plane-shadow.yml'
@@ -22,6 +23,7 @@ on:
       - 'scripts/swarmcp/**'
       - 'scripts/ci/tests/test_swarm_control_plane.py'
       - 'scripts/ci/tests/test_swarm_control_plane_regressions.py'
+      - 'scripts/ci/tests/test_swarm_resource_lifecycle.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
       - '.github/workflows/swarm-control-plane-shadow.yml'
@@ -55,9 +57,11 @@ jobs:
             scripts/swarmcp/store.py \
             scripts/swarmcp/engine.py \
             scripts/swarmcp/policy.py \
+            scripts/swarmcp/resources.py \
             scripts/swarmcp/cli.py \
             scripts/ci/tests/test_swarm_control_plane.py \
-            scripts/ci/tests/test_swarm_control_plane_regressions.py
+            scripts/ci/tests/test_swarm_control_plane_regressions.py \
+            scripts/ci/tests/test_swarm_resource_lifecycle.py
       - name: Validate trusted static config
         run: |
           set -euo pipefail
@@ -75,6 +79,7 @@ jobs:
           python3 -m unittest -v
           scripts.ci.tests.test_swarm_control_plane
           scripts.ci.tests.test_swarm_control_plane_regressions
+          scripts.ci.tests.test_swarm_resource_lifecycle
       - name: Prove 30-worker deterministic race simulation
         run: python3 scripts/swarm_control.py simulate --workers 30
 
