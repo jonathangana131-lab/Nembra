@@ -7,14 +7,16 @@
   "workerId": "sol-20260811-1439r8",
   "leaseId": "home-accessibility-review-r8-20260811-2139",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:39:08Z",
-  "lastHeartbeatAt": "2026-08-11T21:39:08Z",
+  "lastHeartbeatAt": "2026-08-11T21:42:17Z",
+  "releasedAt": "2026-08-11T21:42:17Z",
   "leaseSeconds": 1800,
   "branch": "recovery/v15-home-accessibility-sol-7a2f",
   "pr": 2842,
   "sourceSHA": "e387b5d0b7d743abe06818e9d19910a1f73f13ee",
   "takeoverFromWorkerId": "sol-20260811-nv46",
   "takeoverFromLeaseId": "d8428a820b5a486a89e1bf758a4f5fa7",
-  "takeoverReason": "Generation-1 review was explicitly released. P0 Capture, P1 Dashboard, and P2 Battery/Range useful no-resource roles are currently occupied/saturated. Claim released Home review to independently inspect exact #2842@e387b5d0 source plus retained Xcode evidence without modifying product paths. Physical ES80 authority remains out of scope and NO-GO."
+  "takeoverReason": "Generation-1 review was explicitly released. P0 Capture, P1 Dashboard, and P2 Battery/Range useful no-resource roles were saturated; independently review exact #2842 without product writes.",
+  "checkpoint": "SOURCE REJECTED exact #2842@e387b5d0. Independently confirmed the prior released review's blocker: connectionRecoveryText(_:) handles .progress by rendering only presentation.message and omits presentation.title, so Connecting/Reconnecting state identity disappears from sighted hierarchy and combined VoiceOver semantics. The two new source suites assert reflow/44pt/hidden progress but do not assert preservation of the progress-state title, so they do not prevent this regression. Command-authority hardening otherwise remains fail-closed from source: captured lock target is revalidated at action admission; connection and competing-command state are rechecked; lock requires current qualified stopped authority; unlock requires still-confirmed locked state. No duplicate GitHub review was posted because review PRR_kwDOTubGws8AAAABJFWPuA already records the same exact-head blocker. Descendant must restore title + message while hiding only duplicate progress decoration and add a focused regression; then exact-head Xcode/Simulator/system Dynamic Type/VoiceOver/visual acceptance resets. PHYSICAL NO-GO."
 }
