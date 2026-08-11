@@ -1,0 +1,237 @@
+name: Temporary V14 Pre-Arm Custody Materializer 2
+
+on:
+  push:
+    branches:
+      - materialize/v14-field-untracked-prearm-custody-sol2-20260811
+    paths:
+      - .github/workflows/tmp-v14-field-untracked-prearm-custody-sol2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact attacked production parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "d0b134ca2a49edc029f114660dfb8e216ece682e"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Import both independent pre-arm witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            c57e9bf0a168c66075faecf007ec7d43eb6a21c5 \
+            a57816cca520c4db0cafad99f6b906d7438ddaf0
+          git checkout c57e9bf0a168c66075faecf007ec7d43eb6a21c5 -- \
+            scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          git checkout a57816cca520c4db0cafad99f6b906d7438ddaf0 -- \
+            scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+
+      - name: Materialize post-arm physical source inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          guard_path = Path("Scripts/capture_tuya_private_input_build_guard.py")
+          source = guard_path.read_text(encoding="utf-8")
+          marker = "\n\ndef _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:\n"
+          if source.count(marker) != 1:
+              raise SystemExit("guard insertion marker drifted")
+
+          addition = r'''
+
+          def _verify_post_arm_tracked_source_inventory(
+              manifest: Sequence[AcceptedTrackedSource], repository_root: Path, inputs: object
+          ) -> None:
+              """Reject unaccepted checkout entries after directory vnode custody is armed.
+
+              The installer audits the accepted physical tree before this guard starts. A
+              same-UID actor can otherwise add a build-visible entry after that audit but
+              before vnode watches register. Running this ignore-independent inventory only
+              after watch arming closes that seam: earlier insertions are rejected here and
+              mutations during/after the walk remain observable by the armed vnode watches.
+              """
+
+              authority_root = _lexical_absolute(repository_root)
+              tracked_files: set[str] = set()
+              tracked_directories: set[str] = set()
+              for item in manifest:
+                  admitted = _require_real_checkout_ancestry(
+                      item.path, authority_root, label="post-arm accepted tracked source"
+                  )
+                  relative = admitted.relative_to(authority_root)
+                  pure = PurePosixPath(*relative.parts)
+                  tracked_files.add(pure.as_posix())
+                  for depth in range(1, len(pure.parts)):
+                      tracked_directories.add(PurePosixPath(*pure.parts[:depth]).as_posix())
+
+              allowed_directory_roots: set[str] = set()
+              for attribute, expected_root in (
+                  ("security_build", "LocalSecrets"),
+                  ("identity_sources", "LocalSecrets"),
+                  ("generated_pods", "Pods"),
+                  ("generated_workspace", "NembraCapture.xcworkspace"),
+              ):
+                  candidate = getattr(inputs, attribute, None)
+                  if candidate is None:
+                      continue
+                  admitted = _require_real_checkout_ancestry(
+                      Path(candidate), authority_root, label=f"post-arm {attribute} allowlist subject"
+                  )
+                  relative = admitted.relative_to(authority_root)
+                  if not relative.parts or relative.parts[0] != expected_root:
+                      raise BuildGuardError(
+                          f"{attribute} escaped the accepted field-input root {expected_root}"
+                      )
+                  allowed_directory_roots.add(expected_root)
+
+              allowed_files: set[str] = set()
+              lockfile = getattr(inputs, "lockfile", None)
+              if lockfile is not None:
+                  admitted_lockfile = _require_real_checkout_ancestry(
+                      Path(lockfile), authority_root, label="post-arm dependency lock"
+                  )
+                  relative_lockfile = admitted_lockfile.relative_to(authority_root).as_posix()
+                  if relative_lockfile != "Podfile.lock":
+                      raise BuildGuardError("field dependency lock must remain checkout-root Podfile.lock")
+                  allowed_files.add(relative_lockfile)
+
+              for relative in allowed_directory_roots:
+                  candidate = authority_root / relative
+                  try:
+                      metadata = candidate.lstat()
+                  except OSError as error:
+                      raise BuildGuardError(
+                          f"post-arm field-input allowlist root disappeared: {relative}"
+                      ) from error
+                  if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                      raise BuildGuardError(
+                          f"post-arm field-input allowlist root is not one real directory: {relative}"
+                      )
+
+              for relative in allowed_files:
+                  candidate = authority_root / relative
+                  try:
+                      metadata = candidate.lstat()
+                  except OSError as error:
+                      raise BuildGuardError(
+                          f"post-arm field-input allowlist file disappeared: {relative}"
+                      ) from error
+                  if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                      raise BuildGuardError(
+                          f"post-arm field-input allowlist file is not one real regular file: {relative}"
+                      )
+
+              for current_raw, directories, files in os.walk(
+                  authority_root, topdown=True, followlinks=False
+              ):
+                  current = Path(current_raw)
+                  current_relative = current.relative_to(authority_root)
+                  if current_relative.parts and current_relative.parts[0] in allowed_directory_roots:
+                      directories[:] = []
+                      continue
+
+                  if not current_relative.parts:
+                      directories[:] = [
+                          name
+                          for name in directories
+                          if name != ".git" and name not in allowed_directory_roots
+                      ]
+
+                  for name in list(directories):
+                      candidate = current / name
+                      relative = candidate.relative_to(authority_root).as_posix()
+                      if candidate.is_symlink():
+                          directories.remove(name)
+                          raise BuildGuardError(
+                              f"unaccepted source symlink appeared before xcodebuild admission: {relative}"
+                          )
+                      if relative not in tracked_directories:
+                          directories.remove(name)
+                          raise BuildGuardError(
+                              f"untracked source directory appeared before xcodebuild admission: {relative}"
+                          )
+
+                  for name in files:
+                      candidate = current / name
+                      relative = candidate.relative_to(authority_root).as_posix()
+                      if relative in tracked_files or relative in allowed_files:
+                          continue
+                      raise BuildGuardError(
+                          f"untracked source file appeared before xcodebuild admission: {relative}"
+                      )
+          '''
+          source = source.replace(marker, addition + marker)
+          admission = """        if tracked_manifest:\n            _verify_tracked_source_manifest(tracked_manifest)\n"""
+          replacement = """        if tracked_manifest:\n            _verify_post_arm_tracked_source_inventory(\n                tracked_manifest, inputs.accepted_source_root, inputs  # type: ignore[arg-type]\n            )\n            _verify_tracked_source_manifest(tracked_manifest)\n"""
+          if source.count(admission) != 2:
+              raise SystemExit(f"expected two tracked-manifest verification sites, found {source.count(admission)}")
+          source = source.replace(admission, replacement, 1)
+          guard_path.write_text(source, encoding="utf-8")
+
+          workflow_path = Path(".github/workflows/capture-field-tracked-source-window-authority.yml")
+          workflow = workflow_path.read_text(encoding="utf-8")
+          path_marker = "      - scripts/ci/tests/test_capture_field_tracked_source_window_authority.py\n"
+          if workflow.count(path_marker) != 1:
+              raise SystemExit("authority workflow path marker drifted")
+          workflow = workflow.replace(
+              path_marker,
+              path_marker + "      - scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py\n",
+          )
+          compile_marker = "          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_tracked_source_window_authority.py\n"
+          if workflow.count(compile_marker) != 1:
+              raise SystemExit("authority workflow compile marker drifted")
+          workflow = workflow.replace(
+              compile_marker,
+              compile_marker + "          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py\n",
+          )
+          run_marker = "          /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py\n"
+          if workflow.count(run_marker) != 2:
+              raise SystemExit("authority workflow run marker drifted")
+          workflow = workflow.replace(
+              run_marker,
+              run_marker + "          /usr/bin/python3 scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py\n",
+          )
+          workflow_path.write_text(workflow, encoding="utf-8")
+          PY
+
+      - name: Prove both attacks flip green without weakening prior custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish clean isolated repair branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-materializer'
+          git config user.email 'nembra-v14-materializer@users.noreply.github.com'
+          git rm .github/workflows/tmp-v14-field-untracked-prearm-custody-sol2.yml
+          git add -A
+          git diff --cached --check
+          git commit -m 'Close field untracked pre-arm source admission gap'
+          git push origin HEAD:refs/heads/repair/v14-field-untracked-prearm-custody-clean-sol-20260811
