@@ -1,0 +1,83 @@
+name: Capture Final GO Continuous Tree Release Race Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_continuous_tree_release_race_red_team.py
+      - .github/workflows/capture-final-go-continuous-tree-release-race-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-final-go-continuous-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-race:
+    name: Exploit final watcher-release edge (${{ matrix.os }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind exact attacked production parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ATTACKED_PARENT_SHA: cb36f9265f08708c8e47564f62f4857aeae7af0f
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test "$(git merge-base "$ATTACKED_PARENT_SHA" HEAD)" = "$ATTACKED_PARENT_SHA"
+
+          actual_paths="$RUNNER_TEMP/nembra-release-race-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-release-race-expected.txt"
+          git diff --name-only "$ATTACKED_PARENT_SHA"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-final-go-continuous-tree-release-race-redteam.yml
+          scripts/ci/tests/test_es80_final_go_continuous_tree_release_race_red_team.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exact production subject and witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-continuous-release-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_continuous_tree_release_race_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Reproduce watcher release race
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_es80_final_go_continuous_tree_release_race_red_team.py
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          ATTACKED_PARENT_SHA: cb36f9265f08708c8e47564f62f4857aeae7af0f
+        run: |
+          set -euo pipefail
+          git diff --check "$ATTACKED_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
