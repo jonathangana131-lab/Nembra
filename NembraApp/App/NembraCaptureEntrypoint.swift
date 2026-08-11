@@ -24,6 +24,13 @@ struct NembraCaptureApp: App {
 private struct CaptureP0Root: View {
     @StateObject private var tuya = TuyaAccountBridge()
     @State private var showEngineeringDetails = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private let buildIdentity = NembraCaptureBuildIdentity.current
+
+    private var fieldBuildIsAuthoritative: Bool {
+        buildIdentity.isAuthoritativeFieldBuild
+    }
 
     var body: some View {
         NavigationStack {
@@ -38,131 +45,24 @@ private struct CaptureP0Root: View {
                 .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("NEMBRA CAPTURE")
-                                .font(.caption2.bold())
-                                .tracking(1.5)
-                                .foregroundStyle(.cyan)
-                            Text("Prepare the scooter link")
-                                .font(.largeTitle.bold())
-                            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        rootPanel {
-                            VStack(alignment: .leading, spacing: 14) {
-                                Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
-                                    .font(.title3.bold())
-                                    .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
-                                Text(tuya.statusMessage)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                if !tuya.isLinked {
-                                    TextField("Tuya Smart User Code", text: $tuya.userCode)
-                                        .textInputAutocapitalization(.never)
-                                        .autocorrectionDisabled()
-                                        .padding(12)
-                                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    Button("Create approval QR") { tuya.requestApproval() }
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.large)
-                                }
-
-                                if let data = tuya.qrPNGData,
-                                   let image = UIImage(data: data),
-                                   !tuya.isLinked {
-                                    Image(uiImage: image)
-                                        .interpolation(.none)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(maxWidth: 230)
-                                        .padding(10)
-                                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                    Button("I approved it · check now") { tuya.checkApprovalNow() }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.large)
-                                }
-
-                                if tuya.phase == .failed {
-                                    Button("Reset account link") { tuya.resetLink() }
-                                        .buttonStyle(.bordered)
-                                }
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 16 : 22) {
+                        rootHero
+                        buildAuthorityStatus
+                        accountSetupPanel
 
                         if tuya.isLinked {
-                            rootPanel {
-                                VStack(alignment: .leading, spacing: 14) {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text("Choose this scooter")
-                                                .font(.title3.bold())
-                                            Text("Nembra will verify the selected device again inside the official SDK before Bluetooth discovery.")
-                                                .font(.footnote)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer(minLength: 8)
-                                        if tuya.devices.isEmpty {
-                                            Button("Refresh") { tuya.refreshDevices() }
-                                                .buttonStyle(.bordered)
-                                        }
-                                    }
-
-                                    ForEach(tuya.devices) { device in
-                                        VStack(alignment: .leading, spacing: 10) {
-                                            HStack(alignment: .firstTextBaseline) {
-                                                VStack(alignment: .leading, spacing: 3) {
-                                                    Text(device.name.isEmpty ? "Unnamed Tuya device" : device.name)
-                                                        .font(.headline)
-                                                    let detail = [device.productName, device.category].filter { !$0.isEmpty }.joined(separator: " · ")
-                                                    if !detail.isEmpty {
-                                                        Text(detail)
-                                                            .font(.caption)
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                }
-                                                Spacer()
-                                                if tuya.selectedDeviceID == device.id {
-                                                    Image(systemName: "checkmark.circle.fill")
-                                                        .foregroundStyle(.green)
-                                                        .accessibilityLabel("Selected")
-                                                }
-                                            }
-
-                                            HStack(spacing: 10) {
-                                                Button(tuya.selectedDeviceID == device.id ? "Refresh metadata" : "Use this scooter") {
-                                                    tuya.selectDevice(device)
-                                                }
-                                                .buttonStyle(.bordered)
-
-                                                if tuya.selectedDeviceID == device.id,
-                                                   tuya.phase == .ready,
-                                                   !device.productID.isEmpty,
-                                                   !device.uuid.isEmpty {
-                                                    NavigationLink("Continue to Capture") { SecureLinkView(device: device) }
-                                                        .buttonStyle(.borderedProminent)
-                                                }
-                                            }
-                                        }
-                                        .padding(14)
-                                        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                    }
-                                }
-                            }
+                            scooterChooserPanel
                         }
 
                         DisclosureGroup(isExpanded: $showEngineeringDetails) {
                             VStack(alignment: .leading, spacing: 8) {
+                                Text(fieldBuildIsAuthoritative ? "Field build authority: ready" : "Field build authority: locked")
                                 Text("Account approval and device metadata only establish setup context. Capture independently verifies the current official SDK session and exact scooter membership before discovery.")
                                 Text("No scooter commands are sent by this setup flow.")
                             }
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 8)
                         } label: {
                             Label("Engineering details", systemImage: "wrench.and.screwdriver")
@@ -172,7 +72,7 @@ private struct CaptureP0Root: View {
                     }
                     .frame(maxWidth: 720)
                     .padding(.horizontal, 20)
-                    .padding(.top, 22)
+                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 14 : 22)
                     .padding(.bottom, 44)
                     .frame(maxWidth: .infinity)
                 }
@@ -181,12 +81,218 @@ private struct CaptureP0Root: View {
             .navigationTitle("Nembra Capture")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .accessibilityIdentifier("capture.p0-root")
+    }
+
+    @ViewBuilder
+    private var rootHero: some View {
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 6 : 8) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                Text("NEMBRA CAPTURE")
+                    .font(.caption2.bold())
+                    .tracking(1.5)
+                    .foregroundStyle(.cyan)
+            }
+
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? (fieldBuildIsAuthoritative ? "Prepare Capture" : "Capture locked")
+                    : "Prepare the scooter link"
+            )
+            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? (fieldBuildIsAuthoritative
+                        ? "Link the account that owns this scooter before discovery."
+                        : "Account setup only in this public build.")
+                    : "One guided setup establishes account and bound-device context before passive target correlation. Physical Capture still depends on the field-build gate below."
+            )
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var buildAuthorityStatus: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "lock.shield.fill")
+                .font(.title3)
+                .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")
+                    .font(.headline)
+                    .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(
+                    fieldBuildIsAuthoritative
+                        ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
+                        : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill((fieldBuildIsAuthoritative ? Color.green : Color.orange).opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke((fieldBuildIsAuthoritative ? Color.green : Color.orange).opacity(0.26), lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")
+        .accessibilityValue(
+            fieldBuildIsAuthoritative
+                ? "Build provenance is ready. Account and scooter authority are still required before Bluetooth starts."
+                : "This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."
+        )
+    }
+
+    private var accountSetupPanel: some View {
+        rootPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                Label(
+                    tuya.isLinked ? "Account metadata ready" : "Prepare account metadata",
+                    systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark"
+                )
+                .font(.title3.bold())
+                .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+
+                Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(tuya.statusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !tuya.isLinked {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("Tuya Smart user code")
+                            .font(.subheadline.weight(.semibold))
+                        TextField("Paste user code", text: $tuya.userCode)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .padding(12)
+                            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .accessibilityLabel("Tuya Smart user code")
+                            .accessibilityHint("Used only to create the Tuya account approval QR for metadata setup.")
+                    }
+
+                    Button {
+                        tuya.requestApproval()
+                    } label: {
+                        Label("Create approval QR", systemImage: "qrcode")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
+                }
+
+                if let data = tuya.qrPNGData,
+                   let image = UIImage(data: data),
+                   !tuya.isLinked {
+                    Image(uiImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 230)
+                        .padding(10)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    Button("I approved it · check now") { tuya.checkApprovalNow() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                }
+
+                if tuya.phase == .failed {
+                    Button("Reset account link") { tuya.resetLink() }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
+    private var scooterChooserPanel: some View {
+        rootPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Choose this scooter")
+                            .font(.title3.bold())
+                        Text("Nembra verifies the selected device again inside the official SDK before Bluetooth discovery.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    if tuya.devices.isEmpty {
+                        Button("Refresh") { tuya.refreshDevices() }
+                            .buttonStyle(.bordered)
+                    }
+                }
+
+                ForEach(tuya.devices) { device in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(device.name.isEmpty ? "Unnamed Tuya device" : device.name)
+                                    .font(.headline)
+                                let detail = [device.productName, device.category].filter { !$0.isEmpty }.joined(separator: " · ")
+                                if !detail.isEmpty {
+                                    Text(detail)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if tuya.selectedDeviceID == device.id {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .accessibilityLabel("Selected")
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            Button(tuya.selectedDeviceID == device.id ? "Refresh metadata" : "Use this scooter") {
+                                tuya.selectDevice(device)
+                            }
+                            .buttonStyle(.bordered)
+
+                            if tuya.selectedDeviceID == device.id,
+                               tuya.phase == .ready,
+                               !device.productID.isEmpty,
+                               !device.uuid.isEmpty {
+                                NavigationLink(fieldBuildIsAuthoritative ? "Continue to Capture" : "View locked preflight") {
+                                    SecureLinkView(device: device)
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private func rootPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(18)
+            .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -198,7 +304,6 @@ private struct CaptureP0Root: View {
             )
     }
 }
-
 @MainActor
 private final class SecureLinkController: NSObject, ObservableObject {
     struct Candidate: Identifiable, Codable, Equatable {

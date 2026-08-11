@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture root product surface")
 struct TuyaCaptureRootProductSurfaceSourceTests {
-    @Test("public unprovisioned launch is guided Capture preflight, not an engineering console")
+    @Test("public unprovisioned launch is guided fail-closed Capture preflight, not an engineering console")
     func publicRootIsGuidedPreflight() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = try section(
@@ -15,8 +15,10 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         let body = String(root)
 
         #expect(body.contains("NEMBRA CAPTURE"))
-        #expect(body.contains("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins."))
-        #expect(!body.contains("proves the account and scooter"))
+        #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
+        #expect(body.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
+        #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
         #expect(body.contains("Engineering details"))
         #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
         #expect(!body.contains("Prove the secure scooter link first."))
@@ -41,7 +43,26 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(body.contains("tuya.refreshDevices()"))
         #expect(body.contains("tuya.selectDevice(device)"))
         #expect(body.contains("SecureLinkView(device: device)"))
+        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to Capture\" : \"View locked preflight\")"))
         #expect(app.contains("No DP query or scooter command is authorized by this surface."))
+    }
+
+    @Test("Accessibility XXXL recomposes the root instead of scaling marketing copy")
+    func accessibilityRootIsDeliberatelyCompact() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = String(try section(
+            in: app,
+            from: "private struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController"
+        ))
+
+        #expect(root.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+        #expect(root.contains("if !dynamicTypeSize.isAccessibilitySize"))
+        #expect(root.contains("fieldBuildIsAuthoritative ? \"Prepare Capture\" : \"Capture locked\""))
+        #expect(root.contains("Account setup only in this public build."))
+        #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
+        #expect(root.contains("Text(\"Tuya Smart user code\")"))
+        #expect(root.contains("TextField(\"Paste user code\""))
     }
 
     @Test("legacy card-based Capture root is retired from the metadata bridge")
