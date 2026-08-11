@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "073400-go54f-capture-authority-helper-repair-shape",
+  "type": "FINDING",
+  "workerId": "sol-20260811-go54f",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Recommended minimal #2809 production closure: eliminate eager mutable neighbor execution and execute authority helpers only from immutable accepted bytes. Prefer reusing #2775's established replacement-blind exact-Git-blob pattern, binding provenance/private-review/generated helper bytes to the already owner-reviewed sourceCommitSHA, recomputing the Git blob OID before compile/exec, rather than adding independent mutable-path prechecks. If digest envs are retained, provenance and generated helpers need the same descriptor-read/hash/compile-from-captured-bytes custody as the current private-review helper; never hash then reopen pathname. Build guard must not import provenance/generated at module import; bind accepted modules only after accepted authority is available. Also remove `_load_accepted_private_review_module()`'s dependency on mutable `provenance._stat_identity` by using a local stat-identity primitive. Final field composition must cover installer-side direct provenance invocation and build-guard execution subject as well as inner helper calls. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:34:00Z",
+  "data": {
+    "currentPr": 2805,
+    "currentHead": "39a4e2f4d2d9dc9319d45a0415ca2c6a040a8525",
+    "redTeamPr": 2809,
+    "preferredPatternSourcePr": 2775,
+    "preferredPatternHead": "71aee681d12e353ec54111e066e26598a735ca64",
+    "repairPrinciple": "EXECUTE_ACCEPTED_BYTES_NOT_MUTABLE_PATHS",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
