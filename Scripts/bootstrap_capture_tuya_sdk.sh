@@ -7,7 +7,7 @@ TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
-PRIVATE_INPUT_RESOLUTION_GUARD="$SCRIPT_DIR/capture_tuya_private_input_build_guard.py"
+PRIVATE_INPUT_RESOLUTION_GUARD="$SCRIPT_DIR/capture_tuya_private_dependency_resolution_guard.py"
 PRIVATE_IDENTITY_AUTHORITY_HELPER="$SCRIPT_DIR/capture_tuya_private_identity_authority.py"
 PRIVATE_IDENTITY_AUTHORITY_HELPER_SHA256="40f5aee5c5e39c0a6146ba2ca7bc6bad7cf6abd6576fff8835d02f714589ae71"
 PRIVATE_IDENTITY_WRITER_SHA256="6a27f9f0640a00dfe5f74a1cc4a65a0faf76994fe584efe23afb8f7ee1638fc2"
@@ -102,7 +102,7 @@ fi
 
 if [[ ! -f "$PRIVATE_INPUT_RESOLUTION_GUARD" || -L "$PRIVATE_INPUT_RESOLUTION_GUARD" ]]; then
   unset AUTHORITY_SOURCE
-  echo "ERROR: private-input vnode custody guard is missing from the accepted source." >&2
+  echo "ERROR: private-input dependency-resolution custody adapter is missing from the accepted source." >&2
   exit 6
 fi
 
@@ -146,8 +146,9 @@ EOF
   exit 8
 fi
 
-# The existing field-build guard is generic vnode custody: its --lockfile slot
-# is a watched regular-file anchor. During dependency resolution we deliberately
+# The dependency-resolution adapter invokes the canonical field guard through its
+# explicitly private-only run_guarded_build API. Its --lockfile slot remains a
+# watched regular-file anchor; during dependency resolution we deliberately
 # use the tracked Podfile as that stable anchor because CocoaPods itself executes
 # the Podfile while the private SDK/identity inputs are read. The child re-verifies
 # the root-sealed identity receipt only after every watcher is armed, then runs
