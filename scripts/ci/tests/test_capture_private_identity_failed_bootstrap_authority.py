@@ -77,7 +77,8 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
         self.assertNotIn("\npod install --repo-update\n", source)
 
     def test_dependency_resolution_adapter_matches_canonical_guard_api(self) -> None:
-        adapter_tree = ast.parse(RESOLUTION_GUARD_PATH.read_text(encoding="utf-8"))
+        adapter_source = RESOLUTION_GUARD_PATH.read_text(encoding="utf-8")
+        adapter_tree = ast.parse(adapter_source)
         guard_tree = ast.parse(BUILD_GUARD_PATH.read_text(encoding="utf-8"))
 
         guard_definitions = [
@@ -113,6 +114,11 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
             unexpected,
             f"dependency adapter passes unsupported canonical guard keywords: {sorted(unexpected)}",
         )
+        self.assertEqual(
+            supplied_keywords,
+            {"backend_factory"},
+            "dependency adapter must extend only the accepted event backend seam",
+        )
         self.assertFalse(
             any(name.startswith("require_accepted_") for name in supplied_keywords),
             "pre-generated dependency resolution must not fabricate disable-acceptance toggles",
@@ -137,6 +143,9 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
         )
         self.assertNotIn("_lexical_absolute", adapter_guard_members)
         self.assertNotIn("_require_real_checkout_ancestry", adapter_guard_members)
+        self.assertIn("backend_factory=lambda: _AncestryCustodyBackend(checkout, inputs)", adapter_source)
+        self.assertIn('cwd_fd = os.open(".", flags)', adapter_source)
+        self.assertIn("select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME | select.KQ_NOTE_REVOKE", adapter_source)
 
     def test_dependency_resolution_adapter_rejects_escaping_and_symlinked_ancestry(self) -> None:
         adapter = load_resolution_adapter()
@@ -183,6 +192,18 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
                     checkout,
                     label="private security podspec",
                 )
+
+            prefixes = adapter._subject_parent_prefixes(
+                checkout,
+                (
+                    podspec,
+                    checkout / "LocalSecrets/TuyaSDK/Build",
+                    checkout / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec",
+                ),
+            )
+            self.assertIn(("LocalSecrets",), prefixes)
+            self.assertIn(("LocalSecrets", "TuyaSDK"), prefixes)
+            self.assertIn(("LocalSecrets", "TuyaRuntime"), prefixes)
 
     def test_failed_publication_attacker_source_is_blocked_before_pod(self) -> None:
         writer = load_writer()
