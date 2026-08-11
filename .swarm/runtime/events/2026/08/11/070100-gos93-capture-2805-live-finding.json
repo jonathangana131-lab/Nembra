@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070100-gos93-capture-2805-live-finding",
+  "type": "FINDING",
+  "workerId": "sol-20260811-gos93",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Live Capture P0 PR #2805 has advanced beyond its stale body head. Exact current head cadeac44227af5f5c99bd19fd76de0c2138b2f94 has terminal SUCCESS for Capture Private Review Helper Execution Custody, Capture Private Review Commitment, and Capture CocoaPods Build Subject Authority; Capture Field Build Provenance and Capture Main Selective Graft Diagnostic are still in progress, while Xcode 27 PR Exact-Head QA is SKIPPED because the PR remains draft. Reconciliation must bind the live head rather than body-listed a0ac4c7. Current diff also contains four tracked __pycache__/*.pyc artifacts that should be treated as cleanup/hygiene debt before any accepted composition unless intentionally justified. PHYSICAL remains NO-GO.",
+  "createdAt": "2026-08-11T07:01:00Z",
+  "data": {
+    "pr": 2805,
+    "exactHead": "cadeac44227af5f5c99bd19fd76de0c2138b2f94",
+    "baseSHA": "73f910f95eea3f23c65928455c1507bf556aee0e",
+    "focusedHelperGate": "SUCCESS",
+    "privateCommitmentGate": "SUCCESS",
+    "cocoaPodsAuthorityGate": "SUCCESS",
+    "fieldProvenanceGate": "IN_PROGRESS",
+    "selectiveGraftGate": "IN_PROGRESS",
+    "xcodeGate": "SKIPPED_DRAFT",
+    "trackedPycacheArtifacts": 4,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
