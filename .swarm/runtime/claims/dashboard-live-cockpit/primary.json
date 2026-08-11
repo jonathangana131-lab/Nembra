@@ -9,12 +9,12 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:03:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:14:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:22:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-layout-sol-hl6k",
-  "pr": null,
+  "pr": 2971,
   "sourceSHA": "616746f18c63801a484aa6d394fc6770c8b22cce",
-  "currentHeadSHA": "616746f18c63801a484aa6d394fc6770c8b22cce",
+  "currentHeadSHA": "c150a8287463231ee9af174c38564738bab576a3",
   "takeoverFromWorkerId": "sol-20260811-ui0052",
-  "checkpoint": "Exact a3f2bd02 run 31491381989 proved the module-identity repair through project validation, NembraCore validation, 43 app tests and 12 ordinary UI tests, then failed the mandatory real AX5 landscape rerun on a product layout defect. Preserved iPhone 12 hierarchy shows dashboard.cockpit about 528 pt tall inside a 390 pt landscape window, clipping header/status above screen and Energy Rail/control context below. Dashboard lane now explicitly owns DashboardView.swift; primary moved to a new child of combined QA head 616746f1 to recompose accessibility landscape without moving proven ingredient branches or weakening tests. Capture/ES80 physical NO-GO."
+  "checkpoint": "#2971 is a one-production-file AX5 layout child of combined QA head 616746f1. It replaces the accessibility vertical stack with a three-region landscape cockpit, preserves real Dynamic Type and full speed/Energy Rail semantics, and removes the nested accessibility-root identifier that masked child IDs in the failed hierarchy. Source review caught and repaired a SwiftUI frame-overload mistake before runner dispatch. Exact-head Xcode/AX5/visual evidence on c150a828 is required; no ancestor green counts. Dark-landscape #2963 remains frozen until this product repair is accepted. Capture/ES80 physical NO-GO."
 }
