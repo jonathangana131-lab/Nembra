@@ -1,0 +1,168 @@
+name: Capture Final Premium VoiceOver Materialize
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-final-premium-voiceover-sol
+    paths:
+      - .github/workflows/capture-final-premium-voiceover-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact materializer branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Transplant reviewed premium root onto canonical exact parent
+        env:
+          CANONICAL_PARENT: 1bfdb77bd1bdeb97a434570e7c23c5dbefe72c82
+          PREMIUM_SOURCE: 3c1d4394b7b443936240131e6d0d91ca01e49383
+          CURRENT_ROOT_BLOB: 2eafe31164b44577a729e8d7dab5b3e6c7ceb0f3
+          CURRENT_TEST_BLOB: 7cc9103a05a2b692bb7f75e9cd844c1b97e218d2
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$CANONICAL_PARENT"
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "$CURRENT_ROOT_BLOB"
+          test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift)" = "$CURRENT_TEST_BLOB"
+          git cat-file -e "${PREMIUM_SOURCE}^{commit}" || git fetch --no-tags origin "$PREMIUM_SOURCE"
+
+          python3 <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          premium_sha = "3c1d4394b7b443936240131e6d0d91ca01e49383"
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          current = path.read_text()
+          premium = subprocess.check_output(
+              ["git", "show", f"{premium_sha}:{path.as_posix()}"],
+              text=True,
+          )
+
+          start = "\n@MainActor\nprivate struct CaptureP0Root: View {"
+          end = "\n@MainActor\nprivate final class SecureLinkController: NSObject, ObservableObject {"
+          assert current.count(start) == 1 and current.count(end) == 1
+          assert premium.count(start) == 1 and premium.count(end) == 1
+
+          premium_root = premium[premium.index(start):premium.index(end)]
+
+          title_needle = """            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+                      .fixedSize(horizontal: false, vertical: true)
+
+                      Text(
+                          isAccessibilityLayout"""
+          title_replacement = """            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+                      .fixedSize(horizontal: false, vertical: true)
+                      .accessibilityAddTraits(.isHeader)
+
+                      Text(
+                          isAccessibilityLayout"""
+          assert premium_root.count(title_needle) == 1
+          premium_root = premium_root.replace(title_needle, title_replacement, 1)
+
+          combine_needle = """        }
+                  .accessibilityElement(children: .combine)
+              }
+
+              private var buildAuthorityStatus: some View {"""
+          combine_replacement = """        }
+              }
+
+              private var buildAuthorityStatus: some View {"""
+          assert premium_root.count(combine_needle) == 1
+          premium_root = premium_root.replace(combine_needle, combine_replacement, 1)
+
+          result = current[:current.index(start)] + premium_root + current[current.index(end):]
+          assert "Build provenance ready" in result
+          assert "Continue to preflight" in result
+          assert "Field build ready" not in result
+          assert 'NavigationLink(fieldBuildIsAuthoritative ? "Continue to Capture"' not in result
+          assert ".accessibilityAddTraits(.isHeader)" in premium_root
+          hero = premium_root[premium_root.index("private var rootHero"):premium_root.index("private var buildAuthorityStatus")]
+          assert ".accessibilityElement(children: .combine)" not in hero
+          assert result[result.index(end):] == current[current.index(end):]
+          path.write_text(result)
+          PY
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift")
+          source = path.read_text()
+          marker = "\n    private func section(in source: String, from start: String, to end: String) throws -> Substring {"
+          assert source.count(marker) == 1
+          assert "Accessibility setup promotes the primary action ahead of verbose status" not in source
+          block = r'''
+
+              @Test("Accessibility setup promotes the primary action ahead of verbose status")
+              func accessibilitySetupPromotesActionBeforeVerboseStatus() throws {
+                  let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+                  let panel = String(try section(
+                      in: source,
+                      from: "private var accountSetupPanel: some View",
+                      to: "private var statusText: some View"
+                  ))
+
+                  let standardBranch = try #require(panel.range(of: "if !isAccessibilityLayout {"))
+                  let field = try #require(panel.range(of: "TextField(\"Paste user code\""))
+                  let action = try #require(panel.range(of: "Label(\"Create approval QR\", systemImage: \"qrcode\")"))
+                  let standardStatus = try #require(panel.range(
+                      of: "statusText",
+                      range: standardBranch.upperBound..<field.lowerBound
+                  ))
+                  let accessibilityBranch = try #require(panel.range(
+                      of: "if isAccessibilityLayout {",
+                      range: action.upperBound..<panel.endIndex
+                  ))
+                  let accessibilityStatus = try #require(panel.range(
+                      of: "statusText",
+                      range: accessibilityBranch.upperBound..<panel.endIndex
+                  ))
+
+                  #expect(standardStatus.lowerBound < field.lowerBound)
+                  #expect(field.lowerBound < action.lowerBound)
+                  #expect(action.lowerBound < accessibilityBranch.lowerBound)
+                  #expect(accessibilityBranch.lowerBound < accessibilityStatus.lowerBound)
+                  #expect(panel.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
+                  #expect(panel.contains(".tint(.cyan)"))
+              }
+          '''
+          source = source.replace(marker, block + marker, 1)
+          path.write_text(source)
+          PY
+
+          git diff --check
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift
+
+      - name: Run focused Capture root source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter CaptureP0RootVisualAcceptanceTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaCaptureRootProductSurfaceSourceTests
+
+      - name: Seal two-file convergence and self-delete helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-final-premium-voiceover-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift | sort)"
+          test "$actual" = "$expected"
+          git -c commit.gpgsign=false \
+              -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m 'fix(capture): converge premium root with VoiceOver truth'
+          git push origin HEAD:recovery/v14-capture-final-premium-voiceover-sol
