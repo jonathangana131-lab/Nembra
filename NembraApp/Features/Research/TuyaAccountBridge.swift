@@ -6,6 +6,25 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+private final class TuyaHTTPSOnlyRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        guard let url = request.url,
+              url.scheme?.lowercased() == "https",
+              let host = url.host,
+              !host.isEmpty else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+}
+
 /// Official Tuya Smart account-link preflight for the one-time Nembra Capture utility.
 ///
 /// This deliberately does NOT send scooter commands. It uses Tuya's QR account authorization
@@ -376,9 +395,11 @@ final class TuyaAccountBridge: ObservableObject {
             let terminal = result["terminal_id"] as? String ?? ""
             let expire = Self.int64(result["expire_time"]) ?? 0
             let rawEndpoint = result["endpoint"] as? String ?? ""
-            let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\(rawEndpoint)"
-            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty, !endpoint.isEmpty else {
+            guard !access.isEmpty, !refresh.isEmpty, !uid.isEmpty else {
                 throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
+            }
+            guard let endpoint = Self.normalizedAuthenticatedEndpoint(rawEndpoint) else {
+                throw BridgeError.malformed("Tuya approval returned an insecure account endpoint.")
             }
             guard !Task.isCancelled,
                   generation == operationGeneration,
@@ -542,8 +563,9 @@ final class TuyaAccountBridge: ObservableObject {
         ]
         headers["X-sign"] = Self.restfulSign(hashKey: hashKey, queryEncdata: queryEncdata, bodyEncdata: "", headers: headers)
 
-        var endpoint = session.endpoint
-        while endpoint.hasSuffix("/") { endpoint.removeLast() }
+        guard let endpoint = Self.normalizedAuthenticatedEndpoint(session.endpoint) else {
+            throw BridgeError.invalidURL
+        }
         guard var components = URLComponents(string: endpoint + path) else { throw BridgeError.invalidURL }
         components.queryItems = queryItems.isEmpty ? nil : queryItems
         guard let url = components.url else { throw BridgeError.invalidURL }
@@ -583,8 +605,33 @@ final class TuyaAccountBridge: ObservableObject {
         )
     }
 
+    private static func normalizedAuthenticatedEndpoint(_ rawEndpoint: String) -> String? {
+        let trimmed = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let components = URLComponents(string: candidate),
+              components.scheme?.lowercased() == "https",
+              let host = components.host,
+              !host.isEmpty,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              let url = components.url else { return nil }
+        var normalized = url.absoluteString
+        while normalized.hasSuffix("/") { normalized.removeLast() }
+        return normalized
+    }
+
     private static func requestJSON(_ request: URLRequest) async throws -> [String: Any] {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let requestURL = request.url,
+              requestURL.scheme?.lowercased() == "https",
+              let requestHost = requestURL.host,
+              !requestHost.isEmpty else {
+            throw BridgeError.invalidURL
+        }
+        let redirectDelegate = TuyaHTTPSOnlyRedirectDelegate()
+        let (data, response) = try await URLSession.shared.data(for: request, delegate: redirectDelegate)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw BridgeError.remote("HTTP request failed.")
         }
