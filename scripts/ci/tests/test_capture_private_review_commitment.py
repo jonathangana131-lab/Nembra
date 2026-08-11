@@ -41,6 +41,7 @@ class PrivateReviewCommitmentTests(unittest.TestCase):
         scripts.mkdir()
         for source in (BOOTSTRAP, PROVENANCE, COMMITMENT, GENERATED):
             shutil.copy2(source, scripts / source.name)
+        self.accepted_helper = hashlib.sha256((scripts / COMMITMENT.name).read_bytes()).hexdigest()
 
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
@@ -125,6 +126,7 @@ class PrivateReviewCommitmentTests(unittest.TestCase):
             environment["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"] = accepted_generated
         if accepted_private is not None:
             environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256"] = accepted_private
+            environment["NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"] = self.accepted_helper
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review_only:
             command.append("--resolve-lock-for-review")
@@ -151,6 +153,8 @@ class PrivateReviewCommitmentTests(unittest.TestCase):
         lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
         generated = self.digest_from_review(review.stdout, "CocoaPods generated build subject SHA-256")
         private = self.digest_from_review(review.stdout, "Private review commitment SHA-256")
+        helper = self.digest_from_review(review.stdout, "Private review verifier source SHA-256")
+        self.assertEqual(helper, self.accepted_helper)
         self.assertTrue(self.record.is_file())
         self.assertTrue(self.key.is_file())
         self.assertEqual(self.key.stat().st_size, 32)
@@ -261,6 +265,7 @@ class PrivateReviewCommitmentTests(unittest.TestCase):
             {
                 "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": generated,
                 "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256": private,
+                "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256": self.accepted_helper,
             },
             clear=False,
         ):

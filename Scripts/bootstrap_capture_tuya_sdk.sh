@@ -25,6 +25,7 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
   : "${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 to the preaccepted 64-hex Podfile.lock SHA-256 before field bootstrap.}"
   : "${NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 to the preaccepted 64-hex generated CocoaPods build-subject SHA-256 before field bootstrap.}"
   : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 to the preaccepted 64-hex opaque private review commitment before field bootstrap.}"
+  : "${NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 to the preaccepted 64-hex private-review verifier source SHA-256 before field bootstrap.}"
   [[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
     echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 must be exactly 64 hex characters." >&2
     exit 1
@@ -37,16 +38,23 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
     echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 must be exactly 64 hex characters." >&2
     exit 1
   }
+  [[ "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 must be exactly 64 hex characters." >&2
+    exit 1
+  }
   ACCEPTED_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
   ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" | tr '[:upper:]' '[:lower:]')"
   ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" | tr '[:upper:]' '[:lower:]')"
+  ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" | tr '[:upper:]' '[:lower:]')"
 else
   unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \
     NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \
-    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 || true
+    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \
+    NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 || true
   ACCEPTED_LOCK_SHA256=""
   ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256=""
   ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256=""
+  ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256=""
 fi
 
 [[ -x /usr/bin/python3 ]] || {
@@ -61,6 +69,62 @@ for required_source in "$PROVENANCE_HELPER" "$PRIVATE_REVIEW_HELPER" "$GENERATED
   }
 done
 unset required_source
+
+
+run_accepted_private_review_helper() {
+  local expected_sha256="$1"
+  shift
+  /usr/bin/python3 -I - "$PRIVATE_REVIEW_HELPER" "$expected_sha256" "$@" <<'PY'
+import hashlib
+import hmac
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+expected = sys.argv[2].lower()
+helper_argv = sys.argv[3:]
+if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
+    print("ERROR: accepted private-review verifier source digest is malformed", file=sys.stderr)
+    raise SystemExit(72)
+flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+try:
+    descriptor = os.open(path, flags)
+except OSError as error:
+    print(f"ERROR: accepted private-review verifier source could not be opened: {error}", file=sys.stderr)
+    raise SystemExit(73)
+try:
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size <= 0 or before.st_size > 262144:
+        print("ERROR: private-review verifier source is not one bounded regular single-link file", file=sys.stderr)
+        raise SystemExit(74)
+    chunks = []
+    remaining = before.st_size
+    while remaining:
+        chunk = os.read(descriptor, min(65536, remaining))
+        if not chunk:
+            print("ERROR: private-review verifier source changed during descriptor read", file=sys.stderr)
+            raise SystemExit(75)
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    source = b"".join(chunks)
+    after = os.fstat(descriptor)
+    before_identity = (before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns, before.st_ctime_ns, before.st_nlink)
+    after_identity = (after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns, after.st_ctime_ns, after.st_nlink)
+    if before_identity != after_identity:
+        print("ERROR: private-review verifier source changed during descriptor custody", file=sys.stderr)
+        raise SystemExit(76)
+finally:
+    os.close(descriptor)
+actual = hashlib.sha256(source).hexdigest()
+if not hmac.compare_digest(actual, expected):
+    print("ERROR: private-review verifier source does not match the externally reviewed digest", file=sys.stderr)
+    raise SystemExit(77)
+namespace = {"__name__": "__main__", "__file__": "<accepted-private-review-verifier>"}
+sys.argv = [path, *helper_argv]
+exec(compile(source, "<accepted-private-review-verifier>", "exec"), namespace)
+PY
+}
 
 [[ -f Podfile ]] || { echo "ERROR: Podfile is missing at $REPO_ROOT/Podfile" >&2; exit 4; }
 [[ -d NembraCapture.xcodeproj ]] || { echo "ERROR: NembraCapture.xcodeproj is missing." >&2; exit 5; }
@@ -151,14 +215,16 @@ if [[ "$REVIEW_ONLY" == "1" ]]; then
       echo "ERROR: opaque private-input review commitment could not be created." >&2
       exit 18
     }
+  PRIVATE_REVIEW_HELPER_SHA256="$(shasum -a 256 "$PRIVATE_REVIEW_HELPER" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
 else
-  /usr/bin/python3 -I "$PRIVATE_REVIEW_HELPER" verify \
+  run_accepted_private_review_helper "$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256" verify \
     --witness "$DEPENDENCY_PROVENANCE" \
     --key "$PRIVATE_REVIEW_KEY" \
     --expected "$ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" >/dev/null || {
-      echo "ERROR: local private-input witness/key do not match the externally accepted private review commitment." >&2
+      echo "ERROR: local private-input witness/key or verifier source do not match the externally accepted private review authority." >&2
       exit 18
     }
+  PRIVATE_REVIEW_HELPER_SHA256="$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
 
   /usr/bin/python3 -I "$PROVENANCE_HELPER" verify \
     --lockfile "$REPO_ROOT/Podfile.lock" \
@@ -211,10 +277,11 @@ DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
   Podfile.lock SHA-256: $LOCK_SHA256
   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
   Private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256
+  Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256
   Local private-input witness: $DEPENDENCY_PROVENANCE
   Local private commitment key: retained privately; never publish or export
 
-Review and bind all THREE public authority values to the exact accepted Capture
+Review and bind all FOUR public authority values to the exact accepted Capture
 source through Final GO. Keep the witness/key/generated workspace unchanged.
 Normal field bootstrap requires those accepted values, never reruns CocoaPods,
 never rewrites the witness/key, and verifies private bytes against the committed
@@ -233,10 +300,12 @@ fi
 printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
 printf 'Preaccepted CocoaPods generated build subject matched: %s\n' "$GENERATED_BUILD_SUBJECT_SHA256"
 printf 'Externally accepted opaque private review commitment matched: %s\n' "$PRIVATE_REVIEW_COMMITMENT_SHA256"
-unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \
+printf 'Externally accepted private review verifier source matched: %s\n' "$PRIVATE_REVIEW_HELPER_SHA256"
+unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_BUILD_SUBJECT_SHA256 ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 \
   NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 \
   NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 \
-  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 || true
+  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256 \
+  NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256 || true
 
 cat <<EOF
 
@@ -248,6 +317,7 @@ Verified public authority:
   Podfile.lock SHA-256: $LOCK_SHA256
   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
   Opaque private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256
+  Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256
 
 NEXT BUILD RULE:
   Open NembraCapture.xcworkspace, not NembraCapture.xcodeproj.

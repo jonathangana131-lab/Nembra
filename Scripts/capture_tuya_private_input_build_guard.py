@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import hmac
 import importlib.util
 import os
@@ -10,6 +11,7 @@ import select
 import stat
 import subprocess
 import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Protocol, Sequence
@@ -37,10 +39,52 @@ generated_build = _load_neighbor_module(
     "capture_cocoapods_generated_build_subject.py",
     "capture_cocoapods_generated_build_subject",
 )
-private_review = _load_neighbor_module(
-    "capture_private_review_commitment.py",
-    "capture_private_review_commitment",
-)
+PRIVATE_REVIEW_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
+PRIVATE_REVIEW_HELPER_MAX_BYTES = 262_144
+
+
+def _load_accepted_private_review_module():
+    expected = os.environ.get(PRIVATE_REVIEW_HELPER_ENV, "").lower()
+    if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
+        raise BuildGuardError(
+            f"{PRIVATE_REVIEW_HELPER_ENV} must remain available as exactly 64 hex characters through build-window admission"
+        )
+    helper = Path(__file__).with_name("capture_private_review_commitment.py")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(helper, flags)
+    except OSError as error:
+        raise BuildGuardError("private-review verifier source could not be opened under descriptor custody") from error
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise BuildGuardError("private-review verifier source is not one regular single-link file")
+        if before.st_size <= 0 or before.st_size > PRIVATE_REVIEW_HELPER_MAX_BYTES:
+            raise BuildGuardError("private-review verifier source size is outside the accepted bound")
+        chunks: list[bytes] = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(65_536, remaining))
+            if not chunk:
+                raise BuildGuardError("private-review verifier source changed during descriptor read")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        source = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if provenance._stat_identity(before) != provenance._stat_identity(after):
+            raise BuildGuardError("private-review verifier source changed during descriptor custody")
+    finally:
+        os.close(descriptor)
+    actual = hashlib.sha256(source).hexdigest()
+    if not hmac.compare_digest(actual, expected):
+        raise BuildGuardError("private-review verifier source does not match externally accepted authority")
+    module = types.ModuleType("capture_private_review_commitment_accepted")
+    module.__file__ = "<accepted-private-review-verifier>"
+    try:
+        exec(compile(source, module.__file__, "exec"), module.__dict__)
+    except Exception as error:
+        raise BuildGuardError("accepted private-review verifier source could not be loaded") from error
+    return module
 
 
 @dataclass(frozen=True)
@@ -382,6 +426,7 @@ def _accepted_private_review_commitment_from_environment() -> str:
 
 def _verify_accepted_private_review_commitment(inputs: PrivateInputs) -> None:
     accepted = _accepted_private_review_commitment_from_environment()
+    private_review = _load_accepted_private_review_module()
     try:
         private_review.verify_commitment(
             witness=inputs.private_provenance_record,
