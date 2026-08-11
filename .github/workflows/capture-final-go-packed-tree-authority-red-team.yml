@@ -1,0 +1,31 @@
+name: Capture Final GO Packed Tree Authority Red Team
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/es80_authenticated_stationary_private_review_final_go.py'
+      - 'scripts/ci/tests/test_es80_final_go_packed_tree_authority_red_team.py'
+      - '.github/workflows/capture-final-go-packed-tree-authority-red-team.yml'
+  push:
+    branches:
+      - redteam/v14-final-go-packed-tree-authority-sol56-20260811
+
+permissions:
+  contents: read
+
+jobs:
+  packed-tree-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact diagnostic head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git diff --check HEAD^
+      - name: Replay Final-GO packed-tree authority attack
+        run: python3 scripts/ci/tests/test_es80_final_go_packed_tree_authority_red_team.py
