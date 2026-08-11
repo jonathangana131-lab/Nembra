@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "210950-evidence-result-capture-voiceover-upload-only-red-1405rc",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-1405rc",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Exact P0 Capture runtime accessibility classification for #2973 head 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9: GitHub Actions run 31533392572 / job 93918602962 completed FAILURE, but every functional/source/runtime assertion step before publication succeeded, including runtime UIAccessibility readiness-post count, exactly-one READY-for-capture announcement, exactly-one expired-witness recovery announcement, focused VoiceOver source-contract tests, dynamic READY-label integration, dynamic expired-witness recovery integration, and runtime probe snapshot-input assertion. The sole failing step was actions/upload-artifact@v4: no files matched artifacts/capture-voiceover-runtime-evidence/**, so zero retained artifacts were published. Classify this exact run as ARTIFACT-PUBLICATION RED, not product-VoiceOver assertion red. It remains NOT GREEN and must not be promoted to runtime accessibility acceptance because the retained inspectable evidence contract was not satisfied. Next safe action is a claimed descendant repair that makes the diagnostic artifact path/output deterministic, followed by a fresh exact-head rerun whose artifact is retained and inspected. Simulator accessibility evidence only. PHYSICAL NO-GO."
+  ,"createdAt": "2026-08-11T21:09:50Z"
+}
