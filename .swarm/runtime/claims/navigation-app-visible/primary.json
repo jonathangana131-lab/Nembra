@@ -9,9 +9,9 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T08:18:20Z",
-  "lastHeartbeatAt": "2026-08-11T08:24:00Z",
+  "lastHeartbeatAt": "2026-08-11T08:29:00Z",
   "leaseSeconds": 2700,
   "branch": "recovery/v15-navigation-app-visible-sol-7a2f",
   "pr": 2831,
-  "sourceSHA": "f81315bfc208bb487d807cc7b4387afe592256bf"
+  "sourceSHA": "b1a14f9f25999368de381dff16327c758ced5ef3"
 }
