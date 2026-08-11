@@ -17,15 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 3
-      - name: Repair and validate
-        run: python3 -B scripts/ci/tmp_v14_seal_installer_execution_subject.py
+          fetch-depth: 10
+      - name: Correct fixture and validate repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ci/tmp_v14_fix_sealed_installer_fixture.py
+          python3 -B scripts/ci/tmp_v14_seal_installer_execution_subject.py
       - name: Remove helpers and checkpoint clean product commit
         shell: bash
         run: |
           set -euo pipefail
           rm -f \
             .github/workflows/tmp-v14-seal-installer-execution-subject.yml \
+            .github/workflows/tmp-v14-seal-installer-execution-subject-v2.yml \
+            .github/workflows/tmp-v14-seal-installer-execution-subject-v3.yml \
+            .github/workflows/tmp-v14-seal-installer-execution-subject-v4.yml \
+            scripts/ci/tmp_v14_fix_sealed_installer_fixture.py \
             scripts/ci/tmp_v14_seal_installer_execution_subject.py
           expected=$'scripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py'
           actual="$(git diff --name-only a1f5a90414b5ca26bdd6bebb485189b6bcbe227f | sort)"
