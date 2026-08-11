@@ -1,0 +1,188 @@
+name: Capture AX5 Task-First Materializer
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-ax5-task-first-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: fix/v14-capture-ax5-task-first-sol
+
+      - name: Apply exact-source accessibility repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          source_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          expected_blob = "f8bf601343e89809874f5a2f488bd0db3c2d9fd8"
+          actual_blob = subprocess.check_output(["git", "hash-object", str(source_path)], text=True).strip()
+          if actual_blob != expected_blob:
+              raise SystemExit(f"refusing source drift: expected {expected_blob}, got {actual_blob}")
+
+          source = source_path.read_text()
+
+          old_state = '''    @StateObject private var tuya = TuyaAccountBridge()
+              @State private var showEngineeringDetails = false
+          '''.replace("              ", "    ")
+          new_state = '''    @StateObject private var tuya = TuyaAccountBridge()
+              @State private var showEngineeringDetails = false
+              @Environment(\\.dynamicTypeSize) private var dynamicTypeSize
+
+              private var accessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }
+          '''.replace("              ", "    ")
+          if source.count(old_state) != 1:
+              raise SystemExit("state anchor count changed")
+          source = source.replace(old_state, new_state, 1)
+
+          old_header = '''                    VStack(alignment: .leading, spacing: 22) {
+                          VStack(alignment: .leading, spacing: 8) {
+                              Text("NEMBRA CAPTURE")
+                                  .font(.caption2.bold())
+                                  .tracking(1.5)
+                                  .foregroundStyle(.cyan)
+                              Text("Prepare the scooter link")
+                                  .font(.largeTitle.bold())
+                              Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
+                                  .font(.body)
+                                  .foregroundStyle(.secondary)
+                                  .fixedSize(horizontal: false, vertical: true)
+                          }
+          '''
+          new_header = '''                    VStack(alignment: .leading, spacing: accessibilityLayout ? 14 : 22) {
+                          VStack(alignment: .leading, spacing: accessibilityLayout ? 6 : 8) {
+                              Text("NEMBRA CAPTURE")
+                                  .font(accessibilityLayout ? .caption.bold() : .caption2.bold())
+                                  .tracking(accessibilityLayout ? 0.8 : 1.5)
+                                  .foregroundStyle(.cyan)
+                                  .dynamicTypeSize(.xSmall ... .xxxLarge)
+                              Text(accessibilityLayout ? "Prepare scooter link" : "Prepare the scooter link")
+                                  .font(accessibilityLayout ? .title2.bold() : .largeTitle.bold())
+                              if !accessibilityLayout {
+                                  Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
+                                      .font(.body)
+                                      .foregroundStyle(.secondary)
+                                      .fixedSize(horizontal: false, vertical: true)
+                              }
+                          }
+          '''
+          if source.count(old_header) != 1:
+              raise SystemExit("header anchor count changed")
+          source = source.replace(old_header, new_header, 1)
+
+          old_account = '''                                Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
+                                      .font(.title3.bold())
+                                      .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+                                  Text(tuya.statusMessage)
+                                      .font(.footnote)
+                                      .foregroundStyle(.secondary)
+                                      .fixedSize(horizontal: false, vertical: true)
+          '''
+          new_account = '''                                Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
+                                      .font(accessibilityLayout ? .headline.bold() : .title3.bold())
+                                      .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+                                  Text(accessibilityLayout && !tuya.isLinked
+                                       ? "Read-only account setup. Scooter settings stay unchanged."
+                                       : tuya.statusMessage)
+                                      .font(accessibilityLayout ? .callout : .footnote)
+                                      .foregroundStyle(.secondary)
+                                      .fixedSize(horizontal: false, vertical: true)
+          '''
+          if source.count(old_account) != 1:
+              raise SystemExit("account anchor count changed")
+          source = source.replace(old_account, new_account, 1)
+
+          source = source.replace(
+              "                    .padding(.top, 22)\n",
+              "                    .padding(.top, accessibilityLayout ? 12 : 22)\n",
+              1,
+          )
+          source = source.replace(
+              "            .padding(18)\n",
+              "            .padding(accessibilityLayout ? 14 : 18)\n",
+              1,
+          )
+
+          source_path.write_text(source)
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureRootAccessibilityCompositionSourceTests.swift")
+          if test_path.exists():
+              raise SystemExit("accessibility regression path unexpectedly exists")
+          test_path.write_text(r'''import Foundation
+          import Testing
+
+          @Suite("Capture root accessibility composition")
+          struct CaptureRootAccessibilityCompositionSourceTests {
+              private static func source() throws -> String {
+                  let testFile = URL(fileURLWithPath: #filePath)
+                  let root = testFile
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(
+                      contentsOf: root
+                          .appendingPathComponent("NembraApp")
+                          .appendingPathComponent("App")
+                          .appendingPathComponent("NembraCaptureEntrypoint.swift"),
+                      encoding: .utf8
+                  )
+              }
+
+              @Test("Accessibility Dynamic Type recomposes preflight into a task-first root")
+              func accessibilityLayoutIsTaskFirst() throws {
+                  let source = try Self.source()
+                  let rootStart = try #require(source.range(of: "private struct CaptureP0Root: View"))
+                  let controllerStart = try #require(
+                      source.range(
+                          of: "private final class SecureLinkController",
+                          range: rootStart.lowerBound..<source.endIndex
+                      )
+                  )
+                  let root = source[rootStart.lowerBound..<controllerStart.lowerBound]
+
+                  #expect(root.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+                  #expect(root.contains("dynamicTypeSize.isAccessibilitySize"))
+                  #expect(root.contains("Text(accessibilityLayout ? \"Prepare scooter link\" : \"Prepare the scooter link\")"))
+                  #expect(root.contains("if !accessibilityLayout"))
+                  #expect(root.contains("Read-only account setup. Scooter settings stay unchanged."))
+                  #expect(root.contains(".font(accessibilityLayout ? .headline.bold() : .title3.bold())"))
+                  #expect(root.contains(".padding(.top, accessibilityLayout ? 12 : 22)"))
+                  #expect(root.contains(".padding(accessibilityLayout ? 14 : 18)"))
+
+                  let longIntro = "One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins."
+                  #expect(root.contains(longIntro))
+                  #expect(root.contains(".dynamicTypeSize(.xSmall ... .xxxLarge)"))
+              }
+          }
+          '''.replace("          ", ""))
+
+          Path(".github/workflows/capture-ax5-task-first-materializer.yml").unlink()
+          PY
+
+          git diff --check
+          grep -F '@Environment(\.dynamicTypeSize) private var dynamicTypeSize' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -F 'Read-only account setup. Scooter settings stay unchanged.' NembraApp/App/NembraCaptureEntrypoint.swift
+          test ! -e .github/workflows/capture-ax5-task-first-materializer.yml
+
+      - name: Commit exact repair and self-delete materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(capture): recompose AX5 account setup task-first"
+          git push origin HEAD:fix/v14-capture-ax5-task-first-sol
