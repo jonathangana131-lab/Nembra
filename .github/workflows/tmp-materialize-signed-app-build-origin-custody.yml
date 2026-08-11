@@ -13,11 +13,70 @@ jobs:
     if: github.event.head_commit.message == 'Run signed app origin patcher'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/nembra-origin-pycache
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Placeholder until safe patcher is installed
-        run: exit 1
+      - name: Bind exact construction head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile first-class repair and safe patcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tmp_patch_signed_app_origin_existing.py
+
+      - name: Patch existing custody surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tmp_patch_signed_app_origin_existing.py
+          git diff --check
+
+      - name: Validate materialized production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/capture_signed_app_install_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Commit clean production tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            scripts/ci/tmp_materialize_signed_app_build_origin_custody.py \
+            scripts/ci/tmp_patch_signed_app_origin_existing.py \
+            scripts/ci/tmp_signed_app_origin_installer_block.txt \
+            .github/workflows/tmp-materialize-signed-app-build-origin-custody.yml \
+            .swarm/tmp_materializer_parser_error.txt
+          git add -A
+          git diff --cached --check
+          if git diff --cached --name-only | grep -E '(^|/)(tmp_|tmp-materialize)' >/dev/null; then
+            echo 'ERROR: temporary construction files would survive production commit' >&2
+            exit 1
+          fi
+          git config user.name 'nembra-sol-swarm'
+          git config user.email 'nembra-sol-swarm@users.noreply.github.com'
+          git commit -m 'Bind signed app to build output custody'
+          git push origin HEAD:repair/v14-signed-app-build-origin-custody-sol-20260811
