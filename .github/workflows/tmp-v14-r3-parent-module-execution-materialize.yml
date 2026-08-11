@@ -87,23 +87,23 @@ jobs:
           set -euo pipefail
           git diff --check
 
-      - name: Confirm temporary files removed
+      - name: Commit non-workflow repair checkpoint
         shell: bash
         run: |
           set -euo pipefail
-          test ! -e .github/workflows/tmp-v14-r3-parent-module-execution-materialize.yml
-          test ! -e scripts/ci/tmp_materialize_r3_parent_execution.py
-
-      - name: Commit repair checkpoint
-        shell: bash
-        run: |
-          set -euo pipefail
+          git restore --source=HEAD -- \
+            .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml \
+            .github/workflows/tmp-v14-r3-parent-module-execution-materialize.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
+          git add \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py \
+            scripts/ci/tmp_materialize_r3_parent_execution.py
+          git diff --cached --check
           git commit -m 'Capture: pin R3 parent execution to accepted Git bytes'
 
-      - name: Push repair checkpoint
+      - name: Push non-workflow repair checkpoint
         shell: bash
         run: |
           set -euo pipefail
