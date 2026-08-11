@@ -16,7 +16,7 @@ import hashlib
 import os
 import stat
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable
 
 SCHEMA = b"nembra-capture-cocoapods-generated-build-subject-v1"
 
@@ -246,13 +246,12 @@ def _tree_entries(
     return tuple(sorted(entries, key=lambda item: os.fsencode(item[1])))
 
 
-def _tree_fingerprint(root: Path, *, repository_root: Path | None = None) -> str:
-    effective_repository_root = repository_root if repository_root is not None else root.parent
+def _tree_fingerprint(root: Path, *, repository_root: Path) -> str:
     digest = hashlib.sha256()
     _feed(digest, b"nembra-cocoapods-generated-tree-v1")
     for kind, relative, mode, payload in _tree_entries(
         root,
-        repository_root=effective_repository_root,
+        repository_root=repository_root,
     ):
         _feed(digest, kind.encode("ascii"))
         _feed(digest, os.fsencode(relative))
@@ -295,14 +294,6 @@ def build_subject(*, lockfile: Path, pods: Path, workspace: Path) -> str:
         bytes.fromhex(_tree_fingerprint(workspace, repository_root=repository_root)),
     )
     return digest.hexdigest()
-
-
-def generation_snapshot(roots: Sequence[Path]) -> tuple[tuple[str, str], ...]:
-    """Return stable fingerprints suitable for before/after build-window comparison."""
-    snapshots: list[tuple[str, str]] = []
-    for root in roots:
-        snapshots.append((str(root), _tree_fingerprint(root)))
-    return tuple(snapshots)
 
 
 def _parser() -> argparse.ArgumentParser:
