@@ -3,6 +3,34 @@ import Testing
 
 @Suite("Capture final review blockers")
 struct TuyaCaptureReviewBlockerSourceTests {
+    @Test("field provenance runs for every compiled Capture and dependency input family")
+    func provenanceTriggerCoversFieldBuildInputs() throws {
+        let workflow = try readRepositoryFile(".github/workflows/capture-field-build-provenance.yml")
+        let requiredPaths = [
+            "- Podfile",
+            "- Podfile.lock",
+            "- NembraCapture-Info.plist",
+            "- NembraCapture.xcodeproj/**",
+            "- NembraCapture.xcworkspace/**",
+            "- NembraCapture.entitlements",
+            "- NembraApp/App/NembraCaptureBuildIdentity.swift",
+            "- NembraApp/App/NembraCaptureEntrypoint.swift",
+            "- NembraApp/Features/Research/TuyaAccountBridge.swift",
+            "- NembraApp/Features/Research/ES80CaptureShellView.swift",
+            "- Packages/NembraBluetoothCapture/**",
+            "- Packages/NembraCore/**",
+            "- Scripts/**",
+            "- scripts/field/**",
+            "- scripts/ci/**",
+            "- .github/workflows/capture-field-build-provenance.yml",
+        ]
+
+        for path in requiredPaths {
+            #expect(workflow.contains(path), "Missing field-provenance trigger: \(path)")
+        }
+        #expect(workflow.contains("github.event.pull_request.head.repo.full_name == github.repository"))
+    }
+
     @Test("Tuya status endpoint remains status evidence with its original JSON shape")
     func cloudStatusIsNotPromotedToLocalStrategy() throws {
         let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
