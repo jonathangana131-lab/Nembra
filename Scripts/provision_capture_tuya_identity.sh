@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 LOCAL_SECRETS="$ROOT/LocalSecrets"
+# NEMBRA_TUYA_RUNTIME_DIR is deliberately not honored: private field identity
+# output is fixed to the checkout-owned ignored LocalSecrets tree.
 DEST="$LOCAL_SECRETS/TuyaRuntime"
 SOURCE_DIR="$DEST/Sources/NembraTuyaPrivateConfig"
 PODSPEC="$DEST/NembraTuyaPrivateConfig.podspec"
