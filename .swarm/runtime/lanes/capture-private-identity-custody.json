@@ -4,44 +4,11 @@
   "laneId": "capture-private-identity-custody",
   "epic": "capture",
   "title": "Capture private Tuya identity publication custody",
-  "objective": "Close credential-bearing private identity publication races and interruption residue while preserving admitted-root authority, exact writer digest fencing, secure cleanup, destination-name identity, and package/field contracts before composition.",
+  "objective": "Close credential-bearing private identity publication and crash-recovery custody, including canonical destination-name authority, exact accepted bytes, stage-residue recovery, and source-contract acceptance before flagship composition.",
   "priority": 1,
-  "state": "BLOCKED_EXTERNAL",
+  "state": "REVIEW",
   "dependencies": [],
-  "blockers": [
-    {
-      "id": "active-primary-publication-and-destination-name-custody",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Control-plane primary claim is actively owned by sol-20260811-a7e4 on canonical repair #2755 exact 2d8241c791d79ad04654fb1c90f7ac89ac5d5efc; #2858 is parallel recovery/evidence, not the selected implementation. #2755 is materially stronger: exact current writer re-reads final descriptor bytes with stable metadata and its Capture Private Identity Publication Races run 31476478832 is SUCCESS for staging substitution, same-inode equal-length mutation, and detached ancestry. Exact source still has destination-name authority debt: after opening/validating the sealed final descriptor, it never re-resolves the canonical destination immediately before success to require that pathname still names the held sealed inode. The destination-side invariant demonstrated by #2868 therefore still applies to this source shape even though #2868 itself hooks predecessor helpers and must be re-anchored rather than cherry-picked. Existing independent review on #2755 already records this exact live-head blocker. Preserve byte readback and current source-side defenses while closing destination-name substitution/cleanup without check-then-unlink races.",
-      "pr": 2755,
-      "headSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc"
-    },
-    {
-      "id": "hard-exit-stage-residue-terminal-red",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Tests slot is actively owned by sol-20260811-7f31c2 on #2870 exact 3d154de42cc879bd06128098771b06aa10e57b44, attacked directly from #2755 2d8241c. Capture Private Identity Crash Residue Red Team run 31476707690 is terminal FAILURE: forced os._exit(73) after credential bytes are fsynced but before publication leaves ignored checkout-root `.nembra-private-stage-*` bytes, and the next invocation does not reclaim/report them. This is orthogonal to caught-exception descriptor scrubbing. Final production needs a truthful next-start orphan-stage admission/recovery contract for exact writer-owned entries (or another design preventing retained hidden credential bytes), without claiming physical-media erasure.",
-      "pr": 2870,
-      "headSHA": "3d154de42cc879bd06128098771b06aa10e57b44"
-    },
-    {
-      "id": "root-before-writer-regression-uncomposed",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "#2755 production shell still has the correct order, but exact current TuyaPrivateIdentityCheckoutRootCustodySourceTests.swift only proves root admission/digest each precede credential reads. It still lacks #2733's stronger mechanical contract `root admission -> writer byte capture -> digest fence -> credentials`. Preserve/absorb #2733 exact 55d33a1be7b6e4ce692e316e61ee7bfa33d07376 before closure.",
-      "pr": 2733,
-      "headSHA": "55d33a1be7b6e4ce692e316e61ee7bfa33d07376"
-    },
-    {
-      "id": "field-self-test-portability",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Field Build Provenance previously reached writer self-test on macOS and failed because trusted temporary `/var` ancestry may traverse `/var -> /private/var` while production no-follow admission rejects symlinks. Fix only trusted self-test root/canonicalization; do not weaken production admitted-checkout no-symlink custody. Current #2755 Field and Selective Graft are queued and Xcode is skipped, so this remains non-accepted until exact rerun.",
-      "pr": 2755,
-      "headSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc"
-    }
-  ],
+  "blockers": [],
   "mode": "exclusive",
   "allowedWriteAreas": ["Scripts/provision_capture_tuya_identity.sh","Scripts/provision_capture_tuya_identity_writer.py",".gitignore"],
   "adjacentWriteAreas": ["scripts/ci/tests/test_capture_private_identity_publication_races.py","Packages/NembraBluetoothCapture/Tests",".github/workflows"],
@@ -53,14 +20,16 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "sourceSHA": "3f662b7a3f3da667ce3f916ee3f0a65629269c8a",
   "legacy": {
-    "primaryPR": 2755,
-    "primaryHeadSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc",
-    "parallelRecoveryPR": 2858,
-    "testsPR": 2870,
-    "lineagePRs": [2719,2733,2734,2755,2767,2858,2861,2868,2870],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:18Z from active claims. #2755 is selected primary and already closes same-inode payload authority with exact current publication-race green. Remaining blockers are destination-name authority/cleanup, terminal-red hard-exit stage residue #2870, uncomposed #2733 ordering regression, and macOS self-test portability. #2858/#2861/#2868 remain useful predecessor/adversarial evidence but are not the selected production spine. PHYSICAL NO-GO."
+    "selectedConvergencePR": 2899,
+    "selectedConvergenceLaneMetadata": "capture-private-identity-convergence",
+    "primaryHeadSHA": "3f662b7a3f3da667ce3f916ee3f0a65629269c8a",
+    "supersedesPrimaryPR": 2755,
+    "absorbedEvidencePRs": [2733,2755,2870,2872,2874,2877,2879,2887,2902],
+    "lineagePRs": [2719,2733,2734,2755,2767,2858,2861,2868,2870,2872,2874,2877,2879,2887,2899,2902],
+    "exactHeadGateState": "ALL_REQUIRED_EXACT_HEAD_GATES_GREEN_AWAITING_INDEPENDENT_REVIEW",
+    "knownExactHeadFinding": "Reconciled 2026-08-11T11:53Z. Live successor #2899 exact 3f662b7a supersedes the old #2755/#2870 blocker picture: it composes bounded next-start stage recovery, final canonical-name rebind, trusted macOS realpath self-test correction, and current package source-contract repairs. Exact-head Capture Private Identity Publication Races, Field Build Provenance, Main Selective Graft, and Xcode 27 are all terminal SUCCESS. Independent review and composition remain; no child green authorizes hardware. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","private-identity","publication-custody","lifecycle","legacy-import"]
 }
