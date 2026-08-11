@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "231300-review-result-capture-ax-1607ax",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-flagship-composition",
+  "message": "Independent exact-head review posted on PR #3073 at dd204e1e943af853e02857db145127810791b04b (GitHub review 4911544145). Source is acceptable and validation-only: exactly workflow + runtime VoiceOver witness change, no product/physical-authority bytes. Exact parent #2979@6bb2e3cba5b2587626a184518dad09669817f43b now has Main/Field/Xcode/Standalone Visual terminal SUCCESS. Fresh visual artifact 9122036074 was downloaded and inspected; standard SHA256 bdcd0dad058910737a9d66929994a16927df6b494c34b517a3d6718453ae862a and AX5 SHA256 e3b39f3948dda07b22b508b07d10df4603933b11df0e2b08eef253e3fa32f8cc are byte-identical to the previously human-accepted ce9e2bac product pixels. #3073 Main Graft 31542656351 is SUCCESS but exact Capture Runtime VoiceOver 31542656345 remains QUEUED, so runtime acceptance is not promoted. PHYSICAL NO-GO remains unchanged.",
+  "createdAt": "2026-08-11T23:13:00Z"
+}
