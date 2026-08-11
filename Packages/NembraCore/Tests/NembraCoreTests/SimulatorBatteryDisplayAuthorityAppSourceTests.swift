@@ -43,7 +43,10 @@ struct SimulatorBatteryDisplayAuthorityAppSourceTests {
             )
         )
         #expect(
-            storage.components(separatedBy: "UserDefaultsRetainedBatterySnapshotStorage()").count - 1 == 1
+            body.components(separatedBy: "UserDefaultsRetainedBatterySnapshotStorage()").count - 1 == 1
+        )
+        #expect(
+            body.components(separatedBy: "let vehicleStore = VehicleStore(").count - 1 == 1
         )
         #expect(
             body.components(separatedBy: "retainedBatteryStorage: retainedBatteryStorage").count - 1 == 1
