@@ -1,0 +1,38 @@
+name: Capture CocoaPods NOTE_ATTRIB Red Team
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/capture_tuya_private_input_build_guard.py'
+      - 'Scripts/capture_cocoapods_generated_build_subject.py'
+      - 'scripts/ci/tests/test_capture_cocoapods_note_attrib_custody.py'
+      - '.github/workflows/capture-cocoapods-note-attrib-redteam.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-registration:
+    name: Require NOTE_ATTRIB registration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind diagnostic to exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_note_attrib_custody.py
+      - name: Prove generated mode authority has live custody
+        run: python3 scripts/ci/tests/test_capture_cocoapods_note_attrib_custody.py
+
+  macos-real-kqueue:
+    name: Real macOS NOTE_ATTRIB evidence
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind diagnostic to exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Exercise real chmod kqueue delivery
+        run: /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_note_attrib_custody.py
