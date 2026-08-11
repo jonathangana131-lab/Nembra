@@ -1,0 +1,46 @@
+name: Capture Build Guard FD Capacity Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v14-capture-build-guard-fd-capacity-go56
+  pull_request:
+    paths:
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_build_guard_fd_capacity.py
+      - .github/workflows/capture-build-guard-fd-capacity-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  descriptor-capacity:
+    name: Require complete vnode custody beyond starting soft FD limit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind diagnostic to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile expected-red diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_build_guard_fd_capacity.py
+
+      - name: Require realistic graph custody despite low starting soft limit
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_build_guard_fd_capacity.py
