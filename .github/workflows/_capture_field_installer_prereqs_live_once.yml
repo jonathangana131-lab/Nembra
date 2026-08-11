@@ -1,0 +1,57 @@
+name: Capture Field Installer Prereqs Live Once
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-field-installer-prereqs-live-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'bootstrap live Capture field installer prerequisites'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Materialize and validate exact current-head repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object .gitignore)" = 'dcd1acb190701a96694c2537ca5a8e3f3d352e84'
+          test "$(git hash-object .github/workflows/capture-field-build-provenance.yml)" = '75ad570e28c666293fe73c2d6493958fefa3852c'
+          test "$(git hash-object Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift)" = 'e2d13ab312265ffe2e5c9cac60d8faf6474bc42f'
+          test ! -e scripts/ci/es80_signed_field_artifact_private_runner.py
+          git fetch --no-tags --depth=1 origin a0f4a33451f61411d6e0541f2e70edea5438342d
+          git show a0f4a33451f61411d6e0541f2e70edea5438342d:scripts/ci/es80_signed_field_artifact_private_runner.py > scripts/ci/es80_signed_field_artifact_private_runner.py
+          test "$(git hash-object scripts/ci/es80_signed_field_artifact_private_runner.py)" = 'f648b3080313f65da1e358ef3beb8c23d05966e6'
+          python3 scripts/ci/tmp_capture_field_installer_prereqs.py
+          git diff --check
+          python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          grep -Fq -- '- Packages/NembraCore/**' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq -- '- scripts/ci/es80_signed_field_artifact_private_runner.py' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq -- '- .gitignore' .github/workflows/capture-field-build-provenance.yml
+          grep -Fxq 'LocalSecrets/' .gitignore
+          grep -Fxq 'Pods/' .gitignore
+          grep -Fxq 'NembraCapture.xcworkspace/' .gitignore
+          grep -Fxq 'Podfile.lock' .gitignore
+          ! git diff --name-only | grep -Ev '^(.gitignore|.github/workflows/capture-field-build-provenance.yml|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift|scripts/ci/es80_signed_field_artifact_private_runner.py)$'
+
+      - name: Commit validated repair without temporary tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Nembra Capture Closure'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/_capture_field_installer_prereqs_live_once.yml scripts/ci/tmp_capture_field_installer_prereqs.py
+          git add .gitignore .github/workflows/capture-field-build-provenance.yml scripts/ci/es80_signed_field_artifact_private_runner.py Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
+          git diff --cached --check
+          git commit -m 'fix(capture): restore field installer prerequisites'
+          echo "LOCAL_COMMIT_SHA=$(git rev-parse HEAD)"
+          git push origin HEAD:agent/v14-capture-field-installer-prereqs-live-sol
