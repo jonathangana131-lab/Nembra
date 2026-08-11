@@ -33,7 +33,7 @@ cat <<EOF
 Private Tuya app identity provisioned locally at:
   $DEST
 
-Nothing was written to Git, shell history, host process argv, or stdout.
+Credential plaintext was not written to Git, shell history, host process argv, or stdout.
 The generated source is compiled only by the SDK-integrated Capture workspace.
 Reprovisioning is fail-closed: remove the old local TuyaRuntime directory deliberately before creating a replacement.
 Next: run Scripts/bootstrap_capture_tuya_sdk.sh.
