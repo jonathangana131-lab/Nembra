@@ -9,15 +9,15 @@
   "generation": 3,
   "status": "NEEDS_CHANGES",
   "claimedAt": "2026-08-11T12:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:10:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:17:30Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
-  "currentHeadSHA": "4242a18e699285bd5078357b36bc610adc79496f",
+  "currentHeadSHA": "d3412c7492fe299acd6d1eec6e01ca521478b686",
   "findingPR": 2964,
   "findingHeadSHA": "7c641e69a00c97b92c2c117bbbf64d342d5e986e",
   "findingRun": 31492962368,
-  "findingState": "ROOT_RECEIPT_WIRED_BUT_2964_EARLY_SANITATION_STILL_UNCLOSED",
-  "reviewFinding": "Current #2944 exact 4242a18 wires the root-sealed successful-transaction authority and permanent failed-bootstrap/CocoaPods sentinel; canonical Private Identity run 31494268666 is terminal SUCCESS. However exact writer source still executes _validate_existing_output before entering the try that takes recovered_stage and sanitizes staging_fd. #2964's exact test_early_existing_output_rejection_sanitizes_admitted_inode is absent from the canonical 4242a18 test file/workflow, so the green suite does not exercise the demonstrated seam. An invalid existing destination can therefore reject before descriptor sanitation, leaving credential-bearing admitted crash-residue bytes intact. Durable review comment 5253618566 requires permanent absorption of #2964 plus exact held-inode sanitation on every post-admission failure, then full exact-head rerun. Field/Graft/Xcode pending evidence cannot override this source blocker. PHYSICAL NO-GO."
+  "findingState": "ROOT_RECEIPT_EVOLVING_BUT_2964_EARLY_SANITATION_STILL_UNCLOSED",
+  "reviewFinding": "#2944 has moved through 344a0bc and current d3412c7 after the 4242a18 root-receipt line, but neither move changes Scripts/provision_capture_tuya_identity_writer.py nor canonical test_capture_private_identity_recovery_unlink_race.py. Current d3412c7 adds only tmp-v14-private-authority-path-revoke-materialize.yml on top of 344a0bc and is construction, not acceptance. The #2964 blocker therefore persists exactly: _validate_existing_output still occurs before recovered_stage is taken into the sanitation try, and the permanent early-existing-output sanitation witness remains absent. Durable review comment 5253618566 stands. Do not count 4242 ancestor green or construction-head activity as closure; require a clean descendant absorbing #2964 and re-earned exact gates. PHYSICAL NO-GO."
 }
