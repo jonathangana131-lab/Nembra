@@ -1923,6 +1923,26 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
+                        // The package seal retires ledger callback authority before this MainActor
+                        // continuation resumes. A late SDK terminal/view lifecycle callback may run
+                        // in that suspension window, so app-side generation + phase authority must
+                        // still match the exact observing generation before accepted promotion.
+                        // Do not attempt a second ledger terminal here: the package seal is already
+                        // immutable; this fence only prevents stale app-side state from repainting
+                        // a concurrent terminal lifecycle result as accepted.
+                        guard self.currentConnectionToken == token,
+                              self.phase == .observing else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "Authenticated session authority changed while canonical acceptance was sealing. Relaunch Capture before a new stationary read-only attempt; the sealed package chronology is diagnostic only."
+                            self.log("session_authority_changed_during_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
                         guard self.buildIdentity.isAuthoritativeFieldBuild,
                               self.accountIdentityLeaseIsAuthorized else {
                             self.currentConnectionToken = nil
