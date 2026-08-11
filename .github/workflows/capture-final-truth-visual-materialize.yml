@@ -1,0 +1,34 @@
+name: Capture Final Truth Visual Materialize
+
+on:
+  push:
+    branches:
+      - recovery/v14-capture-final-truth-visual-convergence-sol
+    paths:
+      - .github/workflows/capture-final-truth-visual-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Materialize current-final precision root
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 9df1def03af40f1e452acb3f6d2aa5d52dac5681
+          python3 .github/capture_final_truth_visual_materialize.py
+          rm .github/capture_final_truth_visual_materialize.py
+          rm .github/workflows/capture-final-truth-visual-materialize.yml
+          git diff --check
+          git config user.name nembra-capture-bot
+          git config user.email nembra-capture-bot@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(capture): converge precision root on canonical final head'
+          git push origin HEAD:recovery/v14-capture-final-truth-visual-convergence-sol
