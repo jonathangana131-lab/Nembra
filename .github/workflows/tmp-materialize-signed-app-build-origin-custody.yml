@@ -93,7 +93,7 @@ jobs:
           bash -n scripts/field/install_one_time_capture.command
           git diff --check
 
-      - name: Commit clean production tree
+      - name: Stage clean production tree
         shell: bash
         run: |
           set -euo pipefail
@@ -110,7 +110,18 @@ jobs:
             echo 'ERROR: temporary construction files would survive production commit' >&2
             exit 1
           fi
+          git status --short
+
+      - name: Commit production tree
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name 'nembra-sol-swarm'
           git config user.email 'nembra-sol-swarm@users.noreply.github.com'
           git commit -m 'Bind signed app to build output custody'
+
+      - name: Push production tree
+        shell: bash
+        run: |
+          set -euo pipefail
           git push origin HEAD:repair/v14-signed-app-build-origin-custody-sol-20260811
