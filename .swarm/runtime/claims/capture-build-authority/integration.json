@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607r4",
   "leaseId": "capture-build-integration-1607r4-20260811-2314",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:14:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:14:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:17:00Z",
+  "releasedAt": "2026-08-11T23:17:00Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-selected-xcode-acl-field-source-contract-sol-r8-20260811",
   "pr": 3088,
@@ -17,6 +18,6 @@
   "currentHeadSHA": "31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4",
   "takeoverFromWorkerId": "sol-20260811-1439r8",
   "takeoverFromLeaseId": "capture-build-integration-r8-20260811-2231",
-  "takeoverReason": "Generation-5 integration was explicitly released. Fresh Go claims the non-conflicting integration role to refresh exact #3088 evidence/review, verify its one-workflow source-contract convergence remains a clean descendant of #3072, and advance it only when exact-head acceptance permits. No selected-Xcode production edits, signing/device actions, or physical authority. PHYSICAL NO-GO.",
-  "checkpoint": "Claimed released integration slot. Target #3088 exact 31cca94c on #3072 exact 3e41ecd0. Next: refresh PR head, exact workflow status, changed-file scope, and independent review state before any integration action."
+  "takeoverReason": "Generation-5 integration was explicitly released. Fresh Go recovered the role to refresh exact #3088 acceptance without touching selected-Xcode production paths.",
+  "checkpoint": "#3088 exact 31cca94c now has terminal Capture Field Build Provenance SUCCESS run 31542271509; all job steps including exact-source bind, private provenance, signed identity, compiler-window vnode custody, source contract, and Simulator build succeeded. Exact Xcode run 31542271777 is SKIPPED and not counted. Independent source review already accepts the one-workflow delta. Integration remains BLOCKED because parent #3072 exact 3e41ecd0 is not accepted: ACL custody 31540635879 FAILURE, Xcode 31540655430 FAILURE, Main Selective Graft 31540635890 FAILURE, plus old parent Field 31540635877 FAILURE. Durable PR comment 5259921800 records the refresh. Active build-authority review owns parent classification, so this integration claim is released rather than idling. PHYSICAL NO-GO."
 }
