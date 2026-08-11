@@ -1,0 +1,76 @@
+name: Temporary Capture AX truth union
+
+on:
+  push:
+    branches:
+      - integration/v14-capture-root-ax-truth-union-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add heading semantics to AX truth convergence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              return text.replace(old, new, 1)
+
+          app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          app = app_path.read_text()
+          app = replace_once(
+              app,
+              '            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())\n            .fixedSize(horizontal: false, vertical: true)',
+              '            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())\n            .fixedSize(horizontal: false, vertical: true)\n            .accessibilityAddTraits(.isHeader)',
+              'root hero heading',
+          )
+          app = replace_once(
+              app,
+              '            .foregroundStyle(.secondary)\n            .fixedSize(horizontal: false, vertical: true)\n        }\n        .accessibilityElement(children: .combine)\n    }\n\n    private var buildAuthorityDetail',
+              '            .foregroundStyle(.secondary)\n            .fixedSize(horizontal: false, vertical: true)\n        }\n    }\n\n    private var buildAuthorityDetail',
+              'root hero VoiceOver separation',
+          )
+          app_path.write_text(app)
+
+          for relative in [
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift",
+          ]:
+              path = Path(relative)
+              text = path.read_text()
+              if '.accessibilityAddTraits(.isHeader)' not in text:
+                  anchor = '#expect(root.contains(".accessibilityIdentifier(\\"capture.p0-root\\")"))'
+                  if anchor in text:
+                      text = text.replace(anchor, anchor + '\n        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))', 1)
+                  else:
+                      anchor = '#expect(root.contains("TextField(\\"Paste user code\\""))'
+                      if anchor not in text:
+                          raise SystemExit(f"heading assertion anchor missing in {relative}")
+                      text = text.replace(anchor, anchor + '\n        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))', 1)
+              path.write_text(text)
+
+          Path(".github/workflows/tmp-capture-ax-truth-union-gpt56.yml").unlink()
+          PY
+          git diff --check
+      - name: Commit product-only union
+        shell: bash
+        run: |
+          git config user.name "nembra-v14-gpt56"
+          git config user.email "nembra-v14-gpt56@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift \
+            .github/workflows/tmp-capture-ax-truth-union-gpt56.yml
+          git commit -m "fix(capture): converge AX action and truth semantics"
+          git push origin HEAD:integration/v14-capture-root-ax-truth-union-gpt56
