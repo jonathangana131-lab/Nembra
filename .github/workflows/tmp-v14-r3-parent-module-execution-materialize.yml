@@ -2,14 +2,14 @@ name: TEMP Capture R3 Parent Module Execution Materializer
 
 on:
   push:
-    branches: [repair/v14-r3-parent-module-execution-sol]
+    branches:
+      - repair/v14-r3-parent-module-execution-sol
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -17,218 +17,18 @@ jobs:
         with:
           ref: repair/v14-r3-parent-module-execution-sol
           fetch-depth: 0
-      - name: Apply exact accepted-Git parent loader repair
+      - name: Materialize and validate repair
         shell: bash
         run: |
           set -euo pipefail
           export PYTHONDONTWRITEBYTECODE=1
-          python3 - <<'PY'
-          from pathlib import Path
-
-          source_path = Path('scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py')
-          source = source_path.read_text(encoding='utf-8')
-
-          source = source.replace(
-              'PARENT_BRANCH = "control/v14-auth-stationary-final-go-sol"\n',
-              'PARENT_BRANCH = "control/v14-auth-stationary-final-go-sol"\n'
-              'PARENT_SOURCE_COMMIT = "3fdd32551831c3469e0853ddcee8fa828d38b87b"\n'
-              'PARENT_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"\n',
-              1,
-          )
-
-          old_loader = '''def _load_base_module():
-              path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")
-              spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)
-              if spec is None or spec.loader is None:
-                  raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")
-              module = importlib.util.module_from_spec(spec)
-              spec.loader.exec_module(module)
-              return module
-          '''
-          old_loader = '\n'.join(line[14:] if line.startswith('              ') else line for line in old_loader.splitlines()) + '\n'
-          new_loader = '''def _parent_git_environment() -> dict[str, str]:
-              return {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
-
-
-def _accepted_parent_module_bytes(root: Path, source: str) -> bytes:
-              if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source):
-                  raise GeneratedSubjectGoError("accepted parent source identity is invalid")
-              try:
-                  accepted_oid = subprocess.run(
-                      ["/usr/bin/git", "-C", str(root), "rev-parse", f"{source}:{PARENT_MODULE_PATH}"],
-                      check=True,
-                      text=True,
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.PIPE,
-                      env=_parent_git_environment(),
-                  ).stdout.strip().lower()
-                  payload = subprocess.run(
-                      ["/usr/bin/git", "-C", str(root), "cat-file", "blob", accepted_oid],
-                      check=True,
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.PIPE,
-                      env=_parent_git_environment(),
-                  ).stdout
-                  verified = subprocess.run(
-                      ["/usr/bin/git", "-C", str(root), "hash-object", "--stdin"],
-                      input=payload,
-                      check=True,
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.PIPE,
-                      env=_parent_git_environment(),
-                  ).stdout.decode("ascii").strip().lower()
-              except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
-                  raise GeneratedSubjectGoError("accepted parent Final-GO Git custody failed") from error
-              if (
-                  not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_oid)
-                  or not payload
-                  or len(payload) > 4 * 1024 * 1024
-                  or verified != accepted_oid
-                  or _git_blob_oid(payload, accepted_oid) != accepted_oid
-              ):
-                  raise GeneratedSubjectGoError("accepted parent Final-GO execution bytes failed Git identity verification")
-              return payload
-
-
-def _load_base_module():
-              root = Path(__file__).resolve().parents[2]
-              payload = _accepted_parent_module_bytes(root, PARENT_SOURCE_COMMIT)
-              filename = f"git:{PARENT_SOURCE_COMMIT}:{PARENT_MODULE_PATH}"
-              module = types.ModuleType("nembra_authenticated_stationary_final_go")
-              module.__file__ = str(root / PARENT_MODULE_PATH)
-              module.__package__ = ""
-              try:
-                  exec(compile(payload, filename, "exec", dont_inherit=True), module.__dict__)
-              except Exception as error:
-                  raise GeneratedSubjectGoError("accepted parent Final-GO Git blob could not execute") from error
-              return module
-          '''
-          new_loader = '\n'.join(line[14:] if line.startswith('              ') else line for line in new_loader.splitlines()) + '\n'
-          if old_loader not in source:
-              raise SystemExit('old mutable parent loader not found exactly once')
-          source = source.replace(old_loader, new_loader, 1)
-
-          source = source.replace(
-              '    "scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py",\n)',
-              '    "scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py",\n'
-              '    "scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py",\n'
-              ')',
-              1,
-          )
-
-          old_parent_sha = '    parent_sha = base.canon(parent_head.get("sha"), "parent Final-GO PR head")\n'
-          new_parent_sha = old_parent_sha + '    if parent_sha != PARENT_SOURCE_COMMIT:\n        raise GeneratedSubjectGoError("generated-subject control plane parent moved beyond pinned execution authority")\n'
-          if source.count(old_parent_sha) != 1:
-              raise SystemExit('parent SHA seam not unique')
-          source = source.replace(old_parent_sha, new_parent_sha, 1)
-          source_path.write_text(source, encoding='utf-8')
-
-          test_path = Path('scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py')
-          test_path.write_text(r'''#!/usr/bin/env python3
-"""Regression for R3 loading its authenticated-stationary base from accepted Git bytes."""
-from __future__ import annotations
-import importlib.util
-from pathlib import Path
-import subprocess
-import sys
-import tempfile
-import unittest
-
-REPOSITORY = Path(__file__).resolve().parents[3]
-R3_SOURCE = REPOSITORY / "scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py"
-R3_RELATIVE = "scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py"
-BASE_RELATIVE = "scripts/ci/es80_authenticated_stationary_final_go.py"
-
-
-class GeneratedSubjectBaseModuleExecutionCustodyTests(unittest.TestCase):
-    def test_hidden_base_worktree_replacement_never_executes_from_r3_loader(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="nembra-r3-base-module-exec-") as temporary:
-            root = Path(temporary).resolve(strict=True)
-            sentinel = root / "attacker-base-executed"
-            r3 = root / R3_RELATIVE
-            base = root / BASE_RELATIVE
-            r3.parent.mkdir(parents=True, exist_ok=True)
-            r3.write_bytes(R3_SOURCE.read_bytes())
-            base.write_text("#!/usr/bin/env python3\nBASE_MARKER = 'accepted'\n", encoding="utf-8")
-            subprocess.run(["/usr/bin/git", "-C", str(root), "init", "-q"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "config", "user.email", "capture@nembra.invalid"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "config", "user.name", "Nembra Capture QA"], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "add", "."], check=True)
-            subprocess.run(["/usr/bin/git", "-C", str(root), "commit", "-qm", "accepted R3/base fixture"], check=True)
-            accepted_source = subprocess.check_output(["/usr/bin/git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
-            accepted_blob = subprocess.check_output(["/usr/bin/git", "-C", str(root), "rev-parse", f"{accepted_source}:{BASE_RELATIVE}"], text=True).strip()
-            subprocess.run(["/usr/bin/git", "-C", str(root), "update-index", "--assume-unchanged", BASE_RELATIVE], check=True)
-            base.write_text(
-                "#!/usr/bin/env python3\nfrom pathlib import Path\n"
-                + f"Path({str(sentinel)!r}).write_text('executed', encoding='utf-8')\n"
-                + "BASE_MARKER = 'substituted'\n",
-                encoding="utf-8",
-            )
-            current_blob = subprocess.check_output(["/usr/bin/git", "-C", str(root), "hash-object", "--no-filters", "--", BASE_RELATIVE], text=True).strip()
-            self.assertNotEqual(current_blob, accepted_blob)
-            self.assertEqual(subprocess.check_output(["/usr/bin/git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"], text=True), "")
-            previous = sys.dont_write_bytecode
-            sys.dont_write_bytecode = True
-            try:
-                spec = importlib.util.spec_from_file_location("r3_loader_fixture", r3)
-                if spec is None or spec.loader is None:
-                    self.fail("could not load R3 fixture")
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                module.PARENT_SOURCE_COMMIT = accepted_source
-                loaded = module._load_base_module()
-            finally:
-                sys.dont_write_bytecode = previous
-            self.assertFalse(sentinel.exists(), "R3 executed mutable authenticated-stationary base worktree bytes before exact parent authority was established")
-            self.assertEqual(getattr(loaded, "BASE_MARKER", None), "accepted")
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-''', encoding='utf-8')
-
-          workflow_path = Path('.github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml')
-          workflow = workflow_path.read_text(encoding='utf-8')
-          trigger_line = '      - scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py\n'
-          if workflow.count(trigger_line) != 2:
-              raise SystemExit('canonical workflow helper trigger count drifted')
-          workflow = workflow.replace(trigger_line, trigger_line + '      - scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py\n')
-          compile_line = '            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py\n'
-          if workflow.count(compile_line) != 1:
-              raise SystemExit('canonical workflow helper compile seam drifted')
-          workflow = workflow.replace(compile_line, compile_line.rstrip('\n') + ' \\\n            scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py\n', 1)
-          run_block = '''      - name: Prove generated helper executes from accepted Git bytes
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
-'''
-          if workflow.count(run_block) != 1:
-              raise SystemExit('canonical workflow helper run seam drifted')
-          workflow = workflow.replace(
-              run_block,
-              run_block + '''
-      - name: Prove authenticated-stationary parent executes from accepted Git bytes
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
-''',
-              1,
-          )
-          workflow_path.write_text(workflow, encoding='utf-8')
-
-          materializer = Path('.github/workflows/tmp-v14-r3-parent-module-execution-materialize.yml')
-          materializer.unlink()
-          PY
-          python3 -m py_compile \
-            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
-            scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+          python3 scripts/ci/tmp_materialize_r3_parent_execution.py
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
           python3 scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
           python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
-          bash -n scripts/field/install_one_time_capture.command
           git diff --check
           test ! -e .github/workflows/tmp-v14-r3-parent-module-execution-materialize.yml
+          test ! -e scripts/ci/tmp_materialize_r3_parent_execution.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
