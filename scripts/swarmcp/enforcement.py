@@ -15,6 +15,19 @@ _REVIEW_ROLES = {"review", "adversarial-review", "architecture-review"}
 
 
 def validate_lane(raw):
+    # Preflight slot resources before the base validator performs set membership.
+    if isinstance(raw, dict):
+        slots = raw.get("slots", [])
+        if not isinstance(slots, list):
+            raise ValidationError("slots must be array")
+        for slot in slots:
+            if not isinstance(slot, dict):
+                raise ValidationError("slot must be object")
+            resources = slot.get("resources", [])
+            if not isinstance(resources, list):
+                raise ValidationError("slot.resources must be array")
+            if any(not isinstance(resource, str) for resource in resources):
+                raise ValidationError("slot.resources must contain strings")
     lane = _BASE_VALIDATE_LANE(raw)
     tags = lane.get("tags", [])
     if not isinstance(tags, list):
@@ -39,8 +52,6 @@ def validate_claim(raw):
     return claim
 
 
-# Tighten the validators used by the already-loaded engine/policy modules without
-# duplicating their implementation. Function globals are resolved at call time.
 _model.validate_lane = validate_lane
 _model.validate_claim = validate_claim
 _engine.validate_lane = validate_lane
@@ -71,6 +82,27 @@ def _enforce_full_review_independence(store: Store, lane, reviewer: str):
             raise ValidationError("independent review requires a worker with no implementation ownership history")
 
 
+def _renew_scheduler_guard_before_write(store: Store, held: StoredValue, worker: str):
+    """CAS-verify and renew scheduler ownership immediately before target mutation."""
+    current = store.get(_policy.SCHEDULER_GUARD_PATH)
+    guard = validate_claim(current.value)
+    expected = validate_claim(held.value)
+    if (
+        guard["workerId"] != worker
+        or guard["leaseId"] != expected["leaseId"]
+        or guard["generation"] != expected["generation"]
+        or guard["status"] != "ACTIVE"
+    ):
+        raise LeaseLostError("scheduler mutation guard ownership changed")
+    guard["lastHeartbeatAt"] = format_time(utc_now())
+    return store.update(
+        _policy.SCHEDULER_GUARD_PATH,
+        guard,
+        current.version,
+        "swarm: renew scheduler mutation guard before write",
+    )
+
+
 def claim_slot(store, lane, slot, worker, now, branch="", pr=None, source_sha=None, config=None):
     config = validate_config(config or default_config())
     held = _policy._acquire_scheduler_guard(store, worker, now)
@@ -79,13 +111,14 @@ def claim_slot(store, lane, slot, worker, now, branch="", pr=None, source_sha=No
         if slot_def["role"] in _REVIEW_ROLES:
             _enforce_full_review_independence(store, lane, worker)
         claim = _engine.new_claim(lane, slot, worker, now, branch, pr, source_sha)
+        _renew_scheduler_guard_before_write(store, held, worker)
         return store.create(
             claim_path(lane["laneId"], slot),
             claim,
             f"swarm: claim {lane['laneId']}/{slot}",
         )
     finally:
-        _policy._release_scheduler_guard(store, held, worker, now)
+        _policy._release_scheduler_guard(store, held, worker, utc_now())
 
 
 def takeover_claim(store, lane, slot, worker, now, branch="", pr=None, source_sha=None, config=None):
@@ -117,9 +150,10 @@ def takeover_claim(store, lane, slot, worker, now, branch="", pr=None, source_sh
         )
         claim["priorWorkerIds"] = history
         claim = validate_claim(claim)
+        _renew_scheduler_guard_before_write(store, held, worker)
         return store.update(path, claim, current.version, f"swarm: takeover {lane['laneId']}/{slot}")
     finally:
-        _policy._release_scheduler_guard(store, held, worker, now)
+        _policy._release_scheduler_guard(store, held, worker, utc_now())
 
 
 def _slot_declared_resources(lane, slot_name: str):
@@ -199,9 +233,6 @@ def validate_state_snapshot(lanes, claims, workers, events, resources, now):
     return errors
 
 
-# Make all claim/takeover entry points use the hardened implementation. The scheduler
-# wrapper is kept separately so legacy unit tests of raw resource occupancy stay useful,
-# while the live CLI always calls safe_recommend_slots.
 _policy.claim_slot = claim_slot
 _policy.takeover_claim = takeover_claim
 _engine.claim_slot = claim_slot
