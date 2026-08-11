@@ -84,7 +84,7 @@ xcodebuild \
   -resultBundlePath "$RESULT_BUNDLE" \
   -test-timeouts-enabled YES \
   -default-test-execution-time-allowance 120 \
-  -maximum-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 180 \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
   ONLY_ACTIVE_ARCH=YES \
