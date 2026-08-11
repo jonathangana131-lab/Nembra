@@ -7,17 +7,17 @@
   "workerId": "sol-20260811-4f51fg",
   "leaseId": "capture-private-identity-review-4f51fg-20260811-1200",
   "generation": 3,
-  "status": "ACTIVE",
+  "status": "NEEDS_CHANGES",
   "claimedAt": "2026-08-11T12:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:52:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:55:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
-  "currentHeadSHA": "1834a39ac44e09cf12426cf28cb95ed3c008e9a2",
+  "currentHeadSHA": "e2c3b06fb32644c17eea649de103fe50d7478635",
   "findingPR": 2918,
   "findingHeadSHA": "d8c069069daa32da048e3fb02426c81776f38de0",
   "findingRun": 31488913742,
-  "findingState": "SOURCE_ACCEPTED_PENDING_EXACT_HEAD_GATES",
-  "reviewFinding": "Clean #2944 exact 1834a39 is behind 0 with seven durable paths and no temp materializer. Independent source review found no blocker for declared scope: recovery/reuse and all failure sanitation remain exact-held-descriptor authority; pre-rebind gap is closed; obsolete pathname cleanup helpers are gone; replacement survival, payload/final-name/admitted-ancestry contracts remain; recovered successful reuse removes the root tombstone and composes with Build raw-tree authority. Exact Private Identity run 31492412384 is terminal SUCCESS. Field 31492412374, Main Graft 31492412380, and Xcode 31492412413 remain pending and must all become terminal SUCCESS on unchanged head before review acceptance can release. Durable review comment 5253345790. PHYSICAL NO-GO."
+  "findingState": "SUPERSEDED_SOURCE_ACCEPTANCE_NEW_EXPECTED_REDS_2964_2961",
+  "reviewFinding": "Prior source acceptance on 1834a39 is superseded. #2964 exact 7c641e69 / Private Identity run 31492962368 terminal FAILURE mechanically confirms admitted crash-residue bytes survive an early invalid-output rejection before recovered descriptor sanitation. #2961 exact d7aa662e / Failed Bootstrap Admission run 31492665010 terminal FAILURE confirms failed private publication can become later CocoaPods input on the predecessor; 1834a39 did not change bootstrap admission. Current #2944 exact e2c3b06 only adds Scripts/capture_tuya_private_identity_authority.py; it is not yet wired into provisioning/bootstrap/build and does not change _write_staged, so neither blocker is closed by this head. Durable review comment 5253472551 requires transaction wiring + early-rejection sanitation + permanent replay + clean exact-head acceptance reset. PHYSICAL NO-GO."
 }
