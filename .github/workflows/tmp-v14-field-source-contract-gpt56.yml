@@ -59,24 +59,19 @@ jobs:
               raise SystemExit('accepted-source ordering contract was not materialized')
           PY
           git diff --check
-      - name: Verify exact publish path set
+      - name: Stage only the permanent contract repair
         shell: bash
         run: |
           set -euo pipefail
           rm -f .github/workflows/tmp-v14-field-source-contract-gpt56.yml
           git add -A
-          /usr/bin/python3 - <<'PY'
-          import subprocess
-          expected = {
-              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift',
-              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift',
-              'scripts/ci/tests/test_capture_tuya_private_input_provenance.py',
-              '.github/workflows/tmp-v14-field-source-contract-gpt56.yml',
-          }
-          actual = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines())
-          if actual != expected:
-              raise SystemExit(f'unexpected publish path set: {sorted(actual)}')
-          PY
+          mapfile -t staged < <(git diff --cached --name-only)
+          test "${#staged[@]}" -eq 4
+          printf '%s\n' "${staged[@]}" | grep -Fx 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift'
+          printf '%s\n' "${staged[@]}" | grep -Fx 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift'
+          printf '%s\n' "${staged[@]}" | grep -Fx 'scripts/ci/tests/test_capture_tuya_private_input_provenance.py'
+          printf '%s\n' "${staged[@]}" | grep -Fx '.github/workflows/tmp-v14-field-source-contract-gpt56.yml'
+          git diff --cached --quiet -- scripts/ci/tmp_materialize_field_source_contract_gpt56.py
       - name: Publish permanent test-only repair
         shell: bash
         run: |
