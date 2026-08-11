@@ -76,26 +76,16 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             utterances.append(current)
         }
 
-        // Traverse a bounded horizon even after the required phrases appear so
-        // later forbidden authority cannot hide behind an early success break.
-        // VoiceOver navigation is a throwing API; after all required semantics
-        // are proven, a boundary/no-speech failure may terminate the horizon
-        // without converting infrastructure behavior into a product failure.
+        // Traverse the complete bounded horizon even after the required phrases
+        // appear so later forbidden authority cannot hide behind early success.
+        // Navigation failures remain failures: until a specific terminal-boundary
+        // contract is demonstrated, swallowing an arbitrary VoiceOver error could
+        // truncate the negative-authority oracle and manufacture false acceptance.
         for _ in 0..<64 {
-            do {
-                let output = try service.moveForward()
-                let utterance = output.utterance
-                if !utterance.isEmpty {
-                    utterances.append(utterance)
-                }
-            } catch {
-                let requiredAlreadyObserved = requiredSpeech.allSatisfy { phrase in
-                    utterances.contains(where: { $0.localizedCaseInsensitiveContains(phrase) })
-                }
-                if requiredAlreadyObserved {
-                    break
-                }
-                throw error
+            let output = try service.moveForward()
+            let utterance = output.utterance
+            if !utterance.isEmpty {
+                utterances.append(utterance)
             }
         }
 
