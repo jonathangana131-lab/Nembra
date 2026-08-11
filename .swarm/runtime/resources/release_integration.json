@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "resource-claim",
+  "laneId": "swarm-control-plane-foundation",
+  "slot": "release_integration",
+  "role": "resource",
+  "workerId": "sol-20260811-rv2804",
+  "leaseId": "res-release-integration-20260811-0637",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T06:37:00Z",
+  "lastHeartbeatAt": "2026-08-11T06:37:00Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": null,
+  "resource": "RELEASE_INTEGRATION"
+}
