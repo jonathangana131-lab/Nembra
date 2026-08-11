@@ -37,6 +37,7 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_selected_xcode_custody.py
           /usr/bin/python3 scripts/ci/tmp_materialize_selected_xcode_custody.py
+          /usr/bin/python3 -c 'from pathlib import Path; p=Path("scripts/field/install_one_time_capture.command"); s=p.read_text(); s=s.replace("SELECTED_DEVELOPER_DIR=\"$(/usr/bin/xcode-select -p)\" || die \"Could not resolve the system-selected Xcode developer directory.\"", "SELECTED_DEVELOPER_DIR=\"$(/usr/bin/xcode-select -p)\"\n[[ -n \"$SELECTED_DEVELOPER_DIR\" ]] || die \"Could not resolve the system-selected Xcode developer directory.\""); s=s.replace("DEVELOPER_DIR=\"$SELECTED_DEVELOPER_DIR\" DEVELOPER_DIR=\"$SELECTED_DEVELOPER_DIR\" /usr/bin/xcrun", "DEVELOPER_DIR=\"$SELECTED_DEVELOPER_DIR\" /usr/bin/xcrun"); p.write_text(s)'
           git diff --check
 
       - name: Compile focused authority tests
