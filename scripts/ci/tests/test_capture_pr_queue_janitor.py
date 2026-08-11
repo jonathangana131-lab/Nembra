@@ -4,12 +4,14 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 from pathlib import Path
+import sys
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "capture_pr_queue_janitor.py"
 spec = importlib.util.spec_from_file_location("capture_pr_queue_janitor", SCRIPT)
 assert spec is not None and spec.loader is not None
 janitor = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = janitor
 spec.loader.exec_module(janitor)
 
 
@@ -49,7 +51,7 @@ class CapturePRQueueJanitorTests(unittest.TestCase):
         }
         kwargs.update(overrides)
         return janitor.classify_run(
-            run or self.run(), self.pr() if prs is None else prs, **kwargs
+            run or self.run(), [self.pr()] if prs is None else prs, **kwargs
         )
 
     def test_only_three_direct_capture_workflows_are_allowlisted(self):
