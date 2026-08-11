@@ -54,6 +54,24 @@ class PrivateInputs:
     def generated_workspace(self) -> Path:
         return self.lockfile.parent / "NembraCapture.xcworkspace"
 
+    @property
+    def generated_manifest(self) -> Path:
+        return self.generated_pods / "Manifest.lock"
+
+    def _lock_mirror_snapshot(self) -> tuple[str, str]:
+        try:
+            lock_sha256 = build_subject.stable_file_sha256(self.lockfile)
+            manifest_sha256 = build_subject.stable_file_sha256(self.generated_manifest)
+        except build_subject.BuildSubjectError as error:
+            raise BuildGuardError(
+                f"CocoaPods lock/manifest mirror could not be admitted: {error}"
+            ) from error
+        if manifest_sha256 != lock_sha256:
+            raise BuildGuardError(
+                "Pods/Manifest.lock does not exactly mirror the reviewed attested Podfile.lock"
+            )
+        return lock_sha256, manifest_sha256
+
     def generation_snapshot(self):
         private_snapshot = provenance._private_input_record_generation_snapshot(
             lockfile=self.lockfile,
@@ -62,6 +80,7 @@ class PrivateInputs:
             identity_podspec=self.identity_podspec,
             identity_sources=self.identity_sources,
         )
+        lock_mirror_snapshot = self._lock_mirror_snapshot()
         try:
             accepted_generated_sha256 = build_subject.read_attestation(self.lockfile)
             observed_generated_sha256 = build_subject.build_subject_fingerprint(
@@ -77,9 +96,11 @@ class PrivateInputs:
                 "CocoaPods generated-build subject does not match the reviewed Podfile.lock attestation"
             )
 
-        # Re-sample private custody after the generated subject. The two halves
-        # are collected sequentially; this second private snapshot prevents one
-        # transient generation from being represented as a single accepted state.
+        # The private subject, mirrored lock, and generated graph are collected
+        # sequentially. Re-sample both independent authority halves before
+        # returning one generation witness so a transient mixed state cannot be
+        # represented as an accepted compile input.
+        final_lock_mirror_snapshot = self._lock_mirror_snapshot()
         final_private_snapshot = provenance._private_input_record_generation_snapshot(
             lockfile=self.lockfile,
             security_podspec=self.security_podspec,
@@ -91,8 +112,13 @@ class PrivateInputs:
             raise BuildGuardError(
                 "accepted private inputs changed while the generated-build subject was snapshotted"
             )
+        if final_lock_mirror_snapshot != lock_mirror_snapshot:
+            raise BuildGuardError(
+                "CocoaPods attested lock/manifest mirror changed while the generated-build subject was snapshotted"
+            )
         return (
             private_snapshot,
+            lock_mirror_snapshot,
             accepted_generated_sha256,
             observed_generated_sha256,
         )
