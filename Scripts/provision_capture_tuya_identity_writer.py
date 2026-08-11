@@ -538,7 +538,6 @@ def _write_staged(
     components = _relative_components(destination_relative)
     if components[-1] != final_name:
         raise ProvisionError("private identity final name does not match its admitted relative path")
-    _validate_existing_output(destination_parent_fd, final_name)
 
     temporary_name = (
         recovered_stage.name
@@ -551,6 +550,14 @@ def _write_staged(
         if recovered_stage is not None:
             staging_fd = recovered_stage.take_descriptor()
             _require_recovered_stage_binding(checkout_fd, recovered_stage, staging_fd)
+
+        # Once a crash residue has been admitted by exact descriptor identity, all
+        # subsequent fail-closed exits must sanitize that exact held inode. Keep
+        # destination validation inside the same protected window so attacker-
+        # controlled destination shape cannot strand credential-bearing bytes.
+        _validate_existing_output(destination_parent_fd, final_name)
+
+        if recovered_stage is not None:
             os.ftruncate(staging_fd, 0)
             os.lseek(staging_fd, 0, os.SEEK_SET)
         else:
