@@ -71,16 +71,28 @@ class FinalGoSnapshotReleaseRaceRedTeamTests(unittest.TestCase):
         path.chmod(0o644)
 
     def test_control_replacement_before_final_rebind_is_rejected(self) -> None:
+        """A replacement after the under-custody audit but before final rebind is caught."""
         with tempfile.TemporaryDirectory(prefix="nembra-finalgo-snapshot-release-control-") as temporary:
             sandbox = Path(temporary)
             root = sandbox / "repo"
             root.mkdir()
             source, tracked = self._candidate(root)
             original_audit = MODULE._ORIGINAL_AUDIT
+            audit_count = 0
+            mutation_count = 0
 
             def mutate_before_final_rebind(current_root: Path, current_source: str):
+                nonlocal audit_count, mutation_count
                 result = original_audit(current_root, current_source)
-                self._atomic_replace(tracked, ATTACKER_BYTES, sandbox)
+                audit_count += 1
+                # Current #3038 runs a preliminary validation audit before
+                # descriptor admission, then a second parent audit while the
+                # held snapshot is live. The control must mutate only after the
+                # authoritative under-custody audit, otherwise it merely attacks
+                # admission and never reaches the final-rebind boundary.
+                if audit_count == 2:
+                    self._atomic_replace(tracked, ATTACKER_BYTES, sandbox)
+                    mutation_count += 1
                 return result
 
             MODULE._ORIGINAL_AUDIT = mutate_before_final_rebind
@@ -89,6 +101,9 @@ class FinalGoSnapshotReleaseRaceRedTeamTests(unittest.TestCase):
                     MODULE._audit_candidate_tree(root, source)
             finally:
                 MODULE._ORIGINAL_AUDIT = original_audit
+
+            self.assertEqual(audit_count, 2, "control did not reach the under-custody parent audit")
+            self.assertEqual(mutation_count, 1, "control mutation schedule did not fire exactly once")
             self.assertEqual(tracked.read_bytes(), ATTACKER_BYTES)
 
     def test_replacement_after_final_identity_read_is_accepted_before_snapshot_release(self) -> None:
@@ -111,6 +126,8 @@ class FinalGoSnapshotReleaseRaceRedTeamTests(unittest.TestCase):
                 identity = original_identity(current_root, relative)
                 if relative == "A.swift":
                     identity_reads += 1
+                    # First read follows snapshot capture. Second read is the
+                    # final acceptance rebind after the under-custody parent audit.
                     if identity_reads == 2:
                         self._atomic_replace(tracked, ATTACKER_BYTES, sandbox)
                         mutation_count += 1
