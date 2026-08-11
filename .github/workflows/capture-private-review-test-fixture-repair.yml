@@ -1,0 +1,59 @@
+name: TEMP Capture Private Review Test Fixture Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Repair generated-helper fixture symbol
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path('scripts/ci/tests/test_capture_private_review_helper_execution_custody.py'),
+              Path('scripts/ci/tests/test_capture_private_review_commitment.py'),
+          ]
+          old = '(scripts / SUBJECT_HELPER.name).read_bytes()'
+          new = '(scripts / GENERATED.name).read_bytes()'
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one stale SUBJECT_HELPER fixture reference, found {count}')
+              text = text.replace(old, new, 1)
+              if 'SUBJECT_HELPER' in text:
+                  raise SystemExit(f'{path}: unexpected SUBJECT_HELPER reference remains')
+              path.write_text(text, encoding='utf-8')
+          PY
+          python3 -m py_compile \
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py \
+            scripts/ci/tests/test_capture_private_review_commitment.py
+          python3 -m unittest -v \
+            scripts.ci.tests.test_capture_private_review_helper_execution_custody.PrivateReviewHelperExecutionCustodyTests.test_bootstrap_rejects_substituted_verifier_execution_subject \
+            scripts.ci.tests.test_capture_private_review_helper_execution_custody.PrivateReviewHelperExecutionCustodyTests.test_build_guard_rejects_substituted_neighbor_verifier_execution_subject
+          python3 scripts/ci/tests/test_capture_private_review_commitment.py
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py \
+            scripts/ci/tests/test_capture_private_review_commitment.py
+          git diff --cached --quiet && { echo 'ERROR: fixture repair produced no test diff' >&2; exit 1; }
+          git commit -m 'Capture: repair generated-helper authority fixtures'
+          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
