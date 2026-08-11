@@ -1,4 +1,4 @@
-name: Capture Root AX First-Fold Materializer
+name: Capture Root AX First Fold Materializer
 
 on:
   push:
@@ -17,147 +17,34 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Verify exact parent and one-shot scope
+      - name: Verify unchanged product parent
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "9df1def03af40f1e452acb3f6d2aa5d52dac5681"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-root-ax-first-fold-materialize.yml"
+          test "$(git hash-object NembraApp/App/NembraCaptureEntrypoint.swift)" = "b81fbf5fd9e257393bde921f3a9f811377230020"
+          git merge-base --is-ancestor 9df1def03af40f1e452acb3f6d2aa5d52dac5681 HEAD
+          unexpected="$(git diff --name-only 9df1def03af40f1e452acb3f6d2aa5d52dac5681 HEAD | grep -Ev '^(\.github/workflows/capture-root-ax-first-fold-materialize\.yml|\.github/scripts/capture_root_ax_first_fold_materialize\.py)$' || true)"
+          test -z "$unexpected"
 
-      - name: Compress Accessibility first fold
+      - name: Materialize Accessibility first fold
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          source = path.read_text()
-
-          old_hero = '''            Text(
-                isAccessibilityLayout
-                    ? (fieldBuildIsAuthoritative
-                        ? "Link the account that owns this scooter before discovery."
-                        : "Account setup only in this public build.")
-                    : "Link the account that owns this scooter. Physical Capture still depends on the field-build gate and fresh scooter authority below."
-            )
-            .font(isAccessibilityLayout ? .callout : .body)
-            .foregroundStyle(Color.white.opacity(0.78))
-            .fixedSize(horizontal: false, vertical: true)
-'''
-          new_hero = '''            if !isAccessibilityLayout {
-                Text("Link the account that owns this scooter. Physical Capture still depends on the field-build gate and fresh scooter authority below.")
-                    .font(.body)
-                    .foregroundStyle(Color.white.opacity(0.78))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-'''
-
-          old_authority = '''                Text(
-                    isAccessibilityLayout
-                        ? (fieldBuildIsAuthoritative
-                            ? "Account and scooter authority are still required before Bluetooth starts."
-                            : "Public build: account metadata only. Bluetooth and physical evidence stay locked.")
-                        : (fieldBuildIsAuthoritative
-                            ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
-                            : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture.")
-                )
-                .font(isAccessibilityLayout ? .callout : .subheadline)
-                .foregroundStyle(Color.white.opacity(0.76))
-                .fixedSize(horizontal: false, vertical: true)
-'''
-          new_authority = '''                if !isAccessibilityLayout {
-                    Text(
-                        fieldBuildIsAuthoritative
-                            ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
-                            : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.76))
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-'''
-
-          old_account_heading = '''                        Text(tuya.isLinked ? "Account metadata ready" : "Prepare account metadata")
-                            .font(.title3.bold())
-                            .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
-                        Text(
-                            tuya.isLinked
-                                ? "Account context is ready for scooter selection."
-                                : "Use the Tuya Smart user code for the account that owns this scooter."
-                        )
-                        .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.74))
-                        .fixedSize(horizontal: false, vertical: true)
-'''
-          new_account_heading = '''                        Text(
-                            tuya.isLinked
-                                ? "Account metadata ready"
-                                : (isAccessibilityLayout ? "Account metadata" : "Prepare account metadata")
-                        )
-                        .font(isAccessibilityLayout ? .headline : .title3.bold())
-                        .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
-
-                        if !isAccessibilityLayout || tuya.isLinked {
-                            Text(
-                                tuya.isLinked
-                                    ? "Account context is ready for scooter selection."
-                                    : "Use the Tuya Smart user code for the account that owns this scooter."
-                            )
-                            .font(.subheadline)
-                            .foregroundStyle(Color.white.opacity(0.74))
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
-'''
-
-          old_ax_tail = '''                    if isAccessibilityLayout {
-                        Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
-                            .font(.footnote)
-                            .foregroundStyle(Color.white.opacity(0.72))
-                            .fixedSize(horizontal: false, vertical: true)
-                        statusText
-                    }
-'''
-          new_ax_tail = '''                    if isAccessibilityLayout {
-                        Text("Account setup only in this public build.")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(0.78))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
-                            .font(.footnote)
-                            .foregroundStyle(Color.white.opacity(0.72))
-                            .fixedSize(horizontal: false, vertical: true)
-                        statusText
-                    }
-'''
-
-          for name, old, new in [
-              ("hero", old_hero, new_hero),
-              ("authority", old_authority, new_authority),
-              ("account heading", old_account_heading, new_account_heading),
-              ("AX tail", old_ax_tail, new_ax_tail),
-          ]:
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f"{name}: expected exactly one source block, found {count}")
-              source = source.replace(old, new, 1)
-
-          path.write_text(source)
-          PY
-
+          python3 .github/scripts/capture_root_ax_first_fold_materialize.py
           git diff --check
           grep -Fq 'Text(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence.' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'Account setup only in this public build.' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'Create approval QR' NembraApp/App/NembraCaptureEntrypoint.swift
 
-      - name: Commit product-only result and self-delete
+      - name: Commit product-only result
         shell: bash
         run: |
           set -euo pipefail
           git rm .github/workflows/capture-root-ax-first-fold-materialize.yml
+          git rm .github/scripts/capture_root_ax_first_fold_materialize.py
           git diff --check
           git config user.name 'Nembra Capture Closure'
           git config user.email 'actions@users.noreply.github.com'
