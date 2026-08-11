@@ -101,12 +101,16 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
             self.assertIn(required, bootstrap)
         self.assertLess(bootstrap.index(required_digest), bootstrap.index("pod install --repo-update"))
         self.assertLess(bootstrap.index(lock_compare), bootstrap.index("NEXT BUILD RULE:"))
+        self.assertIn("run_accepted_source_bash() {", installer)
+        self.assertIn('run_authority_git show "$SOURCE_SHA:$relative_path"', installer)
+        self.assertIn("/bin/bash --noprofile --norc -p -c 'source /dev/stdin'", installer)
         self.assertIn(bootstrap_call, installer)
         self.assertNotIn(
             retired_bootstrap_call,
             installer,
             "field bootstrap must not be reopened from the mutable checkout pathname",
         )
+        self.assertNotIn('\n"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"\n', installer)
         self.assertIn(build_call, installer)
         self.assertLess(installer.index(bootstrap_call), installer.index(build_call))
 
