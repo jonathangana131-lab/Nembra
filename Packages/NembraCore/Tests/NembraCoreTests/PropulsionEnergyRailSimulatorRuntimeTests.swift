@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraCore
 
@@ -369,5 +370,158 @@ struct PropulsionEnergyRailSimulatorRuntimeTests {
         )
         #expect(invalidGeneration == false)
         #expect(runtime.projection(atUptimeNanoseconds: 2).currentness == .unavailable)
+    }
+
+    @Test("external clients cannot compile raw live or retained Simulator admission")
+    func externalConsumerCannotCompileRawScalarAdmission() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let harnessRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nembra-energy-rail-external-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: harnessRoot) }
+
+        try FileManager.default.createDirectory(
+            at: harnessRoot,
+            withIntermediateDirectories: true
+        )
+
+        let packagePathLiteral = String(reflecting: packageRoot.path)
+        let manifest = """
+        // swift-tools-version: 6.2
+        import PackageDescription
+
+        let package = Package(
+            name: "EnergyRailExternalAuthorityProbe",
+            dependencies: [
+                .package(name: "NembraCore", path: \(packagePathLiteral))
+            ],
+            targets: [
+                .executableTarget(
+                    name: "Control",
+                    dependencies: [.product(name: "NembraCore", package: "NembraCore")]
+                ),
+                .executableTarget(
+                    name: "LiveProbe",
+                    dependencies: [.product(name: "NembraCore", package: "NembraCore")]
+                ),
+                .executableTarget(
+                    name: "RetainedProbe",
+                    dependencies: [.product(name: "NembraCore", package: "NembraCore")]
+                )
+            ]
+        )
+        """
+        try manifest.write(
+            to: harnessRoot.appendingPathComponent("Package.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try writeExternalProbe(
+            """
+            import NembraCore
+            let runtime = try PropulsionEnergyRailSimulatorRuntime()
+            _ = runtime.identity
+            """,
+            target: "Control",
+            harnessRoot: harnessRoot
+        )
+        try writeExternalProbe(
+            """
+            import NembraCore
+            var runtime = try PropulsionEnergyRailSimulatorRuntime()
+            _ = runtime.acceptLiveSource(
+                watts: 999,
+                receiptSequenceNumber: 1,
+                receivedAtUptimeNanoseconds: 1,
+                continuityGeneration: 1
+            )
+            """,
+            target: "LiveProbe",
+            harnessRoot: harnessRoot
+        )
+        try writeExternalProbe(
+            """
+            import NembraCore
+            var runtime = try PropulsionEnergyRailSimulatorRuntime()
+            _ = runtime.retainSource(
+                watts: 999,
+                receiptSequenceNumber: 1,
+                receivedAtUptimeNanoseconds: 1,
+                continuityGeneration: 1
+            )
+            """,
+            target: "RetainedProbe",
+            harnessRoot: harnessRoot
+        )
+
+        let control = try buildExternalProbe(target: "Control", harnessRoot: harnessRoot)
+        #expect(
+            control.status == 0,
+            "Control external consumer must compile so forbidden-probe failures cannot be mistaken for unrelated package/build failures. Output: \(control.output)"
+        )
+
+        let live = try buildExternalProbe(target: "LiveProbe", harnessRoot: harnessRoot)
+        #expect(
+            live.status != 0,
+            "A generic external NembraCore client must not compile caller-minted LIVE Simulator power from raw watts/receipt scalars."
+        )
+        #expect(live.output.contains("acceptLiveSource"))
+
+        let retained = try buildExternalProbe(target: "RetainedProbe", harnessRoot: harnessRoot)
+        #expect(
+            retained.status != 0,
+            "A generic external NembraCore client must not compile caller-minted RETAINED Simulator power from raw watts/receipt scalars."
+        )
+        #expect(retained.output.contains("retainSource"))
+    }
+
+    private func writeExternalProbe(
+        _ source: String,
+        target: String,
+        harnessRoot: URL
+    ) throws {
+        let sourceDirectory = harnessRoot
+            .appendingPathComponent("Sources", isDirectory: true)
+            .appendingPathComponent(target, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: sourceDirectory,
+            withIntermediateDirectories: true
+        )
+        try source.write(
+            to: sourceDirectory.appendingPathComponent("main.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    private func buildExternalProbe(
+        target: String,
+        harnessRoot: URL
+    ) throws -> (status: Int32, output: String) {
+        let outputURL = harnessRoot.appendingPathComponent("\(target)-build.log")
+        FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+        let outputHandle = try FileHandle(forWritingTo: outputURL)
+        defer { try? outputHandle.close() }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [
+            "swift",
+            "build",
+            "--package-path", harnessRoot.path,
+            "--scratch-path", harnessRoot.appendingPathComponent(".build", isDirectory: true).path,
+            "--target", target
+        ]
+        process.standardOutput = outputHandle
+        process.standardError = outputHandle
+        try process.run()
+        process.waitUntilExit()
+
+        try outputHandle.synchronize()
+        let output = try String(contentsOf: outputURL, encoding: .utf8)
+        return (process.terminationStatus, output)
     }
 }
