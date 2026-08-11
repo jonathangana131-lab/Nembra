@@ -9,15 +9,15 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:54:15Z",
-  "lastHeartbeatAt": "2026-08-11T11:58:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:00:59Z",
   "leaseSeconds": 3600,
   "branch": "sol/1e59e0/capture-final-go-raw-tree-validation-r5",
   "pr": 2916,
   "sourceBranch": "repair/v14-final-go-candidate-worktree-authority-sol-20260811",
   "sourceSHA": "fc662c996ad4551e3bd7bba6e225e3bee9aa620c",
-  "currentHeadSHA": "ce70f2f56fc86ad049946f8821334c0375a993df",
+  "currentHeadSHA": "6ba32d25328f49a3ee273edc1ecf32f8d69724b8",
   "parentPR": 2890,
-  "outcome": "EXACT_HEAD_GREEN",
-  "workflowRunID": 31488923249,
-  "checkpoint": "#2916 exact-head raw candidate-tree validation is green against #2890 current head; independent review posted to #2890. Physical status remains NO-GO."
+  "outcome": "EXACT_HEAD_GREEN_EXPANDED",
+  "workflowRunID": 31489174175,
+  "checkpoint": "#2916 exact-head validation is green for raw untracked-ignore, assume-unchanged, skip-worktree, and no-external-status witnesses against #2890 current head. Physical status remains NO-GO."
 }
