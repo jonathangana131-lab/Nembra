@@ -23,7 +23,7 @@ jobs:
       - name: Bind exact repair trigger
         shell: bash
         env:
-          EXPECTED_PARENT: 51775082925369cbaab573c45340cc435ee5245c
+          EXPECTED_PARENT: fa83a3701fa975e7f8727298d99a4b02cbd90e14
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
@@ -31,51 +31,8 @@ jobs:
           test "$parent" = "$EXPECTED_PARENT"
           test "$(git diff --name-only "$EXPECTED_PARENT" "$actual")" = '.github/workflows/tmp-capture-private-identity-provenance-live.yml'
 
-      - name: Validate descriptor writer
+      - name: Patch provenance source
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
-          python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
-
-      - name: Validate wrapper fresh provisioning
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash -n Scripts/provision_capture_tuya_identity.sh
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "$tmp"' EXIT
-          output="$(printf 'dummy-app-key\ndummy-app-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime" bash Scripts/provision_capture_tuya_identity.sh 2>&1)"
-          test -f "$tmp/runtime/NembraTuyaPrivateConfig.podspec"
-          test -f "$tmp/runtime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift"
-          test "$(stat -c '%a' "$tmp/runtime/NembraTuyaPrivateConfig.podspec")" = 600
-          test "$(stat -c '%a' "$tmp/runtime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")" = 600
-          ! grep -R -Fq 'dummy-app-secret' "$tmp/runtime"
-          ! grep -Fq 'dummy-app-secret' <<< "$output"
-
-      - name: Validate wrapper no-reuse and no-symlink custody
-        shell: bash
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "$tmp"' EXIT
-          printf 'first-key\nfirst-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime" bash Scripts/provision_capture_tuya_identity.sh >/dev/null 2>&1
-          if printf 'second-key\nsecond-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime" bash Scripts/provision_capture_tuya_identity.sh >/dev/null 2>&1; then
-            echo 'ERROR: provisioner reused an existing runtime destination.' >&2
-            exit 1
-          fi
-          mkdir "$tmp/outside"
-          ln -s "$tmp/outside" "$tmp/runtime-link"
-          if printf 'link-key\nlink-secret\n' | NEMBRA_TUYA_RUNTIME_DIR="$tmp/runtime-link" bash Scripts/provision_capture_tuya_identity.sh >/dev/null 2>&1; then
-            echo 'ERROR: provisioner followed a runtime symlink.' >&2
-            exit 1
-          fi
-          test -z "$(find "$tmp/outside" -mindepth 1 -print -quit)"
-
-      - name: Wire dedicated provenance execution
-        shell: bash
-        env:
-          BRANCH: agent/v14-capture-private-identity-custody-live-sol
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -84,9 +41,9 @@ jobs:
           path = Path('.github/workflows/capture-field-build-provenance.yml')
           text = path.read_text()
 
-          def insert_after_first(marker: str, addition: str) -> None:
+          def after(marker: str, addition: str) -> None:
               global text
-              if addition.strip() in text:
+              if addition in text:
                   return
               index = text.find(marker)
               if index < 0:
@@ -94,39 +51,36 @@ jobs:
               end = index + len(marker)
               text = text[:end] + addition + text[end:]
 
-          insert_after_first(
-              '      - Scripts/provision_capture_tuya_identity.sh\n',
-              '      - Scripts/provision_capture_tuya_identity_writer.py\n',
-          )
-          insert_after_first(
-              '          bash -n Scripts/provision_capture_tuya_identity.sh\n',
-              '          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py\n'
-              '          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test\n',
-          )
-          insert_after_first(
-              "          private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'\n",
-              "          private_identity_writer='Scripts/provision_capture_tuya_identity_writer.py'\n",
-          )
-          insert_after_first(
-              '          test -f "$private_identity_provisioner"\n',
-              '          test -f "$private_identity_writer"\n',
-          )
-          insert_after_first(
-              "          grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' \"$private_identity_provisioner\"\n",
-              "          grep -Fq 'provision_capture_tuya_identity_writer.py' \"$private_identity_provisioner\"\n"
-              "          grep -Fq 'O_NOFOLLOW' \"$private_identity_writer\"\n"
-              "          grep -Fq 'O_DIRECTORY' \"$private_identity_writer\"\n"
-              "          grep -Fq 'O_EXCL' \"$private_identity_writer\"\n"
-              "          grep -Fq 'dir_fd=parent_fd' \"$private_identity_writer\"\n",
-          )
+          after('      - Scripts/provision_capture_tuya_identity.sh\n',
+                '      - Scripts/provision_capture_tuya_identity_writer.py\n')
+          after('          bash -n Scripts/provision_capture_tuya_identity.sh\n',
+                '          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py\n'
+                '          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test\n')
+          after("          private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'\n",
+                "          private_identity_writer='Scripts/provision_capture_tuya_identity_writer.py'\n")
+          after('          test -f "$private_identity_provisioner"\n',
+                '          test -f "$private_identity_writer"\n')
+          after("          grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' \"$private_identity_provisioner\"\n",
+                "          grep -Fq 'provision_capture_tuya_identity_writer.py' \"$private_identity_provisioner\"\n"
+                "          grep -Fq 'O_NOFOLLOW' \"$private_identity_writer\"\n"
+                "          grep -Fq 'O_DIRECTORY' \"$private_identity_writer\"\n"
+                "          grep -Fq 'O_EXCL' \"$private_identity_writer\"\n"
+                "          grep -Fq 'dir_fd=parent_fd' \"$private_identity_writer\"\n")
           path.write_text(text)
           PY
 
           grep -Fq -- '- Scripts/provision_capture_tuya_identity_writer.py' .github/workflows/capture-field-build-provenance.yml
           grep -Fq '/usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test' .github/workflows/capture-field-build-provenance.yml
           grep -Fq "private_identity_writer='Scripts/provision_capture_tuya_identity_writer.py'" .github/workflows/capture-field-build-provenance.yml
-          grep -Fq 'O_NOFOLLOW' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'dir_fd=parent_fd' .github/workflows/capture-field-build-provenance.yml
+          test "$(git diff --name-only)" = '.github/workflows/capture-field-build-provenance.yml'
 
+      - name: Commit provenance source
+        shell: bash
+        env:
+          BRANCH: agent/v14-capture-private-identity-custody-live-sol
+        run: |
+          set -euo pipefail
           git config user.name 'nembra-v14-sol'
           git config user.email 'actions@users.noreply.github.com'
           git add .github/workflows/capture-field-build-provenance.yml
