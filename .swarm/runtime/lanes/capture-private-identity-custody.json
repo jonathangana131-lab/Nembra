@@ -10,20 +10,28 @@
   "dependencies": [],
   "blockers": [
     {
-      "id": "legacy-pr-active",
+      "id": "recovery-pr-active-incomplete-byte-custody",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy publication-custody repair PR #2755 remains actively owned at exact 4f4249ab729e587a347a93f84e66917ccafc391f. Capture Private Identity Publication Races, Field Build Provenance, and Main Selective Graft are red and Xcode is skipped; do not duplicate production edits on this active branch. Exact current source/review confirms two publication invariants are still open together: same-inode same-size staging payload mutation is accepted because final validation binds dev/ino/link/size but never final bytes to the intended payload (#2767), and a post-publication validation failure can leave substituted attacker bytes at the credential-bearing final path because cleanup only unlinks the now-absent temporary name. The final writer repair must bind final descriptor bytes with stable metadata around the read, clean/reject contaminated final state safely, then update the privileged shell writer SHA and package custody contract only after writer bytes settle. Field acceptance also retains the macOS self-test portability blocker where trusted temporary `/var` ancestry can traverse a platform symlink; fix the trusted self-test path without weakening production no-symlink root custody.",
-      "pr": 2755,
-      "headSHA": "4f4249ab729e587a347a93f84e66917ccafc391f"
+      "reason": "Recovery #2858 supersedes stale #2755 and is active at exact cb72a47ee2489235febd40ac440bc9f8462ba432. It correctly closes staging-name regular/directory/symlink substitution by rebinding the source name to the sealed inode immediately before publication and making pre-publication cleanup inode-authoritative; its narrowed four-case Publication Races gate 31475822468 is terminal SUCCESS. Exact source review still finds TWO previously accepted #2767 publication invariants unresolved: (1) same-inode same-size payload overwrite remains accepted because post-publication validation checks dev/ino/link/size but never re-reads final descriptor bytes/digest against the intended payload; (2) if post-publication validation later rejects, exception cleanup still targets `temporary_name`, which is absent after rename, so a contaminated canonical final destination can remain. Restore the #2767 same-inode attack and close final-byte binding plus exact-owned final cleanup/quarantine without blindly deleting unrelated prior identity. Xcode is skipped and Selective Graft is red on this exact head; Field Provenance is queued. Green narrowed red-team is ingredient evidence only.",
+      "pr": 2858,
+      "headSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432"
     },
     {
       "id": "root-before-writer-regression-uncomposed",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Production shell on #2755 already has the correct security order: checkout FD 9 is admitted before `/bin/cat` captures writer bytes, writer digest is fenced, then hidden credentials are read. But its current `TuyaPrivateIdentityCheckoutRootCustodySourceTests.swift` only proves root admission and digest fence each precede credentials; it does NOT prove root admission precedes writer-byte capture. Review child #2733 exact 55d33a1be7b6e4ce692e316e61ee7bfa33d07376 carries the unique source-contract assertion `root admission -> writer byte capture -> digest fence -> credentials`. Preserve/absorb that regression into the final #2755 successor so later refactors cannot reopen the checkout-replacement interval while still satisfying the weaker before-credentials test.",
+      "reason": "Production shell order remains correct: checkout FD admission precedes writer-byte capture, digest fence, then hidden credential reads. Recovery #2858 has not yet absorbed #2733's unique source-contract assertion that mechanically locks `root admission -> writer byte capture -> digest fence -> credentials`; the existing weaker test only proves admission/digest precede credentials. Preserve #2733's regression in the final recovery so later refactors cannot reopen the checkout-replacement interval while satisfying the weaker contract.",
       "pr": 2733,
       "headSHA": "55d33a1be7b6e4ce692e316e61ee7bfa33d07376"
+    },
+    {
+      "id": "field-self-test-portability",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Inherited Field Build Provenance on the private-identity lineage previously reached the writer self-test on macOS and failed because trusted temporary `/var` ancestry may traverse the platform `/var -> /private/var` symlink while absolute no-follow root admission rejects it. Fix only the trusted self-test root/canonicalization path; do not weaken production admitted-checkout no-symlink custody. Revalidate on the eventual moved exact recovery after final writer bytes/digest/package contracts stabilize.",
+      "pr": 2858,
+      "headSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432"
     }
   ],
   "mode": "exclusive",
@@ -47,11 +55,12 @@
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
-    "primaryPR": 2755,
-    "primaryHeadSHA": "4f4249ab729e587a347a93f84e66917ccafc391f",
-    "lineagePRs": [2719,2733,2734,2755,2767],
-    "exactHeadGateState": "RED_PUBLICATION_FIELD_GRAFT_XCODE_SKIPPED",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:00Z. #2755 remains an active red production repair. #2767 same-inode payload mutation and contaminated-final cleanup remain real product defects in exact source; macOS self-test canonical-path portability remains a Field blocker. #2733 is a separate uncomposed regression hardening production's already-correct root-before-writer order. Final accepted successor must preserve admitted-root and Darwin secure-publication semantics, close both publication byte/cleanup invariants, update exact writer digest/package contract after bytes stabilize, absorb #2733 ordering regression, and rerun publication/Field/Graft/Xcode on one unchanged head. PHYSICAL NO-GO remains."
+    "primaryPR": 2858,
+    "primaryHeadSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432",
+    "supersededPrimaryPR": 2755,
+    "lineagePRs": [2719,2733,2734,2755,2767,2858],
+    "exactHeadGateState": "NARROW_PUBLICATION_GREEN_BUT_2767_BYTE_CUSTODY_MISSING_GRAFT_RED_XCODE_SKIPPED_FIELD_QUEUED",
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:05Z. #2858 is the correct recovery owner for source-name inode substitution, but exact current source still lacks #2767 final-byte binding and post-publication final-path cleanup, and its green four-case red-team no longer contains the same-inode mutation attack. #2733 ordering regression remains uncomposed. Preserve macOS self-test portability as a separate field blocker. Final accepted successor must close all three security contracts, settle writer digest/package contracts, and rerun publication/Field/Graft/Xcode on one unchanged clean head. PHYSICAL NO-GO remains."
   },
   "tags": ["capture", "p0", "private-identity", "publication-custody", "legacy-import"]
 }
