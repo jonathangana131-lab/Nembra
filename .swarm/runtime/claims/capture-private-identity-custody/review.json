@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-private-identity-custody",
+  "slot": "review",
+  "role": "adversarial-review",
+  "workerId": "sol-20260811-c4d2",
+  "leaseId": "capture-private-identity-review-c4d2-20260811-0939",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T09:39:45Z",
+  "lastHeartbeatAt": "2026-08-11T09:39:45Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 2755,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "currentHeadSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc"
+}
