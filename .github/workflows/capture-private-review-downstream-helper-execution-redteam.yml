@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - adversarial/v14-private-review-downstream-helper-exec-sol-20260811
+      - repair/v14-capture-exception-proxy-clean-sol-20260811
   pull_request:
     paths:
       - Scripts/bootstrap_capture_tuya_sdk.sh
@@ -12,6 +13,7 @@ on:
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/field/install_one_time_capture.command
       - scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+      - scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
       - scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py
       - .github/workflows/capture-private-review-downstream-helper-execution-redteam.yml
 
@@ -37,9 +39,11 @@ jobs:
         run: >-
           python3 -m py_compile
           scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+          scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
           scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py
       - name: Reject mutable downstream authority helpers
         run: >-
           python3 -m unittest -v
           scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
+          scripts.ci.tests.test_capture_private_review_exception_proxy_custody
           scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
