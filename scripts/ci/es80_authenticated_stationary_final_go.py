@@ -129,6 +129,13 @@ def control_plane(authority_repo:Path,pr:int,run_id:int,get=api):
     paths=("scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py",AUTH_WORKFLOW_PATH,"scripts/ci/tests/test_es80_authenticated_stationary_final_go.py")
     blobs={path:git(root,"rev-parse",f"HEAD:{path}").lower() for path in paths}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) for value in blobs.values()): raise GoError("GO control-plane Git blob identity invalid")
+    for path in paths:
+        verbose=git(root,"ls-files","-v","--",path)
+        tagged=git(root,"ls-files","-t","--",path)
+        if not verbose or verbose[:1].islower() or tagged.startswith("S "):
+            raise GoError("GO control-plane authority path has suppressed index worktree tracking")
+        actual_blob=git(root,"hash-object","--no-filters","--",path).lower()
+        if actual_blob!=blobs[path]: raise GoError("GO control-plane authority worktree bytes differ from accepted Git blob")
     return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"mainSHA":main_sha,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
 
 def visual(source:str,run:int,aid:int,archive:Path,get=api):
