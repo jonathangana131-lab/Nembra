@@ -1,0 +1,90 @@
+name: TEMP V14 Final GO custody composition
+
+on:
+  push:
+    branches:
+      - repair/v14-auth-final-go-custody-compose-sol
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Replay effective custody hardening onto live control head
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='e216252ccb2948ff4370a57165fa9475983e51d7'
+          child='36feddadc1b5bcfb28274b2e7e5f1d3d341e3335'
+          current='a79681b538ffdd70b0538c251438f8590c6f0b9f'
+          test "$(git rev-parse HEAD^)" = "$current"
+          git cat-file -e "$base^{commit}"
+          git cat-file -e "$child^{commit}"
+          git diff --binary "$base..$child" -- \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py > /tmp/custody.patch
+          test -s /tmp/custody.patch
+          git apply --3way /tmp/custody.patch
+
+      - name: Validate combined authority contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
+          tests = Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py').read_text()
+          required_source = (
+              'def canonical_private_path(',
+              'canonical_private_path(path,"private intended-device identifier")',
+              'mainSHA',
+              'def _tracked_worktree_bytes(',
+              'git(root,"ls-files","-v","--",relative)',
+              'candidate worktree bytes differ from accepted Git blob',
+              '"PATH":"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"',
+              '["/bin/bash","-p",str(root/INSTALLER),source]',
+              'stable_pr=("number","headSHA","headBranch","base","mainSHA","state","merged","draft")',
+              '"headBranch":branch,"state":state,"merged":merged,"draft":draft',
+          )
+          for needle in required_source:
+              if needle not in source:
+                  raise SystemExit(f'missing combined authority invariant: {needle}')
+          required_tests = (
+              'test_private_device_path_rejects_symlinked_parent_and_noncanonical_paths',
+              'test_current_main_is_bound_and_must_be_candidate_ancestor',
+              'test_candidate_rejects_hidden_index_flags_and_worktree_byte_drift',
+              'test_installer_ignores_inherited_bash_startup_environment',
+              'test_post_install_current_main_or_pr_state_drift_is_rejected',
+          )
+          for needle in required_tests:
+              if needle not in tests:
+                  raise SystemExit(f'missing combined regression: {needle}')
+          PY
+          git diff --check
+
+      - name: Publish clean composed child
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/temp-v14-auth-final-go-custody-compose.yml
+          git add -A
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'scripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go.py'
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'nembra-v14-sol@users.noreply.github.com'
+          git commit -m 'fix(capture): compose Final-GO installer custody hardening'
+          git push origin HEAD:repair/v14-auth-final-go-custody-compose-sol
