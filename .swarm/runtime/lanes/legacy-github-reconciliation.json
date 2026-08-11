@@ -4,7 +4,7 @@
   "laneId": "legacy-github-reconciliation",
   "epic": "swarm-control-plane",
   "title": "Reconcile legacy live GitHub work into V15 state",
-  "objective": "Inspect current main, open PRs, branches, CI and stale swarm artifacts; group active work by real objective and exact lineage; import the minimum trustworthy lanes and supersession records without duplicating implementation.",
+  "objective": "Inspect current main, open PRs, branches, CI and stale swarm artifacts; group active work by real objective and exact lineage; import the minimum trustworthy lanes and supersession records without duplicating implementation. Reconciliation is deliberately sharded so fresh Go workers can advance independent objective families in parallel instead of idling behind one global scanner.",
   "priority": 0,
   "state": "IMPLEMENTING",
   "dependencies": ["swarm-control-plane-foundation"],
@@ -18,9 +18,15 @@
   "adjacentWriteAreas": [],
   "slots": [
     {"name": "reconcile", "role": "scheduler-reconciler", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "reconcile-capture", "role": "scheduler-reconciler", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "reconcile-battery-range", "role": "scheduler-reconciler", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "reconcile-controls-ui", "role": "scheduler-reconciler", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "reconcile-ci-xcode", "role": "scheduler-reconciler", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "reconcile-core-infra", "role": "scheduler-reconciler", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "reconcile-remaining", "role": "scheduler-reconciler", "exclusive": true, "leaseSeconds": 1800, "resources": []},
     {"name": "review", "role": "adversarial-review", "exclusive": true, "leaseSeconds": 1800, "resources": []}
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOURCE_READY"},
-  "tags": ["migration", "legacy-import", "scheduler-reconciliation"]
+  "tags": ["migration", "legacy-import", "scheduler-reconciliation", "parallel-reconciliation"]
 }
