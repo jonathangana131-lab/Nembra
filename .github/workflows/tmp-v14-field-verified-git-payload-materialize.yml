@@ -1,0 +1,66 @@
+name: TEMP V14 Field Verified Git Payload Materializer
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tmp_materialize_field_verified_git_payload.py
+      - .github/workflows/tmp-v14-field-verified-git-payload-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-clean-production-head:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'repair/v14-field-verified-git-execution-payload-sol-20260811'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind materializer to exact branch head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_materialize_field_verified_git_payload.py
+
+      - name: Validate focused authority contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 scripts/ci/tests/test_capture_field_git_packed_blob_execution_red_team.py
+          python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
+          git diff --check
+
+      - name: Publish clean production head
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/tmp_materialize_field_verified_git_payload.py
+          rm -f .github/workflows/tmp-v14-field-verified-git-payload-materialize.yml
+          git config user.name "Nembra Capture Materializer"
+          git config user.email "nembra-capture-materializer@users.noreply.github.com"
+          git add scripts/field/install_one_time_capture.command \
+                  scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py \
+                  scripts/ci/tmp_materialize_field_verified_git_payload.py \
+                  .github/workflows/tmp-v14-field-verified-git-payload-materialize.yml
+          git diff --cached --check
+          git commit -m "Bind accepted Git payload bytes before execution"
+          git push origin "HEAD:${HEAD_BRANCH}"
