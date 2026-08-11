@@ -9,9 +9,10 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T08:02:00Z",
-  "lastHeartbeatAt": "2026-08-11T08:02:00Z",
+  "lastHeartbeatAt": "2026-08-11T08:03:20Z",
   "leaseSeconds": 1800,
   "branch": "recovery/v15-battery-range-simulator-display/sol-f3a8",
-  "pr": null,
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+  "pr": 2815,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "currentHeadSHA": "e35b95022c175e2ae083b888de1fbc245b1fe640"
 }
