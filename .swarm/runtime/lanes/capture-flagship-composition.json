@@ -18,7 +18,7 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Canonical legacy flagship PR #2612 remains the single app-visible Capture spine and has moved to exact 513ebea576cd6d03132e215d80fac57397877fbf after integrating reviewed package-truth child #2824. Production/UI bytes were unchanged by that three-test repair, but the moved flagship must re-earn exact-head acceptance. On the latest live refresh, TODAY Final GO, Legacy Final GO Entrypoint, Signed Candidate Reinspection, Final GO Hardening, and Final GO GitHub API Custody are terminal SUCCESS; Main Selective Graft is queued; Standalone Visual Evidence, Field Build Provenance, and Xcode 27 PR Exact-Head QA are in progress. Security/build/private/signed-install control ingredients are not yet deliberately composed into one final flagship head. Do not create a competing flagship spine and do not promote queued/running or ancestor greens.",
+      "reason": "Canonical legacy flagship PR #2612 remains the single app-visible Capture spine at exact 513ebea576cd6d03132e215d80fac57397877fbf after integrating #2824. On the latest exact-head refresh, TODAY Final GO, Legacy Final GO Entrypoint, Signed Candidate Reinspection, Final GO Hardening, Final GO GitHub API Custody, Main Selective Graft, Standalone Visual Evidence, and Field Build Provenance are terminal SUCCESS. Xcode 27 PR Exact-Head QA is still in progress and therefore not green. Security/build/private/signed-install control ingredients remain uncomposed into this flagship. Do not create a competing flagship spine and do not promote ancestor or running evidence.",
       "pr": 2612,
       "headSHA": "513ebea576cd6d03132e215d80fac57397877fbf"
     }
@@ -48,7 +48,7 @@
     "primaryPR": 2612,
     "primaryHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
     "baseMainAtObservation": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-    "note": "Reconciled after #2824 composition. PR base metadata remains historical; live main is V15.1 control-plane-only relative to the product candidate. Final acceptance still requires one exact composed flagship descendant with all applicable product, security, visual/runtime, field, and physical-precondition gates rerun."
+    "note": "Exact flagship revalidation has advanced: package/selective-graft, Field Provenance, standalone visual, and all currently triggered Final-GO/TODAY custody suites are green on 513ebea5; Xcode/Simulator remains in progress. Even full app-software green will not close Capture until selected security/build/private/signed-install authority is deliberately composed and revalidated, then private intended-device custody and deliberate physical authorization requirements are satisfied."
   },
   "tags": ["capture", "p0", "flagship", "app-visible", "composition", "legacy-import"]
 }
