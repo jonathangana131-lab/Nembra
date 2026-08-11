@@ -272,13 +272,18 @@ def _authority_directory_fd(
     create: bool,
     authority_uid: int,
 ) -> int | None:
+    created = False
     try:
         metadata = authority_root.lstat()
     except FileNotFoundError:
         if not create:
             return None
         try:
-            os.mkdir(authority_root, 0o755)
+            # The caller intentionally runs with umask 077. Create privately
+            # first, admit the exact root-owned directory by descriptor, then
+            # relax only that held inode to the non-secret verifier mode 0755.
+            os.mkdir(authority_root, 0o700)
+            created = True
             metadata = authority_root.lstat()
         except OSError as exc:
             raise AuthorityError("could not create the protected private identity authority directory") from exc
@@ -289,21 +294,47 @@ def _authority_directory_fd(
         stat.S_ISLNK(metadata.st_mode)
         or not stat.S_ISDIR(metadata.st_mode)
         or metadata.st_uid != authority_uid
-        or stat.S_IMODE(metadata.st_mode) != 0o755
     ):
+        raise AuthorityError("private identity authority directory is not protected by expected ownership")
+
+    mode = stat.S_IMODE(metadata.st_mode)
+    normalize_private_creation = create and mode == 0o700
+    if not created and mode != 0o755 and not normalize_private_creation:
         raise AuthorityError("private identity authority directory is not protected by expected ownership")
 
     try:
         descriptor = os.open(authority_root, _directory_flags())
     except OSError as exc:
         raise AuthorityError("could not open the private identity authority directory") from exc
-    held = os.fstat(descriptor)
-    current = authority_root.lstat()
-    if _stat_identity(held) != _stat_identity(current):
-        os.close(descriptor)
-        raise AuthorityError("private identity authority directory changed during admission")
-    return descriptor
+    try:
+        held = os.fstat(descriptor)
+        current = authority_root.lstat()
+        if (
+            not stat.S_ISDIR(held.st_mode)
+            or held.st_uid != authority_uid
+            or _stat_identity(held) != _stat_identity(current)
+        ):
+            raise AuthorityError("private identity authority directory changed during admission")
 
+        if created or normalize_private_creation:
+            # fchmod targets the already-admitted inode. This also repairs a
+            # root-owned 0700 directory stranded by the pre-fix umask path.
+            os.fchmod(descriptor, 0o755)
+            held = os.fstat(descriptor)
+            current = authority_root.lstat()
+            if (
+                not stat.S_ISDIR(held.st_mode)
+                or held.st_uid != authority_uid
+                or stat.S_IMODE(held.st_mode) != 0o755
+                or _stat_identity(held) != _stat_identity(current)
+            ):
+                raise AuthorityError("private identity authority directory mode could not be normalized safely")
+        elif stat.S_IMODE(held.st_mode) != 0o755:
+            raise AuthorityError("private identity authority directory mode changed during admission")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
 
 def _receipt_name(subject: str) -> str:
     if _HEX64.fullmatch(subject) is None:

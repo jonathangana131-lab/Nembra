@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import os
+import stat
 from pathlib import Path
 import tempfile
 import unittest
@@ -135,11 +136,56 @@ class PrivateIdentityAuthorityReceiptTests(unittest.TestCase):
                     authority_uid=uid,
                 )
 
-    def test_unprotected_authority_directory_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="nembra-private-authority-mode-") as temporary:
+    def test_strict_umask_creation_is_normalized_for_unprivileged_verify(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-private-authority-umask-") as temporary:
+            helper, checkout, authority_root, uid, writer_sha, podspec_sha, identity_sha, _, _ = self.make_subject(temporary)
+            previous_umask = os.umask(0o077)
+            try:
+                receipt = helper._seal_current_subject(
+                    checkout,
+                    operator_uid=uid,
+                    expected_writer_sha256=writer_sha,
+                    expected_podspec_sha256=podspec_sha,
+                    expected_identity_sha256=identity_sha,
+                    authority_root=authority_root,
+                    authority_uid=uid,
+                )
+            finally:
+                os.umask(previous_umask)
+            self.assertTrue(receipt.is_file())
+            self.assertEqual(stat.S_IMODE(authority_root.stat().st_mode), 0o755)
+            self.assertEqual(
+                helper._verify_current_subject(
+                    checkout,
+                    operator_uid=uid,
+                    expected_writer_sha256=writer_sha,
+                    authority_root=authority_root,
+                    authority_uid=uid,
+                ),
+                receipt,
+            )
+
+    def test_root_owned_private_mode_residue_is_normalized_on_next_seal(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-private-authority-mode-recovery-") as temporary:
             helper, checkout, authority_root, uid, writer_sha, podspec_sha, identity_sha, _, _ = self.make_subject(temporary)
             authority_root.mkdir(mode=0o700)
             authority_root.chmod(0o700)
+            helper._seal_current_subject(
+                checkout,
+                operator_uid=uid,
+                expected_writer_sha256=writer_sha,
+                expected_podspec_sha256=podspec_sha,
+                expected_identity_sha256=identity_sha,
+                authority_root=authority_root,
+                authority_uid=uid,
+            )
+            self.assertEqual(stat.S_IMODE(authority_root.stat().st_mode), 0o755)
+
+    def test_world_writable_authority_directory_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-private-authority-mode-") as temporary:
+            helper, checkout, authority_root, uid, writer_sha, podspec_sha, identity_sha, _, _ = self.make_subject(temporary)
+            authority_root.mkdir(mode=0o700)
+            authority_root.chmod(0o777)
             with self.assertRaises(helper.AuthorityError):
                 helper._seal_current_subject(
                     checkout,
