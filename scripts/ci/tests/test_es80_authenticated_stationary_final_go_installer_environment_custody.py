@@ -52,6 +52,8 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
                 "[[ -z \"${NEMBRA_TUYA_APP_SECRET:-}\" ]] || exit 44\n"
                 "[[ -z \"${NEMBRA_TUYA_APP_KEY:-}\" ]] || exit 45\n"
                 "[[ \"${NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256:-}\" =~ ^[0-9a-f]{64}$ ]] || exit 47\n"
+                "[[ \"${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:-}\" == aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ]] || exit 48\n"
+                "[[ \"${NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SHA256:-}\" == eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ]] || exit 49\n"
                 f"[[ \"${{PATH:-}}\" == {GO.TRUSTED_INSTALLER_PATH!r} ]] || exit 46\n"
                 "printf '%s\\n' 'SDK-INTEGRATED CAPTURE LAUNCHED'\n",
                 encoding="utf-8",
@@ -83,9 +85,11 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             os.environ["GITHUB_TOKEN"] = "caller-token-must-not-cross"
             os.environ["NEMBRA_TUYA_APP_SECRET"] = "caller-secret-must-not-cross"
             os.environ["NEMBRA_TUYA_APP_KEY"] = "caller-key-must-not-cross"
+            os.environ["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"] = "b" * 64
+            os.environ["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SHA256"] = "c" * 64
             os.environ["PATH"] = "/caller/prepended/path:/usr/bin:/bin"
             try:
-                result = GO.installer(repository, source, private_device, GO.device_hash(private_device))
+                result = GO.installer(repository, source, private_device, GO.device_hash(private_device), "a" * 64, "e" * 64)
             finally:
                 os.environ.clear()
                 os.environ.update(old)
@@ -103,18 +107,30 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             device.write_text("device", encoding="utf-8")
             device.chmod(0o600)
             digest = GO.device_hash(device)
-            env = GO.installer_environment(device, digest)
+            env = GO.installer_environment(device, digest, "a" * 64, "e" * 64)
             self.assertEqual(env["PATH"], GO.TRUSTED_INSTALLER_PATH)
             self.assertEqual(env["BASH_ENV"], "/dev/null")
             self.assertEqual(env["ENV"], "/dev/null")
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"], str(device))
             self.assertEqual(env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"], digest)
+            self.assertEqual(env["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"], "a" * 64)
+            self.assertEqual(env["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SHA256"], "e" * 64)
             forbidden = {
                 "GITHUB_TOKEN", "GH_TOKEN", "PYTHONPATH", "PYTHONHOME",
                 "NEMBRA_TUYA_APP_KEY", "NEMBRA_TUYA_APP_SECRET",
             }
             self.assertTrue(forbidden.isdisjoint(env))
             self.assertTrue(all(not key.startswith("BASH_FUNC_") for key in env))
+
+    def test_noncanonical_reviewed_build_subject_digests_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-final-go-build-subject-shape-") as temporary:
+            device = Path(temporary).resolve(strict=True) / "device"
+            device.write_text("device", encoding="utf-8")
+            device.chmod(0o600)
+            digest = GO.device_hash(device)
+            for lock, cocoa in (("A" * 64, "e" * 64), ("a" * 64, "E" * 64), ("a" * 63, "e" * 64), ("a" * 64, "bad")):
+                with self.assertRaises(GO.GoError):
+                    GO.installer_environment(device, digest, lock, cocoa)
 
     def test_installer_environment_rejects_symlinked_private_device_parent(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-final-go-env-symlink-") as temporary:
@@ -127,7 +143,7 @@ class InstallerEnvironmentCustodyTests(unittest.TestCase):
             alias = root / "alias"
             alias.symlink_to(real_parent, target_is_directory=True)
             with self.assertRaises(GO.GoError):
-                GO.installer_environment(alias / "device", "a" * 64)
+                GO.installer_environment(alias / "device", "a" * 64, "b" * 64, "c" * 64)
 
 
 if __name__ == "__main__":
