@@ -1,0 +1,183 @@
+name: TEMP V14 Publish Exception Proxy Hardening (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/tmp-v14-publish-exception-proxy-hardening-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Harden CLI exception boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Scripts/capture_tuya_private_input_build_guard.py')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          output = []
+          replaced = 0
+          index = 0
+          while index < len(lines):
+              if lines[index] == '    except provenance.ProvenanceError as error:':
+                  expected = [
+                      '    except provenance.ProvenanceError as error:',
+                      '        print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)',
+                      '        return 75',
+                      '    except generated_build.GeneratedBuildSubjectError as error:',
+                      '        print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)',
+                      '        return 76',
+                  ]
+                  actual = lines[index:index + len(expected)]
+                  if actual != expected:
+                      raise SystemExit(f'CLI proxy exception block shape changed: {actual!r}')
+                  output.extend([
+                      '    except Exception:',
+                      '        print("ERROR: unexpected build-window custody failure; field build refused", file=sys.stderr)',
+                      '        return 77',
+                  ])
+                  index += len(expected)
+                  replaced += 1
+                  continue
+              output.append(lines[index])
+              index += 1
+          if replaced != 1:
+              raise SystemExit(f'expected one proxy exception block; replaced {replaced}')
+          text = '\n'.join(output) + '\n'
+          if 'except provenance.ProvenanceError' in text or 'except generated_build.GeneratedBuildSubjectError' in text:
+              raise SystemExit('proxy-loading exception classifier remains')
+          path.write_text(text, encoding='utf-8')
+          PY
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+      - name: Add exception proxy custody regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py <<'PYTEST'
+          #!/usr/bin/env python3
+          from __future__ import annotations
+
+          import importlib.util
+          from pathlib import Path
+          import shutil
+          import sys
+          import tempfile
+          import types
+          import unittest
+
+          REPOSITORY = Path(__file__).resolve().parents[3]
+          GUARD = REPOSITORY / "Scripts/capture_tuya_private_input_build_guard.py"
+          PROVENANCE = REPOSITORY / "Scripts/capture_tuya_private_input_provenance.py"
+          GENERATED = REPOSITORY / "Scripts/capture_cocoapods_generated_build_subject.py"
+
+
+          def load_module(path: Path, name: str):
+              spec = importlib.util.spec_from_file_location(name, path)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError(f"could not load {path.name}")
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[name] = module
+              spec.loader.exec_module(module)
+              return module
+
+
+          def raise_oserror(label: str):
+              raise OSError(label)
+
+
+          class ExceptionProxyCustodyTests(unittest.TestCase):
+              def _guard_with_malicious_neighbors(self):
+                  temporary = tempfile.TemporaryDirectory(prefix="nembra-exception-proxy-")
+                  self.addCleanup(temporary.cleanup)
+                  root = Path(temporary.name)
+                  scripts = root / "Scripts"
+                  scripts.mkdir()
+                  shutil.copy2(GUARD, scripts / GUARD.name)
+
+                  provenance_sentinel = root / "provenance-executed.txt"
+                  generated_sentinel = root / "generated-executed.txt"
+                  (scripts / PROVENANCE.name).write_text(
+                      "from pathlib import Path\n"
+                      f"Path({str(provenance_sentinel)!r}).write_text('executed', encoding='utf-8')\n"
+                      "class ProvenanceError(Exception): pass\n",
+                      encoding="utf-8",
+                  )
+                  (scripts / GENERATED.name).write_text(
+                      "from pathlib import Path\n"
+                      f"Path({str(generated_sentinel)!r}).write_text('executed', encoding='utf-8')\n"
+                      "class GeneratedBuildSubjectError(Exception): pass\n",
+                      encoding="utf-8",
+                  )
+
+                  guard = load_module(scripts / GUARD.name, f"nembra_exception_proxy_{id(self)}")
+                  guard._parse_args = lambda argv: (None, ["/usr/bin/true"])
+                  return guard, provenance_sentinel, generated_sentinel
+
+              def test_provenance_preaccept_failure_does_not_execute_mutable_neighbor_for_exception_matching(self) -> None:
+                  guard, provenance_sentinel, generated_sentinel = self._guard_with_malicious_neighbors()
+                  guard.provenance.require_accepted = lambda: raise_oserror("synthetic provenance descriptor failure")
+
+                  self.assertEqual(guard.main([]), 77)
+                  self.assertFalse(provenance_sentinel.exists())
+                  self.assertFalse(generated_sentinel.exists())
+
+              def test_generated_preaccept_failure_does_not_execute_mutable_neighbor_for_exception_matching(self) -> None:
+                  guard, provenance_sentinel, generated_sentinel = self._guard_with_malicious_neighbors()
+
+                  class AcceptedProvenance(types.SimpleNamespace):
+                      class ProvenanceError(Exception):
+                          pass
+
+                  def accept_provenance():
+                      module = AcceptedProvenance()
+                      guard.provenance._module = module
+                      guard.provenance._accepted = True
+                      return module
+
+                  guard.provenance.require_accepted = accept_provenance
+                  guard.generated_build.require_accepted = lambda: raise_oserror("synthetic generated descriptor failure")
+
+                  self.assertEqual(guard.main([]), 77)
+                  self.assertFalse(provenance_sentinel.exists())
+                  self.assertFalse(generated_sentinel.exists())
+
+
+          if __name__ == "__main__":
+              unittest.main(verbosity=2)
+          PYTEST
+          python3 -m py_compile scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
+          python3 -m unittest -v scripts.ci.tests.test_capture_private_review_exception_proxy_custody
+      - name: Run existing focused authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v \
+            scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody \
+            scripts.ci.tests.test_capture_private_review_helper_execution_custody \
+            scripts.ci.tests.test_capture_private_review_commitment \
+            scripts.ci.tests.test_capture_cocoapods_generated_build_subject \
+            scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+          git diff --check
+      - name: Publish normal source and test files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
+          git diff --cached --quiet && { echo 'ERROR: exception-proxy hardening produced no source/test diff' >&2; exit 1; }
+          git commit -m 'Capture: close lazy authority exception proxy execution'
+          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
