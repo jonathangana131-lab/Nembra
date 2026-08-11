@@ -9,14 +9,14 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:04:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:04:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:05:10Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-provenance-contract-recovery-a91c7e-20260811",
-  "pr": null,
+  "pr": 2997,
   "sourceSHA": "0d78918148471dd3721c276bde27e379b04b7abd",
   "currentHeadSHA": "9fa47617681a16eb4fb1a3168f655884f07e0d24",
   "parentPR": 2977,
   "takeoverFromWorkerId": "sol-20260811-1313qa",
-  "takeoverReason": "Generation-6 lease expired at 20:58Z with no heartbeat or PR, but durable predecessor branch repair/v14-private-provenance-contract-1313qa-20260811 exists at 9fa47617. Exact compare from #2977 0d789181 is ahead-only one commit / one test file (+3/-1), replacing the obsolete literal pod install --repo-update witness with the actual guarded \"$POD_BIN\" install --repo-update command and preserving required-digest-before-resolution ordering. Recover useful bytes without overwriting the predecessor branch; create a clean successor branch at the same exact commit, validate/open PR, then release. Production authority bytes remain unchanged. PHYSICAL NO-GO.",
-  "intent": "Preserve predecessor commit 9fa47617 on a recovery branch, open test-only PR against #2977, require exact Field/Main/focused validation, and avoid weakening private identity/build authority."
+  "checkpoint": "Recovered predecessor exact 9fa47617 unchanged onto successor branch and opened test-only PR #2997 against #2977 0d789181. Compare is one test file +3/-1; production bytes unchanged. Exact PR workflows starting. Await exact Field/Main/focused results; do not conflate this stale-contract repair with unresolved private dependency-resolution adapter API/custody review. PHYSICAL NO-GO.",
+  "intent": "Validate #2997 exact 9fa47617. If the intended provenance contract passes and parent-relevant gates re-earn green, publish exact test acceptance/adoption instructions; otherwise repair only genuine test-contract defects."
 }
