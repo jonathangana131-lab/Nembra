@@ -1,4 +1,4 @@
-name: Capture Generated Subject Helper Execution Red Team
+name: Capture Generated Subject Control Custody Red Team
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
     paths:
       - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
       - scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+      - scripts/ci/tests/test_es80_generated_subject_control_worktree_custody.py
       - .github/workflows/capture-generated-subject-helper-execution-redteam.yml
   workflow_dispatch:
 
@@ -31,12 +32,39 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Require accepted helper bytes at execution boundary
+      - name: Compile both custody diagnostics
         shell: bash
         run: |
           set -euo pipefail
           export PYTHONDONTWRITEBYTECODE=1
           python3 -m py_compile \
             scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
-            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py \
+            scripts/ci/tests/test_es80_generated_subject_control_worktree_custody.py
+      - name: Require accepted helper bytes at execution boundary
+        id: helper_execution
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
           python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+      - name: Require current child control bytes to match accepted Git blobs
+        id: control_worktree
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 scripts/ci/tests/test_es80_generated_subject_control_worktree_custody.py
+      - name: Require both control custody boundaries closed
+        if: always()
+        shell: bash
+        env:
+          HELPER_EXECUTION_OUTCOME: ${{ steps.helper_execution.outcome }}
+          CONTROL_WORKTREE_OUTCOME: ${{ steps.control_worktree.outcome }}
+        run: |
+          set -euo pipefail
+          printf 'helper_execution=%s\ncontrol_worktree=%s\n' "$HELPER_EXECUTION_OUTCOME" "$CONTROL_WORKTREE_OUTCOME"
+          test "$HELPER_EXECUTION_OUTCOME" = success
+          test "$CONTROL_WORKTREE_OUTCOME" = success
