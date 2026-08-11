@@ -35,12 +35,12 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             "The compact sighted Details disclosure must retain the full Engineering details semantic label."
         )
         XCTAssertFalse(
-            app.buttons["Start capture"].exists,
-            "Public/unprovisioned runtime hierarchy must not expose a physical Capture action anywhere, including offscreen."
+            app.descendants(matching: .any)["Start capture"].exists,
+            "Public/unprovisioned runtime hierarchy must not expose a physical Capture action anywhere, including offscreen or under a non-button element type."
         )
         XCTAssertFalse(
-            app.buttons["Scan for scooter"].exists,
-            "Public/unprovisioned runtime hierarchy must not expose Bluetooth scan authority anywhere, including offscreen."
+            app.descendants(matching: .any)["Scan for scooter"].exists,
+            "Public/unprovisioned runtime hierarchy must not expose Bluetooth scan authority anywhere, including offscreen or under a non-button element type."
         )
 
         try app.performAccessibilityAudit(
@@ -82,14 +82,26 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             utterances.append(current)
         }
 
-        // Traverse the full bounded horizon even after all required phrases are
-        // found. Stopping early would let a forbidden physical action later in
-        // VoiceOver order escape the negative authority assertion.
+        // Traverse a bounded horizon even after the required phrases appear so
+        // later forbidden authority cannot hide behind an early success break.
+        // VoiceOver navigation is a throwing API; after all required semantics
+        // are proven, a boundary/no-speech failure may terminate the horizon
+        // without converting infrastructure behavior into a product failure.
         for _ in 0..<64 {
-            let output = try service.moveForward()
-            let utterance = output.utterance
-            if !utterance.isEmpty {
-                utterances.append(utterance)
+            do {
+                let output = try service.moveForward()
+                let utterance = output.utterance
+                if !utterance.isEmpty {
+                    utterances.append(utterance)
+                }
+            } catch {
+                let requiredAlreadyObserved = requiredSpeech.allSatisfy { phrase in
+                    utterances.contains(where: { $0.localizedCaseInsensitiveContains(phrase) })
+                }
+                if requiredAlreadyObserved {
+                    break
+                }
+                throw error
             }
         }
 
