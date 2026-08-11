@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "083700-reconcile-remaining-3f7c-flagship-lane-refresh",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Reconciled capture-flagship-composition durable routing to live canonical #2612 exact 513ebea576cd6d03132e215d80fac57397877fbf after #2824 truth-test composition. Live main remains d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. Exact flagship TODAY Final GO, Legacy Entrypoint, Signed Candidate Reinspection, Final GO Hardening, and GitHub API Custody suites are terminal SUCCESS; Main Selective Graft is queued and Standalone Visual Evidence, Field Build Provenance, and Xcode QA are in progress at this checkpoint. Security/build/private/signed-install ingredients remain uncomposed. No ancestor/queued result is promoted and PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:37:00Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "flagshipPR": 2612,
+    "flagshipSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
+    "terminalGreenRuns": [31473501083,31473501152,31473501184,31473501002,31473501069],
+    "queuedRuns": [31473501082],
+    "inProgressRuns": [31473501070,31473501041,31473501059],
+    "productBytesChangedByReconciliation": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
