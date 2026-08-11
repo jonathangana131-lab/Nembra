@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "083105-navigation-verification-handoff",
+  "type": "HANDOFF",
+  "workerId": "sol-20260811-7a2f",
+  "laneId": "navigation-app-visible",
+  "message": "Navigation recovery implementation is frozen at PR #2831 exact head d43bf700c3b2fca8881e4947cdbf8f2c6226c84b on main@d8e38d0. Legacy accessibility intent is current-main recovered; stale MapKit query-result presentation and selected-overlay Reduce Transparency gaps are repaired; source regressions and a real Navigation UI screenshot test are added. Xcode 27 issue-comment run 31473462410 resolved successfully and the xcode-27 build/test/capture job is pending. Do not accept until that exact head is terminal and artifacts are inspected; independent review remains required. Capture physical state unchanged PHYSICAL_NO_GO.",
+  "createdAt": "2026-08-11T08:31:05Z",
+  "data": {
+    "pr": 2831,
+    "exactHeadSHA": "d43bf700c3b2fca8881e4947cdbf8f2c6226c84b",
+    "baseMainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "xcodeRun": 31473462410,
+    "xcodeState": "PENDING_XCODE27_RUNNER",
+    "independentReviewRequired": true,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
