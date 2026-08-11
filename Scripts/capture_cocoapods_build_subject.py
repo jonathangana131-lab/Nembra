@@ -92,7 +92,9 @@ def _tree_entries(root: Path, tree: Path) -> tuple[tuple[str, str, int, bytes], 
         raise BuildSubjectError(f"required generated build directory is not a real directory: {tree}")
 
     root_resolved = root.resolve(strict=True)
-    entries: list[tuple[str, str, int, bytes]] = []
+    entries: list[tuple[str, str, int, bytes]] = [
+        ("D", tree.relative_to(root).as_posix(), stat.S_IMODE(root_meta.st_mode), b"")
+    ]
     observed: list[tuple[Path, tuple[int, ...], str]] = [(tree, _identity(root_meta), "D")]
     members: dict[Path, tuple[str, ...]] = {}
 
