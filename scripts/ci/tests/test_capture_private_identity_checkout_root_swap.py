@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
-"""Expected-red: private Tuya credential publication must stay bound to the checkout opened before input.
+"""Private Tuya checkout-root and dependency ancestry custody regressions.
 
-The provisioner resolves its checkout path and captures/pins the writer before asking for credentials,
-but the writer currently reopens that checkout by pathname only after the operator has entered those
-credentials. A same-UID process can rename the admitted checkout and place a different directory at
-the same pathname during that input window. Descendant O_NOFOLLOW/dir_fd custody then protects the
-replacement tree rather than the originally admitted checkout.
-
-This diagnostic uses a PTY so the real hidden-input prompts become deterministic race boundaries. It
-swaps the checkout after the AppKey prompt, then requires publication to fail closed and forbids any
-private identity output under the replacement path.
+Credential publication must stay bound to the checkout opened before input, and
+pre-generated dependency work must stay bound to the same real checkout/ancestry
+for the complete guarded child window.
 """
 
 from __future__ import annotations
 
 import errno
+import importlib.util
 import os
 from pathlib import Path
 import pty
@@ -29,6 +24,18 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 PROVISIONER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity.sh"
 WRITER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity_writer.py"
 DEPENDENCY_ADAPTER = REPOSITORY / "Scripts" / "capture_tuya_private_dependency_resolution_guard.py"
+
+
+def load_dependency_adapter():
+    spec = importlib.util.spec_from_file_location(
+        "nembra_private_dependency_adapter_checkout_test",
+        DEPENDENCY_ADAPTER,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("private dependency adapter import unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
@@ -102,6 +109,47 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
             captured.extend(chunk)
         return bytes(captured)
 
+    def _dependency_fixture(self) -> tuple[Path, Path, Path, Path, Path]:
+        podfile = self.checkout / "Podfile"
+        podfile.write_text("# dependency custody fixture\n", encoding="utf-8")
+
+        sdk = self.checkout / "LocalSecrets" / "TuyaSDK"
+        build = sdk / "Build"
+        build.mkdir(parents=True)
+        security_podspec = sdk / "ThingSmartCryption.podspec"
+        security_podspec.write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+        (build / "libfixture.a").write_bytes(b"fixture-sdk-bytes")
+
+        runtime = self.checkout / "LocalSecrets" / "TuyaRuntime"
+        identity_sources = runtime / "Sources" / "NembraTuyaPrivateConfig"
+        identity_sources.mkdir(parents=True)
+        identity_podspec = runtime / "NembraTuyaPrivateConfig.podspec"
+        identity_podspec.write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+        (identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+            "enum NembraTuyaPrivateIdentity {}\n",
+            encoding="utf-8",
+        )
+        return podfile, security_podspec, build, identity_podspec, identity_sources
+
+    @staticmethod
+    def _adapter_argv(
+        podfile: Path,
+        security_podspec: Path,
+        build: Path,
+        identity_podspec: Path,
+        identity_sources: Path,
+        command: list[str],
+    ) -> list[str]:
+        return [
+            "--lockfile", str(podfile),
+            "--security-podspec", str(security_podspec),
+            "--security-build", str(build),
+            "--identity-podspec", str(identity_podspec),
+            "--identity-sources", str(identity_sources),
+            "--",
+            *command,
+        ]
+
     def test_dependency_resolution_adapter_uses_canonical_private_api(self) -> None:
         source = DEPENDENCY_ADAPTER.read_text(encoding="utf-8")
         self.assertIn("return guard.run_guarded_build(", source)
@@ -116,6 +164,41 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
         self.assertNotIn("require_accepted_private_review_commitment", source)
         self.assertNotIn("require_accepted_authority_helpers", source)
         self.assertNotIn("require_accepted_tracked_source", source)
+
+    @unittest.skipUnless(hasattr(select, "kqueue"), "macOS kqueue required")
+    def test_dependency_resolution_adapter_clean_child_runs_under_real_ancestry_custody(self) -> None:
+        adapter = load_dependency_adapter()
+        fixture = self._dependency_fixture()
+        previous = Path.cwd()
+        try:
+            os.chdir(self.checkout)
+            result = adapter.main(self._adapter_argv(*fixture, ["/usr/bin/true"]))
+        finally:
+            os.chdir(previous)
+        self.assertEqual(result, 0)
+
+    @unittest.skipUnless(hasattr(select, "kqueue"), "macOS kqueue required")
+    def test_dependency_resolution_adapter_rejects_ancestry_swap_restore_during_child(self) -> None:
+        adapter = load_dependency_adapter()
+        fixture = self._dependency_fixture()
+        mutation = (
+            "import os; "
+            "os.rename('LocalSecrets', 'LocalSecrets-held'); "
+            "os.rename('LocalSecrets-held', 'LocalSecrets')"
+        )
+        previous = Path.cwd()
+        try:
+            os.chdir(self.checkout)
+            result = adapter.main(
+                self._adapter_argv(*fixture, ["/usr/bin/python3", "-c", mutation])
+            )
+        finally:
+            os.chdir(previous)
+        self.assertNotEqual(
+            result,
+            0,
+            "swap/restore of an admitted ancestry directory escaped vnode custody",
+        )
 
     def test_checkout_root_swap_after_admission_cannot_redirect_credentials(self) -> None:
         script = self.checkout / "Scripts" / PROVISIONER.name
