@@ -63,8 +63,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Make temporary control-plane cleanup explicit at the publication boundary.
-          rm -f scripts/ci/tmp_materialize_field_source_contract_gpt56.py
+          # The materializer self-removes in the ephemeral checkout; delete the
+          # temporary workflow from the publish commit. The tracked materializer
+          # file is deleted immediately afterward through the contents API so the
+          # durable branch tree exposes only the three permanent test repairs.
           rm -f .github/workflows/tmp-v14-field-source-contract-gpt56.yml
           git add -A
           /usr/bin/python3 - <<'PY'
@@ -73,7 +75,6 @@ jobs:
               'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift',
               'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift',
               'scripts/ci/tests/test_capture_tuya_private_input_provenance.py',
-              'scripts/ci/tmp_materialize_field_source_contract_gpt56.py',
               '.github/workflows/tmp-v14-field-source-contract-gpt56.yml',
           }
           actual = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines())
