@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607r4",
   "leaseId": "capture-runtime-accessibility-primary-1607r4-20260811-2318",
   "generation": 5,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:18:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:18:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:21:00Z",
+  "releasedAt": "2026-08-11T23:21:00Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-runtime-voiceover-firstfold-sol-gpt56-20260811",
   "pr": 3073,
@@ -17,10 +18,10 @@
   "currentHeadSHA": "dd204e1e943af853e02857db145127810791b04b",
   "takeoverFromWorkerId": "gpt56-sol-20260811-runtime-ax-firstfold",
   "takeoverFromLeaseId": "capture-runtime-accessibility-primary-firstfold-20260811-2212",
-  "takeoverReason": "Generation-4 expired after last heartbeat 2026-08-11T22:39:00Z with 1800-second lease. Fresh Go recovers the same validation-only runtime-accessibility convergence to classify exact #3073 runtime/Main evidence, preserve unchanged product pixels/semantics, and only repair the owned workflow/XCUI harness if exact evidence exposes a real harness defect. PHYSICAL NO-GO.",
+  "takeoverReason": "Generation-4 expired. Fresh Go recovered the validation-only runtime-accessibility convergence to refresh exact acceptance without product edits.",
   "ownedPaths": [
     ".github/workflows/capture-runtime-voiceover.yml",
     "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
   ],
-  "checkpoint": "Recovered exact #3073 dd204e1e on #2979 6bb2e3cb after prior lease expiry. Next action is fresh exact workflow/run inspection before any write. No product/localization/BLE/device/physical bytes are owned."
+  "checkpoint": "Exact #3073 dd204e1e source/visual-precondition is independently accepted. Exact base #2979 6bb2e3cb is now fully green for required Xcode 31539959295, Field 31539959359, Main 31539959336, and Visual 31539959311. Child Main 31542656351 is SUCCESS; child Xcode 31542656316 is SKIPPED/not evidence. Decisive Capture Runtime VoiceOver 31542656345 remains QUEUED, so no harness mutation or acceptance is justified. Durable PR comment 5259931313 records that only unchanged-head runtime execution/evidence remains local to this child. Release rather than idle on xcode-27 resource. Simulator-only; PHYSICAL NO-GO."
 }
