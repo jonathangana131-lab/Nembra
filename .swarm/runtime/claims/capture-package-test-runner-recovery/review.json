@@ -7,14 +7,17 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "capture-pkg-review-1607ax-20260811-2318",
   "generation": 3,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:18:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:18:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:19:30Z",
+  "releasedAt": "2026-08-11T23:19:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2811,
   "sourceSHA": "7728078452894ac327007ddab18a99d65c4ca3a1",
   "takeoverFromWorkerId": "sol-20260811-e4b7",
   "takeoverFromLeaseId": "capture-pkg-review-e4b7-20260811-0753",
-  "takeoverReason": "Generation-2 review lease expired more than fourteen hours ago. Fresh reconciliation found PR #2811 closed unmerged and explicitly superseded by canonical flagship-side #2824 after independent green package/selective-graft/Xcode evidence. Take over only to retire stale ownership; no product branch or duplicate implementation."
+  "takeoverReason": "Generation-2 review lease expired more than fourteen hours ago; generation-3 recovered only to retire stale ownership after live supersession reconciliation.",
+  "outcome": "SUPERSEDED_BY_CANONICAL_FLAGSHIP_LINEAGE",
+  "checkpoint": "PR #2811 is closed unmerged. Its durable discussion records accepted package/selective-graft/Xcode evidence and explicitly supersedes the recovery branch with canonical flagship-side #2824. No duplicate merge/review needed; stale ACTIVE review claim retired."
 }
