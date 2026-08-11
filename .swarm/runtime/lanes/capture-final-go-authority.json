@@ -10,12 +10,20 @@
   "dependencies": ["capture-build-authority"],
   "blockers": [
     {
-      "id": "legacy-pr-active",
+      "id": "generated-control-current",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Selected generated-subject spine #2775 is exact-head control-green at 71aee681 but has an execution-before-authority defect proven by #2803. Private-review child #2791 is stale to the moved #2775 parent, exact-head red at 61dc8330, and has its own generated-parent execution-before-authority defect proven by #2798. Repair/compose those defects before any Final-GO promotion.",
+      "reason": "Selected generated-subject spine #2775 is now exact b4a2172cd799d363cb503a1ecb3d15bc7382e36f, not the imported 71aee681 snapshot. Its canonical Capture Authenticated Stationary Generated Subject Final GO run 31471815137 and focused R3 Base Loader Custody Current run 31471815121 are terminal SUCCESS. The former #2803 authenticated-stationary parent-module execution seam is closed in this exact control head with accepted Git-object byte loading; Xcode on #2775 is SKIPPED and is not product acceptance. Build-side authority remains an unresolved dependency, so these greens are control ingredient evidence only.",
       "pr": 2775,
-      "headSHA": "71aee681d12e353ec54111e066e26598a735ca64"
+      "headSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f"
+    },
+    {
+      "id": "private-review-control-stale-and-red",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Private-review R4 #2791 remains on stale generated-parent ancestry and exact current head 61dc8330f770e8378c3e92fe1b5dd481fc1ce981. Its Capture Authenticated Stationary Private Review Final GO run 31459307350 is terminal FAILURE and Xcode 31459307292 is SKIPPED. Expected-red #2798 exact 9d30d7c182ae0ad8136c0956def3b2cd7902ddde proves #2791 executes the mutable generated-parent module before later authority checks. Do not repair/promote #2791 on stale ancestry; recover its v4 owner-review/private-environment semantics directly onto current #2775 b4a2172... while loading the generated parent only from exact accepted Git bytes, then replay #2798 green. A fresh search found no current-parent recovery PR yet even though #2612 notes such a recovery lane is intended/active.",
+      "pr": 2791,
+      "headSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981"
     }
   ],
   "mode": "exclusive",
@@ -36,16 +44,16 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "selectedGeneratedPR": 2775,
-    "selectedGeneratedHeadSHA": "71aee681d12e353ec54111e066e26598a735ca64",
+    "selectedGeneratedHeadSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f",
     "privateReviewPR": 2791,
     "privateReviewHeadSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981",
     "privateReviewBaseSHA": "40f835a28e3f61b125c47c1922d7da2af20eba63",
-    "lineagePRs": [2638, 2775, 2791, 2798, 2803],
-    "redTeamPRs": [2798, 2803],
-    "knownExactHeadFinding": "#2775 canonical Final-GO control suite is green but #2803 proves mutable authenticated-stationary parent execution occurs before authority. #2791 is both stale-parent and red, and #2798 proves mutable generated-parent execution occurs before authority."
+    "lineagePRs": [2638,2775,2791,2798,2803],
+    "redTeamPRs": [2798],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T08:54Z. #2775 b4a2172 is exact-head control green and has closed #2803's base-parent execution seam. #2791 remains stale-parent and exact-head red; #2798 still proves generated-parent execution occurs before authority there. Required next control composition is a clean current-#2775 R4 recovery that preserves private-review semantics while sealing the generated-parent execution subject, after build-authority dependency convergence. No current-parent recovery PR surfaced in the latest search. PHYSICAL NO-GO remains."
   },
   "tags": ["capture", "p0", "physical-go", "control-authority", "legacy-import"]
 }
