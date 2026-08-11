@@ -5,16 +5,15 @@
   "slot": "reconcile-capture",
   "role": "scheduler-reconciler",
   "workerId": "sol-20260811-f4c2e7",
-  "leaseId": "reconcapture-f4c2e7-20260811-1150",
-  "generation": 5,
-  "status": "RELEASED",
-  "claimedAt": "2026-08-11T11:50:30Z",
-  "lastHeartbeatAt": "2026-08-11T11:57:30Z",
+  "leaseId": "reconcapture-f4c2e7-20260811-1203",
+  "generation": 6,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T12:03:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:03:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-  "takeoverFromWorkerId": "sol-20260811-c7e19a",
-  "takeoverReason": "generation-4 Capture reconciliation lease expired; live GitHub advanced through current P0 Capture PRs while the lane records still reflected older #2875-era state",
-  "checkpoint": "Reconciled build authority to #2907 d0b134ca, private identity to #2899 3f662b7a, signed-install QA to #2911 8dbc60e6 with exact Field contract red, and Final-GO to #2890 fc662c99 with exact raw-tree self-test failures. Physical remains NO-GO."
+  "takeoverFromWorkerId": "sol-20260811-f4c2e7",
+  "takeoverReason": "generation-5 reconciliation was intentionally released after first pass; live signed-install #2911 moved to a stronger exact head immediately afterward, so resume reconciliation to keep authoritative lane state current while production/test/review slots remain occupied"
 }
