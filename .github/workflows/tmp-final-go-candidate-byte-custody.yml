@@ -116,6 +116,7 @@ jobs:
           rm .github/workflows/tmp-final-go-candidate-byte-custody.yml
           find . -type d -name __pycache__ -prune -exec rm -rf {} +
           expected="$(cat <<'EOF' | sort
+          .github/workflows/tmp-final-go-candidate-byte-custody.yml
           scripts/ci/es80_authenticated_stationary_final_go.py
           scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
           EOF
