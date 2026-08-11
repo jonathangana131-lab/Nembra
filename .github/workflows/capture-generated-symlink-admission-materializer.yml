@@ -164,33 +164,24 @@ jobs:
 
           bootstrap=Path('Scripts/bootstrap_capture_tuya_sdk.sh')
           b=bootstrap.read_text()
-          needle='''    --pods "$REPO_ROOT/Pods" \\
-              --workspace "$REPO_ROOT/NembraCapture.xcworkspace")"\n'''
-          replacement='''    --pods "$REPO_ROOT/Pods" \\
-              --workspace "$REPO_ROOT/NembraCapture.xcworkspace" \\
+          needle='--workspace "$REPO_ROOT/NembraCapture.xcworkspace")"'
+          replacement='''--workspace "$REPO_ROOT/NembraCapture.xcworkspace" \\
               --externally-custodied-root "$TUYA_PRIVATE_SDK" \\
-              --externally-custodied-root "$TUYA_PRIVATE_IDENTITY")"\n'''
+              --externally-custodied-root "$TUYA_PRIVATE_IDENTITY")"'''
           if b.count(needle)!=2: raise SystemExit(f'bootstrap fingerprint call count drift: {b.count(needle)}')
           bootstrap.write_text(b.replace(needle,replacement))
 
           guard=Path('Scripts/capture_tuya_private_input_build_guard.py')
           g=guard.read_text()
-          old='''            observed_generated_sha256 = build_subject.build_subject_fingerprint(
-                  pods=self.generated_pods,
-                  workspace=self.generated_workspace,
-              )
-          '''
-          new='''            observed_generated_sha256 = build_subject.build_subject_fingerprint(
-                  pods=self.generated_pods,
-                  workspace=self.generated_workspace,
+          needle='workspace=self.generated_workspace,\n            )'
+          replacement='''workspace=self.generated_workspace,
                   externally_custodied_roots=(
                       self.security_podspec.parent,
                       self.identity_podspec.parent,
                   ),
-              )
-          '''
-          if g.count(old)!=1: raise SystemExit('build guard fingerprint call drift')
-          guard.write_text(g.replace(old,new,1))
+              )'''
+          if g.count(needle)!=1: raise SystemExit(f'build guard fingerprint call drift: {g.count(needle)}')
+          guard.write_text(g.replace(needle,replacement,1))
 
           workflow=Path('.github/workflows/capture-cocoapods-build-subject-closure.yml')
           w=workflow.read_text()
