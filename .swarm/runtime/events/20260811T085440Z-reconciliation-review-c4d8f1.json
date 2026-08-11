@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventType": "EVIDENCE_RESULT",
+  "timestamp": "2026-08-11T08:54:40Z",
+  "workerId": "sol-20260811-c4d8f1",
+  "laneId": "legacy-github-reconciliation",
+  "slot": "review",
+  "role": "adversarial-review",
+  "leaseId": "lgr-review-c4d8f1-0841",
+  "generation": 2,
+  "branch": "",
+  "pr": null,
+  "sha": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "payload": {
+    "feature": "Nembra Capture / authenticated stationary ES80 physical truth",
+    "physicalStatus": "PHYSICAL_NO_GO",
+    "findings": [
+      {
+        "pr": 2840,
+        "headSHA": "f3b3c31150e29699172b208dab59c2d3724a5f62",
+        "classification": "NARROW_PATCH_SOUND_BUT_LINEAGE_NOT_EXACT_HEAD_ACCEPTED",
+        "evidence": "Dedicated CocoaPods vnode-attribute custody gate is green and standalone Nembra Capture build succeeds, but Capture Main Selective Graft Diagnostic run 31474314566 fails integration truth because the full NembraBluetoothCapture package has 3 source-contract issues. Exact failures are TuyaFieldPythonIsolationSourceTests expecting direct '/usr/bin/python3 -I $PROVENANCE_HELPER snapshot' and '/usr/bin/python3 -I $TUYA_PROVENANCE_HELPER verify' literals, plus TuyaPrivateFieldInputProvenanceSourceTests expecting direct '$PROVENANCE_HELPER snapshot'. Current authority code deliberately executes those helpers through captured/digest-bound custody wrappers run_accepted_python_helper and run_accepted_source_python. This is inherited parent-lineage source-test drift, not evidence that the KQ_NOTE_ATTRIB patch regressed the standalone build. Do not promote #2840 exact head until package acceptance is repaired and required exact-head Xcode state is green."
+      },
+      {
+        "pr": 2837,
+        "classification": "SUPERSEDED",
+        "evidence": "PR is closed/unmerged and superseded by #2840; any lane record treating #2837 as active is stale."
+      },
+      {
+        "pr": 2775,
+        "headSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f",
+        "classification": "DOMAIN_GATES_ADVANCED_NOT_PRODUCT_ACCEPTED",
+        "evidence": "Current generated-subject Final-GO control head has relevant terminal authority gates green, but the PR remains draft and this does not authorize product/physical GO. Lane state retaining the older head/defect-open description requires reconciliation."
+      },
+      {
+        "pr": 2805,
+        "headSHA": "100fdf5b2b3b08c2546ef83cdf9e2b4cd078c5af",
+        "classification": "NOT_EXACT_HEAD_ACCEPTED",
+        "evidence": "Current head differs from stale lane SHA and associated exact-head workflows are action_required rather than green."
+      },
+      {
+        "pr": 2789,
+        "headSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3",
+        "classification": "SIGNED_INSTALL_BLOCKER_REMAINS",
+        "evidence": "Signed-install custody exact-head workflows are action_required; no physical GO authority is earned."
+      },
+      {
+        "pr": 2612,
+        "headSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
+        "classification": "COMPOSED_CANDIDATE_NOT_CURRENT_AUTHORITY_CLOSURE",
+        "evidence": "Several exact-head Final-GO/custody gates are green, but newer private-authority/build-custody lineage is not yet composed into an accepted final head. Child/package/simulator evidence cannot authorize the ES80 experiment."
+      }
+    ],
+    "nextSafeAction": "Reconcile Capture lane heads/blockers to live GitHub; repair the three stale source-contract assertions to validate the stronger captured/digest-bound helper execution shape without weakening the production authority contract; rerun full package + standalone + exact-head Xcode gates on the clean successor; only then compose into flagship Final-GO lineage."
+  }
+}
