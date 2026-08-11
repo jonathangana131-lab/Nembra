@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "075820-superseded-materializer-root-lgrv2353",
+  "type": "SUPERSEDED",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-build-authority",
+  "message": "Supersedes only the immediate runner-root-cause portion of 075636-review-result-authority-materializer-lgrv2353. Retained exact artifact .nembra-authority-materializer-error on #2805@4bbbb6108b4806d4dccbf1445284b3850999d9ef proves the runner reaches compile and fails with IndentationError at materializer line 1, not first-inner-heredoc truncation. The staged source contains zero-indented physical lines inside Python triple-quoted replacement strings, so textwrap.dedent sees common indent zero and leaves top-level Python carrying the YAML outer prefix. Correct extraction should remove the known outer YAML prefix per physical line when present, preserving zero-indent embedded string content; final-sentinel selection remains optional hardening. The #2778 KQ_NOTE_ATTRIB blocker and temporary-scaffolding cleanup findings from the earlier event remain valid. PR corrective review 4904084609. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:58:20Z",
+  "data": {
+    "supersedesEvent": "075636-review-result-authority-materializer-lgrv2353",
+    "scope": "materializer immediate root cause only",
+    "retainedHead": "4bbbb6108b4806d4dccbf1445284b3850999d9ef",
+    "retainedFile": ".nembra-authority-materializer-error",
+    "actualFailure": "IndentationError: unexpected indent",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
