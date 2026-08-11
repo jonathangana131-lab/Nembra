@@ -17,6 +17,16 @@ if SPEC is None or SPEC.loader is None:
 provenance = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(provenance)
 
+PRIVATE_DEVICE_RUNNER_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "es80_signed_field_artifact_private_runner.py"
+PRIVATE_DEVICE_RUNNER_SPEC = importlib.util.spec_from_file_location(
+    "es80_signed_field_artifact_private_runner",
+    PRIVATE_DEVICE_RUNNER_PATH,
+)
+if PRIVATE_DEVICE_RUNNER_SPEC is None or PRIVATE_DEVICE_RUNNER_SPEC.loader is None:
+    raise RuntimeError("could not load hardened intended-device runner")
+private_device_runner = importlib.util.module_from_spec(PRIVATE_DEVICE_RUNNER_SPEC)
+PRIVATE_DEVICE_RUNNER_SPEC.loader.exec_module(private_device_runner)
+
 
 class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -62,6 +72,9 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         current = self.current()
         provenance.write_record(self.record, current)
         return current
+
+    def test_hardened_intended_device_runner_executes_its_adversarial_self_test(self) -> None:
+        private_device_runner.self_test()
 
     def test_snapshot_contains_only_fingerprints_and_is_private(self) -> None:
         current = self.snapshot()
