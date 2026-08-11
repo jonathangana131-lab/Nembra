@@ -9,12 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:21:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:30:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:33:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
   "pr": 2940,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "intent": "Independent tests-side exact-head acceptance support for the clean app-visible Capture AX closure. Verify current package/graft/Field/Xcode/standalone-visual gates on unchanged current head, inspect retained standard+AX5 artifacts when available, and validate source-level large-type/VoiceOver contracts without overlapping primary product edits or review ownership. PHYSICAL NO-GO.",
-  "checkpoint": "#2940 exact 005b7c4 is one additive AX source-regression commit beyond unchanged app bytes 99fbbbb. Independent source review found no test weakening: SecureLinkView owns dynamicTypeSize, semantic Engineering details remains intact, and Tuya field/action sighted+VoiceOver ordering is explicit. Main Graft run 31490540822 is now terminal SUCCESS on exact 005b7c4, including exact clean-head binding, full Capture package tests (new AX regression included), and standalone exact app target build. Standalone Visual 31490540910 remains in progress after exact-subject verification and public-unprovisioned build; retained standard+AX5 pixels still require human inspection. Field 31490540890 queued; Xcode 31490540888 queued. No queued/running gate is counted green. PHYSICAL NO-GO."
+  "checkpoint": "#2940 exact 005b7c4 remains unchanged. Independent source review found no test weakening. Main Graft 31490540822 terminal SUCCESS. Standalone Visual 31490540910/job 93775735099 terminal SUCCESS; artifact 9101029285 downloaded and human-inspected. Standard dark pixels PASS: truthful locked hierarchy, persistent user-code identity, complete approval action, no clipping. AX XXXL pixels PASS: compact Capture locked status, Account setup hierarchy, persistent field identity, input + Create QR remain first-fold, Details remains visible, no overlap/truncation/duplicate lock block. Manifest binds sourceCommitSHA 005b7c4, iPhone 12/iOS 27, screenshot hashes, and physicalAuthorityCreated=false/protocolAuthorityCreated=false. Field 31490540890 and Xcode 31490540888 remain queued and are not counted green. Security/Final-GO composition remains separate. PHYSICAL NO-GO."
 }
