@@ -25,6 +25,9 @@ from typing import Any, Callable, Iterator
 REPO = "jonathangana131-lab/Nembra"
 OWNER = "jonathangana131-lab"
 PARENT_BRANCH = "control/v14-auth-stationary-final-go-sol"
+PARENT_SOURCE_SHA = "3fdd32551831c3469e0853ddcee8fa828d38b87b"
+PARENT_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"
+PARENT_MODULE_BLOB = "b0664c734004c2265b05d23ec58756806ff62f2c"
 WORKFLOW_NAME = "Capture Authenticated Stationary Generated Subject Final GO"
 WORKFLOW_PATH = ".github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml"
 REVIEW_AUTHORITY = "nembra-capture-human-review-github-v3"
@@ -56,7 +59,7 @@ CHILD_AUTHORITY_PATHS = (
     "scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py",
 )
 PARENT_PINNED_PATHS = (
-    "scripts/ci/es80_authenticated_stationary_final_go.py",
+    PARENT_MODULE_PATH,
     "scripts/ci/es80_authenticated_stationary_signed_artifact.py",
     "scripts/ci/es80_today_final_go_publication.py",
 )
@@ -76,12 +79,52 @@ class GeneratedSubjectGoError(RuntimeError):
 
 
 def _load_base_module():
-    path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")
-    spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)
-    if spec is None or spec.loader is None:
-        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # The parent is executable authority. Never reopen its mutable worktree path.
+    # R3 is cut from one exact parent, so the parent commit + Git blob are pinned
+    # in this reviewed child source. generated_control_plane() independently
+    # requires the live parent PR head to remain this same PARENT_SOURCE_SHA.
+    root = Path(__file__).resolve().parents[2]
+    environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
+    try:
+        source_blob = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout.strip().lower()
+        payload = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", PARENT_MODULE_BLOB],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git subject could not be read") from error
+
+    if source_blob != PARENT_MODULE_BLOB:
+        raise GeneratedSubjectGoError("pinned authenticated-stationary parent source does not own the accepted module blob")
+    if not payload or len(payload) > 2 * 1024 * 1024:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob has invalid bounded bytes")
+    header = b"blob " + str(len(payload)).encode("ascii") + b"\0"
+    if len(PARENT_MODULE_BLOB) == 40:
+        actual_blob = hashlib.sha1(header + payload).hexdigest()
+    elif len(PARENT_MODULE_BLOB) == 64:
+        actual_blob = hashlib.sha256(header + payload).hexdigest()
+    else:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob identity has unsupported width")
+    if actual_blob != PARENT_MODULE_BLOB:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent execution bytes failed Git identity verification")
+
+    module = types.ModuleType("nembra_authenticated_stationary_final_go")
+    module.__file__ = f"git:{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"
+    module.__package__ = ""
+    try:
+        exec(compile(payload, module.__file__, "exec", dont_inherit=True), module.__dict__)
+    except Exception as error:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob could not execute") from error
     return module
 
 
@@ -153,6 +196,8 @@ def generated_control_plane(
     parent_base = parent.get("base", {})
     child_branch = child_head.get("ref")
     parent_sha = base.canon(parent_head.get("sha"), "parent Final-GO PR head")
+    if parent_sha != PARENT_SOURCE_SHA:
+        raise GeneratedSubjectGoError("live parent Final-GO source differs from the exact parent execution subject pinned by R3")
     if (
         base.canon(child_head.get("sha"), "generated-subject PR head") != source
         or child_head.get("repo", {}).get("full_name") != REPO
