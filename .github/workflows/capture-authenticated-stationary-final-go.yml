@@ -8,6 +8,7 @@ on:
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go_current_main_worktree.py
       - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
       - .github/workflows/capture-authenticated-stationary-final-go.yml
   pull_request:
@@ -17,6 +18,7 @@ on:
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go_current_main_worktree.py
       - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
       - .github/workflows/capture-authenticated-stationary-final-go.yml
   workflow_dispatch:
@@ -40,7 +42,9 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             scripts/ci/es80_authenticated_stationary_final_go.py \
-            scripts/ci/es80_authenticated_stationary_signed_artifact.py
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_current_main_worktree.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_current_main_worktree.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
