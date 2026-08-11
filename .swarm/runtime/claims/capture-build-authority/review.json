@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-1435vr",
   "leaseId": "capture-build-review-1435vr-20260811-2140",
   "generation": 15,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:40:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:40:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:46:00Z",
+  "releasedAt": "2026-08-11T21:46:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3016,
   "sourceSHA": "a2f67790ac10376016d5c5b5e6280201e9fcc816",
   "currentHeadSHA": "a2f67790ac10376016d5c5b5e6280201e9fcc816",
   "takeoverFromWorkerId": "sol-20260811-1402vo",
-  "takeoverReason": "Generation-14 review explicitly released after diagnosing #3028's invalid scope gate. Reclaim the free independent review slot for the distinct exact-green build-authority test child #3016, whose Field Provenance run 31537399365 is terminal SUCCESS on unchanged a2f67790 and whose Xcode job is path-policy SKIPPED. Review the one-workflow source-contract delta only; no production writes and no physical authority.",
-  "intent": "Independently verify #3016 exact a2f67790 updates Field source oracles to current verified accepted-Git private-runner and selected root-custodied Xcode tool subjects without weakening negative authority, then publish APPROVE or REQUEST_CHANGES anchored to this exact head. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-14 review explicitly released after diagnosing #3028's invalid scope gate. Reclaimed free review slot for exact-green #3016 source-contract repair.",
+  "intent": "Independent exact-head review of #3016 test-contract delta only; no production writes and no physical authority.",
+  "releaseReason": "SOURCE_EVIDENCE_ACCEPTED_COMMENTED_REVIEW_4910985152; formal APPROVE unavailable because connector identity is PR owner. Exact Field run 31537399365 terminal SUCCESS. Separate ACL and physical blockers unchanged; PHYSICAL NO-GO."
 }
