@@ -116,6 +116,9 @@ def control_plane(authority_repo:Path,pr:int,run_id:int,get=api):
     if git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("GO control-plane checkout is not clean")
     _,p=get(f"/pulls/{pos(pr,'GO control-plane PR')}"); head=p.get("head",{}); base=p.get("base",{}); state=p.get("state"); merged=bool(p.get("merged_at")); draft=p.get("draft")
     if canon(head.get("sha"),"GO control-plane PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main" or not ((state=="open" and draft is False) or (state=="closed" and merged)): raise GoError("GO control-plane PR is not exact/promotable")
+    _,main=get("/branches/main"); main_sha=canon(main.get("commit",{}).get("sha"),"current main")
+    _,comparison=get(f"/compare/{main_sha}...{source}"); merge_base=comparison.get("merge_base_commit",{})
+    if comparison.get("status") not in {"ahead","identical"} or canon(merge_base.get("sha"),"GO control-plane main merge base")!=main_sha: raise GoError("GO control plane does not contain the exact current main authority")
     _,run=get(f"/actions/runs/{pos(run_id,'GO control-plane workflow run')}")
     if run.get("name")!=AUTH_WORKFLOW_NAME or run.get("path")!=AUTH_WORKFLOW_PATH or canon(run.get("head_sha"),"GO control-plane workflow head")!=source or run.get("status")!="completed" or run.get("conclusion")!="success" or run.get("event") not in {"push","pull_request"}: raise GoError("GO control-plane exact authority workflow is not terminal SUCCESS")
     branch=head.get("ref"); pulls=run.get("pull_requests",[])
@@ -126,7 +129,7 @@ def control_plane(authority_repo:Path,pr:int,run_id:int,get=api):
     paths=("scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py",AUTH_WORKFLOW_PATH,"scripts/ci/tests/test_es80_authenticated_stationary_final_go.py")
     blobs={path:git(root,"rev-parse",f"HEAD:{path}").lower() for path in paths}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) for value in blobs.values()): raise GoError("GO control-plane Git blob identity invalid")
-    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
+    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"mainSHA":main_sha,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
 
 def visual(source:str,run:int,aid:int,archive:Path,get=api):
     _,a=get(f"/actions/artifacts/{aid}"); m=DIGEST.fullmatch(a.get("digest","") if isinstance(a.get("digest"),str) else "")
