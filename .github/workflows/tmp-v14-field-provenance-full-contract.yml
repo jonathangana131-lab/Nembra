@@ -52,12 +52,16 @@ jobs:
                   raise SystemExit(f'installer validation anchor changed: {text.count(validation_anchor)} matches')
               text = text.replace(validation_anchor, validation_anchor + validation, 1)
 
-          old_guard = '''          guard_line="$(grep -nF '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \\' "$installer" | sed -n '1s/:.*//p')"\n'''
-          new_guard = '''          guard_line="$(grep -nF 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\' "$installer" | sed -n '1s/:.*//p')"\n          if grep -Fq '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"' "$installer"; then
-            echo 'ERROR: build-window guard must execute from the exact accepted Git source subject, not a mutable worktree pathname.' >&2
-            exit 1
-          fi
-'''
+          old_guard = (
+              '          guard_line="$(grep -nF \'/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \\\' "$installer" | sed -n \'1s/:.*//p\')"\n'
+          )
+          new_guard = (
+              '          guard_line="$(grep -nF \'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\\' "$installer" | sed -n \'1s/:.*//p\')"\n'
+              '          if grep -Fq \'/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"\' "$installer"; then\n'
+              "            echo 'ERROR: build-window guard must execute from the exact accepted Git source subject, not a mutable worktree pathname.' >&2\n"
+              '            exit 1\n'
+              '          fi\n'
+          )
           if text.count(old_guard) != 1:
               raise SystemExit(f'stale guard source-contract anchor changed: {text.count(old_guard)} matches')
           text = text.replace(old_guard, new_guard, 1)
@@ -70,8 +74,13 @@ jobs:
           python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract
           bash -n scripts/field/install_one_time_capture.command
           grep -Fq 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"' scripts/field/install_one_time_capture.command
-          grep -Fq 'guard_line="$(grep -nF '\''run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \'\'' "$installer"' .github/workflows/capture-field-build-provenance.yml
           grep -Fq 'scripts/ci/tests/test_capture_field_accepted_source_path_contract.py' .github/workflows/capture-field-build-provenance.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/capture-field-build-provenance.yml').read_text()
+          assert 'guard_line="$(grep -nF \'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\\' "$installer"' in text
+          assert 'guard_line="$(grep -nF \'/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"' not in text
+          PY
           git diff --check
       - name: Publish clean QA successor
         shell: bash
