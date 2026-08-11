@@ -43,18 +43,12 @@ final class CaptureRuntimeVoiceOverUITests: XCTestCase {
             "Public/unprovisioned runtime hierarchy must not expose Bluetooth scan authority anywhere, including offscreen or under a non-button element type."
         )
 
-        try app.performAccessibilityAudit(
-            for: [
-                .sufficientElementDescription,
-                .hitRegion,
-                .dynamicType,
-                .textClipped,
-                .trait,
-                .parentChild,
-                .elementDetection,
-                .action
-            ]
-        )
+        // Run the toolchain's complete supported audit set instead of spelling
+        // individual enum members. Xcode 27 beta 4 does not expose the newer
+        // `.parentChild` / `.action` spellings as public enum members; asking
+        // XCTest for its default `.all` set keeps this witness fail-closed as the
+        // SDK evolves and avoids silently reducing coverage to a hand-picked list.
+        try app.performAccessibilityAudit()
 
         let service = XCUIDevice.shared.voiceOverService
         if service.isEnabled {
