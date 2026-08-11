@@ -61,8 +61,8 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
     def test_helper_execution_bytes_are_protected_exact_git_subject(self) -> None:
         """Promoted #2741 invariant: checked helper bytes must be the executed bytes."""
         source = INSTALLER.read_text(encoding="utf-8")
-        accepted_blob = 'HELPER_ACCEPTED_BLOB="$(git rev-parse "HEAD:$SIGNED_APP_CUSTODY_HELPER_RELATIVE"'
-        actual_blob = 'HELPER_ACTUAL_BLOB="$(git hash-object --no-filters -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE"'
+        accepted_blob = 'HELPER_ACCEPTED_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 git rev-parse "HEAD:$SIGNED_APP_CUSTODY_HELPER_RELATIVE"'
+        actual_blob = 'HELPER_ACTUAL_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 git hash-object --no-filters -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE"'
         protected_root = 'HELPER_EXECUTION_STAGE_ROOT="$(/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-capture-install-helper.XXXXXX)"'
         materialize = 'GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git cat-file blob "$HELPER_ACCEPTED_BLOB"'
         protected_subject = 'HELPER_EXECUTION_SUBJECT="$HELPER_EXECUTION_STAGE_ROOT/capture_signed_app_install_custody.py"'
@@ -156,8 +156,8 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         self.assertLess(indexes["codesign"], indexes["install"])
         self.assertIn('git ls-files -v -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
         self.assertIn('git ls-files -t -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
-        self.assertIn('git rev-parse "HEAD:$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
-        self.assertIn('git hash-object --no-filters -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
+        self.assertIn('GIT_NO_REPLACE_OBJECTS=1 git rev-parse "HEAD:$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
+        self.assertIn('GIT_NO_REPLACE_OBJECTS=1 git hash-object --no-filters -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
         self.assertLess(source.find('HELPER_ACTUAL_BLOB='), indexes["helper_stage"])
         self.assertIn('[[ "$STAGED_APP_TREE_SHA256" == "$SOURCE_APP_TREE_SHA256" ]]', source)
         self.assertIn('APP_INSTALL_STAGE_ROOT=""', source)
