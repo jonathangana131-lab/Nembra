@@ -7,7 +7,28 @@ TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
+REVIEW_ONLY=0
+if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
+  REVIEW_ONLY=1
+  shift
+fi
+[[ "$#" == "0" ]] || {
+  echo "ERROR: usage: Scripts/bootstrap_capture_tuya_sdk.sh [--resolve-lock-for-review]" >&2
+  exit 1
+}
 cd "$REPO_ROOT"
+
+if [[ "$REVIEW_ONLY" == "0" ]]; then
+  : "${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 to the preaccepted lowercase/uppercase 64-hex Podfile.lock SHA-256 before field bootstrap. To create a candidate dependency subject without build authority, use --resolve-lock-for-review.}"
+  [[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 must be exactly 64 hex characters." >&2
+    exit 1
+  }
+  ACCEPTED_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
+else
+  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+  ACCEPTED_LOCK_SHA256=""
+fi
 
 if ! command -v pod >/dev/null 2>&1; then
   cat >&2 <<'EOF'
@@ -119,8 +140,8 @@ then
   exit 12
 fi
 
-LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}')"
-[[ "$LOCK_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || {
+LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+[[ "$LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
   echo "ERROR: could not compute the Podfile.lock SHA-256 provenance fingerprint." >&2
   exit 13
 }
@@ -132,6 +153,29 @@ LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}')"
   echo "ERROR: private Tuya dependency provenance record is not mode 0600." >&2
   exit 15
 }
+
+if [[ "$REVIEW_ONLY" == "1" ]]; then
+  cat <<EOF
+
+DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+  Podfile.lock SHA-256: $LOCK_SHA256
+  Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
+
+Review and bind this exact dependency-lock digest to the exact accepted Capture
+source through the current Final-GO control plane before any field build/install.
+Then rerun the normal bootstrap/installer with that accepted digest supplied as
+NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256. This review-only mode never invokes
+xcodebuild, installs Nembra, scans Bluetooth, or authorizes a physical attempt.
+EOF
+  exit 0
+fi
+
+[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]] || {
+  echo "ERROR: resolved Podfile.lock does not match the preaccepted dependency-lock SHA-256. Stop before xcodebuild/install and review the new dependency subject." >&2
+  exit 16
+}
+printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
+unset ACCEPTED_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
 
 cat <<EOF
 
