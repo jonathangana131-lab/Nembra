@@ -35,7 +35,6 @@ jobs:
           python3 -m py_compile \
             Scripts/capture_tuya_private_input_build_guard.py \
             Scripts/capture_tuya_private_input_provenance.py \
-            Scripts/capture_tuya_private_input_subject_digest.py \
             scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py \
             scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py
       - name: Run Capture authority regressions
