@@ -37,6 +37,18 @@ def load_writer():
     return module
 
 
+def load_resolution_adapter():
+    spec = importlib.util.spec_from_file_location(
+        "nembra_private_dependency_resolution_adapter_test",
+        RESOLUTION_GUARD_PATH,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("private dependency-resolution adapter import unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
     def test_authority_verification_precedes_cocoapods_discovery(self) -> None:
         source = BOOTSTRAP_PATH.read_text(encoding="utf-8")
@@ -105,6 +117,72 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
             any(name.startswith("require_accepted_") for name in supplied_keywords),
             "pre-generated dependency resolution must not fabricate disable-acceptance toggles",
         )
+
+        canonical_members = {
+            node.name
+            for node in guard_tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        }
+        adapter_guard_members = {
+            node.attr
+            for node in ast.walk(adapter_tree)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "guard"
+        }
+        missing_members = adapter_guard_members - canonical_members
+        self.assertFalse(
+            missing_members,
+            f"dependency adapter references nonexistent canonical guard members: {sorted(missing_members)}",
+        )
+        self.assertNotIn("_lexical_absolute", adapter_guard_members)
+        self.assertNotIn("_require_real_checkout_ancestry", adapter_guard_members)
+
+    def test_dependency_resolution_adapter_rejects_escaping_and_symlinked_ancestry(self) -> None:
+        adapter = load_resolution_adapter()
+        with tempfile.TemporaryDirectory(prefix="nembra-private-resolution-ancestry-") as temporary:
+            sandbox = Path(temporary)
+            checkout = sandbox / "repo"
+            private = checkout / "LocalSecrets" / "TuyaSDK"
+            private.mkdir(parents=True)
+            podspec = private / "ThingSmartCryption.podspec"
+            podspec.write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+
+            admitted = adapter._require_real_checkout_ancestry(
+                podspec,
+                checkout,
+                label="private security podspec",
+            )
+            self.assertEqual(admitted, podspec)
+
+            outside = sandbox / "outside.podspec"
+            outside.write_text("outside\n", encoding="utf-8")
+            with self.assertRaises(adapter.ResolutionGuardError):
+                adapter._require_real_checkout_ancestry(
+                    outside,
+                    checkout,
+                    label="private security podspec",
+                )
+
+            real_tree = checkout / "real-build"
+            real_tree.mkdir()
+            alias = checkout / "aliased-build"
+            alias.symlink_to(real_tree, target_is_directory=True)
+            with self.assertRaises(adapter.ResolutionGuardError):
+                adapter._require_real_checkout_ancestry(
+                    alias,
+                    checkout,
+                    label="private security build tree",
+                )
+
+            intermediate = checkout / "alias-parent"
+            intermediate.symlink_to(private, target_is_directory=True)
+            with self.assertRaises(adapter.ResolutionGuardError):
+                adapter._require_real_checkout_ancestry(
+                    intermediate / podspec.name,
+                    checkout,
+                    label="private security podspec",
+                )
 
     def test_failed_publication_attacker_source_is_blocked_before_pod(self) -> None:
         writer = load_writer()
