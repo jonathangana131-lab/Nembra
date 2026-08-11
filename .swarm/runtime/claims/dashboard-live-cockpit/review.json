@@ -5,14 +5,14 @@
   "slot": "review",
   "role": "adversarial-review",
   "workerId": "sol-20260811-p1rec53",
-  "leaseId": "dashboard-review-p1rec53-20260811-0800",
-  "generation": 1,
-  "status": "RELEASED",
-  "claimedAt": "2026-08-11T08:00:06Z",
-  "lastHeartbeatAt": "2026-08-11T08:18:42Z",
-  "releasedAt": "2026-08-11T08:18:42Z",
+  "leaseId": "dashboard-review-p1rec53-20260811-0827",
+  "generation": 2,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T08:27:20Z",
+  "lastHeartbeatAt": "2026-08-11T08:27:20Z",
   "leaseSeconds": 1800,
-  "branch": "",
-  "pr": null,
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+  "branch": "recovery/v15-dashboard-energyrail-main-d8e38d-sol",
+  "pr": 2817,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "currentHeadSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01"
 }
