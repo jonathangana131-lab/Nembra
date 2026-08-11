@@ -24,6 +24,9 @@ struct NembraCaptureApp: App {
 private struct CaptureP0Root: View {
     @StateObject private var tuya = TuyaAccountBridge()
     @State private var showEngineeringDetails = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var accessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }
 
     var body: some View {
         NavigationStack {
@@ -38,16 +41,17 @@ private struct CaptureP0Root: View {
                 .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
-                        VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: accessibilityLayout ? 14 : 22) {
+                        VStack(alignment: .leading, spacing: accessibilityLayout ? 6 : 8) {
                             Text("NEMBRA CAPTURE")
-                                .font(.caption2.bold())
-                                .tracking(1.5)
+                                .font(accessibilityLayout ? .caption.bold() : .caption2.bold())
+                                .tracking(accessibilityLayout ? 0.8 : 1.5)
+                                .dynamicTypeSize(.xSmall ... .xxxLarge)
                                 .foregroundStyle(.cyan)
-                            Text("Prepare the scooter link")
-                                .font(.largeTitle.bold())
-                            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
-                                .font(.body)
+                            Text(accessibilityLayout ? "Prepare scooter link" : "Prepare the scooter link")
+                                .font(accessibilityLayout ? .title2.bold() : .largeTitle.bold())
+                            Text(accessibilityLayout ? "Read-only setup. Scooter settings stay unchanged." : "One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
+                                .font(accessibilityLayout ? .callout : .body)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -55,10 +59,10 @@ private struct CaptureP0Root: View {
                         rootPanel {
                             VStack(alignment: .leading, spacing: 14) {
                                 Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
-                                    .font(.title3.bold())
+                                    .font(accessibilityLayout ? .headline.bold() : .title3.bold())
                                     .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
-                                Text(tuya.statusMessage)
-                                    .font(.footnote)
+                                Text(accessibilityLayout && !tuya.isLinked ? "Approve access to continue." : tuya.statusMessage)
+                                    .font(accessibilityLayout ? .callout : .footnote)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
 
@@ -172,7 +176,7 @@ private struct CaptureP0Root: View {
                     }
                     .frame(maxWidth: 720)
                     .padding(.horizontal, 20)
-                    .padding(.top, 22)
+                    .padding(.top, accessibilityLayout ? 12 : 22)
                     .padding(.bottom, 44)
                     .frame(maxWidth: .infinity)
                 }
@@ -186,7 +190,7 @@ private struct CaptureP0Root: View {
     @ViewBuilder
     private func rootPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(18)
+            .padding(accessibilityLayout ? 14 : 18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
