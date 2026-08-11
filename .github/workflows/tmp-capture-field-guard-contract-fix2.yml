@@ -1,0 +1,52 @@
+name: TEMP Capture Field Guard Contract Fix 2
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/tmp-capture-field-guard-contract-fix2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Align provenance guard invocation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \\'
+          new = 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \\'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one stale guard invocation contract, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          grep -Fq 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \' .github/workflows/capture-field-build-provenance.yml
+          if grep -Fq '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \' .github/workflows/capture-field-build-provenance.yml; then
+            echo 'ERROR: stale mutable guard invocation remains in field provenance contract.' >&2
+            exit 1
+          fi
+      - name: Publish acceptance-contract repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/workflows/tmp-capture-field-guard-contract-fix.yml .github/workflows/tmp-capture-field-guard-contract-fix2.yml
+          git add .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'Capture: align field provenance with accepted-source guard'
+          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
