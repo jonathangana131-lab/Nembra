@@ -1,0 +1,86 @@
+name: Swarm Control Plane Shadow
+
+on:
+  pull_request:
+    paths:
+      - '.swarm/**'
+      - 'scripts/swarm_control.py'
+      - 'scripts/ci/tests/test_swarm_control_plane.py'
+      - 'docs/SWARM_CONTROL_PLANE.md'
+      - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
+      - '.github/workflows/swarm-control-plane-shadow.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.swarm/**'
+      - 'scripts/swarm_control.py'
+      - 'scripts/ci/tests/test_swarm_control_plane.py'
+      - 'docs/SWARM_CONTROL_PLANE.md'
+      - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
+      - '.github/workflows/swarm-control-plane-shadow.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-control-plane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind validation to exact checked-out head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile trusted control-plane code
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/swarm_control.py scripts/ci/tests/test_swarm_control_plane.py
+      - name: Validate trusted static config
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+          sys.path.insert(0, 'scripts')
+          import swarm_control
+          with open('.swarm/config.json', encoding='utf-8') as handle:
+              swarm_control.validate_config(json.load(handle))
+          print('static swarm config valid')
+          PY
+      - name: Run adversarial control-plane tests
+        run: python3 -m unittest -v scripts.ci.tests.test_swarm_control_plane
+      - name: Prove 30-worker deterministic race simulation
+        run: python3 scripts/swarm_control.py simulate --workers 30
+
+  pr-metadata-shadow:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Observe swarm metadata without breaking legacy PRs
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+          sys.path.insert(0, 'scripts')
+          import swarm_control
+          try:
+              metadata = swarm_control.validate_pr_metadata(os.environ.get('PR_BODY', ''))
+          except swarm_control.ValidationError as exc:
+              print(f'::warning title=Swarm shadow metadata::{exc}')
+          else:
+              print('controlled PR metadata:', metadata)
+          PY
