@@ -9,15 +9,15 @@
   "generation": 3,
   "status": "NEEDS_CHANGES",
   "claimedAt": "2026-08-11T12:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:55:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:10:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
-  "currentHeadSHA": "e2c3b06fb32644c17eea649de103fe50d7478635",
-  "findingPR": 2918,
-  "findingHeadSHA": "d8c069069daa32da048e3fb02426c81776f38de0",
-  "findingRun": 31488913742,
-  "findingState": "SUPERSEDED_SOURCE_ACCEPTANCE_NEW_EXPECTED_REDS_2964_2961",
-  "reviewFinding": "Prior source acceptance on 1834a39 is superseded. #2964 exact 7c641e69 / Private Identity run 31492962368 terminal FAILURE mechanically confirms admitted crash-residue bytes survive an early invalid-output rejection before recovered descriptor sanitation. #2961 exact d7aa662e / Failed Bootstrap Admission run 31492665010 terminal FAILURE confirms failed private publication can become later CocoaPods input on the predecessor; 1834a39 did not change bootstrap admission. Current #2944 exact e2c3b06 only adds Scripts/capture_tuya_private_identity_authority.py; it is not yet wired into provisioning/bootstrap/build and does not change _write_staged, so neither blocker is closed by this head. Durable review comment 5253472551 requires transaction wiring + early-rejection sanitation + permanent replay + clean exact-head acceptance reset. PHYSICAL NO-GO."
+  "currentHeadSHA": "4242a18e699285bd5078357b36bc610adc79496f",
+  "findingPR": 2964,
+  "findingHeadSHA": "7c641e69a00c97b92c2c117bbbf64d342d5e986e",
+  "findingRun": 31492962368,
+  "findingState": "ROOT_RECEIPT_WIRED_BUT_2964_EARLY_SANITATION_STILL_UNCLOSED",
+  "reviewFinding": "Current #2944 exact 4242a18 wires the root-sealed successful-transaction authority and permanent failed-bootstrap/CocoaPods sentinel; canonical Private Identity run 31494268666 is terminal SUCCESS. However exact writer source still executes _validate_existing_output before entering the try that takes recovered_stage and sanitizes staging_fd. #2964's exact test_early_existing_output_rejection_sanitizes_admitted_inode is absent from the canonical 4242a18 test file/workflow, so the green suite does not exercise the demonstrated seam. An invalid existing destination can therefore reject before descriptor sanitation, leaving credential-bearing admitted crash-residue bytes intact. Durable review comment 5253618566 requires permanent absorption of #2964 plus exact held-inode sanitation on every post-admission failure, then full exact-head rerun. Field/Graft/Xcode pending evidence cannot override this source blocker. PHYSICAL NO-GO."
 }
