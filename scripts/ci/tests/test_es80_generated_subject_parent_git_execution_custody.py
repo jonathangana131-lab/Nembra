@@ -42,9 +42,9 @@ class GeneratedSubjectParentGitExecutionCustodyTests(unittest.TestCase):
             r3 = root / R3_RELATIVE
             base = root / BASE_RELATIVE
             self.assertEqual(
-                git(root, "rev-parse", f"{PARENT_SOURCE_SHA}:{BASE_RELATIVE}"),
+                git(root, "rev-parse", f"HEAD:{BASE_RELATIVE}"),
                 PARENT_MODULE_BLOB,
-                "the production pin must name the exact authenticated-stationary parent blob",
+                "the exact checked-out R3 tree must own the pinned authenticated-stationary parent blob",
             )
 
             sentinel = root / "attacker-base-executed"
@@ -93,6 +93,7 @@ class GeneratedSubjectParentGitExecutionCustodyTests(unittest.TestCase):
         self.assertIn("GIT_NO_REPLACE_OBJECTS", source)
         self.assertIn("parent_sha != PARENT_SOURCE_SHA", source)
         loader = source[source.index("def _load_base_module") : source.index("def _canonical_digest")]
+        self.assertIn('f"HEAD:{PARENT_MODULE_PATH}"', loader)
         self.assertIn("cat-file", loader)
         self.assertIn("PARENT_MODULE_BLOB", loader)
         self.assertNotIn("spec_from_file_location", loader)
