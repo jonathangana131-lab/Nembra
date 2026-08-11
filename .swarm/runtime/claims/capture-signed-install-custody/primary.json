@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:15:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:52:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:16:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-capture-signed-helper-replace-blind-c7e19a",
   "pr": 2871,
@@ -23,8 +23,10 @@
   "activeBlockerRun": 31491053333,
   "activeBlockerState": "EXPECTED_RED_CONFIRMED",
   "researchProbeBranch": "research/v14-signed-origin-normalization-4f51fg",
-  "researchProbeHeadSHA": "dd415c3efc4c35b198cb2c6840f998d26b9be196",
-  "researchProbeRun": 31493198966,
+  "portableIsolationDiagnosticHeadSHA": "b1c83a78632cdd7def42fb666defe35635f11161",
+  "portableIsolationDiagnosticRun": 31495134925,
+  "portableIsolationDiagnosticState": "RESEARCH_ONLY_SUCCESS",
+  "portableIsolationFinding": "GitHub runner uid 1001 normal gid 1001 with ephemeral gid 61000: intended same-UID transient-GID child can write under root-owned group-only parent; same-UID normal-group sibling is denied; root locks parent to 0700. POSIX primitive only, not Mac/Xcode/product acceptance.",
   "takeoverFromWorkerId": "sol-20260811-4f50x",
-  "takeoverReason": "#2911 accepted QA was composed into #2871 and moved-parent acceptance reset. Fresh parent Signed App 31490454614, Field 31490454631, and Main Graft 31490454719 are terminal green, but independent exact red-team #2955 exact afdd329d / Signed App run 31491053333 mechanically confirms a distinct compiler-output-origin defect: the first protected-stage expected digest is self-derived only after xcodebuild returns from a same-UID-mutable DerivedData pathname. That blocks f76e6ae regardless of legacy gate greens or Xcode status. Production repair must bind the build-produced bundle continuously through the first protected snapshot rather than move the same post-build hash earlier. Isolated Mac research probe 31493198966 tests whether code-sign removal can recover an exact unsigned reference shape without moving production. PHYSICAL NO-GO."
+  "takeoverReason": "#2911 accepted QA was composed into #2871 and moved-parent acceptance reset. Fresh parent Signed App 31490454614, Field 31490454631, and Main Graft 31490454719 are terminal green, but independent exact red-team #2955 exact afdd329d / Signed App run 31491053333 mechanically confirms a distinct compiler-output-origin defect: the first protected-stage expected digest is self-derived only after xcodebuild returns from a same-UID-mutable DerivedData pathname. That blocks f76e6ae regardless of legacy gate greens or Xcode status. Production repair must bind the build-produced bundle continuously through the first protected snapshot rather than move the same post-build hash earlier. Portable transient-GID isolation semantics are now mechanically green in research run 31495134925; next required research gate is real Mac/Xcode compatibility before any production design is selected. PHYSICAL NO-GO."
 }
