@@ -7,6 +7,7 @@ on:
       - capture/one-time-ble-dump-gpt56
   pull_request:
     paths:
+      - .gitignore
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraApp/Features/Research/TuyaAccountBridge.swift
@@ -26,6 +27,7 @@ on:
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_tuya_private_input_provenance.py
       - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/es80_signed_field_artifact_private_runner.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
       - scripts/field/install_one_time_capture.command
