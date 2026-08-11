@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "071140-capture-flagship-metadata-test-truth-9c42",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-9c42",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Canonical P0 flagship #2612 exact head 9e7c65cde7d33b731ea04e11cfe43a792743ed5d has the same selective-graft package blocker class while its standalone Capture Xcode build succeeds. The retained package artifact explicitly records stale failures in TuyaMetadataAccountUIDCustodySourceTests and TuyaMetadataSecretRedactionSourceTests demanding strategy[\"result\"] / localStrategy after production intentionally removed that false provenance; immediately afterward Swift Testing itself aborts with Range requires lowerBound <= upperBound. Open PR #2799 exact ff70b15cd770fcfa11c37635ebf528fcf554fda0 is the existing two-test truth repair and removes those stale demands without restoring localStrategy. Its own selective-graft artifact no longer records those expectation failures, but the Swift Testing Range abort still occurs later, so #2799 is necessary but not sufficient. Treat the residual Range abort as a separate package-test-runtime/source-test defect requiring isolation; standalone app build remains green. PHYSICAL NO-GO unchanged.",
+  "createdAt": "2026-08-11T07:11:40Z",
+  "data": {
+    "flagshipPR": 2612,
+    "flagshipHeadSHA": "9e7c65cde7d33b731ea04e11cfe43a792743ed5d",
+    "flagshipSelectiveGraftRun": 31458876957,
+    "metadataTruthRepairPR": 2799,
+    "metadataTruthRepairHeadSHA": "ff70b15cd770fcfa11c37635ebf528fcf554fda0",
+    "metadataTruthRepairSelectiveGraftRun": 31459674045,
+    "standaloneBuild": "SUCCESS",
+    "staleMetadataAssertionsRemovedBy2799": true,
+    "residualFailureClass": "SWIFT_TESTING_RANGE_ABORT",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
