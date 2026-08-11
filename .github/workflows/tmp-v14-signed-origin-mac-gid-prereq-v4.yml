@@ -1,0 +1,403 @@
+name: tmp V14 Signed Origin Mac GID Prereq v4
+
+on:
+  push:
+    branches:
+      - test/capture-signed-origin-prereq-sol-1312t8-20260811
+    paths:
+      - .github/workflows/tmp-v14-signed-origin-mac-gid-prereq-v4.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind blocked signed-install ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor f76e6ae54b4304df5b02db4f46a72f67daa276e2 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Resolve required runner tools
+        id: tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tool in python3 xcodebuild codesign security ps; do
+            path="$(command -v "$tool" 2>/dev/null || true)"
+            if [[ -z "$path" || ! -x "$path" ]]; then
+              echo "::error title=Probe harness blocker::$tool is unavailable; no isolation conclusion is permitted."
+              exit 78
+            fi
+            echo "${tool}_bin=$path" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Capture normal-session signing visibility counts
+        id: baseline
+        shell: bash
+        env:
+          SECURITY_BIN: ${{ steps.tools.outputs.security_bin }}
+        run: |
+          set -euo pipefail
+          set +e
+          identity_output="$("$SECURITY_BIN" find-identity -v -p codesigning 2>&1)"
+          identity_status="$?"
+          set -e
+          identity_count="$(printf '%s\n' "$identity_output" | /usr/bin/grep -c '^ *[0-9][0-9]*) ' || true)"
+          keychain_count="$("$SECURITY_BIN" list-keychains -d user 2>/dev/null | /usr/bin/grep -c '"' || true)"
+          unset identity_output
+          echo "identity_status=$identity_status" >> "$GITHUB_OUTPUT"
+          echo "identity_count=$identity_count" >> "$GITHUB_OUTPUT"
+          echo "keychain_count=$keychain_count" >> "$GITHUB_OUTPUT"
+          printf 'Normal signing visibility: security_status=%s identity_count=%s keychain_lines=%s\n' "$identity_status" "$identity_count" "$keychain_count"
+
+      - name: Run corrected transient-GID Xcode/signing/process probe
+        id: probe
+        shell: bash
+        env:
+          PYTHON3_BIN: ${{ steps.tools.outputs.python3_bin }}
+          XCODEBUILD_BIN: ${{ steps.tools.outputs.xcodebuild_bin }}
+          CODESIGN_BIN: ${{ steps.tools.outputs.codesign_bin }}
+          SECURITY_BIN: ${{ steps.tools.outputs.security_bin }}
+          PS_BIN: ${{ steps.tools.outputs.ps_bin }}
+          NORMAL_IDENTITY_STATUS: ${{ steps.baseline.outputs.identity_status }}
+          NORMAL_IDENTITY_COUNT: ${{ steps.baseline.outputs.identity_count }}
+          NORMAL_KEYCHAIN_COUNT: ${{ steps.baseline.outputs.keychain_count }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/nembra-v14-signed-origin-mac-gid-v4.json"
+          build_log="$RUNNER_TEMP/nembra-v14-signed-origin-mac-gid-v4-xcodebuild.log"
+          root="/private/tmp/nembra-v14-signed-origin-v4-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          sudo -n rm -rf -- "$root"
+          rm -f -- "$report" "$build_log"
+
+          set +e
+          sudo -n "$PYTHON3_BIN" - \
+            "$GITHUB_WORKSPACE" "$root" "$(id -u)" "$(id -g)" "$(id -un)" "$HOME" "${TMPDIR:-/tmp}" \
+            "$build_log" "$report" "$GITHUB_SHA" "$PYTHON3_BIN" "$XCODEBUILD_BIN" "$CODESIGN_BIN" \
+            "$SECURITY_BIN" "$PS_BIN" "$NORMAL_IDENTITY_STATUS" "$NORMAL_IDENTITY_COUNT" "$NORMAL_KEYCHAIN_COUNT" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import stat
+          import subprocess
+          import sys
+          import time
+          import traceback
+
+          repo = Path(sys.argv[1]).resolve()
+          root = Path(sys.argv[2])
+          uid = int(sys.argv[3])
+          normal_gid = int(sys.argv[4])
+          user = sys.argv[5]
+          home = sys.argv[6]
+          tmpdir = sys.argv[7]
+          build_log = Path(sys.argv[8])
+          report_path = Path(sys.argv[9])
+          probe_head = sys.argv[10]
+          python3_bin = sys.argv[11]
+          xcodebuild_bin = sys.argv[12]
+          codesign_bin = sys.argv[13]
+          security_bin = sys.argv[14]
+          ps_bin = sys.argv[15]
+          normal_security_status = int(sys.argv[16])
+          normal_identity_count = int(sys.argv[17])
+          normal_keychain_count = int(sys.argv[18])
+
+          result = {
+              "probe_head": probe_head,
+              "attacked_parent": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
+              "scope": "Mac Simulator transient-GID prerequisite research only; not production #2955 acceptance or physical-device provisioning",
+              "phase_reached": "bootstrap",
+              "probe_complete": False,
+              "normal_gid": normal_gid,
+              "ephemeral_gid": None,
+              "normal_security_status": normal_security_status,
+              "normal_identity_count": normal_identity_count,
+              "normal_user_keychain_lines": normal_keychain_count,
+              "transient_security_status": None,
+              "transient_identity_count": None,
+              "transient_user_keychain_lines": None,
+              "same_uid_normal_gid_traversal_denied": None,
+              "xcodebuild_exit": None,
+              "writer_processes_at_direct_return": None,
+              "writer_processes_after_drain": None,
+              "writer_drain_seconds": None,
+              "app_exists_after_root_lock": None,
+              "protected_mode_after_root_lock": None,
+              "codesign_verify_exit": None,
+              "failure_class": None,
+              "failure_detail": None,
+          }
+
+          def publish():
+              report_path.write_text(json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
+              os.chown(report_path, uid, normal_gid)
+              os.chmod(report_path, 0o600)
+
+          def fail(kind, detail):
+              result["failure_class"] = kind
+              result["failure_detail"] = str(detail)[:600]
+              publish()
+              raise SystemExit(1)
+
+          base_env = dict(os.environ)
+          base_env.update({"HOME": home, "USER": user, "LOGNAME": user, "TMPDIR": tmpdir})
+
+          def active_egids():
+              completed = subprocess.run([ps_bin, "-axo", "egid="], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+              if completed.returncode != 0:
+                  fail("process_table_unavailable", f"ps exit={completed.returncode}")
+              values = set()
+              for line in completed.stdout.decode("utf-8", "replace").splitlines():
+                  text = line.strip()
+                  if text.isdigit():
+                      values.add(int(text))
+              return values
+
+          def writer_pids(target_gid):
+              completed = subprocess.run([ps_bin, "-axo", "pid=,egid="], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+              if completed.returncode != 0:
+                  fail("process_table_unavailable", f"ps exit={completed.returncode}")
+              pids = []
+              for line in completed.stdout.decode("utf-8", "replace").splitlines():
+                  fields = line.split()
+                  if len(fields) >= 2 and fields[0].isdigit() and fields[1].isdigit() and int(fields[1]) == target_gid:
+                      pids.append(int(fields[0]))
+              return pids
+
+          def run_as_gid(target_gid, argv):
+              read_fd, write_fd = os.pipe()
+              pid = os.fork()
+              if pid == 0:
+                  try:
+                      os.close(read_fd)
+                      os.setgroups([])
+                      os.setgid(target_gid)
+                      os.setuid(uid)
+                      completed = subprocess.run(argv, env=base_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+                      payload = {"status": completed.returncode, "stdout": completed.stdout.decode("utf-8", "replace")[:8192]}
+                      os.write(write_fd, json.dumps(payload).encode("utf-8"))
+                  except BaseException as exc:
+                      os.write(write_fd, json.dumps({"error": type(exc).__name__ + ":" + str(exc)}).encode("utf-8", "replace"))
+                  finally:
+                      os._exit(0)
+              os.close(write_fd)
+              chunks = []
+              while True:
+                  chunk = os.read(read_fd, 65536)
+                  if not chunk:
+                      break
+                  chunks.append(chunk)
+              os.close(read_fd)
+              os.waitpid(pid, 0)
+              return json.loads(b"".join(chunks).decode("utf-8"))
+
+          try:
+              if os.geteuid() != 0:
+                  fail("harness", "root supervisor not established")
+
+              occupied = active_egids()
+              ephemeral_gid = 61000
+              while ephemeral_gid in occupied or ephemeral_gid == normal_gid:
+                  ephemeral_gid += 1
+              result["ephemeral_gid"] = ephemeral_gid
+
+              root.mkdir(mode=0o711)
+              os.chown(root, 0, 0)
+              os.chmod(root, 0o711)
+              protected = root / "protected-derived"
+              protected.mkdir(mode=0o770)
+              os.chown(protected, 0, ephemeral_gid)
+              os.chmod(protected, 0o770)
+              result["phase_reached"] = "protected_output_created"
+
+              identity = run_as_gid(ephemeral_gid, [security_bin, "find-identity", "-v", "-p", "codesigning"])
+              keychains = run_as_gid(ephemeral_gid, [security_bin, "list-keychains", "-d", "user"])
+              if "error" in identity or "error" in keychains:
+                  fail("security_probe_execution", f"identity_error={identity.get('error')} keychain_error={keychains.get('error')}")
+              transient_identity_count = sum(1 for line in identity["stdout"].splitlines() if line.lstrip()[:1].isdigit() and ") " in line)
+              transient_keychain_count = sum(1 for line in keychains["stdout"].splitlines() if '"' in line)
+              result["transient_security_status"] = identity["status"]
+              result["transient_identity_count"] = transient_identity_count
+              result["transient_user_keychain_lines"] = transient_keychain_count
+              if identity["status"] != normal_security_status:
+                  fail("signing_identity_status_regression", f"normal={normal_security_status} transient={identity['status']}")
+              if normal_identity_count > 0 and transient_identity_count < normal_identity_count:
+                  fail("signing_identity_visibility_regression", f"normal={normal_identity_count} transient={transient_identity_count}")
+              if normal_keychain_count > 0 and transient_keychain_count < normal_keychain_count:
+                  fail("user_keychain_visibility_regression", f"normal={normal_keychain_count} transient={transient_keychain_count}")
+              result["phase_reached"] = "signing_visibility_verified"
+
+              # Critical correction versus invalid v2/v3: the negative sibling runs with
+              # the operator's NORMAL GID, not the trusted ephemeral writer GID.
+              sibling = run_as_gid(normal_gid, [python3_bin, "-I", "-c", f"import os; os.listdir({str(protected)!r})"])
+              if "error" in sibling:
+                  fail("normal_gid_probe_execution", sibling["error"])
+              result["same_uid_normal_gid_traversal_denied"] = sibling["status"] != 0
+              if not result["same_uid_normal_gid_traversal_denied"]:
+                  fail("normal_gid_isolation_failure", "same-UID normal-GID sibling traversed protected DerivedData")
+              result["phase_reached"] = "normal_gid_denied"
+
+              log_fd = os.open(build_log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+              os.fchown(log_fd, uid, normal_gid)
+              build_pid = os.fork()
+              if build_pid == 0:
+                  try:
+                      os.setsid()
+                      os.chdir(repo)
+                      os.setgroups([])
+                      os.setgid(ephemeral_gid)
+                      os.setuid(uid)
+                      os.dup2(log_fd, 1)
+                      os.dup2(log_fd, 2)
+                      if log_fd not in (1, 2):
+                          os.close(log_fd)
+                      argv = [
+                          xcodebuild_bin,
+                          "-project", "NembraCapture.xcodeproj",
+                          "-scheme", "Nembra Capture",
+                          "-configuration", "Debug",
+                          "-sdk", "iphonesimulator",
+                          "-destination", "generic/platform=iOS Simulator",
+                          "-derivedDataPath", str(protected),
+                          "CODE_SIGNING_ALLOWED=YES",
+                          "build",
+                      ]
+                      os.execve(xcodebuild_bin, argv, base_env)
+                  except BaseException as exc:
+                      os.write(2, ("probe child setup failed: " + type(exc).__name__ + ":" + str(exc) + "\n").encode())
+                      os._exit(127)
+              os.close(log_fd)
+              _, wait_status = os.waitpid(build_pid, 0)
+              build_status = os.WEXITSTATUS(wait_status) if os.WIFEXITED(wait_status) else 128 + os.WTERMSIG(wait_status)
+              result["xcodebuild_exit"] = build_status
+              result["phase_reached"] = "xcodebuild_returned"
+
+              # A process-group-only test can miss a descendant that detached into a
+              # new session. Because this GID was unused before the build and an
+              # unprivileged builder cannot switch back to the normal GID after the
+              # root supervisor installs the ephemeral real/effective/saved GID, scan
+              # the entire process table for remaining writer-GID processes. Allow a
+              # bounded natural drain before locking output; production may implement
+              # the same authority-revocation gate or a stronger equivalent.
+              initial_writers = writer_pids(ephemeral_gid)
+              result["writer_processes_at_direct_return"] = len(initial_writers)
+              drain_start = time.monotonic()
+              deadline = drain_start + 5.0
+              remaining = initial_writers
+              while remaining and time.monotonic() < deadline:
+                  time.sleep(0.05)
+                  remaining = writer_pids(ephemeral_gid)
+              result["writer_drain_seconds"] = round(time.monotonic() - drain_start, 3)
+              result["writer_processes_after_drain"] = len(remaining)
+              if remaining:
+                  for pid in remaining:
+                      try:
+                          os.kill(pid, 9)
+                      except ProcessLookupError:
+                          pass
+                  fail("writer_gid_not_drained", f"{len(remaining)} transient-GID writer process(es) remained after bounded drain")
+              result["phase_reached"] = "writer_gid_drained"
+
+              # Revoke pathname traversal before deriving any app authority.
+              os.chmod(protected, 0o700)
+              result["protected_mode_after_root_lock"] = oct(stat.S_IMODE(protected.stat().st_mode))
+              app = protected / "Build" / "Products" / "Debug-iphonesimulator" / "Nembra Capture.app"
+              result["app_exists_after_root_lock"] = app.is_dir()
+              result["phase_reached"] = "root_locked_before_app_verify"
+
+              if build_status != 0:
+                  fail("xcodebuild_failure", f"exit={build_status}; raw build log intentionally retained only on runner")
+              if not app.is_dir():
+                  fail("built_app_missing", "xcodebuild returned success but expected Simulator app is absent")
+
+              verify = subprocess.run([codesign_bin, "--verify", "--deep", "--strict", str(app)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+              result["codesign_verify_exit"] = verify.returncode
+              result["phase_reached"] = "codesign_checked_after_root_lock"
+              if verify.returncode != 0:
+                  fail("codesign_verify_failure", f"codesign verify exit={verify.returncode}; output intentionally not published")
+
+              result["probe_complete"] = True
+              result["phase_reached"] = "complete"
+              publish()
+          except SystemExit:
+              raise
+          except BaseException as exc:
+              result["failure_class"] = "unexpected_probe_exception"
+              result["failure_detail"] = type(exc).__name__ + ":" + str(exc)[:500]
+              publish()
+              traceback.print_exc()
+              raise
+          PY
+          probe_status="$?"
+          set -e
+
+          sudo -n rm -rf -- "$root" || true
+          if [[ ! -f "$report" ]]; then
+            echo '::error title=Probe produced no structured report::Harness failure; no isolation conclusion is permitted.'
+            exit 78
+          fi
+          cat "$report"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+          echo "probe_status=$probe_status" >> "$GITHUB_OUTPUT"
+
+      - name: Publish safe research result
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.probe.outputs.report }}
+        run: |
+          set -euo pipefail
+          classification="$(python3 - "$REPORT" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          if data.get('probe_complete'):
+              print('COMPLETE for this Mac Simulator prerequisite slice.')
+          else:
+              print('NOT COMPLETE: ' + str(data.get('failure_class')) + ' — ' + str(data.get('failure_detail')))
+          PY
+          )"
+          {
+            echo '### Corrected signed-origin Mac transient-GID prerequisite v4'
+            echo
+            echo 'Research only; no production source, #2955 acceptance, or physical authority moved.'
+            echo
+            echo "$classification"
+            echo
+            echo 'Safe structured report (statuses/counts only; no identity names, keychain paths, or signing output):'
+            echo '```json'
+            cat "$REPORT"
+            echo '```'
+            echo
+            echo 'Critical harness correction: the negative same-UID sibling is executed with the operator normal GID. Writer drain is checked across the whole process table by the otherwise-unused ephemeral GID, so detached descendants are not accepted merely because the direct xcodebuild process or its original process group ended.'
+            echo
+            echo 'Even a complete result remains prerequisite evidence only. Production still must integrate this boundary with private-input custody, bind actual compiler-produced app bytes through first protected snapshot, preserve signature/provenance/intended-device custody, replay #2955 green on the exact repair head, and pass final exact-head composition. **PHYSICAL NO-GO.**'
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment 2871 --body-file "$RUNNER_TEMP/comment.md"
+
+      - name: Require complete prerequisite slice
+        shell: bash
+        env:
+          REPORT: ${{ steps.probe.outputs.report }}
+        run: |
+          set -euo pipefail
+          python3 - "$REPORT" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          if not data.get('probe_complete'):
+              raise SystemExit('Mac transient-GID prerequisite not cleared: ' + str(data.get('failure_class')))
+          print('Corrected Mac transient-GID prerequisite slice cleared at exact head', data['probe_head'])
+          PY
