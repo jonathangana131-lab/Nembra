@@ -1,0 +1,118 @@
+name: tmp V14 Private Authority Path Revocation Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811
+    paths:
+      - .github/workflows/tmp-v14-private-authority-path-revoke-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+
+      - name: Bind materializer to clean umask-fixed head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '344a0bcf6eae152185d493f6cdf35bf2503a9471'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tmp-v14-private-authority-path-revoke-materialize.yml'
+
+      - name: Materialize canonical-path revocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          helper_path = Path('Scripts/capture_tuya_private_identity_authority.py')
+          test_path = Path('scripts/ci/tests/test_capture_private_identity_authority_receipt.py')
+          pin_paths = [
+              Path('Scripts/provision_capture_tuya_identity.sh'),
+              Path('Scripts/bootstrap_capture_tuya_sdk.sh'),
+              Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift'),
+              Path('scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py'),
+          ]
+          old_digest = '5ffb2118f6ecb260dce35d9663c0e0840ca72590e8b1ef4ab00b75fe2f97f646'
+
+          helper = helper_path.read_text(encoding='utf-8')
+          start = helper.index('def _invalidate_current_subject(')
+          end = helper.index('\ndef _sudo_operator_uid(', start)
+          replacement = '''def _invalidate_current_subject(\n    root: Path,\n    *,\n    authority_root: Path,\n    authority_uid: int,\n    operator_uid: int | None = None,\n) -> None:\n    checkout_fd, checkout_metadata = _open_checkout_root(root)\n    authority_fd = -1\n    try:\n        _, path_sha256 = _checkout_subject(root, checkout_metadata)\n        authority_fd_or_none = _authority_directory_fd(\n            authority_root,\n            create=False,\n            authority_uid=authority_uid,\n        )\n        if authority_fd_or_none is None:\n            return\n        authority_fd = authority_fd_or_none\n\n        try:\n            entries = os.listdir(authority_fd)\n        except OSError as exc:\n            raise AuthorityError(\"could not inspect private identity authority receipts for revocation\") from exc\n\n        # Revocation is path-generation authority, not current-inode authority.\n        # The provisioning shell admits a checkout FD before this privileged\n        # call, but the user-owned parent can be renamed between those actions.\n        # Revoke every valid receipt for the same canonical path/operator so a\n        # replacement checkout inode cannot preserve an older successful\n        # transaction that later becomes authoritative again when the original\n        # pathname is restored.\n        receipt_names = sorted(\n            name\n            for name in entries\n            if name.endswith(\".json\") and _HEX64.fullmatch(name[:-5]) is not None\n        )\n        revoked = False\n        for name in receipt_names:\n            receipt = _read_receipt(authority_fd, name, authority_uid)\n            if receipt.get(\"checkout_path_sha256\") != path_sha256:\n                continue\n            if operator_uid is not None and receipt.get(\"operator_uid\") != operator_uid:\n                continue\n            os.unlink(name, dir_fd=authority_fd)\n            revoked = True\n        if revoked:\n            os.fsync(authority_fd)\n    except OSError as exc:\n        raise AuthorityError(\"could not revoke prior private identity authority\") from exc\n    finally:\n        if authority_fd >= 0:\n            os.close(authority_fd)\n        os.close(checkout_fd)\n\n'''
+          helper = helper[:start] + replacement + helper[end + 1:]
+          old_main = '''                _invalidate_current_subject(\n                    root,\n                    authority_root=AUTHORITY_ROOT,\n                    authority_uid=0,\n                )\n'''
+          new_main = '''                _invalidate_current_subject(\n                    root,\n                    authority_root=AUTHORITY_ROOT,\n                    authority_uid=0,\n                    operator_uid=operator_uid,\n                )\n'''
+          if helper.count(old_main) != 1:
+              raise SystemExit('unexpected production invalidate call')
+          helper = helper.replace(old_main, new_main, 1)
+          helper_path.write_text(helper, encoding='utf-8')
+          new_digest = hashlib.sha256(helper.encode('utf-8')).hexdigest()
+
+          test = test_path.read_text(encoding='utf-8')
+          marker = '''    def test_unprotected_authority_directory_is_rejected'''
+          if marker in test:
+              raise SystemExit('stale authority-directory test name unexpectedly returned')
+          insert_at = test.index('    def test_world_writable_authority_directory_is_rejected')
+          path_swap_test = '''    def test_pathname_inode_swap_cannot_preserve_prior_transaction_receipt(self) -> None:\n        with tempfile.TemporaryDirectory(prefix=\"nembra-private-authority-path-swap-\") as temporary:\n            helper, checkout, authority_root, uid, writer_sha, podspec_sha, identity_sha, _, _ = self.make_subject(temporary)\n            receipt = helper._seal_current_subject(\n                checkout,\n                operator_uid=uid,\n                expected_writer_sha256=writer_sha,\n                expected_podspec_sha256=podspec_sha,\n                expected_identity_sha256=identity_sha,\n                authority_root=authority_root,\n                authority_uid=uid,\n            )\n            self.assertTrue(receipt.is_file())\n\n            parked = checkout.with_name(\"repo.admitted-before-swap\")\n            checkout.rename(parked)\n            checkout.mkdir(mode=0o700)\n            try:\n                helper._invalidate_current_subject(\n                    checkout,\n                    authority_root=authority_root,\n                    authority_uid=uid,\n                    operator_uid=uid,\n                )\n            finally:\n                checkout.rmdir()\n                parked.rename(checkout)\n\n            self.assertFalse(receipt.exists(), \"swapped checkout inode preserved stale path-bound authority\")\n            with self.assertRaises(helper.AuthorityError):\n                helper._verify_current_subject(\n                    checkout,\n                    operator_uid=uid,\n                    expected_writer_sha256=writer_sha,\n                    authority_root=authority_root,\n                    authority_uid=uid,\n                )\n\n'''
+          test = test[:insert_at] + path_swap_test + test[insert_at:]
+          # Keep the existing stale-success test explicit about operator binding.
+          old_call = '''            helper._invalidate_current_subject(\n                checkout,\n                authority_root=authority_root,\n                authority_uid=uid,\n            )\n'''
+          new_call = '''            helper._invalidate_current_subject(\n                checkout,\n                authority_root=authority_root,\n                authority_uid=uid,\n                operator_uid=uid,\n            )\n'''
+          if test.count(old_call) != 1:
+              raise SystemExit('unexpected existing revocation test call')
+          test_path.write_text(test.replace(old_call, new_call, 1), encoding='utf-8')
+
+          for path in pin_paths:
+              text = path.read_text(encoding='utf-8')
+              if old_digest not in text:
+                  raise SystemExit(f'missing prior authority digest pin in {path}')
+              path.write_text(text.replace(old_digest, new_digest), encoding='utf-8')
+
+          print(f'authority_sha256={new_digest}')
+          PY
+
+      - name: Validate path-bound revocation and all private authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_identity_authority.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_authority_receipt.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+          /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+          /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          git diff --check
+
+      - name: Publish durable path-revocation hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Nembra Swarm'
+          git config user.email 'noreply@users.noreply.github.com'
+          git add \
+            Scripts/capture_tuya_private_identity_authority.py \
+            scripts/ci/tests/test_capture_private_identity_authority_receipt.py \
+            Scripts/provision_capture_tuya_identity.sh \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift \
+            scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Capture P0: revoke stale authority across checkout inode swaps'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
