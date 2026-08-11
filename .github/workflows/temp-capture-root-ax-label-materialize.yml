@@ -19,7 +19,7 @@ jobs:
           ref: repair/v14-capture-root-two-file-closure-sol-20260811
           fetch-depth: 1
 
-      - name: Make sighted AX lock unambiguous
+      - name: Make AX labels unambiguous and compact
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -30,16 +30,31 @@ jobs:
               Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift"),
               Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"),
           ]
+          total = 0
           for path in paths:
               text = path.read_text(encoding="utf-8")
               count = text.count("Physical lock")
-              if count != 1:
-                  raise SystemExit(f"{path}: expected exactly one Physical lock marker, found {count}")
-              path.write_text(text.replace("Physical lock", "Capture locked", 1), encoding="utf-8")
+              if count < 1:
+                  raise SystemExit(f"{path}: Physical lock marker missing")
+              total += count
+              path.write_text(text.replace("Physical lock", "Capture locked"), encoding="utf-8")
+          if total < 4:
+              raise SystemExit(f"expected at least four Physical lock markers across app/contracts, found {total}")
+
+          app = paths[0]
+          text = app.read_text(encoding="utf-8")
+          old = '''            Label("Engineering details", systemImage: "wrench.and.screwdriver")
+                .font(.subheadline.weight(.semibold))'''
+          new = '''            Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")
+                .font(.subheadline.weight(.semibold))
+                .accessibilityLabel("Engineering details")'''
+          if text.count(old) != 1:
+              raise SystemExit("engineering disclosure label marker missing or ambiguous")
+          app.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
           git diff --check
 
-      - name: Commit exact label repair and retire materializer
+      - name: Commit exact AX repair and retire materializer
         run: |
           git rm .github/workflows/temp-capture-root-ax-label-materialize.yml
           git add NembraApp/App/NembraCaptureEntrypoint.swift \
@@ -49,5 +64,5 @@ jobs:
           git diff --cached --check
           git config user.name "nembra-capture-bot"
           git config user.email "capture@nembra.invalid"
-          git commit -m "Capture: disambiguate AX lock status"
+          git commit -m "Capture: polish AX action-first labels"
           git push origin HEAD:repair/v14-capture-root-two-file-closure-sol-20260811
