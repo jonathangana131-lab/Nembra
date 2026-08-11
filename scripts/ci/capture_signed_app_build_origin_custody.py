@@ -90,34 +90,49 @@ def _choose_capability_gid(
     raise BuildOriginCustodyError("could not allocate an isolated one-run build capability gid")
 
 
-def _drop_credentials(uid: int, gid: int, groups: Sequence[int]) -> Callable[[], None]:
-    normalized_groups = tuple(sorted(set(int(value) for value in groups)))
+def _structured_credentials(
+    uid: int,
+    gid: int,
+    extra_groups: Sequence[int],
+) -> dict[str, object]:
+    """Describe one minimum-authority POSIX child identity without Python pre-exec code."""
 
-    def demote() -> None:
-        os.setgroups(list(normalized_groups))
-        os.setgid(gid)
-        os.setuid(uid)
-
-    return demote
+    if uid <= 0 or gid < 0:
+        raise BuildOriginCustodyError("structured child credentials require a non-root invoking identity")
+    normalized = tuple(
+        sorted(
+            {
+                int(value)
+                for value in extra_groups
+                if int(value) != gid
+            }
+        )
+    )
+    if any(value <= 0 for value in normalized):
+        raise BuildOriginCustodyError("structured child supplementary groups contain invalid authority")
+    return {
+        "user": uid,
+        "group": gid,
+        "extra_groups": list(normalized),
+    }
 
 
 def _invalidate_invoker_sudo(
     uid: int,
     gid: int,
-    groups: Sequence[int],
     environment: dict[str, str],
 ) -> None:
     """Revoke caller-side cached sudo before any protected build output exists."""
 
-    demote = _drop_credentials(uid, gid, groups)
+    credentials = _structured_credentials(uid, gid, ())
     revoke = subprocess.run(
         ["/usr/bin/sudo", "-K"],
         env=environment,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        preexec_fn=demote,
         check=False,
+        **credentials,
     )
     if revoke.returncode != 0:
         raise BuildOriginCustodyError("could not invalidate invoking-user sudo timestamp before build custody")
@@ -127,8 +142,8 @@ def _invalidate_invoker_sudo(
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        preexec_fn=demote,
         check=False,
+        **credentials,
     )
     if probe.returncode == 0:
         raise BuildOriginCustodyError(
@@ -295,7 +310,7 @@ def run_custodied_build(
     # The outer sudo invocation is needed only to establish this supervisor. Revoke its caller-side
     # cached authority before creating the protected output root. A passwordless/noninteractive sudo
     # policy is deliberately rejected because it defeats the intended same-UID isolation boundary.
-    _invalidate_invoker_sudo(uid, gid, invoking_groups, child_env)
+    _invalidate_invoker_sudo(uid, gid, child_env)
 
     capability_gid = _choose_capability_gid(invoking_groups)
     derived_root: Path | None = None
@@ -305,7 +320,9 @@ def run_custodied_build(
     try:
         derived_root = _prepare_derived(private_tmp, capability_gid)
         guarded_command = _replace_derived_placeholder(command, derived_root)
-        child_groups = tuple(sorted(set(invoking_groups) | {capability_gid}))
+        # Do not replay ambient supplementary groups into the authority-bearing compiler child.
+        # Its primary gid is supplied separately; the fresh one-run capability is the only extra gid.
+        child_groups = (capability_gid,)
         process = subprocess.Popen(
             guarded_command,
             cwd=os.getcwd(),
@@ -315,7 +332,7 @@ def run_custodied_build(
             stderr=sys.stderr,
             text=True,
             start_new_session=True,
-            preexec_fn=_drop_credentials(uid, gid, child_groups),
+            **_structured_credentials(uid, gid, child_groups),
         )
         returncode = process.wait()
         # Revoke the transient filesystem capability at the first privileged instruction after the
@@ -328,7 +345,6 @@ def run_custodied_build(
             raise BuildOriginCustodyError(
                 f"guarded field build failed with exit status {returncode}"
             )
-
 
         source_app = _assert_real_ancestry(
             derived_root,
