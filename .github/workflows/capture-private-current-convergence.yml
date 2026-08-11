@@ -77,7 +77,7 @@ jobs:
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
           grep -Fq '/usr/bin/python3 -I -c \"$PROVENANCE_SOURCE\" snapshot' \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldPythonIsolationSourceTests.swift
-          grep -Fq '!bootstrap.contains("/usr/bin/python3 -I \\"$PROVENANCE_HELPER\\" snapshot")' \
+          grep -Fq '!bootstrap.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot")' \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldPythonIsolationSourceTests.swift
 
       - name: Preserve composable helper-closure ancestry
