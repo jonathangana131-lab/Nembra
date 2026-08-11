@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 from pathlib import Path
+import stat
 import sys
 from typing import Sequence
 
@@ -41,6 +43,50 @@ def _load_guard():
     return module
 
 
+def _lexical_absolute(path: Path) -> Path:
+    """Normalize dot components without following attacker-controlled symlinks."""
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Path:
+    """Admit one existing subject only through real descendants of one checkout root.
+
+    This is intentionally narrower than resolving arbitrary paths. Every pathname
+    component from the admitted checkout root through the supplied subject must
+    exist without a symlink hop. The canonical guard then owns exact file/tree
+    type, generation-snapshot, descriptor identity, and vnode monitoring checks.
+    """
+    checkout = _lexical_absolute(root)
+    candidate = _lexical_absolute(path)
+    try:
+        relative = candidate.relative_to(checkout)
+    except ValueError as exc:
+        raise ResolutionGuardError(f"{label} escapes the admitted checkout root") from exc
+
+    try:
+        root_metadata = checkout.lstat()
+    except OSError as exc:
+        raise ResolutionGuardError("dependency-resolution checkout root is unavailable") from exc
+    if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
+        raise ResolutionGuardError("dependency-resolution checkout root is not one real directory")
+
+    current = checkout
+    for component in relative.parts:
+        if component in ("", ".", ".."):
+            raise ResolutionGuardError(f"{label} has invalid checkout-relative ancestry")
+        current = current / component
+        try:
+            metadata = current.lstat()
+        except OSError as exc:
+            raise ResolutionGuardError(f"{label} is unavailable inside the admitted checkout") from exc
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ResolutionGuardError(f"{label} traverses a symlink inside the admitted checkout")
+        if current != candidate and not stat.S_ISDIR(metadata.st_mode):
+            raise ResolutionGuardError(f"{label} traverses a non-directory checkout ancestor")
+
+    return candidate
+
+
 def _parse_args(guard, argv: Sequence[str]):
     parser = argparse.ArgumentParser(
         description="Run pre-generated private Tuya dependency work under vnode custody."
@@ -58,22 +104,22 @@ def _parse_args(guard, argv: Sequence[str]):
     if not command:
         raise ResolutionGuardError("no guarded dependency command was supplied")
 
-    # Reuse the canonical guard's ancestry admission exactly. The lockfile slot
-    # is a generic watched regular-file anchor here; bootstrap intentionally
-    # supplies the tracked Podfile because CocoaPods executes it.
-    lockfile = guard._lexical_absolute(args.lockfile)
+    # The tracked Podfile is the root anchor because CocoaPods itself executes it.
+    # This adapter owns only lexical/real checkout ancestry admission; the canonical
+    # guard remains the authority for exact generation snapshots and vnode custody.
+    lockfile = _lexical_absolute(args.lockfile)
     root = lockfile.parent
-    lockfile = guard._require_real_checkout_ancestry(lockfile, root, label="dependency manifest anchor")
-    security_podspec = guard._require_real_checkout_ancestry(
+    lockfile = _require_real_checkout_ancestry(lockfile, root, label="dependency manifest anchor")
+    security_podspec = _require_real_checkout_ancestry(
         args.security_podspec, root, label="private security podspec"
     )
-    security_build = guard._require_real_checkout_ancestry(
+    security_build = _require_real_checkout_ancestry(
         args.security_build, root, label="private security build tree"
     )
-    identity_podspec = guard._require_real_checkout_ancestry(
+    identity_podspec = _require_real_checkout_ancestry(
         args.identity_podspec, root, label="private identity podspec"
     )
-    identity_sources = guard._require_real_checkout_ancestry(
+    identity_sources = _require_real_checkout_ancestry(
         args.identity_sources, root, label="private identity source tree"
     )
     return (
