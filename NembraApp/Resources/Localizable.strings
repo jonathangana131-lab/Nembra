@@ -4,8 +4,16 @@
  These keys keep the source strings stable while the standalone Capture target
  renders a tighter English first fold. The compact hero's accessibility label
  remains explicit in NembraCaptureEntrypoint.swift.
+
+ The Accessibility XXXL entries below are sighted-layout compaction only. The
+ corresponding SwiftUI controls retain their explicit full VoiceOver labels
+ ("Physical capture locked" and "Tuya Smart user code"). They respond to the
+ real runtime clipped-text audit without reducing Dynamic Type or weakening the
+ accessibility oracle.
 */
 
 "Prepare the scooter link" = "Link this scooter";
 "Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified." = "Link the Tuya Smart account that owns this scooter.";
 "This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings." = "Account metadata only. This step does not start Bluetooth or change scooter settings.";
+"Capture locked" = "Locked";
+"Tuya user code" = "Tuya code";
