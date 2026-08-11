@@ -234,10 +234,24 @@ def _stop_process(process: subprocess.Popen[bytes] | subprocess.Popen[str]) -> N
         process.wait(timeout=5)
 
 
+def _canonical_expected_generated_subject(value: str | None) -> str:
+    if value is None:
+        raise BuildGuardError(
+            "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 is required before xcodebuild admission"
+        )
+    normalized = value.lower()
+    if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
+        raise BuildGuardError(
+            "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 must be exactly 64 hex characters"
+        )
+    return normalized
+
+
 def run_guarded_build(
     inputs: PrivateInputs,
     command: Sequence[str],
     *,
+    expected_generated_subject_sha256: str | None = None,
     backend_factory: Callable[[], EventBackend] = KqueueVnodeBackend,
     popen_factory: Callable[..., subprocess.Popen] = subprocess.Popen,
     poll_interval: float = 0.10,
@@ -246,6 +260,13 @@ def run_guarded_build(
         raise BuildGuardError("no build command was supplied")
 
     initial_snapshot = inputs.generation_snapshot()
+    if expected_generated_subject_sha256 is not None:
+        expected = _canonical_expected_generated_subject(expected_generated_subject_sha256)
+        if initial_snapshot[1] != expected:
+            raise BuildGuardError(
+                "generated CocoaPods build subject no longer matches the preaccepted SHA-256 before xcodebuild"
+            )
+
     backend = backend_factory()
     watched: tuple[tuple[int, Path], ...] = ()
     process: subprocess.Popen | None = None
@@ -258,6 +279,10 @@ def run_guarded_build(
         armed_snapshot = inputs.generation_snapshot()
         if armed_snapshot != initial_snapshot:
             raise BuildGuardError("field build inputs changed while build-window monitoring was armed")
+        if expected_generated_subject_sha256 is not None and armed_snapshot[1] != expected:
+            raise BuildGuardError(
+                "generated CocoaPods build subject lost preaccepted authority while monitoring was armed"
+            )
         queued = backend.events(0)
         if queued:
             raise BuildGuardError(
@@ -289,6 +314,10 @@ def run_guarded_build(
         final_snapshot = inputs.generation_snapshot()
         if final_snapshot != initial_snapshot:
             raise BuildGuardError("field build inputs changed across the guarded xcodebuild window")
+        if expected_generated_subject_sha256 is not None and final_snapshot[1] != expected:
+            raise BuildGuardError(
+                "generated CocoaPods build subject lost preaccepted authority across xcodebuild"
+            )
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
@@ -336,7 +365,14 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
 def main(argv: Sequence[str] | None = None) -> int:
     inputs, command = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        return run_guarded_build(inputs, command)
+        expected_generated_subject_sha256 = _canonical_expected_generated_subject(
+            os.environ.get("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256")
+        )
+        return run_guarded_build(
+            inputs,
+            command,
+            expected_generated_subject_sha256=expected_generated_subject_sha256,
+        )
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
