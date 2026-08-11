@@ -1,5 +1,5 @@
 Traceback (most recent call last):
-  File "<stdin>", line 11, in <module>
-  File "<capture-authority-chain-materializer>", line 1
-    from pathlib import Path
-IndentationError: unexpected indent
+  File "<stdin>", line 12, in <module>
+  File "<capture-authority-chain-materializer>", line 100, in <module>
+  File "<capture-authority-chain-materializer>", line 7, in replace_once
+SystemExit: bootstrap review helper output: expected one match, found 2
