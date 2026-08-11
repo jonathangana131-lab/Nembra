@@ -25,16 +25,17 @@ jobs:
           rm -f /tmp/nembra-authority-materializer-error.txt
           python3 - <<'PY'
           from pathlib import Path
-          import textwrap
           import traceback
           workflow = Path('.github/workflows/capture-authority-chain-materialize.yml').read_text()
           start = "          python3 - <<'PY'\n"
           end = "\n          PY\n"
+          prefix = "          "
           try:
               if workflow.count(start) != 1:
                   raise RuntimeError(f'expected one payload start, found {workflow.count(start)}')
-              payload = workflow.split(start, 1)[1].split(end, 1)[0]
-              exec(compile(textwrap.dedent(payload), '<capture-authority-chain-materializer>', 'exec'), {})
+              encoded = workflow.split(start, 1)[1].split(end, 1)[0]
+              payload = "\n".join(line[len(prefix):] if line.startswith(prefix) else line for line in encoded.split("\n"))
+              exec(compile(payload, '<capture-authority-chain-materializer>', 'exec'), {})
           except BaseException:
               Path('/tmp/nembra-authority-materializer-error.txt').write_text(traceback.format_exc(), encoding='utf-8')
           PY
