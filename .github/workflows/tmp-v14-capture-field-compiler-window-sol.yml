@@ -25,7 +25,7 @@ jobs:
           set -euo pipefail
           git merge-base --is-ancestor 2d2b1197eab18570195532a1d401756d5c9582d2 HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Keep temporary workflow outside bot commit
+      - name: Keep temporary workflow outside materialized commit
         shell: bash
         run: |
           /usr/bin/python3 - <<'PY'
@@ -80,21 +80,70 @@ jobs:
         run: |
           rm -rf scripts/ci/__pycache__ scripts/ci/tests/__pycache__ Scripts/__pycache__
           git diff --check
-      - name: Stage permanent result
+      - name: Create validated remote Git commit object
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PARENT: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          git add -A
-          git reset -- .github/workflows/tmp-v14-capture-field-compiler-window-sol.yml
-          git diff --cached --check
-          git diff --cached --quiet && exit 31 || true
-      - name: Commit permanent result
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "Nembra V14 Sol"
-          git config user.email "nembra-v14-sol@users.noreply.github.com"
-          git commit -m "Capture: bind tracked source through compiler window"
-      - name: Push permanent result
-        shell: bash
-        run: git push origin HEAD:repair/v14-capture-field-compiler-window-sol-20260811
+          /usr/bin/python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import urllib.request
+
+          repository = os.environ['REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          parent = os.environ['EXPECTED_PARENT']
+          observed = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if observed != parent:
+              raise SystemExit('checkout moved before Git-object publication')
+          base_tree = subprocess.check_output(['git', 'rev-parse', f'{parent}^{{tree}}'], text=True).strip()
+
+          def api(path: str, payload: dict) -> dict:
+              request = urllib.request.Request(
+                  f'https://api.github.com/repos/{repository}{path}',
+                  data=json.dumps(payload).encode('utf-8'),
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'Content-Type': 'application/json',
+                  },
+                  method='POST',
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          changed = (
+              'Scripts/capture_tuya_private_input_build_guard.py',
+              'scripts/field/install_one_time_capture.command',
+              'scripts/ci/tests/test_capture_tuya_private_input_provenance.py',
+              '.github/workflows/capture-field-build-provenance.yml',
+          )
+          entries = []
+          for raw in changed:
+              path = Path(raw)
+              mode = subprocess.check_output(['git', 'ls-tree', parent, '--', raw], text=True).split(None, 1)[0]
+              payload = base64.b64encode(path.read_bytes()).decode('ascii')
+              blob = api('/git/blobs', {'content': payload, 'encoding': 'base64'})
+              entries.append({'path': raw, 'mode': mode, 'type': 'blob', 'sha': blob['sha']})
+          entries.append({
+              'path': 'scripts/ci/tmp_materialize_field_compiler_window_sol.py',
+              'mode': '100644',
+              'type': 'blob',
+              'sha': None,
+          })
+          tree = api('/git/trees', {'base_tree': base_tree, 'tree': entries})
+          commit = api('/git/commits', {
+              'message': 'Capture: bind tracked source through compiler window',
+              'tree': tree['sha'],
+              'parents': [parent],
+          })
+          sha = commit['sha']
+          print(f'::notice title=Materialized Capture commit::{sha}')
+          PY
