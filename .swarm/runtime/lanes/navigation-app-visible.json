@@ -21,28 +21,30 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOURCE_READY"},
-  "sourceSHA": "d43bf700c3b2fca8881e4947cdbf8f2c6226c84b",
+  "sourceSHA": "82c3e17896600a4f15c02ce675cc39bcb398fca4",
   "recovery": {
     "pr": 2831,
     "baseSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
     "headSHA": "d43bf700c3b2fca8881e4947cdbf8f2c6226c84b",
-    "aheadBy": 7,
-    "behindBy": 0,
-    "changedFiles": 3,
     "legacyIntentRecovered": true,
     "additionalTruthHardening": "Non-empty query changes clear prior MapKit results and enter searching state before the 300ms debounce so stale provider results cannot be presented under the new query.",
     "accessibilityHardening": "Both the floating Navigation launch control and selected-destination map overlay honor Reduce Transparency with solid system-background fallbacks; launch animation honors Reduce Motion; Accessibility Dynamic Type gets labeled launch geometry and map recomposition.",
-    "uiAcceptanceCoverage": "NembraUITests launches the real Navigation sheet, validates >=54pt launch geometry and stable surface/map/empty-state identities, captures a Navigation Empty Portrait screenshot attachment, and closes the sheet.",
-    "runtimeAcceptance": "PENDING"
+    "runtimeAcceptance": "RED_PARENT_REPAIRED_PENDING_EXACT_HEAD_RERUN"
+  },
+  "runtimeRepair": {
+    "failedRun": 31473462410,
+    "failedJob": 93721773499,
+    "failedParentHead": "d43bf700c3b2fca8881e4947cdbf8f2c6226c84b",
+    "finding": "XCResult proves the real native MapKit XCUI Map rendered at about 390x390 and the truthful empty state was visible; iOS 27 dropped SwiftUI navigation.map accessibilityIdentifier through the MapKit bridge, so the UI test locator—not the product map—failed.",
+    "repairPR": 2865,
+    "repairHead": "82c3e17896600a4f15c02ce675cc39bcb398fca4",
+    "repairScope": "NembraUITests/NembraUITests.swift only; assert app.maps.firstMatch plus real geometry and visible truth-copy.",
+    "xcodeAcceptance": "PENDING"
   },
   "legacy": {
     "primaryPR": 2509,
     "primaryHeadSHA": "69bd2dc61ea29429413ce20399a3bbb08e29a00e",
-    "mergeBaseSHA": "969428349de610282fca3cc3a9b82cab636d3f5a",
-    "mainAheadBy": 49,
-    "legacyAheadBy": 3,
-    "changedFileOverlapWithNewMain": 0,
-    "knownExactHeadFinding": "Legacy PR #2509 is open, draft, non-mergeable, and 49 current-main commits behind. Recovery PR #2831 restores its accessibility intent on current main, adds stale-provider-result truth hardening, extends Reduce Transparency to the selected-destination overlay, and adds exact-head UI automation/screenshot coverage. Fresh Xcode/runtime/visual/accessibility evidence remains required. Historical exact-head run 31436805256 was skipped and is not acceptance."
+    "knownExactHeadFinding": "Legacy #2509 is historical input only. #2831 current-main recovery is not accepted because its exact-head UI run failed on a platform-dropped MapKit identifier; #2865 is the evidence-driven locator repair and must earn fresh exact-head runtime proof."
   },
   "tags": ["navigation", "p4", "app-visible", "accessibility", "legacy-import"]
 }
