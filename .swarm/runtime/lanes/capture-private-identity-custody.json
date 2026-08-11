@@ -9,10 +9,30 @@
   "state": "NEEDS_CHANGES",
   "dependencies": [],
   "blockers": [
-    "The old #2918 crash-residue unlink race is no longer the live sole blocker. #2944 moved to exact parent 3b8e2182de2275a1c8b858ff8b3b614061582457 and carries the broader private-identity authority design, but current integration archaeology found that lineage still contains temporary publisher .github/workflows/tmp-v14-bootstrap-resolution-adapter.yml and a dependency-resolution adapter that could not truthfully invoke the canonical build guard API.",
-    "#2993 exact ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab is the active disjoint parent repair for the dependency-resolution adapter and checkout/LocalSecrets ancestry custody. Independent review 4910650978 source-accepted that exact repair and Private Identity Publication Races run 31534679538 is terminal SUCCESS, but Field Build Provenance 31534679589 and Main Selective Graft 31534679570 remain queued; Xcode 31534679571 is skipped. Queued/skipped are not acceptance.",
-    "#2977 exact 0d78918148471dd3721c276bde27e379b04b7abd separately repairs early destination-rejection sanitation and has focused Private Identity Publication Races success 31532629865, but its Field 31532629831, Main Graft 31532629871, and later Xcode 31532732434 are terminal failures. #2977 must be selectively recomposed only after the repaired #2993 parent is accepted; its writer/recovery delta must not replace the newer dependency-resolution ancestry work.",
-    "Final private-identity convergence must selectively compose the durable #2944 authority set plus accepted #2993 and #2977 deltas onto the newest build-authority lineage while explicitly excluding temporary construction workflows and preserving newer installer/bootstrap semantics. The composed SHA must re-earn private, Field, Main Graft, Xcode, and independent-review acceptance."
+    {
+      "id": "current-private-convergence-main-package-contract-red",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Current convergence #3086 exact b62c59bab76630aebdf3be17e66f822c4305f2ca has terminal SUCCESS for Private Current Convergence 31541906774, Dependency Helper Execution Closure 31541906751, Private Identity Publication Races 31541906753, and Field Build Provenance 31541906737. Main Selective Graft 31541906770 and Xcode 31541906746 are terminal FAILURE. The Main diagnostic completed the full Capture package execution and standalone Capture build, then retained exactly one stale source-contract issue: TuyaFieldPythonIsolationSourceTests still required pathname execution of PROVENANCE_HELPER even though production intentionally executes already-captured PROVENANCE_SOURCE with isolated Python -I -c. Do not weaken captured provenance custody to satisfy the stale assertion.",
+      "pr": 3086,
+      "headSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca"
+    },
+    {
+      "id": "python-isolation-captured-provenance-repair-pending",
+      "state": "ACTIVE",
+      "scope": "tests",
+      "reason": "Selected one-file repair #3102 exact 3e48f6122dc823de5de15b64dc1530b745250854 updates only TuyaFieldPythonIsolationSourceTests to require captured-provenance execution and reject mutable-helper pathname execution. At the last exact refresh Main Selective Graft run 31545631866 was IN_PROGRESS, Field Build Provenance 31545631807 was QUEUED, and Xcode 31545631909 was SKIPPED. Queued/running/skipped are not acceptance. If this child earns exact green and independent acceptance, absorb only the one-file correction into #3086/current private convergence and reset every applicable exact-head gate on the moved production carrier.",
+      "pr": 3102,
+      "headSHA": "3e48f6122dc823de5de15b64dc1530b745250854"
+    },
+    {
+      "id": "private-to-current-build-lineage-composition-pending",
+      "state": "ACTIVE",
+      "scope": "flagship",
+      "reason": "Private identity remains a separately converging authority family. After the package/source-contract repair is accepted, its exact durable authority set still must be deliberately composed with the current selected build-authority lineage without replaying stale construction workflows or losing newer selected-Xcode custody. The resulting exact SHA must re-earn private, Field, Main Graft, Xcode and independent review before flagship physical composition.",
+      "pr": 3086,
+      "headSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca"
+    }
   ],
   "mode": "exclusive",
   "allowedWriteAreas": [
@@ -36,28 +56,20 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
+  "sourceSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca",
   "legacy": {
-    "selectedConvergencePR": 2944,
-    "selectedConvergenceHeadSHA": "3b8e2182de2275a1c8b858ff8b3b614061582457",
-    "activeParentRepairPR": 2993,
-    "activeParentRepairHeadSHA": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
-    "activeSanitationChildPR": 2977,
-    "activeSanitationChildHeadSHA": "0d78918148471dd3721c276bde27e379b04b7abd",
-    "activeParentRepairRuns": {
-      "privateRaces": 31534679538,
-      "field": 31534679589,
-      "mainGraft": 31534679570,
-      "xcode": 31534679571
-    },
-    "sanitationChildRuns": {
-      "privateRaces": 31532629865,
-      "field": 31532629831,
-      "mainGraft": 31532629871,
-      "xcodeFailure": 31532732434
-    },
-    "exactHeadGateState": "PARENT_REPAIR_VERIFYING_AND_SANITATION_RECOMPOSITION_REQUIRED",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T21:05Z by sol-20260811-1400q7. The runtime lane had remained frozen on the old #2918 finding, but live GitHub has advanced substantially. #2993 exact ee7dd8f5 is the current dependency-resolution/ancestry repair on #2944's moved parent and has independent source acceptance plus focused private-race success; Field/Main remain queued and Xcode is skipped. #2977 exact 0d789181 independently closes the later early-output-rejection sanitation seam but has red broader gates and must recompose after #2993, not supersede it. The active #2993 owner also found one temporary publisher still present in #2944 ancestry and recorded that current build-authority does not independently carry the full private-identity authority set. Final private convergence therefore requires a deliberate selective composition onto the newest build lineage, temporary-workflow exclusion, and complete exact-head reacceptance. PHYSICAL NO-GO."
+    "reconciledAt": "2026-08-11T23:17:38Z",
+    "selectedConvergencePR": 3086,
+    "selectedConvergenceHeadSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca",
+    "currentRepairPR": 3102,
+    "currentRepairHeadSHA": "3e48f6122dc823de5de15b64dc1530b745250854",
+    "selectedConvergenceSuccessRuns": [31541906774,31541906751,31541906753,31541906737],
+    "selectedConvergenceFailedRuns": [31541906770,31541906746],
+    "currentRepairMainRun": 31545631866,
+    "currentRepairFieldRun": 31545631807,
+    "currentRepairSkippedXcodeRun": 31545631909,
+    "supersededDuplicateRepairPR": 3101,
+    "knownExactHeadFinding": "Reconciled generation 10 on 2026-08-11. The old #2993/#2977 snapshot is obsolete. Current private convergence is #3086 exact b62c59b with four authority gates green; its broader Main/Xcode red is now precisely classified to one stale Python-isolation source contract after the actual package/app build succeeded. #3102 exact 3e48f61 is the selected one-file correction and is awaiting exact Main/Field evidence. Private authority must still be deliberately composed into the current build lineage and reaccepted. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","private-identity","publication-custody","dependency-resolution","lifecycle","legacy-import"]
 }
