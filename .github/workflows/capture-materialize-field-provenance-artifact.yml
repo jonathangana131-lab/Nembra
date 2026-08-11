@@ -1,0 +1,58 @@
+name: Capture Materialize Field Provenance Artifact
+
+on:
+  push:
+    branches:
+      - repair/v14-authority-post-materialization-closure-gpt56-sol-20260811
+    paths:
+      - .github/workflows/capture-materialize-field-provenance-artifact.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-authority-post-materialization-closure-gpt56-sol-20260811
+          fetch-depth: 0
+      - name: Download exact reviewed workflow artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: capture-field-provenance-accepted-source-contract
+          path: .artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: jonathangana131-lab/Nembra
+          run-id: 31473332584
+      - name: Validate and publish permanent workflow only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find .artifact -type f -print)
+          test "${#files[@]}" -eq 1
+          artifact="${files[0]}"
+          test "$(basename "$artifact")" = 'capture-field-build-provenance.yml'
+          cp "$artifact" .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"' .github/workflows/capture-field-build-provenance.yml
+          if grep -Fq '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"' .github/workflows/capture-field-build-provenance.yml; then
+            echo 'ERROR: reviewed artifact still carries mutable guard invocation.' >&2
+            exit 1
+          fi
+          python3 scripts/ci/tests/test_capture_private_review_commitment.py
+          python3 scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          python3 -m unittest -v scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
+          python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+          python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          git diff --check
+          rm -rf .artifact
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/capture-field-build-provenance.yml
+          git diff --cached --check
+          git commit -m 'Capture: align field provenance with accepted-source guard'
+          git push origin HEAD:repair/v14-authority-post-materialization-closure-gpt56-sol-20260811
