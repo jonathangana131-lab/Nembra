@@ -9,48 +9,31 @@ permissions:
   contents: read
 
 jobs:
-  inventory:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  isolate-macos:
+    runs-on: xcode-27
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          ref: diagnostic/v14-capture-range-trap-sol-20260811
-          fetch-depth: 5
-      - name: Bind exact diagnostic product ancestor
+          ref: e406df43e8c01be3ab4bf2f2f0069faff406ccf2
+      - name: Bind exact failing product head
         shell: bash
         run: |
           set -euo pipefail
-          git cat-file -e e406df43e8c01be3ab4bf2f2f0069faff406ccf2^{commit}
-          git merge-base --is-ancestor e406df43e8c01be3ab4bf2f2f0069faff406ccf2 HEAD
-      - name: Inventory potentially unsafe source slicing
+          test "$(git rev-parse HEAD)" = e406df43e8c01be3ab4bf2f2f0069faff406ccf2
+      - name: Run Capture authority package serially
         shell: bash
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set -o pipefail
           mkdir -p diagnostics
-          /usr/bin/python3 - <<'PY' > diagnostics/range-candidates.txt
-          from pathlib import Path
-          root = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests')
-          patterns = ('range(of:', 'Range(', '..<', 'source[', 'section(in:', 'sourceSection', 'slice')
-          for path in sorted(root.glob('*.swift')):
-              lines = path.read_text(encoding='utf-8').splitlines()
-              hits = [i for i,l in enumerate(lines) if any(p in l for p in patterns)]
-              if not hits:
-                  continue
-              print(f'===== {path} =====')
-              emitted = set()
-              for i in hits:
-                  for j in range(max(0, i-5), min(len(lines), i+8)):
-                      if j in emitted:
-                          continue
-                      emitted.add(j)
-                      print(f'{j+1:5d}: {lines[j]}')
-              print()
-          PY
-          cat diagnostics/range-candidates.txt
-      - name: Upload source inventory
+          SWIFT_BACKTRACE=enable=yes swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --no-parallel -v 2>&1 | tee diagnostics/swift-test-serial-macos.log
+      - name: Upload deterministic crash log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: capture-range-inventory-${{ github.sha }}
-          path: diagnostics/range-candidates.txt
+          name: capture-range-serial-macos-${{ github.sha }}
+          path: diagnostics/swift-test-serial-macos.log
           if-no-files-found: error
