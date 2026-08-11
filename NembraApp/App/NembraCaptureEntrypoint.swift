@@ -226,7 +226,7 @@ private struct CaptureP0Root: View {
                     .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
 
                     if isAccessibilityLayout {
-                        Text("Account setup only in this public build.")
+                        Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(Color.white.opacity(0.78))
                             .fixedSize(horizontal: false, vertical: true)

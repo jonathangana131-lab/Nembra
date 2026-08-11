@@ -65,7 +65,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(root.contains("private var isAccessibilityLayout: Bool"))
         #expect(root.contains("if !dynamicTypeSize.isAccessibilitySize"))
         #expect(root.contains("fieldBuildIsAuthoritative ? \"Prepare Capture\" : \"Capture locked\""))
-        #expect(root.contains("Account setup only in this public build."))
+        #expect(root.contains("fieldBuildIsAuthoritative ? \"Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority.\" : \"Account setup only in this public build.\""))
         #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
         #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("Text(\"Tuya Smart user code\")"))
