@@ -24,7 +24,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "7cda879dafcc376c5125855af6038805767ae870"
+          TEST_PARENT=7cda879dafcc376c5125855af6038805767ae870
+          git merge-base --is-ancestor "$TEST_PARENT" HEAD
+          changed_from_parent="$(git diff --name-only "$TEST_PARENT"...HEAD | LC_ALL=C sort)"
+          test "$changed_from_parent" = ".github/workflows/tmp-v14-private-bootstrap-explicit-root-materialize.yml"
           test "$(git hash-object Scripts/bootstrap_capture_tuya_sdk.sh)" = "f1a66b2c77f01c575b059bba9da9e44384356e30"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
@@ -34,19 +37,16 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
+          import textwrap
 
           path = Path("Scripts/bootstrap_capture_tuya_sdk.sh")
           source = path.read_text(encoding="utf-8")
-          old = '''#!/bin/bash
+          old = textwrap.dedent('''#!/bin/bash
           set -euo pipefail
 
           SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
           REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-          '''
-          # The heredoc indentation above is part of the Python source, not the
-          # string payload after dedent. Keep the replacement mechanically exact.
-          import textwrap
-          old = textwrap.dedent(old)
+          ''')
           new = textwrap.dedent('''#!/bin/bash
           set -euo pipefail
 
@@ -72,8 +72,7 @@ jobs:
           ''')
           if source.count(old) != 1:
               raise SystemExit("expected bootstrap preamble was not present exactly once")
-          updated = source.replace(old, new, 1)
-          path.write_text(updated, encoding="utf-8")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
           PY
 
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
