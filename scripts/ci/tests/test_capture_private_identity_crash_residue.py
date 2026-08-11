@@ -8,9 +8,9 @@ publication. The next writer invocation must not silently proceed while those
 hidden ``.nembra-private-stage-*`` bytes remain behind.
 
 Recovery itself is also an authority boundary. A same-UID adversary can create
-entries under the reserved ignored prefix. A safe recovery may remove only a
+entries under the reserved ignored prefix. A safe recovery may neutralize only a
 narrow exact writer-shaped crash artifact; it must fail closed on ambiguous or
-unsafe reserved entries without following aliases, widening deletion authority,
+unsafe reserved entries without following aliases, widening mutation authority,
 or recursively deleting attacker-controlled content.
 
 These tests use only dummy payloads and define logical retained-byte handling;
@@ -148,11 +148,17 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
                 residual_payloads,
                 "recovery left credential-bearing hard-exit staging bytes hidden under the ignored root pattern",
             )
-            self.assertEqual(
-                residual_entries,
-                [],
-                "recovery left writer-owned .nembra-private-stage-* crash residue in the checkout root",
-            )
+            # A same-UID actor can swap a pathname after identity admission and
+            # before unlink, so recovery does not claim race-free exact-inode
+            # deletion. It may retain only inert zero-length canonical tombstones.
+            for candidate in residual_entries:
+                metadata = candidate.lstat()
+                self.assertTrue(stat.S_ISREG(metadata.st_mode))
+                self.assertEqual(metadata.st_uid, os.geteuid())
+                self.assertEqual(metadata.st_nlink, 1)
+                self.assertEqual(stat.S_IMODE(metadata.st_mode), 0o600)
+                self.assertEqual(metadata.st_size, 0)
+                self.assertEqual(candidate.read_bytes(), b"")
 
     def test_recovery_cannot_follow_or_silently_ignore_reserved_symlink(self) -> None:
         writer = load_writer()
