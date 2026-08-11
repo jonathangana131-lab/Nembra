@@ -1,0 +1,1 @@
+Temporary exact-head CI trigger for Capture root Accessibility XXXL validation. Delete in the next checkpoint; no product authority.
