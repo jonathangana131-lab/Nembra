@@ -221,10 +221,14 @@ class GeneratedSubjectFinalGoR3Tests(unittest.TestCase):
             self.assertEqual(record["authority"], "nembra-authenticated-stationary-go-control-plane-v1")
             self.assertEqual(record["extensionAuthority"], MODULE.CONTROL_EXTENSION)
             self.assertEqual(record["parentSourceCommitSHA"], PARENT)
+            self.assertEqual(
+                record["requiredCandidateWorkflows"],
+                [name for name, _ in MODULE.GENERATED_ACCEPTANCE_WORKFLOWS],
+            )
             for relative in MODULE.PARENT_PINNED_PATHS:
                 self.assertEqual(record["gitBlobs"][relative], BLOB)
 
-    def test_candidate_authority_matches_selected_2709_helper_and_guard(self):
+    def test_candidate_authority_requires_converged_generated_workflows_and_guard(self):
         with tempfile.TemporaryDirectory(prefix="nembra-generated-candidate-r3-") as temporary:
             root = Path(temporary)
             contents = {
@@ -235,8 +239,21 @@ class GeneratedSubjectFinalGoR3Tests(unittest.TestCase):
                     "capture_cocoapods_generated_build_subject.py\n"
                     "_verify_accepted_generated_build_subject\n"
                     "require_accepted_generated_subject=True\n"
+                    "_require_real_checkout_ancestry\n"
+                    "_ensure_fd_budget\n"
+                    "KQ_NOTE_ATTRIB\n"
                 ),
                 "scripts/field/install_one_time_capture.command": "bootstrap_capture_tuya_sdk.sh\ncapture_tuya_private_input_build_guard.py\n",
+                MODULE.GENERATED_BUILD_WORKFLOW_PATH: (
+                    "name: Capture CocoaPods Build Subject Authority\n"
+                    "Require exact generated CocoaPods build authority\n"
+                    "test_capture_private_input_ancestor_retarget.py\n"
+                ),
+                MODULE.VNODE_WORKFLOW_PATH: (
+                    "name: Capture CocoaPods Vnode Attribute Convergence\n"
+                    "Real macOS chmod vnode evidence\n"
+                    "runs-on: macos-15\n"
+                ),
             }
             for relative, content in contents.items():
                 path = root / relative
@@ -269,14 +286,34 @@ class GeneratedSubjectFinalGoR3Tests(unittest.TestCase):
             )
             self.assertEqual(record["implementation"], MODULE.GENERATED_HELPER_PATH)
             self.assertEqual(record[MODULE.GENERATED_KEY], DIGEST)
+            self.assertEqual(
+                record["requiredCandidateWorkflows"],
+                [name for name, _ in MODULE.GENERATED_ACCEPTANCE_WORKFLOWS],
+            )
+            self.assertEqual(set(record["gitBlobs"]), set(MODULE.GENERATED_AUTHORITY_PATHS))
+
+            guard = root / "Scripts/capture_tuya_private_input_build_guard.py"
+            guard.write_text(guard.read_text(encoding="utf-8").replace("KQ_NOTE_ATTRIB\n", ""), encoding="utf-8")
             with self.assertRaises(MODULE.GeneratedSubjectGoError):
                 MODULE.candidate_generated_authority(
                     root,
                     SOURCE,
                     DIGEST,
                     base=base,
-                    derive_subject=lambda _: "ef" * 32,
+                    derive_subject=lambda _: DIGEST,
                 )
+
+    def test_candidate_workflow_requirements_extend_and_restore_parent_exact_set(self):
+        base = MODULE._load_base_module()
+        original_workflows = base.WORKFLOWS
+        original_paths = dict(base.WORKFLOW_PATHS)
+        with MODULE._candidate_workflow_requirements(base):
+            for name, path in MODULE.GENERATED_ACCEPTANCE_WORKFLOWS:
+                self.assertIn(name, base.WORKFLOWS)
+                self.assertEqual(base.WORKFLOW_PATHS[name], path)
+            self.assertEqual(len(base.WORKFLOWS), len(original_workflows) + 2)
+        self.assertEqual(base.WORKFLOWS, original_workflows)
+        self.assertEqual(base.WORKFLOW_PATHS, original_paths)
 
     def test_parent_extension_preserves_sealed_installer_and_default_module_functions(self):
         base = MODULE._load_base_module()
