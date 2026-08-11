@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "050600-atomic-github-proof",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-cp001",
+  "laneId": "swarm-control-plane-foundation",
+  "message": "Real GitHub Contents API proof passed: deterministic duplicate claim create was rejected with HTTP 422, stale blob-SHA mutation was rejected with HTTP 409, and an expired generation-1 proof claim admitted one generation-2 takeover while a competing stale-SHA takeover was rejected with HTTP 409.",
+  "createdAt": "2026-08-11T05:06:00Z",
+  "data": {
+    "duplicateCreateConflictStatus": 422,
+    "staleUpdateConflictStatus": 409,
+    "takeoverWinner": "sol-20260811-proofb",
+    "takeoverGeneration": 2,
+    "competingTakeoverConflictStatus": 409
+  }
+}
