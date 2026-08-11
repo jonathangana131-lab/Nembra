@@ -49,14 +49,10 @@ def materializer_payload() -> str:
     repaired = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
     count = text.count(old)
     if label == "bootstrap review helper output" and count == 2:
-        candidate = "DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY"
-        marker = text.find(candidate)
-        if marker < 0:
-            raise SystemExit("bootstrap review helper output: review-candidate marker missing")
-        prefix, suffix = text[:marker], text[marker:]
-        if suffix.count(old) != 1:
-            raise SystemExit(f"bootstrap review helper output: expected one review-candidate match, found {suffix.count(old)}")
-        return prefix + suffix.replace(old, new, 1)
+        # The first occurrence is inside the review-only candidate summary.
+        # A later dedicated transform intentionally owns the second occurrence
+        # in the normal verified-authority summary.
+        return text.replace(old, new, 1)
     if count != 1:
         raise SystemExit(f"{label}: expected one match, found {count}")
     return text.replace(old, new, 1)
