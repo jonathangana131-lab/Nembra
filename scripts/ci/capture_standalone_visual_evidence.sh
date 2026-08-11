@@ -1,12 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP_PATH="${APP_PATH:-/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-${RUNNER_TEMP:-/tmp}/NembraCaptureStandaloneVisualEvidence}"
 EXPECTED_BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 EXPECTED_PROCEDURE_IDENTIFIER="ES80-AUTHENTICATED-STATIONARY-v1"
 EXPECTED_DEVICE_NAME="iPhone 12"
 EXPECTED_DEVICE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-12"
+PNG_CONTENT_GUARD="$ROOT_DIR/scripts/ci/capture_visual_png_content_guard.py"
+MAX_SCREENSHOT_ATTEMPTS=40
+SCREENSHOT_RETRY_SECONDS=0.25
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "Standalone Capture visual evidence requires macOS/CoreSimulator." >&2
@@ -23,6 +27,10 @@ fi
 if ! command -v xcrun >/dev/null 2>&1; then
   echo "xcrun/CoreSimulator is required to capture standalone Capture visual evidence." >&2
   exit 5
+fi
+if [[ ! -f "$PNG_CONTENT_GUARD" ]]; then
+  echo "Standalone Capture rendered-content guard is missing: $PNG_CONTENT_GUARD" >&2
+  exit 24
 fi
 
 INFO_PLIST="$APP_PATH/Info.plist"
@@ -113,6 +121,54 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+capture_ready_screenshot() {
+  local output_path="$1"
+  local label="$2"
+  local pending_path="${output_path%.png}.pending.png"
+  local attempt
+
+  rm -f "$output_path" "$pending_path"
+  for ((attempt = 1; attempt <= MAX_SCREENSHOT_ATTEMPTS; attempt++)); do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      echo "$label: standalone Nembra Capture exited before rendered visual evidence was ready." >&2
+      return 1
+    fi
+
+    if ! xcrun simctl io "$UDID" screenshot "$pending_path" >/dev/null; then
+      echo "$label: simctl screenshot attempt $attempt/$MAX_SCREENSHOT_ATTEMPTS failed." >&2
+    elif /usr/bin/python3 "$PNG_CONTENT_GUARD" "$pending_path" --label "$label attempt $attempt/$MAX_SCREENSHOT_ATTEMPTS" \
+      2>&1 | tee -a "$ARTIFACTS_DIR/logs/screenshot-readiness.log"; then
+      mv "$pending_path" "$output_path"
+      echo "$label: rendered-content readiness accepted on attempt $attempt/$MAX_SCREENSHOT_ATTEMPTS." \
+        | tee -a "$ARTIFACTS_DIR/logs/screenshot-readiness.log"
+      return 0
+    fi
+
+    if (( attempt < MAX_SCREENSHOT_ATTEMPTS )); then
+      sleep "$SCREENSHOT_RETRY_SECONDS"
+    fi
+  done
+
+  echo "$label: no screenshot proved non-trivial rendered app content after $MAX_SCREENSHOT_ATTEMPTS bounded attempts; refusing visual acceptance." \
+    | tee -a "$ARTIFACTS_DIR/logs/screenshot-readiness.log" >&2
+  return 1
+}
+
+launch_standalone_capture() {
+  local tee_mode="$1"
+  local launch_output
+  if [[ "$tee_mode" == "append" ]]; then
+    launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee -a "$ARTIFACTS_DIR/logs/launch.log")"
+  else
+    launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee "$ARTIFACTS_DIR/logs/launch.log")"
+  fi
+  pid="${launch_output##*: }"
+  if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+    echo "Could not parse standalone Capture process ID from: $launch_output" >&2
+    return 1
+  fi
+}
+
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP_PATH"
@@ -128,31 +184,24 @@ while IFS= read -r variable_name; do
   esac
 done < <(compgen -v)
 
-launch_output="$(xcrun simctl launch "$UDID" "$BUNDLE_ID" | tee "$ARTIFACTS_DIR/logs/launch.log")"
-pid="${launch_output##*: }"
-if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
-  echo "Could not parse standalone Capture process ID from: $launch_output" >&2
+if ! launch_standalone_capture truncate; then
   exit 14
-fi
-sleep 2
-if ! kill -0 "$pid" >/dev/null 2>&1; then
-  echo "Standalone Nembra Capture exited before visual evidence could be captured." >&2
-  exit 15
 fi
 
 STANDARD_SCREENSHOT="$ARTIFACTS_DIR/screenshots/standalone-unprovisioned-dark-iphone12.png"
-xcrun simctl io "$UDID" screenshot "$STANDARD_SCREENSHOT"
-if [[ ! -s "$STANDARD_SCREENSHOT" ]]; then
-  echo "Standalone Capture standard screenshot was not created." >&2
+if ! capture_ready_screenshot "$STANDARD_SCREENSHOT" "Standard iPhone 12 Capture root"; then
   exit 16
 fi
 
+# Relaunch after changing Dynamic Type so AX XXXL evidence cannot accidentally
+# admit a still-rendered standard-size frame while the environment transition is pending.
 xcrun simctl ui "$UDID" content_size accessibility-extra-extra-extra-large
-sleep 1
+xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+if ! launch_standalone_capture append; then
+  exit 22
+fi
 AX5_SCREENSHOT="$ARTIFACTS_DIR/screenshots/standalone-unprovisioned-dark-iphone12-ax5.png"
-xcrun simctl io "$UDID" screenshot "$AX5_SCREENSHOT"
-if [[ ! -s "$AX5_SCREENSHOT" ]]; then
-  echo "Standalone Capture Accessibility XXXL screenshot was not created." >&2
+if ! capture_ready_screenshot "$AX5_SCREENSHOT" "Accessibility XXXL iPhone 12 Capture root"; then
   exit 22
 fi
 xcrun simctl ui "$UDID" content_size large
@@ -160,14 +209,15 @@ xcrun simctl ui "$UDID" content_size large
 STANDARD_SCREENSHOT_SHA256="$(shasum -a 256 "$STANDARD_SCREENSHOT" | awk '{print $1}')"
 AX5_SCREENSHOT_SHA256="$(shasum -a 256 "$AX5_SCREENSHOT" | awk '{print $1}')"
 INFO_PLIST_SHA256="$(shasum -a 256 "$INFO_PLIST" | awk '{print $1}')"
-for digest in "$STANDARD_SCREENSHOT_SHA256" "$AX5_SCREENSHOT_SHA256" "$INFO_PLIST_SHA256"; do
+PNG_CONTENT_GUARD_SHA256="$(shasum -a 256 "$PNG_CONTENT_GUARD" | awk '{print $1}')"
+for digest in "$STANDARD_SCREENSHOT_SHA256" "$AX5_SCREENSHOT_SHA256" "$INFO_PLIST_SHA256" "$PNG_CONTENT_GUARD_SHA256"; do
   if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
     echo "Could not derive stable SHA-256 evidence digests." >&2
     exit 17
   fi
 done
 
-/usr/bin/python3 - "$ARTIFACTS_DIR/NembraCaptureStandaloneVisualEvidence.json" "$BUILD_IDENTIFIER" "$SOURCE_SHA" "$PROCEDURE_IDENTIFIER" "$BUNDLE_ID" "$RUNTIME_ID" "$DEVICE_TYPE" "$STANDARD_SCREENSHOT_SHA256" "$AX5_SCREENSHOT_SHA256" "$INFO_PLIST_SHA256" <<'PY'
+/usr/bin/python3 - "$ARTIFACTS_DIR/NembraCaptureStandaloneVisualEvidence.json" "$BUILD_IDENTIFIER" "$SOURCE_SHA" "$PROCEDURE_IDENTIFIER" "$BUNDLE_ID" "$RUNTIME_ID" "$DEVICE_TYPE" "$STANDARD_SCREENSHOT_SHA256" "$AX5_SCREENSHOT_SHA256" "$INFO_PLIST_SHA256" "$PNG_CONTENT_GUARD_SHA256" <<'PY'
 import json
 import sys
 (
@@ -181,6 +231,7 @@ import sys
     standard_screenshot_sha256,
     ax5_screenshot_sha256,
     info_plist_sha256,
+    png_content_guard_sha256,
 ) = sys.argv[1:]
 record = {
     "schemaVersion": 6,
@@ -202,6 +253,9 @@ record = {
     "syntheticAuthorityEnvironmentRejected": True,
     "expectedReviewState": "public/unprovisioned root presentation; reviewer must verify fail-closed messaging visually",
     "visualAcceptanceRequiresHumanReview": True,
+    "screenshotRenderedContentReadinessVerified": True,
+    "screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v1",
+    "screenshotRenderedContentGuardSHA256": png_content_guard_sha256,
     "physicalAuthorityCreated": False,
     "protocolAuthorityCreated": False,
     "screenshots": [
@@ -224,4 +278,5 @@ printf '%s\n' \
   "Baseline: $EXPECTED_DEVICE_NAME / iOS 27 Simulator" \
   "Standard screenshot: $STANDARD_SCREENSHOT" \
   "Accessibility XXXL screenshot: $AX5_SCREENSHOT" \
+  "Rendered-content guard: $PNG_CONTENT_GUARD_SHA256" \
   "Visual review is still required; this artifact creates no physical/protocol authority."
