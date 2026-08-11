@@ -259,6 +259,7 @@ def root_probe(package_root: Path) -> int:
         helper.hdiutil_create(image)
         device = helper.hdiutil_attach(image, mountpoint, readonly=False)
         os.chown(mountpoint, build_uid, build_gid)
+        run_checked(["/bin/chmod", "-N", str(mountpoint)])
         os.chmod(mountpoint, 0o700)
 
         child_environment = {
