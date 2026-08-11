@@ -6,22 +6,23 @@
   "title": "Rides selected-distance truth and immutable-history attachment",
   "objective": "Converge selected-source distance coverage truth and the mechanically bound immutable RideHistoryRecord attachment onto current main, preserving source coverage, exact record identity, non-authoritative persisted checkpoint bytes, and trusted re-reconciliation before statistics consumption.",
   "priority": 3,
-  "state": "BLOCKED_EXTERNAL",
+  "state": "VERIFYING",
   "dependencies": [],
   "blockers": [
     {
-      "id": "legacy-parent-not-current",
+      "id": "current-main-parent-candidate-pending-acceptance",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy parent PR #438 remains draft and GitHub reports it non-mergeable. Its exact head f23407fd3f66881e95da8097b389510cc741b593 is based on old main 8f5c90fd8fbf753d7b277ed85d6a178d7aac8c12. Because its direct-source access fence has both SwiftPM and Nembra.app compilation semantics, current-main reconciliation plus exact NembraCore and Xcode acceptance are required before promotion.",
-      "pr": 438,
-      "headSHA": "f23407fd3f66881e95da8097b389510cc741b593"
+      "reason": "Current-main recovery #3058 is a one-commit exact-blob successor from main d8e38d0a: source 7245b17b + focused tests fef85b75, ahead 1 / behind 0 with exactly two paths. Current main before recovery still carried vulnerable source blob 76e3bf31, so no source semantic port was required. Fresh exact-head NembraCore + direct Nembra.app Xcode acceptance and independent truth review are still required; legacy #438 evidence is supporting only.",
+      "pr": 3058,
+      "headSHA": "92512a5c90be846ddab3521015a26419a8498865",
+      "run": 31539934088
     },
     {
       "id": "stacked-child-waits-parent",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy child PR #443 is stacked exactly on #438 and remains draft. Its durable checkpoint is intentionally non-authoritative and the new source is not yet manually wired into Nembra.app. Historical/validation-mirror greens are supporting evidence only; after parent convergence the child must be replayed onto the accepted current lineage and rerun on the final exact head.",
+      "reason": "Legacy child PR #443 remains stacked on stale #438 and must not be merged independently. After #3058 is independently accepted on its unchanged current-main head, replay/reconcile only the durable history attachment semantics onto that selected parent; persisted bytes/UUID matching remain non-authoritative and statistics consumption must wait for exact immutable-history binding.",
       "pr": 443,
       "headSHA": "c213118e482fbd862725b4a07cfd13a743651374"
     }
@@ -46,13 +47,20 @@
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOFTWARE_ONLY"},
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "currentCandidate": {
+    "pr": 3058,
+    "headSHA": "92512a5c90be846ddab3521015a26419a8498865",
+    "baseSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "xcodeRun": 31539934088,
+    "status": "EXACT_HEAD_VALIDATION_QUEUED"
+  },
   "legacy": {
     "parentPR": 438,
     "parentHeadSHA": "f23407fd3f66881e95da8097b389510cc741b593",
     "childPR": 443,
     "childHeadSHA": "c213118e482fbd862725b4a07cfd13a743651374",
     "supersededPredecessorPRs": [204],
-    "knownExactHeadFinding": "#438 preserves the selected source's own coverage and seals UUID-only convenience composition; #443 persists only reconciliation inputs and remints trusted runtime distance by re-running reconciliation against exact immutable history. Neither lineage is current-main accepted or final app wiring."
+    "knownExactHeadFinding": "#438 preserves the selected source's own coverage and seals UUID-only convenience composition; #3058 reuses those exact reviewed blobs on current main without stale ancestry. #443 still waits for current-parent acceptance and replay."
   },
   "tags": ["rides", "p3", "distance", "history", "authority", "legacy-import"]
 }
