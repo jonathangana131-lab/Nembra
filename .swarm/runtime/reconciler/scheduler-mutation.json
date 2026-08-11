@@ -5,13 +5,12 @@
   "slot": "mutation",
   "role": "scheduler-reconciler",
   "workerId": "sol-20260811-5e64go",
-  "leaseId": "sched-5e64go-20260811-115956",
-  "generation": 1,
-  "status": "RELEASED",
-  "claimedAt": "2026-08-11T11:59:56Z",
-  "lastHeartbeatAt": "2026-08-11T12:00:20Z",
+  "leaseId": "sched-5e64go-20260811-121009",
+  "generation": 2,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T12:10:09Z",
+  "lastHeartbeatAt": "2026-08-11T12:10:09Z",
   "leaseSeconds": 300,
   "branch": "",
-  "pr": null,
-  "releasedAt": "2026-08-11T12:00:20Z"
+  "pr": null
 }
