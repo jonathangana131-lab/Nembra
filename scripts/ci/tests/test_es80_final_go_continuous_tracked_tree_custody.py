@@ -76,7 +76,7 @@ class FinalGoContinuousTrackedTreeCustodyTests(unittest.TestCase):
 
     def test_post_subject_replacement_is_rejected_before_whole_audit_returns(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-finalgo-continuous-post-read-") as temporary:
-            sandbox = Path(temporary)
+            sandbox = Path(temporary).resolve(strict=True)
             root = sandbox / "repo"
             root.mkdir()
             source, tracked = self._candidate(root)
