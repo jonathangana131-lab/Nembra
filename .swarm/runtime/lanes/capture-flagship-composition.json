@@ -7,12 +7,7 @@
   "objective": "Maintain one canonical app-visible Capture lineage, compose only independently accepted authority/custody descendants, then rerun exact software, field, Xcode, visual/accessibility and final adversarial gates on one unchanged composed head before any physical decision.",
   "priority": 0,
   "state": "VERIFYING",
-  "dependencies": [
-    "capture-build-authority",
-    "capture-final-go-authority",
-    "capture-signed-install-custody",
-    "capture-private-identity-custody"
-  ],
+  "dependencies": ["capture-build-authority", "capture-final-go-authority", "capture-signed-install-custody", "capture-private-identity-custody"],
   "blockers": [
     {
       "id": "physical-security-lineages-uncomposed",
@@ -26,65 +21,22 @@
       "id": "standard-first-fold-copy-density",
       "state": "ACTIVE",
       "scope": "product-quality",
-      "reason": "Retained exact #2940 standard screenshot is truthful and passes the targeted AX repair, but repeated account/read-only/lock guidance pushes the Create approval QR control to y=2300 of a 2532 px viewport (~90.8%). #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 has now earned terminal exact-head Xcode 27 success in run 31490540888, so simplify redundant sighted standard prose on a successor while preserving semantic lock/account/CTA truth and rerun retained standard + AX pixels.",
+      "reason": "Retained exact #2940 standard screenshot is truthful and passes the targeted AX repair, but repeated account/read-only/lock guidance pushes the Create approval QR control to y=2300 of a 2532 px viewport (~90.8%). #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 has earned terminal exact-head Xcode 27 success in run 31490540888, so simplify redundant sighted standard prose on a successor while preserving semantic lock/account/CTA truth and rerun retained standard + AX pixels.",
       "pr": 2940,
       "headSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27"
     }
   ],
   "mode": "exclusive",
-  "allowedWriteAreas": [
-    "NembraApp",
-    "NembraCapture.xcodeproj",
-    "Packages/NembraBluetoothCapture"
-  ],
-  "adjacentWriteAreas": [
-    "Packages/NembraCore",
-    "scripts/field",
-    "Scripts",
-    ".github/workflows"
-  ],
+  "allowedWriteAreas": ["NembraApp", "NembraCapture.xcodeproj", "Packages/NembraBluetoothCapture"],
+  "adjacentWriteAreas": ["Packages/NembraCore", "scripts/field", "Scripts", ".github/workflows"],
   "slots": [
-    {
-      "name": "primary",
-      "role": "implementation",
-      "exclusive": true,
-      "leaseSeconds": 2700,
-      "resources": []
-    },
-    {
-      "name": "tests",
-      "role": "tests",
-      "exclusive": true,
-      "leaseSeconds": 1800,
-      "resources": [
-        "XCODE_BUILD",
-        "IOS_SIMULATOR"
-      ]
-    },
-    {
-      "name": "review",
-      "role": "adversarial-review",
-      "exclusive": true,
-      "leaseSeconds": 1800,
-      "resources": []
-    },
-    {
-      "name": "integration",
-      "role": "integration",
-      "exclusive": true,
-      "leaseSeconds": 1800,
-      "resources": [
-        "RELEASE_INTEGRATION"
-      ]
-    }
+    {"name": "primary", "role": "implementation", "exclusive": true, "leaseSeconds": 2700, "resources": []},
+    {"name": "tests", "role": "tests", "exclusive": true, "leaseSeconds": 1800, "resources": ["XCODE_BUILD", "IOS_SIMULATOR"]},
+    {"name": "review", "role": "adversarial-review", "exclusive": true, "leaseSeconds": 1800, "resources": []},
+    {"name": "integration", "role": "integration", "exclusive": true, "leaseSeconds": 1800, "resources": ["RELEASE_INTEGRATION"]}
   ],
-  "acceptance": {
-    "independentReview": true
-  },
-  "physical": {
-    "required": true,
-    "state": "PHYSICAL_NO_GO"
-  },
+  "acceptance": {"independentReview": true},
+  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "legacy": {
     "acceptedAppVisibleBaselinePR": 2940,
@@ -93,16 +45,8 @@
     "previousAcceptedAppVisibleBaselineHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
     "candidateAppVisibleSuccessorPR": 2940,
     "candidateAppVisibleSuccessorHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-    "supersededVisualPRs": [
-      2841,
-      2891
-    ],
-    "exactCandidateRuns": {
-      "mainGraft": 31490540822,
-      "field": 31490540890,
-      "standaloneVisual": 31490540910,
-      "xcode": 31490540888
-    },
+    "supersededVisualPRs": [2612, 2841, 2891],
+    "exactCandidateRuns": {"mainGraft": 31490540822, "field": 31490540890, "standaloneVisual": 31490540910, "xcode": 31490540888},
     "xcodeExactHeadStatus": "SUCCESS",
     "xcodeExactHeadCompletedAt": "2026-08-11T12:56:18Z",
     "xcodeExactHeadJob": 93775787237,
@@ -112,16 +56,9 @@
       "standardPixelReview": "PASS_TARGETED_AX_REPAIR",
       "accessibilityXXXLReview": "PASS"
     },
-    "branchConvergence": "Do not fast-forward the historical #2612 head branch: open authority children including #2709, #2754, and #2719 still target that ref as their PR base. #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 is now the accepted app-visible Capture ingredient after terminal exact-head Main Graft, Field, Standalone Visual and Xcode 27 success plus retained-pixel review; keep historical base refs untouched and compose later by exact accepted lineage.",
+    "branchConvergence": "PR #2612 is closed as superseded after #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 became the independently accepted app-visible baseline. Do not fast-forward or delete the historical #2612 head branch: open authority children including #2709, #2754, and #2719 still target that ref as their PR base. Closing the stale PR removes flagship ambiguity without retargeting those historical diffs.",
     "baseMainAtObservation": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-    "note": "CI/Xcode reconciliation 2026-08-11T20:16Z: live Actions run 31490540888 is completed SUCCESS on exact #2940 head 005b7c4aaf27fabb442a65599b4538ebcc09ae27. Both trusted-head resolution job 93775734812 and Xcode 27 build/test/Simulator-capture job 93775787237 completed SUCCESS; project structure, NembraCore, Capture authority package, Simulator build/tests/state capture, and evidence upload all passed. The stale ax-successor-xcode-exact-head-pending blocker is removed and #2940 is promoted only to accepted app-visible ingredient/baseline. Broader standard copy-density remains active. Build/private-identity/signed-install/Final-GO composition and physical proof remain explicitly separate; PHYSICAL NO-GO."
+    "note": "Integration convergence 2026-08-11T20:19Z: #2940 exact 005b7c4 remains the accepted app-visible ingredient after Main Graft 31490540822, Field 31490540890, Standalone Visual 31490540910, Xcode 27 31490540888 and independent review acceptance. Legacy flagship PR #2612 was closed unmerged with durable supersession comment 5258382040; its branch ref remains untouched for live child bases. Standard copy-density successor work is actively owned. Build/private-identity/signed-install/Final-GO/runtime-VoiceOver composition and physical proof remain separate. PHYSICAL NO-GO."
   },
-  "tags": [
-    "capture",
-    "p0",
-    "flagship",
-    "app-visible",
-    "composition",
-    "accessibility"
-  ]
+  "tags": ["capture", "p0", "flagship", "app-visible", "composition", "accessibility"]
 }
