@@ -74,6 +74,13 @@ class PrivateInputs:
             ),
         )
 
+    def generated_subject_digest(self) -> str:
+        return generated_subject.subject_digest(
+            lockfile=self.lockfile,
+            pods=self.pods,
+            workspace=self.workspace,
+        )
+
 
 class EventBackend(Protocol):
     def register(self, descriptor: int) -> None: ...
@@ -231,6 +238,45 @@ def _stop_process(process: subprocess.Popen[bytes] | subprocess.Popen[str]) -> N
         process.wait(timeout=5)
 
 
+def _canonical_accepted_generated_subject() -> str:
+    value = os.environ.get("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256", "")
+    normalized = value.lower()
+    if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
+        raise BuildGuardError(
+            "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 must carry the exact reviewed 64-hex generated build subject before xcodebuild"
+        )
+    if value != normalized:
+        raise BuildGuardError(
+            "accepted CocoaPods generated build-subject authority must be canonical lowercase SHA-256"
+        )
+    return normalized
+
+
+def _authority_bound_initial_snapshot(inputs: PrivateInputs):
+    """Return one generation snapshot proven to contain the externally accepted bytes.
+
+    Bootstrap equality is not enough: generated ignored inputs can be replaced after
+    bootstrap and before the guard arms vnode watchers. Bracket the actual digest
+    comparison with generation snapshots, then use that exact stable snapshot as the
+    baseline for watcher admission. No later attacker-selected snapshot can silently
+    replace accepted authority.
+    """
+
+    expected = _canonical_accepted_generated_subject()
+    before = inputs.generation_snapshot()
+    actual = inputs.generated_subject_digest()
+    after = inputs.generation_snapshot()
+    if after != before:
+        raise BuildGuardError(
+            "private/generated build inputs changed while externally accepted CocoaPods authority was rebound before xcodebuild"
+        )
+    if actual != expected:
+        raise BuildGuardError(
+            "CocoaPods generated build subject no longer matches externally accepted authority before xcodebuild"
+        )
+    return after
+
+
 def run_guarded_build(
     inputs: PrivateInputs,
     command: Sequence[str],
@@ -242,7 +288,7 @@ def run_guarded_build(
     if not command:
         raise BuildGuardError("no build command was supplied")
 
-    initial_snapshot = inputs.generation_snapshot()
+    initial_snapshot = _authority_bound_initial_snapshot(inputs)
     backend = backend_factory()
     watched: tuple[tuple[int, Path], ...] = ()
     process: subprocess.Popen | None = None
