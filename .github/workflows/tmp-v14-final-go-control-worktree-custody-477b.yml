@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 3
+          fetch-depth: 4
       - name: Apply exact admission repair and promote red-team regression
         shell: bash
         env:
@@ -55,11 +55,11 @@ jobs:
         run: |
           set -euo pipefail
           rm -f .github/workflows/tmp-v14-final-go-control-worktree-custody-477b.yml
+          git add -A
           expected=$'.github/workflows/capture-authenticated-stationary-final-go.yml\nscripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_final_go_control_worktree_custody.py'
-          actual="$(git diff --name-only 477b13acab3496484a28e1bcfe2b0b95fc2f66f2 | sort)"
+          actual="$(git diff --cached --name-only 477b13acab3496484a28e1bcfe2b0b95fc2f66f2 | sort)"
           test "$actual" = "$expected"
           git config user.name "nembra-v14-closure-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add -A
           git commit -m "fix(capture): bind Final-GO control worktree bytes"
           git push origin HEAD:repair/v14-final-go-control-worktree-custody-477b-sol
