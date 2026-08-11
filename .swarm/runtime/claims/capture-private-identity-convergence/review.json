@@ -9,11 +9,11 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:38:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:38:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:42:30Z",
   "leaseSeconds": 1200,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
-  "currentHeadSHA": "462d4d3862e48af8aa2582733a7c2cf011075b30",
-  "notes": "Reclaimed released review slot only after primary published clean user-authored successor. Review binds exact 462d4d3862e48af8aa2582733a7c2cf011075b30. Canonical Private Identity Publication Races run 31492000964 is terminal SUCCESS; Field 31492001005, Main Graft 31492001010, and Xcode 31492001009 are queued and are not acceptance. Verify the seven-path durable cleanup-authority repair, test reconciliation, digest/source-contract pins, and absence of temporary construction residue. No production edits. Any head move resets review. PHYSICAL NO-GO."
+  "currentHeadSHA": "1834a39ac44e09cf12426cf28cb95ed3c008e9a2",
+  "notes": "Exact-head review rebound after 462d4d moved. Delta 462d4d..1834a39 is a hardening: delete obsolete pathname cleanup helpers; sanitize any held staging descriptor on failure, including admitted crash residue before successful rebind; strengthen pre-rebind race regression to require admitted credential inode == empty while attacker replacement survives; repin shell + Swift writer SHA to 683865d663d98295a0a60498e42d579cef8b3588aae091bbafe8b4431343badc. Canonical Private Identity Publication Races run 31492412384 / job 93781822853 is terminal SUCCESS on exact 1834a39. Source review finds the replacement-inode cleanup-authority defect closed and the reconciled publication/ancestor tests stronger, not weakened. Field 31492412374, Main Graft 31492412380, Xcode 31492412413 remain nonterminal and are required. No production edits. Any head move resets review. PHYSICAL NO-GO."
 }
