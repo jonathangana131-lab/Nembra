@@ -1,5 +1,6 @@
 name: V14 Capture Precision Truth Bootstrap
 
+# One-shot same-repo materializer; it deletes itself after producing the reviewed product/test diff.
 on:
   push:
     branches:
