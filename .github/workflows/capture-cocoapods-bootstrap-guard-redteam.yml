@@ -1,0 +1,40 @@
+name: Capture CocoaPods Bootstrap Guard Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-capture-cocoapods-bootstrap-guard-rebind-sol
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_cocoapods_build_subject.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_cocoapods_bootstrap_guard_rebind.py
+      - .github/workflows/capture-cocoapods-bootstrap-guard-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-to-guard-rebind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind exact diagnostic head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_bootstrap_guard_rebind.py
+
+      - name: Require externally accepted subject at build-guard admission
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_cocoapods_bootstrap_guard_rebind
