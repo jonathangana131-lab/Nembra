@@ -1,0 +1,65 @@
+name: Temporary Capture Private Writer Pin QA
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-private-writer-pin-sol
+    paths:
+      - .github/workflows/tmp-capture-private-writer-pin-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-private-writer-pin-sol
+          fetch-depth: 0
+
+      - name: Bind workflow-only QA child
+        shell: bash
+        env:
+          PRODUCT_HEAD: 2ef97ef10c6be9d84ecd422fb78af98bac2a260e
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-capture-private-writer-pin-qa.yml'
+          git diff --check "$PRODUCT_HEAD" HEAD
+
+      - name: Exercise exact writer digest fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          test "$(sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}')" = 'fd636098ef767c76946246f3f7f793a07b969f1abf9ee43445e4b5154f1089e8'
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/repo/Scripts"
+          cp Scripts/provision_capture_tuya_identity.sh Scripts/provision_capture_tuya_identity_writer.py "$tmp/repo/Scripts/"
+          chmod 700 "$tmp/repo/Scripts/provision_capture_tuya_identity.sh"
+          chmod 600 "$tmp/repo/Scripts/provision_capture_tuya_identity_writer.py"
+
+          output="$(printf 'nembra-dummy-app-key\nnembra-dummy-app-secret\n' | /bin/bash -p "$tmp/repo/Scripts/provision_capture_tuya_identity.sh" 2>&1)"
+          test -f "$tmp/repo/LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"
+          test -f "$tmp/repo/LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift"
+          ! grep -Fq 'nembra-dummy-app-key' <<< "$output"
+          ! grep -Fq 'nembra-dummy-app-secret' <<< "$output"
+
+          rm -rf "$tmp/repo/LocalSecrets"
+          sentinel="$tmp/tampered-writer-executed"
+          cat > "$tmp/repo/Scripts/provision_capture_tuya_identity_writer.py" <<'PY'
+          import os
+          open(os.environ['NEMBRA_WRITER_SENTINEL'], 'w').write('executed')
+          PY
+          if printf 'escape-key\nescape-secret\n' | NEMBRA_WRITER_SENTINEL="$sentinel" /bin/bash -p "$tmp/repo/Scripts/provision_capture_tuya_identity.sh" >"$tmp/reject.log" 2>&1; then
+            echo 'ERROR: digest-mismatched writer was accepted.' >&2
+            exit 1
+          fi
+          grep -Fq 'writer bytes do not match the accepted digest' "$tmp/reject.log"
+          test ! -e "$sentinel"
