@@ -9,6 +9,39 @@ DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.t
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
 cd "$REPO_ROOT"
 
+# The field installer imports the exact private intended-device reader immediately
+# before entering this bootstrap. CPython importlib can materialize one local
+# __pycache__ entry even under isolated mode, which would make the installer's
+# post-bootstrap dirty-tree gate reject its own accepted run. The installer has
+# already proven the checkout clean before that import, so remove only the exact
+# runner cache shape it can have created; fail closed on every other object.
+/usr/bin/python3 -I - "$REPO_ROOT" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+cache = root / "scripts" / "ci" / "__pycache__"
+if not cache.exists() and not cache.is_symlink():
+    raise SystemExit(0)
+if cache.is_symlink() or not cache.is_dir():
+    raise SystemExit("ERROR: private-reader bytecode cache path is not one real directory")
+entries = list(cache.iterdir())
+for entry in entries:
+    if (
+        entry.is_symlink()
+        or not entry.is_file()
+        or not entry.name.startswith("es80_signed_field_artifact_private_runner.")
+        or not entry.name.endswith(".pyc")
+    ):
+        raise SystemExit(
+            "ERROR: refusing to remove unexpected object from private-reader bytecode cache: "
+            + entry.name
+        )
+for entry in entries:
+    entry.unlink()
+cache.rmdir()
+PY
+
 if ! command -v pod >/dev/null 2>&1; then
   cat >&2 <<'EOF'
 ERROR: CocoaPods is not installed.
