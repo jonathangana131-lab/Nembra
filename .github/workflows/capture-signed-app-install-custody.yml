@@ -10,6 +10,7 @@ on:
       - scripts/field/install_one_time_capture.command
       - scripts/ci/tests/test_capture_signed_app_install_guard.py
       - scripts/ci/tests/test_capture_signed_app_install_subject.py
+      - scripts/ci/tests/test_capture_signed_app_verification_seal_window.py
       - .github/workflows/capture-signed-app-install-custody.yml
   workflow_dispatch:
 
@@ -45,10 +46,14 @@ jobs:
           /usr/bin/python3 -m py_compile Scripts/capture_signed_app_install_guard.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_install_guard.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_install_subject.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_verification_seal_window.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_guard.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_subject.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_verification_seal_window.py
           bash -n scripts/field/install_one_time_capture.command
-          grep -Fq 'SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" --digest-only --app "$APP")"' scripts/field/install_one_time_capture.command
+          grep -Fq -- '--verify-authority-only' scripts/field/install_one_time_capture.command
+          grep -Fq -- '--expected-source-sha "$SOURCE_SHA"' scripts/field/install_one_time_capture.command
           grep -Fq -- '--expected-sha256 "$SIGNED_APP_SUBJECT_SHA256"' scripts/field/install_one_time_capture.command
           grep -Fq 'KQ_FILTER_VNODE' Scripts/capture_signed_app_install_guard.py
+          grep -Fq 'verify_authority_and_seal' Scripts/capture_signed_app_install_guard.py
           grep -Fq 'fingerprint_bundle(app) != expected' Scripts/capture_signed_app_install_guard.py
