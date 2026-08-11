@@ -2,17 +2,15 @@
 """Run pre-generated Tuya dependency work under private-input vnode custody.
 
 This is intentionally *not* the physical field-build CLI. The canonical build
-guard's CLI requires accepted tracked-source, generated CocoaPods, private-review,
-and helper authority because it protects xcodebuild. Dependency resolution runs
-one rung earlier, before those generated subjects can exist.
+guard's CLI protects the later xcodebuild window. Dependency resolution runs one
+rung earlier, before generated CocoaPods subjects can exist.
 
 The canonical guard deliberately preserves a private-only `run_guarded_build`
-API for callers whose five admitted inputs are the lock/manifest anchor plus the
-private security and identity trees. This adapter exposes only that narrow mode.
-It grants no xcodebuild, generated-build, private-review, source-acceptance, or
-physical GO authority. The child command must independently establish semantic
-authority (bootstrap uses the root-sealed private-identity receipt) after vnode
-watchers are armed.
+API whose authority is exactly the five admitted inputs plus the child command.
+This adapter exposes only that narrow mode. It grants no xcodebuild,
+generated-build, private-review, source-acceptance, or physical GO authority.
+The child command must independently establish semantic authority (bootstrap
+uses the root-sealed private-identity receipt) after vnode watchers are armed.
 """
 
 from __future__ import annotations
@@ -94,17 +92,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         guard = _load_guard()
         inputs, command = _parse_args(guard, sys.argv[1:] if argv is None else argv)
-        # Explicitly name every authority toggle so a future default change in
-        # the canonical guard cannot silently promote this pre-generated adapter
-        # into physical build authority or make it depend on generated subjects.
-        return guard.run_guarded_build(
-            inputs,
-            command,
-            require_accepted_generated_subject=False,
-            require_accepted_private_review_commitment=False,
-            require_accepted_authority_helpers=False,
-            require_accepted_tracked_source=False,
-        )
+        # This is the canonical guard's deliberately narrow private API. Its
+        # current contract takes the admitted PrivateInputs + child command;
+        # dependency-resolution authority is not expressed through optional
+        # "disable acceptance" toggles that the canonical guard does not own.
+        # Bootstrap independently re-verifies the root-sealed private identity
+        # inside the already-armed vnode window before the child executes.
+        return guard.run_guarded_build(inputs, command)
     except ResolutionGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
