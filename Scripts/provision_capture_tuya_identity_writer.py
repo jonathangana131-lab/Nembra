@@ -36,6 +36,7 @@ class ProvisionError(RuntimeError):
 
 _DARWIN_RENAME_NOFOLLOW_ANY = 0x00000010
 _DARWIN_RENAME_RESOLVE_BENEATH = 0x00000020
+_RESERVED_STAGE_PREFIX = ".nembra-private-stage-"
 
 
 def _directory_flags() -> int:
@@ -274,6 +275,70 @@ def _unlink_owned_relative_inode_if_named(
         return
 
 
+def _recover_reserved_staging(checkout_fd: int) -> None:
+    """Remove only safe writer-shaped crash residue; fail closed on every unsafe reserved entry."""
+    try:
+        names = sorted(name for name in os.listdir(checkout_fd) if name.startswith(_RESERVED_STAGE_PREFIX))
+    except OSError as exc:
+        raise ProvisionError("could not inspect reserved private identity staging namespace") from exc
+
+    for name in names:
+        try:
+            metadata = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ProvisionError("could not inspect reserved private identity staging entry") from exc
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_nlink != 1
+        ):
+            raise ProvisionError("reserved private identity staging namespace contains an unsafe entry")
+        _unlink_owned_inode_if_named(checkout_fd, name, metadata)
+        os.fsync(checkout_fd)
+
+    try:
+        remaining = sorted(name for name in os.listdir(checkout_fd) if name.startswith(_RESERVED_STAGE_PREFIX))
+    except OSError as exc:
+        raise ProvisionError("could not re-inspect reserved private identity staging namespace") from exc
+    if remaining:
+        raise ProvisionError("reserved private identity staging namespace could not be recovered safely")
+
+
+def _require_relative_name_matches_descriptor(
+    checkout_fd: int,
+    relative_path: str,
+    descriptor: int,
+    label: str,
+) -> None:
+    components = _relative_components(relative_path)
+    parent_fd = os.dup(checkout_fd)
+    try:
+        for component in components[:-1]:
+            next_fd = os.open(component, _directory_flags(), dir_fd=parent_fd)
+            os.close(parent_fd)
+            parent_fd = next_fd
+        try:
+            named = os.stat(components[-1], dir_fd=parent_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise ProvisionError(f"{label}: canonical destination is unavailable") from exc
+        held = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(named.st_mode)
+            or not stat.S_ISREG(held.st_mode)
+            or named.st_uid != os.geteuid()
+            or held.st_uid != os.geteuid()
+            or named.st_nlink != 1
+            or held.st_nlink != 1
+            or named.st_dev != held.st_dev
+            or named.st_ino != held.st_ino
+        ):
+            raise ProvisionError(f"{label}: canonical destination no longer names the accepted published inode")
+    finally:
+        os.close(parent_fd)
+
+
 class _SealedStaging:
     def __init__(self, metadata: os.stat_result, descriptor: int, payload: bytes) -> None:
         self.metadata = metadata
@@ -458,11 +523,23 @@ def _write_staged(
                 payload,
                 "published private identity payload changed before durable success",
             )
+            _require_relative_name_matches_descriptor(
+                checkout_fd,
+                destination_relative,
+                final_fd,
+                "published private identity name changed before durable success",
+            )
         except Exception:
             compromised = os.fstat(final_fd)
             _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, compromised)
             raise
         os.fsync(checkout_fd)
+        _require_relative_name_matches_descriptor(
+            checkout_fd,
+            destination_relative,
+            final_fd,
+            "published private identity name changed at final success boundary",
+        )
     except Exception:
         _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
         raise
@@ -516,6 +593,8 @@ public enum NembraTuyaPrivateIdentity {{
     local_secrets_fd = runtime_fd = sources_fd = module_fd = -1
     try:
         _require_checkout_path_identity(checkout_fd, checkout_root)
+        _recover_reserved_staging(checkout_fd)
+        _require_checkout_path_identity(checkout_fd, checkout_root)
         local_secrets_fd = _ensure_private_directory(checkout_fd, "LocalSecrets")
         runtime_fd = _ensure_private_directory(local_secrets_fd, "TuyaRuntime")
         sources_fd = _ensure_private_directory(runtime_fd, "Sources")
@@ -560,7 +639,7 @@ def _self_test() -> None:
     encoded_key = base64.b64encode(b"dummy-key").decode("ascii")
     encoded_secret = base64.b64encode(b"dummy-secret").decode("ascii")
     with tempfile.TemporaryDirectory(prefix="nembra-tuya-writer-") as temporary:
-        root = Path(temporary)
+        root = Path(os.path.realpath(temporary))
         checkout = root / "repo"
         checkout.mkdir()
         checkout_fd = os.open(checkout, _directory_flags())

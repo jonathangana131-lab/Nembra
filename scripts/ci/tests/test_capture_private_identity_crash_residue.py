@@ -80,7 +80,7 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
                     checkout_fd = os.open(checkout, child_writer._directory_flags())
                     destination_parent_fd = os.open(destination_parent, child_writer._directory_flags())
 
-                    def hard_exit_after_seal(_root_fd: int, _src: str, _dst: str) -> None:
+                    def hard_exit_after_seal(_root_fd: int, _src: str, _dst: str, _sealed) -> None:
                         # _write_staged reaches this seam only after the stage has
                         # been fully written, chmod'd to 0600 and fsync'd.
                         os._exit(CRASH_EXIT)

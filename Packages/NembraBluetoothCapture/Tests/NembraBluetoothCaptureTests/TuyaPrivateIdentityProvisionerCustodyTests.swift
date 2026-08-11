@@ -179,7 +179,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"b697044a4de0cf1afcd40bc68722bbf4c316e59c6258cfd4de0497d3b4145276\""))
+        #expect(shell.contains("WRITER_SHA256=\"b73888faf2f772c86debc0a4f37fee5f106fa137a07af0c61f355bf8b15d42fe\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
@@ -199,6 +199,9 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("O_EXCL"))
         #expect(writer.contains("_require_descriptor_payload"))
         #expect(writer.contains("_unlink_owned_relative_inode_if_named"))
+        #expect(writer.contains("_recover_reserved_staging"))
+        #expect(writer.contains("_require_relative_name_matches_descriptor"))
+        #expect(writer.contains("os.path.realpath(temporary)"))
         #expect(writer.contains("hashlib.sha256"))
         #expect(writer.contains("dir_fd=checkout_fd"))
         #expect(writer.contains("src_dir_fd=checkout_fd"))
