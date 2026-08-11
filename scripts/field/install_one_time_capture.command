@@ -227,67 +227,36 @@ else
 fi
 [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || die "Could not determine a valid 10-character Team ID."
 
-DERIVED="${TMPDIR:-/tmp}/NembraAuthenticatedCaptureDerived"
-rm -rf "$DERIVED"
 BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 APP_ID_SUFFIX=".${BUNDLE_ID}"
 PROCEDURE_ID="ES80-AUTHENTICATED-STATIONARY-v1"
 BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"
+DERIVED_PLACEHOLDER="__NEMBRA_PROTECTED_DERIVED__"
 say "Field procedure: $PROCEDURE_ID"
 verify_private_tuya_inputs
 
-say "Building SDK-integrated Nembra Capture for the intended iPhone"
-# Endpoint fingerprints alone cannot prove that a transient private-input change
-# was not consumed by the compiler and restored before the post-build verify.
-# Keep macOS vnode custody armed for every admitted private file/directory across
-# the complete compiler/linker window, then retain the cryptographic verify below.
-/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \
-    --lockfile "$ROOT/Podfile.lock" \
-    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
-    --security-build "$TUYA_PRIVATE_SDK/Build" \
-    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
-    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-    -- xcodebuild \
-    -workspace NembraCapture.xcworkspace \
-    -scheme "Nembra Capture" \
-    -configuration Debug \
-    -destination "generic/platform=iOS" \
-    -derivedDataPath "$DERIVED" \
-    -allowProvisioningUpdates \
-    -allowProvisioningDeviceRegistration \
-    DEVELOPMENT_TEAM="$TEAM_ID" \
-    CODE_SIGN_STYLE=Automatic \
-    PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-    "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL" \
-    "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
-    "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
-    "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID" \
-    build || die "Private inputs changed while xcodebuild was running, vnode custody failed, or the signed build itself failed. No field artifact was admitted."
+# Both custody helpers are executed from exact accepted Git-object bytes. Build-output
+# authority must not depend on a mutable worktree helper at the privileged handoff.
+BUILD_ORIGIN_CUSTODY_HELPER_PATH="scripts/ci/capture_signed_app_build_origin_custody.py"
+BUILD_ORIGIN_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$SOURCE_SHA:$BUILD_ORIGIN_CUSTODY_HELPER_PATH" 2>/dev/null)" || \
+    die "Signed-app build-origin custody helper is missing from the exact accepted Git tree."
+[[ "$BUILD_ORIGIN_CUSTODY_HELPER_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Signed-app build-origin custody helper Git blob identity is malformed."
+BUILD_ORIGIN_CUSTODY_HELPER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$BUILD_ORIGIN_CUSTODY_HELPER_BLOB" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || \
+    die "Could not capture signed-app build-origin custody helper from the accepted Git object."
+[[ -n "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64" ]] || die "Captured signed-app build-origin custody helper is empty."
+[[ "$(printf '%s' "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git hash-object --stdin)" == "$BUILD_ORIGIN_CUSTODY_HELPER_BLOB" ]] || \
+    die "Decoded signed-app build-origin custody helper bytes do not match the accepted Git blob."
 
-verify_private_tuya_inputs
-[[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
-[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."
-APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"
-[[ -d "$APP" ]] || die "Build finished but the standalone Nembra Capture.app was not found at $APP"
 SIGNED_APP_CUSTODY_HELPER_PATH="scripts/ci/capture_signed_app_install_custody.py"
 SIGNED_APP_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_CUSTODY_HELPER_PATH" 2>/dev/null)" || \
     die "Signed-app custody helper is missing from the exact accepted Git tree."
 [[ "$SIGNED_APP_CUSTODY_HELPER_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Signed-app custody helper Git blob identity is malformed."
-SIGNED_APP_CUSTODY_HELPER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" | /usr/bin/base64)" || \
+SIGNED_APP_CUSTODY_HELPER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || \
     die "Could not capture signed-app custody helper from the accepted Git object."
 [[ -n "$SIGNED_APP_CUSTODY_HELPER_BASE64" ]] || die "Captured signed-app custody helper is empty."
-[[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \
+[[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \
     die "Decoded signed-app custody helper bytes do not match the accepted Git blob."
-SOURCE_APP_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/python3 -I - fingerprint --app "$APP")" || \
-    die "Could not bind the exact post-build signed-app tree before protected staging."
-[[ "$SOURCE_APP_TREE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Signed-app tree fingerprint is malformed."
 
-# devicectl reopens an app bundle by pathname. A normal DerivedData path remains mutable by the
-# invoking user after signature/provenance review, so it cannot itself be the physical install
-# authority. Snapshot the exact finite tree through root into one private staging directory. The
-# stage remains root-only while it is copied and ownership-sealed; only after sealing do we expose
-# read/traverse access to the unprivileged CoreDevice client. Every later authority check and the
-# actual install operate on this same protected pathname.
 APP_INSTALL_STAGE_ROOT=""
 INSTALL_LOG=""
 cleanup_install_subject() {
@@ -301,39 +270,87 @@ cleanup_install_subject() {
     fi
 }
 trap cleanup_install_subject EXIT
-APP_INSTALL_STAGE_ROOT="$(/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX)" || \
-    die "Could not create the root-owned signed-app install custody directory."
+
+say "Building SDK-integrated Nembra Capture inside protected compiler-output custody"
+# The accepted helper runs as one root supervisor. It immediately invalidates the invoking
+# user's cached sudo authority, creates root-owned DerivedData whose only write/traverse
+# capability is an otherwise-unused supplementary gid given to this guarded build process
+# group, retires ordinary descendants when xcodebuild finishes, revokes that gid from the
+# filesystem, then hashes and root-stages the exact locked output before returning here.
+if ! BUILD_ORIGIN_CUSTODY_RESULT="$(
+    /usr/bin/sudo /usr/bin/python3 -I -c '
+import base64
+import sys
+encoded = sys.argv[1]
+source = base64.b64decode(encoded, validate=True)
+sys.argv = ["<accepted-build-origin-custody>"] + sys.argv[2:]
+namespace = {
+    "__name__": "__main__",
+    "__file__": "<accepted-build-origin-custody>",
+}
+exec(
+    compile(source, "<accepted-build-origin-custody>", "exec", dont_inherit=True),
+    namespace,
+)
+' \
+        "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64" \
+        --app-relative "Build/Products/Debug-iphoneos/Nembra Capture.app" \
+        --install-custody-helper-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64" \
+        -- \
+        /usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \
+        --lockfile "$ROOT/Podfile.lock" \
+        --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+        --security-build "$TUYA_PRIVATE_SDK/Build" \
+        --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+        --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+        -- /usr/bin/xcodebuild \
+        -workspace NembraCapture.xcworkspace \
+        -scheme "Nembra Capture" \
+        -configuration Debug \
+        -destination "generic/platform=iOS" \
+        -derivedDataPath "$DERIVED_PLACEHOLDER" \
+        -allowProvisioningUpdates \
+        -allowProvisioningDeviceRegistration \
+        DEVELOPMENT_TEAM="$TEAM_ID" \
+        CODE_SIGN_STYLE=Automatic \
+        PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+        "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL" \
+        "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
+        "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
+        "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"
+)"; then
+    die "The signed build could not be bound from isolated xcodebuild output into protected install custody. No field artifact was admitted."
+fi
+
+[[ "$BUILD_ORIGIN_CUSTODY_RESULT" == *$'\t'* ]] || die "Build-origin custody returned no canonical stage/fingerprint record."
+[[ "${BUILD_ORIGIN_CUSTODY_RESULT#*$'\t'}" != *$'\t'* ]] || die "Build-origin custody returned an ambiguous stage/fingerprint record."
+APP_INSTALL_STAGE_ROOT="${BUILD_ORIGIN_CUSTODY_RESULT%%$'\t'*}"
+STAGED_APP_TREE_SHA256="${BUILD_ORIGIN_CUSTODY_RESULT#*$'\t'}"
 [[ "$APP_INSTALL_STAGE_ROOT" == /private/tmp/nembra-authenticated-capture-install.* ]] || \
-    die "Protected signed-app install custody directory is outside the canonical private temporary root."
+    die "Build-origin custody returned a stage outside the canonical private temporary root."
+[[ "$STAGED_APP_TREE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Build-origin custody returned a malformed signed-app tree fingerprint."
 APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"
-/usr/bin/sudo /usr/bin/ditto --noacl "$APP" "$APP_INSTALL_STAGE" || \
-    die "Could not snapshot the exact signed app into protected install custody without inherited ACL authority."
-STAGED_ACL_PATH="$(/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -acl -print -quit 2>/dev/null || true)"
-[[ -z "$STAGED_ACL_PATH" ]] || \
-    die "Protected signed-app install stage retained an ACL at $STAGED_ACL_PATH; refuse to expose or install it."
-unset STAGED_ACL_PATH || true
-# The stage root is still root mode-0700 here, so the invoking user cannot race this seal. BSD
-# find does not follow symlinks by default; chown -h changes a symlink object rather than an
-# external target. The verifier below rejects broken/escaping links before the stage is admitted.
-/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -exec /usr/sbin/chown -h root:wheel {} + || \
-    die "Could not root-own every protected signed-app install entry."
-/usr/bin/sudo /bin/chmod 0755 "$APP_INSTALL_STAGE_ROOT" || \
-    die "Could not expose read-only traversal of the protected signed-app install stage."
-STAGED_APP_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/python3 -I - verify-stage \
+APP="$APP_INSTALL_STAGE"
+
+# The root supervisor revoked caller-side cached sudo before creating DerivedData.
+# Reprove that no noninteractive elevation authority survived the compiler/staging life.
+if /usr/bin/sudo -n /usr/bin/true >/dev/null 2>&1; then
+    die "Noninteractive sudo authority remained after build-origin custody; do not install from this stage."
+fi
+
+VERIFIED_STAGE_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/python3 -I - verify-stage \
     --stage-root "$APP_INSTALL_STAGE_ROOT" \
     --app "$APP_INSTALL_STAGE" \
-    --expected "$SOURCE_APP_TREE_SHA256")" || \
-    die "Protected signed-app install subject failed root-owned custody or exact-tree verification."
-[[ "$STAGED_APP_TREE_SHA256" == "$SOURCE_APP_TREE_SHA256" ]] || \
-    die "Protected signed-app install subject differs from the exact post-build signed app."
-# The protected stage is now the only install subject. Revoke the successful staging
-# elevation before any signature/provenance review or CoreDevice side effect so a
-# same-UID actor cannot reuse this run's sudo timestamp to mutate the root-owned tree.
-/usr/bin/sudo -K || die "Could not invalidate staging elevation before signed-app admission."
-if /usr/bin/sudo -n /usr/bin/true >/dev/null 2>&1; then
-    die "Noninteractive sudo authority remained after invalidation; do not install from this stage."
-fi
-APP="$APP_INSTALL_STAGE"
+    --expected "$STAGED_APP_TREE_SHA256")" || \
+    die "Protected signed-app install subject failed root-owned custody or exact build-origin tree verification."
+[[ "$VERIFIED_STAGE_TREE_SHA256" == "$STAGED_APP_TREE_SHA256" ]] || \
+    die "Protected signed-app install subject differs from the exact isolated xcodebuild output."
+unset BUILD_ORIGIN_CUSTODY_RESULT VERIFIED_STAGE_TREE_SHA256
+
+verify_private_tuya_inputs
+[[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
+[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart."
+
 APP_INFO_PLIST="$APP/Info.plist"
 [[ -f "$APP_INFO_PLIST" ]] || die "Built Capture app is missing its Info.plist provenance subject. Discard this candidate."
 BUILT_BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
@@ -493,7 +510,7 @@ else
     printf '%s\n' "Protected signed-app stage retained at $APP_INSTALL_STAGE_ROOT; remove it later with sudo after this run is no longer authoritative." >&2
 fi
 trap - EXIT
-unset SOURCE_APP_TREE_SHA256 STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_BASE64 APP_INSTALL_STAGE
+unset STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_BASE64 BUILD_ORIGIN_CUSTODY_HELPER_PATH BUILD_ORIGIN_CUSTODY_HELPER_BLOB BUILD_ORIGIN_CUSTODY_HELPER_BASE64 APP_INSTALL_STAGE
 
 say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \

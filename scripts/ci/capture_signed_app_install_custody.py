@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Bind the exact signed Capture.app bytes consumed by the physical install side effect.
 
-The normal build output lives in a user-writable DerivedData tree. The field installer snapshots
-that app, copies it through root into a root-owned staging directory, then runs every provenance,
-signature, entitlement, and provisioning-profile check against the protected staging copy. This
-helper fingerprints the finite bundle and proves the staged path cannot be replaced or modified by
-the invoking non-root user before devicectl consumes it.
+The field installer admits xcodebuild output only through the root-supervised build-origin handoff.
+That supervisor locks its isolated DerivedData root, snapshots the exact bundle into a root-owned
+staging directory, and returns only that protected stage. This helper fingerprints the finite bundle
+and proves the staged path cannot be replaced or modified by the invoking non-root user before
+devicectl consumes it.
 """
 
 from __future__ import annotations

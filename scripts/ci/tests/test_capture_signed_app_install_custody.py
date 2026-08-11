@@ -58,80 +58,45 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
 
     def test_installer_moves_authority_to_protected_stage_before_codesign(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
-        app_marker = 'APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"'
-        fingerprint_marker = '/usr/bin/python3 -I - fingerprint --app "$APP"'
-        stage_marker = '/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX'
-        copy_marker = '/usr/bin/sudo /usr/bin/ditto --noacl "$APP" "$APP_INSTALL_STAGE"'
-        acl_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -acl -print -quit'
-        owner_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -exec /usr/sbin/chown -h root:wheel {} +'
-        verify_stage_marker = '/usr/bin/python3 -I - verify-stage'
-        revoke_marker = '/usr/bin/sudo -K'
-        no_sudo_marker = '/usr/bin/sudo -n /usr/bin/true'
-        switch_marker = 'APP="$APP_INSTALL_STAGE"'
-        codesign_marker = '/usr/bin/codesign --verify --deep --strict "$APP"'
-        install_marker = 'xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"'
-
+        markers = {
+            "origin_helper": 'BUILD_ORIGIN_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1',
+            "install_helper": 'SIGNED_APP_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1',
+            "supervisor": '/usr/bin/sudo /usr/bin/python3 -I -c',
+            "derived": '-derivedDataPath "$DERIVED_PLACEHOLDER"',
+            "result": 'APP_INSTALL_STAGE_ROOT="${BUILD_ORIGIN_CUSTODY_RESULT%%',
+            "switch": 'APP="$APP_INSTALL_STAGE"',
+            "verify_stage": '/usr/bin/python3 -I - verify-stage',
+            "no_sudo": '/usr/bin/sudo -n /usr/bin/true',
+            "codesign": '/usr/bin/codesign --verify --deep --strict "$APP"',
+            "install": 'xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"',
+        }
         indexes = {}
-        for name, marker in (
-            ("app", app_marker),
-            ("fingerprint", fingerprint_marker),
-            ("stage", stage_marker),
-            ("copy", copy_marker),
-            ("acl", acl_marker),
-            ("owner", owner_marker),
-            ("verify_stage", verify_stage_marker),
-            ("revoke", revoke_marker),
-            ("no_sudo", no_sudo_marker),
-            ("switch", switch_marker),
-            ("codesign", codesign_marker),
-            ("install", install_marker),
-        ):
+        for name, marker in markers.items():
             indexes[name] = source.find(marker)
             self.assertGreaterEqual(indexes[name], 0, f"installer is missing {name} custody marker")
 
-        blob_marker = source.find('/usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"')
-        decode_marker = source.find('/usr/bin/base64 -D')
-        hash_marker = source.find('/usr/bin/git hash-object --stdin')
-        self.assertGreaterEqual(blob_marker, 0)
-        self.assertGreaterEqual(decode_marker, 0)
-        self.assertGreaterEqual(hash_marker, 0)
-        self.assertIn(
-            'SIGNED_APP_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse',
-            source,
-        )
-        self.assertIn(
-            'SIGNED_APP_CUSTODY_HELPER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob',
-            source,
-        )
-        self.assertNotIn('SIGNED_APP_CUSTODY_HELPER_BLOB="$(/usr/bin/git rev-parse', source)
-        self.assertNotIn('SIGNED_APP_CUSTODY_HELPER_BASE64="$(/usr/bin/git cat-file blob', source)
-        self.assertLess(blob_marker, indexes["fingerprint"])
-        self.assertLess(decode_marker, indexes["fingerprint"])
-        self.assertLess(hash_marker, indexes["fingerprint"])
-        self.assertNotIn('/usr/bin/python3 -I "$ROOT/scripts/ci/capture_signed_app_install_custody.py"', source)
-        self.assertNotIn('SIGNED_APP_CUSTODY_HELPER_SOURCE=', source)
-        self.assertIn('SIGNED_APP_CUSTODY_HELPER_BASE64=', source)
-        self.assertIn("/usr/bin/base64 -D | /usr/bin/python3 -I - fingerprint", source)
-        self.assertIn("/usr/bin/base64 -D | /usr/bin/python3 -I - verify-stage", source)
-        self.assertIn('Protected signed-app install stage retained an ACL', source)
-
-        self.assertLess(indexes["app"], indexes["fingerprint"])
-        self.assertLess(indexes["fingerprint"], indexes["stage"])
-        self.assertLess(indexes["stage"], indexes["copy"])
-        self.assertLess(indexes["copy"], indexes["acl"])
-        self.assertLess(indexes["acl"], indexes["owner"])
-        self.assertLess(indexes["owner"], indexes["verify_stage"])
-        self.assertLess(indexes["verify_stage"], indexes["revoke"])
-        self.assertLess(indexes["revoke"], indexes["no_sudo"])
-        self.assertLess(indexes["no_sudo"], indexes["switch"])
-        self.assertLess(indexes["switch"], indexes["codesign"])
+        self.assertLess(indexes["origin_helper"], indexes["supervisor"])
+        self.assertLess(indexes["install_helper"], indexes["supervisor"])
+        self.assertLess(indexes["supervisor"], indexes["result"])
+        self.assertLess(indexes["result"], indexes["switch"])
+        self.assertLess(indexes["switch"], indexes["no_sudo"])
+        self.assertLess(indexes["no_sudo"], indexes["verify_stage"])
+        self.assertLess(indexes["verify_stage"], indexes["codesign"])
         self.assertLess(indexes["codesign"], indexes["install"])
-        self.assertIn('[[ "$STAGED_APP_TREE_SHA256" == "$SOURCE_APP_TREE_SHA256" ]]', source)
+
+        self.assertIn('DERIVED_PLACEHOLDER="__NEMBRA_PROTECTED_DERIVED__"', source)
+        self.assertIn('--install-custody-helper-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"', source)
+        self.assertIn('[[ "$VERIFIED_STAGE_TREE_SHA256" == "$STAGED_APP_TREE_SHA256" ]]', source)
         self.assertIn('APP_INSTALL_STAGE_ROOT=""', source)
         self.assertIn('cleanup_install_subject()', source)
-        self.assertNotIn('/usr/bin/sudo /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
         self.assertIn('/usr/bin/sudo -n /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
-        self.assertIn('Noninteractive sudo authority remained after invalidation', source)
+        self.assertIn('Noninteractive sudo authority remained after build-origin custody', source)
+
+        self.assertNotIn('APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"', source)
+        self.assertNotIn('SOURCE_APP_TREE_SHA256=', source)
+        self.assertNotIn('/usr/bin/sudo /usr/bin/ditto --noacl "$APP" "$APP_INSTALL_STAGE"', source)
+        self.assertNotIn('/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX', source)
+
 
 
 if __name__ == "__main__":
