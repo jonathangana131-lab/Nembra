@@ -12,6 +12,8 @@ REDUCE_MOTION_RESULT_BUNDLE="$ARTIFACTS_DIR/NembraReduceMotionTests.xcresult"
 REDUCE_MOTION_ATTACHMENTS_DIR="$ARTIFACTS_DIR/reduce-motion-test-attachments"
 ACCESSIBILITY_TYPE_RESULT_BUNDLE="$ARTIFACTS_DIR/NembraAccessibilityTypeTests.xcresult"
 ACCESSIBILITY_TYPE_ATTACHMENTS_DIR="$ARTIFACTS_DIR/accessibility-type-test-attachments"
+DARK_LANDSCAPE_RESULT_BUNDLE="$ARTIFACTS_DIR/NembraDarkLandscapeTests.xcresult"
+DARK_LANDSCAPE_ATTACHMENTS_DIR="$ARTIFACTS_DIR/dark-landscape-test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
 rm -rf \
@@ -19,7 +21,9 @@ rm -rf \
   "$REDUCE_MOTION_RESULT_BUNDLE" \
   "$REDUCE_MOTION_ATTACHMENTS_DIR" \
   "$ACCESSIBILITY_TYPE_RESULT_BUNDLE" \
-  "$ACCESSIBILITY_TYPE_ATTACHMENTS_DIR"
+  "$ACCESSIBILITY_TYPE_ATTACHMENTS_DIR" \
+  "$DARK_LANDSCAPE_RESULT_BUNDLE" \
+  "$DARK_LANDSCAPE_ATTACHMENTS_DIR"
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -313,6 +317,82 @@ if [[ "$CONTENT_SIZE_RESET_STATUS" -ne 0 ]]; then
   exit 9
 fi
 
+# Dark landscape is a separate visual-acceptance surface from portrait dark captures.
+# Use the real CoreSimulator appearance switch, then rerun existing landscape cockpit
+# tests so orientation is controlled by XCUITest and keep-always screenshots are tied
+# to an immutable xcresult. This is presentation evidence only; it does not promote
+# Simulator watts into physical ES80 truth.
+: > "$ARTIFACTS_DIR/logs/simctl-appearance.log"
+set +e
+xcrun simctl ui "$UDID" appearance dark \
+  >> "$ARTIFACTS_DIR/logs/simctl-appearance.log" 2>&1
+DARK_APPEARANCE_STATUS=$?
+set -e
+if [[ "$DARK_APPEARANCE_STATUS" -ne 0 ]]; then
+  echo "Could not set real Simulator dark appearance for required dark-landscape cockpit evidence." >&2
+  exit 10
+fi
+echo "dark_landscape_appearance=dark" >> "$ARTIFACTS_DIR/environment.txt"
+echo "dark_landscape_content_size=large" >> "$ARTIFACTS_DIR/environment.txt"
+
+set +e
+set -o pipefail
+xcodebuild \
+  -project Nembra.xcodeproj \
+  -scheme Nembra \
+  -configuration Debug \
+  -destination "platform=iOS Simulator,id=$UDID" \
+  -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$DARK_LANDSCAPE_RESULT_BUNDLE" \
+  -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 120 \
+  -collect-test-diagnostics never \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardRetainedPowerAfterReconnectIsExplicitLastKnown \
+  CODE_SIGNING_ALLOWED=NO \
+  ONLY_ACTIVE_ARCH=YES \
+  test \
+  | tee "$ARTIFACTS_DIR/logs/xcodebuild-dark-landscape-test.log"
+DARK_LANDSCAPE_TEST_STATUS=${PIPESTATUS[0]}
+set -e
+
+set +e
+xcrun simctl ui "$UDID" appearance light \
+  >> "$ARTIFACTS_DIR/logs/simctl-appearance.log" 2>&1
+APPEARANCE_RESET_STATUS=$?
+set -e
+if [[ "$APPEARANCE_RESET_STATUS" -eq 0 ]]; then
+  echo "appearance_reset=light" >> "$ARTIFACTS_DIR/environment.txt"
+else
+  echo "appearance_reset=failed_status_${APPEARANCE_RESET_STATUS}" >> "$ARTIFACTS_DIR/environment.txt"
+fi
+
+if [[ -d "$DARK_LANDSCAPE_RESULT_BUNDLE" ]]; then
+  if xcrun xcresulttool export attachments \
+    --path "$DARK_LANDSCAPE_RESULT_BUNDLE" \
+    --output-path "$DARK_LANDSCAPE_ATTACHMENTS_DIR" \
+    > "$ARTIFACTS_DIR/logs/xcresult-dark-landscape-attachments.log" 2>&1; then
+    find "$DARK_LANDSCAPE_ATTACHMENTS_DIR" -type f -maxdepth 2 -print | sort \
+      > "$ARTIFACTS_DIR/dark-landscape-test-attachments.txt" || true
+  else
+    {
+      echo "Dark-landscape attachment export failed; the complete xcresult is still preserved."
+      xcrun xcresulttool help export attachments || true
+    } >> "$ARTIFACTS_DIR/logs/xcresult-dark-landscape-attachments.log" 2>&1
+  fi
+fi
+
+if [[ "$DARK_LANDSCAPE_TEST_STATUS" -ne 0 ]]; then
+  echo "Dark-landscape exact-head UI acceptance failed with status $DARK_LANDSCAPE_TEST_STATUS." >&2
+  exit "$DARK_LANDSCAPE_TEST_STATUS"
+fi
+
+if [[ "$APPEARANCE_RESET_STATUS" -ne 0 ]]; then
+  echo "Could not restore light Simulator appearance after dark-landscape QA; refusing ordinary screenshot filenames because their appearance provenance would be ambiguous." >&2
+  exit 11
+fi
+
 APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/Nembra.app"
 if [[ ! -d "$APP_PATH" ]]; then
   echo "Expected built app was not found at $APP_PATH" >&2
@@ -334,7 +414,11 @@ capture_state() {
   local state="$1"
   local appearance="${2:-light}"
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-  xcrun simctl ui "$UDID" appearance "$appearance" >/dev/null 2>&1 || true
+  if ! xcrun simctl ui "$UDID" appearance "$appearance" \
+    >> "$ARTIFACTS_DIR/logs/simctl-appearance.log" 2>&1; then
+    echo "Could not set Simulator appearance to ${appearance} for ${state}; refusing a mislabeled screenshot." >&2
+    exit 12
+  fi
   local launch_output pid screenshot_path
   launch_output="$(
     SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
