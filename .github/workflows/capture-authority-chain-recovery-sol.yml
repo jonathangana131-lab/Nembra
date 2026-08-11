@@ -23,7 +23,7 @@ jobs:
         run: |
           set -uo pipefail
           rm -f .nembra-authority-recovery-error
-          {
+          (
             set -e
             python3 scripts/ci/capture_authority_chain_recovery_sol.py
             bash -n Scripts/bootstrap_capture_tuya_sdk.sh
@@ -36,7 +36,7 @@ jobs:
             python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
             grep -Fq 'GIT_NO_REPLACE_OBJECTS' scripts/field/install_one_time_capture.command
             git diff --check
-          } > >(tee /tmp/nembra-recovery.out) 2>&1
+          ) > >(tee /tmp/nembra-recovery.out) 2>&1
           status=$?
           if [[ "$status" != "0" ]]; then
             cp /tmp/nembra-recovery.out .nembra-authority-recovery-error
