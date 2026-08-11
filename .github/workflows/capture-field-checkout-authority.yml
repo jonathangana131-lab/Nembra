@@ -1,0 +1,38 @@
+name: Capture Field Checkout Authority
+
+on:
+  push:
+    branches:
+      - repair/v14-field-installer-workspace-authority-sol-20260811
+  pull_request:
+    paths:
+      - Scripts/capture_field_checkout_authority.py
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_checkout_authority.py
+      - scripts/ci/tests/test_capture_field_installer_info_exclude_red_team.py
+      - .github/workflows/capture-field-checkout-authority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  checkout-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Compile authority helper and tests
+        run: >-
+          python3 -m py_compile
+          Scripts/capture_field_checkout_authority.py
+          scripts/ci/tests/test_capture_field_checkout_authority.py
+      - name: Run raw checkout authority regression
+        run: python3 -m unittest -v scripts.ci.tests.test_capture_field_checkout_authority
