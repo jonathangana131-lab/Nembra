@@ -124,7 +124,7 @@ jobs:
           printf 'NEMBRA_DASH_PERF_TEST_STATUS=%s\n' "$status" >> "$GITHUB_ENV"
           exit "$status"
 
-      - name: Require emitted hitch, CPU, and memory metrics
+      - name: Require finite emitted hitch, CPU, and memory metrics
         shell: bash
         run: |
           set -euo pipefail
@@ -134,6 +134,7 @@ jobs:
           test -f "$database"
           /usr/bin/python3 - "$database" "$metrics_json" <<'PY'
           import json
+          import math
           import sqlite3
           import sys
           from pathlib import Path
@@ -158,31 +159,63 @@ jobs:
               }
               for identifier, display_name, unit, measurements in rows
           ]
-          observed = set()
+
+          required = ("hitch", "cpu", "memory")
+          evidence = {family: [] for family in required}
+          invalid = []
           for record in records:
               searchable = (record["identifier"] + " " + record["displayName"]).lower()
-              if "hitch" in searchable:
-                  observed.add("hitch")
-              if "cpu" in searchable:
-                  observed.add("cpu")
-              if "memory" in searchable:
-                  observed.add("memory")
+              matched = [family for family in required if family in searchable]
+              for family in matched:
+                  raw = record["measurements"].strip()
+                  try:
+                      value = float(raw)
+                  except (TypeError, ValueError):
+                      invalid.append({
+                          "family": family,
+                          "identifier": record["identifier"],
+                          "displayName": record["displayName"],
+                          "measurements": record["measurements"],
+                          "reason": "non-numeric",
+                      })
+                      continue
+                  if not math.isfinite(value):
+                      invalid.append({
+                          "family": family,
+                          "identifier": record["identifier"],
+                          "displayName": record["displayName"],
+                          "measurements": record["measurements"],
+                          "reason": "non-finite",
+                      })
+                      continue
+                  evidence[family].append({**record, "measurementValue": value})
 
-          required = {"hitch", "cpu", "memory"}
-          missing = sorted(required - observed)
+          observed = sorted(family for family in required if evidence[family])
+          missing = sorted(family for family in required if not evidence[family])
+          metric_capture_complete = not missing and not invalid
           payload = {
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "requiredMetricFamilies": sorted(required),
-              "observedMetricFamilies": sorted(observed),
+              "observedMetricFamilies": observed,
               "missingMetricFamilies": missing,
+              "invalidRequiredMetrics": invalid,
+              "requiredMetricEvidence": evidence,
+              "metricCaptureComplete": metric_capture_complete,
+              "performanceAccepted": False,
+              "performanceAcceptanceReason": (
+                  "Simulator metric capture is an instrumentation ingredient only; "
+                  "no performance threshold is applied and final combined-load iPhone 12 profiling remains required."
+              ),
               "performanceMetrics": records,
           }
           output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(payload, indent=2, sort_keys=True))
           if missing:
-              raise SystemExit("required XCTest performance metric family was not emitted: " + ", ".join(missing))
+              raise SystemExit("required finite XCTest performance metric family was not emitted: " + ", ".join(missing))
+          if invalid:
+              raise SystemExit("required XCTest performance metric row contained a non-numeric or non-finite measurement")
           PY
-          printf 'NEMBRA_DASH_PERF_METRIC_PRESENCE_GATE=passed\n' >> "$GITHUB_ENV"
+          printf 'NEMBRA_DASH_PERF_METRIC_CAPTURE_COMPLETE=passed\n' >> "$GITHUB_ENV"
 
       - name: Seal sustained-performance evidence
         if: always()
@@ -205,7 +238,7 @@ jobs:
           import json,os,platform,sys
           path,witness=sys.argv[1:]
           record={
-              "schemaVersion": 2,
+              "schemaVersion": 3,
               "authority": "dashboard-sustained-performance-simulator-only",
               "sourceCommitSHA": os.environ.get("NEMBRA_DASH_PERF_SOURCE_SHA", "unavailable"),
               "productParentSHA": os.environ.get("NEMBRA_DASH_PERF_PRODUCT_PARENT", "c150a8287463231ee9af174c38564738bab576a3"),
@@ -217,9 +250,11 @@ jobs:
               "sourceStressLifetime": "fixture-lifetime-until-cancelled",
               "sourceStressElapsedSecondsPerUpdate": 0,
               "requestedMetrics": ["XCTHitchMetric", "XCTCPUMetric", "XCTMemoryMetric"],
-              "metricPresenceGateRequired": True,
-              "metricPresenceGatePassed": os.environ.get("NEMBRA_DASH_PERF_METRIC_PRESENCE_GATE") == "passed",
+              "finiteMetricCaptureRequired": True,
+              "metricCaptureComplete": os.environ.get("NEMBRA_DASH_PERF_METRIC_CAPTURE_COMPLETE") == "passed",
               "metricThresholdsApplied": False,
+              "performanceAccepted": False,
+              "performanceAcceptanceReason": "Simulator metric capture is instrumentation-only; final combined-load iPhone 12 profiling remains required.",
               "runtimeWitnessSHA256": witness,
               "testExitStatus": os.environ.get("NEMBRA_DASH_PERF_TEST_STATUS", "unavailable"),
               "renderFramesAreTelemetryEvidence": False,
