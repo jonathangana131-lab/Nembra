@@ -13,14 +13,15 @@
   "allowedWriteAreas": [
     ".github/workflows/capture-package-test-runner-diagnostic.yml",
     "scripts/ci/capture_package_test_runner_diagnostic.py",
-    "scripts/ci/tests/test_capture_package_test_runner_diagnostic.py"
+    "scripts/ci/tests/test_capture_package_test_runner_diagnostic.py",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift"
   ],
   "adjacentWriteAreas": [
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataAccountUIDCustodySourceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaMetadataSecretRedactionSourceTests.swift"
   ],
   "slots": [
-    {"name": "primary", "role": "repair", "exclusive": true, "leaseSeconds": 1800, "resources": ["XCODE_27_RUNNER"]},
+    {"name": "primary", "role": "repair", "exclusive": true, "leaseSeconds": 1800, "resources": ["XCODE_BUILD"]},
     {"name": "review", "role": "adversarial-review", "exclusive": true, "leaseSeconds": 1800, "resources": []},
     {"name": "integration", "role": "integration", "exclusive": true, "leaseSeconds": 1800, "resources": ["RELEASE_INTEGRATION"]}
   ],
