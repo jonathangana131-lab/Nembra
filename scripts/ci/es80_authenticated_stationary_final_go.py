@@ -170,10 +170,18 @@ def git(repo:Path,*args):
 def candidate(repo:Path,source:str):
     root=repo.expanduser().resolve(strict=True)
     if canon(git(root,"rev-parse","HEAD"),"candidate HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("candidate checkout is not exact clean accepted source")
-    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in (("installer",INSTALLER),("runbook",RUNBOOK),("buildIdentity",IDENTITY))}
+    authority_paths={"installer":INSTALLER,"runbook":RUNBOOK,"buildIdentity":IDENTITY}
+    blobs={k:git(root,"rev-parse",f"HEAD:{p}").lower() for k,p in authority_paths.items()}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",x) for x in blobs.values()): raise GoError("candidate Git blob invalid")
-    paths=[root/INSTALLER,root/RUNBOOK,root/IDENTITY]
+    paths=[root/p for p in authority_paths.values()]
     if any(not p.is_file() or p.is_symlink() for p in paths): raise GoError("candidate authority path is not a regular non-symlink file")
+    for key,relative in authority_paths.items():
+        verbose=git(root,"ls-files","-v","--",relative)
+        tagged=git(root,"ls-files","-t","--",relative)
+        if not verbose or verbose[:1].islower() or tagged.startswith("S "):
+            raise GoError("candidate authority path has suppressed index worktree tracking")
+        actual_blob=git(root,"hash-object","--no-filters","--",relative).lower()
+        if actual_blob!=blobs[key]: raise GoError("candidate authority worktree bytes differ from accepted Git blob")
     ins=paths[0].read_text(); rb=paths[1].read_text(); ident=paths[2].read_text()
     if f'PROCEDURE_ID="{PROC}"' not in ins or f'BUNDLE_ID="{BUNDLE}"' not in ins or f"PROCEDURE_ID: `{PROC}`" not in rb or f'static let requiredFieldProcedureIdentifier = "{PROC}"' not in ident or "ES80-FINGERPRINT-v1" in ins or "NEMBRA_ES80_TODAY_RESEARCH" in ins: raise GoError("candidate carries wrong/retired field authority")
     return {"sourceCommitSHA":source,"installerGitBlob":blobs["installer"],"runbookGitBlob":blobs["runbook"],"buildIdentityGitBlob":blobs["buildIdentity"]}
