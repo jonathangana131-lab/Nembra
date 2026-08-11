@@ -50,11 +50,8 @@ jobs:
                   indent = line[:len(line) - len(line.lstrip())]
                   out.append(indent + "grep -Fq 'Exact requested Capture source matched under isolated Git + raw-byte authority: $SOURCE_SHA' \"$installer\"")
                   source_message_replaced += 1
-              elif "build_line=\"$(grep -nF -- '-- xcodebuild \\\\'" in line:
-                  out.append(line.replace("-- xcodebuild \\\\`,", "-- /usr/bin/xcodebuild \\\\,"))
-                  build_line_replaced += 1
-              elif "build_line=\"$(grep -nF -- '-- xcodebuild \\" in line:
-                  out.append(line.replace("-- xcodebuild \\", "-- /usr/bin/xcodebuild \\") )
+              elif "build_line=" in line and "-- xcodebuild " in line:
+                  out.append(line.replace("-- xcodebuild ", "-- /usr/bin/xcodebuild ", 1))
                   build_line_replaced += 1
               else:
                   out.append(line)
@@ -67,7 +64,7 @@ jobs:
           rendered = '\n'.join(out) + '\n'
           if "SOURCE_SHA=\"$(git rev-parse HEAD" in rendered and "if grep -Fq 'SOURCE_SHA=\"$(git rev-parse HEAD'" not in rendered:
               raise SystemExit('retired ambient source-authority assertion remains')
-          if "build_line=\"$(grep -nF -- '-- /usr/bin/xcodebuild \\" not in rendered:
+          if not any("build_line=" in line and "-- /usr/bin/xcodebuild " in line for line in out):
               raise SystemExit('exact /usr/bin/xcodebuild ordering assertion was not materialized')
           path.write_text(rendered, encoding='utf-8')
           PY
