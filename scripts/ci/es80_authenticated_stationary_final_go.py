@@ -118,7 +118,7 @@ def control_plane(authority_repo:Path,pr:int,run_id:int,get=api):
         bound=(isinstance(pulls,list) and any(isinstance(x,dict) and x.get("number")==pr for x in pulls)) or (pulls==[] and run.get("head_branch")==branch)
         if not bound: raise GoError("GO control-plane workflow is not bound to canonical PR")
     elif run.get("head_branch")!=branch: raise GoError("GO control-plane push workflow is not bound to canonical PR branch")
-    paths=("scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py",AUTH_WORKFLOW_PATH,"scripts/ci/tests/test_es80_authenticated_stationary_final_go.py")
+    paths=("scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py",AUTH_WORKFLOW_PATH,"scripts/ci/tests/test_es80_authenticated_stationary_final_go.py","scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py")
     blobs={path:git(root,"rev-parse",f"HEAD:{path}").lower() for path in paths}
     if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) for value in blobs.values()): raise GoError("GO control-plane Git blob identity invalid")
     return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"headBranch":branch,"state":state,"merged":merged,"draft":draft,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
@@ -185,9 +185,17 @@ def device_hash(path:Path):
     if not t or any(c.isspace() for c in t): raise GoError("private device identifier must be one token")
     return sha(t.encode())
 
+INSTALLER_ENV_PASSTHROUGH=("HOME","TMPDIR","DEVELOPER_DIR","LANG","LC_ALL","USER","LOGNAME")
+TRUSTED_INSTALLER_PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
 def installer(repo:Path,source:str,device:Path):
-    root=repo.expanduser().resolve(strict=True); device_path=canonical_private_path(device,"private intended-device identifier"); env=os.environ.copy(); env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device_path)
-    try:p=subprocess.run(["/bin/bash",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    root=repo.expanduser().resolve(strict=True); device_path=canonical_private_path(device,"private intended-device identifier")
+    env={"PATH":TRUSTED_INSTALLER_PATH,"BASH_ENV":"/dev/null","ENV":"/dev/null"}
+    for name in INSTALLER_ENV_PASSTHROUGH:
+        value=os.environ.get(name)
+        if value: env[name]=value
+    env["NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"]=str(device_path)
+    try:p=subprocess.run(["/bin/bash","--noprofile","--norc","-p",str(root/INSTALLER),source],cwd=root,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     except OSError as e: raise GoError("private installer execution failed") from e
     if p.returncode or "SDK-INTEGRATED CAPTURE LAUNCHED" not in p.stdout or canon(git(root,"rev-parse","HEAD"),"post-install HEAD")!=source or git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("private installer did not preserve exact accepted field subject")
     return {"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
