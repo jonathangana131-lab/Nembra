@@ -2,15 +2,43 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# The field path is fixed by default. A caller may override only the destination
-# directory so CI can exercise this generator with dummy credentials without
-# touching a developer's real ignored LocalSecrets/TuyaRuntime contents.
-DEST="${NEMBRA_TUYA_RUNTIME_DIR:-$ROOT/LocalSecrets/TuyaRuntime}"
+LOCAL_SECRETS="$ROOT/LocalSecrets"
+DEST="$LOCAL_SECRETS/TuyaRuntime"
 SOURCE_DIR="$DEST/Sources/NembraTuyaPrivateConfig"
+PODSPEC="$DEST/NembraTuyaPrivateConfig.podspec"
+IDENTITY_SWIFT="$SOURCE_DIR/NembraTuyaPrivateIdentity.swift"
 
 umask 077
-mkdir -p "$SOURCE_DIR"
-chmod 700 "$DEST" "$DEST/Sources" "$SOURCE_DIR" 2>/dev/null || true
+# A caller may invoke this script under `bash -x`; disable tracing before any
+# credential is read or transformed so private values never enter trace output.
+set +x
+
+# Credential output is intentionally pinned under the ignored checkout-owned
+# LocalSecrets tree. Refuse symlinked/non-directory components instead of
+# following caller-controlled filesystem redirections.
+for directory in "$LOCAL_SECRETS" "$DEST" "$DEST/Sources" "$SOURCE_DIR"; do
+  if [[ -L "$directory" ]]; then
+    echo "ERROR: refusing symlinked private Tuya destination: $directory" >&2
+    exit 4
+  fi
+  if [[ -e "$directory" && ! -d "$directory" ]]; then
+    echo "ERROR: private Tuya destination component is not a directory: $directory" >&2
+    exit 4
+  fi
+  mkdir -p "$directory"
+  chmod 700 "$directory"
+done
+
+for output in "$PODSPEC" "$IDENTITY_SWIFT"; do
+  if [[ -L "$output" ]]; then
+    echo "ERROR: refusing symlinked private Tuya identity output: $output" >&2
+    exit 4
+  fi
+  if [[ -e "$output" && ! -f "$output" ]]; then
+    echo "ERROR: private Tuya identity output is not a regular file: $output" >&2
+    exit 4
+  fi
+done
 
 read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY
 printf '\n'
@@ -20,11 +48,18 @@ printf '\n'
 [[ -n "$APP_KEY" ]] || { echo "ERROR: AppKey is empty." >&2; exit 2; }
 [[ -n "$APP_SECRET" ]] || { echo "ERROR: AppSecret is empty." >&2; exit 3; }
 
-APP_KEY_B64="$(printf '%s' "$APP_KEY" | base64 | tr -d '\r\n')"
-APP_SECRET_B64="$(printf '%s' "$APP_SECRET" | base64 | tr -d '\r\n')"
+APP_KEY_B64="$(printf '%s' "$APP_KEY" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+APP_SECRET_B64="$(printf '%s' "$APP_SECRET" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 unset APP_KEY APP_SECRET
 
-cat > "$DEST/NembraTuyaPrivateConfig.podspec" <<'RUBY'
+PODSPEC_TMP="$(mktemp "$DEST/.NembraTuyaPrivateConfig.podspec.XXXXXX")"
+IDENTITY_TMP="$(mktemp "$SOURCE_DIR/.NembraTuyaPrivateIdentity.swift.XXXXXX")"
+cleanup_private_identity_temps() {
+  rm -f "$PODSPEC_TMP" "$IDENTITY_TMP"
+}
+trap cleanup_private_identity_temps EXIT HUP INT TERM
+
+cat > "$PODSPEC_TMP" <<'RUBY'
 Pod::Spec.new do |s|
   s.name = 'NembraTuyaPrivateConfig'
   s.version = '1.0.0'
@@ -40,7 +75,7 @@ Pod::Spec.new do |s|
 end
 RUBY
 
-cat > "$SOURCE_DIR/NembraTuyaPrivateIdentity.swift" <<SWIFT
+cat > "$IDENTITY_TMP" <<SWIFT
 import Foundation
 
 public enum NembraTuyaPrivateIdentity {
@@ -60,14 +95,28 @@ public enum NembraTuyaPrivateIdentity {
 }
 SWIFT
 unset APP_KEY_B64 APP_SECRET_B64
-chmod 600 "$DEST/NembraTuyaPrivateConfig.podspec" "$SOURCE_DIR/NembraTuyaPrivateIdentity.swift"
+chmod 600 "$PODSPEC_TMP" "$IDENTITY_TMP"
+
+# Recheck directory custody immediately before publication. `mv` replaces a
+# final-path symlink rather than following it, while the parent checks keep the
+# publication rooted in the checkout-owned private tree.
+for directory in "$LOCAL_SECRETS" "$DEST" "$DEST/Sources" "$SOURCE_DIR"; do
+  [[ ! -L "$directory" && -d "$directory" ]] || {
+    echo "ERROR: private Tuya destination changed during provisioning: $directory" >&2
+    exit 4
+  }
+done
+mv -f "$PODSPEC_TMP" "$PODSPEC"
+mv -f "$IDENTITY_TMP" "$IDENTITY_SWIFT"
+trap - EXIT HUP INT TERM
+chmod 600 "$PODSPEC" "$IDENTITY_SWIFT"
 
 cat <<EOF
 
 Private Tuya app identity provisioned locally at:
   $DEST
 
-Nothing was written to Git, shell history, host process argv, or stdout.
+No plaintext credential was written to Git, shell history, host process argv, or stdout.
 The generated source is compiled only by the SDK-integrated Capture workspace.
 Next: run Scripts/bootstrap_capture_tuya_sdk.sh.
 EOF
