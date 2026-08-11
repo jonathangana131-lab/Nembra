@@ -380,11 +380,14 @@ private struct NembraNavigationView: View {
             return
         }
 
+        // Clear the prior provider response before the debounce. Otherwise a new
+        // non-empty query can temporarily display MapKit results from the old query.
+        results = []
+        searchError = nil
+        isSearching = true
+
         try? await Task.sleep(for: .milliseconds(300))
         guard !Task.isCancelled else { return }
-
-        isSearching = true
-        searchError = nil
 
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = trimmed
