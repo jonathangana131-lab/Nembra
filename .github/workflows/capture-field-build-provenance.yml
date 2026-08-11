@@ -66,7 +66,6 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'CAPTURE_PROVENANCE_SOURCE_SHA=%s\n' "$actual" >> "$GITHUB_ENV"
           printf 'Exact provenance source: %s\n' "$actual"
-
       - name: Validate private Tuya input provenance helper
         shell: bash
         run: |
@@ -89,7 +88,7 @@ jobs:
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
           bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
-          /usr/bin/python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_path_contract
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
 
       - name: Verify source contract
         shell: bash
