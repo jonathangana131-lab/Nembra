@@ -48,7 +48,7 @@ jobs:
               'git(root,"hash-object","--no-filters","--",relative)',
               'candidate authority worktree bytes differ from accepted Git blob',
               'mainSHA',
-              'candidate does not contain exact current main authority',
+              'candidate does not contain the exact current main authority',
               'def accepted_installer_blob(',
               '"cat-file","blob"',
               'source /dev/fd/',
@@ -80,3 +80,5 @@ jobs:
           test "$(git diff --name-only "$base"..HEAD | sort)" = "$net"
           git diff --check "$base"..HEAD
           git push origin HEAD:repair/v14-final-go-pinned-installer-subject-current-sol
+
+# Registered in the previous commit; this push triggers the current-head runner.
