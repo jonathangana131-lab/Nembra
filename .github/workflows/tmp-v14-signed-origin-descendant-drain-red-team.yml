@@ -1,0 +1,74 @@
+name: tmp V14 Signed Origin Descendant Drain Red Team
+
+on:
+  push:
+    branches:
+      - test/capture-signed-origin-prereq-sol-1312t8-20260811
+    paths:
+      - scripts/ci/tests/test_capture_signed_origin_build_descendant_drain.py
+      - .github/workflows/tmp-v14-signed-origin-descendant-drain-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  expected-red:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact research ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor f76e6ae54b4304df5b02db4f46a72f67daa276e2 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Confirm expected-red descendant lifetime witness
+        id: witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/descendant-drain.log"
+          set +e
+          python3 scripts/ci/tests/test_capture_signed_origin_build_descendant_drain.py >"$log" 2>&1
+          status="$?"
+          set -e
+          cat "$log"
+          if [[ "$status" -eq 0 ]]; then
+            echo '::error title=Expected-red unexpectedly green::Current build guard no longer reproduces descendant lifetime gap; independently review the mechanism before treating this diagnostic as obsolete.'
+            exit 1
+          fi
+          grep -F 'Capture build guard returned while a direct build descendant remained alive.' "$log" >/dev/null || {
+            echo '::error title=Diagnostic failed for wrong reason::Expected descendant lifetime assertion was not observed.'
+            exit 1
+          }
+          echo "Expected-red confirmed at $GITHUB_SHA: direct build process completion does not mechanically drain its descendant before guard return." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish research checkpoint
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat >"$RUNNER_TEMP/comment.md" <<EOF
+          ### Signed-origin process-family drain expected-red
+
+          Research only; no production source or hardware authority moved.
+
+          Exact diagnostic head \`$GITHUB_SHA\` mechanically reproduced a second prerequisite for any transient-GID compiler-output repair: the current guarded-build lifecycle can return after its direct build child exits while a descendant remains alive. The witness uses the real \`run_guarded_build\` process admission/poll/completion/finally path with input-event mechanics stubbed out so the oracle is only process lifetime.
+
+          This does **not** prove real Xcode leaks a descendant. The separate macOS/Xcode prerequisite probe must establish the actual process-family behavior. It does prove that a production output-custody design cannot infer full drain merely from the current direct-child wait. Before root lock / first protected snapshot, the trusted supervisor must mechanically prove the relevant builder process family is drained or has otherwise lost output authority.
+
+          This finding is complementary to #2955: compiler-origin custody still requires the actual xcodebuild-produced subject to remain isolated through first protected snapshot. No post-build self-derived digest is promoted by this test.
+
+          **PHYSICAL NO-GO.**
+          EOF
+          gh pr comment 2871 --body-file "$RUNNER_TEMP/comment.md"
