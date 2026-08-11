@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 8
+          fetch-depth: 10
           persist-credentials: true
 
       - name: Verify exact current parent and helper-only history
@@ -47,10 +47,11 @@ jobs:
                   raise SystemExit(f'{label}: expected 1 match, found {count}')
               return text.replace(old, new, 1)
 
+          env_line = '    @Environment(' + chr(92) + '.dynamicTypeSize) private var dynamicTypeSize\n'
           root = replace_once(
               root,
               '    @State private var showEngineeringDetails = false\n',
-              '    @State private var showEngineeringDetails = false\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n',
+              '    @State private var showEngineeringDetails = false\n' + env_line,
               'dynamic type environment',
           )
           root = replace_once(
@@ -148,15 +149,25 @@ jobs:
 
           source = source[:start] + root + source[end:]
           path.write_text(source, encoding='utf-8')
-          PY
 
-          test "$(grep -Fc '@Environment(\.dynamicTypeSize) private var dynamicTypeSize' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
-          test "$(grep -Fc 'Text("Link the scooter account")' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
-          test "$(grep -Fc 'Text("Prepare the scooter link")' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
-          grep -Fq 'No scooter setting is changed here.' NembraApp/App/NembraCaptureEntrypoint.swift
-          grep -Fq '.padding(.top, dynamicTypeSize.isAccessibilitySize ? 10 : 22)' NembraApp/App/NembraCaptureEntrypoint.swift
-          test "$(grep -Fc 'Button("Create approval QR") { tuya.requestApproval() }' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
-          ! grep -Fq '.dynamicTypeSize(...DynamicTypeSize.xxxLarge)' NembraApp/App/NembraCaptureEntrypoint.swift
+          result = path.read_text(encoding='utf-8')
+          checks = {
+              '@Environment(' + chr(92) + '.dynamicTypeSize) private var dynamicTypeSize': 1,
+              'Text("Link the scooter account")': 1,
+              'Text("Prepare the scooter link")': 1,
+              'Button("Create approval QR") { tuya.requestApproval() }': 1,
+              '.padding(.top, dynamicTypeSize.isAccessibilitySize ? 10 : 22)': 1,
+          }
+          for needle, expected in checks.items():
+              actual = result.count(needle)
+              if actual != expected:
+                  raise SystemExit(f'postcondition mismatch for {needle!r}: expected {expected}, found {actual}')
+          if 'No scooter setting is changed here.' not in root:
+              raise SystemExit('accessibility purpose context was not inserted')
+          if '.dynamicTypeSize(...DynamicTypeSize.xxxLarge)' in root:
+              raise SystemExit('Capture root must not cap Dynamic Type')
+          print('AX5 root transform semantic postconditions: PASS')
+          PY
           git diff --check
 
       - name: Publish product-only descendant
