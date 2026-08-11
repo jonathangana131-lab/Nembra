@@ -1,0 +1,53 @@
+name: TEMP V14 Field Private Root Narrow Materialize
+
+on:
+  push:
+    branches:
+      - repair/v14-field-untracked-prearm-admission-sol-20260811
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bind exact triggering head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f scripts/ci/tmp_v14_field_private_root_narrow_materialize.py
+      - name: Materialize narrow private raw-tree authority
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_v14_field_private_root_narrow_materialize.py
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          python3 -m py_compile scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+      - name: Replay pre-arm and private-root regressions
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+          python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+      - name: Diff hygiene
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+      - name: Publish clean repaired child
+        env:
+          BRANCH: repair/v14-field-untracked-prearm-admission-sol-20260811
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-materializer[bot]"
+          git config user.email "nembra-capture-materializer[bot]@users.noreply.github.com"
+          git add Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_field_untracked-prearm-injection-red-team.py
+          git rm scripts/ci/tmp_v14_field_private_root_narrow_materialize.py
+          git rm .github/workflows/tmp-v14-field-private-root-narrow-materialize.yml
+          git diff --cached --check
+          git commit -m "Narrow private source admission to accepted pod roots"
+          git push origin "HEAD:${BRANCH}"
