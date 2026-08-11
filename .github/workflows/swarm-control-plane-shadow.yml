@@ -1,16 +1,8 @@
-name: Swarm Control Plane Shadow
+name: Swarm Control Plane
 
 on:
   pull_request:
-    paths:
-      - '.swarm/**'
-      - 'SWARM_GO.md'
-      - 'scripts/swarm_control.py'
-      - 'scripts/swarmcp/**'
-      - 'scripts/ci/tests/test_swarm_*.py'
-      - 'docs/SWARM_CONTROL_PLANE.md'
-      - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
-      - '.github/workflows/swarm-control-plane-shadow.yml'
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     branches:
       - main
@@ -23,6 +15,8 @@ on:
       - 'docs/SWARM_CONTROL_PLANE.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
       - '.github/workflows/swarm-control-plane-shadow.yml'
+  schedule:
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -30,12 +24,14 @@ permissions:
 
 jobs:
   deterministic-control-plane:
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - name: Bind validation to exact checked-out head
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -67,27 +63,105 @@ jobs:
       - name: Prove 30-worker deterministic race simulation
         run: python3 scripts/swarm_control.py simulate --workers 30
 
-  pr-metadata-shadow:
+  controlled-pr-enforcement:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Observe swarm metadata without breaking legacy PRs
+          fetch-depth: 0
+      - name: Fetch trusted base and live swarm state
+        run: |
+          set -euo pipefail
+          git fetch origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+          git fetch origin swarm-state:refs/remotes/origin/swarm-state
+      - name: Materialize exact live state with trusted base config
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/nembra-swarm-live"
+          TRUSTED="$RUNNER_TEMP/nembra-swarm-trusted"
+          mkdir -p "$ROOT/.swarm" "$TRUSTED"
+          git show "origin/${GITHUB_BASE_REF}:.swarm/config.json" > "$ROOT/.swarm/config.json"
+          git archive origin/swarm-state .swarm/runtime | tar -x -C "$ROOT"
+          git archive "origin/${GITHUB_BASE_REF}" scripts/swarm_control.py scripts/swarmcp | tar -x -C "$TRUSTED"
+          echo "SWARM_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "TRUSTED_ROOT=$TRUSTED" >> "$GITHUB_ENV"
+      - name: Collect exact changed-file set
+        run: |
+          set -euo pipefail
+          git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" > "$RUNNER_TEMP/nembra-swarm-changed-files.txt"
+      - name: Enforce ownership using trusted base generation
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          python3 - <<'PY'
+          set -euo pipefail
+          if [[ -f "$TRUSTED_ROOT/scripts/swarmcp/maximum.py" ]]; then
+            PYTHONPATH="$TRUSTED_ROOT/scripts" python3 -m swarmcp.maximum render --root "$SWARM_ROOT"
+            PYTHONPATH="$TRUSTED_ROOT/scripts" python3 -m swarmcp.maximum pr-check \
+              --root "$SWARM_ROOT" \
+              --event "$GITHUB_EVENT_PATH" \
+              --changed-files "$RUNNER_TEMP/nembra-swarm-changed-files.txt"
+          else
+            # One bootstrap generation: the old trusted base did not yet contain
+            # V16 enforcement. It may validate metadata, but cannot use PR-head
+            # code to police itself. After V16 lands, every later PR takes the
+            # hardened trusted-base path above.
+            PYTHONPATH="$TRUSTED_ROOT/scripts" python3 - <<'PY'
           import os
-          import sys
-          sys.path.insert(0, 'scripts')
           import swarm_control
+          body = os.environ.get('PR_BODY', '')
           try:
-              metadata = swarm_control.validate_pr_metadata(os.environ.get('PR_BODY', ''))
+              meta = swarm_control.validate_pr_metadata(body)
           except swarm_control.ValidationError as exc:
-              print(f'::warning title=Swarm shadow metadata::{exc}')
+              print(f'::warning title=V16 bootstrap shadow::{exc}')
           else:
-              print('controlled PR metadata:', metadata)
+              print('V16 bootstrap metadata:', meta)
           PY
+          fi
+
+  state-projection:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Materialize live swarm-state snapshot
+        run: |
+          set -euo pipefail
+          git fetch origin swarm-state:refs/remotes/origin/swarm-state
+          CONTROL_SHA="$(git rev-parse origin/swarm-state)"
+          echo "CONTROL_SHA=$CONTROL_SHA" >> "$GITHUB_ENV"
+          ROOT="$RUNNER_TEMP/nembra-swarm-projection"
+          mkdir -p "$ROOT/.swarm"
+          cp .swarm/config.json "$ROOT/.swarm/config.json"
+          git archive "$CONTROL_SHA" .swarm/runtime | tar -x -C "$ROOT"
+          echo "SWARM_ROOT=$ROOT" >> "$GITHUB_ENV"
+      - name: Validate and rebuild digest-fenced projection
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 -m swarmcp.maximum validate-local --root "$SWARM_ROOT"
+          PYTHONPATH=scripts python3 -m swarmcp.maximum render --root "$SWARM_ROOT"
+          PYTHONPATH=scripts python3 -m swarmcp.maximum verify-fence --root "$SWARM_ROOT"
+      - name: Publish generated projection without overwriting newer state
+        run: |
+          set -euo pipefail
+          EXPECTED="${CONTROL_SHA:?materialized swarm-state SHA missing}"
+          git switch --detach "$EXPECTED"
+          mkdir -p .swarm/runtime/generated
+          rm -rf .swarm/runtime/generated/*
+          cp -R "$SWARM_ROOT/.swarm/runtime/generated/." .swarm/runtime/generated/
+          [[ -n "$(git status --porcelain -- .swarm/runtime/generated)" ]] || exit 0
+          git config user.name nembra-swarm-control
+          git config user.email actions@users.noreply.github.com
+          git add .swarm/runtime/generated
+          git commit -m 'chore(swarm): publish validated V16 projection [swarm-generated]'
+          git fetch origin swarm-state:refs/remotes/origin/swarm-state
+          [[ "$(git rev-parse origin/swarm-state)" == "$EXPECTED" ]] || { echo 'swarm-state advanced; refusing stale projection'; exit 1; }
+          git push origin HEAD:swarm-state
