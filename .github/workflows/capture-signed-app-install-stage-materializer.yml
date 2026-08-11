@@ -1,0 +1,42 @@
+name: Capture Signed App Install Stage Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-signed-app-install-staging-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bind exact claimed parent ancestry
+        run: git merge-base --is-ancestor 4e659c2ecc24e2422648169bbd56d7af2383a2ce HEAD
+      - name: Materialize and validate product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/_materialize_signed_app_install_stage.py
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile Scripts/capture_signed_app_install_stage.py scripts/ci/tests/test_capture_signed_app_install_stage.py
+          python3 scripts/ci/tests/test_capture_signed_app_install_stage.py
+          git diff --check
+      - name: Commit product patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          if git diff --quiet -- scripts/field/install_one_time_capture.command .github/workflows/capture-field-build-provenance.yml; then
+            echo 'Product patch already materialized.'
+            exit 0
+          fi
+          git add scripts/field/install_one_time_capture.command .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'fix(capture): pin signed app install subject'
+          git push origin HEAD:repair/v14-capture-signed-app-install-staging-sol
