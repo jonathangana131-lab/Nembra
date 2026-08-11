@@ -1,0 +1,60 @@
+name: Capture Field Git Commit Object Execution Red Team
+
+on:
+  pull_request:
+    paths:
+      - "scripts/field/install_one_time_capture.command"
+      - "scripts/ci/tests/test_capture_field_git_commit_object_execution_red_team.py"
+      - ".github/workflows/capture-field-git-commit-object-execution-redteam.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packed-commit-object-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind checked-out exact head
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - name: Compile diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile scripts/ci/tests/test_capture_field_git_commit_object_execution_red_team.py
+          rm -rf scripts/ci/tests/__pycache__
+
+      - name: Prove packed commit alias retargets fresh tree lookup
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_field_git_commit_object_execution_red_team.py \
+            CaptureFieldPackedCommitExecutionRedTeamTests.test_commit_pack_alias_retargets_fresh_tree_lookup_after_accepted_audit
+
+      - name: Enforce accepted-commit execution-root contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_field_git_commit_object_execution_red_team.py \
+            CaptureFieldPackedCommitExecutionRedTeamTests.test_installer_execution_reader_must_bind_path_resolution_to_externally_accepted_commit
+
+      - name: Shell and diff hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+          test -z "$(find scripts -type d -name __pycache__ -print -quit)"
