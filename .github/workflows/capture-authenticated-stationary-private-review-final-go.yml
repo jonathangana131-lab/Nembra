@@ -13,6 +13,7 @@ on:
       - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
+      - scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
   pull_request:
     paths:
@@ -24,6 +25,7 @@ on:
       - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
+      - scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
   workflow_dispatch:
 
@@ -61,7 +63,8 @@ jobs:
             scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
             scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py \
-            scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
+            scripts/ci/tests/test_es80_final_go_current_vnode_contract.py \
+            scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
 
       - name: Preserve inherited private-review contracts
         shell: bash
@@ -99,6 +102,12 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             CandidateRawFilesystemAuthorityTests.test_info_exclude_cannot_hide_untracked_physical_input
+
+      - name: Reject physical payload inode and symlink replacement races
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
 
       - name: Require selected current vnode gate and reject retired convergence alias
         shell: bash
