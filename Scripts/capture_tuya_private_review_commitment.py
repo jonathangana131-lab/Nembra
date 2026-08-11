@@ -56,7 +56,26 @@ def _identity(metadata: os.stat_result) -> tuple[int, ...]:
     )
 
 
+def _canonical_nosymlink_path(path: Path, label: str) -> Path:
+    path = path.expanduser()
+    if not path.is_absolute() or path.anchor != os.sep:
+        raise CommitmentError(f"{label} path must be absolute")
+    if any(component in ("", ".", "..") for component in path.parts[1:]):
+        raise CommitmentError(f"{label} path must be canonical")
+    current = Path(os.sep)
+    for component in path.parts[1:]:
+        current /= component
+        try:
+            metadata = current.lstat()
+        except OSError as error:
+            raise CommitmentError(f"{label} path component is unavailable") from error
+        if stat.S_ISLNK(metadata.st_mode):
+            raise CommitmentError(f"{label} path contains a symlink component")
+    return path
+
+
 def _read_review_key(path: Path) -> bytes:
+    path = _canonical_nosymlink_path(path, "private review key")
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is None:
         raise CommitmentError("private review authority requires O_NOFOLLOW support")
@@ -143,12 +162,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     paths = {
-        "key_file": args.key_file.resolve(),
-        "lockfile": args.lockfile.resolve(),
-        "security_podspec": args.security_podspec.resolve(),
-        "security_build": args.security_build.resolve(),
-        "identity_podspec": args.identity_podspec.resolve(),
-        "identity_sources": args.identity_sources.resolve(),
+        "key_file": args.key_file,
+        "lockfile": args.lockfile,
+        "security_podspec": args.security_podspec,
+        "security_build": args.security_build,
+        "identity_podspec": args.identity_podspec,
+        "identity_sources": args.identity_sources,
     }
     try:
         if args.mode == "review":
