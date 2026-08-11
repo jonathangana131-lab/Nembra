@@ -18,7 +18,7 @@ LOCAL_SECRETS="$ROOT/LocalSecrets"
 # output is fixed to the checkout-owned ignored LocalSecrets tree.
 DEST="$LOCAL_SECRETS/TuyaRuntime"
 WRITER="$ROOT/Scripts/provision_capture_tuya_identity_writer.py"
-WRITER_SHA256="fd636098ef767c76946246f3f7f793a07b969f1abf9ee43445e4b5154f1089e8"
+WRITER_SHA256="3575ccc3aea7a493e4972c780852f3da5434fb323e9fa728c612d14ea605ed71"
 
 umask 077
 
@@ -50,24 +50,54 @@ CAPTURED_WRITER_SHA256="$(builtin printf '%s' "$WRITER_SOURCE" | /usr/bin/shasum
 }
 unset CAPTURED_WRITER_SHA256
 
+# Bind the checkout root itself before asking for credentials. Descendant
+# descriptor custody is insufficient if the checkout pathname can be replaced
+# while the operator is blocked on hidden input. The writer must later open the
+# root and prove that descriptor has this exact device/inode identity before it
+# creates LocalSecrets or consumes the credential-derived publication payload.
+if ! ROOT_IDENTITY_CAPTURE="$(/usr/bin/python3 -I - "$ROOT" <<'PY'
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+metadata = os.stat(path, follow_symlinks=False)
+if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
+    raise SystemExit(2)
+print(f"{metadata.st_dev}\t{metadata.st_ino}")
+PY
+)"; then
+  unset WRITER_SOURCE
+  builtin printf '%s\n' 'ERROR: checkout root could not be admitted before private credential input.' >&2
+  exit 4
+fi
+ROOT_DEVICE="${ROOT_IDENTITY_CAPTURE%%$'\t'*}"
+ROOT_INODE="${ROOT_IDENTITY_CAPTURE#*$'\t'}"
+unset ROOT_IDENTITY_CAPTURE
+[[ "$ROOT_DEVICE" =~ ^[0-9]+$ && "$ROOT_INODE" =~ ^[0-9]+$ ]] || {
+  unset WRITER_SOURCE ROOT_DEVICE ROOT_INODE
+  builtin printf '%s\n' 'ERROR: checkout root identity admission returned malformed metadata.' >&2
+  exit 4
+}
+
 builtin read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY
 builtin printf '\n'
 builtin read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET
 builtin printf '\n'
 
-[[ -n "$APP_KEY" ]] || { unset WRITER_SOURCE; echo "ERROR: AppKey is empty." >&2; exit 2; }
-[[ -n "$APP_SECRET" ]] || { unset WRITER_SOURCE; echo "ERROR: AppSecret is empty." >&2; exit 3; }
+[[ -n "$APP_KEY" ]] || { unset WRITER_SOURCE ROOT_DEVICE ROOT_INODE; echo "ERROR: AppKey is empty." >&2; exit 2; }
+[[ -n "$APP_SECRET" ]] || { unset WRITER_SOURCE ROOT_DEVICE ROOT_INODE; echo "ERROR: AppSecret is empty." >&2; exit 3; }
 
 APP_KEY_B64="$(builtin printf '%s' "$APP_KEY" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 APP_SECRET_B64="$(builtin printf '%s' "$APP_SECRET" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 unset APP_KEY APP_SECRET
 
-if ! builtin printf '%s\0%s' "$APP_KEY_B64" "$APP_SECRET_B64" | /usr/bin/python3 -I -c "$WRITER_SOURCE" "$ROOT"; then
-  unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE
+if ! builtin printf '%s\0%s' "$APP_KEY_B64" "$APP_SECRET_B64" | /usr/bin/python3 -I -c "$WRITER_SOURCE" "$ROOT" "$ROOT_DEVICE" "$ROOT_INODE"; then
+  unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE ROOT_DEVICE ROOT_INODE
   builtin printf '%s\n' 'ERROR: private Tuya identity publication failed closed.' >&2
   exit 4
 fi
-unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE
+unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE ROOT_DEVICE ROOT_INODE
 
 /bin/cat <<EOF
 
@@ -76,6 +106,6 @@ Private Tuya app identity provisioned locally at:
 
 No plaintext credential was written to Git, shell history, host process argv, or stdout.
 The generated source is compiled only by the SDK-integrated Capture workspace.
-The writer source is SHA-256 pinned before credential input; filesystem publication is descriptor-bound and no-follow under the fixed checkout LocalSecrets tree.
+The writer source is SHA-256 pinned before credential input; checkout-root identity is bound before input; filesystem publication is descriptor-bound and no-follow under that exact admitted root.
 Next: run Scripts/bootstrap_capture_tuya_sdk.sh.
 EOF
