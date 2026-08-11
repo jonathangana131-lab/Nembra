@@ -9,7 +9,7 @@
   "generation": 9,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:01:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:08:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:21:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
@@ -17,5 +17,5 @@
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
   "takeoverFromLeaseId": "reconcapture-a91c7e-20260811-2052",
   "takeoverReason": "Released generation-8 Capture reconciliation completed Final-GO refresh. Continue the same shard against current live GitHub to reconcile newer signed-install/build/private-identity blocker truth without modifying actively owned product implementation paths. PHYSICAL NO-GO.",
-  "checkpoint": "Reconciled three stale authoritative Capture descriptors without touching active product branches: signed-install now tracks #2995 live a71cc55 plus unresolved #2998 detached/open-FD authority and queued exact gates; private-identity now tracks #2993 ee7dd8f parent repair plus #2977 sanitation recomposition; flagship now tracks #2979 ce9e2bac software-green/visual-queued successor and #2973 4ed3c579 runtime VoiceOver in-progress while preserving #2940 005b7c4 as accepted app-visible baseline. PHYSICAL NO-GO."
+  "checkpoint": "Reconciled signed-install, private-identity and flagship descriptors against live GitHub. #2973 exact 4ed3c579 is terminal runtime VoiceOver red, but its xcresult/transcript upload also failed ENOTFOUND, so product-vs-harness cause is not retained; #3012 b7c746d is the queued fail-closed diagnostic recovery. #2998 exact 678bf8a is now terminal red at the direct detached/open-FD witness step; connector logs/annotations do not expose its assertion text and gh is unavailable, so classify terminal witness red cause unclassified: neither security acceptance nor mechanical exploit proof. Refreshing #2995 exact-head gates and remaining P0 scheduler truth. PHYSICAL NO-GO."
 }
