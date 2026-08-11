@@ -80,7 +80,12 @@ class FinalGoContinuousTrackedTreeCustodyTests(unittest.TestCase):
             root = sandbox / "repo"
             root.mkdir()
             source, tracked = self._candidate(root)
-            accepted_mode, accepted_oid = MODULE._tree_entries(root, source)["A.swift"]
+            # Production _audit_candidate_tree canonicalizes candidate_repo before
+            # reaching _tree_entries. Mirror that precondition at this direct test
+            # seam because Darwin TemporaryDirectory paths may lexically use /var
+            # while .git resolves physically beneath /private/var.
+            canonical_root = root.resolve(strict=True)
+            accepted_mode, accepted_oid = MODULE._tree_entries(canonical_root, source)["A.swift"]
             original = MODULE._physical_blob_oid
             fired = False
 
