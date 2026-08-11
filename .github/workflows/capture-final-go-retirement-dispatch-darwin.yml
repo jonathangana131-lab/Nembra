@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - test/v14-final-go-retirement-dispatch-darwin-r2-sol-20260811
+      - validation/v15-final-go-darwin-failure-diagnostics-sol-20260811
     paths:
       - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
   pull_request:
@@ -83,8 +84,24 @@ jobs:
       - name: Replay whole-tree races through real kqueue custody
         shell: bash
         run: |
-          set -euo pipefail
-          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+          set -uo pipefail
+          LOG="$RUNNER_TEMP/finalgo-darwin-whole-tree.log"
+          set +e
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py 2>&1 | tee "$LOG"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            python3 - "$LOG" <<'PY'
+          from pathlib import Path
+          import sys
+
+          payload = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+          bounded = payload[-12000:]
+          escaped = bounded.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Darwin whole-tree replay failed::{escaped}")
+          PY
+            exit "$status"
+          fi
 
       - name: Prove sealed retirement dispatch on Darwin
         shell: bash
