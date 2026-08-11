@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "205330-5a3b113071cf4f72",
+  "type": "FINDING",
+  "workerId": "sol-20260811-1315r8",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Capture Build child PR #2982 moved to exact head 8650f62e2d8b4d516414c3b85a2c3862ea0ed20c, resetting prior a71552ac acceptance. On exact 8650f62, Capture Field Selected Xcode Custody run 31533610279/job 93919307674 is FAILURE in the custody contract and exact-head Xcode job 93919328627 is queued. Source inspection shows the permanent test now requires Xcode-27 version admission through the exact custodied SELECTED_XCODEBUILD, while the production installer at this intermediate materializer head still interrogates /usr/bin/xcodebuild before exact xcodebuild resolution/custody. This head is not selectable; production materialization plus fresh exact-head gates are required. PHYSICAL NO-GO unchanged.",
+  "createdAt": "2026-08-11T20:53:30Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "pullRequest": 2982,
+    "headSHA": "8650f62e2d8b4d516414c3b85a2c3862ea0ed20c",
+    "selectedXcodeRunId": 31533610279,
+    "selectedXcodeJobId": 93919307674,
+    "selectedXcodeConclusion": "failure",
+    "xcodeJobId": 93919328627,
+    "xcodeStatus": "queued",
+    "classification": "INTERMEDIATE_MATERIALIZER_HEAD_NOT_ACCEPTED",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
