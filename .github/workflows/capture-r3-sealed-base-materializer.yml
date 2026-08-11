@@ -1,0 +1,43 @@
+name: Capture R3 Sealed Base Materializer
+on:
+  push:
+    branches: [repair/v14-r3-sealed-base-module-execution-sol]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Compose sealed parent execution and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-pycache"
+          python3 scripts/ci/_materialize_r3_sealed_base.py
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py \
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py \
+            scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
+          python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          python3 scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+          git diff --check
+      - name: Publish production-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/_materialize_r3_sealed_base.py .github/workflows/capture-r3-sealed-base-materializer.yml
+          git config user.name 'nembra-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): seal R3 parent module execution'
+          git push origin HEAD:repair/v14-r3-sealed-base-module-execution-sol
