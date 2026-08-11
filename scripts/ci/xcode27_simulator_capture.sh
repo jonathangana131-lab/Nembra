@@ -10,9 +10,16 @@ RESULT_BUNDLE="$ARTIFACTS_DIR/NembraTests.xcresult"
 ATTACHMENTS_DIR="$ARTIFACTS_DIR/test-attachments"
 REDUCE_MOTION_RESULT_BUNDLE="$ARTIFACTS_DIR/NembraReduceMotionTests.xcresult"
 REDUCE_MOTION_ATTACHMENTS_DIR="$ARTIFACTS_DIR/reduce-motion-test-attachments"
+ACCESSIBILITY_TYPE_RESULT_BUNDLE="$ARTIFACTS_DIR/NembraAccessibilityTypeTests.xcresult"
+ACCESSIBILITY_TYPE_ATTACHMENTS_DIR="$ARTIFACTS_DIR/accessibility-type-test-attachments"
 BUNDLE_ID="com.jonathangana131.nembra"
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
-rm -rf "$RESULT_BUNDLE" "$REDUCE_MOTION_RESULT_BUNDLE" "$REDUCE_MOTION_ATTACHMENTS_DIR"
+rm -rf \
+  "$RESULT_BUNDLE" \
+  "$REDUCE_MOTION_RESULT_BUNDLE" \
+  "$REDUCE_MOTION_ATTACHMENTS_DIR" \
+  "$ACCESSIBILITY_TYPE_RESULT_BUNDLE" \
+  "$ACCESSIBILITY_TYPE_ATTACHMENTS_DIR"
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -200,6 +207,105 @@ if [[ "$REDUCE_MOTION_RUNTIME_AVAILABLE" -eq 1 ]]; then
     echo "Reduce Motion exact-head UI acceptance failed with status $REDUCE_MOTION_TEST_STATUS." >&2
     exit "$REDUCE_MOTION_TEST_STATUS"
   fi
+fi
+
+# V14 visual acceptance requires a real large-Dynamic-Type landscape cockpit image,
+# because DashboardCockpitComposition and NembraEnergyRailView both switch to
+# materially different accessibility geometry. Xcode 27's CoreSimulator exposes
+# `content_size`, so exercise the real system setting rather than a semantic-only
+# unit substitute or a fabricated screenshot. Probe accessibility spellings from
+# strongest to weakest; every accepted value is an actual accessibility category.
+set_accessibility_content_size() {
+  local value status
+  local log_path="$ARTIFACTS_DIR/logs/simctl-content-size.log"
+  : > "$log_path"
+
+  for value in \
+    accessibility-extra-extra-extra-large \
+    accessibility-extra-extra-large \
+    accessibility-extra-large \
+    accessibility-large \
+    accessibility-medium
+  do
+    echo "probe_content_size=$value" >> "$log_path"
+    set +e
+    xcrun simctl ui "$UDID" content_size "$value" >> "$log_path" 2>&1
+    status=$?
+    set -e
+    if [[ "$status" -eq 0 ]]; then
+      echo "accessibility_content_size=$value" >> "$ARTIFACTS_DIR/environment.txt"
+      echo "accepted_content_size=$value" >> "$log_path"
+      return 0
+    fi
+    echo "rejected_content_size=$value status=$status" >> "$log_path"
+  done
+
+  {
+    echo "No accessibility content-size value was accepted. Runner help follows."
+    xcrun simctl help ui || true
+    xcrun simctl ui "$UDID" help || true
+  } >> "$log_path" 2>&1
+  return 1
+}
+
+if ! set_accessibility_content_size; then
+  echo "Accessibility-size landscape cockpit evidence is required but this runner did not accept an accessibility content-size setting." >&2
+  exit 8
+fi
+
+set +e
+set -o pipefail
+xcodebuild \
+  -project Nembra.xcodeproj \
+  -scheme Nembra \
+  -configuration Debug \
+  -destination "platform=iOS Simulator,id=$UDID" \
+  -derivedDataPath "$DERIVED_DATA" \
+  -resultBundlePath "$ACCESSIBILITY_TYPE_RESULT_BUNDLE" \
+  -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 120 \
+  -collect-test-diagnostics never \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \
+  CODE_SIGNING_ALLOWED=NO \
+  ONLY_ACTIVE_ARCH=YES \
+  test \
+  | tee "$ARTIFACTS_DIR/logs/xcodebuild-accessibility-type-test.log"
+ACCESSIBILITY_TYPE_TEST_STATUS=${PIPESTATUS[0]}
+set -e
+
+# Restore the normal content-size category for the remaining generic screenshot
+# matrix. Failure to restore is non-authoritative for the already-preserved
+# accessibility xcresult, but is recorded for diagnosis instead of hidden.
+set +e
+xcrun simctl ui "$UDID" content_size large \
+  >> "$ARTIFACTS_DIR/logs/simctl-content-size.log" 2>&1
+CONTENT_SIZE_RESET_STATUS=$?
+set -e
+if [[ "$CONTENT_SIZE_RESET_STATUS" -eq 0 ]]; then
+  echo "content_size_reset=large" >> "$ARTIFACTS_DIR/environment.txt"
+else
+  echo "content_size_reset=failed_status_${CONTENT_SIZE_RESET_STATUS}" >> "$ARTIFACTS_DIR/environment.txt"
+fi
+
+if [[ -d "$ACCESSIBILITY_TYPE_RESULT_BUNDLE" ]]; then
+  if xcrun xcresulttool export attachments \
+    --path "$ACCESSIBILITY_TYPE_RESULT_BUNDLE" \
+    --output-path "$ACCESSIBILITY_TYPE_ATTACHMENTS_DIR" \
+    > "$ARTIFACTS_DIR/logs/xcresult-accessibility-type-attachments.log" 2>&1; then
+    find "$ACCESSIBILITY_TYPE_ATTACHMENTS_DIR" -type f -maxdepth 2 -print | sort \
+      > "$ARTIFACTS_DIR/accessibility-type-test-attachments.txt" || true
+  else
+    {
+      echo "Accessibility Dynamic Type attachment export failed; the complete xcresult is still preserved."
+      xcrun xcresulttool help export attachments || true
+    } >> "$ARTIFACTS_DIR/logs/xcresult-accessibility-type-attachments.log" 2>&1
+  fi
+fi
+
+if [[ "$ACCESSIBILITY_TYPE_TEST_STATUS" -ne 0 ]]; then
+  echo "Accessibility Dynamic Type exact-head UI acceptance failed with status $ACCESSIBILITY_TYPE_TEST_STATUS." >&2
+  exit "$ACCESSIBILITY_TYPE_TEST_STATUS"
 fi
 
 APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/Nembra.app"
