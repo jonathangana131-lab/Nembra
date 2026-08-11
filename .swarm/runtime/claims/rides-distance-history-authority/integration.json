@@ -7,12 +7,14 @@
   "workerId": "sol-20260811-1439r8",
   "leaseId": "rides-distance-integration-r8-20260811-2212",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:12:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:12:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:19:30Z",
+  "releasedAt": "2026-08-11T22:19:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 443,
   "sourceSHA": "92512a5c90be846ddab3521015a26419a8498865",
-  "intent": "Pre-reconcile legacy child #443 against current main plus current parent candidate #3058 without modifying the unaccepted parent. Identify exactly which immutable-history distance attachment semantics remain missing on current main, which stale child bytes must not be replayed, and the minimal safe successor delta after parent acceptance. SOFTWARE_ONLY."
+  "intent": "Pre-reconcile legacy child #443 against current main plus current parent candidate #3058 without modifying the unaccepted parent. Identify exactly which immutable-history distance attachment semantics remain missing on current main, which stale child bytes must not be replayed, and the minimal safe successor delta after parent acceptance. SOFTWARE_ONLY.",
+  "checkpoint": "READY TO REPLAY AFTER #3058 ACCEPTANCE. Legacy #443 exact source blob 58b20483 and test blob 23fb5c59 remain additive/absent on current main. Its required dependency blobs are byte-identical between #443 and current main: RideHistoryCommit.swift 88d064f5, RideStatistics.swift 1624732b, LiveDistanceIntegration.swift 5e0b23dc. #3058 exact head restores RideDistanceReconciliation.swift blob 7245b17b, identical to #443's accepted parent source. Search found no alternative RideHistoryDistanceCheckpoint/RideHistoryDistanceCommitCoordinator implementation on current main and no RideHistoryDistanceAttachment.swift project selection. Therefore no semantic port is currently required: after #3058 unchanged head earns independent acceptance, replay only the exact two #443 blobs on top and run fresh package/integration gates. Do not replay #443's stale nine-commit ancestry, do not merge child ahead of parent, and do not call it app-visible until deliberate project/persistence wiring exists. SOFTWARE_ONLY."
 }
