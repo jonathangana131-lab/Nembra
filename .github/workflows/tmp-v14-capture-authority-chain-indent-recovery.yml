@@ -35,34 +35,28 @@ jobs:
               if workflow.count(start) != 1:
                   raise RuntimeError(f'expected one payload start, found {workflow.count(start)}')
               payload = workflow.split(start, 1)[1].split(end, 1)[0]
-              # A global dedent is wrong here: intentional triple-quoted fixture
-              # text contains zero-indented lines. Strip only the YAML prefix.
               prefix = ' ' * 10
               payload = '\n'.join(
                   line[len(prefix):] if line.startswith(prefix) else line
                   for line in payload.splitlines()
               ) + '\n'
 
-              # The review-candidate and verified-summary blocks both contain the
-              # verifier-source line. The original materializer assumed that line
-              # was globally unique. Preserve fail-closed replacement everywhere
-              # else, but allow this named replacement to consume only the first
-              # of the two ordered occurrences; a later context-specific rewrite
-              # still owns the verified-summary occurrence.
-              old_helper = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"{label}: expected one match, found {count}")
-    return text.replace(old, new, 1)
-'''
-              new_helper = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
-    if label == "bootstrap review helper output" and count == 2:
-        return text.replace(old, new, 1)
-    if count != 1:
-        raise SystemExit(f"{label}: expected one match, found {count}")
-    return text.replace(old, new, 1)
-'''
+              old_helper = (
+                  'def replace_once(text: str, old: str, new: str, label: str) -> str:\n'
+                  '    count = text.count(old)\n'
+                  '    if count != 1:\n'
+                  '        raise SystemExit(f"{label}: expected one match, found {count}")\n'
+                  '    return text.replace(old, new, 1)\n'
+              )
+              new_helper = (
+                  'def replace_once(text: str, old: str, new: str, label: str) -> str:\n'
+                  '    count = text.count(old)\n'
+                  '    if label == "bootstrap review helper output" and count == 2:\n'
+                  '        return text.replace(old, new, 1)\n'
+                  '    if count != 1:\n'
+                  '        raise SystemExit(f"{label}: expected one match, found {count}")\n'
+                  '    return text.replace(old, new, 1)\n'
+              )
               if payload.count(old_helper) != 1:
                   raise RuntimeError(f'expected one replace_once helper, found {payload.count(old_helper)}')
               payload = payload.replace(old_helper, new_helper, 1)
