@@ -164,6 +164,10 @@ struct DashboardView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Label(connectionText, systemImage: connectionIcon)
+                // At AX sizes the state word itself is already a non-color cue.
+                // Keep its full Dynamic Type scale and reclaim the decorative
+                // symbol width instead of forcing a mid-word hyphenation fallback.
+                .labelStyle(.titleOnly)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(connectionStyle)
                 .lineLimit(2)
