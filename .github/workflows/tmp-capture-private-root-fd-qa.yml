@@ -1,0 +1,54 @@
+name: Temporary Capture Private Root FD QA
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-private-root-fd-sol
+    paths:
+      - .github/workflows/tmp-capture-private-root-fd-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-private-root-fd-sol
+          fetch-depth: 0
+      - name: Bind workflow-only QA child
+        shell: bash
+        env:
+          STAGED_PRODUCT: 9229eb8c12c931552d45a7d484a9a3d14b227600
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$STAGED_PRODUCT"
+          test "$(git diff --name-only "$STAGED_PRODUCT" HEAD)" = '.github/workflows/tmp-capture-private-root-fd-qa.yml'
+          git diff --check "$STAGED_PRODUCT" HEAD
+      - name: Exercise admitted root descriptor handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          test "$(sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}')" = '920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34'
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/repo/Scripts"
+          cp Scripts/provision_capture_tuya_identity.sh Scripts/provision_capture_tuya_identity_writer.py "$tmp/repo/Scripts/"
+          chmod 700 "$tmp/repo/Scripts/provision_capture_tuya_identity.sh"
+          chmod 600 "$tmp/repo/Scripts/provision_capture_tuya_identity_writer.py"
+          output="$(printf 'nembra-dummy-app-key\nnembra-dummy-app-secret\n' | /bin/bash -p "$tmp/repo/Scripts/provision_capture_tuya_identity.sh" 2>&1)"
+          test -f "$tmp/repo/LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"
+          test -f "$tmp/repo/LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift"
+          ! grep -Fq 'nembra-dummy-app-key' <<< "$output"
+          ! grep -Fq 'nembra-dummy-app-secret' <<< "$output"
+      - name: Turn expected-red checkout swap green
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
