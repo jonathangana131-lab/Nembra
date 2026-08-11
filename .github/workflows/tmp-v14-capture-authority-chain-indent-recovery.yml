@@ -49,6 +49,13 @@ jobs:
           PY
           if [[ -s /tmp/nembra-authority-materializer-recovery-error.txt ]]; then
             cat /tmp/nembra-authority-materializer-recovery-error.txt
+            git reset --hard HEAD
+            cp /tmp/nembra-authority-materializer-recovery-error.txt .nembra-authority-materializer-recovery-error
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add .nembra-authority-materializer-recovery-error
+            git commit -m 'Capture: retain recovery materializer failure'
+            git push origin HEAD:repair/v14-capture-authority-chain-indent-recovery-sol
             exit 1
           fi
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
