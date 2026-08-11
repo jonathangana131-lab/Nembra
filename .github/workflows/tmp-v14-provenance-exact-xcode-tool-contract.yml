@@ -1,0 +1,110 @@
+name: TEMP Advance Capture provenance exact-tool contract
+
+on:
+  push:
+    branches:
+      - repair/v14-selected-xcode-tool-file-custody-sol-1316sx-20260811
+    paths:
+      - .github/workflows/tmp-v14-provenance-exact-xcode-tool-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  advance-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-selected-xcode-tool-file-custody-sol-1316sx-20260811
+          fetch-depth: 0
+
+      - name: Bind materializer to exact triggering head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Advance stale provenance assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          source = path.read_text(encoding='utf-8')
+          replacements = (
+              (
+                  '''          grep -Fq 'run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py"' "$installer"''',
+                  '''          grep -Fq 'read_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE"' "$installer"''',
+                  'verified accepted intended-device helper payload',
+              ),
+              (
+                  '''          grep -Fq 'devicectl list devices --hide-headers' "$installer"''',
+                  '''          grep -Fq '"$SELECTED_DEVICECTL" list devices --hide-headers' "$installer"''',
+                  'exact selected devicectl discovery',
+              ),
+              (
+                  '''          grep -Fq 'devicectl device install app --device "$COREDEVICE_ID"' "$installer"''',
+                  '''          grep -Fq '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"' "$installer"''',
+                  'exact selected devicectl install',
+              ),
+              (
+                  '''          build_line="$(grep -nF -- '-- /usr/bin/xcodebuild \\' "$installer" | sed -n '1s/:.*//p')"''',
+                  '''          build_line="$(grep -nF -- '-- "$SELECTED_XCODEBUILD" \\' "$installer" | sed -n '1s/:.*//p')"''',
+                  'exact selected guarded xcodebuild',
+              ),
+          )
+          for old, new, label in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one stale {label} assertion, found {count}')
+              source = source.replace(old, new, 1)
+
+          for forbidden in (
+              '''grep -Fq 'run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py"' "$installer"''',
+              '''grep -Fq 'devicectl list devices --hide-headers' "$installer"''',
+              '''grep -Fq 'devicectl device install app --device "$COREDEVICE_ID"' "$installer"''',
+              '''grep -nF -- '-- /usr/bin/xcodebuild \\' "$installer"''',
+          ):
+              if forbidden in source:
+                  raise SystemExit(f'stale weaker provenance assertion remains: {forbidden}')
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-field-build-provenance.yml').read_text(encoding='utf-8')
+          installer = Path('scripts/field/install_one_time_capture.command').read_text(encoding='utf-8')
+          required = (
+              'read_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE"',
+              '"$SELECTED_DEVICECTL" list devices --hide-headers',
+              '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"',
+              '-- "$SELECTED_XCODEBUILD" \\',
+          )
+          for marker in required:
+              if marker not in workflow:
+                  raise SystemExit(f'advanced provenance workflow marker missing: {marker}')
+              if marker not in installer:
+                  raise SystemExit(f'advanced provenance assertion does not match production installer: {marker}')
+          PY
+          git diff --check
+
+      - name: Publish durable acceptance-contract repair and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/tmp-v14-provenance-exact-xcode-tool-contract.yml
+          git add .github/workflows/capture-field-build-provenance.yml
+          git diff --cached --check
+          git config user.name "nembra-swarm-materializer"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Capture: advance provenance to exact selected Xcode tools"
+          git push origin HEAD:repair/v14-selected-xcode-tool-file-custody-sol-1316sx-20260811
