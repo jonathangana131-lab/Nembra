@@ -7,13 +7,15 @@
   "workerId": "sol-20260811-1439r8",
   "leaseId": "capture-final-go-integration-r8-20260811-2204",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:04:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:04:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:10:30Z",
+  "releasedAt": "2026-08-11T22:10:30Z",
   "leaseSeconds": 1800,
   "branch": "",
-  "pr": 3069,
-  "sourceSHA": "59b7076aa2e52a0fa56a18cac0e129ac360d7f20",
+  "pr": 3042,
+  "sourceSHA": "899e5dc5cc5e71617bfe4151cdb1da20c576fbc2",
   "resource": "RELEASE_INTEGRATION",
-  "intent": "Independently trace exact #3069 sealed-record handoff through downstream Final-GO/publication/composition consumers. Determine whether any consumer reopens candidate_repo or source path after the custody transition without establishing new custody. Do not modify the actively owned production/test paths; durable output is an integration accept/block checkpoint and any non-conflicting consumer fix only if mechanically required. PHYSICAL NO-GO."
+  "intent": "Trace the selected Final-GO sealed/retirement handoff through downstream publication and teardown without modifying actively owned production/test paths.",
+  "checkpoint": "INTEGRATION BLOCKED on exact selected #3042@899e5dc5. Audit first followed #3069, but that carrier was closed/superseded during the trace; conclusions were re-anchored to live #3042. Downstream publication premise is sound in the inherited issuer: exact #2775 generated-subject main and exact #2638 base publish only completed record bytes via publication(authority_repo=..., control=record[finalGOControlPlane]); publication receives neither candidate_repo nor candidate source path, and its module loader resolves the accepted publication Git blob from the independent authority/control source. However current #3042 retirement is not mechanically non-overwritable through teardown. _CandidateRetirementBoundary.retire(record) sets _CANDIDATE_RETIRED and replaces base.git/base.git_bytes while still nested inside _PREDECESSOR_CANDIDATE_GIT_CUSTODY. That predecessor context captured the original functions and its finally restores them after retire() but before the outer retirement boundary exits. #3074 exact parent c3a7cbe5 mechanically witnesses this reopen. Fresh compare c3a7cbe5 -> live 899e5dc5 is ahead 1 / behind 0 and changes only .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml, so production script blob 00b16bf8 and the nested-restore defect are unchanged on current head. Required closure: make candidate Git/blob retirement dispatch non-overwritable across inherited finally restoration (or equivalent), then replay #3074 on the repaired immutable head and re-earn canonical/current exact-head gates. No patch was made because Final-GO primary/review/tests own the production/test paths. PHYSICAL NO-GO."
 }
