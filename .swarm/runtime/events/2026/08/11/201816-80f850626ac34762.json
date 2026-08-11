@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "201816-80f850626ac34762",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-1315r8",
+  "laneId": "legacy-github-reconciliation",
+  "message": "CI/Xcode reconciliation removed stale Capture #2940 pending-Xcode state. Live Actions run 31490540888 is completed SUCCESS on exact head 005b7c4aaf27fabb442a65599b4538ebcc09ae27; trusted-head job 93775734812 and Xcode 27 build/test/Simulator-capture job 93775787237 both completed SUCCESS. capture-flagship-composition now records #2940 as the accepted app-visible ingredient while retaining standard copy-density and physical-security composition blockers. PHYSICAL NO-GO remains unchanged.",
+  "createdAt": "2026-08-11T20:18:16Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "captureHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+    "pullRequest": 2940,
+    "workflowRunId": 31490540888,
+    "workflowConclusion": "success",
+    "xcodeJobId": 93775787237,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
