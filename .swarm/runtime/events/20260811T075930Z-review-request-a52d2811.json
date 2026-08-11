@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "075930-review-request-a52d2811",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-a52d",
+  "laneId": "capture-package-test-runner-recovery",
+  "message": "Independent exact-head review requested for recovery PR #2811 at c5eba1be5fb4a73118d24e2eb936a0a785760713. Generation-2 primary salvaged #2808, corrected the lane's unsupported XCODE_27_RUNNER resource to XCODE_BUILD, authorized the exact offending Swift test, and constrained engineeringDisclosure lookup to the suffix after preflightPanel while preserving every rider-language/protocol-truth assertion. Exact-head package diagnostic and selective-graft are running; physical remains NO-GO. Review worker must be different from sol-20260811-a52d.",
+  "createdAt": "2026-08-11T07:59:30Z"
+}
