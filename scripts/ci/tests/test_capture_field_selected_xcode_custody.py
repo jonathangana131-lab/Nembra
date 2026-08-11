@@ -77,6 +77,28 @@ class CaptureFieldSelectedXcodeCustodyTests(unittest.TestCase):
             "selected developer-directory authority must remain explicit after caller overrides are cleared",
         )
 
+    def test_same_selected_tree_drives_device_tools_and_guarded_xcodebuild(self) -> None:
+        name, _ = self._selected_developer_dir()
+        self.assertRegex(
+            self.source,
+            re.compile(rf'DEVELOPER_DIR="?\${name}"?\s+/usr/bin/xcrun\s+(?:xctrace|devicectl)'),
+            "physical device tooling must be explicitly pinned to the admitted selected developer tree",
+        )
+        self.assertIn(
+            'SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)"',
+            self.source,
+        )
+        self.assertIn(
+            '-- "$SELECTED_XCODEBUILD"',
+            self.source,
+            "the vnode-guarded compiler must execute the exact xcodebuild resolved from the admitted selected tree",
+        )
+        self.assertNotIn(
+            '-- /usr/bin/xcodebuild',
+            self.source,
+            "the guarded physical build must not fall back to the mutable system Xcode dispatcher after custody",
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
