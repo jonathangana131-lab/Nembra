@@ -10,7 +10,7 @@ The witness deliberately keeps a writable file descriptor open from a detached s
 It requires the first detach to fail while that reference is live, proves the descriptor can still
 mutate bytes after ordinary pathname access is revoked, then closes the descriptor and requires a
 second detach to succeed. The image is reattached read-only and the exact post-quiescence bytes are
-verified while a same-UID write is rejected.
+verified while both root and a same-UID process are unable to mutate the frozen filesystem.
 
 No Xcode build, signing identity, device, Bluetooth, Tuya traffic, install, launch, or physical action
 occurs here. A green result is architecture-feasibility evidence only.
@@ -27,7 +27,6 @@ import plistlib
 import pwd
 import secrets
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -221,6 +220,10 @@ def root_probe() -> int:
     normal_groups = sorted(set(os.getgrouplist(account.pw_name, gid)))
     capability_gid = choose_capability_gid(normal_groups)
     workspace = Path(tempfile.mkdtemp(prefix="nembra-unmount-freeze.", dir="/private/tmp"))
+    # mkdtemp creates a root-only 0700 parent under this sudo probe. The capability child must be
+    # able to traverse this one private fixture parent while ordinary same-UID siblings remain out.
+    os.chown(workspace, 0, capability_gid)
+    os.chmod(workspace, 0o710)
     image = workspace / "origin-freeze.sparseimage"
     mountpoint = workspace / "mount"
     control = workspace / "control"
@@ -333,6 +336,19 @@ def root_probe() -> int:
         if frozen != expected:
             raise ProbeError("read-only remount did not preserve the exact quiesced compiler-output bytes")
 
+        # Prove the filesystem itself is read-only, not merely hidden behind the root-owned
+        # pathname mode. Root can traverse the mount; an append must still fail and bytes stay exact.
+        root_readonly_errno: int | None = None
+        try:
+            with target.open("ab", buffering=0) as handle:
+                handle.write(b"ROOT_AFTER_FREEZE\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as error:
+            root_readonly_errno = error.errno
+        if root_readonly_errno is None or target.read_bytes() != expected:
+            raise ProbeError("read-only remount accepted a root write or changed frozen bytes")
+
         readonly_attack = subprocess.run(
             ["/bin/sh", "-c", 'printf "AFTER_FREEZE\\n" >> "$1"', "sh", str(target)],
             stdin=subprocess.DEVNULL,
@@ -355,6 +371,7 @@ def root_probe() -> int:
             "firstDetachReturnCode": first_detach.returncode,
             "heldDescriptorPostLockWrite": write_result,
             "secondDetachReturnCode": second_detach.returncode,
+            "rootReadonlyWriteErrno": root_readonly_errno,
             "readonlyAttackReturnCode": readonly_attack.returncode,
             "frozenByteCount": len(frozen),
             "physicalAuthorityCreated": False,
@@ -424,6 +441,8 @@ def parent_probe() -> int:
         and evidence.get("firstDetachReturnCode") != 0
         and evidence.get("heldDescriptorPostLockWrite") == "write-ok"
         and evidence.get("secondDetachReturnCode") == 0
+        and isinstance(evidence.get("rootReadonlyWriteErrno"), int)
+        and evidence.get("rootReadonlyWriteErrno") != 0
         and evidence.get("readonlyAttackReturnCode") != 0
         and evidence.get("physicalAuthorityCreated") is False
     )
