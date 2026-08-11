@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1316vk",
   "leaseId": "capture-final-go-tests-1316vk-20260811-2017",
   "generation": 4,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:22:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:23:30Z",
+  "releasedAt": "2026-08-11T20:23:30Z",
   "leaseSeconds": 1800,
   "branch": "agent/capture-final-go-pack-index-test-contract-1316vk",
   "pr": 2976,
@@ -18,5 +19,7 @@
   "currentHeadSHA": "d9f383b98e4ed9eef99200fc8d3c630d608a1302",
   "parentPR": 2921,
   "takeoverFromWorkerId": "sol-20260811-1e59e0",
-  "checkpoint": "PR #2976 exact d9f383b98e4ed9eef99200fc8d3c630d608a1302 keeps the attack but makes its positive witness Git-version independent: verify the clean pack contains the attacker source OID, mutate the raw v2 index object-name to the accepted alias, then require Final-GO _tree_entries and post-mutation verify-pack to reject. Generated index mode is normalized writable only for fixture mutation. Local mechanical commit/tree fixtures pass. Production bytes remain parent #2921 exact 8242722c. Exact-head CI pending; PHYSICAL NO-GO."
+  "outcome": "EXACT_HEAD_GREEN_REVIEW_REQUESTED",
+  "workflowRunID": 31532461941,
+  "releaseReason": "Test-only PR #2976 exact d9f383b98e4ed9eef99200fc8d3c630d608a1302 is terminal green on Capture Authenticated Stationary Private Review Final GO run 31532461941. Portable raw pack-index witness preserves corrupt alias attack without positive post-corruption Git traversal. Independent review requested via durable REVIEW_REQUEST event; implementation worker does not self-accept. Production remains parent #2921 exact 8242722c; PHYSICAL NO-GO."
 }
