@@ -9,15 +9,15 @@
   "generation": 8,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:17:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:20:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-private-convergence-provenance-witness-a91c7e-20260811",
-  "pr": null,
+  "pr": 3011,
   "sourceSHA": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
-  "currentHeadSHA": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
+  "currentHeadSHA": "48812444f4d9c086bd4f0b0e9a42ccf483392041",
   "parentPR": 2993,
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
-  "takeoverReason": "Generation-7 released after discovering #2993 is the actively owned repaired adapter/ancestry parent. #2993 exact ee7dd8f5 still contains the stale provenance positive witness but its primary ownedPaths do not include test_capture_tuya_private_input_provenance.py. Safely stack only that one proven test-maintenance delta from #2997 onto exact #2993; do not touch adapter, failed-bootstrap, or checkout-root-swap paths owned by convergence primary. PHYSICAL NO-GO.",
   "ownedPaths": ["scripts/ci/tests/test_capture_tuya_private_input_provenance.py"],
-  "intent": "Create a one-file test-only child of #2993 replacing obsolete literal pod install witness with exact guarded POD_BIN command while preserving lock-before-resolution ordering. Require exact Field evidence, then hand to convergence owner for absorption."
+  "checkpoint": "Opened one-file test-only PR #3011 exact 48812444 directly on active convergence #2993 ee7dd8f5. The corrected file is the already-proven blob 214155f77c5c2c3290164cca1b211314ed05f5a0 from #2997, changing only the stale literal pod install witness to exact guarded \"$POD_BIN\" install --repo-update while preserving lock-before-resolution ordering. Adapter/failed-bootstrap/checkout-root-swap paths owned by #2993 primary are untouched. Exact Field evidence required; PHYSICAL NO-GO.",
+  "intent": "Validate #3011 exact 48812444. If Field passes the provenance contract, hand exact child to #2993 primary for absorption. Do not merge independently as final private convergence and do not touch the overlapping checkout-root-swap fixture; review 4910736753 already supplies that adoption requirement."
 }
