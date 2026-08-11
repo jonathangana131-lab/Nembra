@@ -9,12 +9,12 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:35:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:42:30Z",
+  "lastHeartbeatAt": "2026-08-11T12:45:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-field-untracked-prearm-admission-sol-20260811",
   "pr": 2924,
   "sourceSHA": "0f07d8d673f1b2472dc1439af2413258573ddb0a",
-  "currentHeadSHA": "200bacfd5396243262aea598afcde780c731b954",
+  "currentHeadSHA": "8553e0787092335d5681c36e538f039a5063274b",
   "takeoverFromWorkerId": "sol-20260811-54c8arm",
-  "checkpoint": "Clean successor published by exact-head-bound one-shot run 31492201175. Current head has exactly three permanent changed files; temp materializer helper/workflow self-deleted. Publisher pinned/fetched canonical #2913@8b67673789451835acc1bed192ce66aa4113ee23, verified canonical test/workflow blobs, replayed pre-arm + tracked-source authority, py_compile, diff hygiene, then pushed 200bacfd5396243262aea598afcde780c731b954. Private raw-tree allowlist now admits exact derived LocalSecrets/<private-root> subjects while traversing the LocalSecrets ancestor so unrelated content fails closed. Exact-head PR gates still need to be re-earned; PHYSICAL NO-GO."
+  "checkpoint": "Exact current candidate 8553e0787092335d5681c36e538f039a5063274b is temp-free and reviewable. It preserves the clean 200bacfd raw-tree/private-root repair and strengthens the permanent regression to reject both a direct rogue LocalSecrets file and an unrelated LocalSecrets sibling directory. This synchronize event triggered the permanent Capture authority matrix on the exact new head. Do not promote older green; PHYSICAL NO-GO."
 }
