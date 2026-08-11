@@ -25,7 +25,7 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(heroUse.lowerBound < body.endIndex)
     }
 
-    @Test("Accessibility XXXL receives a compact root hero and labeled metadata input")
+    @Test("Accessibility XXXL receives a compact precision root with a reachable primary action")
     func accessibilityRootRecomposesInsteadOfScalingMarketingCopy() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
@@ -34,30 +34,54 @@ struct CaptureP0RootVisualAcceptanceTests {
             to: "private final class SecureLinkController:"
         ))
 
+        #expect(root.contains("private var isAccessibilityLayout: Bool"))
         #expect(root.contains("if !dynamicTypeSize.isAccessibilitySize"))
         #expect(root.contains("fieldBuildIsAuthoritative ? \"Prepare Capture\" : \"Capture locked\""))
         #expect(root.contains("Account setup only in this public build."))
         #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
+        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("Text(\"Tuya Smart user code\")"))
         #expect(root.contains("TextField(\"Paste user code\""))
         #expect(root.contains(".accessibilityLabel(\"Tuya Smart user code\")"))
         #expect(root.contains(".accessibilityIdentifier(\"capture.p0-root\")"))
-        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
-        #expect(root.contains("private var buildAuthorityDetail: String"))
-        #expect(root.contains("Public build: account metadata only. Bluetooth and physical Capture stay locked."))
-        #expect(root.contains("private var accountMetadataPrimaryAction: some View"))
-        #expect(root.contains("private var accountMetadataSupportingCopy: some View"))
-        #expect(root.contains("nembra.capture.root.account-link-action"))
+        #expect(root.contains(".accessibilityIdentifier(\"nembra.capture.root.account-link-action\")"))
+        #expect(root.contains("private func rootSection"))
+        #expect(!root.contains("private func rootPanel"))
+        #expect(root.contains("private func scooterSelectionButton"))
+        #expect(root.contains("private func continueButton"))
+    }
 
+    @Test("Accessibility setup promotes the primary action ahead of verbose status")
+    func accessibilitySetupPromotesActionBeforeVerboseStatus() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let panel = String(try section(
-            in: root,
+            in: source,
             from: "private var accountSetupPanel: some View",
-            to: "private var accountMetadataPrimaryAction: some View"
+            to: "private var statusText: some View"
         ))
-        let accessibilityBranch = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize"))
-        let primary = try #require(panel.range(of: "accountMetadataPrimaryAction", range: accessibilityBranch.upperBound..<panel.endIndex))
-        let supporting = try #require(panel.range(of: "accountMetadataSupportingCopy", range: primary.upperBound..<panel.endIndex))
-        #expect(primary.lowerBound < supporting.lowerBound)
+
+        let standardBranch = try #require(panel.range(of: "if !isAccessibilityLayout {"))
+        let field = try #require(panel.range(of: "TextField(\"Paste user code\""))
+        let action = try #require(panel.range(of: "Label(\"Create approval QR\", systemImage: \"qrcode\")"))
+        let standardStatus = try #require(panel.range(
+            of: "statusText",
+            range: standardBranch.upperBound..<field.lowerBound
+        ))
+        let accessibilityBranch = try #require(panel.range(
+            of: "if isAccessibilityLayout {",
+            range: action.upperBound..<panel.endIndex
+        ))
+        let accessibilityStatus = try #require(panel.range(
+            of: "statusText",
+            range: accessibilityBranch.upperBound..<panel.endIndex
+        ))
+
+        #expect(standardStatus.lowerBound < field.lowerBound)
+        #expect(field.lowerBound < action.lowerBound)
+        #expect(action.lowerBound < accessibilityBranch.lowerBound)
+        #expect(accessibilityBranch.lowerBound < accessibilityStatus.lowerBound)
+        #expect(panel.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
+        #expect(panel.contains(".tint(.cyan)"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
