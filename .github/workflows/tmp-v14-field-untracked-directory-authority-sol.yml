@@ -1,0 +1,102 @@
+name: TEMP V14 Field Untracked Directory Authority Sol
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-field-installer-git-authority-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Bind exact triggering head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git merge-base --is-ancestor 5b795689d20f4ffee10380d9aec98eea75f0f16c HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Materialize untracked-directory authority repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          installer_path = Path('scripts/field/install_one_time_capture.command')
+          installer = installer_path.read_text(encoding='utf-8')
+
+          old = '''tracked: set[str] = set()\nchecked = 0\n'''
+          new = '''tracked: set[str] = set()\ntracked_directories: set[str] = set()\nchecked = 0\n'''
+          if installer.count(old) != 1:
+              raise SystemExit('unexpected tracked-set anchor count')
+          installer = installer.replace(old, new, 1)
+
+          old = '''    tracked.add(relative)\n    current = root\n'''
+          new = '''    tracked.add(relative)\n    for depth in range(1, len(parts)):\n        tracked_directories.add(PurePosixPath(*parts[:depth]).as_posix())\n    current = root\n'''
+          if installer.count(old) != 1:
+              raise SystemExit('unexpected tracked-directory derivation anchor count')
+          installer = installer.replace(old, new, 1)
+
+          old = '''    for name in list(directories):\n        candidate = current / name\n        relative = candidate.relative_to(root).as_posix()\n        if candidate.is_symlink():\n            directories.remove(name)\n            if relative not in tracked:\n                raise SystemExit(\n                    "untracked accepted-source path outside field-input allowlist: " + relative\n                )\n'''
+          new = '''    for name in list(directories):\n        candidate = current / name\n        relative = candidate.relative_to(root).as_posix()\n        if candidate.is_symlink():\n            directories.remove(name)\n            if relative not in tracked:\n                raise SystemExit(\n                    "untracked accepted-source path outside field-input allowlist: " + relative\n                )\n            continue\n        if relative not in tracked_directories:\n            directories.remove(name)\n            raise SystemExit(\n                "untracked accepted-source path outside field-input allowlist: " + relative\n            )\n'''
+          if installer.count(old) != 1:
+              raise SystemExit('unexpected directory-walk anchor count')
+          installer = installer.replace(old, new, 1)
+          installer_path.write_text(installer, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py')
+          test = test_path.read_text(encoding='utf-8')
+          old = '''            'untracked accepted-source path outside field-input allowlist', 'field-input allowlist root must be one real directory',\n            'field-input allowlist lockfile must be one real regular file',\n'''
+          new = '''            'untracked accepted-source path outside field-input allowlist', 'field-input allowlist root must be one real directory',\n            'field-input allowlist lockfile must be one real regular file', 'tracked_directories: set[str] = set()',\n            'tracked_directories.add(PurePosixPath(*parts[:depth]).as_posix())', 'relative not in tracked_directories',\n'''
+          if test.count(old) != 1:
+              raise SystemExit('unexpected red-team marker anchor count')
+          test = test.replace(old, new, 1)
+          test_path.write_text(test, encoding='utf-8')
+
+          Path('.github/workflows/tmp-v14-field-untracked-directory-authority-sol.yml').unlink()
+          PY
+      - name: Verify permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .github/workflows/tmp-v14-field-untracked-directory-authority-sol.yml
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          /bin/rm -rf -- scripts/ci/tests/__pycache__
+          git diff --check
+      - name: Verify exact publish path set
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          /usr/bin/python3 - <<'PY'
+          import subprocess
+          expected = {
+              'scripts/field/install_one_time_capture.command',
+              'scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py',
+              '.github/workflows/tmp-v14-field-untracked-directory-authority-sol.yml',
+          }
+          actual = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines())
+          if actual != expected:
+              raise SystemExit(f'unexpected materialized path set: {sorted(actual)}')
+          PY
+      - name: Publish permanent result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra V14 Sol"
+          git config user.email "nembra-v14-sol@users.noreply.github.com"
+          git commit -m "Capture: reject unrelated untracked directories"
+          git push origin HEAD:repair/v14-capture-field-installer-git-authority-sol-20260811
