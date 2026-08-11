@@ -1,0 +1,12 @@
+/*
+ Standalone Capture sighted-copy compaction.
+
+ These keys intentionally preserve the authoritative source strings while the
+ standalone Capture target renders a tighter English first fold. Accessibility
+ semantics remain owned by the explicit accessibility labels/values/hints in
+ NembraCaptureEntrypoint.swift; this resource does not mint physical authority.
+*/
+
+"Prepare the scooter link" = "Link this scooter";
+"Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified." = "Link the Tuya Smart account that owns this scooter.";
+"This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings." = "Account metadata only. This step does not start Bluetooth or change scooter settings.";
