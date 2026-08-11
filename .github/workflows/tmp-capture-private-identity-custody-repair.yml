@@ -1,0 +1,124 @@
+name: Temporary Capture Private Identity Custody Repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-private-identity-symlink-custody-sol
+    paths:
+      - .github/workflows/tmp-capture-private-identity-custody-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-private-identity-symlink-custody-sol
+          fetch-depth: 0
+
+      - name: Materialize descriptor-bound provisioner
+        shell: bash
+        env:
+          EXPECTED_PARENT: 76d496d93f4cf473c976e91190b5f93d8e71a751
+          BRANCH: agent/v14-capture-private-identity-symlink-custody-sol
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          parent="$(git rev-parse HEAD^)"
+          test "$parent" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only "$EXPECTED_PARENT" "$actual")" = '.github/workflows/tmp-capture-private-identity-custody-repair.yml'
+
+          cat > Scripts/provision_capture_tuya_identity.sh <<'SH'
+          #!/bin/bash
+          set -euo pipefail
+
+          ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+          DEST="${NEMBRA_TUYA_RUNTIME_DIR:-$ROOT/LocalSecrets/TuyaRuntime}"
+          WRITER="$ROOT/Scripts/provision_capture_tuya_identity_writer.py"
+
+          [[ -x /usr/bin/python3 ]] || { echo "ERROR: System Python 3 is required for private Tuya identity provisioning." >&2; exit 2; }
+          [[ -f "$WRITER" ]] || { echo "ERROR: descriptor-bound private identity writer is missing from accepted source." >&2; exit 3; }
+
+          umask 077
+          read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY
+          printf '\n'
+          read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET
+          printf '\n'
+
+          [[ -n "$APP_KEY" ]] || { echo "ERROR: AppKey is empty." >&2; exit 4; }
+          [[ -n "$APP_SECRET" ]] || { echo "ERROR: AppSecret is empty." >&2; exit 5; }
+
+          APP_KEY_B64="$(printf '%s' "$APP_KEY" | base64 | tr -d '\r\n')"
+          APP_SECRET_B64="$(printf '%s' "$APP_SECRET" | base64 | tr -d '\r\n')"
+          unset APP_KEY APP_SECRET
+
+          if ! printf '%s\0%s' "$APP_KEY_B64" "$APP_SECRET_B64" | /usr/bin/python3 -I "$WRITER" "$DEST"; then
+              unset APP_KEY_B64 APP_SECRET_B64
+              echo "ERROR: private Tuya identity was not provisioned; no existing runtime is overwritten or followed." >&2
+              exit 6
+          fi
+          unset APP_KEY_B64 APP_SECRET_B64
+
+          cat <<EOF
+
+          Private Tuya app identity provisioned locally at:
+            $DEST
+
+          Nothing was written to Git, shell history, host process argv, or stdout.
+          The generated source is compiled only by the SDK-integrated Capture workspace.
+          Reprovisioning is fail-closed: remove the old local TuyaRuntime directory deliberately before creating a replacement.
+          Next: run Scripts/bootstrap_capture_tuya_sdk.sh.
+          EOF
+          SH
+          chmod 755 Scripts/provision_capture_tuya_identity.sh
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = workflow.read_text()
+          replacements = [
+              (
+                  '      - Scripts/provision_capture_tuya_identity.sh\n',
+                  '      - Scripts/provision_capture_tuya_identity.sh\n      - Scripts/provision_capture_tuya_identity_writer.py\n',
+              ),
+              (
+                  '          bash -n Scripts/provision_capture_tuya_identity.sh\n',
+                  '          bash -n Scripts/provision_capture_tuya_identity.sh\n          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py\n          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test\n',
+              ),
+              (
+                  "          private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'\n",
+                  "          private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'\n          private_identity_writer='Scripts/provision_capture_tuya_identity_writer.py'\n",
+              ),
+              (
+                  '          test -f "$private_identity_provisioner"\n',
+                  '          test -f "$private_identity_provisioner"\n          test -f "$private_identity_writer"\n',
+              ),
+              (
+                  "          grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' \"$private_identity_provisioner\"\n",
+                  "          grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' \"$private_identity_provisioner\"\n          grep -Fq 'provision_capture_tuya_identity_writer.py' \"$private_identity_provisioner\"\n          grep -Fq 'O_NOFOLLOW' \"$private_identity_writer\"\n          grep -Fq 'O_DIRECTORY' \"$private_identity_writer\"\n          grep -Fq 'O_EXCL' \"$private_identity_writer\"\n          grep -Fq 'dir_fd=parent_fd' \"$private_identity_writer\"\n",
+              ),
+          ]
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one provenance workflow match: {old!r}')
+              text = text.replace(old, new, 1)
+          workflow.write_text(text)
+          PY
+
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          grep -Fq '/usr/bin/python3 -I "$WRITER" "$DEST"' Scripts/provision_capture_tuya_identity.sh
+          ! grep -Fq 'mkdir -p "$SOURCE_DIR"' Scripts/provision_capture_tuya_identity.sh
+
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Scripts/provision_capture_tuya_identity.sh .github/workflows/capture-field-build-provenance.yml
+          test "$(git diff --cached --name-only | sort)" = $'.github/workflows/capture-field-build-provenance.yml\nScripts/provision_capture_tuya_identity.sh'
+          git commit -m 'fix(capture): pin private identity provisioning filesystem custody'
+          git push origin "HEAD:$BRANCH"
