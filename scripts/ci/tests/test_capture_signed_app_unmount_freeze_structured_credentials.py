@@ -76,6 +76,46 @@ def wait_for(path: Path, *, timeout: float = 8.0) -> str:
     raise ProbeError(f"timed out waiting for detached-writer marker: {path.name}")
 
 
+def wait_for_writer_ready(
+    path: Path,
+    writer: subprocess.Popen[str],
+    *,
+    timeout: float = 8.0,
+) -> str:
+    """Wait for READY while retaining an early child exit's exact diagnostics."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            pass
+
+        returncode = writer.poll()
+        if returncode is not None:
+            stdout, stderr = writer.communicate(timeout=1.0)
+            raise ProbeError(
+                "detached writer exited before ready "
+                f"returncode={returncode} "
+                f"stdout={stdout[-2000:].strip()!r} "
+                f"stderr={stderr[-2000:].strip()!r}"
+            )
+        time.sleep(0.03)
+
+    returncode = writer.poll()
+    if returncode is not None:
+        stdout, stderr = writer.communicate(timeout=1.0)
+        raise ProbeError(
+            "detached writer exited before ready "
+            f"returncode={returncode} "
+            f"stdout={stdout[-2000:].strip()!r} "
+            f"stderr={stderr[-2000:].strip()!r}"
+        )
+    raise ProbeError(
+        f"timed out waiting for detached-writer marker: {path.name}; "
+        f"writer remained alive pid={writer.pid}"
+    )
+
+
 def detached_writer_code() -> str:
     return r'''
 import os
@@ -204,7 +244,7 @@ def root_probe() -> int:
             )
             return 72
 
-        if wait_for(ready) != "ready":
+        if wait_for_writer_ready(ready, writer) != "ready":
             raise ProbeError("detached writer did not establish its held descriptor")
 
         os.chown(mountpoint, 0, 0)
