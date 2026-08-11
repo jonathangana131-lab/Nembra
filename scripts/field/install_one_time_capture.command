@@ -32,10 +32,18 @@ say "Exact requested Capture source matched: $SOURCE_SHA"
 # never places it in a child process argv/environment.
 unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true
 : "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to an absolute private mode-0600 file containing only the intended iPhone UDID.}"
+: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256:?Final GO must provide NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 as the accepted SHA-256 of the intended-device identifier.}"
+[[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || die "NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 must be exactly 64 hex characters."
+NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256="$(printf '%s' "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" | tr '[:upper:]' '[:lower:]')"
+export NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256
 PRIVATE_DEVICE_RUNNER="$ROOT/scripts/ci/es80_signed_field_artifact_private_runner.py"
 [[ -f "$PRIVATE_DEVICE_RUNNER" ]] || die "Private intended-device reader is missing from the accepted source."
 if ! DEVICE_UDID="$(/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT" <<'PY'
+import hashlib
+import hmac
 import importlib.util
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -46,13 +54,20 @@ if spec is None or spec.loader is None:
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 value = module.read_private_identifier(Path(sys.argv[2]), Path(sys.argv[3]))
+expected_digest = os.environ.get("NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256", "")
+if re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None:
+    raise RuntimeError("expected intended-device digest is unavailable or malformed")
+actual_digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+if not hmac.compare_digest(actual_digest, expected_digest):
+    raise RuntimeError("private intended-device identifier does not match Final GO authority")
 sys.stdout.write(value)
 PY
 )"; then
     die "The intended-device verification file failed private custody validation."
 fi
 [[ -n "$DEVICE_UDID" ]] || die "The intended-device verification file produced no identifier."
-say "Private intended-device admission validated"
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 || true
+say "Private intended-device admission validated against Final GO digest"
 
 # The physical authentication candidate is the standalone Capture product with
 # Tuya's app-specific security SDK and private app identity integrated through
