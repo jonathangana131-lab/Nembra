@@ -9,10 +9,10 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T07:54:05Z",
-  "lastHeartbeatAt": "2026-08-11T08:04:15Z",
+  "lastHeartbeatAt": "2026-08-11T08:13:10Z",
   "leaseSeconds": 1800,
   "branch": "repair/v15-capture-package-runner-range-recovery-sol-a52d",
   "pr": 2811,
-  "sourceSHA": "ff70b15cd770fcfa11c37635ebf528fcf554fda0",
+  "sourceSHA": "7728078452894ac327007ddab18a99d65c4ca3a1",
   "takeoverFromWorkerId": "sol-20260811-9c42"
 }
