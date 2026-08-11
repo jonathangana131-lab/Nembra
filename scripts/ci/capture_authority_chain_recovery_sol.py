@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-import textwrap
 
 ROOT = Path(__file__).resolve().parents[2]
 MATERIALIZER = ROOT / ".github/workflows/capture-authority-chain-materialize.yml"
 INSTALLER = ROOT / "scripts/field/install_one_time_capture.command"
+YAML_BLOCK_PREFIX = "          "
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -26,12 +26,26 @@ def materializer_payload() -> str:
     body = workflow.split(start, 1)[1]
     if body.count(end) != 1:
         raise SystemExit("materializer payload end is not unique")
-    payload = textwrap.dedent(body.split(end, 1)[0])
+    raw_payload = body.split(end, 1)[0]
+
+    # YAML literal-block content is encoded with exactly ten structural spaces
+    # before every physical Python line. Strip that prefix line-by-line instead
+    # of textwrap.dedent(), whose global-minimum rule is disturbed by physical
+    # continuation lines inside the transformer's own multiline strings.
+    decoded: list[str] = []
+    for number, line in enumerate(raw_payload.splitlines(keepends=True), start=1):
+        if not line.strip():
+            decoded.append(line[len(YAML_BLOCK_PREFIX):] if line.startswith(YAML_BLOCK_PREFIX) else line)
+            continue
+        if not line.startswith(YAML_BLOCK_PREFIX):
+            raise SystemExit(f"materializer YAML payload line {number} lost its structural prefix")
+        decoded.append(line[len(YAML_BLOCK_PREFIX):])
+    payload = "".join(decoded)
 
     function_start = payload.find("def replace_once(")
-    function_end_marker = "\n\n# ------------------------------------------------------------------\n# Bootstrap:"
-    function_end = payload.find(function_end_marker, function_start)
-    if function_start < 0 or function_end < 0:
+    bootstrap_label = payload.find("# Bootstrap:", function_start)
+    function_end = payload.rfind("# ------------------------------------------------------------------", function_start, bootstrap_label)
+    if function_start < 0 or bootstrap_label < 0 or function_end < 0 or function_end <= function_start:
         raise SystemExit("materializer replace_once function boundary is unavailable")
     repaired = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
     count = text.count(old)
@@ -47,8 +61,10 @@ def materializer_payload() -> str:
     if count != 1:
         raise SystemExit(f"{label}: expected one match, found {count}")
     return text.replace(old, new, 1)
+
+
 '''
-    return payload[:function_start] + repaired.rstrip("\n") + payload[function_end:]
+    return payload[:function_start] + repaired + payload[function_end:]
 
 
 def harden_exact_git_execution() -> None:
