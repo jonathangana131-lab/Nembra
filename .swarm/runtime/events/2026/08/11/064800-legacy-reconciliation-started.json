@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "064800-legacy-reconciliation-started",
+  "type": "CLAIMED",
+  "workerId": "sol-20260811-rv2804",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Claimed the priority-0 legacy GitHub reconciliation lane after V15 foundation reached DONE. First live inventory started from main 3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc across current open PR truth; reconciliation will group active objectives/lineage and preserve PHYSICAL NO-GO boundaries rather than duplicating legacy implementation.",
+  "createdAt": "2026-08-11T06:48:00Z",
+  "data": {
+    "mainSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+    "foundationLane": "swarm-control-plane-foundation",
+    "foundationState": "DONE",
+    "sourcePR": 2804,
+    "inventoryStarted": true
+  }
+}
