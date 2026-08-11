@@ -30,7 +30,9 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
-        #expect(script.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
+        #expect(script.contains("run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot"))
+        #expect(script.contains("NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"))
+        #expect(script.contains("NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"))
         #expect(script.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(script.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
         #expect(script.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))

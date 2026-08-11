@@ -21,6 +21,10 @@ class BuildGuardError(RuntimeError):
     pass
 
 
+def _stat_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid, metadata.st_gid, metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns)
+
+
 def _load_neighbor_module(filename: str, module_name: str):
     helper = Path(__file__).with_name(filename)
     spec = importlib.util.spec_from_file_location(module_name, helper)
@@ -31,60 +35,89 @@ def _load_neighbor_module(filename: str, module_name: str):
     return module
 
 
-provenance = _load_neighbor_module(
-    "capture_tuya_private_input_provenance.py",
-    "capture_tuya_private_input_provenance",
-)
-generated_build = _load_neighbor_module(
-    "capture_cocoapods_generated_build_subject.py",
-    "capture_cocoapods_generated_build_subject",
-)
 PRIVATE_REVIEW_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
-PRIVATE_REVIEW_HELPER_MAX_BYTES = 262_144
+PROVENANCE_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"
+GENERATED_BUILD_SUBJECT_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"
+AUTHORITY_HELPER_MAX_BYTES = 262_144
 
 
-def _load_accepted_private_review_module():
-    expected = os.environ.get(PRIVATE_REVIEW_HELPER_ENV, "").lower()
+def _load_accepted_helper_module(filename: str, module_name: str, environment_name: str):
+    expected = os.environ.get(environment_name, "").lower()
     if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
-        raise BuildGuardError(
-            f"{PRIVATE_REVIEW_HELPER_ENV} must remain available as exactly 64 hex characters through build-window admission"
-        )
-    helper = Path(__file__).with_name("capture_private_review_commitment.py")
+        raise BuildGuardError(f"{environment_name} must remain available as exactly 64 hex characters through build-window admission")
+    helper = Path(__file__).with_name(filename)
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(helper, flags)
     except OSError as error:
-        raise BuildGuardError("private-review verifier source could not be opened under descriptor custody") from error
+        raise BuildGuardError(f"accepted authority helper could not be opened under descriptor custody: {filename}") from error
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
-            raise BuildGuardError("private-review verifier source is not one regular single-link file")
-        if before.st_size <= 0 or before.st_size > PRIVATE_REVIEW_HELPER_MAX_BYTES:
-            raise BuildGuardError("private-review verifier source size is outside the accepted bound")
+            raise BuildGuardError(f"accepted authority helper is not one regular single-link file: {filename}")
+        if before.st_size <= 0 or before.st_size > AUTHORITY_HELPER_MAX_BYTES:
+            raise BuildGuardError(f"accepted authority helper size is outside the accepted bound: {filename}")
         chunks: list[bytes] = []
         remaining = before.st_size
         while remaining:
             chunk = os.read(descriptor, min(65_536, remaining))
             if not chunk:
-                raise BuildGuardError("private-review verifier source changed during descriptor read")
+                raise BuildGuardError(f"accepted authority helper changed during descriptor read: {filename}")
             chunks.append(chunk)
             remaining -= len(chunk)
         source = b"".join(chunks)
         after = os.fstat(descriptor)
-        if provenance._stat_identity(before) != provenance._stat_identity(after):
-            raise BuildGuardError("private-review verifier source changed during descriptor custody")
+        if _stat_identity(before) != _stat_identity(after):
+            raise BuildGuardError(f"accepted authority helper changed during descriptor custody: {filename}")
     finally:
         os.close(descriptor)
     actual = hashlib.sha256(source).hexdigest()
     if not hmac.compare_digest(actual, expected):
-        raise BuildGuardError("private-review verifier source does not match externally accepted authority")
-    module = types.ModuleType("capture_private_review_commitment_accepted")
-    module.__file__ = "<accepted-private-review-verifier>"
+        raise BuildGuardError(f"accepted authority helper source does not match externally reviewed authority: {filename}")
+    module = types.ModuleType(module_name)
+    module.__file__ = f"<accepted-{filename}>"
     try:
         exec(compile(source, module.__file__, "exec"), module.__dict__)
     except Exception as error:
-        raise BuildGuardError("accepted private-review verifier source could not be loaded") from error
+        raise BuildGuardError(f"accepted authority helper source could not be loaded: {filename}") from error
     return module
+
+
+class _AuthorityHelperProxy:
+    def __init__(self, filename: str, module_name: str, environment_name: str) -> None:
+        self._filename = filename
+        self._module_name = module_name
+        self._environment_name = environment_name
+        self._module = None
+
+    def require_accepted(self):
+        self._module = _load_accepted_helper_module(self._filename, self._module_name, self._environment_name)
+        return self._module
+
+    def __getattr__(self, name: str):
+        if self._module is None:
+            self._module = _load_neighbor_module(self._filename, self._module_name)
+        return getattr(self._module, name)
+
+
+provenance = _AuthorityHelperProxy(
+    "capture_tuya_private_input_provenance.py",
+    "capture_tuya_private_input_provenance",
+    PROVENANCE_HELPER_ENV,
+)
+generated_build = _AuthorityHelperProxy(
+    "capture_cocoapods_generated_build_subject.py",
+    "capture_cocoapods_generated_build_subject",
+    GENERATED_BUILD_SUBJECT_HELPER_ENV,
+)
+
+
+def _load_accepted_private_review_module():
+    return _load_accepted_helper_module(
+        "capture_private_review_commitment.py",
+        "capture_private_review_commitment_accepted",
+        PRIVATE_REVIEW_HELPER_ENV,
+    )
 
 
 @dataclass(frozen=True)
@@ -190,7 +223,7 @@ def _lstat_identity(path: Path) -> tuple[int, ...]:
         metadata = path.lstat()
     except OSError as error:
         raise BuildGuardError(f"build input disappeared before vnode admission: {path}") from error
-    return provenance._stat_identity(metadata)
+    return _stat_identity(metadata)
 
 
 def _add_parent_watch_chain(paths: set[Path], path: Path, *, repository_root: Path) -> None:
@@ -354,7 +387,7 @@ def _open_watched_inputs(paths: Iterable[Path], backend: EventBackend) -> tuple[
             except OSError as error:
                 raise BuildGuardError(f"build input could not be opened for build-window custody: {path}") from error
             try:
-                after = provenance._stat_identity(os.fstat(descriptor))
+                after = _stat_identity(os.fstat(descriptor))
                 if before != after:
                     raise BuildGuardError(f"build input changed while vnode custody was armed: {path}")
                 mode = os.fstat(descriptor).st_mode
@@ -456,9 +489,14 @@ def run_guarded_build(
     poll_interval: float = 0.10,
     require_accepted_generated_subject: bool = False,
     require_accepted_private_review_commitment: bool = False,
+    require_accepted_authority_helpers: bool = False,
 ) -> int:
     if not command:
         raise BuildGuardError("no build command was supplied")
+
+    if require_accepted_authority_helpers:
+        provenance.require_accepted()
+        generated_build.require_accepted()
 
     if require_accepted_generated_subject:
         _verify_accepted_generated_build_subject(inputs)
@@ -585,6 +623,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             command,
             require_accepted_generated_subject=True,
             require_accepted_private_review_commitment=True,
+            require_accepted_authority_helpers=True,
         )
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
