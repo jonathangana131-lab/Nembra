@@ -8,6 +8,9 @@ TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
 PRIVATE_INPUT_RESOLUTION_GUARD="$SCRIPT_DIR/capture_tuya_private_dependency_resolution_guard.py"
+PRIVATE_INPUT_BUILD_GUARD="$SCRIPT_DIR/capture_tuya_private_input_build_guard.py"
+PRIVATE_INPUT_RESOLUTION_GUARD_GIT_BLOB_OID="0b0a654a2511d4e52588b01409656a37aac01ae7"
+PROVENANCE_HELPER_GIT_BLOB_OID="66c21083dca625da11ad72bb6c652a09c2434ef6"
 PRIVATE_IDENTITY_AUTHORITY_HELPER="$SCRIPT_DIR/capture_tuya_private_identity_authority.py"
 PRIVATE_IDENTITY_AUTHORITY_HELPER_SHA256="40f5aee5c5e39c0a6146ba2ca7bc6bad7cf6abd6576fff8835d02f714589ae71"
 PRIVATE_IDENTITY_WRITER_SHA256="6a27f9f0640a00dfe5f74a1cc4a65a0faf76994fe584efe23afb8f7ee1638fc2"
@@ -94,23 +97,67 @@ if [[ ! -d NembraCapture.xcodeproj ]]; then
   exit 5
 fi
 
-if [[ ! -f "$PROVENANCE_HELPER" ]]; then
-  unset AUTHORITY_SOURCE
-  echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
-  exit 6
-fi
+for accepted_helper in "$PROVENANCE_HELPER" "$PRIVATE_INPUT_RESOLUTION_GUARD" "$PRIVATE_INPUT_BUILD_GUARD"; do
+  if [[ ! -f "$accepted_helper" || -L "$accepted_helper" ]]; then
+    unset AUTHORITY_SOURCE accepted_helper
+    echo "ERROR: required private dependency custody helper is missing from accepted source." >&2
+    exit 6
+  fi
+done
+unset accepted_helper
 
-if [[ ! -f "$PRIVATE_INPUT_RESOLUTION_GUARD" || -L "$PRIVATE_INPUT_RESOLUTION_GUARD" ]]; then
-  unset AUTHORITY_SOURCE
-  echo "ERROR: private-input dependency-resolution custody adapter is missing from the accepted source." >&2
+# The adapter itself is part of the authority boundary. Capture the complete
+# source before execution, preserve trailing newlines with a sentinel, bind the
+# bytes to the exact accepted Git blob identity, and execute only the captured
+# bytes through Python stdin. A same-UID pathname replacement after capture can
+# therefore never become the code that arms custody.
+RESOLUTION_GUARD_CAPTURE="$({ /bin/cat -- "$PRIVATE_INPUT_RESOLUTION_GUARD"; printf '\001'; })"
+[[ "$RESOLUTION_GUARD_CAPTURE" == *$'\001' ]] || {
+  unset AUTHORITY_SOURCE RESOLUTION_GUARD_CAPTURE
+  echo "ERROR: private dependency-resolution adapter could not be captured." >&2
   exit 6
-fi
+}
+RESOLUTION_GUARD_SOURCE="${RESOLUTION_GUARD_CAPTURE%$'\001'}"
+unset RESOLUTION_GUARD_CAPTURE
+CAPTURED_RESOLUTION_GUARD_OID="$(printf '%s' "$RESOLUTION_GUARD_SOURCE" | /usr/bin/python3 -I -c 'import hashlib,sys; p=sys.stdin.buffer.read(); print(hashlib.sha1(b"blob "+str(len(p)).encode("ascii")+b"\0"+p).hexdigest())')"
+[[ "$CAPTURED_RESOLUTION_GUARD_OID" == "$PRIVATE_INPUT_RESOLUTION_GUARD_GIT_BLOB_OID" ]] || {
+  unset AUTHORITY_SOURCE RESOLUTION_GUARD_SOURCE CAPTURED_RESOLUTION_GUARD_OID
+  echo "ERROR: private dependency-resolution adapter bytes do not match accepted Git identity." >&2
+  exit 6
+}
+unset CAPTURED_RESOLUTION_GUARD_OID
+
+# Provenance snapshot execution is also authority-bearing. Capture and bind it
+# once here; the adapter independently re-captures and binds the same helper for
+# canonical guard generation snapshots.
+PROVENANCE_CAPTURE="$({ /bin/cat -- "$PROVENANCE_HELPER"; printf '\001'; })"
+[[ "$PROVENANCE_CAPTURE" == *$'\001' ]] || {
+  unset AUTHORITY_SOURCE RESOLUTION_GUARD_SOURCE PROVENANCE_CAPTURE
+  echo "ERROR: private-input provenance helper could not be captured." >&2
+  exit 6
+}
+PROVENANCE_SOURCE="${PROVENANCE_CAPTURE%$'\001'}"
+unset PROVENANCE_CAPTURE
+CAPTURED_PROVENANCE_OID="$(printf '%s' "$PROVENANCE_SOURCE" | /usr/bin/python3 -I -c 'import hashlib,sys; p=sys.stdin.buffer.read(); print(hashlib.sha1(b"blob "+str(len(p)).encode("ascii")+b"\0"+p).hexdigest())')"
+[[ "$CAPTURED_PROVENANCE_OID" == "$PROVENANCE_HELPER_GIT_BLOB_OID" ]] || {
+  unset AUTHORITY_SOURCE RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE CAPTURED_PROVENANCE_OID
+  echo "ERROR: private-input provenance helper bytes do not match accepted Git identity." >&2
+  exit 6
+}
+unset CAPTURED_PROVENANCE_OID
+
+run_private_resolution_guard() {
+  printf '%s' "$RESOLUTION_GUARD_SOURCE" | /usr/bin/python3 -I - \
+    --canonical-guard-source "$PRIVATE_INPUT_BUILD_GUARD" \
+    --provenance-helper-source "$PROVENANCE_HELPER" \
+    "$@"
+}
 
 # Tuya's SmartLife iOS SDK requires the app-specific security package generated
 # for the exact Developer Platform app/bundle identity. It must never be
 # replaced with a public placeholder or omitted just to make CocoaPods resolve.
 if [[ ! -f "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" || ! -d "$TUYA_PRIVATE_SDK/Build" ]]; then
-  unset AUTHORITY_SOURCE
+  unset AUTHORITY_SOURCE RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE
   cat >&2 <<EOF
 ERROR: Tuya's app-specific iOS security SDK is not provisioned.
 
@@ -132,7 +179,7 @@ fi
 if [[ ! -f "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" ||
       ! -d "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" ||
       ! -f "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift" ]]; then
-  unset AUTHORITY_SOURCE
+  unset AUTHORITY_SOURCE RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE
   cat >&2 <<EOF
 ERROR: Tuya's private app identity is not provisioned for the field workspace.
 
@@ -146,14 +193,10 @@ EOF
   exit 8
 fi
 
-# The dependency-resolution adapter invokes the canonical field guard through its
-# explicitly private-only run_guarded_build API. Its --lockfile slot remains a
-# watched regular-file anchor; during dependency resolution we deliberately
-# use the tracked Podfile as that stable anchor because CocoaPods itself executes
-# the Podfile while the private SDK/identity inputs are read. The child re-verifies
-# the root-sealed identity receipt only after every watcher is armed, then runs
-# CocoaPods under the same watcher set. A swap/restore race therefore cannot turn
-# unsealed podspec/source bytes into dependency-resolution authority.
+# The dependency-resolution adapter invokes the exact captured canonical field
+# guard through its private-only run_guarded_build API. Its --lockfile slot uses
+# tracked Podfile because CocoaPods executes it. The child re-verifies the
+# root-sealed identity receipt only after every watcher is armed.
 AUTHORITY_REVERIFY_AND_EXEC='set -euo pipefail
 AUTHORITY_SOURCE_INNER="$1"
 REPO_ROOT_INNER="$2"
@@ -163,10 +206,7 @@ shift 3
 exec "$@"'
 
 printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
-# `pod install` preserves an existing Podfile.lock instead of silently upgrading
-# resolved transitive SDK inputs. `--repo-update` refreshes specs only; the two
-# public Tuya products themselves are exact-pinned in Podfile at 7.8.0.
-if ! /usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD" \
+if ! run_private_resolution_guard \
   --lockfile "$REPO_ROOT/Podfile" \
   --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
   --security-build "$TUYA_PRIVATE_SDK/Build" \
@@ -176,19 +216,19 @@ if ! /usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD" \
      "$AUTHORITY_SOURCE" "$REPO_ROOT" "$PRIVATE_IDENTITY_WRITER_SHA256" \
      "$POD_BIN" install --repo-update
 then
-  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
+  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE
   echo "ERROR: private-input custody rejected guarded CocoaPods dependency resolution." >&2
   exit 18
 fi
 
 if [[ ! -d NembraCapture.xcworkspace ]]; then
-  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
+  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE
   echo "ERROR: CocoaPods did not create NembraCapture.xcworkspace." >&2
   exit 9
 fi
 
 if [[ ! -f Podfile.lock ]]; then
-  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
+  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE
   echo "ERROR: CocoaPods did not create Podfile.lock; exact field dependency provenance is unavailable." >&2
   exit 10
 fi
@@ -198,18 +238,16 @@ for expected in \
   "  - ThingSmartBusinessExtensionKit (7.8.0)"
 do
   if ! grep -Fq -- "$expected" Podfile.lock; then
-    unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
+    unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE
     echo "ERROR: resolved Tuya SDK does not match the exact reviewed 7.8.0 field dependency: $expected" >&2
     exit 11
   fi
 done
 
 # Snapshot every ignored input that can materially change the private field
-# build. Re-arm the same vnode custody and re-verify the root receipt inside that
-# watched window before running the snapshot helper. The resulting record can
-# therefore only describe the same sealed private generation admitted by the
-# successful transaction; the field installer independently verifies it again.
-if ! /usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD" \
+# build. Re-arm custody, re-verify the root receipt, and execute the provenance
+# helper from the already captured accepted bytes rather than its mutable path.
+if ! run_private_resolution_guard \
   --lockfile "$REPO_ROOT/Podfile" \
   --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
   --security-build "$TUYA_PRIVATE_SDK/Build" \
@@ -217,7 +255,7 @@ if ! /usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD" \
   --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
   -- /bin/bash -c "$AUTHORITY_REVERIFY_AND_EXEC" _ \
      "$AUTHORITY_SOURCE" "$REPO_ROOT" "$PRIVATE_IDENTITY_WRITER_SHA256" \
-     /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
+     /usr/bin/python3 -I -c "$PROVENANCE_SOURCE" snapshot \
        --lockfile "$REPO_ROOT/Podfile.lock" \
        --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
        --security-build "$TUYA_PRIVATE_SDK/Build" \
@@ -225,11 +263,11 @@ if ! /usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD" \
        --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
        --record "$DEPENDENCY_PROVENANCE"
 then
-  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
+  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE
   echo "ERROR: exact private Tuya build-input provenance could not be snapshotted under vnode custody." >&2
   exit 12
 fi
-unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
+unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC RESOLUTION_GUARD_SOURCE PROVENANCE_SOURCE
 
 LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
 [[ "$LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {

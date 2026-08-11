@@ -62,16 +62,23 @@ class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
 
     def test_dependency_resolution_and_snapshot_are_vnode_guarded(self) -> None:
         source = BOOTSTRAP_PATH.read_text(encoding="utf-8")
-        guard_call = '/usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD"'
+        guard_call = "run_private_resolution_guard \\\n"
         first_guard = source.index(guard_call)
         second_guard = source.index(guard_call, first_guard + 1)
         pod_exec = source.index('"$POD_BIN" install --repo-update')
-        snapshot_exec = source.index('/usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot')
+        snapshot_exec = source.index('/usr/bin/python3 -I -c "$PROVENANCE_SOURCE" snapshot')
 
         self.assertLess(first_guard, pod_exec)
         self.assertLess(pod_exec, second_guard)
         self.assertLess(second_guard, snapshot_exec)
         self.assertEqual(source.count(guard_call), 2)
+        self.assertIn("PRIVATE_INPUT_RESOLUTION_GUARD_GIT_BLOB_OID=", source)
+        self.assertIn("PROVENANCE_HELPER_GIT_BLOB_OID=", source)
+        self.assertIn("printf '%s' \"$RESOLUTION_GUARD_SOURCE\" | /usr/bin/python3 -I -", source)
+        self.assertNotIn('/usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD"', source)
+        self.assertNotIn('/usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot', source)
+        self.assertIn('--canonical-guard-source "$PRIVATE_INPUT_BUILD_GUARD"', source)
+        self.assertIn('--provenance-helper-source "$PROVENANCE_HELPER"', source)
         self.assertIn('--lockfile "$REPO_ROOT/Podfile"', source)
         self.assertIn('verify "$REPO_ROOT_INNER" "$WRITER_SHA_INNER"', source)
         self.assertNotIn("\npod install --repo-update\n", source)

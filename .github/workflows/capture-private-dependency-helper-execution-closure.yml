@@ -1,0 +1,89 @@
+name: Capture Private Dependency Helper Execution Closure
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_dependency_resolution_guard.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - Scripts/capture_tuya_private_input_provenance.py
+      - scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_closure.py
+      - scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+      - .github/workflows/capture-private-dependency-helper-execution-closure.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-private-dependency-helper-execution-closure-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  immutable-helper-execution:
+    name: Reject mutable dependency-custody execution subjects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind exact acceptance head to selected private convergence parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SELECTED_PARENT_SHA: c20484aec3c003143c9ebf034a40166a6d0ff94f
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git merge-base --is-ancestor "$SELECTED_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile production and closure regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-helper-closure-pycache"
+          python3 -m py_compile Scripts/capture_tuya_private_dependency_resolution_guard.py
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_closure.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+          python3 -m py_compile scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Replay execution-subject substitution attacks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_private_dependency_helper_execution_subject_closure.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve failed-publication authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve private-input provenance boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          SELECTED_PARENT_SHA: c20484aec3c003143c9ebf034a40166a6d0ff94f
+        run: |
+          set -euo pipefail
+          git diff --check "$SELECTED_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
