@@ -9,14 +9,17 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:15:21Z",
-  "lastHeartbeatAt": "2026-08-11T20:15:21Z",
+  "lastHeartbeatAt": "2026-08-11T20:23:00Z",
   "leaseSeconds": 2700,
-  "branch": "",
-  "pr": 2944,
+  "branch": "repair/v14-private-early-sanitation-gpt56-20260811",
+  "pr": 2977,
   "sourceSHA": "baf25d84d66296e2f061f17dfde29deaba0aecd1",
-  "currentHeadSHA": "baf25d84d66296e2f061f17dfde29deaba0aecd1",
+  "currentHeadSHA": "0d78918148471dd3721c276bde27e379b04b7abd",
+  "composedParentSHA": "3b8e2182de2275a1c8b858ff8b3b614061582457",
+  "focusedRun": 31532629865,
+  "focusedRunState": "SUCCESS",
   "takeoverFromWorkerId": "sol-20260811-4c47a9",
   "takeoverFromLeaseId": "capture-private-identity-primary-4c47a9-20260811-1202",
-  "takeoverReason": "Generation-2 proper-lane claim is RELEASED. Current #2944 exact baf25d84 remains blocked by independent #2964: an admitted credential-bearing crash residue can escape exact-inode sanitation when _validate_existing_output rejects before recovered_stage enters the sanitation try. Recover narrowly on current convergence head, absorb the permanent witness, preserve root-receipt/downstream guard authority, and re-earn focused acceptance. PHYSICAL NO-GO.",
-  "checkpoint": "Claimed narrow #2964 production repair only. Do not touch Capture build/signed-install/Final-GO lanes."
+  "takeoverReason": "Generation-2 proper-lane claim was RELEASED. Recovered narrow #2964 repair on the live #2944 convergence lineage without touching other Capture authority lanes. PHYSICAL NO-GO.",
+  "checkpoint": "#2977 exact 0d789181 composes the moved #2944 parent 3b8e2182 and differs from that parent in exactly two intended files. Production now consumes/re-binds the admitted crash-residue descriptor before destination validation inside the sanitation-protected try; permanent #2964 witness is absorbed. Exact Capture Private Identity Publication Races Red Team run 31532629865/job 93916092236 is terminal SUCCESS including compile, publication/recovery races, and failed-bootstrap authority. Field Build Provenance 31532629831 and Main Selective Graft 31532629871 are queued; Xcode 31532629929 is skipped and is not counted. Independent review still required. PHYSICAL NO-GO."
 }
