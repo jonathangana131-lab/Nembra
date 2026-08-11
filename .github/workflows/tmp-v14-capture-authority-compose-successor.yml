@@ -1,0 +1,136 @@
+name: TEMP Capture Authority Successor Composition
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-authority-composed-successor-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-authority-composed-successor-sol-20260811
+          fetch-depth: 0
+      - name: Bind composition input
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Transplant green production repair
+        shell: bash
+        env:
+          RECOVERY_SHA: 74b2ec17fbcf6897c0c4453ea0b77d32139e34f7
+        run: |
+          set -euo pipefail
+          export GIT_NO_REPLACE_OBJECTS=1
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_GLOBAL=/dev/null
+          export LANG=C
+          export LC_ALL=C
+          git fetch --no-tags origin "$RECOVERY_SHA"
+          paths=(
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift
+            Scripts/bootstrap_capture_tuya_sdk.sh
+            Scripts/capture_tuya_private_input_build_guard.py
+            scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+            scripts/ci/tests/test_capture_private_review_commitment.py
+            scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+            scripts/field/install_one_time_capture.command
+          )
+          for path in "${paths[@]}"; do
+            mkdir -p "$(dirname "$path")"
+            /usr/bin/git show "$RECOVERY_SHA:$path" > "$path"
+          done
+      - name: Preserve replacement-blind accepted Git authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/field/install_one_time_capture.command')
+          text = path.read_text()
+          old = '''    source = subprocess.check_output(
+              ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
+              cwd=root,
+              stderr=subprocess.DEVNULL,
+          )'''
+          new = '''    git_environment = {
+              "GIT_NO_REPLACE_OBJECTS": "1",
+              "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_GLOBAL": "/dev/null",
+              "LANG": "C",
+              "LC_ALL": "C",
+          }
+          source = subprocess.check_output(
+              ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
+              cwd=root,
+              env=git_environment,
+              stderr=subprocess.DEVNULL,
+          )'''
+          if text.count(old) != 1:
+              raise SystemExit(f'accepted-source Git runner changed unexpectedly: {text.count(old)} matches')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Remove superseded materializer scaffolding
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/capture-authority-chain-materialize-trigger \
+            .github/workflows/capture-authority-chain-materialize.yml \
+            .github/workflows/capture-authority-chain-materialize-runner.yml \
+            .github/workflows/capture-authority-chain-runner.yml \
+            .github/workflows/fix-capture-authority-materializer.yml \
+            .github/workflows/tmp-v14-capture-authority-chain-runner.yml \
+            .nembra-authority-materializer-error \
+            .nembra-go-authority-chain-trigger
+      - name: Syntax gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py \
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py \
+            scripts/ci/tests/test_capture_private_review_commitment.py \
+            scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py \
+            scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py
+      - name: Authority adversarial gates
+        run: >-
+          python3 -m unittest -v
+          scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
+          scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+          scripts.ci.tests.test_capture_private_review_helper_execution_custody
+          scripts.ci.tests.test_capture_private_review_commitment
+          scripts.ci.tests.test_capture_cocoapods_generated_build_subject
+      - name: Diff hygiene
+        run: |
+          set -euo pipefail
+          git diff --check
+          git status --short
+          test -n "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Publish clean composed candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-capture-authority-compose-successor.yml
+          find Scripts scripts -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet && { echo 'ERROR: composition produced no candidate diff' >&2; exit 1; }
+          git commit -m 'Capture: compose complete accepted authority execution chain'
+          git push origin HEAD:repair/v14-capture-authority-composed-successor-sol-20260811
