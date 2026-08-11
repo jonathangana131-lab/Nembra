@@ -63,6 +63,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
         #expect(root.contains("Text(\"Tuya Smart user code\")"))
         #expect(root.contains("TextField(\"Paste user code\""))
+        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("private var buildAuthorityDetail: String"))
         #expect(root.contains("Build provenance ready"))
         #expect(root.contains("private var accountMetadataPrimaryAction: some View"))

@@ -101,6 +101,7 @@ private struct CaptureP0Root: View {
             )
             .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
             .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
 
             Text(
                 dynamicTypeSize.isAccessibilitySize
@@ -113,7 +114,6 @@ private struct CaptureP0Root: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityElement(children: .combine)
     }
 
     private var buildAuthorityDetail: String {

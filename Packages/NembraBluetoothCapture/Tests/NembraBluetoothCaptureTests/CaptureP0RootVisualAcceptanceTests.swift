@@ -42,6 +42,7 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(root.contains("TextField(\"Paste user code\""))
         #expect(root.contains(".accessibilityLabel(\"Tuya Smart user code\")"))
         #expect(root.contains(".accessibilityIdentifier(\"capture.p0-root\")"))
+        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("private var buildAuthorityDetail: String"))
         #expect(root.contains("Public build: account metadata only. Bluetooth and physical Capture stay locked."))
         #expect(root.contains("private var accountMetadataPrimaryAction: some View"))
