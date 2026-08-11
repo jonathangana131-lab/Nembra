@@ -80,7 +80,9 @@ class FinalGoContinuousTrackedTreeCustodyTests(unittest.TestCase):
             root = sandbox / "repo"
             root.mkdir()
             source, tracked = self._candidate(root)
-            accepted_mode, accepted_oid = MODULE._tree_entries(root, source)["A.swift"]
+            accepted_mode, accepted_oid = MODULE._tree_entries(
+                root.expanduser().resolve(strict=True), source
+            )["A.swift"]
             original = MODULE._physical_blob_oid
             fired = False
 
