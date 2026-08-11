@@ -7,15 +7,16 @@
   "workerId": "sol-20260811-1608n7",
   "leaseId": "capture-final-go-tests-1608n7-20260811-2311",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:11:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:13:00Z",
+  "releasedAt": "2026-08-11T23:13:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "36b531b2e7d0c07bb8a63766e5b9fb5779d0a022",
   "takeoverFromWorkerId": "sol-20260811-fgloop",
   "takeoverFromLeaseId": "capture-final-go-tests-fgloop-20260811-2128",
-  "takeoverReason": "Generation-5 test lease expired. Recover validation-only Final-GO Darwin evidence from exact accepted production candidate #3082@36b531b2 without changing production paths. Preserve failed #3087 evidence; create a clean successor validation lineage that uses native Darwin facilities available on hosted macOS rather than nonstandard fswatch/filewatcher. PHYSICAL NO-GO.",
-  "checkpoint": "Claimed validation-only tests shard after exact #3087@75c75d2 Darwin run 31541800016 failed because hosted macOS lacked fswatch/filewatcher before exercising production behavior. #3082 exact-head Final-GO sealed handoff, retirement dispatch, and authenticated private review are green; Xcode is skipped. Building a clean exact-descendant Darwin validator with no nonstandard watcher dependency. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-5 test lease expired. Recovery inspection found live production had already moved and a legacy worker concurrently created the correct current exact-descendant validator.",
+  "checkpoint": "RELEASED WITHOUT DUPLICATE BRANCH. Fresh live state found #3082 moved to d4a44db4 after absorbing #3092, #3087 was superseded, and legacy worker gpt56-sol-20260811-retirement-darwin-r3 created #3100@8eec90d4 directly on current d4a44db4. #3100 macOS Darwin gate 31545488271 is QUEUED; queued is not green. Current #3082 exact d4a44db4 has retirement-dispatch 31545310005 SUCCESS, sealed-handoff 31545310008 SUCCESS, canonical Final-GO 31545310020 SUCCESS, Xcode 31545310044 SKIPPED. Continue reconciliation; no duplicate validation lineage. PHYSICAL NO-GO."
 }
