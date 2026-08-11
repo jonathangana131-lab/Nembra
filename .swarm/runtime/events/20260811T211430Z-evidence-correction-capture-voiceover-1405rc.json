@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "211430-evidence-correction-capture-voiceover-1405rc",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-1405rc",
+  "laneId": "legacy-github-reconciliation",
+  "message": "CORRECTION / SUPERSEDES event 210950-evidence-result-capture-voiceover-upload-only-red-1405rc. Exact #2973 head 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9 run 31533392572 / job 93918602962 is NOT upload-only red. The targeted runtime VoiceOver xcodebuild step itself failed after one targeted test executed. Current flagship tests claim records the exact harness-authority failures as AXSpringBoardServerInstanceErrorDomain Code 16 (UI test process lacks accessibility access) and AXAuditErrorDomain Code 0. The later artifact publication failure is downstream and does not change the root classification: DIRECT RUNTIME ACCESSIBILITY ACCEPTANCE RED. Active child #3007 head 3004c6c3693d4368560b4a767ce0f7c767ab085f owns .github/workflows/capture-runtime-voiceover.yml and is gathering exact Xcode/CoreSimulator accessibility-toolchain evidence while preserving the real audit/traversal oracle; do not duplicate or weaken that gate. Simulator-only evidence. Product/UI/protocol/physical authority unchanged. PHYSICAL NO-GO."
+  ,"createdAt": "2026-08-11T21:14:30Z"
+}
