@@ -25,16 +25,28 @@ jobs:
           set -euo pipefail
           git merge-base --is-ancestor 2d2b1197eab18570195532a1d401756d5c9582d2 HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Keep temporary workflow outside bot commit
+        shell: bash
+        run: |
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tmp_materialize_field_compiler_window_sol.py')
+          text = path.read_text(encoding='utf-8')
+          marker = 'workflow_path.unlink()\n'
+          if text.count(marker) != 1:
+              raise SystemExit('unexpected workflow cleanup marker count')
+          path.write_text(text.replace(marker, '', 1), encoding='utf-8')
+          PY
       - name: Compile materializer
         shell: bash
         run: /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_field_compiler_window_sol.py
       - name: Apply materializer
         shell: bash
         run: /usr/bin/python3 scripts/ci/tmp_materialize_field_compiler_window_sol.py
-      - name: Verify temporary cleanup
+      - name: Verify temporary script cleanup
         shell: bash
         run: |
-          test ! -e .github/workflows/tmp-v14-capture-field-compiler-window-sol.yml
+          test -e .github/workflows/tmp-v14-capture-field-compiler-window-sol.yml
           test ! -e scripts/ci/tmp_materialize_field_compiler_window_sol.py
       - name: Verify installer shell syntax
         shell: bash
@@ -73,9 +85,8 @@ jobs:
         run: |
           set -euo pipefail
           git add -A
+          git reset -- .github/workflows/tmp-v14-capture-field-compiler-window-sol.yml
           git diff --cached --check
-          test ! -e .github/workflows/tmp-v14-capture-field-compiler-window-sol.yml
-          test ! -e scripts/ci/tmp_materialize_field_compiler_window_sol.py
           git diff --cached --quiet && exit 31 || true
       - name: Commit permanent result
         shell: bash
