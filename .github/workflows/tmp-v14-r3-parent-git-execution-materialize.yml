@@ -124,12 +124,22 @@ jobs:
           )
 
           path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+
+          test_path = Path("scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py")
+          test_text = test_path.read_text(encoding="utf-8")
+          old = 'PARENT = "2" * 40\n'
+          new = 'PARENT = MODULE.PARENT_SOURCE_SHA\n'
+          if test_text.count(old) != 1:
+              raise SystemExit("core R3 fixture parent: expected exactly one fake parent fixture")
+          test_path.write_text(test_text.replace(old, new, 1), encoding="utf-8")
           PY
 
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+          git add \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
           git commit -m "Capture: pin R3 parent execution to accepted Git blob"
 
       - name: Compile repair and regression
