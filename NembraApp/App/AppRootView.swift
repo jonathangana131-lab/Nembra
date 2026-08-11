@@ -860,7 +860,7 @@ private struct RideRouteMapView: View {
                 CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
             }
             if coordinates.count >= 2 {
-                projectedSegments.append(PresentationSegment(id: segment.index, coordinates: coordinates))
+                projectedSegments.append(PresentationSegment(id: Int(segment.index), coordinates: coordinates))
             }
 
             for point in segment.points {
