@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "worker",
+  "workerId": "sol-20260811-1e59e0",
+  "model": "GPT-5.6 Sol",
+  "status": "ACTIVE",
+  "branch": "sol/1e59e0/capture-final-go-raw-tree-validation-r5",
+  "startedAt": "2026-08-11T11:53:48Z",
+  "lastSeenAt": "2026-08-11T11:53:48Z"
+}
