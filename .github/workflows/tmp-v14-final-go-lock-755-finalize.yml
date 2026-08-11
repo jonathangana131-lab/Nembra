@@ -1,0 +1,97 @@
+name: TEMP V14 Final-GO Lock 755 Finalizer
+
+on:
+  push:
+    branches:
+      - recovery/v14-final-go-reviewed-lock-current-755-sol
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-final-go-reviewed-lock-current-755-sol
+          fetch-depth: 0
+      - name: Verify exact conflict-evidence parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "93a97a60ab1f6e6145809050e76d30e85ab7c708"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-v14-final-go-lock-755-finalize.yml"
+      - name: Materialize semantic composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp recovery-debug-755/es80_authenticated_stationary_final_go.py scripts/ci/es80_authenticated_stationary_final_go.py
+          cp recovery-debug-755/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          src=Path('recovery-debug-755/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').read_text()
+          pattern=re.compile(r'<<<<<<< current-755\n(.*?)=======\n(.*?)>>>>>>> reviewed-lock-d841\n', re.S)
+          matches=list(pattern.finditer(src))
+          if len(matches)!=1:
+              raise SystemExit(f'expected one localized conflict, found {len(matches)}')
+          ours,theirs=matches[0].group(1),matches[0].group(2)
+          old='GO.installer_environment(alias / "device")'
+          new='GO.installer_environment(alias / "device", "d" * 64)'
+          if ours.count(old)!=1:
+              raise SystemExit('symlink-parent regression call shape drifted')
+          ours=ours.replace(old,new,1)
+          resolved=ours+theirs
+          out=src[:matches[0].start()]+resolved+src[matches[0].end():]
+          if any(marker in out for marker in ('<<<<<<<','=======','>>>>>>>')):
+              raise SystemExit('unresolved merge marker remains')
+          Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').write_text(out)
+          PY
+          rm -rf recovery-debug-755
+          git diff --check
+      - name: Validate complete composed authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+      - name: Prove lock and current-main custody coexist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
+          required=(
+            'nembra-capture-human-review-github-v2',
+            'tuyaDependencyLockSHA256',
+            'NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256',
+            'acceptedTuyaDependencyLockSHA256',
+            'mainSHA',
+            'controlPlaneMainSHA',
+            'candidate authority path has suppressed index worktree tracking',
+            'hash-object","--no-filters',
+            'BASH_ENV":"/dev/null',
+          )
+          missing=[x for x in required if x not in s]
+          if missing: raise SystemExit(f'missing composed authority markers: {missing}')
+          t=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py').read_text()
+          for name in ('test_installer_environment_rejects_symlinked_private_device_parent','test_noncanonical_tuya_lock_digest_is_rejected_before_installer'):
+              if name not in t: raise SystemExit(f'missing composed regression: {name}')
+          PY
+      - name: Commit clean recovery and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v14-final-go-lock-755-finalize.yml
+          git config user.name "jonathangana131-lab"
+          git config user.email "jonathangana131@gmail.com"
+          git add -A
+          git commit -m "fix(capture): compose reviewed Tuya lock on current Final-GO"
+          test "$(git diff --name-only 7557c5502c25cbcd0c44984eb19e8c62145d8435...HEAD | sort)" = "$(printf '%s\n' 'scripts/ci/es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py' 'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py' | sort)"
+          git push origin HEAD:recovery/v14-final-go-reviewed-lock-current-755-sol
