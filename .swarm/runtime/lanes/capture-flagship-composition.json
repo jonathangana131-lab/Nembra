@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "capture-flagship-composition",
+  "epic": "capture",
+  "title": "Capture flagship exact-current composition",
+  "objective": "Maintain the canonical app-visible Capture candidate on current main, compose only accepted authority/custody descendants, then rerun exact software, package, field, Xcode, visual, accessibility and final adversarial gates on one unchanged head before any physical decision.",
+  "priority": 0,
+  "state": "BLOCKED_EXTERNAL",
+  "dependencies": [
+    "capture-build-authority",
+    "capture-final-go-authority",
+    "capture-signed-install-custody",
+    "capture-private-identity-custody"
+  ],
+  "blockers": [
+    {
+      "id": "legacy-pr-active",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Canonical legacy flagship PR #2612 remains open and current authority descendants are not yet accepted/composed; do not create a competing flagship spine.",
+      "pr": 2612,
+      "headSHA": "9e7c65cde7d33b731ea04e11cfe43a792743ed5d"
+    }
+  ],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "NembraApp",
+    "NembraCapture.xcodeproj",
+    "Packages/NembraBluetoothCapture"
+  ],
+  "adjacentWriteAreas": [
+    "Packages/NembraCore",
+    "scripts/field",
+    "Scripts",
+    ".github/workflows"
+  ],
+  "slots": [
+    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":["XCODE_BUILD","IOS_SIMULATOR"]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":["RELEASE_INTEGRATION"]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "legacy": {
+    "primaryPR": 2612,
+    "primaryHeadSHA": "9e7c65cde7d33b731ea04e11cfe43a792743ed5d",
+    "baseMainAtObservation": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+    "note": "PR base metadata still points at pre-V15 main; exact-current composition must refresh main ancestry before acceptance."
+  },
+  "tags": ["capture", "p0", "flagship", "app-visible", "composition", "legacy-import"]
+}
