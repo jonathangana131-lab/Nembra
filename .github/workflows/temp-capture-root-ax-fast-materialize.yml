@@ -28,11 +28,19 @@ jobs:
           from pathlib import Path
           p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           s = p.read_text(encoding='utf-8')
+
+          marker = 'private struct SecureLinkView: View'
+          split = s.find(marker)
+          if split < 0:
+              raise SystemExit('SecureLinkView marker missing')
+          prefix, secure = s[:split], s[split:]
           old = 'Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")'
           new = 'Label(dynamicTypeSize.isAccessibilitySize ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")'
-          if s.count(old) != 1:
-              raise SystemExit('unexpected SecureLinkView disclosure source shape')
-          s = s.replace(old, new, 1)
+          if secure.count(old) != 1:
+              raise SystemExit(f'unexpected SecureLinkView disclosure source shape: {secure.count(old)} matches')
+          secure = secure.replace(old, new, 1)
+          s = prefix + secure
+
           old = '''                    VStack(alignment: .leading, spacing: 7) {
                         if !isAccessibilityLayout {
                             Text("Tuya Smart user code")
@@ -46,7 +54,7 @@ jobs:
                             .accessibilityHidden(true)
                         TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)'''
           if s.count(old) != 1:
-              raise SystemExit('unexpected Tuya user-code field source shape')
+              raise SystemExit(f'unexpected Tuya user-code field source shape: {s.count(old)} matches')
           p.write_text(s.replace(old, new, 1), encoding='utf-8')
           PY
           git diff --check
