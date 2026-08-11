@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Crash-residue reuse must never act on a swapped replacement pathname."""
+"""Private staging failure paths must stay bound to exact held inode authority."""
 from __future__ import annotations
 
 import importlib.util
@@ -155,6 +155,66 @@ class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
                 "failure sanitation did not stay on the exact held inode after the late name swap",
             )
             self.assertFalse(destination.exists(), "late-swap failure published a private output")
+
+    def test_post_publication_destination_swap_never_deletes_replacement(self) -> None:
+        writer = load_writer()
+        private_payload = b"dummy-private-output-for-publication-race"
+        replacement_payload = b"canonical-destination-replacement-must-survive"
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-publication-cleanup-authority-") as temporary:
+            checkout = Path(temporary) / "repo"
+            destination_parent = checkout / "private"
+            destination_parent.mkdir(parents=True, mode=0o700)
+            destination_relative = "private/identity.swift"
+            destination = checkout / destination_relative
+            escaped = checkout / "attacker-renamed-published-private-output"
+
+            checkout_fd = os.open(checkout, writer._directory_flags())
+            destination_fd = os.open(destination_parent, writer._directory_flags())
+            real_secure_replace = writer._secure_replace_beneath
+            attack_fired = False
+
+            def publish_then_swap(
+                root_fd: int,
+                source_name: str,
+                target_relative: str,
+                sealed,
+            ) -> None:
+                nonlocal attack_fired
+                real_secure_replace(root_fd, source_name, target_relative, sealed)
+                attack_fired = True
+                install_replacement(
+                    writer,
+                    root_fd,
+                    target_relative,
+                    escaped.name,
+                    replacement_payload,
+                )
+
+            writer._secure_replace_beneath = publish_then_swap
+            try:
+                with self.assertRaises(writer.ProvisionError):
+                    writer._write_staged(
+                        checkout_fd,
+                        destination_fd,
+                        "identity.swift",
+                        destination_relative,
+                        private_payload,
+                    )
+            finally:
+                writer._secure_replace_beneath = real_secure_replace
+                os.close(destination_fd)
+                os.close(checkout_fd)
+
+            self.assertTrue(attack_fired, "fixture did not replace the canonical destination after publication")
+            self.assertTrue(destination.is_file(), "failure cleanup deleted the replacement canonical destination")
+            self.assertEqual(destination.read_bytes(), replacement_payload)
+            self.assertTrue(escaped.is_file(), "accepted staging inode disappeared after destination replacement")
+            self.assertEqual(
+                escaped.read_bytes(),
+                b"",
+                "failed publication did not sanitize only the exact held private staging inode",
+            )
 
     def test_recovery_source_never_pathname_unlinks_admitted_residue(self) -> None:
         source = WRITER_PATH.read_text(encoding="utf-8")
