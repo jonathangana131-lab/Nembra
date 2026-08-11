@@ -9,7 +9,7 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:20:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:26:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:29:35Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-connection-sol-1611dn",
   "pr": 3117,
@@ -22,5 +22,5 @@
     "NembraApp/Features/Dashboard/DashboardView.swift",
     "NembraUITests/NembraUITests.swift"
   ],
-  "checkpoint": "PR #3117 exact head e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1 remains mergeable and frozen at one file/+4/-0. Opening the PR auto-triggered run 31546199706; the immediate /xcode27 command created same-PR concurrency and cancelled that first build before evidence. Surviving issue-comment exact run is 31546215731 (run #16639): resolver SUCCESS, Xcode 27 build/test/capture job 93959225474 currently QUEUED. Do not trigger another duplicate. Acceptance requires this immutable run (or a later single exact run if infrastructure cancels it) to reach real AX5 and retained stopped+riding pixel inspection proving full unhyphenated connection wording while preserving Nembra Simulator, center speed/Energy Rail separation, 2x2 >=44pt stopped controls and exact mode semantics. Performance is independently occupied by #3118; deferred dark-landscape #2963 remains blocked on this AX5 acceptance. Simulator-only; ES80 PHYSICAL NO-GO."
+  "checkpoint": "PR #3117 exact e9c0dab725d96f735c6fdd14cf0a76d9e811b2c1 remains frozen and mergeable, one file/+4/-0. Surviving exact Xcode 27 command run 31546215731 resolver is SUCCESS and build/test/capture job 93959225474 remains QUEUED; do not trigger another duplicate. Live P0 refresh shows Capture is genuinely saturated rather than open: selected Final-GO carrier #3082 exact 4a2c2002 has current focused software greens and current real-Darwin validator #3120 exact 5b9dab6 queued; private convergence #3086 and selected-Xcode/signed-install validators are separately active/pending. Therefore Dashboard remains the correct non-conflicting overflow feature. #3117 exact head is also a strict descendant of flagship #2817 current head 14eba29 (ahead 16/behind 0), so after AX5 pixel acceptance the flagship can converge forward rather than replay stale ancestry. Acceptance still requires fresh retained AX5 stopped+riding pixels proving Nembra Simulator and Connected fully readable, center speed/Energy Rail separation intact, 2x2 >=44pt stopped controls in-window, exact mode semantics. Simulator-only; ES80 PHYSICAL NO-GO."
 }
