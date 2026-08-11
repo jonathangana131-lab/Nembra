@@ -1,0 +1,34 @@
+name: Capture Final-GO Control Worktree Diagnostic
+
+on:
+  pull_request:
+    branches:
+      - control/v14-auth-stationary-final-go-sol
+    paths:
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_final_go_control_worktree_custody.py
+      - .github/workflows/capture-final-go-control-worktree-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  require-control-worktree-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout diagnostic subject
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Compile diagnostic and Final-GO issuer
+        run: |
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_final_go_control_worktree_custody.py
+
+      - name: Require accepted control-plane worktree bytes
+        run: python3 scripts/ci/tests/test_es80_final_go_control_worktree_custody.py
