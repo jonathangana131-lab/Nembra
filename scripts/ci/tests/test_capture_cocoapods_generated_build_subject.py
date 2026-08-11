@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Adversarial custody tests for the generated CocoaPods Capture build subject.
 
-Review-only bootstrap may create one candidate dependency/build graph. Normal
-field bootstrap must verify that exact graph without rerunning CocoaPods, reject
-any lock/generated drift, and preserve the build guard's accepted graph custody
-through xcodebuild.
+Review-only bootstrap may create one candidate dependency/build graph and one
+local private-input review witness. Normal field bootstrap must verify those
+exact subjects without rerunning CocoaPods or replacing the private witness,
+reject any public/generated/private drift, and preserve the build guard's
+accepted graph custody through xcodebuild.
 """
 
 from __future__ import annotations
@@ -59,7 +60,8 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         (self.private_sdk / "ThingSmartCryption.podspec").write_text(
             "Pod::Spec.new do |s|\nend\n", encoding="utf-8"
         )
-        (self.private_sdk / "Build/libThingSmartCryption.a").write_bytes(b"private-security-sdk")
+        self.private_security_binary = self.private_sdk / "Build/libThingSmartCryption.a"
+        self.private_security_binary.write_bytes(b"private-security-sdk")
 
         self.private_identity = self.root / "LocalSecrets/TuyaRuntime"
         self.identity_sources = self.private_identity / "Sources/NembraTuyaPrivateConfig"
@@ -67,10 +69,12 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         (self.private_identity / "NembraTuyaPrivateConfig.podspec").write_text(
             "Pod::Spec.new do |s|\nend\n", encoding="utf-8"
         )
-        (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+        self.private_identity_source = self.identity_sources / "NembraTuyaPrivateIdentity.swift"
+        self.private_identity_source.write_text(
             "enum NembraTuyaPrivateIdentity { static let configured = true }\n",
             encoding="utf-8",
         )
+        self.private_provenance_record = self.private_identity / "ResolvedTuyaDependencyProvenance.txt"
 
         self.fake_bin = self.root / "fake-bin"
         self.fake_bin.mkdir()
@@ -183,10 +187,12 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             f"CocoaPods generated build subject SHA-256: {accepted_subject}",
             review.stdout,
         )
+        self.assertTrue(self.private_provenance_record.is_file(), review.stdout)
         return accepted_lock, accepted_subject
 
     def test_exact_reviewed_lock_and_generated_subject_are_required_without_regeneration(self) -> None:
         accepted_lock, accepted_subject = self.review_authority()
+        reviewed_private_witness = self.private_provenance_record.read_bytes()
 
         missing_subject = self.run_bootstrap(
             "HOSTILE_UNUSED_PAYLOAD",
@@ -196,6 +202,7 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.assertNotEqual(missing_subject.returncode, 0, missing_subject.stdout)
         self.assertIn("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256", missing_subject.stdout)
         self.assertEqual(self.pod_invocation_count(), 1, missing_subject.stdout)
+        self.assertEqual(self.private_provenance_record.read_bytes(), reviewed_private_witness)
 
         accepted = self.run_bootstrap(
             "HOSTILE_UNUSED_PAYLOAD",
@@ -205,7 +212,9 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         )
         self.assertEqual(accepted.returncode, 0, accepted.stdout)
         self.assertIn("Preaccepted CocoaPods generated build subject matched", accepted.stdout)
+        self.assertIn("Private Tuya field-input provenance matched the reviewed local witness", accepted.stdout)
         self.assertIn("Normal field bootstrap did not run CocoaPods", accepted.stdout)
+        self.assertEqual(self.private_provenance_record.read_bytes(), reviewed_private_witness)
         self.assertEqual(
             self.pod_invocation_count(),
             1,
@@ -262,6 +271,41 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
             self.pod_invocation_count(),
             1,
             "unaccepted lock was allowed to execute CocoaPods before authority rejection",
+        )
+
+    def test_stable_unreviewed_private_generation_cannot_replace_review_witness(self) -> None:
+        accepted_lock, accepted_subject = self.review_authority()
+        reviewed_record = self.private_provenance_record.read_bytes()
+        reviewed_lock = (self.root / "Podfile.lock").read_bytes()
+        reviewed_generated = (self.root / GENERATED_RELATIVE).read_bytes()
+
+        self.private_security_binary.write_bytes(b"substituted-private-security-generation-b")
+        self.private_identity_source.write_text(
+            "enum NembraTuyaPrivateIdentity { static let configured = false }\n",
+            encoding="utf-8",
+        )
+
+        field = self.run_bootstrap(
+            "PAYLOAD_MUST_NOT_BE_CONSUMED",
+            review_only=False,
+            accepted_lock=accepted_lock,
+            accepted_subject=accepted_subject,
+        )
+
+        self.assertNotEqual(field.returncode, 0, field.stdout)
+        self.assertIn("private Tuya build inputs changed after bootstrap", field.stdout)
+        self.assertIn("could not be verified against the reviewed local witness", field.stdout)
+        self.assertEqual(
+            self.private_provenance_record.read_bytes(),
+            reviewed_record,
+            "normal field admission overwrote the reviewed private-input witness",
+        )
+        self.assertEqual((self.root / "Podfile.lock").read_bytes(), reviewed_lock)
+        self.assertEqual((self.root / GENERATED_RELATIVE).read_bytes(), reviewed_generated)
+        self.assertEqual(
+            self.pod_invocation_count(),
+            1,
+            "unreviewed private generation triggered mutable CocoaPods regeneration",
         )
 
     def test_build_window_snapshot_and_watch_set_cover_generated_graph(self) -> None:
