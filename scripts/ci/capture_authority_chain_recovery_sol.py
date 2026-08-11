@@ -28,18 +28,17 @@ def materializer_payload() -> str:
         raise SystemExit("materializer payload end is not unique")
     raw_payload = body.split(end, 1)[0]
 
-    # YAML literal-block content is encoded with exactly ten structural spaces
-    # before every physical Python line. Strip that prefix line-by-line instead
-    # of textwrap.dedent(), whose global-minimum rule is disturbed by physical
-    # continuation lines inside the transformer's own multiline strings.
+    # Decode the YAML literal block one physical line at a time. Normal Python
+    # lines carry the ten-space YAML structural prefix. A few physical
+    # continuation lines embedded in the transformer's string literals do not;
+    # those bytes are intentional payload content and must be preserved rather
+    # than rejected or made to influence a global dedent calculation.
     decoded: list[str] = []
-    for number, line in enumerate(raw_payload.splitlines(keepends=True), start=1):
-        if not line.strip():
-            decoded.append(line[len(YAML_BLOCK_PREFIX):] if line.startswith(YAML_BLOCK_PREFIX) else line)
-            continue
-        if not line.startswith(YAML_BLOCK_PREFIX):
-            raise SystemExit(f"materializer YAML payload line {number} lost its structural prefix")
-        decoded.append(line[len(YAML_BLOCK_PREFIX):])
+    for line in raw_payload.splitlines(keepends=True):
+        if line.startswith(YAML_BLOCK_PREFIX):
+            decoded.append(line[len(YAML_BLOCK_PREFIX):])
+        else:
+            decoded.append(line)
     payload = "".join(decoded)
 
     function_start = payload.find("def replace_once(")
