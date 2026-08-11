@@ -161,15 +161,24 @@ def _slot_definition(lane: dict, slot_name: str) -> dict:
 
 
 def _load_lane(root: Path, lane_id: str) -> dict:
-    return validate_lane(_load_json(root / lane_path(lane_id)))
+    lane = validate_lane(_load_json(root / lane_path(lane_id)))
+    if lane["laneId"] != lane_id:
+        raise ValidationError("lane record does not match deterministic lane path")
+    return lane
 
 
 def _load_claim(root: Path, lane_id: str, slot: str) -> dict:
-    return validate_claim(_load_json(root / claim_path(lane_id, slot)))
+    claim = validate_claim(_load_json(root / claim_path(lane_id, slot)))
+    if claim["laneId"] != lane_id or claim["slot"] != slot:
+        raise ValidationError("claim record does not match deterministic lane/slot path")
+    return claim
 
 
 def _resource_subject(root: Path, resource: str) -> dict:
-    return validate_claim(_load_json(root / resource_path(resource)))
+    subject = validate_claim(_load_json(root / resource_path(resource)))
+    if subject.get("resource") != resource:
+        raise ValidationError("resource claim record does not match deterministic resource path")
+    return subject
 
 
 def _legacy_allowed(config: dict, created_at: str) -> bool:
