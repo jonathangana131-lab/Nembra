@@ -35,7 +35,9 @@ struct TuyaCaptureRootProductVisualAccessibilitySourceTests {
         #expect(action.lowerBound < accessibilityStatus.lowerBound)
         #expect(account.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
         #expect(account.contains(".frame(minHeight: 52)"))
-        #expect(account.contains("Bluetooth remains off"))
+        #expect(root.contains("Nembra does not begin passive Bluetooth correlation until account and device checks are complete."))
+        #expect(account.contains("passive scooter correlation has not begun."))
+        #expect(account.contains(".accessibilityAddTraits(.isHeader)"))
     }
 
     @Test("root visual recompose stays presentation-only and flatter than the old setup-card stack")

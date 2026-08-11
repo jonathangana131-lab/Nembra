@@ -25,8 +25,10 @@ private struct CaptureP0Root: View {
     @StateObject private var tuya = TuyaAccountBridge()
     @State private var showEngineeringDetails = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    private let buildIdentity = NembraCaptureBuildIdentity.current
 
     private var isAccessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }
+    private var isAuthoritativeFieldBuild: Bool { buildIdentity.isAuthoritativeFieldBuild }
 
     var body: some View {
         NavigationStack {
@@ -78,16 +80,29 @@ private struct CaptureP0Root: View {
                 .font(isAccessibilityLayout ? .title.bold() : .largeTitle.bold())
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(
-                isAccessibilityLayout
-                    ? "Link the Tuya account that owns this scooter. Bluetooth stays off until account and device checks are complete."
-                    : "Link the account that owns this scooter. Nembra verifies the account and device again before any passive Bluetooth correlation begins."
+            Label(
+                isAuthoritativeFieldBuild ? "Field build ready" : "Physical capture locked",
+                systemImage: isAuthoritativeFieldBuild ? "checkmark.shield.fill" : "lock.shield.fill"
             )
-            .font(isAccessibilityLayout ? .callout : .body)
-            .foregroundStyle(Color.white.opacity(0.76))
-            .fixedSize(horizontal: false, vertical: true)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(isAuthoritativeFieldBuild ? Color.green : Color.orange)
+
+            Text(introSupportCopy)
+                .font(isAccessibilityLayout ? .callout : .body)
+                .foregroundStyle(Color.white.opacity(0.76))
+                .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var introSupportCopy: String {
+        if !isAuthoritativeFieldBuild {
+            return "This public build can prepare account metadata. It cannot scan or collect physical scooter evidence."
+        }
+        if isAccessibilityLayout {
+            return "Nembra does not begin passive Bluetooth correlation until account and device checks are complete."
+        }
+        return "Link the account that owns this scooter. Nembra verifies the account and device again before any passive Bluetooth correlation begins."
     }
 
     private var accountSection: some View {
@@ -107,6 +122,7 @@ private struct CaptureP0Root: View {
                         Text(tuya.isLinked ? "Account link ready" : "Link your scooter account")
                             .font(.title3.bold())
                             .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
+                            .accessibilityAddTraits(.isHeader)
                         Text(tuya.isLinked ? "Account context is ready for scooter selection." : "Use the Tuya Smart user code for the account that owns this scooter.")
                             .font(.subheadline)
                             .foregroundStyle(Color.white.opacity(0.74))
@@ -143,7 +159,7 @@ private struct CaptureP0Root: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.cyan)
                     .foregroundStyle(.black)
-                    .accessibilityHint("Creates the Tuya approval QR code for this account. Bluetooth remains off.")
+                    .accessibilityHint("Creates the Tuya approval QR code for this account; passive scooter correlation has not begun.")
 
                     if isAccessibilityLayout {
                         statusText
@@ -279,9 +295,15 @@ private struct CaptureP0Root: View {
            tuya.phase == .ready,
            !device.productID.isEmpty,
            !device.uuid.isEmpty {
-            NavigationLink("Continue to Capture") { SecureLinkView(device: device) }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            if isAuthoritativeFieldBuild {
+                NavigationLink("Continue to Capture") { SecureLinkView(device: device) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+            } else {
+                NavigationLink("View locked preflight") { SecureLinkView(device: device) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+            }
         }
     }
 
