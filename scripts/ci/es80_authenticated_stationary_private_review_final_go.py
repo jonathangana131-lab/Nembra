@@ -150,37 +150,112 @@ def _tree_entries(root: Path, source: str) -> dict[str, tuple[bytes, str]]:
     return entries
 
 
+def _stable_stat(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
 def _read_physical_payload(root: Path, relative: str, mode: bytes) -> tuple[bytes, os.stat_result]:
+    """Read one tracked pathname through descriptor-bound no-follow custody.
+
+    The admitted pathname object is opened relative to a no-follow directory
+    descriptor chain. Regular-file bytes are read only through the admitted
+    descriptor and rebound to both pre-open and post-read metadata. Symlink
+    target bytes are read relative to the same bound parent descriptor and the
+    symlink object is re-proved afterward. A final absolute-path lstat rejects
+    namespace replacement before the payload is admitted.
+    """
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        raise RuntimeError("candidate descriptor-bound physical read custody is unavailable")
     parts = PurePosixPath(relative).parts
-    current = root
-    for component in parts[:-1]:
-        current = current / component
-        try:
-            metadata = os.lstat(current)
-        except OSError as error:
-            raise RuntimeError("candidate tracked path ancestry is unavailable: " + relative) from error
-        if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
-            raise RuntimeError("candidate tracked path has symlink/non-directory ancestry: " + relative)
-    path = root.joinpath(*parts)
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise RuntimeError("candidate tracked path is unsafe: " + relative)
+    root = root.expanduser().resolve(strict=True)
+    cloexec = getattr(os, "O_CLOEXEC", 0)
+    descriptors: list[int] = []
+    file_descriptor: int | None = None
     try:
-        metadata = os.lstat(path)
+        parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | cloexec)
+        descriptors.append(parent)
+        for component in parts[:-1]:
+            child = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | cloexec,
+                dir_fd=parent,
+            )
+            child_metadata = os.fstat(child)
+            if not stat.S_ISDIR(child_metadata.st_mode):
+                os.close(child)
+                raise RuntimeError("candidate tracked path has non-directory ancestry: " + relative)
+            descriptors.append(child)
+            parent = child
+
+        name = parts[-1]
+        admitted = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        final_path = root.joinpath(*parts)
+        if mode == b"120000":
+            if not stat.S_ISLNK(admitted.st_mode):
+                raise RuntimeError("candidate expected tracked symlink: " + relative)
+            target = os.readlink(name, dir_fd=parent)
+            after = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            namespace_after = os.lstat(final_path)
+            if _stable_stat(admitted) != _stable_stat(after) or _stable_stat(after) != _stable_stat(namespace_after):
+                raise RuntimeError("candidate tracked symlink changed while reading: " + relative)
+            return (os.fsencode(target) if isinstance(target, str) else target), admitted
+
+        if not stat.S_ISREG(admitted.st_mode) or stat.S_ISLNK(admitted.st_mode):
+            raise RuntimeError("candidate expected tracked regular file: " + relative)
+        expected_executable = mode == b"100755"
+        if bool(admitted.st_mode & 0o111) != expected_executable:
+            raise RuntimeError("candidate tracked executable mode differs from accepted tree: " + relative)
+
+        file_descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | cloexec, dir_fd=parent)
+        opened = os.fstat(file_descriptor)
+        if not stat.S_ISREG(opened.st_mode) or _stable_stat(opened) != _stable_stat(admitted):
+            raise RuntimeError("candidate tracked regular-file identity changed before descriptor admission: " + relative)
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(file_descriptor, 1 << 20)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > opened.st_size:
+                raise RuntimeError("candidate tracked regular file grew while reading: " + relative)
+            chunks.append(chunk)
+        after = os.fstat(file_descriptor)
+        rebound = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        namespace_after = os.lstat(final_path)
+        if (
+            total != opened.st_size
+            or _stable_stat(opened) != _stable_stat(after)
+            or _stable_stat(after) != _stable_stat(rebound)
+            or _stable_stat(rebound) != _stable_stat(namespace_after)
+        ):
+            raise RuntimeError("candidate tracked regular file changed while reading: " + relative)
+        return b"".join(chunks), opened
     except OSError as error:
-        raise RuntimeError("candidate tracked path is unavailable: " + relative) from error
-    if mode == b"120000":
-        if not stat.S_ISLNK(metadata.st_mode):
-            raise RuntimeError("candidate expected tracked symlink: " + relative)
-        target = os.readlink(path)
-        return (os.fsencode(target) if isinstance(target, str) else target), metadata
-    if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
-        raise RuntimeError("candidate expected tracked regular file: " + relative)
-    expected_executable = mode == b"100755"
-    if bool(metadata.st_mode & 0o111) != expected_executable:
-        raise RuntimeError("candidate tracked executable mode differs from accepted tree: " + relative)
-    try:
-        payload = path.read_bytes()
-    except OSError as error:
-        raise RuntimeError("candidate tracked file could not be read: " + relative) from error
-    return payload, metadata
+        raise RuntimeError("candidate tracked path descriptor custody failed: " + relative) from error
+    finally:
+        if file_descriptor is not None:
+            try:
+                os.close(file_descriptor)
+            except OSError:
+                pass
+        for descriptor in reversed(descriptors):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 
 def _physical_blob_oid(root: Path, relative: str, mode: bytes, accepted_oid: str) -> str:
