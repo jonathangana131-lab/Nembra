@@ -62,6 +62,14 @@ def emit_error(kind: str, message: str, *, build_output: str = "", detach_output
     print(ERROR_MARKER + json.dumps(payload, sort_keys=True), file=sys.stderr)
 
 
+def structured_credentials(uid: int, gid: int, groups: list[int]) -> dict[str, object]:
+    return {
+        "user": uid,
+        "group": gid,
+        "extra_groups": sorted(set(groups)),
+    }
+
+
 def make_package(root: Path) -> None:
     (root / "Package.swift").write_text(
         textwrap.dedent(
@@ -123,7 +131,11 @@ def root_probe(package_root: Path) -> int:
         os.chown(mountpoint, 0, capability_gid)
         os.chmod(mountpoint, 0o770)
 
-        child_groups = sorted(set(normal_groups) | {capability_gid})
+        # Only the fresh one-run capability is required as a supplementary
+        # group. Replaying unrelated hosted-runner groups can exceed macOS
+        # setgroups limits before Xcode starts and is not part of this oracle.
+        child_groups = [capability_gid]
+        ordinary_groups: list[int] = []
         child_environment = {
             "HOME": account.pw_dir,
             "USER": account.pw_name,
@@ -163,7 +175,7 @@ def root_probe(package_root: Path) -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            preexec_fn=helper.drop(uid, gid, child_groups),
+            **structured_credentials(uid, gid, child_groups),
             check=False,
         )
         if build.returncode != 0:
@@ -191,7 +203,7 @@ def root_probe(package_root: Path) -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            preexec_fn=helper.drop(uid, gid, normal_groups),
+            **structured_credentials(uid, gid, ordinary_groups),
             check=False,
         )
         if sibling.returncode == 0 or sha256(product) != before:
@@ -241,7 +253,7 @@ def root_probe(package_root: Path) -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            preexec_fn=helper.drop(uid, gid, child_groups),
+            **structured_credentials(uid, gid, child_groups),
             check=False,
         )
         if former_capability.returncode == 0 or sha256(frozen_product) != frozen:
