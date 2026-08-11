@@ -1,0 +1,136 @@
+name: Temporary Capture Tuya Provisioner Root Custody Review
+
+on:
+  push:
+    branches:
+      - review/v14-tuya-provisioner-root-custody-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Patch root custody and adversarial regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "jonathangana131-lab/Nembra"
+          test "$GITHUB_REF_NAME" = "review/v14-tuya-provisioner-root-custody-sol"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script_path = Path("Scripts/provision_capture_tuya_identity.sh")
+          script = script_path.read_text()
+          old = '''ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+          LOCAL_SECRETS="$ROOT/LocalSecrets"
+          # NEMBRA_TUYA_RUNTIME_DIR is deliberately not honored: private field identity
+          # output is fixed to the checkout-owned ignored LocalSecrets tree.
+          DEST="$LOCAL_SECRETS/TuyaRuntime"
+          SOURCE_DIR="$DEST/Sources/NembraTuyaPrivateConfig"
+          PODSPEC="$DEST/NembraTuyaPrivateConfig.podspec"
+          IDENTITY_SWIFT="$SOURCE_DIR/NembraTuyaPrivateIdentity.swift"
+
+          umask 077
+          # A direct operator invocation enters privileged Bash mode from the shebang,
+          # which suppresses BASH_ENV/imported startup state. Also close the executable
+          # lookup surface before any credential is read or transformed.
+          PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+          export PATH
+          set +x
+          '''.replace('          ', '')
+          new = '''# A direct operator invocation enters privileged Bash mode from the shebang,
+          # which suppresses BASH_ENV/imported startup state. Close executable lookup
+          # before deriving the checkout root so caller PATH cannot redirect custody.
+          PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+          export PATH
+          set +x
+
+          ROOT="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+          LOCAL_SECRETS="$ROOT/LocalSecrets"
+          # NEMBRA_TUYA_RUNTIME_DIR is deliberately not honored: private field identity
+          # output is fixed to the checkout-owned ignored LocalSecrets tree.
+          DEST="$LOCAL_SECRETS/TuyaRuntime"
+          SOURCE_DIR="$DEST/Sources/NembraTuyaPrivateConfig"
+          PODSPEC="$DEST/NembraTuyaPrivateConfig.podspec"
+          IDENTITY_SWIFT="$SOURCE_DIR/NembraTuyaPrivateIdentity.swift"
+
+          umask 077
+          '''.replace('          ', '')
+          if old in script:
+              script = script.replace(old, new, 1)
+              script_path.write_text(script)
+          elif 'ROOT="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"' not in script:
+              raise SystemExit("provisioner root-custody anchor drifted")
+
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift")
+          test = test_path.read_text()
+          method_name = "checkoutRootDerivationIgnoresCallerPathExecutables"
+          if method_name not in test:
+              anchor = '    @Test("symlinked LocalSecrets fails before credential publication")\n'
+              if anchor not in test:
+                  raise SystemExit("provisioner custody test anchor drifted")
+              method = r'''    @Test("checkout root derivation ignores caller PATH executables")
+              func checkoutRootDerivationIgnoresCallerPathExecutables() throws {
+                  let fixture = try makeFixture()
+                  defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+                  let source = try String(contentsOf: fixture.script, encoding: .utf8)
+                  let pathFence = source.range(of: "PATH=\"/usr/bin:/bin:/usr/sbin:/sbin\"")
+                  let trustedRoot = source.range(of: "ROOT=\"$(cd \"$(/usr/bin/dirname")
+                  #expect(pathFence != nil)
+                  #expect(trustedRoot != nil)
+                  if let pathFence, let trustedRoot {
+                      #expect(pathFence.lowerBound < trustedRoot.lowerBound)
+                  }
+
+                  let sandbox = fixture.root.deletingLastPathComponent()
+                  let hostilePath = sandbox.appendingPathComponent("hostile-root-bin", isDirectory: true)
+                  let attackerRoot = sandbox.appendingPathComponent("attacker-root", isDirectory: true)
+                  let attackerScripts = attackerRoot.appendingPathComponent("Scripts", isDirectory: true)
+                  try FileManager.default.createDirectory(at: hostilePath, withIntermediateDirectories: true)
+                  try FileManager.default.createDirectory(at: attackerScripts, withIntermediateDirectories: true)
+                  let sentinel = sandbox.appendingPathComponent("hostile-dirname-invoked")
+                  let hostileDirname = hostilePath.appendingPathComponent("dirname")
+                  let fake = "#!/bin/sh\n/bin/echo invoked > \"\(sentinel.path)\"\n/bin/echo \"\(attackerScripts.path)\"\n"
+                  try Data(fake.utf8).write(to: hostileDirname)
+                  try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: hostileDirname.path)
+
+                  let result = try invokeDirect(fixture.script, environment: ["PATH": hostilePath.path])
+                  #expect(result.status == 0)
+                  #expect(!FileManager.default.fileExists(atPath: sentinel.path))
+                  #expect(!FileManager.default.fileExists(atPath: attackerRoot.appendingPathComponent("LocalSecrets/TuyaRuntime").path))
+                  #expect(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec").path))
+              }
+
+'''.replace('              ', '')
+              test_path.write_text(test.replace(anchor, method + anchor, 1))
+          PY
+
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          grep -Fq 'PATH="/usr/bin:/bin:/usr/sbin:/sbin"' Scripts/provision_capture_tuya_identity.sh
+          grep -Fq 'ROOT="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"' Scripts/provision_capture_tuya_identity.sh
+          ! grep -Fq '$(dirname "${BASH_SOURCE[0]}")' Scripts/provision_capture_tuya_identity.sh
+          grep -Fq 'checkoutRootDerivationIgnoresCallerPathExecutables' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
+          git diff --check
+
+      - name: Publish product-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-review'
+          git config user.email 'nembra-v14-review@users.noreply.github.com'
+          git add Scripts/provision_capture_tuya_identity.sh Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
+          if git diff --cached --quiet; then
+            echo 'root custody repair already materialized'
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m 'fix(capture): pin provisioner checkout root before credential custody'
+          git push origin "HEAD:$GITHUB_REF_NAME"
