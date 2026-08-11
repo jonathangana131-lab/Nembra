@@ -6,10 +6,11 @@ import unittest
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
-FIELD_GATE = REPOSITORY / ".github/workflows/capture-field-build-provenance.yml"
+FOCUSED_GATE = REPOSITORY / ".github/workflows/capture-signed-app-install-custody.yml"
 HELPER = "scripts/ci/es80_signed_app_install_guard.py"
 UNIT_TEST = "scripts/ci/tests/test_es80_signed_app_install_guard.py"
 SOURCE_TEST = "scripts/ci/tests/test_capture_signed_app_install_custody_source.py"
+INSTALLER_PATH = "scripts/field/install_one_time_capture.command"
 
 
 class SignedAppInstallCustodySourceTests(unittest.TestCase):
@@ -38,13 +39,14 @@ class SignedAppInstallCustodySourceTests(unittest.TestCase):
         self.assertIn('[[ "$INSTALL_RESULT" == "74" || "$INSTALL_RESULT" == "75" ]]', source)
         self.assertIn('Signed Capture app install custody failed', source)
 
-    def test_canonical_field_gate_owns_helper_tests_and_installer_contract(self) -> None:
-        workflow = FIELD_GATE.read_text(encoding="utf-8")
-        for path in (HELPER, UNIT_TEST, SOURCE_TEST):
+    def test_focused_exact_head_gate_owns_helper_tests_and_installer_contract(self) -> None:
+        workflow = FOCUSED_GATE.read_text(encoding="utf-8")
+        for path in (HELPER, UNIT_TEST, SOURCE_TEST, INSTALLER_PATH):
             self.assertIn(f"      - {path}", workflow)
         self.assertIn("python3 -m py_compile scripts/ci/es80_signed_app_install_guard.py", workflow)
         self.assertIn("python3 -I scripts/ci/tests/test_es80_signed_app_install_guard.py", workflow)
         self.assertIn("python3 -I scripts/ci/tests/test_capture_signed_app_install_custody_source.py", workflow)
+        self.assertIn("bash -n scripts/field/install_one_time_capture.command", workflow)
 
 
 if __name__ == "__main__":
