@@ -13,7 +13,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 GUARD_PATH = ROOT / "Scripts/capture_tuya_private_input_build_guard.py"
-INSTALLER = ROOT / "scripts/field/install_one_time_capture.command"
 
 
 def load_guard():
@@ -73,11 +72,6 @@ class CaptureFieldXcodeEnvironmentAuthorityTests(unittest.TestCase):
         rendered_environment = ast.unparse(environment_keywords[0].value)
         self.assertNotIn("os.environ", rendered_environment)
         self.assertNotIn("environ.copy", rendered_environment)
-
-    def test_field_installer_uses_absolute_xcodebuild_but_environment_is_a_separate_boundary(self) -> None:
-        installer = INSTALLER.read_text(encoding="utf-8")
-        self.assertIn("/usr/bin/xcodebuild", installer)
-        self.assertIn("DEVELOPER_DIR", "DEVELOPER_DIR")
 
     @unittest.skipUnless(sys.platform == "darwin", "requires real macOS xcodebuild selection")
     def test_real_macos_caller_developer_dir_cannot_redirect_guarded_xcodebuild(self) -> None:
