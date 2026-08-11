@@ -52,9 +52,12 @@ final class DashboardSustainedPerformanceUITests: XCTestCase {
             "Measurement must begin only after fresh Simulator-owned speed/power receipts are actively retargeting both instruments."
         )
 
+        let preMeasurePowerValue = energyRail.value as? String ?? ""
+        let preMeasureSpeedValue = speed.value as? String ?? ""
+
         let options = XCTMeasureOptions()
-        // XCTest performs one warm-up plus one recorded iteration. The source-owned
-        // stress fixture runs for roughly 12 seconds, covering both 3-second windows.
+        // The source-owned stress driver remains alive for the fixture lifetime,
+        // so launch/idle overhead cannot move this measurement after source motion.
         options.iterationCount = 1
 
         measure(
@@ -71,6 +74,23 @@ final class DashboardSustainedPerformanceUITests: XCTestCase {
         XCTAssertTrue(cockpit.exists, "The real cockpit must remain mounted for the complete measurement window.")
         XCTAssertTrue(energyRail.exists, "The Energy Rail must remain mounted for the complete measurement window.")
         XCTAssertTrue(speed.exists, "The speed instrument must remain mounted for the complete measurement window.")
+
+        // Prove the source did not terminate at or before the measured window.
+        // We intentionally wait for a *new* semantic source value after metrics stop,
+        // instead of accepting a screenshot of a settled final fixture value.
+        let postMeasurePowerMoved = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value != %@", preMeasurePowerValue),
+            object: energyRail
+        )
+        let postMeasureSpeedMoved = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value != %@", preMeasureSpeedValue),
+            object: speed
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [postMeasurePowerMoved, postMeasureSpeedMoved], timeout: 1.5),
+            .completed,
+            "The sustained source must still be actively retargeting both semantic instruments after the metric window."
+        )
 
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = "Dashboard Sustained Stress Landscape"
