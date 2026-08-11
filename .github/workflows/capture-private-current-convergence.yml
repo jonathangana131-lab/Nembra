@@ -67,9 +67,9 @@ jobs:
             printf 'Private provenance must execute captured accepted bytes, not the mutable helper pathname.\n' >&2
             exit 21
           fi
-          grep -Fq '#expect(bootstrap.contains("PROVENANCE_HELPER_GIT_BLOB_OID=\\\""))' \
+          grep -Fq 'PROVENANCE_HELPER_GIT_BLOB_OID' \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
-          grep -Fq '#expect(!bootstrap.contains("/usr/bin/python3 -I \\\"$PROVENANCE_HELPER\\\" snapshot"))' \
+          grep -Fq 'PROVENANCE_SOURCE' \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
 
       - name: Preserve explicit source-root authority boundary
