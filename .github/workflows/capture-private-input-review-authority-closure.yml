@@ -9,6 +9,7 @@ on:
       - Scripts/capture_tuya_private_input_build_guard.py
       - Scripts/capture_cocoapods_generated_build_subject.py
       - scripts/ci/tests/test_capture_private_input_review_authority_closure.py
+      - scripts/ci/tests/test_capture_private_input_bootstrap_admission.py
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
       - .github/workflows/capture-private-input-review-authority-closure.yml
   pull_request:
@@ -19,6 +20,7 @@ on:
       - Scripts/capture_tuya_private_input_build_guard.py
       - Scripts/capture_cocoapods_generated_build_subject.py
       - scripts/ci/tests/test_capture_private_input_review_authority_closure.py
+      - scripts/ci/tests/test_capture_private_input_bootstrap_admission.py
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
       - .github/workflows/capture-private-input-review-authority-closure.yml
   workflow_dispatch:
@@ -57,6 +59,7 @@ jobs:
             Scripts/capture_tuya_private_input_build_guard.py \
             Scripts/capture_cocoapods_generated_build_subject.py \
             scripts/ci/tests/test_capture_private_input_review_authority_closure.py \
+            scripts/ci/tests/test_capture_private_input_bootstrap_admission.py \
             scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
 
       - name: Prove private review cannot self-authorize replacements
@@ -64,6 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_capture_private_input_review_authority_closure.py
+          python3 scripts/ci/tests/test_capture_private_input_bootstrap_admission.py
 
       - name: Prove generated-build and ancestry authority still compose
         shell: bash
