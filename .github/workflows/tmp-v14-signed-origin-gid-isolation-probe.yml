@@ -70,12 +70,15 @@ jobs:
 
           protected = root / 'protected-derived'
           stage = root / 'protected-stage'
-          root.mkdir(mode=0o700)
+          root.mkdir(mode=0o711)
           os.chown(root, 0, 0)
+          os.chmod(root, 0o711)
           protected.mkdir(mode=0o770)
           os.chown(protected, 0, ephemeral_gid)
+          os.chmod(protected, 0o770)
           stage.mkdir(mode=0o700)
           os.chown(stage, 0, 0)
+          os.chmod(stage, 0o700)
 
           write_fd, read_fd = os.pipe()
           pid = os.fork()
