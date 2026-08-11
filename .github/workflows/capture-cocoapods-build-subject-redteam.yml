@@ -1,4 +1,5 @@
 name: Capture CocoaPods Build Subject Authority
+# Temporary synchronize marker; reverted immediately so the final PR diff remains test-only.
 
 on:
   pull_request:
