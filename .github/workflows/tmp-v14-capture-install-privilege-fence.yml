@@ -1,0 +1,36 @@
+name: Temporary V14 Capture Install Privilege Fence
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-signed-app-protected-install-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Materialize privilege fence and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 56a423d6dcf1ed376136050c57f427a2ff11bc39 HEAD
+          python3 -B scripts/ci/tmp_materialize_install_privilege_fence.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          python3 -B -c 'compile(open("scripts/ci/capture_signed_app_install_custody.py", encoding="utf-8").read(), "custody", "exec"); compile(open("scripts/ci/tests/test_capture_signed_app_install_custody.py", encoding="utf-8").read(), "tests", "exec")'
+          python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          git diff --check
+          test -z "$(find scripts -type d -name __pycache__ -print -quit)"
+          git rm .github/workflows/tmp-v14-capture-install-privilege-fence.yml scripts/ci/tmp_materialize_install_privilege_fence.py
+          git add scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_signed_app_install_custody.py
+          git diff --cached --check
+          git config user.name "Nembra V14 Capture Closure"
+          git config user.email "nembra-v14@users.noreply.github.com"
+          git commit -m "fix(capture): revoke staging elevation before install"
+          git push origin HEAD:repair/v14-capture-signed-app-protected-install-sol
