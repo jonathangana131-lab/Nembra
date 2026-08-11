@@ -9,11 +9,13 @@ on:
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
       - scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
       - scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
+      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
       - .github/workflows/capture-cocoapods-build-subject-redteam.yml
   push:
     branches:
       - repair/v14-capture-cocoapods-generated-subject-sol-20260810
       - repair/v14-capture-2709-coherent-generation-sol
+      - repair/v14-capture-2709-vnode-attrib-r2-sol
   workflow_dispatch:
 
 permissions:
@@ -48,6 +50,7 @@ jobs:
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
           /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
 
       - name: Require lock-preserving generated substitutions to fail closed
@@ -67,3 +70,33 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_coherent_generation.py
+
+      - name: Require vnode attribute authority to stay under live custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+
+  macos-vnode-attribute:
+    name: Require real macOS vnode attribute delivery
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind real-kqueue test to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Require real chmod vnode evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
