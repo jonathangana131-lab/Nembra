@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-build-authority",
+  "slot": "tests",
+  "role": "tests",
+  "workerId": "sol-20260811-e3c4",
+  "leaseId": "capture-build-tests-e3c4-20260811-0945",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T09:45:30Z",
+  "lastHeartbeatAt": "2026-08-11T09:45:30Z",
+  "leaseSeconds": 1800,
+  "branch": "repair/v14-capture-field-installer-git-authority-sol-20260811",
+  "pr": 2876,
+  "sourceSHA": "50f774ddbc92215bd8ecd5006cd728f71019aad4"
+}
