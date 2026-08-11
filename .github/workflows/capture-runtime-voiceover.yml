@@ -119,11 +119,17 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf /tmp/NembraRuntimeVoiceOverUITests "$RUNNER_TEMP/CaptureRuntimeVoiceOver.xcresult"
-          xcodebuild test -project Nembra.xcodeproj -scheme Nembra -configuration Debug \
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
             -destination "platform=iOS Simulator,id=$NEMBRA_RUNTIME_AX_UDID" \
             -derivedDataPath /tmp/NembraRuntimeVoiceOverUITests \
             -resultBundlePath "$RUNNER_TEMP/CaptureRuntimeVoiceOver.xcresult" \
-            -only-testing:NembraUITests/CaptureRuntimeVoiceOverUITests/testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit
+            -only-testing:NembraUITests/CaptureRuntimeVoiceOverUITests/testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            test
 
       - name: Seal runtime accessibility evidence manifest
         if: always()
