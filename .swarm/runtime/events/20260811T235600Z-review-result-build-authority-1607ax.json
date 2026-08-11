@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "235600-review-result-build-authority-1607ax",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-build-authority",
+  "message": "Recovered expired build-authority review generation 17 and refreshed exact production #3072@3e41ecd07b020523ccfedc365c201db9799c3e7e. Source ACL closure remains independently accepted/fail-closed, but product is NOT accepted: exact Selected Xcode Tool ACL Custody 31540635879 is terminal FAILURE; Xcode QA 31540655430, Main 31540635890, and Field 31540635877 are also red. The stale selected-tool Field assertions already have a mechanically green consumable correction in #3088@31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4 (Field 31542271509 SUCCESS), but absorbing it would move the head and reset exact gates. Current workflow-only ACL diagnostic #3093@49e51aef23b843f8790d36508b4f6d33025c2df4 remains source-accepted and its retained macOS run 31543820090 is still QUEUED, so the exact ACL runner failure cannot yet be classified as selected-Xcode incompatibility vs fixture vs real mutability. No production mutation is justified until that diagnostic is terminal. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T23:56:00Z"
+}
