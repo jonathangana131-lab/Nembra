@@ -175,7 +175,12 @@ class CandidateRawFilesystemAuthorityTests(unittest.TestCase):
             attributes = root / ".git" / "info" / "attributes"
             relative = "NembraApp/App/NembraCaptureEntrypoint.swift"
             attributes.write_text(relative + " filter=evil\n", encoding="utf-8")
-            (root / relative).write_text("// attacker-controlled physical source\n", encoding="utf-8")
+            # Keep the mutated file exactly the same byte length as the accepted
+            # content so Git cannot resolve status from the size field alone; it
+            # must enter the content-conversion path where the clean filter is an
+            # ambient executable authority surface. Raw candidate custody never
+            # invokes that filter and still rejects the changed physical bytes.
+            (root / relative).write_text("// attacker app source\n", encoding="utf-8")
             subprocess.run(
                 ["/usr/bin/git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
                 check=True,
