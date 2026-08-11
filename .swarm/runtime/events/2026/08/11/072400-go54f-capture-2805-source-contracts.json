@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072400-go54f-capture-2805-source-contracts",
+  "type": "FINDING",
+  "workerId": "sol-20260811-go54f",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Exact #2805 head 76d2ed5: all three selective-graft package assertions are inherited source-contract drift, not verifier-custody failures. TuyaAccountBridge no longer retains/fetches selectedDeviceLocalStrategy; current retained opaque payloads are metadata/status/specifications and are recursively secret-redacted plus final-envelope account-UID-redacted, so the two localStrategy/strategy exact-substring tests are stale and should be reconciled to current retained payload custody without weakening redaction. Podfile.lock behavior is fail-closed via [[ -f Podfile.lock ]] || { ... }; the test's required literal [[ ! -f Podfile.lock ]] is stale syntax, not a behavior regression. Separately, build_guard main() still has undefined private_review exception matching. Minimal regression: patch _parse_args to return a sentinel input/command, patch run_guarded_build to raise RuntimeError('sentinel'), and assert main([]) propagates RuntimeError rather than masking it with NameError; then remove the stale undefined exception clause. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:24:00Z",
+  "data": {
+    "pr": 2805,
+    "exactHead": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab",
+    "packageIssueClassification": "INHERITED_SOURCE_CONTRACT_DRIFT",
+    "localStrategyRetained": false,
+    "podfileLockGuardBehavior": "POSITIVE_EXISTENCE_FAIL_CLOSED",
+    "privateReviewUndefinedExceptionBlocker": true,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
