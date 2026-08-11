@@ -296,7 +296,8 @@ final class SpeedInstrumentModel {
 /// detection, persistence, distance, and safety continue to consume accepted
 /// domain/source state rather than rendered speed or Energy Rail frames.
 /// Propulsion admission is independent from speed and aggregate VehicleState:
-/// only `VehicleStore.simulatorPowerStoreProjection` can introduce a receipt.
+/// only `VehicleStore.simulatorPowerStoreProjection`, cross-checked against the
+/// exact source-sealed availability object, can reach the package runtime.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
@@ -370,6 +371,12 @@ struct DashboardSpeedInstrumentView: View {
         .onChange(of: vehicle.simulatorPowerStoreProjection) { _, projection in
             synchronizeEnergyRailStoreProjection(projection)
         }
+        .onChange(of: vehicle.simulatorPowerSourceAvailability) { _, _ in
+            // Source currentness may legitimately change while the Store projection
+            // stays on the same retained receipt (for example transport demotes first,
+            // then the source actor publishes retained). Reconcile both authorities.
+            synchronizeEnergyRailStoreProjection(vehicle.simulatorPowerStoreProjection)
+        }
         .onChange(of: reduceMotion) { _, _ in
             // Reduce Motion suppresses continuous spatial/high-frequency animation,
             // but package-owned one-shot freshness deadlines must still wake semantic
@@ -414,9 +421,9 @@ struct DashboardSpeedInstrumentView: View {
         ).requiresContinuousFrames
     }
 
-    /// Applies exactly one already-sealed Store projection to the package runtime.
-    /// No view clock, aggregate watts, speed receipt, mode, or lifecycle callback can
-    /// create positive propulsion authority here.
+    /// Applies exactly one already-sealed source state plus the Store's negative-only
+    /// lifecycle fence to the package runtime. Positive admission is impossible from
+    /// aggregate watts, raw receipt fields, speed, mode, lifecycle, or a view clock.
     private func synchronizeEnergyRailStoreProjection(
         _ storeProjection: SimulatorPowerStoreFencedProjection
     ) {
@@ -433,30 +440,28 @@ struct DashboardSpeedInstrumentView: View {
             return
         }
 
+        let sourceAvailability = vehicle.simulatorPowerSourceAvailability
+
         switch storeProjection.currentness {
         case .live:
-            guard let observation = storeProjection.observation else {
+            guard sourceAvailability.currentness == .live,
+                  let storeObservation = storeProjection.observation,
+                  sourceAvailability.observation == storeObservation,
+                  runtime.synchronizeSource(sourceAvailability) else {
                 runtime.markUnavailable()
                 break
             }
-            _ = runtime.acceptLiveSource(
-                watts: observation.watts,
-                receiptSequenceNumber: observation.receiptSequenceNumber,
-                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
-                continuityGeneration: observation.continuityGeneration
-            )
 
         case .retained:
-            guard let observation = storeProjection.observation else {
+            guard let storeObservation = storeProjection.observation,
+                  let sourceObservation = sourceAvailability.observation,
+                  sourceObservation == storeObservation,
+                  sourceAvailability.currentness != .unavailable,
+                  runtime.synchronizeSource(sourceAvailability),
+                  runtime.retainCurrentSource() else {
                 runtime.markUnavailable()
                 break
             }
-            _ = runtime.retainSource(
-                watts: observation.watts,
-                receiptSequenceNumber: observation.receiptSequenceNumber,
-                receivedAtUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
-                continuityGeneration: observation.continuityGeneration
-            )
 
         case .unavailable:
             runtime.markUnavailable()
