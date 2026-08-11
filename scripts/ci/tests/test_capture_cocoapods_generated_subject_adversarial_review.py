@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -19,6 +20,7 @@ def load_module(path: Path, name: str):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load {path}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
