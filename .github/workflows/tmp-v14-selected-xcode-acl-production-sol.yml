@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
 
+# Construction-only trigger recovery. Delete this workflow after the durable installer edit lands.
 jobs:
   materialize:
     runs-on: ubuntu-latest
