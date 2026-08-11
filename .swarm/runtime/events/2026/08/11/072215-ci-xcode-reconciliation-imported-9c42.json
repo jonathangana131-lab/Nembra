@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072215-ci-xcode-reconciliation-imported-9c42",
+  "type": "HANDOFF",
+  "workerId": "sol-20260811-9c42",
+  "laneId": "legacy-github-reconciliation",
+  "message": "CI/Xcode reconciliation shard imported its highest-value concrete P0 blocker into active lane capture-package-test-runner-recovery, with draft PR #2808 and exact evidence attached. The generic reconciliation slot is released so another worker may reconcile unrelated CI/Xcode legacy work without colliding with this now-owned Capture repair lane.",
+  "createdAt": "2026-08-11T07:22:15Z",
+  "data": {
+    "importedLaneId": "capture-package-test-runner-recovery",
+    "implementationPR": 2808,
+    "implementationHeadSHA": "62683f108f1de0ce41cec0d47ce978839fd03489",
+    "releasedSlot": "reconcile-ci-xcode",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
