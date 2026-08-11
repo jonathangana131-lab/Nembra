@@ -9,7 +9,7 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T22:10:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:10:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:13:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-selected-xcode-acl-clean-sol-1402vo-20260811",
   "pr": null,
@@ -17,5 +17,5 @@
   "currentHeadSHA": "0807fc75a7edb51597d9e926c747cd5e6c400771",
   "takeoverFromWorkerId": "sol-20260811-1316sx",
   "takeoverReason": "Generation-4 lease expired after last heartbeat 2026-08-11T20:40:00Z (2700s lease) with no recovery heartbeat. V14 stale ownership is recoverable. Start a clean successor from construction-clean #3008 exact 0807fc75; never rewrite abandoned #2988 branch. #3028 test worker owns its two validation paths, so this implementation lane initially owns only installer + permanent provenance contract and will converge tests later rather than collide.",
-  "checkpoint": "Recover selected-Xcode ACL production closure from clean #3008. Reuse the exact strict-ACL transform preserved in #3028 construction history: reject any extended ACL on path anchor/components via /bin/ls -lde under closed env, keep root/nonwritable/type/symlink checks, and advance stale selected-device/xcodebuild provenance assertions. Preserve real Xcode non-regression requirement, selected-tool ACL leaf+ancestor attack, exact-head Field/Main/Xcode acceptance, and PHYSICAL NO-GO."
+  "checkpoint": "Recovered clean successor remains at #3008 exact parent while publishing the already-reviewed strict-ACL transform: reject extended ACL authority on anchor/components via /bin/ls -lde under closed env; preserve root/nonwritable/type/symlink checks; advance permanent selected-device/xcodebuild provenance assertions. No temporary contents-write workflow."
 }
