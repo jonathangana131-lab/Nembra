@@ -1,0 +1,103 @@
+name: tmp V14 Signed Origin Mac GID Keychain Diagnostic
+
+on:
+  push:
+    branches:
+      - research/v14-signed-origin-normalization-4f51fg
+    paths:
+      - .github/workflows/tmp-v14-signed-origin-mac-gid-keychain-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: xcode-27
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Compare normal and transient-GID security visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          uid="$(id -u)"
+          gid="$(id -g)"
+          user="$(id -un)"
+          home="$HOME"
+          tmp="${TMPDIR:-/tmp}"
+          eph=61000
+          while id -G | tr ' ' '\n' | grep -Fxq "$eph"; do eph=$((eph + 1)); done
+
+          set +e
+          normal_identity_output="$(/usr/bin/security find-identity -v -p codesigning 2>&1)"
+          normal_identity_status="$?"
+          normal_keychain_output="$(/usr/bin/security list-keychains -d user 2>&1)"
+          normal_keychain_status="$?"
+          set -e
+          normal_identity_count="$(printf '%s\n' "$normal_identity_output" | grep -c '".*"' || true)"
+          normal_keychain_count="$(printf '%s\n' "$normal_keychain_output" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
+          unset normal_identity_output normal_keychain_output
+
+          sudo -n /usr/bin/python3 - "$uid" "$gid" "$eph" "$user" "$home" "$tmp" \
+            "$normal_identity_status" "$normal_identity_count" "$normal_keychain_status" "$normal_keychain_count" <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          uid = int(sys.argv[1]); normal_gid = int(sys.argv[2]); eph = int(sys.argv[3])
+          user = sys.argv[4]; home = sys.argv[5]; tmp = sys.argv[6]
+          normal_identity_status = int(sys.argv[7]); normal_identity_count = int(sys.argv[8])
+          normal_keychain_status = int(sys.argv[9]); normal_keychain_count = int(sys.argv[10])
+          env = dict(os.environ)
+          env.update({'HOME': home, 'USER': user, 'LOGNAME': user, 'TMPDIR': tmp})
+
+          def run_as_transient(argv):
+              r, w = os.pipe()
+              pid = os.fork()
+              if pid == 0:
+                  try:
+                      os.close(r)
+                      os.setgroups([]); os.setgid(eph); os.setuid(uid)
+                      result = subprocess.run(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+                      lines = [line for line in result.stdout.splitlines() if line.strip()]
+                      quoted = sum(1 for line in lines if b'"' in line)
+                      os.write(w, json.dumps({'status': result.returncode, 'lines': len(lines), 'quoted_lines': quoted}).encode())
+                  except BaseException as exc:
+                      os.write(w, json.dumps({'error': type(exc).__name__ + ':' + str(exc)}).encode())
+                  finally:
+                      os._exit(0)
+              os.close(w)
+              data = os.read(r, 65536); os.close(r); os.waitpid(pid, 0)
+              return json.loads(data.decode())
+
+          identities = run_as_transient(['/usr/bin/security','find-identity','-v','-p','codesigning'])
+          keychains = run_as_transient(['/usr/bin/security','list-keychains','-d','user'])
+          if 'error' in identities or 'error' in keychains:
+              print(f'::error title=Transient GID security child failed::{identities!r} {keychains!r}', flush=True)
+              raise SystemExit(21)
+          print(
+              '::notice title=Transient GID keychain visibility::'
+              f'normal_identity_status={normal_identity_status} normal_identity_count={normal_identity_count} '
+              f'transient_identity_status={identities["status"]} transient_identity_quoted_lines={identities["quoted_lines"]} '
+              f'normal_keychain_status={normal_keychain_status} normal_keychain_lines={normal_keychain_count} '
+              f'transient_keychain_status={keychains["status"]} transient_keychain_lines={keychains["lines"]} '
+              f'uid={uid} normal_gid={normal_gid} ephemeral_gid={eph}',
+              flush=True,
+          )
+          if identities['status'] != normal_identity_status:
+              print('::error title=Transient GID identity status mismatch::security find-identity exit status changed', flush=True)
+              raise SystemExit(22)
+          if normal_identity_count > 0 and identities['quoted_lines'] < normal_identity_count:
+              print('::error title=Transient GID identity visibility regression::fewer signing identities are visible after GID drop', flush=True)
+              raise SystemExit(23)
+          if keychains['status'] != normal_keychain_status:
+              print('::error title=Transient GID keychain status mismatch::security list-keychains exit status changed', flush=True)
+              raise SystemExit(24)
+          if normal_keychain_count > 0 and keychains['lines'] < normal_keychain_count:
+              print('::error title=Transient GID keychain visibility regression::fewer user keychains are visible after GID drop', flush=True)
+              raise SystemExit(25)
+          PY
