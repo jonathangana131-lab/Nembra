@@ -104,7 +104,7 @@ private struct CaptureP0Root: View {
                 Text(
                     fieldBuildIsAuthoritative
                         ? (isAccessibilityLayout ? "Build ready" : "Build provenance ready")
-                        : (isAccessibilityLayout ? "Physical lock" : "Physical capture locked")
+                        : (isAccessibilityLayout ? "Capture locked" : "Physical capture locked")
                 )
                 .font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)
                 .dynamicTypeSize(...DynamicTypeSize.accessibility1)
@@ -379,8 +379,9 @@ private struct CaptureP0Root: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 8)
         } label: {
-            Label("Engineering details", systemImage: "wrench.and.screwdriver")
+            Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")
                 .font(.subheadline.weight(.semibold))
+                .accessibilityLabel("Engineering details")
         }
         .tint(Color.white.opacity(0.76))
         .padding(.top, isAccessibilityLayout ? 2 : 4)
@@ -3783,8 +3784,9 @@ private struct SecureLinkView: View {
             }
             .padding(.top, 12)
         } label: {
-            Label("Engineering details", systemImage: "wrench.and.screwdriver")
+            Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")
                 .font(.subheadline.weight(.semibold))
+                .accessibilityLabel("Engineering details")
         }
         .tint(.secondary)
         .padding(.horizontal, 2)

@@ -32,7 +32,7 @@ struct CaptureRootLargeTypeHierarchySourceTests {
         #expect(!hero.contains("Capture locked"))
         #expect(!hero.contains("NEMBRA CAPTURE"))
 
-        #expect(authority.contains("isAccessibilityLayout ? \"Physical lock\" : \"Physical capture locked\""))
+        #expect(authority.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
         #expect(authority.contains(".font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)"))
         #expect(authority.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
         #expect(authority.contains(".padding(.vertical, isAccessibilityLayout ? 2 : 10)"))
