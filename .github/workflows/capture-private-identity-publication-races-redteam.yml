@@ -10,6 +10,7 @@ on:
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
       - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
       - scripts/ci/tests/test_capture_private_identity_crash_residue.py
+      - scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
       - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
       - .github/workflows/capture-private-identity-publication-races-redteam.yml
   pull_request:
@@ -19,6 +20,7 @@ on:
       - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
       - scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
       - scripts/ci/tests/test_capture_private_identity_crash_residue.py
+      - scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
       - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
       - .github/workflows/capture-private-identity-publication-races-redteam.yml
   workflow_dispatch:
@@ -28,7 +30,7 @@ permissions:
 
 jobs:
   publication-custody:
-    name: Reject staging substitution, detached ancestry, crash residue, and final-name swaps
+    name: Reject publication races, crash-residue swaps, and final-name swaps
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -54,6 +56,7 @@ jobs:
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
           /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
 
@@ -65,4 +68,5 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_destination_ancestor_swap_current.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_recovery_unlink_race.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
