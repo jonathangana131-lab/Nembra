@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "kind": "lane",
+  "laneId": "capture-private-identity-custody",
+  "epic": "capture",
+  "title": "Capture private Tuya identity publication custody",
+  "objective": "Close credential-bearing private identity publication races while preserving admitted-root authority, exact writer digest fencing, secure cleanup, and package/field contracts before composition.",
+  "priority": 1,
+  "state": "BLOCKED_EXTERNAL",
+  "dependencies": [],
+  "blockers": [
+    {
+      "id": "legacy-pr-active",
+      "state": "ACTIVE",
+      "scope": "lane",
+      "reason": "Legacy publication-custody repair PR #2755 is still active; V15 must not duplicate its credential-publication writes.",
+      "pr": 2755,
+      "headSHA": "4f4249ab729e587a347a93f84e66917ccafc391f"
+    }
+  ],
+  "mode": "exclusive",
+  "allowedWriteAreas": [
+    "Scripts/provision_capture_tuya_identity.sh",
+    "Scripts/provision_capture_tuya_identity_writer.py",
+    ".gitignore"
+  ],
+  "adjacentWriteAreas": [
+    "scripts/ci/tests/test_capture_private_identity_publication_races.py",
+    "Packages/NembraBluetoothCapture/Tests",
+    ".github/workflows"
+  ],
+  "slots": [
+    {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
+    {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
+    {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":[]}
+  ],
+  "acceptance": {"independentReview": true},
+  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
+  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "legacy": {
+    "primaryPR": 2755,
+    "primaryHeadSHA": "4f4249ab729e587a347a93f84e66917ccafc391f",
+    "lineagePRs": [2719, 2734, 2755, 2767]
+  },
+  "tags": ["capture", "p0", "private-identity", "publication-custody", "legacy-import"]
+}
