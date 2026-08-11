@@ -346,10 +346,10 @@ PROFILE_ROOT_TEAM_IDENTIFIER="${PROFILE_TEAM_FIELDS#*$'\t'}"
 say "Final signed app and embedded provisioning profile authorize Sign in with Apple for one exact App ID and the selected team"
 SIGNED_APP_INSTALL_GUARD="$ROOT/Scripts/capture_signed_app_install_guard.py"
 [[ -f "$SIGNED_APP_INSTALL_GUARD" ]] || die "Signed-app install custody guard is missing from the accepted source."
-SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" --digest-only --app "$APP")" || \
-    die "Could not seal the exact signed Capture app install subject. Discard this candidate."
+SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" --verify-authority-only --app "$APP" --expected-build-identifier "$BUILD_LABEL" --expected-source-sha "$SOURCE_SHA" --expected-tuya-lock-sha256 "$TUYA_DEPENDENCY_LOCK_SHA256" --expected-procedure-id "$PROCEDURE_ID" --expected-bundle-id "$BUNDLE_ID" --expected-team-id "$TEAM_ID")" || \
+    die "Could not continuously verify and seal the exact signed Capture app install subject. Discard this candidate."
 [[ "$SIGNED_APP_SUBJECT_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Signed Capture app install-subject fingerprint is malformed. Discard this candidate."
-say "Final signed Capture app install subject sealed for devicectl custody"
+say "Final signed Capture app authority verified and sealed under continuous vnode custody"
 unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER BUILT_APP_ID_PREFIX PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_FIELDS PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE APP_ID_SUFFIX
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
