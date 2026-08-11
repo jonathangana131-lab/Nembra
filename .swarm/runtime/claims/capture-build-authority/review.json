@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-1402vo",
   "leaseId": "capture-build-review-1402vo-20260811-2130",
   "generation": 13,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:30:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:30:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:34:00Z",
+  "releasedAt": "2026-08-11T21:34:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3008,
   "sourceSHA": "6b0c974d432205593f2d1157de06544a01145489",
   "currentHeadSHA": "0807fc75a7edb51597d9e926c747cd5e6c400771",
-  "takeoverFromWorkerId": "sol-20260811-1402vo",
-  "takeoverReason": "Generation-12 was explicitly released after live-head reconciliation. New cleanup successor #3008 now has actual immutable PR head 0807fc75 (three empty ancestry-refresh commits beyond body-listed d1516c6; identical tree). Review exact 0807, not stale body SHA. Do not touch implementation/test-owned paths.",
-  "intent": "Independent exact-head review of #3008 construction-clean selected-Xcode provenance successor. Verify exact parent relationship, two-path tree delta, deletion of temporary contents-write publisher, stronger verified-Git private-runner provenance contract, no hidden production drift, exact-head CI state, and preserve selected-tool ACL blocker + PHYSICAL NO-GO."
+  "outcome": "SOURCE_SCOPE_ACCEPTED_EXACT_FIELD_PENDING_ACL_BLOCKER_UNCHANGED",
+  "reviewId": 4910867722,
+  "durableEvidence": "Live PR head is 0807fc75, not stale body-listed d1516c6. d1516c6->0807fc75 is ahead 3 with zero file changes, so tree is identical. Exact #2988 parent 6b0c974->0807fc75 changes exactly capture-field-build-provenance.yml (+7/-1) plus deletion of the 110-line temporary contents:write self-publisher. Provenance now requires verifier definition + exact private-runner relative path + verified-blob pipe and forbids direct git-show runner payload authority. Field run 31537323765 queued; Xcode 31537323716 skipped. Selected-tool POSIX ACL authority remains independent hard blocker. PHYSICAL NO-GO.",
+  "releaseReason": "Exact-head source/scope review published as 4910867722. Release slot while Field gate waits; a later reviewer can consume terminal exact 0807 evidence or review a moved ACL-repair descendant."
 }
