@@ -1,0 +1,23 @@
+name: Capture 2708 Generated Subject Red Team
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/capture_cocoapods_build_subject.py'
+      - 'scripts/ci/tests/test_capture_2708_generated_subject_adversarial.py'
+      - '.github/workflows/capture-2708-generated-subject-redteam.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-subject-redteam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile expected-red review harness
+        run: python3 -m py_compile scripts/ci/tests/test_capture_2708_generated_subject_adversarial.py
+      - name: Require coherent subject and bounded symlink targets
+        run: python3 scripts/ci/tests/test_capture_2708_generated_subject_adversarial.py
