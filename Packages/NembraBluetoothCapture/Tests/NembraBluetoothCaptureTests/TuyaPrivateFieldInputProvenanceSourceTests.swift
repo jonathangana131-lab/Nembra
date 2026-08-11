@@ -10,7 +10,7 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
         #expect(bootstrap.contains("capture_tuya_private_input_provenance.py"))
-        #expect(bootstrap.contains("\"$PROVENANCE_HELPER\" snapshot"))
+        #expect(bootstrap.contains("run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot"))
         #expect(bootstrap.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(bootstrap.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
         #expect(bootstrap.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))
@@ -38,12 +38,16 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
 
         let firstCall = try requiredIndex(of: "say \"Field procedure: $PROCEDURE_ID\"\nverify_private_tuya_inputs", in: installer)
         let build = try requiredIndex(of: "xcodebuild \\", in: installer)
-        let secondCall = try requiredIndex(of: "\nverify_private_tuya_inputs\n[[ \"$(git rev-parse HEAD", in: installer)
+        let secondCall = try requiredIndex(
+            of: "\nverify_private_tuya_inputs\nverify_accepted_checkout_source \"Accepted-source inputs changed while the field build was compiling. Discard this candidate and restart.\"",
+            in: installer
+        )
         let appReadback = try requiredIndex(of: "APP_INFO_PLIST=\"$APP/Info.plist\"", in: installer)
 
         #expect(firstCall < build)
         #expect(build < secondCall)
         #expect(secondCall < appReadback)
+        #expect(installer.contains("run_accepted_source_python \"$TUYA_PROVENANCE_HELPER_RELATIVE\" verify"))
         #expect(installer.contains("--record \"$TUYA_DEPENDENCY_PROVENANCE\""))
         #expect(installer.contains("Private Tuya SDK/app-identity inputs no longer match the bootstrap fingerprint record"))
     }
