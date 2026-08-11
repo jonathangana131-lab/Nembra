@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "233400-review-result-private-build-interface-1607ax",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "capture-private-identity-custody",
+  "message": "Fresh exact #3086@e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb follow-up: private convergence/publication/helper gates remain terminal SUCCESS; Main 31546075878, Field 31546075937, and Xcode/package 31546075785 remain QUEUED and are not acceptance. Independently re-proved the existing cross-lineage blocker on selected build integration #3088@31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4: installer run_accepted_source_bash executes verified accepted Git bytes via bash source /dev/stdin but contains no NEMBRA_ACCEPTED_SOURCE_ROOT consumer, so #3086's explicit physical source-root authority interface is not yet consumed. Earlier integration already documented this and correctly deferred installer writes while #3072 is red/actively reviewed. Review 4911618973 posted; no duplicate composition PR created. Future accepted build descendant must explicitly pass accepted ROOT, selectively consume private/build ingredients, and reset exact gates. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T23:34:00Z"
+}
