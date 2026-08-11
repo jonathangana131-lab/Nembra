@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084620-reconcile-remaining-3f7c-selected-build-and-visual-edges",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Reconciled two live Capture P0 closure edges. Build authority: #2840 exact f3b3c311... supersedes stale-#2805 vnode sibling #2837 by carrying the KQ_NOTE_ATTRIB repair onto clean #2825/#2838; focused private-review/CocoaPods/vnode gates are green, but Selective Graft is red and Field/Xcode non-terminal. Independent review also requires #2834 path-contract gate wiring/rejection and #2836 exact-Git guard-presence authority to be composed before build-authority closure. App-visible flagship: #2841 exact fbff1688... is the current Accessibility XXXL/public-root visual child from #2612; Field Provenance is green while visual/graft/Xcode are still active, and retained screenshots plus human critique remain required. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:46:20Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "selectedBuildPR": 2840,
+    "selectedBuildSHA": "f3b3c31150e29699172b208dab59c2d3724a5f62",
+    "requiredBuildDebts": [2834,2836],
+    "visualChildPR": 2841,
+    "visualChildSHA": "fbff1688e8da457cbf1f2702f90e41402bc7dbe3",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
