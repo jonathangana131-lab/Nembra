@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "073600-go54f-capture-2805-package-green-security-red",
+  "type": "CHECKPOINT",
+  "workerId": "sol-20260811-go54f",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Exact #2805 head 39a4e2f4d2d9dc9319d45a0415ca2c6a040a8525 now has terminal SUCCESS for Private Review Helper Execution Custody, Private Review Commitment, CocoaPods Build Subject Authority, Field Build Provenance, and Main Selective Graft. Selective-graft run 31469208387/job 93708601424 passed exact clean head, full Capture package (944 tests), standalone Capture build, integration-truth enforcement, and artifact upload. Xcode exact-head QA remains SKIPPED because draft. Security remains non-accepting: #2809 exact red-team proves four downstream helper execution-custody failures against unchanged production bytes; build_guard main() still has undefined stale private_review exception clause. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:36:00Z",
+  "data": {
+    "pr": 2805,
+    "exactHead": "39a4e2f4d2d9dc9319d45a0415ca2c6a040a8525",
+    "selectiveGraftRun": 31469208387,
+    "selectiveGraftJob": 93708601424,
+    "packageTests": 944,
+    "package": "SUCCESS",
+    "standaloneBuild": "SUCCESS",
+    "integrationTruth": "SUCCESS",
+    "xcodeExactHead": "SKIPPED_DRAFT",
+    "securityBlocker": "PR_2809_DOWNSTREAM_HELPER_EXECUTION_CUSTODY",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
