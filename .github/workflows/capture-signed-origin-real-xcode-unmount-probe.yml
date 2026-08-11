@@ -3,14 +3,16 @@ name: Capture Signed Origin Real Xcode Dedicated UID Freeze
 on:
   push:
     branches:
-      - validation/v14-real-xcode-dedicated-uid-freeze-sol-20260811
+      - validation/v14-real-xcode-field-groups-overflow-diagnostics-sol-1607k9
     paths:
       - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_effective_groups.py
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift
       - .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_effective_groups.py
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift
       - .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml
   workflow_dispatch:
@@ -38,7 +40,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact red parent and three-path validation delta
+      - name: Bind exact red parent and four-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -53,6 +55,7 @@ jobs:
           printf '%s\n' \
             .github/workflows/capture-signed-origin-real-xcode-unmount-probe.yml \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_effective_groups.py \
             scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
           diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
@@ -65,15 +68,25 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -m py_compile \
             scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
-            scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'create_local_build_identity' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'structured_credentials(build_uid, build_gid, [])' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'if build_uid == field_uid or build_gid in field_groups:' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'os.chmod(mountpoint, 0o700)' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'hdiutil_detach(device)' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'readonly=True' scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py
-          grep -Fq 'Capture Trusted Xcode 27 Exact-Head QA' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift
-          grep -Fq 'NEMBRA_REAL_XCODE_DEDICATED_UID_JSON=' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift
+            scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_effective_groups.py
+          base='scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py'
+          wrapper='scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_effective_groups.py'
+          bridge='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests.swift'
+          grep -Fq 'create_local_build_identity' "$base"
+          grep -Fq 'structured_credentials(build_uid, build_gid, [])' "$base"
+          grep -Fq 'if build_uid == field_uid or build_gid in field_groups:' "$base"
+          grep -Fq 'hdiutil_detach(device)' "$base"
+          grep -Fq 'readonly=True' "$base"
+          grep -Fq 'field_effective_groups = canonical_group_vector(list(os.getgroups()))' "$wrapper"
+          grep -Fq 'directory_groups = sorted(set(os.getgrouplist(account.pw_name, field_gid)))' "$wrapper"
+          grep -Fq 'set(effective_authority).issubset(set(directory_groups))' "$wrapper"
+          grep -Fq 'requested == directory_groups' "$wrapper"
+          grep -Fq 'field_extra_groups = [group for group in field_effective_groups if group != field_gid]' "$wrapper"
+          grep -Fq 'NEMBRA_REAL_XCODE_DEDICATED_UID_EFFECTIVE_GROUPS_JSON=' "$wrapper"
+          grep -Fq 'Capture Trusted Xcode 27 Exact-Head QA' "$bridge"
+          grep -Fq 'test_capture_signed_app_real_xcode_dedicated_uid_effective_groups.py' "$bridge"
+          grep -Fq 'NEMBRA_REAL_XCODE_DEDICATED_UID_EFFECTIVE_GROUPS_JSON=' "$bridge"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Run real-Xcode dedicated UID freeze oracle
@@ -82,55 +95,17 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          source_file='scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py'
-          backup="$RUNNER_TEMP/nembra-real-xcode-dedicated-uid.original.py"
           output="$RUNNER_TEMP/nembra-real-xcode-dedicated-uid-output.txt"
-          cp "$source_file" "$backup"
-          restore_source() { cp "$backup" "$source_file"; }
-          trap restore_source EXIT
-
-          # Diagnostics-only bypass for the exact hosted-runner fixture failure at
-          # the field-user negative control. The committed oracle is unchanged.
-          # The source has already proved that the fresh build GID is absent from
-          # the field account's complete membership set and that the APFS mount
-          # root is build-owned mode 0700; unrelated supplementary groups cannot
-          # grant traversal through that synthetic boundary. This temporary run
-          # asks only what the *next* architecture outcome is after the Python
-          # setgroups vector-overflow fixture is removed. A green result here is
-          # not acceptance of the permanent oracle.
-          /usr/bin/python3 -I - "$source_file" <<'PY'
-          from pathlib import Path
-          import sys
-
-          path = Path(sys.argv[1])
-          source = path.read_text(encoding="utf-8")
-          needle = "**structured_credentials(field_uid, field_gid, field_groups),"
-          replacement = "**structured_credentials(field_uid, field_gid, []),"
-          if source.count(needle) != 1:
-              raise SystemExit("field negative-control credential site is missing or ambiguous")
-          required = (
-              "if build_uid == field_uid or build_gid in field_groups:",
-              "os.chown(mountpoint, build_uid, build_gid)",
-              "os.chmod(mountpoint, 0o700)",
-          )
-          for marker in required:
-              if marker not in source:
-                  raise SystemExit(f"diagnostic prerequisite missing: {marker}")
-          path.write_text(source.replace(needle, replacement), encoding="utf-8")
-          PY
-          /usr/bin/python3 -m py_compile "$source_file"
-          printf '%s\n' 'NEMBRA_DEDICATED_UID_GROUP_OVERFLOW_DIAGNOSTIC=1'
-
           set +e
-          /usr/bin/python3 -B -I "$source_file" >"$output" 2>&1
+          /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_effective_groups.py \
+            >"$output" 2>&1
           rc=$?
           set -e
           printf '%s\n' "$rc" > "$RUNNER_TEMP/nembra-real-xcode-dedicated-uid-rc.txt"
-          restore_source
-          trap - EXIT
           cat "$output"
           if [[ "$rc" != 0 ]]; then
-            diagnostic="$(tail -n 160 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            diagnostic="$(tail -n 180 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
             printf '::error title=Dedicated UID real Xcode freeze oracle red::%s\n' "$diagnostic"
           fi
           exit "$rc"
@@ -157,17 +132,17 @@ jobs:
           except ValueError:
               rc = None
           record = {
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "authority": "capture-signed-output-dedicated-uid-validation-only",
               "exactValidationHead": head.lower(),
               "exactRedParent": parent.lower(),
               "probeReturnCode": rc,
               "successEvidencePresent": "NEMBRA_REAL_XCODE_DEDICATED_UID_JSON=" in output,
+              "effectiveGroupEvidencePresent": "NEMBRA_REAL_XCODE_DEDICATED_UID_EFFECTIVE_GROUPS_JSON=" in output,
               "redEvidencePresent": "NEMBRA_REAL_XCODE_DEDICATED_UID_ERROR=" in output,
               "probeOutputSHA256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
               "productionAcceptanceClaimed": False,
               "physicalAuthorityCreated": False,
-              "diagnosticFieldGroupsBypass": True,
           }
           Path(manifest).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
@@ -192,5 +167,6 @@ jobs:
           test "$PROBE_OUTCOME" = success
           test "$(cat "$RUNNER_TEMP/nembra-real-xcode-dedicated-uid-rc.txt")" = 0
           grep -q '^NEMBRA_REAL_XCODE_DEDICATED_UID_JSON=' "$RUNNER_TEMP/nembra-real-xcode-dedicated-uid-output.txt"
+          grep -q '^NEMBRA_REAL_XCODE_DEDICATED_UID_EFFECTIVE_GROUPS_JSON=' "$RUNNER_TEMP/nembra-real-xcode-dedicated-uid-output.txt"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
