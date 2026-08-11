@@ -98,6 +98,11 @@ class CaptureFieldInstallerGitAuthorityRedTeamTests(unittest.TestCase):
             self.assertIn(marker, source, f"missing field Git-authority marker: {marker}")
         self.assertGreaterEqual(source.count("verify_accepted_checkout_source"), 4)
 
+    def test_untracked_real_directory_is_rejected_outside_field_input_roots(self) -> None:
+        source = INSTALLER.read_text(encoding="utf-8")
+        directory_rejection = '''        if relative not in tracked_directories:\n            directories.remove(name)\n            raise SystemExit(\n                "untracked accepted-source path outside field-input allowlist: " + relative\n            )'''
+        self.assertIn(directory_rejection, source)
+
     def test_physical_tool_execution_ignores_caller_path(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
         self.assertTrue(source.startswith("#!/bin/bash -p\n"))
