@@ -1,0 +1,64 @@
+name: TEMP Capture Field Guard Contract Fix
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/tmp-capture-field-guard-contract-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Repair stale field provenance source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '''          guard_line="$(grep -nF '/usr/bin/python3 -I \"$TUYA_BUILD_WINDOW_GUARD\" \\' "$installer" | sed -n '1s/:.*//p')"
+          build_line="$(grep -nF -- '-- xcodebuild \\' "$installer" | sed -n '1s/:.*//p')"
+          second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
+          test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
+'''
+          new = '''          guard_presence_line="$(grep -nF 'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file -e \"$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE\"' "$installer" | sed -n '1s/:.*//p')"
+          guard_line="$(grep -nF 'run_accepted_source_python \"$TUYA_BUILD_WINDOW_GUARD_RELATIVE\" \\' "$installer" | sed -n '1s/:.*//p')"
+          build_line="$(grep -nF -- '-- xcodebuild \\' "$installer" | sed -n '1s/:.*//p')"
+          second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
+          test -n "$guard_presence_line" && test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
+          if grep -Fq '"$TUYA_BUILD_WINDOW_GUARD"' "$installer"; then
+            echo 'ERROR: field installer must not resurrect the removed mutable build-guard pathname variable.' >&2
+            exit 1
+          fi
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one stale guard contract, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          grep -Fq 'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE" \' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'git cat-file -e "$SOURCE_SHA:$TUYA_BUILD_WINDOW_GUARD_RELATIVE"' .github/workflows/capture-field-build-provenance.yml
+          ! grep -Fq '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \' .github/workflows/capture-field-build-provenance.yml
+      - name: Publish acceptance-contract repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-capture-field-guard-contract-fix.yml
+          git add .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'Capture: align field provenance with accepted-source guard'
+          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
