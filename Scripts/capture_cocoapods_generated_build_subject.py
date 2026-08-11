@@ -280,8 +280,129 @@ def _regular_fingerprint(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _tree_generation_witness(
+    root: Path,
+    *,
+    repository_root: Path,
+) -> tuple[tuple[object, ...], ...]:
+    """Capture pathname/metadata authority without consuming file contents.
+
+    Per-tree content hashing already proves stable reads locally. This witness is
+    intentionally cheaper and spans the *whole* lock + Pods + workspace call so
+    a path that changes after its local tree pass cannot become part of a hybrid
+    subject. ctime/inode/membership are retained, so same-size rewrites and path
+    replacement are rejected by the final joint comparison.
+    """
+
+    try:
+        root_metadata = root.lstat()
+    except OSError as error:
+        raise GeneratedBuildSubjectError(
+            f"required generated build directory is unavailable: {root}"
+        ) from error
+    if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
+        raise GeneratedBuildSubjectError(
+            f"required generated build root is not a real directory: {root}"
+        )
+
+    witness: list[tuple[object, ...]] = [
+        ("D", ".", _identity(root_metadata), _members(root))
+    ]
+    for current_text, directory_names, file_names in os.walk(
+        root, topdown=True, followlinks=False
+    ):
+        current = Path(current_text)
+        if current != root:
+            current_metadata = current.lstat()
+            if stat.S_ISLNK(current_metadata.st_mode) or not stat.S_ISDIR(current_metadata.st_mode):
+                raise GeneratedBuildSubjectError(
+                    f"generated build directory changed kind while witnessing: {current}"
+                )
+            witness.append(
+                (
+                    "D",
+                    current.relative_to(root).as_posix(),
+                    _identity(current_metadata),
+                    _members(current),
+                )
+            )
+
+        kept_directories: list[str] = []
+        for name in sorted(directory_names, key=os.fsencode):
+            candidate = current / name
+            metadata = candidate.lstat()
+            relative = candidate.relative_to(root).as_posix()
+            if stat.S_ISLNK(metadata.st_mode):
+                target = _authorized_symlink_target(
+                    candidate,
+                    generated_root=root,
+                    repository_root=repository_root,
+                )
+                witness.append(("L", relative, _identity(metadata), target))
+            elif stat.S_ISDIR(metadata.st_mode):
+                kept_directories.append(name)
+            else:
+                raise GeneratedBuildSubjectError(
+                    f"unsupported generated directory entry while witnessing: {candidate}"
+                )
+        directory_names[:] = kept_directories
+
+        for name in sorted(file_names, key=os.fsencode):
+            candidate = current / name
+            metadata = candidate.lstat()
+            relative = candidate.relative_to(root).as_posix()
+            if stat.S_ISLNK(metadata.st_mode):
+                target = _authorized_symlink_target(
+                    candidate,
+                    generated_root=root,
+                    repository_root=repository_root,
+                )
+                witness.append(("L", relative, _identity(metadata), target))
+            elif stat.S_ISREG(metadata.st_mode):
+                witness.append(("F", relative, _identity(metadata)))
+            else:
+                raise GeneratedBuildSubjectError(
+                    f"unsupported generated file entry while witnessing: {candidate}"
+                )
+
+    return tuple(sorted(witness, key=lambda item: (str(item[1]), str(item[0]))))
+
+
+def _generation_witness(
+    *,
+    lockfile: Path,
+    pods: Path,
+    workspace: Path,
+) -> tuple[object, ...]:
+    repository_root = lockfile.parent
+    try:
+        lock_metadata = lockfile.lstat()
+    except OSError as error:
+        raise GeneratedBuildSubjectError(
+            f"required generated build file is unavailable: {lockfile}"
+        ) from error
+    if stat.S_ISLNK(lock_metadata.st_mode) or not stat.S_ISREG(lock_metadata.st_mode):
+        raise GeneratedBuildSubjectError(
+            f"required generated build file is not a regular file: {lockfile}"
+        )
+    return (
+        ("LOCK", _identity(lock_metadata)),
+        ("PODS", _tree_generation_witness(pods, repository_root=repository_root)),
+        (
+            "WORKSPACE",
+            _tree_generation_witness(workspace, repository_root=repository_root),
+        ),
+    )
+
+
 def build_subject(*, lockfile: Path, pods: Path, workspace: Path) -> str:
     repository_root = lockfile.parent
+    initial_generation = _generation_witness(
+        lockfile=lockfile,
+        pods=pods,
+        workspace=workspace,
+    )
+
     digest = hashlib.sha256()
     _feed(digest, SCHEMA)
     _feed(digest, bytes.fromhex(_regular_fingerprint(lockfile)))
@@ -293,6 +414,16 @@ def build_subject(*, lockfile: Path, pods: Path, workspace: Path) -> str:
         digest,
         bytes.fromhex(_tree_fingerprint(workspace, repository_root=repository_root)),
     )
+
+    final_generation = _generation_witness(
+        lockfile=lockfile,
+        pods=pods,
+        workspace=workspace,
+    )
+    if final_generation != initial_generation:
+        raise GeneratedBuildSubjectError(
+            "generated CocoaPods build inputs changed across the combined lock/Pods/workspace fingerprint"
+        )
     return digest.hexdigest()
 
 
