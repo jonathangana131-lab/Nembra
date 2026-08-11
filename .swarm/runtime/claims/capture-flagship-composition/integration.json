@@ -7,15 +7,19 @@
   "workerId": "sol-20260811-a91c7e",
   "leaseId": "capture-flagship-integration-a91c7e-20260811-2049",
   "generation": 3,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:49:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:49:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:50:10Z",
+  "releasedAt": "2026-08-11T20:50:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2979,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
   "takeoverFromWorkerId": "sol-20260811-9a31r",
-  "takeoverReason": "Generation-2 integration released after canonicalizing #2940 and closing legacy #2612. Current #2979 successor ce9e2bac has consumed expected-red #2990's test as byte-identical blob e6a18682 and added the semantic repair. Safely converge PR topology by marking #2990 superseded/consumed and closing it unmerged; do not promote #2979 until fresh exact gates finish and do not touch security dependency branches. PHYSICAL NO-GO.",
-  "intent": "Close consumed test-only #2990 with durable exact adoption evidence, preserve its branch/history, then release integration and refresh #2979 gates."
+  "outcome": "EXPECTED_RED_DIAGNOSTIC_CONSUMED_AND_CLOSED",
+  "consumedPR": 2990,
+  "consumedHeadSHA": "96ef1bc5a7ed31e0c32de91d0280870bce8ccd9f",
+  "closureReviewId": 4910594585,
+  "releaseReason": "#2979 exact ce9e2bac consumes #2990's only regression file as the exact same Git blob e6a1868203de8167a4170ff2c151edddc3a42464 and supplies the intended explicit Text(verbatim:) authority repair. #2990 was durably commented with adoption evidence and closed unmerged; its branch/evidence history remains untouched. #2979 is not promoted until fresh exact Xcode/Field/Main/Standalone Visual gates and pixel review finish. Security dependencies and physical truth remain separate. PHYSICAL NO-GO."
 }
