@@ -1,0 +1,45 @@
+name: Capture Final GO Parent Directory Custody QA
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/es80_authenticated_stationary_private_review_final_go.py'
+      - 'scripts/ci/tests/test_es80_final_go_parent_directory_read_custody.py'
+      - '.github/workflows/capture-final-go-parent-directory-custody-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parent-directory-custody:
+    name: Reject parent namespace replacement
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind QA to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile current Final-GO and QA
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_parent_directory_read_custody.py
+
+      - name: Require held parent-directory custody
+        run: python3 scripts/ci/tests/test_es80_final_go_parent_directory_read_custody.py
+
+      - name: Check diff hygiene
+        run: git diff --check HEAD^ HEAD
