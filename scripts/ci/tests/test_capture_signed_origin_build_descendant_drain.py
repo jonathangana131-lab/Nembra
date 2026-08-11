@@ -26,11 +26,21 @@ GUARD = REPOSITORY / "Scripts/capture_tuya_private_input_build_guard.py"
 
 
 def load_guard():
-    spec = importlib.util.spec_from_file_location("capture_tuya_private_input_build_guard", GUARD)
+    module_name = "capture_tuya_private_input_build_guard_descendant_diagnostic"
+    spec = importlib.util.spec_from_file_location(module_name, GUARD)
     if spec is None or spec.loader is None:
         raise RuntimeError("could not load Capture build guard")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # The guard contains dataclasses with postponed annotations. dataclasses resolves
+    # those through sys.modules while the class decorator runs, so register the
+    # module before exec_module instead of letting a harness-only import failure
+    # masquerade as process-lifetime evidence.
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
     return module
 
 
