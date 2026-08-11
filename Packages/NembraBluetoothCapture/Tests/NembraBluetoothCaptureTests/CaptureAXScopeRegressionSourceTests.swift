@@ -53,6 +53,19 @@ struct CaptureAXScopeRegressionSourceTests {
         #expect(semanticLabel.lowerBound < action.lowerBound)
     }
 
+    @Test("AX sighted compaction preserves full VoiceOver authority identity")
+    func accessibilityCompactCopyKeepsFullSemantics() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let strings = try readRepositoryFile("NembraApp/Resources/Localizable.strings")
+
+        #expect(strings.contains("\"Capture locked\" = \"Locked\";"))
+        #expect(strings.contains("\"Tuya user code\" = \"Tuya code\";"))
+        #expect(app.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
+        #expect(app.contains(".accessibilityLabel(\"Tuya Smart user code\")"))
+        #expect(!strings.contains("\"Physical capture locked\" ="))
+        #expect(!strings.contains("\"Tuya Smart user code\" ="))
+    }
+
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
