@@ -1,0 +1,51 @@
+name: TEMP V14 sealed installer execution subject v2
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-sealed-installer-replace-blind-sol
+    paths:
+      - .github/workflows/tmp-v14-seal-installer-execution-subject-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 4
+      - name: Correct fixture assertion and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/ci/tmp_v14_seal_installer_execution_subject.py')
+          s=p.read_text()
+          old='    \'                f"[[ \\\\\\\"${{1:-}}\\\\\\\" == {source!r} ]] || exit 51\\\\n"\\n\','
+          new='    \'                "[[ \\\\\\\"${1:-}\\\\\\\" =~ ^[0-9a-f]{40}$ ]] || exit 51\\\\n"\\n\','
+          if s.count(old)!=1:
+              raise SystemExit(f'fixture source assertion seam count={s.count(old)}')
+          p.write_text(s.replace(old,new,1))
+          PY
+          python3 -B scripts/ci/tmp_v14_seal_installer_execution_subject.py
+      - name: Remove helpers and checkpoint clean product commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/tmp-v14-seal-installer-execution-subject.yml \
+            .github/workflows/tmp-v14-seal-installer-execution-subject-v2.yml \
+            scripts/ci/tmp_v14_seal_installer_execution_subject.py
+          expected=$'scripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py'
+          actual="$(git diff --name-only a1f5a90414b5ca26bdd6bebb485189b6bcbe227f | sort)"
+          test "$actual" = "$expected"
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): seal accepted installer execution subject"
+          git push origin HEAD:repair/v14-final-go-sealed-installer-replace-blind-sol
