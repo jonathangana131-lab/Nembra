@@ -1,0 +1,66 @@
+name: TEMP Final GO Lock Main Env Convergence
+
+on:
+  push:
+    branches:
+      - recovery/v14-final-go-lock-main-env-convergence-sol
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: recovery/v14-final-go-lock-main-env-convergence-sol
+          fetch-depth: 0
+      - name: Compose reviewed lock and exact-main repairs over current control plane
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          git fetch origin \
+            449db5b23de1bc4eab07713c2fe41c902e23cafe \
+            d2af7dac5600e176f5bf097ff2ec61f5e2ede4aa \
+            79123d9faf0bd1a5610c1f663c876981f1ce60af
+
+          git diff --binary 449db5b23de1bc4eab07713c2fe41c902e23cafe d2af7dac5600e176f5bf097ff2ec61f5e2ede4aa -- \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            > /tmp/tuya-lock.patch
+          git apply --3way --index /tmp/tuya-lock.patch
+
+          git diff --binary d2af7dac5600e176f5bf097ff2ec61f5e2ede4aa 79123d9faf0bd1a5610c1f663c876981f1ce60af -- \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            > /tmp/current-main.patch
+          git apply --3way --index /tmp/current-main.patch
+
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in (
+              'scripts/ci/es80_authenticated_stationary_final_go.py',
+              'scripts/ci/tests/test_es80_authenticated_stationary_final_go.py',
+              'scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py',
+              'scripts/ci/es80_authenticated_stationary_signed_artifact.py',
+              'scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py',
+          ):
+              compile(Path(path).read_text(), path, 'exec')
+          PY
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+          python3 -B scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          git diff --check
+
+          rm .github/workflows/tmp-final-go-lock-main-env-convergence.yml
+          git add -A
+          test "$(git diff --cached --name-only | sort)" = $'scripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go.py'
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(capture): converge Final GO lock main and environment custody'
+          git push origin HEAD:recovery/v14-final-go-lock-main-env-convergence-sol
