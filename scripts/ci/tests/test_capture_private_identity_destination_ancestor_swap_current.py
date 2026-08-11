@@ -23,7 +23,7 @@ def load_writer():
 
 
 class PrivateIdentityDestinationAncestorSwapTests(unittest.TestCase):
-    def test_rejected_current_destination_ancestor_swap_does_not_leave_attacker_payload(self) -> None:
+    def test_rejected_current_destination_ancestor_swap_preserves_replacement_and_sanitizes_held_inode(self) -> None:
         writer = load_writer()
         payload = b"accepted-private-identity-payload"
         attacker_payload = b"Z" * len(payload)
@@ -80,21 +80,28 @@ class PrivateIdentityDestinationAncestorSwapTests(unittest.TestCase):
                 os.close(checkout_fd)
 
             canonical = checkout / "private" / "identity.swift"
-            canonical_bytes = canonical.read_bytes() if canonical.is_file() else None
             detached = checkout / "private.detached" / "identity.swift"
 
             self.assertTrue(attacked, "diagnostic never reached the post-publication final-open seam")
             self.assertTrue(rejected, "writer reported success after destination ancestry was replaced")
-            self.assertNotEqual(
-                canonical_bytes,
+            self.assertTrue(
+                canonical.is_file(),
+                "failure cleanup deleted the attacker replacement in the substituted canonical ancestry",
+            )
+            self.assertEqual(
+                canonical.read_bytes(),
                 attacker_payload,
-                "rejected publication left attacker bytes at the canonical credential destination",
+                "failure cleanup mutated bytes outside the exact held private inode authority",
             )
             self.assertTrue(
                 detached.is_file(),
-                "diagnostic did not preserve the originally published accepted inode in detached ancestry",
+                "diagnostic did not preserve the originally published held inode in detached ancestry",
             )
-            self.assertEqual(detached.read_bytes(), payload)
+            self.assertEqual(
+                detached.read_bytes(),
+                b"",
+                "credential-bearing bytes survived failure sanitation on the exact held published inode",
+            )
 
 
 if __name__ == "__main__":
