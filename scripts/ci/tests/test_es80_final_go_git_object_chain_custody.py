@@ -95,14 +95,15 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
     def test_forged_commit_name_cannot_retarget_tree_authority(self):
         with tempfile.TemporaryDirectory(prefix="nembra-final-go-commit-chain-") as directory:
             repo = Path(directory) / "repo"
-            accepted_commit, _, accepted_blob, attacker_commit, _, attacker_payload = self._repository(repo)
+            accepted_commit, _, accepted_blob, attacker_commit, _, _ = self._repository(repo)
             baseline = MODULE._tree_entries(repo, accepted_commit)
             self.assertEqual(baseline[TARGET][1], accepted_blob)
             forged = self._forge_alias(repo, source_oid=attacker_commit, alias_oid=accepted_commit)
             substituted = self._git(repo, "cat-file", "commit", accepted_commit)
             self.assertNotEqual(object_oid("commit", substituted), accepted_commit)
-            ambient = self._git(repo, "ls-tree", "-r", "-z", accepted_commit)
-            self.assertIn(object_oid("blob", attacker_payload).encode("ascii"), ambient)
+            # Stock Git already rejects higher-level tree traversal through this
+            # corrupt alias with hash mismatch. The authority contract under test
+            # is that Nembra independently rejects the substituted object bytes.
             with self.assertRaises(RuntimeError):
                 MODULE._tree_entries(repo, accepted_commit)
             verify = subprocess.run([GIT, "verify-pack", "-v", str(forged)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -111,12 +112,13 @@ class FinalGoGitObjectChainCustodyTests(unittest.TestCase):
     def test_forged_tree_name_cannot_retarget_leaf_authority(self):
         with tempfile.TemporaryDirectory(prefix="nembra-final-go-tree-chain-") as directory:
             repo = Path(directory) / "repo"
-            accepted_commit, accepted_tree, accepted_blob, _, attacker_tree, attacker_payload = self._repository(repo)
+            accepted_commit, accepted_tree, accepted_blob, _, attacker_tree, _ = self._repository(repo)
             self.assertEqual(MODULE._tree_entries(repo, accepted_commit)[TARGET][1], accepted_blob)
             forged = self._forge_alias(repo, source_oid=attacker_tree, alias_oid=accepted_tree)
             substituted = self._git(repo, "cat-file", "tree", accepted_tree)
             self.assertNotEqual(object_oid("tree", substituted), accepted_tree)
-            self.assertIn(object_oid("blob", attacker_payload).encode("ascii"), self._git(repo, "ls-tree", accepted_tree))
+            # Do not require ambient ls-tree to walk a corrupt pack-index alias;
+            # current Git fails closed before returning attacker path authority.
             with self.assertRaises(RuntimeError):
                 MODULE._tree_entries(repo, accepted_commit)
             verify = subprocess.run([GIT, "verify-pack", "-v", str(forged)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
