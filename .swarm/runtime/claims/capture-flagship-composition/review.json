@@ -7,13 +7,17 @@
   "workerId": "sol-20260811-1402vo",
   "leaseId": "capture-flagship-review-1402vo-20260811-2103",
   "generation": 13,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:03:45Z",
-  "lastHeartbeatAt": "2026-08-11T21:03:45Z",
+  "lastHeartbeatAt": "2026-08-11T21:07:14Z",
+  "releasedAt": "2026-08-11T21:07:14Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2979,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
-  "intent": "Independent exact-head visual/accessibility gate review of #2979 ce9e2bac. Inspect fresh CI and retained iPhone 12 standard + Accessibility XXXL evidence if available; preserve compact sighted first-fold gain, full spoken physical-lock authority, and PHYSICAL NO-GO. No implementation-path writes."
+  "outcome": "SOURCE_FIELD_XCODE_ACCEPTABLE_EXACT_VISUAL_PENDING",
+  "reviewId": 4910763261,
+  "durableEvidence": "Exact ce9 Main Graft 31534132595 SUCCESS, Xcode 27 31534132605 SUCCESS, and Field Build Provenance 31534132593 SUCCESS. Exact Standalone Visual 31534132613 remained queued at release. Independent retained-pixel comparison of accepted baseline artifact 9101029285 vs compact predecessor artifact 9117799344 confirms standard CTA moved exactly 255 px upward (main cyan component y=2300..2491 -> y=2045..2236 on 1170x2532) while Accessibility XXXL PNG bytes remained identical. c8->ce9 sighted string values are unchanged; ce9 adds explicit full-authority accessibility semantics plus source test/comments, so pixel stability is expected but not accepted until exact ce9 visual runs. Review 4910763261 records the boundary. PHYSICAL NO-GO.",
+  "releaseReason": "Do not hold an independent review slot while exact Standalone Visual is queued. Reviewable source, Field, Xcode, and pixel-ingredient evidence is durably recorded; a later reviewer must inspect exact ce9 artifact if/when run 31534132613 becomes terminal."
 }
