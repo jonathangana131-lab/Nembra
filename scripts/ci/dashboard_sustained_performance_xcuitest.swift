@@ -25,35 +25,28 @@ final class DashboardSustainedPerformanceUITests: XCTestCase {
             "Sustained performance evidence is valid only when the real landscape Cockpit is mounted."
         )
 
-        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
         XCTAssertTrue(
-            energyRail.waitForExistence(timeout: 2),
+            app.descendants(matching: .any)["dashboard.energy-rail"].waitForExistence(timeout: 2),
             "The sustained performance run must exercise the real mounted Energy Rail."
         )
-        let speed = app.descendants(matching: .any)["dashboard.speed"]
         XCTAssertTrue(
-            speed.waitForExistence(timeout: 2),
+            app.descendants(matching: .any)["dashboard.speed"].waitForExistence(timeout: 2),
             "The sustained performance run must exercise the real mounted speed instrument."
         )
 
-        let initialPowerValue = energyRail.value as? String ?? ""
-        let initialSpeedValue = speed.value as? String ?? ""
-        let powerMoved = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value != %@", initialPowerValue),
-            object: energyRail
-        )
-        let speedMoved = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value != %@", initialSpeedValue),
-            object: speed
-        )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [powerMoved, speedMoved], timeout: 2),
-            .completed,
-            "Measurement must begin only after fresh Simulator-owned speed/power receipts are actively retargeting both instruments."
-        )
-
-        let preMeasurePowerValue = energyRail.value as? String ?? ""
-        let preMeasureSpeedValue = speed.value as? String ?? ""
+        let initialPowerValue = freshSemanticValue(identifier: "dashboard.energy-rail", in: app)
+        let initialSpeedValue = freshSemanticValue(identifier: "dashboard.speed", in: app)
+        guard let preMeasureValues = waitForBothSemanticValuesToMove(
+            in: app,
+            powerFrom: initialPowerValue,
+            speedFrom: initialSpeedValue,
+            timeout: 2
+        ) else {
+            XCTFail(
+                "Measurement must begin only after fresh Simulator-owned speed/power receipts are actively retargeting both instruments."
+            )
+            return
+        }
 
         let options = XCTMeasureOptions()
         // The source-owned stress driver remains alive for the fixture lifetime,
@@ -71,24 +64,30 @@ final class DashboardSustainedPerformanceUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 3)
         }
 
-        XCTAssertTrue(cockpit.exists, "The real cockpit must remain mounted for the complete measurement window.")
-        XCTAssertTrue(energyRail.exists, "The Energy Rail must remain mounted for the complete measurement window.")
-        XCTAssertTrue(speed.exists, "The speed instrument must remain mounted for the complete measurement window.")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.cockpit"].exists,
+            "The real cockpit must remain mounted for the complete measurement window."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.energy-rail"].exists,
+            "The Energy Rail must remain mounted for the complete measurement window."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dashboard.speed"].exists,
+            "The speed instrument must remain mounted for the complete measurement window."
+        )
 
         // Prove the source did not terminate at or before the measured window.
-        // We intentionally wait for a *new* semantic source value after metrics stop,
-        // instead of accepting a screenshot of a settled final fixture value.
-        let postMeasurePowerMoved = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value != %@", preMeasurePowerValue),
-            object: energyRail
-        )
-        let postMeasureSpeedMoved = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value != %@", preMeasureSpeedValue),
-            object: speed
-        )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [postMeasurePowerMoved, postMeasureSpeedMoved], timeout: 1.5),
-            .completed,
+        // Re-query the semantic elements on every observation. SwiftUI may replace
+        // the accessibility snapshot while the accepted Simulator-owned source is
+        // moving, so a pre-measure XCUIElement handle is not itself fresh evidence.
+        XCTAssertNotNil(
+            waitForBothSemanticValuesToMove(
+                in: app,
+                powerFrom: preMeasureValues.power,
+                speedFrom: preMeasureValues.speed,
+                timeout: 1.5
+            ),
             "The sustained source must still be actively retargeting both semantic instruments after the metric window."
         )
 
@@ -96,5 +95,48 @@ final class DashboardSustainedPerformanceUITests: XCTestCase {
         attachment.name = "Dashboard Sustained Stress Landscape"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    @MainActor
+    private func freshSemanticValue(identifier: String, in app: XCUIApplication) -> String {
+        let element = app.descendants(matching: .any)[identifier]
+        guard element.exists else { return "" }
+        return element.value as? String ?? ""
+    }
+
+    @MainActor
+    private func waitForBothSemanticValuesToMove(
+        in app: XCUIApplication,
+        powerFrom initialPowerValue: String,
+        speedFrom initialSpeedValue: String,
+        timeout: TimeInterval
+    ) -> (power: String, speed: String)? {
+        let deadline = Date().addingTimeInterval(timeout)
+        var observedPowerValue = initialPowerValue
+        var observedSpeedValue = initialSpeedValue
+        var sawPowerMove = false
+        var sawSpeedMove = false
+
+        repeat {
+            let freshPowerValue = freshSemanticValue(identifier: "dashboard.energy-rail", in: app)
+            let freshSpeedValue = freshSemanticValue(identifier: "dashboard.speed", in: app)
+
+            if !freshPowerValue.isEmpty {
+                observedPowerValue = freshPowerValue
+                sawPowerMove = sawPowerMove || freshPowerValue != initialPowerValue
+            }
+            if !freshSpeedValue.isEmpty {
+                observedSpeedValue = freshSpeedValue
+                sawSpeedMove = sawSpeedMove || freshSpeedValue != initialSpeedValue
+            }
+
+            if sawPowerMove && sawSpeedMove {
+                return (power: observedPowerValue, speed: observedSpeedValue)
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+
+        return nil
     }
 }
