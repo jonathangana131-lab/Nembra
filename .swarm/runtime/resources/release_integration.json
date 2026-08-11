@@ -7,15 +7,15 @@
   "workerId": "sol-20260811-1606dg",
   "leaseId": "release-integration-1606dg-20260811-2323",
   "generation": 7,
-  "status": "CLAIMED",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:23:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:23:00Z",
-  "releasedAt": null,
+  "lastHeartbeatAt": "2026-08-11T23:25:00Z",
+  "releasedAt": "2026-08-11T23:25:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-final-go-retirement-dispatch-current-sol-20260811",
   "pr": 3082,
   "resource": "RELEASE_INTEGRATION",
   "takeoverFromWorkerId": "sol-20260811-1439r8",
   "takeoverFromLeaseId": "release-integration-r8-20260811-2222",
-  "checkpoint": "Acquired for exact-current #3082@148f2721 scope reconciliation only. No merge to main, hardware, signing, Xcode, simulator, Bluetooth, or physical scooter action. PHYSICAL NO-GO."
+  "checkpoint": "Released after exact-current #3082@4a2c2002 canonical/retirement/sealed software gates all reached terminal SUCCESS. Fresh Darwin exact descendant remains mandatory. PHYSICAL NO-GO."
 }
