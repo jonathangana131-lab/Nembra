@@ -4,7 +4,7 @@ test_build_guard_does_not_execute_mutable_generated_subject_neighbor (__main__.D
 test_build_guard_does_not_execute_mutable_provenance_neighbor (__main__.DownstreamBuildGuardHelperExecutionCustodyTests.test_build_guard_does_not_execute_mutable_provenance_neighbor) ... ok
 
 ----------------------------------------------------------------------
-Ran 4 tests in 0.573s
+Ran 4 tests in 0.560s
 
 OK
 test_bootstrap_rejects_substituted_verifier_execution_subject (__main__.PrivateReviewHelperExecutionCustodyTests.test_bootstrap_rejects_substituted_verifier_execution_subject) ... ERROR
