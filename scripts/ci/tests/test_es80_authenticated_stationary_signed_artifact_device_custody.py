@@ -51,6 +51,7 @@ class SignedArtifactDeviceCustodyTests(unittest.TestCase):
         self.private_file(replacement, REPLACEMENT_DEVICE)
         moved = self.root / "admitted-original"
         original_open = os.open
+        original_supports_dir_fd = set(os.supports_dir_fd)
         swapped = False
 
         def retarget_before_final_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
@@ -61,8 +62,13 @@ class SignedArtifactDeviceCustodyTests(unittest.TestCase):
                 swapped = True
             return original_open(path, flags, *args, **kwargs)
 
-        with mock.patch.object(signed.os, "open", side_effect=retarget_before_final_open):
-            value = signed._read_intended_device(admitted_device, self.repo)
+        with mock.patch.object(signed.os, "open", side_effect=retarget_before_final_open) as patched_open:
+            with mock.patch.object(
+                signed.os,
+                "supports_dir_fd",
+                original_supports_dir_fd | {patched_open},
+            ):
+                value = signed._read_intended_device(admitted_device, self.repo)
 
         self.assertTrue(swapped)
         self.assertEqual(value, DEVICE)
