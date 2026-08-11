@@ -57,10 +57,17 @@ for forbidden in [
         raise SystemExit(f"visual readiness must not be authorized by a fixed launch delay: {forbidden}")
 
 for needle in [
+    '- scripts/ci/capture_visual_png_content_guard.py',
+    '- scripts/ci/tests/test_capture_visual_png_content_guard.py',
+    '/usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py',
     'NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=""',
     'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure"',
     'procedureIdentifier == Self.requiredFieldProcedureIdentifier',
     "assert r['schemaVersion']==6",
+    "assert r['screenshotRenderedContentReadinessVerified'] is True",
+    "assert r['screenshotRenderedContentGuard']=='capture_visual_png_content_guard.py/v1'",
+    "assert re.fullmatch(r'[0-9a-f]{64}', r['screenshotRenderedContentGuardSHA256'])",
+    'if: always()',
 ]:
     if needle not in workflow:
         raise SystemExit(f"missing workflow contract: {needle}")
