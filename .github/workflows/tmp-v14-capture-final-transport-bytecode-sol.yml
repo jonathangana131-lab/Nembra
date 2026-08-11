@@ -1,0 +1,238 @@
+name: tmp v14 Capture final transport + bytecode repair
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-final-transport-bytecode-sol
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.repository == 'jonathangana131-lab/Nembra' && github.ref == 'refs/heads/agent/v14-capture-final-transport-bytecode-sol'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Apply exact reviewed repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          installer_path = Path('scripts/field/install_one_time_capture.command')
+          installer = installer_path.read_text()
+          old_loader = '/usr/bin/python3 -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          new_loader = '/usr/bin/python3 -B -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          assert installer.count(old_loader) == 1, installer.count(old_loader)
+          installer = installer.replace(old_loader, new_loader, 1)
+          installer_path.write_text(installer)
+
+          bridge_path = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
+          bridge = bridge_path.read_text()
+          old_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\\(rawEndpoint)"
+          '''
+          new_endpoint = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpoint = try Self.canonicalHTTPSAccountEndpoint(rawEndpoint)
+          '''
+          assert bridge.count(old_endpoint) == 1, bridge.count(old_endpoint)
+          bridge = bridge.replace(old_endpoint, new_endpoint, 1)
+
+          marker = '    private static func makeDevice(_ raw: [String: Any]) -> LinkedDevice {'
+          assert bridge.count(marker) == 1
+          helper = r'''    private static func canonicalHTTPSAccountEndpoint(_ rawEndpoint: String) throws -> String {
+              let trimmed = rawEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+              guard !trimmed.isEmpty else {
+                  throw BridgeError.malformed("Tuya approval returned an empty API endpoint.")
+              }
+
+              let candidate: String
+              if let parsed = URLComponents(string: trimmed), parsed.scheme != nil {
+                  candidate = trimmed
+              } else {
+                  candidate = "https://\(trimmed)"
+              }
+
+              guard var components = URLComponents(string: candidate),
+                    components.scheme?.lowercased() == "https",
+                    let host = components.host,
+                    !host.isEmpty,
+                    components.user == nil,
+                    components.password == nil,
+                    components.query == nil,
+                    components.fragment == nil else {
+                  throw BridgeError.malformed("Tuya approval returned an invalid secure API endpoint.")
+              }
+
+              components.scheme = "https"
+              guard let url = components.url,
+                    url.scheme?.lowercased() == "https",
+                    let normalizedHost = url.host,
+                    !normalizedHost.isEmpty else {
+                  throw BridgeError.malformed("Tuya approval returned an invalid secure API endpoint.")
+              }
+
+              var endpoint = url.absoluteString
+              while endpoint.hasSuffix("/") { endpoint.removeLast() }
+              guard !endpoint.isEmpty else {
+                  throw BridgeError.malformed("Tuya approval returned an invalid secure API endpoint.")
+              }
+              return endpoint
+          }
+
+'''
+          bridge = bridge.replace(marker, helper + marker, 1)
+
+          old_request = '        let (data, response) = try await URLSession.shared.data(for: request)'
+          new_request = '''        guard let requestURL = request.url,
+                requestURL.scheme?.lowercased() == "https",
+                let requestHost = requestURL.host,
+                !requestHost.isEmpty else {
+              throw BridgeError.invalidURL
+          }
+          let (data, response) = try await URLSession.shared.data(
+              for: request,
+              delegate: HTTPSOnlyRedirectDelegate.shared
+          )'''
+          assert bridge.count(old_request) == 1, bridge.count(old_request)
+          bridge = bridge.replace(old_request, new_request, 1)
+
+          old_http_guard = '''        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+              throw BridgeError.remote("HTTP request failed.")
+          }'''
+          new_http_guard = '''        guard let http = response as? HTTPURLResponse,
+                http.url?.scheme?.lowercased() == "https",
+                let responseHost = http.url?.host,
+                !responseHost.isEmpty,
+                (200..<300).contains(http.statusCode) else {
+              throw BridgeError.remote("HTTPS request failed.")
+          }'''
+          assert bridge.count(old_http_guard) == 1, bridge.count(old_http_guard)
+          bridge = bridge.replace(old_http_guard, new_http_guard, 1)
+
+          import_marker = 'import UniformTypeIdentifiers\n\n'
+          assert bridge.count(import_marker) == 1
+          delegate = r'''private final class HTTPSOnlyRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+              static let shared = HTTPSOnlyRedirectDelegate()
+
+              func urlSession(
+                  _ session: URLSession,
+                  task: URLSessionTask,
+                  willPerformHTTPRedirection response: HTTPURLResponse,
+                  newRequest request: URLRequest,
+                  completionHandler: @escaping (URLRequest?) -> Void
+              ) {
+                  guard let originalURL = task.originalRequest?.url,
+                        originalURL.scheme?.lowercased() == "https",
+                        let originalHost = originalURL.host,
+                        !originalHost.isEmpty,
+                        let redirectURL = request.url,
+                        redirectURL.scheme?.lowercased() == "https",
+                        let redirectHost = redirectURL.host,
+                        !redirectHost.isEmpty,
+                        originalHost.caseInsensitiveCompare(redirectHost) == .orderedSame else {
+                      completionHandler(nil)
+                      return
+                  }
+                  completionHandler(request)
+              }
+          }
+
+'''
+          bridge = bridge.replace(import_marker, import_marker + delegate, 1)
+          bridge_path.write_text(bridge)
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountEndpointTransportSourceTests.swift')
+          test_path.write_text(r'''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya account endpoint transport source contract")
+          struct TuyaAccountEndpointTransportSourceTests {
+              @Test("server-selected account endpoint is HTTPS-only and redirects cannot downgrade or change host")
+              func accountEndpointAndRedirectTransportFailClosed() throws {
+                  let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+
+                  #expect(!bridge.contains("rawEndpoint.hasPrefix(\"http\")"))
+                  #expect(bridge.contains("let endpoint = try Self.canonicalHTTPSAccountEndpoint(rawEndpoint)"))
+                  #expect(bridge.contains("components.scheme?.lowercased() == \"https\""))
+                  #expect(bridge.contains("let host = components.host"))
+                  #expect(bridge.contains("components.user == nil"))
+                  #expect(bridge.contains("components.password == nil"))
+                  #expect(bridge.contains("requestURL.scheme?.lowercased() == \"https\""))
+                  #expect(bridge.contains("delegate: HTTPSOnlyRedirectDelegate.shared"))
+                  #expect(bridge.contains("redirectURL.scheme?.lowercased() == \"https\""))
+                  #expect(bridge.contains("originalHost.caseInsensitiveCompare(redirectHost) == .orderedSame"))
+                  #expect(bridge.contains("completionHandler(nil)"))
+                  #expect(bridge.contains("http.url?.scheme?.lowercased() == \"https\""))
+              }
+
+              @Test("private intended-device reader import cannot leave bytecode in the accepted checkout")
+              func installerDisablesPrivateReaderBytecodeWrites() throws {
+                  let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+                  #expect(installer.contains("/usr/bin/python3 -B -I - \"$PRIVATE_DEVICE_RUNNER\""))
+                  #expect(!installer.contains("/usr/bin/python3 -I - \"$PRIVATE_DEVICE_RUNNER\""))
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(
+                      contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+                      encoding: .utf8
+                  )
+              }
+          }
+          '''.replace('          ', ''))
+          PY
+
+      - name: Validate repair source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/field/install_one_time_capture.command
+          python3 - <<'PY'
+          from pathlib import Path
+          installer = Path('scripts/field/install_one_time_capture.command').read_text()
+          bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift').read_text()
+          assert '/usr/bin/python3 -B -I - "$PRIVATE_DEVICE_RUNNER"' in installer
+          assert '/usr/bin/python3 -I - "$PRIVATE_DEVICE_RUNNER"' not in installer
+          assert 'rawEndpoint.hasPrefix("http")' not in bridge
+          assert 'let endpoint = try Self.canonicalHTTPSAccountEndpoint(rawEndpoint)' in bridge
+          assert 'components.scheme?.lowercased() == "https"' in bridge
+          assert 'requestURL.scheme?.lowercased() == "https"' in bridge
+          assert 'redirectURL.scheme?.lowercased() == "https"' in bridge
+          assert 'originalHost.caseInsensitiveCompare(redirectHost) == .orderedSame' in bridge
+          assert 'http.url?.scheme?.lowercased() == "https"' in bridge
+          PY
+          git diff --check
+
+      - name: Commit durable repair and remove materializer
+        shell: bash
+        env:
+          BRANCH: agent/v14-capture-final-transport-bytecode-sol
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$BRANCH"
+          rm -f .github/workflows/tmp-v14-capture-final-transport-bytecode-sol.yml
+          git config user.name 'nembra-v14-bot'
+          git config user.email 'nembra-v14-bot@users.noreply.github.com'
+          git add scripts/field/install_one_time_capture.command \
+                  NembraApp/Features/Research/TuyaAccountBridge.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountEndpointTransportSourceTests.swift \
+                  .github/workflows/tmp-v14-capture-final-transport-bytecode-sol.yml
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'fix(capture): close HTTPS and installer bytecode blockers'
+          git push origin "HEAD:$BRANCH"
