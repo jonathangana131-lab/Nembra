@@ -632,12 +632,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
-    except provenance.ProvenanceError as error:
-        print(f"ERROR: private-input provenance rejected build-window custody: {error}", file=sys.stderr)
-        return 75
-    except generated_build.GeneratedBuildSubjectError as error:
-        print(f"ERROR: generated CocoaPods build subject rejected build-window custody: {error}", file=sys.stderr)
-        return 76
+    except Exception:
+        print("ERROR: unexpected build-window custody failure; field build refused", file=sys.stderr)
+        return 77
 
 
 if __name__ == "__main__":
