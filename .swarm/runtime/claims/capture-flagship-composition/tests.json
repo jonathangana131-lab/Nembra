@@ -7,14 +7,14 @@
   "workerId": "sol-20260811-f4c2e7",
   "leaseId": "capture-flagship-tests-f4c2e7-20260811-1221",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T12:21:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:33:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:36:30Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
   "pr": 2940,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "intent": "Independent tests-side exact-head acceptance support for the clean app-visible Capture AX closure. Verify current package/graft/Field/Xcode/standalone-visual gates on unchanged current head, inspect retained standard+AX5 artifacts when available, and validate source-level large-type/VoiceOver contracts without overlapping primary product edits or review ownership. PHYSICAL NO-GO.",
-  "checkpoint": "#2940 exact 005b7c4 remains unchanged. Independent source review found no test weakening. Main Graft 31490540822 terminal SUCCESS. Standalone Visual 31490540910/job 93775735099 terminal SUCCESS; artifact 9101029285 downloaded and human-inspected. Standard dark pixels PASS: truthful locked hierarchy, persistent user-code identity, complete approval action, no clipping. AX XXXL pixels PASS: compact Capture locked status, Account setup hierarchy, persistent field identity, input + Create QR remain first-fold, Details remains visible, no overlap/truncation/duplicate lock block. Manifest binds sourceCommitSHA 005b7c4, iPhone 12/iOS 27, screenshot hashes, and physicalAuthorityCreated=false/protocolAuthorityCreated=false. Field 31490540890 and Xcode 31490540888 remain queued and are not counted green. Security/Final-GO composition remains separate. PHYSICAL NO-GO."
+  "intent": "Independent tests-side exact-head acceptance support for the clean app-visible Capture AX closure. PHYSICAL NO-GO.",
+  "checkpoint": "HOT-SWAP: #2940 exact 005b7c4 remained unchanged through tests-side review. Main Graft 31490540822 terminal SUCCESS including full Capture package + standalone target. Standalone Visual 31490540910/job 93775735099 terminal SUCCESS; retained artifact 9101029285 digest sha256:129c0836ebf8d0274d3f250530da9674730425e879233fbacbed2976f7fe1f5c was downloaded and human-inspected. Standard dark targeted AX-repair pixels PASS; AX XXXL pixels PASS with first-fold field+Create QR+Details, compact Capture locked state, no clipping/overlap/duplicate lock. Manifest binds exact source, iPhone 12/iOS 27, screenshot hashes, physicalAuthorityCreated=false and protocolAuthorityCreated=false. Source/test review found no truth or accessibility test weakening. Independent review agrees targeted AX regression PASS and separately flags broader standard-state copy density (repeated account/read-only explanation pushes primary action to extreme bottom) as future flagship product-quality debt, not #2940 regression rejection. Xcode 27 run 31490540888: immutable PR-head resolver SUCCESS, build/test job 93775787237 still queued. Field run 31490540890 job 93775735274 queued. Do not promote either until terminal green on unchanged 005b7c4. Security/build-authority/signed-install/Final-GO remain separate blockers. PHYSICAL NO-GO."
 }
