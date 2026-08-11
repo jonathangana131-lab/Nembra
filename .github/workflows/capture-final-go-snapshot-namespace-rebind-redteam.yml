@@ -1,0 +1,69 @@
+name: Capture Final GO Snapshot Namespace Rebind Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_snapshot_namespace_rebind_loop_red_team.py
+      - .github/workflows/capture-final-go-snapshot-namespace-rebind-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  snapshot-namespace-rebind-redteam:
+    name: Reject finite snapshot namespace identity loops
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact attacked production head and validation-only scope
+        shell: bash
+        env:
+          ATTACKED_PARENT: a97ba4ee05555d618938b2c1158bda156d91e113
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$ATTACKED_PARENT" HEAD)" = "$ATTACKED_PARENT"
+          changed_paths="$(git diff --name-only "$ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-final-go-snapshot-namespace-rebind-redteam.yml' \
+            'scripts/ci/tests/test_es80_final_go_snapshot_namespace_rebind_loop_red_team.py')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Expected-red child must remain exactly two-path. Changed:\n' >&2
+            printf '%s\n' "$changed_paths" | sed 's/^/  /' >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exact production subject and expected-red witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_snapshot_namespace_rebind_loop_red_team.py
+
+      - name: Demonstrate finite namespace identity rebind race
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_snapshot_namespace_rebind_loop_red_team.py
+
+      - name: Preserve validation truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'SUCCESS above is exploit-positive evidence against exact #3038@a97ba4ee05555d618938b2c1158bda156d91e113.' \
+            'This workflow performs no credentials, Xcode/device operation, Bluetooth/Tuya action, install, launch, or physical experiment.'
+          git diff --check a97ba4ee05555d618938b2c1158bda156d91e113...HEAD
