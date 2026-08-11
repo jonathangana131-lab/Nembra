@@ -8,7 +8,6 @@ import select
 import stat
 import subprocess
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Protocol, Sequence
@@ -49,6 +48,7 @@ class PrivateInputs:
     security_build: Path
     identity_podspec: Path
     identity_sources: Path
+    accepted_generated_subject_sha256: str | None = None
 
     @property
     def pods(self) -> Path:
@@ -73,6 +73,28 @@ class PrivateInputs:
                 workspace=self.workspace,
             ),
         )
+
+    def require_accepted_generated_subject(self) -> str:
+        expected = (self.accepted_generated_subject_sha256 or "").lower()
+        if len(expected) != 64 or any(character not in "0123456789abcdef" for character in expected):
+            raise BuildGuardError(
+                "externally accepted CocoaPods generated build-subject digest is missing or malformed before xcodebuild"
+            )
+        try:
+            actual = generated_subject.subject_digest(
+                lockfile=self.lockfile,
+                pods=self.pods,
+                workspace=self.workspace,
+            )
+        except (OSError, generated_subject.GeneratedSubjectError, provenance.ProvenanceError) as error:
+            raise BuildGuardError(
+                f"accepted CocoaPods generated build subject could not be reproved before xcodebuild: {error}"
+            ) from error
+        if actual != expected:
+            raise BuildGuardError(
+                "current CocoaPods generated build subject does not match externally accepted authority before xcodebuild"
+            )
+        return actual
 
 
 class EventBackend(Protocol):
@@ -242,6 +264,10 @@ def run_guarded_build(
     if not command:
         raise BuildGuardError("no build command was supplied")
 
+    # Do not let the bytes present when the guard happens to start become new
+    # authority. Rebind the exact generated graph to the separately reviewed
+    # digest before any watcher baseline or xcodebuild child can be admitted.
+    accepted_generated_subject = inputs.require_accepted_generated_subject()
     initial_snapshot = inputs.generation_snapshot()
     backend = backend_factory()
     watched: tuple[tuple[int, Path], ...] = ()
@@ -249,9 +275,11 @@ def run_guarded_build(
     try:
         watched = _open_watched_inputs(_watch_paths(inputs), backend)
 
-        # Registration itself has a race boundary. Reprove the entire admitted
-        # generation after every vnode watch is armed, then reject any queued
-        # mutation before the child build is allowed to start.
+        # Registration itself has a race boundary. Reprove both the accepted
+        # cryptographic subject and the complete generation after every vnode
+        # watch is armed, then reject any queued mutation before child start.
+        if inputs.require_accepted_generated_subject() != accepted_generated_subject:
+            raise BuildGuardError("accepted CocoaPods generated build subject changed while monitoring was armed")
         armed_snapshot = inputs.generation_snapshot()
         if armed_snapshot != initial_snapshot:
             raise BuildGuardError("private/generated build inputs changed while build-window monitoring was armed")
@@ -279,13 +307,14 @@ def run_guarded_build(
                 + _describe_events(trailing, watched)
             )
 
-        # Keep every vnode watcher live while the final generation is sampled.
-        # A mutation after this point cannot have affected the already-finished
-        # child build; the install script still performs independent crypto
-        # provenance verification immediately after this guard returns.
+        # Keep every vnode watcher live while final metadata and cryptographic
+        # subject authority are sampled. A mutate/restore that escapes event
+        # delivery still cannot silently promote a different final graph.
         final_snapshot = inputs.generation_snapshot()
         if final_snapshot != initial_snapshot:
             raise BuildGuardError("private/generated build inputs changed across the guarded xcodebuild window")
+        if inputs.require_accepted_generated_subject() != accepted_generated_subject:
+            raise BuildGuardError("accepted CocoaPods generated build subject changed across xcodebuild")
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
@@ -325,6 +354,9 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
             security_build=args.security_build.resolve(),
             identity_podspec=args.identity_podspec.resolve(),
             identity_sources=args.identity_sources.resolve(),
+            accepted_generated_subject_sha256=os.environ.get(
+                "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"
+            ),
         ),
         command,
     )
