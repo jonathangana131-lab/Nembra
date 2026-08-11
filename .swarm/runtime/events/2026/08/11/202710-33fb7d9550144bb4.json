@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "202710-33fb7d9550144bb4",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-1315r8",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Capture Final-GO PR #2921 current exact head 471cc025b332f4df8b43a98d709710aeb4e0698f has now earned terminal SUCCESS in Capture Authenticated Stationary Private Review Final GO run 31532784360. Exact-head Xcode 27 PR QA run 31532784381 remains QUEUED, so the moved head is not yet fully accepted and must not authorize hardware. Queue status is not green; if the head moves, acceptance resets. PHYSICAL NO-GO unchanged.",
+  "createdAt": "2026-08-11T20:27:10Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "pullRequest": 2921,
+    "headSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
+    "finalGoRunId": 31532784360,
+    "finalGoConclusion": "success",
+    "xcodeRunId": 31532784381,
+    "xcodeStatus": "queued",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
