@@ -24,11 +24,11 @@ struct CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let oracle = repositoryRoot
-            .appendingPathComponent("scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py")
+            .appendingPathComponent("scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_effective_groups.py")
 
         #expect(
             FileManager.default.fileExists(atPath: oracle.path),
-            "The exact-head trusted gate must carry the dedicated-UID validation oracle."
+            "The exact-head trusted gate must carry the effective-group dedicated-UID validation oracle."
         )
 
         let process = Process()
@@ -54,13 +54,17 @@ struct CaptureDedicatedUIDRealXcodeFreezeTrustedGateTests {
 
         if process.terminationStatus != 0 {
             Issue.record(
-                "Dedicated-UID real-Xcode freeze oracle returned \(process.terminationStatus). Retained oracle output:\n\(output)"
+                "Dedicated-UID real-Xcode effective-group oracle returned \(process.terminationStatus). Retained oracle output:\n\(output)"
             )
         }
         #expect(process.terminationStatus == 0)
         #expect(
             output.contains("NEMBRA_REAL_XCODE_DEDICATED_UID_JSON="),
             "A green trusted-gate run must retain the structured dedicated-UID success record."
+        )
+        #expect(
+            output.contains("NEMBRA_REAL_XCODE_DEDICATED_UID_EFFECTIVE_GROUPS_JSON="),
+            "A green trusted-gate run must retain the exact field effective-group authority record."
         )
         #expect(
             !output.contains("NEMBRA_REAL_XCODE_DEDICATED_UID_ERROR="),
