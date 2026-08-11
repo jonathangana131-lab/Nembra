@@ -1,0 +1,36 @@
+name: Capture Private Identity Final Name 2874 Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-private-identity-final-name-race-2874-sol-20260811
+  pull_request:
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+      - .github/workflows/capture-private-identity-final-name-2874-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  destination-name-race:
+    name: Reject final name swap after verified open
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Bind to exact checked-out head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile red team
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
+      - name: Reject post-open destination-name substitution
+        run: python3 -I scripts/ci/tests/test_capture_private_identity_final_name_binding_2874.py
