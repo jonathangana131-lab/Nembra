@@ -8,7 +8,9 @@ on:
       - NembraApp/Features/Research/TuyaAccountBridge.swift
       - NembraCapture.xcodeproj/project.pbxproj
       - scripts/ci/capture_standalone_visual_evidence.sh
+      - scripts/ci/capture_visual_png_content_guard.py
       - scripts/ci/tests/test_capture_standalone_visual_evidence.py
+      - scripts/ci/tests/test_capture_visual_png_content_guard.py
       - .github/workflows/capture-standalone-visual-evidence.yml
   workflow_dispatch:
 
@@ -41,6 +43,7 @@ jobs:
           printf 'NEMBRA_VISUAL_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
           bash -n scripts/ci/capture_standalone_visual_evidence.sh
           /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py
           grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
           grep -Fq 'procedureIdentifier == Self.requiredFieldProcedureIdentifier' NembraApp/App/NembraCaptureBuildIdentity.swift
           grep -Fq 'procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier' NembraApp/App/NembraCaptureEntrypoint.swift
@@ -75,7 +78,7 @@ jobs:
             bash scripts/ci/capture_standalone_visual_evidence.sh
           manifest="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
           /usr/bin/python3 - "$manifest" "$NEMBRA_VISUAL_SOURCE_SHA" <<'PY'
-          import json, sys
+          import json, re, sys
           r=json.load(open(sys.argv[1], encoding='utf-8'))
           assert r['schemaVersion']==6
           assert r['sourceCommitSHA']==sys.argv[2]
@@ -86,11 +89,15 @@ jobs:
           assert r['tuyaDependencyLockSHA256']=='' and r['expectedFieldBuildAuthority'] is False
           assert r['syntheticAuthorityEnvironmentRejected'] is True
           assert r['visualAcceptanceRequiresHumanReview'] is True
+          assert r['screenshotRenderedContentReadinessVerified'] is True
+          assert r['screenshotRenderedContentGuard']=='capture_visual_png_content_guard.py/v1'
+          assert re.fullmatch(r'[0-9a-f]{64}', r['screenshotRenderedContentGuardSHA256'])
           assert r['physicalAuthorityCreated'] is False and r['protocolAuthorityCreated'] is False
           assert {x['state'] for x in r['screenshots']}=={'unprovisioned-dark-standard','unprovisioned-dark-accessibility-xxxl'}
           PY
 
       - name: Upload evidence
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: nembra-capture-standalone-visual-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
