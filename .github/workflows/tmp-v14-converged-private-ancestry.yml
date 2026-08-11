@@ -1,0 +1,34 @@
+name: Temporary Converged Private Input Ancestry
+on:
+  pull_request:
+    branches: [repair/v14-capture-converged-private-ancestry-sol]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-converged-private-ancestry-sol
+          fetch-depth: 1
+      - name: Transform and test convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_materialize_converged_private_ancestry.py
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
+          python3 scripts/ci/tests/test_capture_cocoapods_converged_subject.py
+          python3 scripts/ci/tests/test_capture_private_input_ancestor_retarget.py
+          git diff --check
+      - name: Checkpoint guard repair only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name nembra-v14-go
+          git config user.email nembra-v14-go@users.noreply.github.com
+          git add Scripts/capture_tuya_private_input_build_guard.py
+          git commit -m 'fix(capture): pin converged private input ancestry'
+          git push origin HEAD:repair/v14-capture-converged-private-ancestry-sol
