@@ -4,14 +4,14 @@
   "laneId": "capture-build-authority",
   "slot": "review",
   "role": "adversarial-review",
-  "workerId": "sol-20260811-a52d",
-  "leaseId": "capture-build-review-a52d-20260811-0906",
-  "generation": 1,
+  "workerId": "sol-20260811-d4c8",
+  "leaseId": "capture-build-review-d4c8-20260811-0941",
+  "generation": 2,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T09:06:20Z",
-  "lastHeartbeatAt": "2026-08-11T09:06:20Z",
+  "claimedAt": "2026-08-11T09:41:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:41:00Z",
   "leaseSeconds": 1800,
-  "branch": "repair/v14-capture-vnode-current-642-sol-20260811",
-  "pr": 2856,
-  "sourceSHA": "757b35222ab33210d872993df1e50426fb59aff3"
+  "branch": "repair/v14-capture-field-installer-git-authority-sol-20260811",
+  "pr": 2876,
+  "sourceSHA": "c83f047f9812a5c2f3c01f304b4ce9eb9793dacc"
 }
