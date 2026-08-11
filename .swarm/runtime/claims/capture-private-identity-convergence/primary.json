@@ -9,12 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:58:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:42:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:44:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
   "currentHeadSHA": "1834a39ac44e09cf12426cf28cb95ed3c008e9a2",
   "takeoverFromWorkerId": null,
-  "takeoverReason": "No durable convergence claim existed. #2899 merged at 9e14bdf0813fe6d3fe930692f75e7060efa58889. #2918 and the later cleanup witness proved pathname cleanup could act outside held-inode authority. #2944 now carries descriptor-admitted crash-residue reuse, descriptor-only failure sanitation, same-UID exact-authority test reconciliation, pre/post-rebind and post-publication regressions, pre-rebind held-residue sanitation, and deletion of obsolete pathname cleanup helpers. Temporary construction files are removed; compare is behind 0 with exactly seven durable paths. Fresh exact-head canonical gates on 1834a39ac44e09cf12426cf28cb95ed3c008e9a2 are required before composition."
+  "takeoverReason": "No durable convergence claim existed. #2899 merged at 9e14bdf0813fe6d3fe930692f75e7060efa58889. #2918 and later cleanup witnesses proved pathname cleanup could act outside held-inode authority. #2961 now independently confirms a downstream admission gap: after failed private identity publication leaves attacker replacement bytes at the canonical identity path, later bootstrap can reach CocoaPods. Production convergence is evaluating that finding while preserving exact-held-inode cleanup authority. PHYSICAL NO-GO."
 }
