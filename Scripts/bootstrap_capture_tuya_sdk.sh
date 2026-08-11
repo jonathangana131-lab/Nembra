@@ -221,7 +221,7 @@ else
     --witness "$DEPENDENCY_PROVENANCE" \
     --key "$PRIVATE_REVIEW_KEY" \
     --expected "$ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256" >/dev/null || {
-      echo "ERROR: local private-input witness/key or verifier source do not match the externally accepted private review authority." >&2
+      echo "ERROR: local private-input witness/key do not match the externally accepted private review commitment, or verifier source does not match the externally accepted private review authority." >&2
       exit 18
     }
   PRIVATE_REVIEW_HELPER_SHA256="$ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
@@ -249,7 +249,7 @@ fi
   exit 14
 }
 [[ "$(stat -f '%Lp' "$DEPENDENCY_PROVENANCE" 2>/dev/null || true)" == "600" ]] || {
-  echo "ERROR: private Tuya provenance witness is not mode 0600." >&2
+  echo "ERROR: private Tuya dependency provenance record is not mode 0600." >&2
   exit 15
 }
 [[ "$(stat -f '%Lp' "$PRIVATE_REVIEW_KEY" 2>/dev/null || true)" == "600" ]] || {
@@ -278,7 +278,7 @@ DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
   CocoaPods generated build subject SHA-256: $GENERATED_BUILD_SUBJECT_SHA256
   Private review commitment SHA-256: $PRIVATE_REVIEW_COMMITMENT_SHA256
   Private review verifier source SHA-256: $PRIVATE_REVIEW_HELPER_SHA256
-  Local private-input witness: $DEPENDENCY_PROVENANCE
+  Local private-input fingerprint record (review witness): $DEPENDENCY_PROVENANCE
   Local private commitment key: retained privately; never publish or export
 
 Review and bind all FOUR public authority values to the exact accepted Capture
