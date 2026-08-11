@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - repair/v14-auth-final-go-main-index-custody-sol
+    paths-ignore:
+      - scripts/ci/temp_final_go_failure.log
 
 permissions:
   contents: write
@@ -24,17 +26,19 @@ jobs:
           python3 scripts/ci/temp_v14_final_go_main_index_forwardport.py
 
       - name: Validate composed control-plane authority
+        id: validate
         shell: bash
         run: |
-          set -euo pipefail
-          python3 -m py_compile \
-            scripts/ci/es80_authenticated_stationary_final_go.py \
-            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
-          python3 - <<'PY'
+          set +e
+          {
+            python3 -m py_compile \
+              scripts/ci/es80_authenticated_stationary_final_go.py \
+              scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+              scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+              scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py && \
+            python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py && \
+            python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py && \
+            python3 - <<'PY'
           from pathlib import Path
           source=Path('scripts/ci/es80_authenticated_stationary_final_go.py').read_text()
           tests=Path('scripts/ci/tests/test_es80_authenticated_stationary_final_go.py').read_text()
@@ -62,13 +66,35 @@ jobs:
           ):
               if needle not in tests: raise SystemExit(f'missing composed regression: {needle}')
           PY
-          git diff --check
+            status=$?
+            if [ "$status" -eq 0 ]; then git diff --check; status=$?; fi
+            exit "$status"
+          } > /tmp/final-go-validation.log 2>&1
+          status=$?
+          cat /tmp/final-go-validation.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Preserve failure evidence without touching product source
+        if: steps.validate.outputs.status != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/final-go-validation.log scripts/ci/temp_final_go_failure.log
+          git add scripts/ci/temp_final_go_failure.log
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'nembra-v14-sol@users.noreply.github.com'
+          git commit -m 'chore(capture): preserve Final-GO regression failure evidence'
+          git push origin HEAD:repair/v14-auth-final-go-main-index-custody-sol
+          exit 1
 
       - name: Publish clean focused recovery
+        if: steps.validate.outputs.status == '0'
         shell: bash
         run: |
           set -euo pipefail
           rm -f scripts/ci/temp_v14_final_go_main_index_forwardport.py
+          rm -f scripts/ci/temp_final_go_failure.log
           rm -f .github/workflows/temp-v14-auth-final-go-main-index-forwardport.yml
           git add -A
           git diff --cached --check
@@ -77,5 +103,3 @@ jobs:
           git config user.email 'nembra-v14-sol@users.noreply.github.com'
           git commit -m 'fix(capture): bind Final-GO main and worktree custody'
           git push origin HEAD:repair/v14-auth-final-go-main-index-custody-sol
-
-# Registered by the preceding branch commit; this follow-up push triggers the disposable runner.
