@@ -63,6 +63,39 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
         #expect(root.contains("Text(\"Tuya Smart user code\")"))
         #expect(root.contains("TextField(\"Paste user code\""))
+        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
+        #expect(root.contains("private var buildAuthorityDetail: String"))
+        #expect(root.contains("Build provenance ready"))
+        #expect(root.contains("private var accountMetadataPrimaryAction: some View"))
+        #expect(root.contains("private var accountMetadataSupportingCopy: some View"))
+        #expect(root.contains("nembra.capture.root.account-link-action"))
+
+        let panel = String(try section(
+            in: root,
+            from: "private var accountSetupPanel: some View",
+            to: "private var accountMetadataPrimaryAction: some View"
+        ))
+        let accessibilityBranch = try #require(panel.range(of: "if dynamicTypeSize.isAccessibilitySize"))
+        let primary = try #require(panel.range(of: "accountMetadataPrimaryAction", range: accessibilityBranch.upperBound..<panel.endIndex))
+        let supporting = try #require(panel.range(of: "accountMetadataSupportingCopy", range: primary.upperBound..<panel.endIndex))
+        #expect(primary.lowerBound < supporting.lowerBound)
+    }
+
+    @Test("metadata preparation bridge remains cloud-only and command-free")
+    func metadataBridgeCannotAcquireBluetoothOrScooterCommandAuthority() throws {
+        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+
+        #expect(bridge.contains("Official Tuya Smart account-link preflight"))
+        #expect(bridge.contains("read-only Device Sharing endpoints"))
+        #expect(bridge.contains("signedGET(path:"))
+        #expect(!bridge.contains("import CoreBluetooth"))
+        #expect(!bridge.contains("ThingSmartBLEManager"))
+        #expect(!bridge.contains("connectBLE"))
+        #expect(!bridge.contains("disconnectBLE"))
+        #expect(!bridge.contains("publishDps"))
+        #expect(!bridge.contains("queryDps"))
+        #expect(!bridge.contains("writeValue"))
+        #expect(!bridge.contains("setDp"))
     }
 
     @Test("legacy card-based Capture root is retired from the metadata bridge")
