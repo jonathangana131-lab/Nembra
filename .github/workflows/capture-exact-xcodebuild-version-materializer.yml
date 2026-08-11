@@ -1,0 +1,85 @@
+name: Capture Exact Xcodebuild Version Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-field-tool-file-custody-sol-go-20260811
+    paths:
+      - .github/workflows/capture-exact-xcodebuild-version-materializer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind construction seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "3194fb2a5062f3317ea1f7c984f30193d586f119"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-exact-xcodebuild-version-materializer.yml"
+
+      - name: Materialize exact-version admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/field/install_one_time_capture.command")
+          source = path.read_text(encoding="utf-8")
+          old = '''SELECTED_XCODE_VERSION="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcodebuild -version 2>/dev/null)" || die "Could not interrogate the selected Xcode toolchain."
+          SELECTED_XCODE_FIRST_LINE="${SELECTED_XCODE_VERSION%%$'\\n'*}"
+          [[ "$SELECTED_XCODE_FIRST_LINE" =~ ^Xcode[[:space:]]27([.]|$) ]] || die "Selected developer tree must identify as Xcode 27 before physical device discovery or build admission."
+          SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)" || die "Could not resolve xcodebuild from the selected Xcode 27 developer tree."
+          readonly SELECTED_XCODEBUILD
+          [[ "$SELECTED_XCODEBUILD" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected xcodebuild escaped the admitted Xcode developer tree."
+          validate_root_custodied_path "$(dirname "$SELECTED_XCODEBUILD")" directory || die "Selected xcodebuild parent escaped trusted root custody."
+          validate_root_custodied_path "$SELECTED_XCODEBUILD" file || die "Selected xcodebuild executable is not under exact root/nonwritable file custody."
+          [[ -x "$SELECTED_XCODEBUILD" ]] || die "Selected xcodebuild is not executable."
+          '''
+          new = '''SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)" || die "Could not resolve xcodebuild from the selected Xcode developer tree."
+          readonly SELECTED_XCODEBUILD
+          [[ "$SELECTED_XCODEBUILD" == "$SELECTED_DEVELOPER_DIR"/* ]] || die "Selected xcodebuild escaped the admitted Xcode developer tree."
+          validate_root_custodied_path "$(dirname "$SELECTED_XCODEBUILD")" directory || die "Selected xcodebuild parent escaped trusted root custody."
+          validate_root_custodied_path "$SELECTED_XCODEBUILD" file || die "Selected xcodebuild executable is not under exact root/nonwritable file custody."
+          [[ -x "$SELECTED_XCODEBUILD" ]] || die "Selected xcodebuild is not executable."
+          SELECTED_XCODE_VERSION="$("$SELECTED_XCODEBUILD" -version 2>/dev/null)" || die "Could not interrogate the exact selected Xcode toolchain."
+          SELECTED_XCODE_FIRST_LINE="${SELECTED_XCODE_VERSION%%$'\\n'*}"
+          [[ "$SELECTED_XCODE_FIRST_LINE" =~ ^Xcode[[:space:]]27([.]|$) ]] || die "Selected developer tree must identify as Xcode 27 before physical device discovery or build admission."
+          '''
+          if source.count(old) != 1:
+              raise SystemExit("selected xcodebuild version-admission seed drifted")
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Focused validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcrun_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Publish production-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-bot"
+          git config user.email "nembra-capture-bot@users.noreply.github.com"
+          git add scripts/field/install_one_time_capture.command
+          git diff --cached --quiet && { echo "No production repair staged" >&2; exit 1; }
+          git commit -m "Capture P0: interrogate exact custodied xcodebuild"
+          git push origin HEAD:repair/v14-field-tool-file-custody-sol-go-20260811
