@@ -7,21 +7,21 @@ on:
       - capture/one-time-ble-dump-gpt56
   pull_request:
     paths:
+      - Podfile
+      - Podfile.lock
+      - NembraCapture-Info.plist
+      - NembraCapture.xcodeproj/**
+      - NembraCapture.xcworkspace/**
+      - NembraCapture.entitlements
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - NembraApp/App/NembraCaptureEntrypoint.swift
-      - NembraCapture.xcodeproj/project.pbxproj
-      - NembraCapture.entitlements
-      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
-      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
-      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerPrivateInstallLogCustodySourceTests.swift
-      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
-      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift
-      - Scripts/bootstrap_capture_tuya_sdk.sh
-      - Scripts/capture_tuya_private_input_provenance.py
-      - Scripts/capture_tuya_private_input_build_guard.py
-      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
-      - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
-      - scripts/field/install_one_time_capture.command
+      - NembraApp/Features/Research/TuyaAccountBridge.swift
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
+      - Packages/NembraBluetoothCapture/**
+      - Packages/NembraCore/**
+      - Scripts/**
+      - scripts/field/**
+      - scripts/ci/**
       - .github/workflows/capture-field-build-provenance.yml
   workflow_dispatch:
 
