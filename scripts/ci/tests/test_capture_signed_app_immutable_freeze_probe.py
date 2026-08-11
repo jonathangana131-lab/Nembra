@@ -15,6 +15,7 @@ occurs here.
 from __future__ import annotations
 
 import importlib.util
+import json
 import mmap
 import os
 from pathlib import Path
@@ -33,6 +34,20 @@ if SPEC is None or SPEC.loader is None:
 HELPER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(HELPER)
 
+EVIDENCE_MARKER = "NEMBRA_IMMUTABLE_FREEZE_RESULT="
+
+
+def _status_summary(status: int | None) -> str:
+    if status is None:
+        return "MISSING"
+    if os.WIFEXITED(status):
+        return f"EXIT:{os.WEXITSTATUS(status)}"
+    if os.WIFSIGNALED(status):
+        return f"SIGNAL:{os.WTERMSIG(status)}"
+    if os.WIFSTOPPED(status):
+        return f"STOP:{os.WSTOPSIG(status)}"
+    return f"RAW:{status}"
+
 
 @unittest.skipUnless(sys.platform == "darwin" and os.geteuid() == 0, "requires root on macOS")
 class SignedAppImmutableFreezeProbeTests(unittest.TestCase):
@@ -46,6 +61,7 @@ class SignedAppImmutableFreezeProbeTests(unittest.TestCase):
         ready_r, ready_w = os.pipe()
         go_r, go_w = os.pipe()
         result_r, result_w = os.pipe()
+        status_r, status_w = os.pipe()
         launcher_pid = -1
         immutable_set = False
         try:
@@ -55,8 +71,12 @@ class SignedAppImmutableFreezeProbeTests(unittest.TestCase):
                     os.close(ready_r)
                     os.close(go_w)
                     os.close(result_r)
+                    os.close(status_r)
                     os.setsid()  # mirrors production start_new_session=True
-                    os.setgroups(sorted(set(groups) | {capability_gid}))
+                    # The kernel oracle needs only the real primary identity plus the
+                    # one-run capability. Replaying every hosted-runner supplementary
+                    # group can exceed macOS/Python's setgroups ceiling before READY.
+                    os.setgroups([capability_gid])
                     os.setgid(gid)
                     os.setuid(uid)
 
@@ -65,54 +85,91 @@ class SignedAppImmutableFreezeProbeTests(unittest.TestCase):
                     os.fsync(fd)
                     mapping = mmap.mmap(fd, len(initial), access=mmap.ACCESS_WRITE)
 
-                    detached_pid = os.fork()
-                    if detached_pid == 0:
+                    # Keep a same-UID monitor outside the launcher's process group so
+                    # it can reap the actual attacker and report a fatal VM signal.
+                    # The monitor closes its own product authority immediately after
+                    # forking the attacker; it exists only to preserve waitpid status.
+                    monitor_pid = os.fork()
+                    if monitor_pid == 0:
                         try:
                             os.setsid()
-                            os.write(ready_w, b"R")
-                            if os.read(go_r, 1) != b"G":
-                                os._exit(91)
-
-                            succeeded = 0
-                            fchflags = getattr(os, "fchflags", None)
-                            if callable(fchflags):
+                            attacker_pid = os.fork()
+                            if attacker_pid == 0:
                                 try:
-                                    fchflags(fd, 0)
-                                    succeeded |= 1
-                                except OSError:
-                                    pass
+                                    os.setsid()
+                                    os.close(status_w)
+                                    os.write(ready_w, b"R")
+                                    if os.read(go_r, 1) != b"G":
+                                        os._exit(91)
 
-                            try:
-                                os.lseek(fd, 0, os.SEEK_END)
-                                os.write(fd, b"FD_AFTER_FREEZE\n")
-                                os.fsync(fd)
-                                succeeded |= 2
-                            except OSError:
-                                pass
+                                    succeeded = 0
+                                    fchflags = getattr(os, "fchflags", None)
+                                    if callable(fchflags):
+                                        try:
+                                            fchflags(fd, 0)
+                                            succeeded |= 1
+                                        except OSError:
+                                            pass
 
-                            try:
-                                mapping[0:4] = b"MMAP"
-                                mapping.flush()
-                                succeeded |= 4
-                            except (BufferError, OSError, ValueError):
-                                pass
+                                    try:
+                                        os.lseek(fd, 0, os.SEEK_END)
+                                        os.write(fd, b"FD_AFTER_FREEZE\n")
+                                        os.fsync(fd)
+                                        succeeded |= 2
+                                    except OSError:
+                                        pass
 
-                            try:
-                                os.write(result_w, bytes([succeeded]))
-                            except OSError:
-                                pass
+                                    try:
+                                        mapping[0:4] = b"MMAP"
+                                        mapping.flush()
+                                        succeeded |= 4
+                                    except (BufferError, OSError, ValueError):
+                                        pass
+
+                                    try:
+                                        os.write(result_w, bytes([succeeded]))
+                                    except OSError:
+                                        pass
+                                    mapping.close()
+                                    os.close(fd)
+                                    os._exit(0)
+                                except BaseException:
+                                    try:
+                                        os.write(result_w, b"E")
+                                    except OSError:
+                                        pass
+                                    os._exit(92)
+
+                            # The monitor must not itself retain product mutation
+                            # authority. Only the attacker keeps the inherited FD/map.
                             mapping.close()
                             os.close(fd)
+                            os.close(ready_w)
+                            os.close(go_r)
+                            os.close(result_w)
+                            _, attacker_status = os.waitpid(attacker_pid, 0)
+                            try:
+                                os.write(status_w, f"{attacker_status}\n".encode("ascii"))
+                            except OSError:
+                                pass
+                            os.close(status_w)
                             os._exit(0)
                         except BaseException:
                             try:
-                                os.write(result_w, b"E")
+                                os.write(status_w, b"MONITOR_ERROR\n")
                             except OSError:
                                 pass
-                            os._exit(92)
+                            os._exit(94)
 
+                    # The direct launcher has established an escaped descendant tree;
+                    # drop its own copies and exit so production PGID retirement has
+                    # no authority over the attacker/monitor sessions.
                     mapping.close()
                     os.close(fd)
+                    os.close(ready_w)
+                    os.close(go_r)
+                    os.close(result_w)
+                    os.close(status_w)
                     os._exit(0)
                 except BaseException:
                     os._exit(93)
@@ -120,6 +177,7 @@ class SignedAppImmutableFreezeProbeTests(unittest.TestCase):
             os.close(ready_w)
             os.close(go_r)
             os.close(result_w)
+            os.close(status_w)
             _, launcher_status = os.waitpid(launcher_pid, 0)
             self.assertTrue(os.WIFEXITED(launcher_status))
             self.assertEqual(os.WEXITSTATUS(launcher_status), 0)
@@ -142,17 +200,57 @@ class SignedAppImmutableFreezeProbeTests(unittest.TestCase):
             HELPER._terminate_remaining_process_group(launcher_pid)
             os.write(go_w, b"G")
 
-            readable, _, _ = select.select([result_r], [], [], 3.0)
-            self.assertTrue(readable, "detached writer produced no post-freeze result")
-            result = os.read(result_r, 1)
-            self.assertEqual(result, b"\x00", f"post-freeze authority unexpectedly succeeded: {result!r}")
+            result: bytes | None = None
+            attacker_status: int | None = None
+            monitor_error: str | None = None
+            deadline = time.monotonic() + 4.0
+            while time.monotonic() < deadline and (result is None or attacker_status is None):
+                watched = []
+                if result is None:
+                    watched.append(result_r)
+                if attacker_status is None and monitor_error is None:
+                    watched.append(status_r)
+                if not watched:
+                    break
+                readable, _, _ = select.select(watched, [], [], max(0.0, deadline - time.monotonic()))
+                if not readable:
+                    break
+                if result_r in readable and result is None:
+                    candidate = os.read(result_r, 1)
+                    if candidate:
+                        result = candidate
+                if status_r in readable and attacker_status is None and monitor_error is None:
+                    status_line = os.read(status_r, 64).decode("ascii", errors="replace").strip()
+                    if status_line == "MONITOR_ERROR":
+                        monitor_error = status_line
+                    elif status_line:
+                        try:
+                            attacker_status = int(status_line)
+                        except ValueError:
+                            monitor_error = status_line
 
             # Give any delayed mmap writeback a chance to become visible before the
             # final byte comparison. A green result must preserve the exact bytes.
             time.sleep(0.2)
-            self.assertEqual(product.read_bytes(), initial)
+            final_bytes = product.read_bytes()
+            evidence = {
+                "attackerStatus": _status_summary(attacker_status),
+                "bytesPreserved": final_bytes == initial,
+                "finalLength": len(final_bytes),
+                "monitorError": monitor_error,
+                "resultHex": result.hex() if result is not None else None,
+                "physicalAuthorityCreated": False,
+            }
+            print(EVIDENCE_MARKER + json.dumps(evidence, sort_keys=True), flush=True)
+
+            self.assertIsNone(monitor_error, f"detached-writer monitor failed: {monitor_error}")
+            self.assertIsNotNone(attacker_status, f"detached writer terminal status missing: {evidence}")
+            self.assertTrue(os.WIFEXITED(attacker_status), f"detached writer trapped/terminated after freeze: {evidence}")
+            self.assertEqual(os.WEXITSTATUS(attacker_status), 0, f"detached writer fixture exited nonzero: {evidence}")
+            self.assertEqual(result, b"\x00", f"post-freeze authority unexpectedly succeeded or returned no result: {evidence}")
+            self.assertEqual(final_bytes, initial, f"immutable freeze did not preserve exact bytes: {evidence}")
         finally:
-            for descriptor in (ready_r, ready_w, go_r, go_w, result_r, result_w):
+            for descriptor in (ready_r, ready_w, go_r, go_w, result_r, result_w, status_r, status_w):
                 try:
                     os.close(descriptor)
                 except OSError:
