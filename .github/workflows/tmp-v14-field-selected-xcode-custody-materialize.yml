@@ -58,9 +58,7 @@ jobs:
           printf '%s\n' "$output"
           if [[ "$status" != "0" ]]; then
             context="$(grep -nE 'xcode-select|SELECTED_DEVELOPER_DIR|SELECTED_XCODEBUILD' scripts/field/install_one_time_capture.command || true)"
-            combined="$output
---- generated installer custody lines ---
-$context"
+            combined="$output | generated installer custody lines: $context"
             escaped="$(printf '%s' "$combined" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')"
             printf '::error title=Selected Xcode custody regression::%s\n' "$escaped"
             exit "$status"
