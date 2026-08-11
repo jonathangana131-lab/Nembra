@@ -130,53 +130,54 @@ struct DashboardView: View {
         }
     }
 
+    /// Accessibility landscape is a real cockpit composition, not the portrait-like
+    /// vertical stack used by the first recovery. On the iPhone 12's 390 pt landscape
+    /// height, AX5 makes the Energy Rail and semantic text materially taller. Keep the
+    /// full-height instrument in the center and move context to lateral rails so large
+    /// text gets width without pushing speed/power above or below the physical screen.
     private func accessibilityCockpit(personality: DashboardModePersonality) -> some View {
-        VStack(spacing: 8) {
-            HStack(alignment: .top, spacing: 14) {
-                accessibilityStatusSummary
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                modeReadout(personality: personality)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
+        HStack(alignment: .center, spacing: 12) {
+            accessibilityStatusSummary
+                .frame(width: 188, maxHeight: .infinity, alignment: .topLeading)
 
             DashboardSpeedInstrumentView(modePersonality: personality)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .layoutPriority(3)
+                .layoutPriority(4)
 
-            accessibilityControlStrip
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 10) {
+                modeReadout(personality: personality)
+                Spacer(minLength: 0)
+                accessibilityControlStrip
+            }
+            .frame(width: 188, maxHeight: .infinity, alignment: .topTrailing)
         }
-        .accessibilityIdentifier("dashboard.cockpit.accessibility")
     }
 
     private var accessibilityStatusSummary: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(vehicle.profile.identity.displayName)
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(vehicle.profile.identity.displayName)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
 
-                Label(connectionText, systemImage: connectionIcon)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(connectionStyle)
-                    .lineLimit(1)
-            }
+            Label(connectionText, systemImage: connectionIcon)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(connectionStyle)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
 
-            HStack(spacing: 14) {
-                compactAccessibilityMetric(
-                    title: "Battery",
-                    value: batteryText,
-                    warning: batteryInstrumentWarning,
-                    retained: isRetainedBatteryData
-                )
-                compactAccessibilityMetric(
-                    title: "Trip",
-                    value: tripText,
-                    retained: isRetainedVehicleData
-                )
-            }
+            compactAccessibilityMetric(
+                title: "Battery",
+                value: batteryText,
+                warning: batteryInstrumentWarning,
+                retained: isRetainedBatteryData
+            )
+
+            compactAccessibilityMetric(
+                title: "Trip",
+                value: tripText,
+                retained: isRetainedVehicleData
+            )
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dashboard.accessibility-status")
@@ -196,6 +197,7 @@ struct DashboardView: View {
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(warning ? Color.red : (retained ? Color.secondary : Color.white))
                 .lineLimit(1)
+                .minimumScaleFactor(0.72)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
@@ -211,12 +213,14 @@ struct DashboardView: View {
             Label("Live speed required for controls", systemImage: "speedometer")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
                 .accessibilityLabel("Controls unavailable until current stopped speed is known")
                 .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
         } else if isVehicleMoving {
             Text("Controls available when stopped")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.trailing)
                 .accessibilityIdentifier("dashboard.controls-moving-message")
         }
     }
