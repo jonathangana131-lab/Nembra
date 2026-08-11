@@ -1,0 +1,52 @@
+name: Capture Field Selected Xcode Tool File Custody
+
+on:
+  push:
+    branches:
+      - repair/v14-selected-xcode-tool-file-custody-sol-1316sx-20260811
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+      - .github/workflows/capture-field-selected-xcode-tool-file-custody.yml
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+      - .github/workflows/capture-field-selected-xcode-tool-file-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selected-xcode-tool-file-custody:
+    name: Require exact selected Xcode executable authority
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind regression to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+
+      - name: Require exact selected Xcode executable custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_selected_xcode_tool_file_custody.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
