@@ -67,9 +67,6 @@ class PrivateInputs:
             identity_sources=self.identity_sources,
         )
         if self.generated_pods is None or self.generated_workspace is None:
-            # Direct package/unit callers from the pre-generated-graph contract
-            # retain their old private-only behavior. The real field CLI always
-            # supplies both generated roots below and therefore cannot use this.
             return (private_snapshot,)
         return (private_snapshot, self.generated_build_subject())
 
@@ -94,6 +91,7 @@ class KqueueVnodeBackend:
             "KQ_NOTE_DELETE",
             "KQ_NOTE_WRITE",
             "KQ_NOTE_EXTEND",
+            "KQ_NOTE_ATTRIB",
             "KQ_NOTE_LINK",
             "KQ_NOTE_RENAME",
             "KQ_NOTE_REVOKE",
@@ -108,6 +106,7 @@ class KqueueVnodeBackend:
             select.KQ_NOTE_DELETE
             | select.KQ_NOTE_WRITE
             | select.KQ_NOTE_EXTEND
+            | select.KQ_NOTE_ATTRIB
             | select.KQ_NOTE_LINK
             | select.KQ_NOTE_RENAME
             | select.KQ_NOTE_REVOKE
@@ -137,18 +136,49 @@ def _lstat_identity(path: Path) -> tuple[int, ...]:
     return provenance._stat_identity(metadata)
 
 
-def _add_parent_watch_chain(paths: set[Path], path: Path, *, repository_root: Path) -> None:
-    """Watch lexical parents so a whole admitted subtree cannot be swapped by rename."""
+def _lexical_absolute(path: Path) -> Path:
+    return Path(os.path.abspath(os.fspath(path.expanduser())))
 
+
+def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Path:
+    """Keep the lexical selector xcodebuild can reopen; do not resolve it away."""
+
+    candidate = _lexical_absolute(path)
+    authority_root = _lexical_absolute(root)
+    try:
+        relative = candidate.relative_to(authority_root)
+    except ValueError as error:
+        raise BuildGuardError(f"{label} must remain inside the accepted checkout root") from error
+
+    try:
+        root_metadata = authority_root.lstat()
+    except OSError as error:
+        raise BuildGuardError("accepted checkout root disappeared before build-window custody") from error
+    if not stat.S_ISDIR(root_metadata.st_mode) or stat.S_ISLNK(root_metadata.st_mode):
+        raise BuildGuardError("accepted checkout root must be one real directory")
+
+    current = authority_root
+    for component in relative.parts:
+        current = current / component
+        try:
+            metadata = current.lstat()
+        except OSError as error:
+            raise BuildGuardError(
+                f"{label} path ancestry disappeared before build-window custody: {current}"
+            ) from error
+        if stat.S_ISLNK(metadata.st_mode):
+            raise BuildGuardError(f"{label} path ancestry must not contain symlinks: {current}")
+    return candidate
+
+
+def _add_parent_watch_chain(paths: set[Path], path: Path, *, repository_root: Path) -> None:
     current = path.parent
     while True:
         paths.add(current)
         if current == repository_root:
             return
         if current == current.parent or repository_root not in current.parents:
-            raise BuildGuardError(
-                f"build input escapes the accepted checkout parent chain: {path}"
-            )
+            raise BuildGuardError(f"build input escapes the accepted checkout parent chain: {path}")
         current = current.parent
 
 
@@ -185,24 +215,28 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     _add_tree_watch_paths(paths, inputs.security_build, label="private security build input tree")
     _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")
 
-    # The parent-chain contract is a new field-build guarantee. Preserve the
-    # pre-existing private-only API for isolated tests/tools that may stage the
-    # five original inputs in separate temporary roots; the production CLI below
-    # always supplies both generated roots and therefore always receives strict
-    # checkout-parent custody.
+    # Preserve the original private-only API for isolated callers. The production
+    # field CLI always supplies both generated roots and receives the stronger
+    # lexical ancestry + parent-directory custody below.
     if inputs.generated_pods is not None and inputs.generated_workspace is not None:
-        repository_root = inputs.lockfile.parent
+        repository_root = _lexical_absolute(inputs.lockfile.parent)
+        field_paths = (
+            (inputs.lockfile, "dependency lock"),
+            (inputs.security_podspec, "private security podspec"),
+            (inputs.security_build, "private security build tree"),
+            (inputs.identity_podspec, "private identity podspec"),
+            (inputs.identity_sources, "private identity source tree"),
+            (inputs.generated_pods, "generated CocoaPods Pods tree"),
+            (inputs.generated_workspace, "generated CocoaPods workspace tree"),
+        )
+        admitted: list[Path] = []
+        for path, label in field_paths:
+            admitted.append(_require_real_checkout_ancestry(path, repository_root, label=label))
+
         paths.add(repository_root)
-        for path in (
-            inputs.lockfile,
-            inputs.security_podspec,
-            inputs.security_build,
-            inputs.identity_podspec,
-            inputs.identity_sources,
-            inputs.generated_pods,
-            inputs.generated_workspace,
-        ):
+        for path in admitted:
             _add_parent_watch_chain(paths, path, repository_root=repository_root)
+
         _add_tree_watch_paths(paths, inputs.generated_pods, label="generated CocoaPods Pods tree")
         _add_tree_watch_paths(paths, inputs.generated_workspace, label="generated CocoaPods workspace tree")
 
@@ -409,15 +443,30 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     command = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
-    lockfile = args.lockfile.resolve()
+
+    lockfile = _lexical_absolute(args.lockfile)
     root = lockfile.parent
+    lockfile = _require_real_checkout_ancestry(lockfile, root, label="dependency lock")
+    security_podspec = _require_real_checkout_ancestry(
+        args.security_podspec, root, label="private security podspec"
+    )
+    security_build = _require_real_checkout_ancestry(
+        args.security_build, root, label="private security build tree"
+    )
+    identity_podspec = _require_real_checkout_ancestry(
+        args.identity_podspec, root, label="private identity podspec"
+    )
+    identity_sources = _require_real_checkout_ancestry(
+        args.identity_sources, root, label="private identity source tree"
+    )
+
     return (
         PrivateInputs(
             lockfile=lockfile,
-            security_podspec=args.security_podspec.resolve(),
-            security_build=args.security_build.resolve(),
-            identity_podspec=args.identity_podspec.resolve(),
-            identity_sources=args.identity_sources.resolve(),
+            security_podspec=security_podspec,
+            security_build=security_build,
+            identity_podspec=identity_podspec,
+            identity_sources=identity_sources,
             generated_pods=root / "Pods",
             generated_workspace=root / "NembraCapture.xcworkspace",
         ),
