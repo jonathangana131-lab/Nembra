@@ -174,29 +174,6 @@ def create_review(
     return commitment(provenance.read_record(record_path), key)
 
 
-def verify_review(
-    *,
-    record_path: Path,
-    key_path: Path,
-    current: dict[str, str],
-    accepted: str,
-) -> str:
-    accepted = _accepted_commitment(accepted)
-    provenance.verify_record(record_path, current)
-    recorded = provenance.read_record(record_path)
-    key = _read_key(key_path)
-    observed = commitment(recorded, key)
-    if not hmac.compare_digest(observed, accepted):
-        raise PrivateReviewError(
-            "private Tuya build inputs do not match the externally accepted review commitment"
-        )
-    # The record and current generation were equal before key/commitment read.
-    # Recompute current after the external comparison so a stable replacement
-    # cannot become a new baseline between local verification and admission.
-    fresh = provenance.build_record(**_paths_for_current(current, record_path)) if False else None
-    return observed
-
-
 def verify_review_paths(
     *,
     record_path: Path,
