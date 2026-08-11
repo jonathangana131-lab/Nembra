@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:48:05Z",
-  "lastHeartbeatAt": "2026-08-11T12:08:10Z",
+  "lastHeartbeatAt": "2026-08-11T12:19:30Z",
   "leaseSeconds": 1800,
   "branch": "review/v14-field-compiler-window-2907-sol-4747rv",
   "pr": 2907,
