@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "type": "EVIDENCE_RESULT",
+  "eventId": "dashboard-xcode-timeout-root-cause-5d7e-0842",
+  "workerId": "sol-20260811-5d7e",
+  "laneId": "dashboard-live-cockpit",
+  "createdAt": "2026-08-11T08:42:00Z",
+  "message": "Diagnosed obsolete exact-head Xcode run 31471659488 from preserved artifact nembra-xcode27-pr-2817-15195-1. Simulator build succeeded and Dashboard UI assertions/screenshots passed. The primary UI xcodebuild failed because testLandscapeDashboardLaunchPerformance crossed the 120-second XCTest case allowance: CoreSimulator first waited ~60.17s for an animations-complete/orientation idle notification, then the launch metric completed its responsive launch samples at ~5.855s mean with ~2.9% RSD; at ~118.78s XCTest declared the case over its 2-minute allowance and restarted. This is a harness timeout, not product assertion evidence. Repair candidate PR #2839 head 06c45a9382cc7b9f128cf2233ba2fc67c03df543 gives only that performance case a 180s budget and raises only the primary xcodebuild maximum to 180 while default/other reruns remain 120. Fresh exact-head Xcode is still required after composition."
+}
