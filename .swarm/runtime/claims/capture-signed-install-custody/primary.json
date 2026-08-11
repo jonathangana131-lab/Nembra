@@ -9,7 +9,7 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:37:36Z",
-  "lastHeartbeatAt": "2026-08-11T21:51:30Z",
+  "lastHeartbeatAt": "2026-08-11T22:00:15Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-custody-recovery-gpt56-sol-20260811",
   "pr": 3056,
@@ -17,5 +17,5 @@
   "currentHeadSHA": "03dd7377db5fe1ae38679b7bfc9999840e79d216",
   "takeoverFromWorkerId": "sol-20260811-1312n8",
   "takeoverReason": "Generation-4 primary last heartbeat 2026-08-11T20:34:04Z plus 2700-second lease expired before recovery. Recover the same Capture P0 signed-install compiler-output-origin lane from live #2995 exact a71cc55 without touching active review/tests. Preserve #2998 detached-FD blocker and all protected-stage/signature/intended-device custody. PHYSICAL NO-GO.",
-  "checkpoint": "Published draft #3056 exact 03dd7377 on #2995 exact a71cc55. Three-path production successor replaces custom Python preexec credential demotion with structured UID/primary-GID launch and only the one fresh capability GID for the authority-bearing compiler child; portable source contract and real-Xcode probe aligned. PR gates queued; Xcode exact-head skipped by draft policy. This does NOT close #2998 detached FD/dirfd/mmap authority. Consume #3027 current APFS replay before selecting/composing a freeze primitive. PHYSICAL NO-GO."
+  "checkpoint": "Draft #3056 exact 03dd7377 remains the production successor. Structured UID/primary-GID launch with only the fresh capability GID is durable; portable protected-boundary job passed. Field Build Provenance red is inherited from #2995 at the same private-Tuya helper step, not a #3056 regression, and was classified in PR comment 5259286035 without waiving the gate. Freeze architecture is still blocked on detached FD/dirfd/mmap authority; #3064 now covers the previously missing APFS shared-mmap class. PHYSICAL NO-GO."
 }
