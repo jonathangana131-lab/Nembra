@@ -1,0 +1,14 @@
+bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+bash -n scripts/field/install_one_time_capture.command
+python compile checks
+downstream authority red-team
+test_bootstrap_rejects_substituted_generated_subject_helper (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBootstrapHelperExecutionCustodyTests.test_bootstrap_rejects_substituted_generated_subject_helper) ... ok
+test_bootstrap_rejects_substituted_provenance_verifier (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBootstrapHelperExecutionCustodyTests.test_bootstrap_rejects_substituted_provenance_verifier) ... ok
+test_build_guard_does_not_execute_mutable_generated_subject_neighbor (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBuildGuardHelperExecutionCustodyTests.test_build_guard_does_not_execute_mutable_generated_subject_neighbor) ... ok
+test_build_guard_does_not_execute_mutable_provenance_neighbor (scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody.DownstreamBuildGuardHelperExecutionCustodyTests.test_build_guard_does_not_execute_mutable_provenance_neighbor) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.574s
+
+OK
+VALIDATION_STATUS=0
