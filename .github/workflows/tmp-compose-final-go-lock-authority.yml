@@ -6,6 +6,7 @@ on:
       - repair/v14-final-go-lock-authority-1b1-sol
     paths:
       - scripts/ci/tmp_compose_final_go_lock_authority.py
+      - scripts/ci/tmp_fix_final_go_device_fixture.py
       - .github/workflows/tmp-compose-final-go-lock-authority.yml
 
 permissions:
@@ -43,11 +44,12 @@ jobs:
           git fetch --no-tags origin repair/v14-final-go-lock-authority-compose-sol
           test "$(git rev-parse FETCH_HEAD)" = "7a0da0eb08cac328f2212eb2d2a7c7af0265b7c1"
           run_step resolver python3 scripts/ci/tmp_compose_final_go_lock_authority.py
+          run_step fixture python3 scripts/ci/tmp_fix_final_go_device_fixture.py
           run_step compile python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
           run_step authority-tests python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
           run_step environment-tests python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
           run_step signed-artifact-tests python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
-          rm scripts/ci/tmp_compose_final_go_lock_authority.py .github/workflows/tmp-compose-final-go-lock-authority.yml
+          rm scripts/ci/tmp_compose_final_go_lock_authority.py scripts/ci/tmp_fix_final_go_device_fixture.py .github/workflows/tmp-compose-final-go-lock-authority.yml
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
