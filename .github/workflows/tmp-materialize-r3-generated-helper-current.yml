@@ -1,0 +1,53 @@
+name: Temporary Materialize Current R3 Helper Execution Custody
+
+on:
+  push:
+    branches:
+      - repair/v14-r3-generated-helper-execution-current-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-r3-generated-helper-execution-current-sol
+          fetch-depth: 0
+
+      - name: Apply current-head execution-subject repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_materialize_r3_generated_helper_current.py
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py \
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
+          python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          git diff --check
+
+      - name: Commit clean production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-materialize-r3-generated-helper-current.yml
+          rm -f scripts/ci/tmp_materialize_r3_generated_helper_current.py
+          git config user.name 'nembra-capture-bot'
+          git config user.email 'nembra-capture-bot@users.noreply.github.com'
+          git add \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py \
+            .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml \
+            .github/workflows/tmp-materialize-r3-generated-helper-current.yml \
+            scripts/ci/tmp_materialize_r3_generated_helper_current.py
+          git diff --cached --check
+          git commit -m 'fix(capture): pin current R3 generated helper execution'
+          git push origin HEAD:repair/v14-r3-generated-helper-execution-current-sol
