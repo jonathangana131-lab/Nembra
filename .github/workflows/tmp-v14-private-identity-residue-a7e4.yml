@@ -1,5 +1,6 @@
 name: Temporary Private Identity Residue Hardening
 
+# Retry 2: package custody assertions now track checkout-root publication.
 on:
   push:
     branches:
