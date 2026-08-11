@@ -8,6 +8,7 @@ on:
     paths:
       - scripts/ci/es80_signed_app_install_guard.py
       - scripts/ci/tests/test_es80_signed_app_install_guard.py
+      - scripts/ci/tests/test_capture_signed_app_install_custody_source.py
       - scripts/field/install_one_time_capture.command
       - .github/workflows/capture-signed-app-install-custody.yml
   workflow_dispatch:
@@ -41,10 +42,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 -m py_compile scripts/ci/es80_signed_app_install_guard.py scripts/ci/tests/test_es80_signed_app_install_guard.py
+          /usr/bin/python3 -m py_compile scripts/ci/es80_signed_app_install_guard.py scripts/ci/tests/test_es80_signed_app_install_guard.py scripts/ci/tests/test_capture_signed_app_install_custody_source.py
+          bash -n scripts/field/install_one_time_capture.command
 
       - name: Exercise portable custody invariants
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_es80_signed_app_install_guard.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_custody_source.py
