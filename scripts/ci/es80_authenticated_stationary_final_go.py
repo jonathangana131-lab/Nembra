@@ -14,6 +14,12 @@ from typing import Any
 REPO="jonathangana131-lab/Nembra"; OWNER="jonathangana131-lab"; PROC="ES80-AUTHENTICATED-STATIONARY-v1"
 BUNDLE="com.jonathangana131.nembra.capturelearn"; DEVICE="iPhone 12"; PRODUCT="iPhone13,2"
 WORKFLOWS=("Capture Main Selective Graft Diagnostic","Capture Field Build Provenance","Xcode 27 PR Exact-Head QA","Capture Standalone Visual Evidence")
+WORKFLOW_PATHS={
+    "Capture Main Selective Graft Diagnostic":".github/workflows/capture-main-selective-graft-diagnostic.yml",
+    "Capture Field Build Provenance":".github/workflows/capture-field-build-provenance.yml",
+    "Xcode 27 PR Exact-Head QA":".github/workflows/xcode27-pr-command.yml",
+    "Capture Standalone Visual Evidence":".github/workflows/capture-standalone-visual-evidence.yml",
+}
 VISUAL=WORKFLOWS[-1]; MANIFEST="NembraCaptureStandaloneVisualEvidence.json"
 STATES={"unprovisioned-dark-standard","unprovisioned-dark-accessibility-xxxl"}
 INSTALLER="scripts/field/install_one_time_capture.command"; RUNBOOK="docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"; IDENTITY="NembraApp/App/NembraCaptureBuildIdentity.swift"
@@ -83,8 +89,8 @@ def public(source:str,pr:int,runs:dict[str,int],get=api):
         rid=pos(runs[name],name); _,r=get(f"/actions/runs/{rid}")
         pulls=r.get("pull_requests",[])
         bound=(isinstance(pulls,list) and any(isinstance(x,dict) and x.get("number")==pr for x in pulls)) or (pulls==[] and r.get("head_branch")==head_ref)
-        if r.get("name")!=name or canon(r.get("head_sha"),name)!=source or r.get("status")!="completed" or r.get("conclusion")!="success" or r.get("event")!="pull_request" or not bound: raise GoError(f"{name} is not exact terminal SUCCESS for PR #{pr}")
-        subjects.append({"name":name,"runID":rid,"headSHA":source,"conclusion":"success"})
+        if r.get("name")!=name or r.get("path")!=WORKFLOW_PATHS[name] or canon(r.get("head_sha"),name)!=source or r.get("status")!="completed" or r.get("conclusion")!="success" or r.get("event")!="pull_request" or not bound: raise GoError(f"{name} is not exact terminal SUCCESS from its canonical workflow for PR #{pr}")
+        subjects.append({"name":name,"path":WORKFLOW_PATHS[name],"runID":rid,"headSHA":source,"conclusion":"success"})
     return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":state,"merged":merged,"draft":draft},subjects
 
 def visual(source:str,run:int,aid:int,archive:Path,get=api):
