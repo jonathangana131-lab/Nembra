@@ -1,5 +1,6 @@
 name: Capture Private Identity Publication Races Red Team
 
+# Temporary bootstrap head for PR #2943; self-restored by the materializer.
 on:
   pull_request:
     paths:
