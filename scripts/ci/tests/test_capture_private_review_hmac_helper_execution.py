@@ -112,7 +112,7 @@ class BuildGuardHMACHelperExecutionTests(unittest.TestCase):
                 "class PrivateReviewCommitmentError(RuntimeError): pass\n"
                 "def _read_private_regular_file(path, *, label, maximum_size=None, exact_size=None):\n"
                 "    return b'x', (0, 0, 0, 0, 0, 0, 0)\n"
-                "def verify_commitment(*, witness_path, key_path, expected): return expected\n",
+                "def verify_commitment(*, witness, key_path, expected_tag): return expected_tag\n",
                 encoding="utf-8",
             )
 
