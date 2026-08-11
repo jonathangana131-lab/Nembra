@@ -7,16 +7,17 @@
   "workerId": "sol-20260811-brv7",
   "leaseId": "brsim-primary-brv7-20260811-2139",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:39:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:42:11Z",
+  "lastHeartbeatAt": "2026-08-11T21:45:18Z",
+  "releasedAt": "2026-08-11T21:45:18Z",
   "leaseSeconds": 1800,
   "branch": "recovery/v15-battery-range-simulator-display/sol-f3a8",
   "pr": 2815,
   "sourceSHA": "359f1226938c2fae8ca63346113b005c3f336206",
-  "currentHeadSHA": "c7413bd7a823cd01aec1039ea42fbaeee22d6b6f",
+  "currentHeadSHA": "c3798e8abd12fc721daa227bd4ca791e8e42d81d",
   "takeoverFromWorkerId": "sol-20260811-f3a8",
-  "takeoverReason": "Generation-1 lease expired many hours ago. Recover the same open #2815 lineage to close the exact retainedBatteryStorage production-vs-Simulator regression identified by independent predecessor review 4910969717; preserve production behavior and do not self-accept the successor.",
   "ownedPaths": ["Packages/NembraCore/Tests/NembraCoreTests/SimulatorBatteryDisplayAuthorityAppSourceTests.swift"],
-  "checkpoint": "Pushed test-only successor c7413bd7. The regression now isolates makeRuntime, compacts whitespace, and mechanically requires the exact production-only ternary `bootstrap.scenario == nil ? UserDefaultsRetainedBatterySnapshotStorage() : nil`, plus one forwarding site. No production source changed. Exact-head Xcode run 31539083686 is queued; ancestor green does not accept this head. Visual acceptance remains independently blocked because the standard artifact does not open BatteryRangeView and this lane does not authorize UI-test/harness writes. PHYSICAL ES80 battery/range truth remains unavailable."
+  "result": "SOURCE_BLOCKER_REPAIRED_EXACT_HEAD_NOT_ACCEPTED",
+  "checkpoint": "Test-only successor c3798e8 mechanically locks the production-vs-Simulator retainedBatteryStorage fence and alternate runtime-store bypasses; production source is unchanged. Exact-head Xcode run 31539214153 resolved c3798e8 then cancelled the Mac build/test/capture job before steps, so exact-head acceptance remains unearned. BatteryRangeView screenshots/accessibility evidence remain absent and require an authorized visual/UI-test lane. Independent successor review required; implementing worker must not self-accept. Durable EVIDENCE_RESULT 214518-evidence-result-brv7 published. PHYSICAL ES80 battery/range truth remains unavailable."
 }
