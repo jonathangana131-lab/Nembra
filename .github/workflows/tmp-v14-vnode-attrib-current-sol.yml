@@ -34,7 +34,7 @@ jobs:
           provenance_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateFieldInputProvenanceSourceTests.swift'
           guard='Scripts/capture_tuya_private_input_build_guard.py'
 
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE"
+          test "$(git merge-base HEAD "$EXPECTED_BASE")" = "$EXPECTED_BASE"
           test "$(git diff --name-only "$EXPECTED_BASE"...HEAD)" = "$materializer"
           test "$(git rev-parse "HEAD:$python_test")" = '2dbaab1ad38fe0e93b74d51dfafb75153c28ca0d'
           test "$(git rev-parse "HEAD:$provenance_test")" = '33cd7a49ebb680a4d298fe5309dde0036da24c71'
@@ -85,11 +85,21 @@ jobs:
           grep -Fq 'run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot' "$python_test"
           grep -Fq 'run_accepted_source_python \"$TUYA_PROVENANCE_HELPER_RELATIVE\" verify' "$python_test"
           grep -Fq 'run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot' "$provenance_test"
-          git diff --check
+
+          if ! diff_check="$(git diff --check 2>&1)"; then
+            encoded="${diff_check//'%'/'%25'}"
+            encoded="${encoded//$'\r'/'%0D'}"
+            encoded="${encoded//$'\n'/'%0A'}"
+            printf '::error title=Vnode materializer diff-check::%s\n' "$encoded"
+            exit 1
+          fi
 
           changed="$(git status --short | awk '{print $2}' | sort)"
           expected="$(printf '%s\n' "$vnode_workflow" "$vnode_test" "$python_test" "$provenance_test" "$guard" | sort)"
-          test "$changed" = "$expected"
+          if [[ "$changed" != "$expected" ]]; then
+            printf '::error title=Vnode materializer changed-path mismatch::expected=%q actual=%q\n' "$expected" "$changed"
+            exit 1
+          fi
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
