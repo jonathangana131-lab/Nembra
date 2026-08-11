@@ -1,7 +1,7 @@
 name: Temporary Capture Device Digest Rendezvous
 
 on:
-  push:
+  pull_request:
     branches:
       - repair/v14-capture-device-digest-rendezvous-sol
 
@@ -10,12 +10,13 @@ permissions:
 
 jobs:
   materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
       - name: Transform and validate
         shell: bash
         run: |
