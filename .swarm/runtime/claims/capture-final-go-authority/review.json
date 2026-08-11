@@ -7,15 +7,19 @@
   "workerId": "sol-20260811-a91c7e",
   "leaseId": "capture-final-go-review-a91c7e-20260811-2046",
   "generation": 11,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:46:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:46:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:47:10Z",
+  "releasedAt": "2026-08-11T20:47:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2921,
   "sourceSHA": "8242722c0b0e4ff2bcd117419fe405db191a5985",
   "currentHeadSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
-  "takeoverReason": "Generation-10 source/control review accepted exact 471cc025 but correctly released WAITING_XCODE. Xcode run 31532784381 is now terminal SUCCESS on that unchanged exact head, while canonical Final-GO run 31532784360 remains terminal SUCCESS. Re-enter review only to bind the newly terminal required gate to the already-proven unchanged source/control composition; do not infer final flagship composition or physical authorization. PHYSICAL NO-GO.",
-  "intent": "Seal exact Final-GO software-authority child acceptance on unchanged 471cc025 if workflow identity/head remain exact, publish durable checkpoint, then release and refresh dependencies."
+  "outcome": "ACCEPTED_EXACT_HEAD_FINAL_GO_INGREDIENT",
+  "reviewId": 4910583605,
+  "finalGoRun": 31532784360,
+  "xcodeRun": 31532784381,
+  "releaseReason": "Exact 471cc025 remained unchanged after generation-10 source/control acceptance. Canonical Final-GO run 31532784360/job 93916591748 and required Xcode 27 run 31532784381/jobs 93916591468+93916625054 are now both terminal SUCCESS on that immutable head. Review 4910583605 records exact software-authority child acceptance only. Build authority, signed-install, private identity, current flagship app-visible/runtime lines, final composition, and physical ES80 truth remain separate. PHYSICAL NO-GO."
 }
