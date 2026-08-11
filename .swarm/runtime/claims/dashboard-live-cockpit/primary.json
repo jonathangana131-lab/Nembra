@@ -9,19 +9,20 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:23:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:28:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:35:00Z",
   "leaseSeconds": 2700,
-  "branch": "repair/v15-dashboard-ax5-status-sol-c84e",
-  "pr": 2981,
+  "branch": "repair/v15-dashboard-ax5-energyrail-sol-c84e",
+  "pr": 2991,
   "sourceSHA": "c150a8287463231ee9af174c38564738bab576a3",
-  "currentHeadSHA": "c200cba0c072051a3dc84457bd73612a851ef815",
+  "currentHeadSHA": "355689e9e8c66dec32a43e42170665c783b6d1b1",
   "takeoverFromWorkerId": "sol-20260811-hl6k",
-  "takeoverReason": "Generation-2 lease expired many hours ago. Fresh independent evidence review of exact c150a828 / Xcode run 31510207367 found the former vertical overflow closed but critical AX5 vehicle/connection labels visibly ellipsized in the fixed 188-pt status rail and no AX5 stopped-control runtime witness. Continue the same Dashboard accessibility closure with a narrow product+acceptance successor; preserve telemetry truth and Simulator-only authority.",
+  "takeoverReason": "Generation-2 lease expired many hours ago. Exact c150 AX5 evidence exposed status truncation and later independent visual review exposed Energy Rail/currentness-label intersection. Continue the same Dashboard accessibility closure through stacked exact-head successors; preserve telemetry truth and Simulator-only authority.",
   "ownedPaths": [
     "NembraApp/Features/Dashboard/DashboardView.swift",
+    "NembraApp/DesignSystem/NembraVisuals.swift",
     "NembraUITests/NembraUITests.swift",
     "scripts/ci/xcode27_simulator_capture.sh"
   ],
-  "checkpoint": "Opened #2981 exact c200cba as a two-file successor: accessibility status identity/connection now reflow to two lines instead of scaling/ellipsis; real AX content-size harness now reruns both riding and the existing stopped-controls mode/touch-target screenshot test. /xcode27 requested. Parent c150 green does not accept moved head.",
-  "acceptance": "Exact c200cba must keep speed/Energy Rail semantics, make critical left status intelligible at AX5 without disabling Dynamic Type, prove stopped controls under the same real AX content-size setting, and re-earn exact-head Xcode/screenshots plus independent review. ES80 physical NO-GO."
+  "checkpoint": "#2981 exact c200cba repairs AX5 status reflow and adds real AX stopped-state rerun; its exact Xcode attempt 31533023076 was runner-cancelled before build then re-run without moving the head and is in flight. Independent visual review simultaneously found AX5 LIVE POWER/rail intersection on parent artifact, so opened one-file successor #2991 exact 355689e: AX rail top padding 76->92 and minimum component height 156->164 only; standard geometry unchanged. /xcode27 requested on #2991. Checkpoint != endpoint.",
+  "acceptance": "Final exact successor must keep speed/Energy Rail semantic truth, show untruncated vehicle/connection status at AX5, separate power currentness text from the rail, prove riding + connected-stopped under real system AX content size, preserve 44-pt stopped controls, avoid reintroduced vertical clipping, and earn exact-head Xcode/screenshots plus independent review. ES80 physical NO-GO."
 }
