@@ -6,22 +6,23 @@
   "title": "Rides monotonic-duration authority and durable archive",
   "objective": "Converge the completed-ride monotonic-duration authority seal and its one-way non-authoritative persistence attachment onto current main without allowing Codable/persisted bytes, UUID matching, or wall-clock subtraction to remint observed-duration authority.",
   "priority": 3,
-  "state": "BLOCKED_EXTERNAL",
+  "state": "VERIFYING",
   "dependencies": [],
   "blockers": [
     {
-      "id": "legacy-parent-not-current",
+      "id": "current-main-parent-candidate-pending-acceptance",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy parent PR #1474 remains draft and GitHub reports it non-mergeable. Its exact head 40fda83500f6c9830f69631bbe3d6a35c381825b is based on old main b603d5012139559152269ad304fea58fa8a0ceec, while live main at reconciliation is d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. Re-anchor/reconcile before acceptance; focused harness evidence is not full NembraCore acceptance.",
-      "pr": 1474,
-      "headSHA": "40fda83500f6c9830f69631bbe3d6a35c381825b"
+      "reason": "Fresh reconciliation found current main already contains the non-Codable authoritative CompletedRideDurationEvidence plus newer exact completed-ride provenance in the non-authoritative archive, so replaying all of stale #1474 would regress newer truth. The still-live gap was narrower: RideSessionDurationEvidence.swift on main is exact legacy pre-fix blob 3961c8ae. Current-main candidate #3067 ports only #1474's exact final producer-access blob 171431b4 and adds a lane-authorized source-contract assertion to CompletedRideDurationPersistenceInvariantTests.swift. Fresh exact-head NembraCore/integration validation and independent review remain required.",
+      "pr": 3067,
+      "headSHA": "488f0e8480e7187fda312c6b6dcb0c1e0b6d3d13",
+      "run": 31540497351
     },
     {
-      "id": "stacked-child-waits-parent",
+      "id": "stacked-child-needs-fresh-reconciliation",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy child PR #1514 is correctly stacked on exact #1474 head 40fda83500f6c9830f69631bbe3d6a35c381825b and remains draft. It has no full repository-native NembraCore green claim and must not merge independently or create archive-to-authoritative restore authority.",
+      "reason": "Legacy child #1514 must not be replayed wholesale after parent acceptance because current main already contains newer archive/provenance semantics. Once #3067 is independently accepted, reconcile only any still-missing one-way durable attachment behavior against current main; persisted bytes, UUID matching, and archive presence remain non-authoritative.",
       "pr": 1514,
       "headSHA": "5744f017a330495d425b9cfcbddd802c9cbfcebd"
     }
@@ -47,13 +48,21 @@
   "acceptance": {"independentReview": true},
   "physical": {"required": false, "state": "SOFTWARE_ONLY"},
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "currentCandidate": {
+    "pr": 3067,
+    "headSHA": "488f0e8480e7187fda312c6b6dcb0c1e0b6d3d13",
+    "baseSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "xcodeRun": 31540497351,
+    "status": "EXACT_HEAD_VALIDATION_QUEUED",
+    "appVisibility": "PACKAGE_DOMAIN_ONLY_SOURCE_NOT_DIRECTLY_SELECTED_IN_NEMBRA_APP"
+  },
   "legacy": {
     "parentPR": 1474,
     "parentHeadSHA": "40fda83500f6c9830f69631bbe3d6a35c381825b",
     "childPR": 1514,
     "childHeadSHA": "5744f017a330495d425b9cfcbddd802c9cbfcebd",
     "supersededPredecessorPRs": [1410],
-    "knownExactHeadFinding": "#1474 seals runtime duration authority away from generic Codable and direct-source producer access; #1514 adds one-way non-authoritative archive persistence on that exact parent. Neither lineage is current-main accepted or app-visible."
+    "knownExactHeadFinding": "Current main already integrated and extended #1474's completed-duration archive authority work, but not its direct-source RideSessionDurationEvidence producer-access fence. #3067 isolates that remaining exact source repair on current main. #1514 requires semantic reconciliation, not stale replay."
   },
   "tags": ["rides", "p3", "duration", "authority", "persistence", "legacy-import"]
 }
