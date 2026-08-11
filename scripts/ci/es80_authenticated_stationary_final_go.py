@@ -21,6 +21,8 @@ WORKFLOW_PATHS={
     "Capture Standalone Visual Evidence":".github/workflows/capture-standalone-visual-evidence.yml",
 }
 VISUAL=WORKFLOWS[-1]; MANIFEST="NembraCaptureStandaloneVisualEvidence.json"
+AUTH_WORKFLOW_NAME="Capture Authenticated Stationary Final GO"
+AUTH_WORKFLOW_PATH=".github/workflows/capture-authenticated-stationary-final-go.yml"
 STATES={"unprovisioned-dark-standard","unprovisioned-dark-accessibility-xxxl"}
 INSTALLER="scripts/field/install_one_time_capture.command"; RUNBOOK="docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"; IDENTITY="NembraApp/App/NembraCaptureBuildIdentity.swift"
 HEX40=re.compile(r"^[0-9a-f]{40}$"); HEX64=re.compile(r"^[0-9a-f]{64}$"); DIGEST=re.compile(r"^sha256:([0-9a-f]{64})$")
@@ -93,6 +95,23 @@ def public(source:str,pr:int,runs:dict[str,int],get=api):
         subjects.append({"name":name,"path":WORKFLOW_PATHS[name],"runID":rid,"headSHA":source,"conclusion":"success"})
     return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":state,"merged":merged,"draft":draft},subjects
 
+def control_plane(authority_repo:Path,pr:int,run_id:int,get=api):
+    root=authority_repo.expanduser().resolve(strict=True); source=canon(git(root,"rev-parse","HEAD"),"GO control-plane HEAD")
+    if git(root,"status","--porcelain=v1","--untracked-files=all"): raise GoError("GO control-plane checkout is not clean")
+    _,p=get(f"/pulls/{pos(pr,'GO control-plane PR')}"); head=p.get("head",{}); base=p.get("base",{}); state=p.get("state"); merged=bool(p.get("merged_at")); draft=p.get("draft")
+    if canon(head.get("sha"),"GO control-plane PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main" or not ((state=="open" and draft is False) or (state=="closed" and merged)): raise GoError("GO control-plane PR is not exact/promotable")
+    _,run=get(f"/actions/runs/{pos(run_id,'GO control-plane workflow run')}")
+    if run.get("name")!=AUTH_WORKFLOW_NAME or run.get("path")!=AUTH_WORKFLOW_PATH or canon(run.get("head_sha"),"GO control-plane workflow head")!=source or run.get("status")!="completed" or run.get("conclusion")!="success" or run.get("event") not in {"push","pull_request"}: raise GoError("GO control-plane exact authority workflow is not terminal SUCCESS")
+    branch=head.get("ref"); pulls=run.get("pull_requests",[])
+    if run.get("event")=="pull_request":
+        bound=(isinstance(pulls,list) and any(isinstance(x,dict) and x.get("number")==pr for x in pulls)) or (pulls==[] and run.get("head_branch")==branch)
+        if not bound: raise GoError("GO control-plane workflow is not bound to canonical PR")
+    elif run.get("head_branch")!=branch: raise GoError("GO control-plane push workflow is not bound to canonical PR branch")
+    paths=("scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py",AUTH_WORKFLOW_PATH,"scripts/ci/tests/test_es80_authenticated_stationary_final_go.py")
+    blobs={path:git(root,"rev-parse",f"HEAD:{path}").lower() for path in paths}
+    if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) for value in blobs.values()): raise GoError("GO control-plane Git blob identity invalid")
+    return {"authority":"nembra-authenticated-stationary-go-control-plane-v1","sourceCommitSHA":source,"prNumber":pr,"workflowRunID":run_id,"workflowName":AUTH_WORKFLOW_NAME,"workflowPath":AUTH_WORKFLOW_PATH,"gitBlobs":blobs}
+
 def visual(source:str,run:int,aid:int,archive:Path,get=api):
     _,a=get(f"/actions/artifacts/{aid}"); m=DIGEST.fullmatch(a.get("digest","") if isinstance(a.get("digest"),str) else "")
     if a.get("expired") is not False or a.get("workflow_run",{}).get("id")!=run or not m: raise GoError("visual artifact metadata mismatch")
@@ -164,7 +183,8 @@ def installer(repo:Path,source:str,device:Path):
 def retained_signed_artifact_unimplemented(repo:Path,source:str,device:Path,install:dict[str,Any])->dict[str,Any]:
     raise GoError("retained signed IPA production + independent reinspection is not implemented; physical GO remains disabled")
 
-def build(*,candidate_repo:Path,source:str,pr:int,runs:dict[str,int],artifact_id:int,review_id:int,archive:Path,device_file:Path,get=api,run_installer=installer,inspect_signed_artifact=retained_signed_artifact_unimplemented,now=None):
+def build(*,authority_repo:Path,authority_pr:int,authority_run:int,candidate_repo:Path,source:str,pr:int,runs:dict[str,int],artifact_id:int,review_id:int,archive:Path,device_file:Path,get=api,control_authority=control_plane,run_installer=installer,inspect_signed_artifact=retained_signed_artifact_unimplemented,now=None):
+    control=control_authority(authority_repo,authority_pr,authority_run,get)
     source=canon(source,"source"); pr=pos(pr,"PR")
     ps,ws=public(source,pr,runs,get); vs=visual(source,runs[VISUAL],pos(artifact_id,"artifact"),archive,get); rv=review(pr,review_id,source,vs,get); cs=candidate(candidate_repo,source); dh=device_hash(device_file)
     got=run_installer(candidate_repo,source,device_file); expected={"authority":"accepted-candidate-private-installer-execution-v1","result":"success","sourceCommitSHA":source,"buildIdentifier":f"capture-v14-{source[:12]}","bundleIdentifier":BUNDLE,"procedureIdentifier":PROC,"baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27"}
@@ -184,7 +204,7 @@ def build(*,candidate_repo:Path,source:str,pr:int,runs:dict[str,int],artifact_id
     ps,ws,vs,rv,cs,dh=post_ps,post_ws,post_vs,post_rv,post_cs,post_dh
 
     stamp=(now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat().replace("+00:00","Z")
-    return {"schemaVersion":1,"authority":"nembra-authenticated-stationary-final-go-v1","status":"GO","createdAtUTC":stamp,"acceptedSourceCommitSHA":source,"acceptedPR":ps,"procedureIdentifier":PROC,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"softwareAcceptance":ws,"visualArtifact":vs,"visualReview":rv,"candidateSource":cs,"privateFieldInstall":{**got,"intendedDeviceIdentifierSHA256":dh},"retainedSignedFieldArtifact":signed,"experiment":{"scope":"one stationary authenticated read-only ES80 Capture attempt","baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27","initialScooterState":"OFF and stationary","runtimeRequiredGates":["field-build provenance remains current","official Tuya SDK + owning account","fresh exact scooter membership/UID lease","fresh unique OFF1 -> ON1 -> OFF2 -> ON2 full-UUID correlation","explicit operator target confirmation","official Tuya SDK sole post-handoff BLE owner",">=45 monotonic seconds same-generation authenticated application evidence","seal accepted immutable prefix before share"],"expectedArtifact":"one immutable sanitized Nembra Capture JSON","expectedArtifactTruth":{"rawFD50BytesCaptured":False,"dpQueriesSent":False,"dpCommandsSent":False},"stopConditions":["authority/account/membership changes","correlation none/ambiguous","continuity/clock/lifecycle fails","no same-generation evidence by deadline","any secret leak","any DP query/publish, scooter command, reset/unbind/OTA, or second post-auth CoreBluetooth owner"],"ridingAuthorized":False,"applicationWritesAuthorized":False,"dpQueryOrPublishAuthorized":False,"scooterCommandsAuthorized":False},"physicalResultCollected":False}
+    return {"schemaVersion":1,"authority":"nembra-authenticated-stationary-final-go-v1","status":"GO","createdAtUTC":stamp,"finalGOControlPlane":control,"acceptedSourceCommitSHA":source,"acceptedPR":ps,"procedureIdentifier":PROC,"buildIdentifier":expected["buildIdentifier"],"bundleIdentifier":BUNDLE,"softwareAcceptance":ws,"visualArtifact":vs,"visualReview":rv,"candidateSource":cs,"privateFieldInstall":{**got,"intendedDeviceIdentifierSHA256":dh},"retainedSignedFieldArtifact":signed,"experiment":{"scope":"one stationary authenticated read-only ES80 Capture attempt","baselineDevice":DEVICE,"baselineProductType":PRODUCT,"baselineOS":"iOS 27","initialScooterState":"OFF and stationary","runtimeRequiredGates":["field-build provenance remains current","official Tuya SDK + owning account","fresh exact scooter membership/UID lease","fresh unique OFF1 -> ON1 -> OFF2 -> ON2 full-UUID correlation","explicit operator target confirmation","official Tuya SDK sole post-handoff BLE owner",">=45 monotonic seconds same-generation authenticated application evidence","seal accepted immutable prefix before share"],"expectedArtifact":"one immutable sanitized Nembra Capture JSON","expectedArtifactTruth":{"rawFD50BytesCaptured":False,"dpQueriesSent":False,"dpCommandsSent":False},"stopConditions":["authority/account/membership changes","correlation none/ambiguous","continuity/clock/lifecycle fails","no same-generation evidence by deadline","any secret leak","any DP query/publish, scooter command, reset/unbind/OTA, or second post-auth CoreBluetooth owner"],"ridingAuthorized":False,"applicationWritesAuthorized":False,"dpQueryOrPublishAuthorized":False,"scooterCommandsAuthorized":False},"physicalResultCollected":False}
 
 def publication():
     p=Path(__file__).with_name("es80_today_final_go_publication.py"); s=importlib.util.spec_from_file_location("pub",p)
@@ -192,7 +212,7 @@ def publication():
     m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
 
 def main(argv=None):
-    p=argparse.ArgumentParser(); p.add_argument("--candidate-repo",type=Path,required=True); p.add_argument("--source-sha",required=True); p.add_argument("--pr-number",type=int,required=True); p.add_argument("--workflow",action="append",required=True); p.add_argument("--visual-artifact-id",type=int,required=True); p.add_argument("--visual-artifact-archive",type=Path,required=True); p.add_argument("--visual-review-id",type=int,required=True); p.add_argument("--intended-device-udid-file",type=Path,required=True); p.add_argument("--output",type=Path,required=True); p.add_argument("--run-private-installer",action="store_true"); a=p.parse_args(argv)
+    p=argparse.ArgumentParser(); p.add_argument("--authority-repo",type=Path,required=True); p.add_argument("--authority-pr-number",type=int,required=True); p.add_argument("--authority-workflow-run",type=int,required=True); p.add_argument("--candidate-repo",type=Path,required=True); p.add_argument("--source-sha",required=True); p.add_argument("--pr-number",type=int,required=True); p.add_argument("--workflow",action="append",required=True); p.add_argument("--visual-artifact-id",type=int,required=True); p.add_argument("--visual-artifact-archive",type=Path,required=True); p.add_argument("--visual-review-id",type=int,required=True); p.add_argument("--intended-device-udid-file",type=Path,required=True); p.add_argument("--output",type=Path,required=True); p.add_argument("--run-private-installer",action="store_true"); a=p.parse_args(argv)
     if not a.run_private_installer: p.error("--run-private-installer is required")
     try:
         runs={}
@@ -200,7 +220,7 @@ def main(argv=None):
             n,sep,i=x.rpartition("=")
             if not sep or n in runs: raise GoError("--workflow must be unique NAME=RUN_ID")
             runs[n]=pos(int(i),n)
-        r=build(candidate_repo=a.candidate_repo,source=a.source_sha,pr=a.pr_number,runs=runs,artifact_id=a.visual_artifact_id,review_id=a.visual_review_id,archive=a.visual_artifact_archive,device_file=a.intended_device_udid_file)
+        r=build(authority_repo=a.authority_repo,authority_pr=a.authority_pr_number,authority_run=a.authority_workflow_run,candidate_repo=a.candidate_repo,source=a.source_sha,pr=a.pr_number,runs=runs,artifact_id=a.visual_artifact_id,review_id=a.visual_review_id,archive=a.visual_artifact_archive,device_file=a.intended_device_udid_file)
         raw=(json.dumps(r,indent=2,sort_keys=True)+"\n").encode(); d=publication().publish_record_no_replace(a.output,raw)
     except (GoError,OSError,ValueError) as e: print(f"AUTHENTICATED STATIONARY FINAL GO: NO-GO: {e}",file=sys.stderr); return 2
     print(f"AUTHENTICATED STATIONARY FINAL GO: GO: {a.output.resolve(strict=True)}\nrecord_sha256={d}\nPHYSICAL RESULT COLLECTED: NO"); return 0

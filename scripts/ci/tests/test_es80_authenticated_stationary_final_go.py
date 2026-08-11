@@ -18,17 +18,21 @@ class F:
  def write_review(self,**x):
   d={'id':self.rid,'node_id':'PRR_test','state':'COMMENTED','commit_id':self.s,'user':{'login':go.OWNER},'author_association':'OWNER','submitted_at':'2026-08-11T02:00:00Z','body':self.body()};d.update(x);self.map[f'/pulls/{self.pr}/reviews/{self.rid}']=d
  def get(self,p):v=self.map[p];return json.dumps(v).encode(),v
+ def control(self,repo,pr,run,get):return {'authority':'nembra-authenticated-stationary-go-control-plane-v1','sourceCommitSHA':'e'*40,'prNumber':2638,'workflowRunID':900,'workflowName':go.AUTH_WORKFLOW_NAME,'workflowPath':go.AUTH_WORKFLOW_PATH,'gitBlobs':{}}
  def inst(self,repo,s,dev):return {'authority':'accepted-candidate-private-installer-execution-v1','result':'success','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'baselineDevice':go.DEVICE,'baselineProductType':go.PRODUCT,'baselineOS':'iOS 27'}
  def signed(self,repo,s,dev,install):return {'authority':'nembra-authenticated-stationary-retained-signed-artifact-v1','sourceCommitSHA':s,'buildIdentifier':f'capture-v14-{s[:12]}','bundleIdentifier':go.BUNDLE,'procedureIdentifier':go.PROC,'tuyaDependencyLockSHA256':'a'*64,'retainedIPASHA256':'b'*64,'retainedAppTreeSHA256':'c'*64,'embeddedProvisioningProfileSHA256':'d'*64,'signingTeamIdentifier':'TEAM','applicationIdentifier':'TEAM.'+go.BUNDLE,'codesignVerified':True,'intendedDeviceIncluded':True,'physicalAuthorityCreated':False}
  def build(self,**x):
-  a=dict(candidate_repo=self.repo,source=self.s,pr=self.pr,runs=self.ids,artifact_id=self.aid,review_id=self.rid,archive=self.arc,device_file=self.dev,get=self.get,run_installer=self.inst,inspect_signed_artifact=self.signed);a.update(x);return go.build(**a)
+  a=dict(authority_repo=self.repo,authority_pr=2638,authority_run=900,candidate_repo=self.repo,source=self.s,pr=self.pr,runs=self.ids,artifact_id=self.aid,review_id=self.rid,archive=self.arc,device_file=self.dev,get=self.get,control_authority=self.control,run_installer=self.inst,inspect_signed_artifact=self.signed);a.update(x);return go.build(**a)
 class T(unittest.TestCase):
  def setUp(self):self.t=tempfile.TemporaryDirectory();self.f=F(Path(self.t.name))
  def tearDown(self):self.t.cleanup()
  def no(self,fn):
   with self.assertRaises(go.GoError):fn()
+ def test_go_control_plane_authority_is_required(self):
+  def bad(repo,pr,run,get):raise go.GoError("unaccepted GO control plane")
+  self.no(lambda:self.f.build(control_authority=bad))
  def test_production_default_refuses_go_without_retained_signed_artifact_authority(self):
-  a=dict(candidate_repo=self.f.repo,source=self.f.s,pr=self.f.pr,runs=self.f.ids,artifact_id=self.f.aid,review_id=self.f.rid,archive=self.f.arc,device_file=self.f.dev,get=self.f.get,run_installer=self.f.inst)
+  a=dict(authority_repo=self.f.repo,authority_pr=2638,authority_run=900,candidate_repo=self.f.repo,source=self.f.s,pr=self.f.pr,runs=self.f.ids,artifact_id=self.f.aid,review_id=self.f.rid,archive=self.f.arc,device_file=self.f.dev,get=self.f.get,control_authority=self.f.control,run_installer=self.f.inst)
   self.no(lambda:go.build(**a))
  def test_malformed_retained_signed_artifact_authority_is_rejected(self):
   def bad(r,s,d,i):x=self.f.signed(r,s,d,i);x["retainedIPASHA256"]="not-a-digest";return x
