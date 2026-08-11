@@ -9,7 +9,13 @@ on:
     paths:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraApp/Features/Research/TuyaAccountBridge.swift
+      - NembraApp/Features/Research/ES80CaptureShellView.swift
       - NembraCapture.xcodeproj/project.pbxproj
+      - NembraCapture-Info.plist
+      - Packages/NembraBluetoothCapture/**
+      - Podfile
+      - Podfile.lock
       - NembraCapture.entitlements
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerIntendedDeviceAuthoritySourceTests.swift
