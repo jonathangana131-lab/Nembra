@@ -9,7 +9,7 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:08:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:08:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:19:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
@@ -17,5 +17,5 @@
   "takeoverFromWorkerId": "sol-20260811-1433c9",
   "takeoverFromLeaseId": "reconcile-ci-xcode-1433c9-20260811-2134",
   "takeoverReason": "Generation-3 reconciliation slot is RELEASED. Refresh CI/Xcode exact-head truth across current Capture P0 lineages without modifying active product implementation paths. PHYSICAL NO-GO.",
-  "checkpoint": "Claimed released CI/Xcode reconciliation shard on live main d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. Refreshing exact current Capture PR workflow states, especially Final-GO, signed-install/build authority, private identity, runtime accessibility, and composition. PHYSICAL NO-GO."
+  "checkpoint": "Heartbeat 23:19Z. Exact current Final-GO production #3082@d4a44db4: retirement-dispatch SUCCESS, sealed-handoff SUCCESS, canonical Final-GO SUCCESS, generic Xcode SKIPPED. Current validation descendant #3100@8eec90d4 was QUEUED at last check. #3088@31cca94c Field Build Provenance SUCCESS. #3093@49e51aef real selected-Xcode ACL diagnostic was QUEUED; generic Xcode SKIPPED. #3056@51b8e6b3 signed-install/custody/private primitives SUCCESS but Field/Main composition remain red from a stale source-contract expecting literal -- xcodebuild. #3086 has moved to b62c59ba; extracting exact composition failures now. PHYSICAL NO-GO."
 }
