@@ -1,0 +1,65 @@
+name: Temporary V14 Field Private Runner Custody Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-field-private-runner-exec-custody-sol-20260811
+    paths:
+      - scripts/ci/tmp_materialize_field_private_runner_exec_custody.py
+      - .github/workflows/tmp-v14-field-private-runner-exec-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact materializer head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize accepted-runner execution custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_materialize_field_private_runner_exec_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/field/install_one_time_capture.command').read_text(encoding='utf-8')
+          start = source.index('PRIVATE_DEVICE_RUNNER="$ROOT/scripts/ci/es80_signed_field_artifact_private_runner.py"')
+          end = source.index('say "Private intended-device admission validated against Final GO digest"', start)
+          admission = source[start:end]
+          assert 'spec_from_file_location("nembra_private_device_reader", runner_path)' not in admission
+          assert 'spec.loader.exec_module(module)' not in admission
+          assert 'run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py"' in admission
+          assert '/usr/bin/python3 -I -B -c' in admission
+          assert 'exec(compile(source, module.__file__, "exec"), module.__dict__)' in admission
+          assert 'reader = getattr(module, "read_private_identifier", None)' in admission
+          assert '"$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"' not in admission
+          PY
+          git diff --check
+
+      - name: Publish clean production-only successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-materializer'
+          git config user.email 'nembra-v14-materializer@users.noreply.github.com'
+          git add scripts/field/install_one_time_capture.command
+          git rm scripts/ci/tmp_materialize_field_private_runner_exec_custody.py
+          git rm .github/workflows/tmp-v14-field-private-runner-exec-custody.yml
+          git diff --cached --check
+          git commit -m 'Bind private field runner execution to accepted Git bytes'
+          git push origin HEAD:repair/v14-field-private-runner-exec-custody-sol-20260811
