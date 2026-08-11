@@ -36,6 +36,9 @@ class ProvisionError(RuntimeError):
 
 _DARWIN_RENAME_NOFOLLOW_ANY = 0x00000010
 _DARWIN_RENAME_RESOLVE_BENEATH = 0x00000020
+_PRIVATE_STAGE_PREFIX = ".nembra-private-stage-"
+_PRIVATE_STAGE_NONCE_HEX_LENGTH = 24
+_PRIVATE_STAGE_MAX_BYTES = 1_048_576
 
 
 def _directory_flags() -> int:
@@ -107,6 +110,98 @@ def _require_checkout_path_identity(checkout_fd: int, checkout_root: Path) -> No
     finally:
         os.close(current_fd)
 
+
+
+def _is_canonical_private_stage_name(name: str) -> bool:
+    if not name.startswith(_PRIVATE_STAGE_PREFIX):
+        return False
+    suffix = name[len(_PRIVATE_STAGE_PREFIX):]
+    pid_text, separator, nonce = suffix.partition("-")
+    if not separator or not (0 < len(pid_text) <= 20):
+        return False
+    if not pid_text.isascii() or not pid_text.isdecimal() or pid_text == "0":
+        return False
+    if str(int(pid_text, 10)) != pid_text:
+        return False
+    return (
+        len(nonce) == _PRIVATE_STAGE_NONCE_HEX_LENGTH
+        and all(character in "0123456789abcdef" for character in nonce)
+    )
+
+
+def _recover_private_stage_residue(checkout_fd: int) -> None:
+    """Remove only exact writer-owned crash residue; reject every ambiguous alias."""
+    try:
+        entries = os.listdir(checkout_fd)
+    except OSError as exc:
+        raise ProvisionError("could not inspect private identity staging namespace") from exc
+
+    reserved = sorted(name for name in entries if name.startswith(_PRIVATE_STAGE_PREFIX))
+    for name in reserved:
+        if not _is_canonical_private_stage_name(name):
+            raise ProvisionError("reserved private identity staging namespace contains a non-writer entry")
+
+        try:
+            named = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ProvisionError("could not inspect reserved private identity staging entry") from exc
+
+        if (
+            not stat.S_ISREG(named.st_mode)
+            or named.st_uid != os.geteuid()
+            or named.st_nlink != 1
+            or stat.S_IMODE(named.st_mode) != 0o600
+            or named.st_size > _PRIVATE_STAGE_MAX_BYTES
+        ):
+            raise ProvisionError("reserved private identity staging entry is not safe writer-owned crash residue")
+
+        descriptor = -1
+        try:
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=checkout_fd,
+            )
+            held = os.fstat(descriptor)
+            current = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+            if (
+                not stat.S_ISREG(held.st_mode)
+                or held.st_uid != os.geteuid()
+                or held.st_nlink != 1
+                or stat.S_IMODE(held.st_mode) != 0o600
+                or held.st_size > _PRIVATE_STAGE_MAX_BYTES
+                or current.st_dev != held.st_dev
+                or current.st_ino != held.st_ino
+                or current.st_uid != held.st_uid
+                or current.st_nlink != held.st_nlink
+                or current.st_mode != held.st_mode
+                or current.st_size != held.st_size
+            ):
+                raise ProvisionError("reserved private identity staging entry changed during recovery admission")
+
+            os.unlink(name, dir_fd=checkout_fd)
+            after_unlink = os.fstat(descriptor)
+            if after_unlink.st_dev != held.st_dev or after_unlink.st_ino != held.st_ino or after_unlink.st_nlink != 0:
+                raise ProvisionError("reserved private identity staging name changed during recovery removal")
+            os.fsync(checkout_fd)
+        except ProvisionError:
+            raise
+        except OSError as exc:
+            raise ProvisionError("could not safely remove writer-owned private identity crash residue") from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+
+    try:
+        leftovers = sorted(
+            name for name in os.listdir(checkout_fd) if name.startswith(_PRIVATE_STAGE_PREFIX)
+        )
+    except OSError as exc:
+        raise ProvisionError("could not re-inspect private identity staging namespace") from exc
+    if leftovers:
+        raise ProvisionError("private identity staging namespace is not clean after recovery")
 
 def _ensure_private_directory(parent_fd: int, name: str) -> int:
     if not name or name in (".", "..") or "/" in name:
@@ -394,7 +489,7 @@ def _write_staged(
         raise ProvisionError("private identity final name does not match its admitted relative path")
     _validate_existing_output(destination_parent_fd, final_name)
 
-    temporary_name = f".nembra-private-stage-{os.getpid()}-{secrets.token_hex(12)}"
+    temporary_name = f"{_PRIVATE_STAGE_PREFIX}{os.getpid()}-{secrets.token_hex(12)}"
     staging_fd = final_fd = -1
     sealed: os.stat_result | None = None
     try:
@@ -515,6 +610,8 @@ public enum NembraTuyaPrivateIdentity {{
 
     local_secrets_fd = runtime_fd = sources_fd = module_fd = -1
     try:
+        _require_checkout_path_identity(checkout_fd, checkout_root)
+        _recover_private_stage_residue(checkout_fd)
         _require_checkout_path_identity(checkout_fd, checkout_root)
         local_secrets_fd = _ensure_private_directory(checkout_fd, "LocalSecrets")
         runtime_fd = _ensure_private_directory(local_secrets_fd, "TuyaRuntime")
