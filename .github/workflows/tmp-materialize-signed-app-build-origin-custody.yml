@@ -59,30 +59,11 @@ jobs:
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
             scripts/ci/tmp_patch_signed_app_origin_existing.py
 
-      - name: Patch existing custody surfaces or persist exact mismatch
-        shell: bash
-        run: |
-          set -uo pipefail
-          diagnostic='/tmp/nembra-origin-patch-error.txt'
-          if /usr/bin/python3 -B scripts/ci/tmp_patch_signed_app_origin_existing.py 2>"$diagnostic"; then
-            git diff --check
-            exit 0
-          fi
-          git reset --hard HEAD
-          git clean -fd
-          mkdir -p .swarm
-          cp "$diagnostic" .swarm/tmp_origin_patch_error.txt
-          git add .swarm/tmp_origin_patch_error.txt
-          git config user.name 'nembra-sol-swarm'
-          git config user.email 'nembra-sol-swarm@users.noreply.github.com'
-          git commit -m 'Record signed app origin patch mismatch'
-          git push origin HEAD:repair/v14-signed-app-build-origin-custody-sol-20260811
-          exit 1
-
-      - name: Validate materialized production repair
+      - name: Patch and validate production repair
         shell: bash
         run: |
           set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tmp_patch_signed_app_origin_existing.py
           /usr/bin/python3 -m py_compile \
             scripts/ci/capture_signed_app_build_origin_custody.py \
             scripts/ci/capture_signed_app_install_custody.py \
@@ -93,35 +74,50 @@ jobs:
           bash -n scripts/field/install_one_time_capture.command
           git diff --check
 
-      - name: Stage clean production tree
+      - name: Snapshot workflow payloads and publish non-workflow production bytes
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p .swarm
+          cp .github/workflows/capture-signed-app-install-custody.yml \
+            .swarm/materialized_capture_signed_app_install_custody.yml.txt
+          cp .github/workflows/capture-field-build-provenance.yml \
+            .swarm/materialized_capture_field_build_provenance.yml.txt
+
+          # The Actions token cannot publish workflow-file mutations. Restore those two paths
+          # before committing; connected GitHub write authority will apply the exact validated
+          # payload snapshots after this non-workflow commit lands.
+          git checkout HEAD -- \
+            .github/workflows/capture-signed-app-install-custody.yml \
+            .github/workflows/capture-field-build-provenance.yml
+
           rm -f \
             scripts/ci/tmp_materialize_signed_app_build_origin_custody.py \
             scripts/ci/tmp_patch_signed_app_origin_existing.py \
             scripts/ci/tmp_signed_app_origin_installer_block.txt \
-            .github/workflows/tmp-materialize-signed-app-build-origin-custody.yml \
             .swarm/tmp_materializer_parser_error.txt \
             .swarm/tmp_origin_patch_error.txt
-          git add -A
+
+          git add -A -- \
+            scripts/field/install_one_time_capture.command \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/capture_signed_app_install_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_install_custody.py \
+            scripts/ci/tmp_materialize_signed_app_build_origin_custody.py \
+            scripts/ci/tmp_patch_signed_app_origin_existing.py \
+            scripts/ci/tmp_signed_app_origin_installer_block.txt \
+            .swarm/tmp_materializer_parser_error.txt \
+            .swarm/tmp_origin_patch_error.txt \
+            .swarm/materialized_capture_signed_app_install_custody.yml.txt \
+            .swarm/materialized_capture_field_build_provenance.yml.txt
+
           git diff --cached --check
-          if git diff --cached --diff-filter=ACMR --name-only | grep -E '(^|/)(tmp_|tmp-materialize)' >/dev/null; then
-            echo 'ERROR: temporary construction files would survive production commit' >&2
+          if git diff --cached --name-only | grep '^.github/workflows/' >/dev/null; then
+            echo 'ERROR: workflow mutation leaked into Actions-token publication commit.' >&2
             exit 1
           fi
-          git status --short
-
-      - name: Commit production tree
-        shell: bash
-        run: |
-          set -euo pipefail
           git config user.name 'nembra-sol-swarm'
           git config user.email 'nembra-sol-swarm@users.noreply.github.com'
           git commit -m 'Bind signed app to build output custody'
-
-      - name: Push production tree
-        shell: bash
-        run: |
-          set -euo pipefail
           git push origin HEAD:repair/v14-signed-app-build-origin-custody-sol-20260811
