@@ -9,13 +9,13 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:37:36Z",
-  "lastHeartbeatAt": "2026-08-11T22:16:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:24:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-custody-recovery-gpt56-sol-20260811",
   "pr": 3056,
   "sourceSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
-  "currentHeadSHA": "7e7ac8b97306cb52439daae15c371b570b0d0701",
+  "currentHeadSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f",
   "takeoverFromWorkerId": "sol-20260811-1312n8",
   "takeoverReason": "Generation-4 primary last heartbeat 2026-08-11T20:34:04Z plus 2700-second lease expired before recovery. Recover the same Capture P0 signed-install compiler-output-origin lane from live #2995 exact a71cc55 without touching active review/tests. Preserve #2998 detached-FD blocker and all protected-stage/signature/intended-device custody. PHYSICAL NO-GO.",
-  "checkpoint": "Draft #3056 exact 7e7ac8b9 remains the production successor. Exact-head Capture Signed App Install Custody run 31541166405 has one completed green job: portable source/fingerprint regressions plus protected-stage same-UID rejection passed on this head. macOS ACL, compiler capability, real-Xcode, and runner-transport jobs remain queued, so the PR is not accepted. Field Build Provenance run 31541166287 is also queued; inherited private-Tuya provenance debt is not waived. Detached FD/dirfd/mmap freeze and final composed Final-GO authority remain blockers. PHYSICAL NO-GO."
+  "checkpoint": "Draft #3056 exact 51b8e6b3 is the production successor. Same three-path scope now adds sudo-policy-aware fail-closed custody: root queries sudo -ll -U invoking-user under C locale, rejects NOPASSWD, !authenticate, or matching exempt_group, then sudo -K under real invoking groups and requires both sudo -n true and sudo -n -l to remain unavailable. Compiler child remains primary GID + exactly fresh capability GID; root UID/GID/ambient root group rejected; real-Xcode oracle retains aligned root-group rejection. Portable regressions for policy classifier added. All 7e7ac8b9 evidence is stale; fresh exact-head runs 31542155759/31542155737 are queued. Detached FD/dirfd/mmap freeze, private-Tuya provenance, and final composed Final-GO remain blockers. PHYSICAL NO-GO."
 }
