@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084030-reconcile-remaining-3f7c-authority-graph-refresh",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Refreshed capture-build-authority to the live closure graph. #2805 is exact 9e0fa421... with private-review/downstream/private-commitment/CocoaPods gates green but Field/Graft queued and Xcode pending; direct source still omits KQ_NOTE_ATTRIB. #2837 exact b3aa17f... is now the current-lineage vnode recovery, proving the old #2778 finding was still live; its surrounding focused security gates are green while vnode-current/Field/Graft/Xcode are queued. #2838 exact 668009b... is the clean direct-#2825 Field Provenance contract repair with Field/Xcode queued. #2836 carries the additional exact-Git guard-presence semantic improvement but its exact Field Provenance and Selective Graft are red. No queued/old-head result is promoted. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:40:30Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "legacyAuthorityPR": 2805,
+    "legacyAuthoritySHA": "9e0fa4210a022256f5c5d918413e244e5394ddd9",
+    "vnodeRecoveryPR": 2837,
+    "vnodeRecoverySHA": "b3aa17f136e632fbe757c0af5de2c1f738b7021f",
+    "fieldContractPR": 2838,
+    "fieldContractSHA": "668009b364b08ca5aa9cc245556cc32879df9df8",
+    "semanticGuardChildPR": 2836,
+    "semanticGuardChildSHA": "0e43f89172a67dd55c9dfea2ec2956e455b45a29",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
