@@ -45,4 +45,4 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add .github/workflows/capture-field-build-provenance.yml
           git commit -m 'Capture: materialize field provenance accepted-source contract'
-          git push --force origin HEAD:refs/heads/scratch/v14-field-provenance-contract-go-20260811-0049
+          git push origin HEAD:scratch/v14-field-provenance-contract-go-20260811-0049
