@@ -6,6 +6,7 @@ on:
       - repair/v14-private-identity-payload-publication-sol-20260811
     paths:
       - .github/workflows/tmp-v14-private-identity-payload-diagnostic.yml
+      - scripts/tmp_v14_private_identity_payload_patch.py
 
 permissions:
   contents: read
@@ -23,17 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64
-          import re
-          workflow = Path('.github/workflows/tmp-v14-private-identity-payload-publication.yml').read_text()
-          match = re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d", workflow)
-          if match is None:
-              raise SystemExit('encoded repair payload unavailable')
-          code = base64.b64decode(match.group(1))
-          exec(compile(code, '<identity-publication-repair>', 'exec'), {})
-          PY
+          python3 scripts/tmp_v14_private_identity_payload_patch.py
       - name: Writer syntax
         run: python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
       - name: Writer self test
