@@ -9,12 +9,12 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:59:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:59:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:07:00Z",
   "leaseSeconds": 1800,
   "branch": "",
-  "pr": 2924,
-  "sourceSHA": "8553e0787092335d5681c36e538f039a5063274b",
-  "currentHeadSHA": "8553e0787092335d5681c36e538f039a5063274b",
+  "pr": 2966,
+  "sourceSHA": "6dc67baec2377f95a189411715e072b6d83dc409",
+  "currentHeadSHA": "6dc67baec2377f95a189411715e072b6d83dc409",
   "takeoverFromWorkerId": "sol-20260811-4747rv",
-  "takeoverReason": "Generation-3 review lease expired after last heartbeat 2026-08-11T12:19:30Z. Canonical Build production moved from #2907 to #2924 exact 8553e078. Independently attack raw accepted-tree admission, authenticated LocalSecrets root handling, and permanent untracked-prearm regression without touching production ownership. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-3 review lease expired. Initial #2924 exact review found no new raw-tree blocker and duplicate independent review already existed, so review gravity followed the live Build critical path to #2966 exact 6dc67bae. Current task: mechanically witness selected Xcode tool-file custody gap identified by exact-head review, without touching the active production installer lineage. PHYSICAL NO-GO."
 }
