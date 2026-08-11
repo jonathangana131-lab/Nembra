@@ -10,6 +10,7 @@ from .store import *
 
 SCHEDULER_GUARD_PATH = ".swarm/runtime/reconciler/scheduler-mutation.json"
 SCHEDULER_GUARD_LEASE_SECONDS = 300
+REVIEW_SUBJECT_ROLES = {"implementation", "repair", "scheduler-reconciler", "recovery"}
 
 
 def _scheduler_guard_claim(worker: str, now: dt.datetime, generation: int = 1, takeover_from: str | None = None):
@@ -130,6 +131,17 @@ def slot_phase_allowed(lane, slot):
     return state in RUNNABLE_LANE_STATES
 
 
+def _review_subject_claims(store: Store, lane):
+    lane = validate_lane(lane)
+    prefix = f".swarm/runtime/claims/{lane['laneId']}"
+    subjects = []
+    for _, stored in store.list(prefix):
+        claim = validate_claim(stored.value)
+        if claim["laneId"] == lane["laneId"] and claim["role"] in REVIEW_SUBJECT_ROLES:
+            subjects.append(claim)
+    return subjects
+
+
 def _enforce_claim_policy(store: Store, lane, slot_name: str, worker: str, now: dt.datetime, config):
     lane = validate_lane(lane)
     _worker(worker)
@@ -160,11 +172,11 @@ def _enforce_claim_policy(store: Store, lane, slot_name: str, worker: str, now: 
         "adversarial-review",
         "architecture-review",
     }:
-        try:
-            primary = validate_claim(store.get(claim_path(lane["laneId"], "primary")).value)
-        except NotFoundError as exc:
-            raise ValidationError("independent review requires an existing primary claim") from exc
-        _engine.verify_review_independence(lane, primary, worker)
+        subjects = _review_subject_claims(store, lane)
+        if not subjects:
+            raise ValidationError("independent review requires an existing work-subject claim")
+        for subject in subjects:
+            _engine.verify_review_independence(lane, subject, worker)
 
     if slot["role"] == "implementation":
         claims = _runtime_claims(store)
