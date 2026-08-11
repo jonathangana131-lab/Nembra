@@ -9,13 +9,13 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:37:36Z",
-  "lastHeartbeatAt": "2026-08-11T22:00:15Z",
+  "lastHeartbeatAt": "2026-08-11T22:03:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-custody-recovery-gpt56-sol-20260811",
   "pr": 3056,
   "sourceSHA": "a71cc55dbc2281791e327888cf89ce0db6cf6193",
-  "currentHeadSHA": "03dd7377db5fe1ae38679b7bfc9999840e79d216",
+  "currentHeadSHA": "1edf595e772df3010693f4236ed43ade80a1473b",
   "takeoverFromWorkerId": "sol-20260811-1312n8",
   "takeoverReason": "Generation-4 primary last heartbeat 2026-08-11T20:34:04Z plus 2700-second lease expired before recovery. Recover the same Capture P0 signed-install compiler-output-origin lane from live #2995 exact a71cc55 without touching active review/tests. Preserve #2998 detached-FD blocker and all protected-stage/signature/intended-device custody. PHYSICAL NO-GO.",
-  "checkpoint": "Draft #3056 exact 03dd7377 remains the production successor. Structured UID/primary-GID launch with only the fresh capability GID is durable; portable protected-boundary job passed. Field Build Provenance red is inherited from #2995 at the same private-Tuya helper step, not a #3056 regression, and was classified in PR comment 5259286035 without waiving the gate. Freeze architecture is still blocked on detached FD/dirfd/mmap authority; #3064 now covers the previously missing APFS shared-mmap class. PHYSICAL NO-GO."
+  "checkpoint": "Draft #3056 exact 1edf595e is the production successor. Self-review corrected 03dd7377's under-modeled sudo probe: sudo revocation/verification now runs under the invoking account's real supplementary groups, while the authority-bearing compiler child remains primary GID + exactly the fresh capability GID. Source/unit regressions require this split and forbid preexec_fn. Old-head acceptance is stale; fresh exact-head gates are required. Detached FD/dirfd/mmap freeze, inherited private-Tuya provenance, and final composition remain blockers. PHYSICAL NO-GO."
 }
