@@ -28,6 +28,28 @@ struct NavigationVisualSurfaceSourceTests {
         #expect(!source.contains("batteryPercent *"))
     }
 
+    @Test("Landscape Navigation entry reuses qualified stopped-speed authority")
+    func landscapeLauncherFailsClosedWithoutQualifiedStoppedSpeed() throws {
+        let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
+        let host = slice(
+            source,
+            after: "private struct NembraNavigationHost<Content: View>: View {",
+            before: "private struct NembraRecentDestination"
+        )
+        let launcherPolicy = slice(
+            host,
+            after: "private var shouldShowNavigationLauncher: Bool {",
+            before: "private var launcherAlignment"
+        )
+
+        #expect(host.contains("@Environment(VehicleStore.self) private var vehicle"))
+        #expect(launcherPolicy.contains("guard verticalSizeClass == .compact else { return true }"))
+        #expect(launcherPolicy.contains("vehicle.simulatorQualifiedLiveSpeedKilometersPerHour"))
+        #expect(launcherPolicy.contains("return speed < 0.5"))
+        #expect(host.contains("verticalSizeClass == .compact ? .top : .bottomTrailing"))
+        #expect(host.contains("Available while current stopped speed is confirmed"))
+    }
+
     @Test("Accessibility Dynamic Type has dedicated launch and map geometry")
     func accessibilityDynamicTypeRecomposesNavigationGeometry() throws {
         let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
@@ -36,19 +58,43 @@ struct NavigationVisualSurfaceSourceTests {
             after: "private struct NembraNavigationHost<Content: View>: View {",
             before: "private struct NembraRecentDestination"
         )
-        let map = slice(
+        let navigation = slice(
             source,
-            after: "private var destinationMap: some View {",
-            before: "@ViewBuilder\n    private var searchSurface"
+            after: "private struct NembraNavigationView: View {",
+            before: "@MainActor\n    private func searchDestinations()"
         )
 
         // Merely reading Dynamic Type is not enough. Accessibility sizes must
         // switch the icon-only launcher to labeled geometry while preserving a
-        // large touch target, and the map must deliberately recompose vertically.
+        // large touch target, and map height must deliberately recompose for both
+        // portrait and compact landscape rather than stretching portrait.
         #expect(host.contains("if dynamicTypeSize.isAccessibilitySize"))
         #expect(host.contains("Label(\"Navigation\", systemImage: \"location.north.circle.fill\")"))
         #expect(host.contains(".frame(minWidth: 54, minHeight: 54)"))
-        #expect(map.contains(".frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 220 : 280)"))
+        #expect(navigation.contains("private var navigationMapHeight: CGFloat"))
+        #expect(navigation.contains("if verticalSizeClass == .compact"))
+        #expect(navigation.contains("dynamicTypeSize.isAccessibilitySize ? 160 : 180"))
+        #expect(navigation.contains("dynamicTypeSize.isAccessibilitySize ? 220 : 280"))
+    }
+
+    @Test("Empty and failure states use the Nembra Navigation hierarchy")
+    func importantNavigationStatesAvoidStockUnavailableCards() throws {
+        let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
+        let navigation = slice(
+            source,
+            after: "private struct NembraNavigationView: View {",
+            before: "@MainActor\n    private func searchDestinations()"
+        )
+
+        #expect(!navigation.contains("ContentUnavailableView"))
+        #expect(navigation.contains("private var navigationEmptyState: some View"))
+        #expect(navigation.contains("private func navigationStatusSurface("))
+        #expect(navigation.contains("Text(\"NAVIGATION\")"))
+        #expect(navigation.contains("Text(\"Find a destination\")"))
+        #expect(navigation.contains("Search for a place or address. Nembra will preview it here without using scooter telemetry."))
+        #expect(navigation.contains("Choose a destination before riding."))
+        #expect(navigation.contains("No destination found"))
+        #expect(navigation.contains("Map results stay separate from scooter telemetry."))
     }
 
     @Test("Reduce Transparency removes Material from both Navigation overlays")
@@ -62,7 +108,7 @@ struct NavigationVisualSurfaceSourceTests {
         let map = slice(
             source,
             after: "private var destinationMap: some View {",
-            before: "@ViewBuilder\n    private var searchSurface"
+            before: "private var navigationMapHeight"
         )
 
         // Keep the two contracts scoped independently so a future unrelated
