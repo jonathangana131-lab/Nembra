@@ -225,6 +225,13 @@ class PrivateIdentityRecoveryInodeCustodyTests(unittest.TestCase):
         self.assertIn("return recovered", recovery)
         self.assertIn("_RecoveredPrivateStage", recovery)
 
+        write_start = source.index("def _write_staged(")
+        write_end = source.index("def _decode_input", write_start)
+        write_staged = source[write_start:write_end]
+        self.assertNotIn("_unlink_owned_inode_if_named", write_staged)
+        self.assertNotIn("_unlink_owned_relative_inode_if_named", write_staged)
+        self.assertIn("_sanitize_held_private_descriptor", write_staged)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

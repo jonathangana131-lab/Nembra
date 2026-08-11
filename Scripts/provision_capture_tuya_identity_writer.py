@@ -562,6 +562,15 @@ def _secure_replace_beneath(
     )
 
 
+def _sanitize_held_private_descriptor(descriptor: int) -> None:
+    """Sanitize only the exact already-held private inode on a failed write path."""
+    try:
+        os.ftruncate(descriptor, 0)
+        os.fsync(descriptor)
+    except OSError as exc:
+        raise ProvisionError("could not sanitize held private identity staging inode after failure") from exc
+
+
 def _write_staged(
     checkout_fd: int,
     destination_parent_fd: int,
@@ -636,7 +645,6 @@ def _write_staged(
             or final.st_dev != sealed.st_dev
             or final.st_ino != sealed.st_ino
         ):
-            _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, final)
             raise ProvisionError("published private identity output is not the sealed staging inode")
         try:
             _require_descriptor_payload(
@@ -652,8 +660,6 @@ def _write_staged(
                 "published private identity payload changed before durable success",
             )
         except Exception:
-            compromised = os.fstat(final_fd)
-            _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, compromised)
             raise
         os.fsync(checkout_fd)
         try:
@@ -664,19 +670,10 @@ def _write_staged(
                 payload,
             )
         except Exception:
-            _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, sealed)
-            os.fsync(checkout_fd)
             raise
     except Exception:
-        if recovered_stage is not None:
-            if recovered_mutation_started and staging_fd >= 0:
-                try:
-                    os.ftruncate(staging_fd, 0)
-                    os.fsync(staging_fd)
-                except OSError:
-                    pass
-        else:
-            _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
+        if staging_fd >= 0 and (recovered_stage is None or recovered_mutation_started):
+            _sanitize_held_private_descriptor(staging_fd)
         raise
     finally:
         if final_fd >= 0:
