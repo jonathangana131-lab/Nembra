@@ -9,7 +9,7 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:51:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:57:12Z",
+  "lastHeartbeatAt": "2026-08-11T10:00:10Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-final-go-core-worktree-candidate-sol-20260811",
   "pr": 2889,
@@ -17,5 +17,5 @@
   "currentHeadSHA": "c737964d6b96cfefed03cf91567c4338aed09fe5",
   "parentPR": 2873,
   "intent": "Independently verify current exact-head candidate-worktree/core.worktree closure and current Final-GO control tests without modifying primary implementation bytes.",
-  "checkpoint": "Opened test-only child #2889 with a portable physical-candidate-vs-clean-worktree regression and dedicated Ubuntu workflow; parent #2873 received review comment 4904969024. Diagnostic is not a standalone product ingredient and physical status remains NO-GO."
+  "checkpoint": "#2889 exact c737964d defensive diagnostic run 31479968317 is machine-confirmed EXPECTED RED: exact-head checkout/bind passed and intended Reproduce candidate core.worktree split step failed (job 93742424772). Parent #2873 exact 3c8711f8 remains unchanged and received machine-proof review comment 4904997518. Diagnostic is test-only; physical ES80 remains NO-GO."
 }
