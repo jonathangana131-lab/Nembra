@@ -7,13 +7,15 @@
   "workerId": "sol-20260811-1439r8",
   "leaseId": "capture-final-go-integration-r8-20260811-2222",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:22:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:22:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:27:00Z",
+  "releasedAt": "2026-08-11T22:27:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3082,
-  "sourceSHA": "0d7d6045fcf70129524b4d87da0a34d35dcde28c",
+  "sourceSHA": "36b531b2e7d0c07bb8a63766e5b9fb5779d0a022",
   "resource": "RELEASE_INTEGRATION",
-  "intent": "Independently integrate-audit exact-current Final-GO repair #3082 after generation-1 found candidate Git/blob authority reopened by inherited teardown. Verify stable retirement-aware dispatch survives nested predecessor restore, outer release is the only raw-function restoration point, and downstream publication remains sealed-record/control-only. Do not modify production/test paths owned by active primary/review/tests. PHYSICAL NO-GO."
+  "intent": "Independently integrate-audit exact-current Final-GO repair #3082 after generation-1 found candidate Git/blob authority reopened by inherited teardown. Verify stable retirement-aware dispatch survives nested predecessor restore, outer release is the only raw-function restoration point, and downstream publication remains sealed-record/control-only. Do not modify production/test paths owned by active primary/review/tests. PHYSICAL NO-GO.",
+  "checkpoint": "INTEGRATION ACCEPTED on exact #3082@36b531b2 for the generation-1 teardown blocker, not overall Final-GO acceptance. Production installs stable base.git/base.git_bytes dispatchers in _CandidateRetirementBoundary.__enter__ before inherited candidate custody enters. Those wrappers forward only while _CANDIDATE_RETIRED is false; retire(record) flips the ContextVar and reinstalls the same wrappers. Therefore inherited custody's captured restore targets are retirement-aware wrappers, not raw caller Git functions, and its finally cannot reopen candidate Git during enclosing continuous-custody teardown. The permanent regression reproduces the nested restore schedule and requires Git + Git-bytes rejection in outer teardown plus zero raw calls; exact-head run 31541569617 is terminal SUCCESS. Exact-head canonical Final-GO run 31541569615 and advanced sealed-handoff run 31541569622 are also terminal SUCCESS. Xcode run 31541569616 is SKIPPED and is not counted. Downstream publication premise from integration generation-1 remains valid: accepted control path consumes completed record/finalGOControlPlane through the independent authority publication module and does not pass candidate_repo/source after build returns. Remaining required acceptance: independent adversarial review/replay of #3074 against this unchanged head; fresh Darwin/macOS exact-descendant evidence because #3078 is ancestor-only; any moved/absorbed #3042 head must re-earn gates; separate selected-Xcode, signed-install, private-identity, runtime accessibility, flagship composition, and physical capture gates remain. PHYSICAL NO-GO."
 }
