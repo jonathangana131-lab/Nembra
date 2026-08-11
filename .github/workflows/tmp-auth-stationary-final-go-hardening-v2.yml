@@ -1,0 +1,36 @@
+name: Temporary Authenticated Stationary Final-GO Hardening V2
+
+on:
+  push:
+    branches:
+      - control/v14-auth-stationary-final-go-hardening-v2-sol
+    paths:
+      - .github/workflows/tmp-auth-stationary-final-go-hardening-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: control/v14-auth-stationary-final-go-hardening-v2-sol
+          fetch-depth: 0
+      - name: Apply and validate rebased hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_materialize_final_go_hardening_v2.py
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py
+          python3 -m py_compile scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          git rm .github/workflows/tmp-auth-stationary-final-go-hardening-v2.yml scripts/ci/tmp_materialize_final_go_hardening_v2.py
+          git config user.name nembra-v14-hardening
+          git config user.email nembra-v14-hardening@users.noreply.github.com
+          git add scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+          git commit -m 'fix(capture): bind Final-GO source and main authority'
+          git push origin HEAD:control/v14-auth-stationary-final-go-hardening-v2-sol
