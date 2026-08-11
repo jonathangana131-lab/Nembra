@@ -1,0 +1,32 @@
+name: Debug HMAC Parent Generated Authority
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-parent-gates-sol
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run exact generated authority test with retained log
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py 2>&1 | tee "$RUNNER_TEMP/hmac-parent-generated-authority.log"
+          status="${PIPESTATUS[0]}"
+          echo "$status" > "$RUNNER_TEMP/status.txt"
+          exit 0
+      - name: Upload debug log
+        uses: actions/upload-artifact@v6
+        with:
+          name: hmac-parent-generated-authority-debug-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/hmac-parent-generated-authority.log
+            ${{ runner.temp }}/status.txt
+          retention-days: 1
