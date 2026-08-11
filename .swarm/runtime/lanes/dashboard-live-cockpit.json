@@ -13,17 +13,17 @@
       "id": "accessibility-landscape-evidence-pending",
       "state": "REPAIR_CANDIDATE",
       "scope": "visual-acceptance",
-      "reason": "Visual review requires a real accessibility-size / large-Dynamic-Type landscape cockpit image because DashboardCockpitComposition and NembraEnergyRailView switch to materially different geometry. Exact head f3c166edffd385103d64ae02651d9acea6e67304 now extends the Xcode 27 capture harness with a mandatory real CoreSimulator `content_size` accessibility-category rerun of the riding landscape UI test, its own xcresult, attachment export, accepted-setting log, and fail-closed exit if no accessibility category is accepted. This is a repair candidate only until exact-head runner evidence is collected and the image is independently inspected for clipping, hierarchy, Energy Rail/watts integration and crowding.",
+      "reason": "Visual review requires a real accessibility-size / large-Dynamic-Type landscape cockpit image because DashboardCockpitComposition and NembraEnergyRailView switch to materially different geometry. Exact descendant head 4ef988828cb18fc7118cc826e899e464b0471273 retains the mandatory real CoreSimulator `content_size` accessibility-category rerun of the riding landscape UI test, its own xcresult, attachment export, accepted-setting log, and fail-closed exit if no accessibility category is accepted. The only change from f3c166ed is a Swift Testing syntax repair in PropulsionEnergyRailPublicAuthorityTests. This remains a repair candidate until exact-head runner evidence is collected and the image is independently inspected for clipping, hierarchy, Energy Rail/watts integration and crowding.",
       "pr": 2817,
-      "headSHA": "f3c166edffd385103d64ae02651d9acea6e67304"
+      "headSHA": "4ef988828cb18fc7118cc826e899e464b0471273"
     },
     {
       "id": "exact-head-xcode-performance-pending",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Final composed head f3c166edffd385103d64ae02651d9acea6e67304 includes the independently requested external-consumer authority compile regression from child #2833 and the accessibility-size capture gate. Ancestor Xcode/review evidence is not final-head acceptance. Require fresh immutable-head Xcode 27/iPhone 12 Simulator execution, exported live/retained/unavailable plus accessibility-size screenshots, Reduce Motion verification where supported, empirical performance evidence, independent exact-head review, and final main-head overlap recheck before integration.",
+      "reason": "Final candidate 4ef988828cb18fc7118cc826e899e464b0471273 is a one-test-file descendant of f3c166ed that fixes Swift Testing macro compilation around mutating runtime calls without changing production architecture. Prior run 31473979468 proved exact f3c checkout and failed only because those mutating calls were directly nested in #expect; Simulator execution never ran. Require fresh immutable-head Xcode 27/iPhone 12 Simulator execution on 4ef9888, exported live/retained/unavailable plus accessibility-size screenshots, Reduce Motion verification where supported, empirical performance evidence, independent exact-head review, and final main-head overlap recheck before integration.",
       "pr": 2817,
-      "headSHA": "f3c166edffd385103d64ae02651d9acea6e67304"
+      "headSHA": "4ef988828cb18fc7118cc826e899e464b0471273"
     }
   ],
   "mode": "exclusive",
@@ -66,9 +66,9 @@
     "mergeBaseSHA": "7f29b468a869f4e1534665f8c46c4188e0398850",
     "mainAheadBy": 64,
     "changedFileOverlapWithNewMain": 0,
-    "knownExactHeadFinding": "Legacy head is eight commits ahead of its merge base and 64 commits behind current main. The 64 newer main commits touch none of the original 19 Dashboard changed paths, so exact selective recovery onto current main remains structurally coherent. Independent authority re-review cleared the original public raw-scalar Simulator admission defect on 28c7e886. The unique external-package compile proof from child #2833 head f9250b38 is now composed into flagship head f3c166ed, and the visual Dynamic Type blocker has a mandatory real-system capture gate on the same flagship head. Physical ES80 power/current authority remains absent.",
+    "knownExactHeadFinding": "Legacy head is eight commits ahead of its merge base and 64 commits behind current main. The 64 newer main commits touch none of the original 19 Dashboard changed paths, so exact selective recovery onto current main remains structurally coherent. Independent authority re-review cleared the original public raw-scalar Simulator admission defect on 28c7e886. The unique external-package compile proof from child #2833 head f9250b38 is composed into the flagship. f3c166ed then failed final package compilation only because PropulsionEnergyRailPublicAuthorityTests placed mutating calls directly inside Swift Testing #expect; 4ef9888 fixes only that test syntax. Physical ES80 power/current authority remains absent.",
     "recoveryPR": 2817,
-    "recoveryHeadSHA": "f3c166edffd385103d64ae02651d9acea6e67304",
+    "recoveryHeadSHA": "4ef988828cb18fc7118cc826e899e464b0471273",
     "authorityTestPR": 2833,
     "authorityTestHeadSHA": "f9250b38facff51e79e324934b3c6f2a936fd18a",
     "authorityTestComposed": true
