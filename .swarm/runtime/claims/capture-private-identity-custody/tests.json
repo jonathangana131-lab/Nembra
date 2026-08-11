@@ -7,13 +7,12 @@
   "workerId": "sol-20260811-4f51fg",
   "leaseId": "capture-private-identity-tests-4f51fg-20260811-1203",
   "generation": 4,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T12:03:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:03:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:10:30Z",
   "leaseSeconds": 1800,
   "branch": "redteam/v14-private-identity-recovery-unlink-swap-4f51fg",
-  "pr": 2899,
-  "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
-  "takeoverFromWorkerId": "sol-20260811-2d7a6b",
-  "takeoverReason": "Generation-3 tests lease expired without heartbeat. Post-merge independent review recovered a pre-merge blocking finding that lane reconciliation omitted: recovery can delete a replacement inode if the reserved pathname is swapped after its final stat and before unlink. Create a test-only expected-red witness on the merged private-identity lineage; do not weaken deletion authority. PHYSICAL NO-GO."
+  "pr": 2918,
+  "sourceSHA": "d8c069069daa32da048e3fb02426c81776f38de0",
+  "outcome": "Duplicate #2928 closed unmerged after live reconciliation found earlier canonical #2918. #2918 exact run 31488913742 is terminal expected-red at exact-inode recovery deletion authority. Separate primary worker sol-20260811-4c47a9 owns production repair. Review slot remains NEEDS_CHANGES; PHYSICAL NO-GO."
 }
