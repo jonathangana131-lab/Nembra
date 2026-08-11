@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070600-finding-control-lineage-lgrv2353",
+  "type": "FINDING",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Control-lineage reconciliation: keep #2775 as the selected generated-subject Final-GO control lineage at exact head 71aee681d12e353ec54111e066e26598a735ca64. Its canonical generated-subject Final-GO gate is SUCCESS and Xcode is SKIPPED, but test-only child #2803 exact 16cb60338b9dab307f67ac6b715334b065862b04 proves a still-open mutable authenticated-stationary parent-module execution defect; model #2803 as blocker evidence on the same lane, not an implementation lane. #2796 is older helper-execution repair ancestry already reflected by #2775's moved head and should not become a separate active lane. Private-review Final-GO #2791 is stale-parent: its actual base is #2775@40f835a28e3f61b125c47c1922d7da2af20eba63 while selected #2775 is now 71aee681d12e353ec54111e066e26598a735ca64; #2791 exact head 61dc8330f770e8378c3e92fe1b5dd481fc1ce981 also has its canonical control gate FAILURE and Xcode SKIPPED. #2798 is expected-red evidence showing #2791 executes its generated parent from mutable pathname before authority; preserve that defect contract for a fresh current-parent successor rather than importing stale #2791/#2798 as parallel active lanes. Physical remains NO-GO.",
+  "createdAt": "2026-08-11T07:06:00Z"
+}
