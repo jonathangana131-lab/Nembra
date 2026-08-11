@@ -127,6 +127,52 @@ jobs:
             ONLY_ACTIVE_ARCH=YES \
             -only-testing:NembraUITests/CaptureRuntimeVoiceOverUITests/testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit
 
+      - name: Prove targeted VoiceOver test executed
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/CaptureRuntimeVoiceOver.xcresult"
+          tests_json="$RUNNER_TEMP/CaptureRuntimeVoiceOver.tests.json"
+          test -d "$result"
+
+          # Xcode 16+ exposes the structured test-results interface. A green
+          # xcodebuild invocation is not sufficient authority here: previous
+          # harness failures produced retained result bundles with zero tests.
+          xcrun xcresulttool get test-results tests \
+            --path "$result" \
+            --compact > "$tests_json"
+
+          /usr/bin/python3 - "$tests_json" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          needle = "testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit"
+          with open(path, "r", encoding="utf-8") as handle:
+              document = json.load(handle)
+
+          strings = []
+          def walk(value):
+              if isinstance(value, dict):
+                  for child in value.values():
+                      walk(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      walk(child)
+              elif isinstance(value, str):
+                  strings.append(value)
+
+          walk(document)
+          matches = [value for value in strings if needle in value]
+          if not matches:
+              raise SystemExit(
+                  "Runtime accessibility acceptance requires retained xcresult "
+                  "evidence for the targeted VoiceOver test; no executed test "
+                  f"identifier containing {needle!r} was found."
+              )
+          print(f"targeted VoiceOver xcresult entries: {len(matches)}")
+          PY
+
       - name: Seal runtime accessibility evidence manifest
         if: always()
         shell: bash
@@ -138,9 +184,15 @@ jobs:
           source_sha="${NEMBRA_RUNTIME_AX_SOURCE_SHA:-unavailable}"
           product_parent="${NEMBRA_RUNTIME_AX_PRODUCT_PARENT:-005b7c4aaf27fabb442a65599b4538ebcc09ae27}"
           runtime="${NEMBRA_RUNTIME_AX_RUNTIME:-unavailable}"
-          /usr/bin/python3 - "$evidence/manifest.json" "$source_sha" "$product_parent" "$runtime" "$snippet_sha" <<'PY'
+          tests_json="$RUNNER_TEMP/CaptureRuntimeVoiceOver.tests.json"
+          tests_sha="unavailable"
+          if [[ -f "$tests_json" ]]; then
+            tests_sha="$(shasum -a 256 "$tests_json" | awk '{print $1}')"
+            cp "$tests_json" "$evidence/CaptureRuntimeVoiceOver.tests.json"
+          fi
+          /usr/bin/python3 - "$evidence/manifest.json" "$source_sha" "$product_parent" "$runtime" "$snippet_sha" "$tests_sha" <<'PY'
           import json,sys
-          path,source,parent,runtime,snippet=sys.argv[1:]
+          path,source,parent,runtime,snippet,tests_sha=sys.argv[1:]
           record={
               "schemaVersion": 1,
               "authority": "capture-runtime-accessibility-simulator-only",
@@ -156,6 +208,9 @@ jobs:
               "voiceOverSpeechTraversalRequired": True,
               "accessibilityAuditRequired": True,
               "runtimeWitnessSHA256": snippet,
+              "targetedTestResultRequired": True,
+              "targetedTestIdentifier": "testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit",
+              "targetedTestResultEvidenceSHA256": tests_sha,
               "physicalAuthorityCreated": False,
               "protocolAuthorityCreated": False,
           }
