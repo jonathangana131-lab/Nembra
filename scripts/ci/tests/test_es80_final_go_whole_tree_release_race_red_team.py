@@ -82,28 +82,30 @@ class WholeTreeReleaseRaceRedTeamTests(unittest.TestCase):
         real_lstat = self.module.os.lstat
         fired = False
 
+        def raced_lstat(path, *args, **kwargs):
+            nonlocal fired
+            metadata = real_lstat(path, *args, **kwargs)
+            try:
+                attacked = Path(path) == self.a
+            except TypeError:
+                attacked = False
+            if attacked and not fired:
+                fired = True
+                # assert_clean() has already drained backend.events() for this
+                # pass. Return the accepted A.swift metadata after placing a real
+                # replacement, so queued CREATE/MOVE/leaf events land after the
+                # only event drain and are discarded when __exit__ closes custody.
+                self._replace_a(attacker)
+            return metadata
+
         # Arm cleanly first. Only after the context body is complete do we install
         # the scheduling seam used by __exit__'s final acceptance reproof.
-        with guard:
-            def raced_lstat(path, *args, **kwargs):
-                nonlocal fired
-                metadata = real_lstat(path, *args, **kwargs)
-                try:
-                    attacked = Path(path) == self.a
-                except TypeError:
-                    attacked = False
-                if attacked and not fired:
-                    fired = True
-                    # assert_clean() has already drained backend.events() for this
-                    # pass. Return the accepted A.swift metadata after placing a
-                    # real replacement, so the queued CREATE/MOVE/leaf events land
-                    # after the only event drain and are discarded on close().
-                    self._replace_a(attacker)
-                return metadata
+        try:
+            with guard:
+                self.module.os.lstat = raced_lstat
+        finally:
+            self.module.os.lstat = real_lstat
 
-            self.module.os.lstat = raced_lstat
-
-        self.module.os.lstat = real_lstat
         self.assertTrue(fired, "release-race scheduling seam never reached A.swift final lstat")
         self.assertEqual(
             self.a.read_text(encoding="utf-8"),
