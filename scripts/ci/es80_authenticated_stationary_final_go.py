@@ -74,8 +74,10 @@ def api(path:str):
 
 def public(source:str,pr:int,runs:dict[str,int],get=api):
     if set(runs)!=set(WORKFLOWS): raise GoError("exact required workflow set mismatch")
-    _,p=get(f"/pulls/{pr}"); head=p.get("head",{}); base=p.get("base",{}); head_ref=head.get("ref")
+    _,p=get(f"/pulls/{pr}"); head=p.get("head",{}); base=p.get("base",{}); head_ref=head.get("ref"); state=p.get("state"); merged=bool(p.get("merged_at")); draft=p.get("draft")
     if canon(head.get("sha"),"PR head")!=source or head.get("repo",{}).get("full_name")!=REPO or base.get("ref")!="main" or not isinstance(head_ref,str) or not head_ref: raise GoError("canonical PR subject mismatch")
+    if not ((state=="open" and draft is False) or (state=="closed" and merged)):
+        raise GoError("canonical PR is draft or closed without merge; software acceptance is not promotable")
     subjects=[]
     for name in WORKFLOWS:
         rid=pos(runs[name],name); _,r=get(f"/actions/runs/{rid}")
@@ -83,7 +85,7 @@ def public(source:str,pr:int,runs:dict[str,int],get=api):
         bound=(isinstance(pulls,list) and any(isinstance(x,dict) and x.get("number")==pr for x in pulls)) or (pulls==[] and r.get("head_branch")==head_ref)
         if r.get("name")!=name or canon(r.get("head_sha"),name)!=source or r.get("status")!="completed" or r.get("conclusion")!="success" or r.get("event")!="pull_request" or not bound: raise GoError(f"{name} is not exact terminal SUCCESS for PR #{pr}")
         subjects.append({"name":name,"runID":rid,"headSHA":source,"conclusion":"success"})
-    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":p.get("state"),"merged":bool(p.get("merged_at"))},subjects
+    return {"number":pr,"headSHA":source,"headBranch":head_ref,"base":"main","state":state,"merged":merged,"draft":draft},subjects
 
 def visual(source:str,run:int,aid:int,archive:Path,get=api):
     _,a=get(f"/actions/artifacts/{aid}"); m=DIGEST.fullmatch(a.get("digest","") if isinstance(a.get("digest"),str) else "")
