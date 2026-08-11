@@ -168,7 +168,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(try posixPermissions(runtime.appendingPathComponent("Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")) == 0o600)
     }
 
-    @Test("publication and writer execution are pinned before secrets")
+    @Test("publication, writer execution, and checkout root are pinned before secrets")
     func descriptorBoundPublicationSourceContract() throws {
         let shell = try String(
             contentsOf: repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh"),
@@ -179,17 +179,22 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"fd636098ef767c76946246f3f7f793a07b969f1abf9ee43445e4b5154f1089e8\""))
+        #expect(shell.contains("WRITER_SHA256=\"3575ccc3aea7a493e4972c780852f3da5434fb323e9fa728c612d14ea605ed71\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
-        #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT\""))
+        #expect(shell.contains("ROOT_IDENTITY_CAPTURE=\"$(/usr/bin/python3 -I - \"$ROOT\""))
+        #expect(shell.contains("metadata = os.stat(path, follow_symlinks=False)"))
+        #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT\" \"$ROOT_DEVICE\" \"$ROOT_INODE\""))
         #expect(!shell.contains("/usr/bin/python3 -I \"$WRITER\""))
         let digestFence = shell.range(of: "[[ \"$CAPTURED_WRITER_SHA256\" == \"$WRITER_SHA256\" ]]")
+        let rootIdentityFence = shell.range(of: "ROOT_IDENTITY_CAPTURE=\"$(/usr/bin/python3 -I - \"$ROOT\"")
         let credentialRead = shell.range(of: "builtin read -r -s -p \"Tuya SmartLife SDK AppKey (input hidden): \" APP_KEY")
         #expect(digestFence != nil)
+        #expect(rootIdentityFence != nil)
         #expect(credentialRead != nil)
-        if let digestFence, let credentialRead {
-            #expect(digestFence.lowerBound < credentialRead.lowerBound)
+        if let digestFence, let rootIdentityFence, let credentialRead {
+            #expect(digestFence.lowerBound < rootIdentityFence.lowerBound)
+            #expect(rootIdentityFence.lowerBound < credentialRead.lowerBound)
         }
 
         #expect(!shell.contains("/usr/bin/mktemp"))
@@ -200,6 +205,9 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("dir_fd=parent_fd"))
         #expect(writer.contains("src_dir_fd=parent_fd"))
         #expect(writer.contains("dst_dir_fd=parent_fd"))
+        #expect(writer.contains("(metadata.st_dev, metadata.st_ino) != expected_identity"))
+        #expect(writer.contains("checkout root identity changed after pre-credential admission"))
+        #expect(writer.contains("self-test accepted a replacement checkout root"))
     }
 
     private func makeFixture() throws -> (root: URL, script: URL) {
