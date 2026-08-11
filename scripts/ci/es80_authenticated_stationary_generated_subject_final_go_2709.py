@@ -31,6 +31,7 @@ GENERATED_AUTHORITY_PATHS = (
     "Scripts/capture_tuya_private_input_build_guard.py",
     "scripts/field/install_one_time_capture.command",
 )
+GIT_OID = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
 
 def _load_core():
@@ -50,34 +51,121 @@ _ORIGINAL_CANDIDATE = core.candidate_generated_authority
 _ORIGINAL_BUILD = core.build
 
 
-def _current_generated_subject(root: Path) -> str:
-    helper = root / GENERATED_HELPER_PATH
+def _git_environment() -> dict[str, str]:
+    # Keep source/blob resolution replacement-blind and independent of caller Git
+    # configuration. The accepted source commit, not mutable worktree state, owns
+    # the helper bytes that participate in physical Final-GO authority.
+    return {
+        "PATH": "/usr/bin:/bin",
+        "HOME": "/var/empty",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+    }
+
+
+def _git_bytes(root: Path, *args: str, input_bytes: bytes | None = None) -> bytes:
     try:
         process = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), *args],
+            input=input_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=_git_environment(),
+        )
+    except OSError as error:
+        raise core.GeneratedSubjectGoError("accepted generated-helper Git custody could not run") from error
+    if process.returncode != 0:
+        raise core.GeneratedSubjectGoError("accepted generated-helper Git custody failed closed")
+    return process.stdout
+
+
+def _accepted_helper_bytes(root: Path, source: str) -> tuple[str, bytes]:
+    if not isinstance(source, str) or not GIT_OID.fullmatch(source.lower()):
+        raise core.GeneratedSubjectGoError("accepted generated-helper source commit is malformed")
+    source = source.lower()
+    blob = _git_bytes(root, "rev-parse", f"{source}:{GENERATED_HELPER_PATH}").decode(
+        "ascii", errors="strict"
+    ).strip().lower()
+    if not GIT_OID.fullmatch(blob):
+        raise core.GeneratedSubjectGoError("accepted generated-helper Git blob identity is malformed")
+    raw = _git_bytes(root, "cat-file", "blob", blob)
+    actual = _git_bytes(root, "hash-object", "--stdin", input_bytes=raw).decode(
+        "ascii", errors="strict"
+    ).strip().lower()
+    if actual != blob:
+        raise core.GeneratedSubjectGoError("accepted generated-helper blob bytes failed Git object revalidation")
+    return blob, raw
+
+
+def _execute_accepted_helper(
+    root: Path,
+    source: str,
+    helper_args: list[str],
+) -> subprocess.CompletedProcess[str]:
+    _, raw = _accepted_helper_bytes(root, source)
+    # Feed the exact accepted Git blob on stdin to a tiny isolated executor. The
+    # mutable checkout pathname is retained only as __file__/argv display context;
+    # Python never reopens it as executable authority.
+    executor = r'''
+import sys
+raw = sys.stdin.buffer.read()
+path = sys.argv[1]
+helper_args = sys.argv[2:]
+sys.argv = [path, *helper_args]
+scope = {
+    "__name__": "__main__",
+    "__file__": path,
+    "__package__": None,
+    "__cached__": None,
+}
+exec(compile(raw, path, "exec"), scope, scope)
+'''
+    try:
+        return subprocess.run(
             [
                 "/usr/bin/python3",
                 "-I",
                 "-B",
-                str(helper),
-                "--lockfile",
-                str(root / "Podfile.lock"),
-                "--pods",
-                str(root / "Pods"),
-                "--workspace",
-                str(root / "NembraCapture.xcworkspace"),
+                "-c",
+                executor,
+                str(root / GENERATED_HELPER_PATH),
+                *helper_args,
             ],
             cwd=root,
             env={"PATH": "/usr/bin:/bin"},
-            text=True,
+            input=raw,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            text=False,
             check=False,
         )
     except OSError as error:
         raise core.GeneratedSubjectGoError(
-            "selected generated CocoaPods build-subject helper could not run"
+            "accepted generated CocoaPods build-subject helper could not run"
         ) from error
-    value = process.stdout.strip()
+
+
+def _current_generated_subject(root: Path, source: str) -> str:
+    process = _execute_accepted_helper(
+        root,
+        source,
+        [
+            "--lockfile",
+            str(root / "Podfile.lock"),
+            "--pods",
+            str(root / "Pods"),
+            "--workspace",
+            str(root / "NembraCapture.xcworkspace"),
+        ],
+    )
+    try:
+        value = process.stdout.decode("utf-8", errors="strict").strip()
+    except UnicodeDecodeError as error:
+        raise core.GeneratedSubjectGoError(
+            "selected generated CocoaPods build subject was not canonical UTF-8"
+        ) from error
     if (
         process.returncode != 0
         or not core.HEX64.fullmatch(value)
@@ -95,7 +183,7 @@ def candidate_generated_authority(
     accepted_digest: str,
     *,
     base: Any,
-    derive_subject: Callable[[Path], str] = _current_generated_subject,
+    derive_subject: Callable[[Path, str], str] = _current_generated_subject,
 ) -> dict[str, Any]:
     root = candidate_repo.expanduser().resolve(strict=True)
     accepted_digest = core._canonical_digest(
@@ -146,7 +234,7 @@ def candidate_generated_authority(
             "candidate source lacks selected generated-build authority enforcement"
         )
 
-    current = derive_subject(root)
+    current = derive_subject(root, source)
     if current != accepted_digest:
         raise core.GeneratedSubjectGoError(
             "candidate generated CocoaPods subject does not match reviewed authority"
@@ -197,8 +285,8 @@ def generated_control_plane(
 
 def build(*args: Any, **kwargs: Any) -> dict[str, Any]:
     # The core build signature captured its then-current helper as a Python
-    # default. Override that one parameter explicitly; everything else remains
-    # the recovered core contract and current #2638 sealed installer path.
+    # default. Override that boundary explicitly so the selected adapter always
+    # derives with helper bytes bound to the candidate's exact source commit.
     kwargs.setdefault("derive_subject", _current_generated_subject)
     record = _ORIGINAL_BUILD(*args, **kwargs)
     candidate = record.get("generatedBuildSubjectCandidate")
