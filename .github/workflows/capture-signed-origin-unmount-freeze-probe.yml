@@ -1,0 +1,75 @@
+name: Capture Signed Origin Unmount Freeze Probe
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py
+      - .github/workflows/capture-signed-origin-unmount-freeze-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-signed-origin-unmount-freeze-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-unmount-freeze:
+    name: Prove non-forced detach is a compiler-output quiescence boundary
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind exact validation head to reviewed production parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRODUCTION_PARENT_SHA: a71cc55dbc2281791e327888cf89ce0db6cf6193
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PRODUCTION_PARENT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$PRODUCTION_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          actual_paths="$RUNNER_TEMP/nembra-unmount-freeze-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-unmount-freeze-expected.txt"
+          git diff --name-only "$PRODUCTION_PARENT_SHA"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-signed-origin-unmount-freeze-probe.yml
+          scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+
+      - name: Compile validation witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-unmount-freeze-pycache"
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove detached writable descriptor blocks freeze until quiesced
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_file="$RUNNER_TEMP/nembra-unmount-freeze-output.txt"
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py | tee "$output_file"
+          grep -q '^NEMBRA_UNMOUNT_FREEZE_JSON=' "$output_file"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
