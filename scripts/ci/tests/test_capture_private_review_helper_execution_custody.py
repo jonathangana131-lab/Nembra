@@ -46,7 +46,7 @@ class PrivateReviewHelperExecutionCustodyTests(unittest.TestCase):
         self.helper = scripts / COMMITMENT.name
         self.accepted_helper = hashlib.sha256(self.helper.read_bytes()).hexdigest()
         self.accepted_provenance_helper = hashlib.sha256((scripts / PROVENANCE.name).read_bytes()).hexdigest()
-        self.accepted_generated_helper = hashlib.sha256((scripts / SUBJECT_HELPER.name).read_bytes()).hexdigest()
+        self.accepted_generated_helper = hashlib.sha256((scripts / GENERATED.name).read_bytes()).hexdigest()
 
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
