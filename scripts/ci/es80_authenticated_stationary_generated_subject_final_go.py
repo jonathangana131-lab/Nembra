@@ -75,6 +75,7 @@ class GeneratedSubjectGoError(RuntimeError):
 
 
 BASE_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"
+PARENT_BASE_MODULE_GIT_BLOB = "b0664c734004c2265b05d23ec58756806ff62f2c"
 
 
 def _load_base_module():
@@ -118,6 +119,8 @@ def _load_base_module():
         raise GeneratedSubjectGoError("authenticated-stationary Final-GO control source is invalid")
     if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_blob):
         raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob is invalid")
+    if accepted_blob != PARENT_BASE_MODULE_GIT_BLOB:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git blob does not match exact accepted parent authority")
     if not payload or verified != accepted_blob:
         raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent Git bytes failed identity verification")
     filename = f"git:{source}:{BASE_MODULE_PATH}"
