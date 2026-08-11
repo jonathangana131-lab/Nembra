@@ -1,0 +1,30 @@
+name: Capture CocoaPods Generated Build Subject
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/bootstrap_capture_tuya_sdk.sh'
+      - 'Scripts/capture_cocoapods_generated_build_subject.py'
+      - 'Scripts/capture_tuya_private_input_provenance.py'
+      - 'scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py'
+      - '.github/workflows/capture-cocoapods-generated-build-subject.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-build-subject:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile generated-subject helper and regression
+        run: |
+          python3 -m py_compile \
+            Scripts/capture_cocoapods_generated_build_subject.py \
+            scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - name: Exercise generated-subject hasher invariants
+        run: python3 Scripts/capture_cocoapods_generated_build_subject.py self-test
+      - name: Prove reviewed generated graph is required and reproducible
+        run: python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
