@@ -162,14 +162,16 @@ def validate_pr_metadata(body):
     if schema not in SUPPORTED_SCHEMA_VERSIONS or gen<1:raise ValidationError('unsupported metadata version')
     return {'schemaVersion':schema,'laneId':_id(f['SWARM_LANE'],'lane'),'slot':_id(f['SWARM_SLOT'],'slot'),'workerId':_worker(f['SWARM_WORKER']),'generation':gen}
 def validate_state_snapshot(lanes,claims,workers,events,resources,now):
-    errors=[]; good=[]
+    errors=[]; good=[]; registered_workers=set()
     for i,x in enumerate(lanes):
         try:good.append(validate_lane(x))
         except ValidationError as e:errors.append(f'lane[{i}]: {e}')
-    for name,seq,fn in [('worker',workers,validate_worker),('event',events,validate_event)]:
-        for i,x in enumerate(seq):
-            try:fn(x)
-            except ValidationError as e:errors.append(f'{name}[{i}]: {e}')
+    for i,x in enumerate(workers):
+        try:registered_workers.add(validate_worker(x)['workerId'])
+        except ValidationError as e:errors.append(f'worker[{i}]: {e}')
+    for i,x in enumerate(events):
+        try:validate_event(x)
+        except ValidationError as e:errors.append(f'event[{i}]: {e}')
     lm={x['laneId']:x for x in good}; seen=set()
     for i,raw in enumerate(claims):
         try:
@@ -177,6 +179,7 @@ def validate_state_snapshot(lanes,claims,workers,events,resources,now):
             if c['laneId'] not in lm:raise ValidationError('claim references unknown lane')
             if c['slot'] not in {s['name'] for s in lm[c['laneId']]['slots']}:raise ValidationError('claim references unknown slot')
             if claim_is_live(c,now):
+                if c['workerId'] not in registered_workers:raise ValidationError('live claim references unregistered worker')
                 k=(c['laneId'],c['slot'])
                 if k in seen:raise ValidationError('duplicate active owner')
                 seen.add(k)
