@@ -1,0 +1,630 @@
+name: TEMP V14 Final GO Whole Tree Custody Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-whole-tree-custody-sol-1404m2
+    paths:
+      - .github/workflows/tmp-v14-final-go-whole-tree-custody-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Bind constructor to defeated exact parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "471cc025b332f4df8b43a98d709710aeb4e0698f" || test "$(git rev-parse HEAD)" = "471cc025b332f4df8b43a98d709710aeb4e0698f"
+      - name: Materialize whole-tree custody repair and permanent regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          target = Path("scripts/ci/es80_authenticated_stationary_private_review_final_go.py")
+          text = target.read_text(encoding="utf-8")
+          audit_start = text.index("def _audit_candidate_tree(root: Path, source: str) -> dict[str, tuple[bytes, str]]:\n")
+          audit_end = text.index("\ndef _load_parent_module() -> types.ModuleType:\n", audit_start)
+          replacement = r'''class _WholeTreeCustody:
+              """Hold tracked inode identity and mutation history across Final-GO authority.
+
+              Descriptor identity closes persistent post-admission replacement on every platform.
+              The physical macOS field path additionally requires kqueue vnode history over every
+              admitted tracked directory and regular-file descriptor, so replace/restore or
+              mutate/restore cannot disappear between endpoint reproofs.
+              """
+
+              def __init__(self, root: Path, source: str) -> None:
+                  import sys
+
+                  self.root = root.expanduser().resolve(strict=True)
+                  self.source = source.lower()
+                  self.entries = _tree_entries(self.root, self.source)
+                  self.directory_fds: dict[str, int] = {}
+                  self.directory_stats: dict[str, os.stat_result] = {}
+                  self.file_fds: dict[str, int] = {}
+                  self.leaf_stats: dict[str, os.stat_result] = {}
+                  self.symlink_targets: dict[str, bytes] = {}
+                  self._kqueue: Any | None = None
+                  self._watch_count = 0
+                  self._darwin = sys.platform == "darwin"
+                  self._closed = False
+                  try:
+                      self._open_tracked_subjects()
+                      self._arm_darwin_vnode_watchers()
+                      self._assert_namespace_bound("after whole-tree watcher admission")
+                  except Exception:
+                      self.close()
+                      raise
+
+              def _open_tracked_subjects(self) -> None:
+                  if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+                      raise RuntimeError("candidate whole-tree descriptor custody is unavailable")
+                  cloexec = getattr(os, "O_CLOEXEC", 0)
+                  root_fd = os.open(
+                      self.root,
+                      os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | cloexec,
+                  )
+                  self.directory_fds[""] = root_fd
+                  self.directory_stats[""] = os.fstat(root_fd)
+
+                  tracked_directories: set[str] = set()
+                  for relative in self.entries:
+                      parts = PurePosixPath(relative).parts
+                      for index in range(1, len(parts)):
+                          tracked_directories.add(PurePosixPath(*parts[:index]).as_posix())
+                  for relative in sorted(
+                      tracked_directories,
+                      key=lambda value: (len(PurePosixPath(value).parts), value),
+                  ):
+                      parts = PurePosixPath(relative).parts
+                      parent_relative = PurePosixPath(*parts[:-1]).as_posix() if len(parts) > 1 else ""
+                      parent_fd = self.directory_fds[parent_relative]
+                      fd = os.open(
+                          parts[-1],
+                          os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | cloexec,
+                          dir_fd=parent_fd,
+                      )
+                      metadata = os.fstat(fd)
+                      if not stat.S_ISDIR(metadata.st_mode):
+                          os.close(fd)
+                          raise RuntimeError(
+                              "candidate tracked directory identity is not a directory: " + relative
+                          )
+                      self.directory_fds[relative] = fd
+                      self.directory_stats[relative] = metadata
+
+                  for relative, (mode, _accepted_oid) in self.entries.items():
+                      parts = PurePosixPath(relative).parts
+                      parent_relative = PurePosixPath(*parts[:-1]).as_posix() if len(parts) > 1 else ""
+                      parent_fd = self.directory_fds[parent_relative]
+                      admitted = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+                      self.leaf_stats[relative] = admitted
+                      if mode == b"120000":
+                          if not stat.S_ISLNK(admitted.st_mode):
+                              raise RuntimeError("candidate expected tracked symlink: " + relative)
+                          target = os.readlink(parts[-1], dir_fd=parent_fd)
+                          self.symlink_targets[relative] = (
+                              os.fsencode(target) if isinstance(target, str) else target
+                          )
+                          continue
+                      if not stat.S_ISREG(admitted.st_mode) or stat.S_ISLNK(admitted.st_mode):
+                          raise RuntimeError("candidate expected tracked regular file: " + relative)
+                      expected_executable = mode == b"100755"
+                      if bool(admitted.st_mode & 0o111) != expected_executable:
+                          raise RuntimeError(
+                              "candidate tracked executable mode differs from accepted tree: " + relative
+                          )
+                      fd = os.open(
+                          parts[-1],
+                          os.O_RDONLY | os.O_NOFOLLOW | cloexec,
+                          dir_fd=parent_fd,
+                      )
+                      opened = os.fstat(fd)
+                      if _stable_stat(opened) != _stable_stat(admitted):
+                          os.close(fd)
+                          raise RuntimeError(
+                              "candidate tracked regular-file identity changed during whole-tree admission: "
+                              + relative
+                          )
+                      self.file_fds[relative] = fd
+
+              def _arm_darwin_vnode_watchers(self) -> None:
+                  if not self._darwin:
+                      return
+                  try:
+                      import select
+
+                      required = (
+                          "kqueue",
+                          "kevent",
+                          "KQ_FILTER_VNODE",
+                          "KQ_EV_ADD",
+                          "KQ_EV_ENABLE",
+                          "KQ_EV_CLEAR",
+                          "KQ_NOTE_DELETE",
+                          "KQ_NOTE_WRITE",
+                          "KQ_NOTE_EXTEND",
+                          "KQ_NOTE_ATTRIB",
+                          "KQ_NOTE_LINK",
+                          "KQ_NOTE_RENAME",
+                      )
+                      if any(not hasattr(select, name) for name in required):
+                          raise RuntimeError("candidate whole-tree Darwin vnode custody is unavailable")
+                      fflags = (
+                          select.KQ_NOTE_DELETE
+                          | select.KQ_NOTE_WRITE
+                          | select.KQ_NOTE_EXTEND
+                          | select.KQ_NOTE_ATTRIB
+                          | select.KQ_NOTE_LINK
+                          | select.KQ_NOTE_RENAME
+                          | getattr(select, "KQ_NOTE_REVOKE", 0)
+                      )
+                      flags = select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR
+                      descriptors = list(self.directory_fds.values()) + list(self.file_fds.values())
+                      queue = select.kqueue()
+                      changes = [
+                          select.kevent(
+                              fd,
+                              filter=select.KQ_FILTER_VNODE,
+                              flags=flags,
+                              fflags=fflags,
+                          )
+                          for fd in descriptors
+                      ]
+                      queue.control(changes, 0, 0)
+                      self._kqueue = queue
+                      self._watch_count = len(descriptors)
+                  except Exception as error:
+                      if isinstance(error, RuntimeError):
+                          raise
+                      raise RuntimeError(
+                          "candidate whole-tree Darwin vnode custody could not be armed"
+                      ) from error
+
+              def _drain_vnode_events(self) -> None:
+                  if self._kqueue is None:
+                      return
+                  try:
+                      events = self._kqueue.control([], max(1, self._watch_count), 0)
+                  except Exception as error:
+                      raise RuntimeError(
+                          "candidate whole-tree Darwin vnode custody could not be queried"
+                      ) from error
+                  if events:
+                      raise RuntimeError(
+                          "candidate tracked tree mutated during whole-tree custody"
+                      )
+
+              def _assert_namespace_bound(self, phase: str) -> None:
+                  self._drain_vnode_events()
+                  try:
+                      root_live = os.stat(self.root, follow_symlinks=False)
+                  except OSError as error:
+                      raise RuntimeError(
+                          "candidate root namespace changed during whole-tree custody: " + phase
+                      ) from error
+                  if _stable_stat(root_live) != _stable_stat(self.directory_stats[""]):
+                      raise RuntimeError(
+                          "candidate root identity changed during whole-tree custody: " + phase
+                      )
+
+                  for relative, fd in self.directory_fds.items():
+                      if not relative:
+                          continue
+                      held = os.fstat(fd)
+                      try:
+                          live = os.lstat(self.root / relative)
+                      except OSError as error:
+                          raise RuntimeError(
+                              "candidate tracked directory namespace changed during whole-tree custody: "
+                              + relative
+                          ) from error
+                      expected = self.directory_stats[relative]
+                      if (
+                          _stable_stat(held) != _stable_stat(expected)
+                          or _stable_stat(live) != _stable_stat(expected)
+                      ):
+                          raise RuntimeError(
+                              "candidate tracked directory identity changed during whole-tree custody: "
+                              + relative
+                          )
+
+                  for relative, (mode, _accepted_oid) in self.entries.items():
+                      try:
+                          live = os.lstat(self.root / relative)
+                      except OSError as error:
+                          raise RuntimeError(
+                              "candidate tracked namespace changed during whole-tree custody: " + relative
+                          ) from error
+                      expected = self.leaf_stats[relative]
+                      if _stable_stat(live) != _stable_stat(expected):
+                          raise RuntimeError(
+                              "candidate tracked identity changed during whole-tree custody: " + relative
+                          )
+                      if mode == b"120000":
+                          target = os.readlink(self.root / relative)
+                          target_bytes = os.fsencode(target) if isinstance(target, str) else target
+                          if target_bytes != self.symlink_targets[relative]:
+                              raise RuntimeError(
+                                  "candidate tracked symlink target changed during whole-tree custody: "
+                                  + relative
+                              )
+                      else:
+                          held = os.fstat(self.file_fds[relative])
+                          if _stable_stat(held) != _stable_stat(expected):
+                              raise RuntimeError(
+                                  "candidate tracked regular file changed during whole-tree custody: "
+                                  + relative
+                              )
+                  self._drain_vnode_events()
+
+              def verify(self) -> dict[str, tuple[bytes, str]]:
+                  self._assert_namespace_bound("before candidate audit")
+                  if _head_oid(self.root) != self.source:
+                      raise RuntimeError("candidate physical checkout HEAD differs from accepted source")
+
+                  tracked_directories: set[str] = set()
+                  for relative, (mode, accepted_oid) in self.entries.items():
+                      parts = PurePosixPath(relative).parts
+                      for index in range(1, len(parts)):
+                          tracked_directories.add(PurePosixPath(*parts[:index]).as_posix())
+                      actual_oid = _physical_blob_oid(self.root, relative, mode, accepted_oid)
+                      if actual_oid != accepted_oid:
+                          raise RuntimeError(
+                              "candidate physical tracked bytes differ from accepted tree: " + relative
+                          )
+
+                  for relative in FIELD_INPUT_DIRECTORIES:
+                      path = self.root / relative
+                      try:
+                          metadata = os.lstat(path)
+                      except OSError as error:
+                          raise RuntimeError(
+                              "required candidate field-input directory is unavailable: " + relative
+                          ) from error
+                      if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                          raise RuntimeError(
+                              "candidate field-input allowlist root must be one real directory: " + relative
+                          )
+                  for relative in FIELD_INPUT_FILES:
+                      path = self.root / relative
+                      try:
+                          metadata = os.lstat(path)
+                      except OSError as error:
+                          raise RuntimeError(
+                              "required candidate field-input file is unavailable: " + relative
+                          ) from error
+                      if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                          raise RuntimeError(
+                              "candidate field-input allowlist file must be one real regular file: " + relative
+                          )
+
+                  allowed_roots = set(FIELD_INPUT_DIRECTORIES)
+                  allowed_files = set(FIELD_INPUT_FILES)
+                  tracked = set(self.entries)
+                  try:
+                      walker = os.walk(self.root, topdown=True, followlinks=False)
+                      for current_raw, directories, files in walker:
+                          current = Path(current_raw)
+                          current_relative = current.relative_to(self.root)
+                          if current_relative.parts and current_relative.parts[0] in allowed_roots:
+                              directories[:] = []
+                              continue
+                          for name in list(directories):
+                              candidate = current / name
+                              relative = candidate.relative_to(self.root).as_posix()
+                              if not current_relative.parts and name == ".git":
+                                  directories.remove(name)
+                                  continue
+                              if not current_relative.parts and name in allowed_roots:
+                                  directories.remove(name)
+                                  continue
+                              metadata = os.lstat(candidate)
+                              if stat.S_ISLNK(metadata.st_mode):
+                                  directories.remove(name)
+                                  if relative not in tracked or self.entries[relative][0] != b"120000":
+                                      raise RuntimeError(
+                                          "untracked candidate symlink outside field-input allowlist: "
+                                          + relative
+                                      )
+                                  continue
+                              if relative not in tracked_directories:
+                                  raise RuntimeError(
+                                      "untracked candidate directory outside field-input allowlist: "
+                                      + relative
+                                  )
+                          for name in files:
+                              candidate = current / name
+                              relative = candidate.relative_to(self.root).as_posix()
+                              if relative in tracked or relative in allowed_files:
+                                  continue
+                              raise RuntimeError(
+                                  "untracked candidate path outside field-input allowlist: " + relative
+                              )
+                  except OSError as error:
+                      raise RuntimeError("candidate raw filesystem enumeration failed") from error
+
+                  self._assert_namespace_bound("after candidate audit")
+                  if _head_oid(self.root) != self.source:
+                      raise RuntimeError(
+                          "candidate physical checkout HEAD changed during whole-tree custody"
+                      )
+                  self._drain_vnode_events()
+                  return dict(self.entries)
+
+              def assert_intact(self) -> None:
+                  self._assert_namespace_bound("before whole-tree custody release")
+                  if _head_oid(self.root) != self.source:
+                      raise RuntimeError(
+                          "candidate physical checkout HEAD changed before whole-tree custody release"
+                      )
+                  self._drain_vnode_events()
+
+              def close(self) -> None:
+                  if self._closed:
+                      return
+                  self._closed = True
+                  if self._kqueue is not None:
+                      try:
+                          self._kqueue.close()
+                      except Exception:
+                          pass
+                      self._kqueue = None
+                  for fd in list(self.file_fds.values()) + list(self.directory_fds.values()):
+                      try:
+                          os.close(fd)
+                      except OSError:
+                          pass
+                  self.file_fds.clear()
+                  self.directory_fds.clear()
+
+
+          @contextlib.contextmanager
+          def _whole_tree_custody(
+              root: Path, source: str
+          ) -> Iterator[dict[str, tuple[bytes, str]]]:
+              custody = _WholeTreeCustody(root, source)
+              try:
+                  entries = custody.verify()
+                  try:
+                      yield entries
+                  except Exception:
+                      raise
+                  else:
+                      custody.assert_intact()
+              finally:
+                  custody.close()
+
+
+          def _audit_candidate_tree(root: Path, source: str) -> dict[str, tuple[bytes, str]]:
+              """Verify one candidate under whole-tree inode and mutation-history custody."""
+              with _whole_tree_custody(root, source) as entries:
+                  return dict(entries)
+          '''
+          text = text[:audit_start] + replacement + text[audit_end:]
+
+          custody_start = text.index("@contextlib.contextmanager\ndef _candidate_git_custody(")
+          custody_end = text.index("\ndef build(*, candidate_repo: Path", custody_start)
+          custody_replacement = r'''@contextlib.contextmanager
+          def _candidate_git_custody(base: Any, candidate_repo: Path, source: str) -> Iterator[None]:
+              root = candidate_repo.expanduser().resolve(strict=True)
+              source = source.lower()
+              original_git = getattr(base, "git", None)
+              original_git_bytes = getattr(base, "git_bytes", None)
+              if not callable(original_git) or not callable(original_git_bytes):
+                  raise PrivateReviewGoError("parent Final-GO Git authority is not patchable")
+
+              with _whole_tree_custody(root, source):
+                  def guarded_git(repo: Path, *args: str) -> str:
+                      try:
+                          item_root = repo.expanduser().resolve(strict=True)
+                      except OSError as error:
+                          raise PrivateReviewGoError("Git repository path is unavailable") from error
+                      if item_root != root:
+                          return original_git(repo, *args)
+                      try:
+                          return _candidate_git_text(root, source, *args)
+                      except RuntimeError as error:
+                          raise PrivateReviewGoError(str(error)) from error
+
+                  def guarded_git_bytes(repo: Path, *args: str) -> bytes:
+                      try:
+                          item_root = repo.expanduser().resolve(strict=True)
+                      except OSError as error:
+                          raise PrivateReviewGoError("Git repository path is unavailable") from error
+                      if item_root != root:
+                          return original_git_bytes(repo, *args)
+                      try:
+                          return _candidate_git_bytes(root, source, *args)
+                      except RuntimeError as error:
+                          raise PrivateReviewGoError(str(error)) from error
+
+                  base.git = guarded_git
+                  base.git_bytes = guarded_git_bytes
+                  try:
+                      yield
+                  finally:
+                      base.git = original_git
+                      base.git_bytes = original_git_bytes
+          '''
+          text = text[:custody_start] + custody_replacement + text[custody_end:]
+          target.write_text(text, encoding="utf-8")
+
+          regression = Path("scripts/ci/tests/test_es80_final_go_whole_tree_custody.py")
+          regression.write_text(r'''#!/usr/bin/env python3
+          """Permanent regressions for Final-GO whole-tree candidate custody."""
+          from __future__ import annotations
+
+          import importlib.util
+          import os
+          from pathlib import Path
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          import unittest
+
+          SCRIPT = Path(__file__).resolve().parents[1] / "es80_authenticated_stationary_private_review_final_go.py"
+          SPEC = importlib.util.spec_from_file_location("nembra_final_go_whole_tree_custody_subject", SCRIPT)
+          if SPEC is None or SPEC.loader is None:
+              raise RuntimeError("could not load current Final-GO subject")
+          MODULE = importlib.util.module_from_spec(SPEC)
+          SPEC.loader.exec_module(MODULE)
+
+
+          class FinalGoWholeTreeCustodyTests(unittest.TestCase):
+              def _candidate(self, root: Path) -> tuple[str, Path]:
+                  subprocess.run(["/usr/bin/git", "-C", str(root), "init", "-q"], check=True)
+                  subprocess.run(
+                      ["/usr/bin/git", "-C", str(root), "config", "user.email", "capture@nembra.invalid"],
+                      check=True,
+                  )
+                  subprocess.run(
+                      ["/usr/bin/git", "-C", str(root), "config", "user.name", "Nembra Capture QA"],
+                      check=True,
+                  )
+                  tracked = root / "A.swift"
+                  tracked.write_text("// exact accepted Final-GO bytes\n", encoding="utf-8")
+                  tracked.chmod(0o644)
+                  subprocess.run(["/usr/bin/git", "-C", str(root), "add", "A.swift"], check=True)
+                  subprocess.run(["/usr/bin/git", "-C", str(root), "commit", "-qm", "accepted candidate"], check=True)
+                  source = subprocess.check_output(
+                      ["/usr/bin/git", "-C", str(root), "rev-parse", "HEAD"], text=True
+                  ).strip().lower()
+                  for relative in MODULE.FIELD_INPUT_DIRECTORIES:
+                      path = root / relative
+                      path.mkdir(parents=True, exist_ok=True)
+                      self.assertTrue(stat.S_ISDIR(path.lstat().st_mode))
+                  for relative in MODULE.FIELD_INPUT_FILES:
+                      path = root / relative
+                      path.parent.mkdir(parents=True, exist_ok=True)
+                      path.write_text("PODS:\n", encoding="utf-8")
+                      path.chmod(0o600)
+                  return source, tracked
+
+              def test_clean_candidate_is_accepted(self) -> None:
+                  with tempfile.TemporaryDirectory(prefix="nembra-finalgo-whole-tree-clean-") as temporary:
+                      root = Path(temporary) / "repo"
+                      root.mkdir()
+                      source, _tracked = self._candidate(root)
+                      entries = MODULE._audit_candidate_tree(root, source)
+                      self.assertEqual(set(entries), {"A.swift"})
+
+              def test_post_subject_replacement_is_rejected_before_audit_returns(self) -> None:
+                  with tempfile.TemporaryDirectory(prefix="nembra-finalgo-whole-tree-replace-") as temporary:
+                      sandbox = Path(temporary)
+                      root = sandbox / "repo"
+                      root.mkdir()
+                      source, tracked = self._candidate(root)
+                      attacker = sandbox / "attacker.swift"
+                      attacker.write_text("// attacker replacement after per-file reproof\n", encoding="utf-8")
+                      attacker.chmod(0o644)
+                      original = MODULE._physical_blob_oid
+                      mutation_count = 0
+
+                      def mutate_after_admitted_read(current_root, relative, mode, expected_oid):
+                          nonlocal mutation_count
+                          result = original(current_root, relative, mode, expected_oid)
+                          if relative == "A.swift" and mutation_count == 0:
+                              os.replace(attacker, tracked)
+                              tracked.chmod(0o644)
+                              mutation_count += 1
+                          return result
+
+                      MODULE._physical_blob_oid = mutate_after_admitted_read
+                      try:
+                          with self.assertRaisesRegex(RuntimeError, "whole-tree custody"):
+                              MODULE._audit_candidate_tree(root, source)
+                      finally:
+                          MODULE._physical_blob_oid = original
+                      self.assertEqual(mutation_count, 1)
+
+              @unittest.skipUnless(sys.platform == "darwin", "Darwin kqueue mutation-history evidence")
+              def test_transient_replace_restore_is_rejected_by_darwin_vnode_history(self) -> None:
+                  with tempfile.TemporaryDirectory(prefix="nembra-finalgo-whole-tree-transient-") as temporary:
+                      sandbox = Path(temporary)
+                      root = sandbox / "repo"
+                      root.mkdir()
+                      source, tracked = self._candidate(root)
+                      attacker = sandbox / "attacker.swift"
+                      attacker.write_text("// transient attacker bytes\n", encoding="utf-8")
+                      attacker.chmod(0o644)
+                      saved = sandbox / "accepted-saved.swift"
+                      displaced = sandbox / "attacker-displaced.swift"
+                      original = MODULE._physical_blob_oid
+                      mutation_count = 0
+
+                      def transient_replace_restore(current_root, relative, mode, expected_oid):
+                          nonlocal mutation_count
+                          result = original(current_root, relative, mode, expected_oid)
+                          if relative == "A.swift" and mutation_count == 0:
+                              os.replace(tracked, saved)
+                              os.replace(attacker, tracked)
+                              os.replace(tracked, displaced)
+                              os.replace(saved, tracked)
+                              mutation_count += 1
+                          return result
+
+                      MODULE._physical_blob_oid = transient_replace_restore
+                      try:
+                          with self.assertRaisesRegex(RuntimeError, "whole-tree custody"):
+                              MODULE._audit_candidate_tree(root, source)
+                      finally:
+                          MODULE._physical_blob_oid = original
+                      self.assertEqual(mutation_count, 1)
+                      self.assertEqual(
+                          tracked.read_text(encoding="utf-8"),
+                          "// exact accepted Final-GO bytes\n",
+                          "fixture did not restore accepted endpoint bytes",
+                      )
+
+              def test_source_requires_darwin_kqueue_and_outer_build_custody(self) -> None:
+                  source = SCRIPT.read_text(encoding="utf-8")
+                  self.assertIn('self._darwin = sys.platform == "darwin"', source)
+                  self.assertIn('"kqueue"', source)
+                  self.assertIn("KQ_NOTE_RENAME", source)
+                  self.assertIn("candidate tracked tree mutated during whole-tree custody", source)
+                  self.assertIn("with _whole_tree_custody(root, source):", source)
+
+
+          if __name__ == "__main__":
+              unittest.main(verbosity=2)
+          '''.replace("\n          ", "\n").lstrip(), encoding="utf-8")
+          PY
+      - name: Compile and run focused closure regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_whole_tree_custody.py
+          python3 scripts/ci/tests/test_es80_final_go_whole_tree_custody.py
+          python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+          python3 scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+          git diff --check
+      - name: Publish production and regression bytes only
+        shell: bash
+        env:
+          BRANCH: repair/v14-final-go-whole-tree-custody-sol-1404m2
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra Swarm"
+          git config user.email "nembra-swarm@users.noreply.github.com"
+          git add \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_whole_tree_custody.py
+          test -n "$(git diff --cached --name-only)"
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "2"
+          git commit -m "Capture: hold whole-tree Final-GO custody"
+          git push origin "HEAD:${BRANCH}"
