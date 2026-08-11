@@ -21,6 +21,7 @@ permissions:
 jobs:
   authority-tests:
     name: Authenticated stationary GO authority tests
+    # Keep control-plane tests off the scarce self-hosted Mac; no physical install runs in CI.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
