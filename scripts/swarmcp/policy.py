@@ -115,6 +115,21 @@ def _slot_for(lane, slot_name: str):
     return slots[slot_name]
 
 
+def slot_phase_allowed(lane, slot):
+    lane = validate_lane(lane)
+    role = slot["role"]
+    state = lane["state"]
+    if role in {"integration", "release"}:
+        return state == "INTEGRATION_READY"
+    if role in {"review", "adversarial-review", "architecture-review"}:
+        return state == "REVIEW"
+    if role in {"implementation", "repair"}:
+        return state in {"READY", "CLAIMED", "IMPLEMENTING", "NEEDS_CHANGES"}
+    if role == "scheduler-reconciler":
+        return state in {"READY", "CLAIMED", "IMPLEMENTING", "NEEDS_CHANGES"}
+    return state in RUNNABLE_LANE_STATES
+
+
 def _enforce_claim_policy(store: Store, lane, slot_name: str, worker: str, now: dt.datetime, config):
     lane = validate_lane(lane)
     _worker(worker)
@@ -134,6 +149,8 @@ def _enforce_claim_policy(store: Store, lane, slot_name: str, worker: str, now: 
         raise ValidationError(reason)
 
     slot = _slot_for(lane, slot_name)
+    if not slot_phase_allowed(lane, slot):
+        raise ValidationError(f"role {slot['role']} is not claimable while lane is {lane['state']}")
     physical_ok, physical_reason = _engine.physical_slot_runnable(lane, slot)
     if not physical_ok:
         raise ValidationError(physical_reason)
@@ -155,7 +172,7 @@ def _enforce_claim_policy(store: Store, lane, slot_name: str, worker: str, now: 
         limits = config["wipLimits"]
         if total >= limits["maxPrimaryLanes"]:
             raise ValidationError("project primary WIP limit reached")
-        if by_epic.get(lane.get("epic", ""), 0) >= limits["maxPrimaryPerEpic"]:
+        if by_epic.get(lane["epic"], 0) >= limits["maxPrimaryPerEpic"]:
             raise ValidationError("epic primary WIP limit reached")
 
     return lane, slot
@@ -246,7 +263,7 @@ def recommend_slots(lanes, claims, resources, config, now, red_main=False):
             continue
         tags = set(lane.get("tags", []))
         for slot in lane["slots"]:
-            if (lane["laneId"], slot["name"]) in live:
+            if (lane["laneId"], slot["name"]) in live or not slot_phase_allowed(lane, slot):
                 continue
             physical_ok, physical_reason = _engine.physical_slot_runnable(lane, slot)
             if not physical_ok or any(resource in busy for resource in slot.get("resources", [])):
@@ -254,7 +271,7 @@ def recommend_slots(lanes, claims, resources, config, now, red_main=False):
             role = slot["role"]
             if role == "implementation" and (
                 primary_total >= limits["maxPrimaryLanes"]
-                or primary_by_epic.get(lane.get("epic", ""), 0) >= limits["maxPrimaryPerEpic"]
+                or primary_by_epic.get(lane["epic"], 0) >= limits["maxPrimaryPerEpic"]
             ):
                 continue
             pressure = (
@@ -294,12 +311,12 @@ def recommend_slots(lanes, claims, resources, config, now, red_main=False):
     project_remaining = max(0, limits["maxPrimaryLanes"] - primary_total)
     epic_remaining = {
         epic: max(0, limits["maxPrimaryPerEpic"] - primary_by_epic.get(epic, 0))
-        for epic in {lane.get("epic", "") for lane in lanes}
+        for epic in {lane["epic"] for lane in lanes}
     }
     result = []
     for recommendation in ordered:
         if recommendation.role == "implementation":
-            epic = lane_map[recommendation.lane_id].get("epic", "")
+            epic = lane_map[recommendation.lane_id]["epic"]
             if project_remaining <= 0 or epic_remaining.get(epic, 0) <= 0:
                 continue
             project_remaining -= 1
