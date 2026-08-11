@@ -37,20 +37,27 @@ _EXPECTED_RUN_GUARDED_BUILD_PARAMETERS = (
     "popen_factory",
     "poll_interval",
 )
+_CANONICAL_GUARD_MODULE_NAME = "nembra_private_dependency_resolution_build_guard"
 
 
 def _load_guard():
     guard_path = Path(__file__).with_name("capture_tuya_private_input_build_guard.py")
     if not guard_path.is_file() or guard_path.is_symlink():
         raise ResolutionGuardError("canonical private-input build guard is missing or symlinked")
-    spec = importlib.util.spec_from_file_location(
-        "nembra_private_dependency_resolution_build_guard",
-        guard_path,
-    )
+    spec = importlib.util.spec_from_file_location(_CANONICAL_GUARD_MODULE_NAME, guard_path)
     if spec is None or spec.loader is None:
         raise ResolutionGuardError("canonical private-input build guard could not be loaded")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # The canonical guard defines dataclasses. Python's dataclass machinery
+    # resolves postponed annotations through sys.modules while the class body is
+    # executed, so the module must be registered before exec_module.
+    sys.modules[_CANONICAL_GUARD_MODULE_NAME] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        if sys.modules.get(_CANONICAL_GUARD_MODULE_NAME) is module:
+            sys.modules.pop(_CANONICAL_GUARD_MODULE_NAME, None)
+        raise
     return module
 
 
