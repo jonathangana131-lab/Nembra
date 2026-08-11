@@ -40,11 +40,23 @@ jobs:
 
           path = Path("scripts/ci/tmp_materialize_field_verified_git_payload.py")
           source = path.read_text(encoding="utf-8")
-          old = 'EXPECTED_INSTALLER_BLOB = "87430680649f9eb3160f30162f2c78f75809af68"'
-          new = 'EXPECTED_INSTALLER_BLOB = "840bc068551f060a1d74578247b79b4ce9add029"'
-          if source.count(old) != 1:
-              raise SystemExit("refusing to patch unexpected materializer installer-blob precondition")
-          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          replacements = (
+              (
+                  'EXPECTED_INSTALLER_BLOB = "87430680649f9eb3160f30162f2c78f75809af68"',
+                  'EXPECTED_INSTALLER_BLOB = "840bc068551f060a1d74578247b79b4ce9add029"',
+                  "installer-blob precondition",
+              ),
+              (
+                  'EXPECTED_TEST_BLOB = "514dc57300f6f6987248a09e20f307a18fa43b76"',
+                  'EXPECTED_TEST_BLOB = "a6a03b3b9a5bde131e90c0386f7e6524ec8abd8a"',
+                  "authority-test blob precondition",
+              ),
+          )
+          for old, new, label in replacements:
+              if source.count(old) != 1:
+                  raise SystemExit(f"refusing to patch unexpected materializer {label}")
+              source = source.replace(old, new, 1)
+          path.write_text(source, encoding="utf-8")
           PY
           python3 scripts/ci/tmp_materialize_field_verified_git_payload.py
 
