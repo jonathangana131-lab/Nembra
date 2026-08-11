@@ -7,6 +7,7 @@ on:
       - scripts/field/install_one_time_capture.command
       - scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
       - scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
       - .github/workflows/capture-field-tracked-source-window-authority.yml
   workflow_dispatch:
 
@@ -29,15 +30,17 @@ jobs:
           expected='${{ github.event.pull_request.head.sha || github.sha }}'
           test "$(git rev-parse HEAD)" = "$expected"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Prove tracked source custody contract
+      - name: Prove tracked source and selected vnode custody contracts
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
           /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
           /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
           /bin/bash -n scripts/field/install_one_time_capture.command
           git diff --check
 
@@ -56,9 +59,10 @@ jobs:
           expected='${{ github.event.pull_request.head.sha || github.sha }}'
           test "$(git rev-parse HEAD)" = "$expected"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Exercise real kqueue mutate-restore delivery
+      - name: Exercise real kqueue source and vnode attribute delivery
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_compiler_window_red_team.py
           /usr/bin/python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
