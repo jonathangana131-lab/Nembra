@@ -1,0 +1,153 @@
+name: TEMP Capture R3 Parent Git Execution Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-r3-parent-git-execution-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-r3-parent-git-execution-sol
+          fetch-depth: 0
+
+      - name: Materialize exact accepted-parent execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'PARENT_BRANCH = "control/v14-auth-stationary-final-go-sol"\nWORKFLOW_NAME = "Capture Authenticated Stationary Generated Subject Final GO"\n',
+              'PARENT_BRANCH = "control/v14-auth-stationary-final-go-sol"\n'
+              'PARENT_SOURCE_SHA = "3fdd32551831c3469e0853ddcee8fa828d38b87b"\n'
+              'PARENT_MODULE_PATH = "scripts/ci/es80_authenticated_stationary_final_go.py"\n'
+              'PARENT_MODULE_BLOB = "b0664c734004c2265b05d23ec58756806ff62f2c"\n'
+              'WORKFLOW_NAME = "Capture Authenticated Stationary Generated Subject Final GO"\n',
+              "parent authority constants",
+          )
+
+          replace_once(
+              'PARENT_PINNED_PATHS = (\n    "scripts/ci/es80_authenticated_stationary_final_go.py",\n',
+              'PARENT_PINNED_PATHS = (\n    PARENT_MODULE_PATH,\n',
+              "parent pinned path constant",
+          )
+
+          old_loader = '''def _load_base_module():
+    path = Path(__file__).with_name("es80_authenticated_stationary_final_go.py")
+    spec = importlib.util.spec_from_file_location("nembra_authenticated_stationary_final_go", path)
+    if spec is None or spec.loader is None:
+        raise GeneratedSubjectGoError("authenticated-stationary Final-GO parent could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+'''
+          new_loader = '''def _load_base_module():
+    # The parent is executable authority. Never reopen its mutable worktree path.
+    # R3 is cut from one exact parent, so the parent commit + Git blob are pinned
+    # in this reviewed child source. generated_control_plane() independently
+    # requires the live parent PR head to remain this same PARENT_SOURCE_SHA.
+    root = Path(__file__).resolve().parents[2]
+    environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
+    try:
+        source_blob = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout.strip().lower()
+        payload = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", PARENT_MODULE_BLOB],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git subject could not be read") from error
+
+    if source_blob != PARENT_MODULE_BLOB:
+        raise GeneratedSubjectGoError("pinned authenticated-stationary parent source does not own the accepted module blob")
+    if not payload or len(payload) > 2 * 1024 * 1024:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob has invalid bounded bytes")
+    header = b"blob " + str(len(payload)).encode("ascii") + b"\\0"
+    if len(PARENT_MODULE_BLOB) == 40:
+        actual_blob = hashlib.sha1(header + payload).hexdigest()
+    elif len(PARENT_MODULE_BLOB) == 64:
+        actual_blob = hashlib.sha256(header + payload).hexdigest()
+    else:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob identity has unsupported width")
+    if actual_blob != PARENT_MODULE_BLOB:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent execution bytes failed Git identity verification")
+
+    module = types.ModuleType("nembra_authenticated_stationary_final_go")
+    module.__file__ = f"git:{PARENT_SOURCE_SHA}:{PARENT_MODULE_PATH}"
+    module.__package__ = ""
+    try:
+        exec(compile(payload, module.__file__, "exec", dont_inherit=True), module.__dict__)
+    except Exception as error:
+        raise GeneratedSubjectGoError("accepted authenticated-stationary parent Git blob could not execute") from error
+    return module
+'''
+          replace_once(old_loader, new_loader, "base loader")
+
+          replace_once(
+              '    parent_sha = base.canon(parent_head.get("sha"), "parent Final-GO PR head")\n    if (\n',
+              '    parent_sha = base.canon(parent_head.get("sha"), "parent Final-GO PR head")\n'
+              '    if parent_sha != PARENT_SOURCE_SHA:\n'
+              '        raise GeneratedSubjectGoError("live parent Final-GO source differs from the exact parent execution subject pinned by R3")\n'
+              '    if (\n',
+              "live parent execution pin",
+          )
+
+          path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+                  scripts/ci/tests/test_es80_generated_subject_parent_git_execution_custody.py
+          git commit -m "Capture: pin R3 parent execution to accepted Git blob"
+
+      - name: Validate exact repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_generated_subject_parent_git_execution_custody.py
+          python3 scripts/ci/tests/test_es80_generated_subject_parent_git_execution_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
+          python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Remove temporary materializer and publish clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/tmp-v14-r3-parent-git-execution-materialize.yml
+          git commit -m "Capture: remove R3 execution materializer"
+          git push origin HEAD:repair/v14-r3-parent-git-execution-sol
