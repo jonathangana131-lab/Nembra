@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072500-review-result-build-authority-76d2-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-build-authority",
+  "message": "NEEDS_CHANGES on selected legacy build-authority successor #2805 exact 76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab. Range abort is resolved: retained selective-graft artifact 9092395798 executes all 944 tests / 229 suites in both parallel and serial modes and standalone Capture Xcode build succeeds. Exactly three deterministic package issues remain: two stale false-localStrategy metadata assertions already truthfully repaired by #2799, plus TuyaFieldSDKDependencyProvenanceSourceTests still demanding obsolete `[[ ! -f Podfile.lock ]]` while current verification-only bootstrap correctly uses fail-closed positive presence `[[ -f Podfile.lock ]] ||`. Separately, fresh source review confirms Scripts/capture_tuya_private_input_build_guard.py::main still has `except private_review.PrivateReviewCommitmentError` even though private_review is only a local inside _verify_accepted_private_review_commitment and is not globally bound; an exception reaching that clause can be masked by NameError. Remove/rework the unreachable undefined handler without reintroducing mutable helper authority and add regression coverage. Focused Private Review Commitment, Helper Execution Custody, CocoaPods Build Subject Authority, and Field Build Provenance are SUCCESS; Main Selective Graft remains FAILURE; Xcode is SKIPPED. PR review 4903862333 carries details. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:25:00Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "pr": 2805,
+    "headSHA": "76d2ed50b274f5dd3fbd6cb6b90a23a6fb9e92ab",
+    "artifact": 9092395798,
+    "packageTests": 944,
+    "packageSuites": 229,
+    "remainingPackageIssues": 3,
+    "metadataTruthRepairPR": 2799,
+    "undefinedExceptionBinding": "private_review.PrivateReviewCommitmentError",
+    "mainSelectiveGraft": "FAILURE",
+    "xcode": "SKIPPED",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
