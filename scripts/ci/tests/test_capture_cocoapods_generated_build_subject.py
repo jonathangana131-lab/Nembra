@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 HELPER = ROOT / "Scripts/capture_cocoapods_generated_build_subject.py"
 BOOTSTRAP = ROOT / "Scripts/bootstrap_capture_tuya_sdk.sh"
+BUILD_GUARD = ROOT / "Scripts/capture_tuya_private_input_build_guard.py"
 
 
 def load_helper():
@@ -50,8 +51,23 @@ class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
         self.assertLess(missing_authority, mismatch)
         self.assertIn("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256", source)
         self.assertIn("--resolve-lock-for-review", source)
+        self.assertIn("CocoaPods build subject SHA-256", source)
 
-    def test_helper_has_mac_build_window_guard(self) -> None:
+    def test_existing_xcodebuild_guard_owns_generated_subject(self) -> None:
+        source = BUILD_GUARD.read_text(encoding="utf-8")
+        loader = source.index("capture_cocoapods_generated_build_subject.py")
+        generated_snapshot = source.index("generated_build_subject.fingerprint_subject")
+        watcher = source.index("inputs.generated_pods")
+        xcodebuild = source.index("process = popen_factory(list(command))")
+        final_snapshot = source.rindex("final_snapshot = inputs.generation_snapshot()")
+        self.assertLess(loader, generated_snapshot)
+        self.assertLess(generated_snapshot, watcher)
+        self.assertLess(watcher, xcodebuild)
+        self.assertLess(xcodebuild, final_snapshot)
+        self.assertIn("inputs.generated_workspace", source)
+        self.assertIn("field build inputs changed across the guarded xcodebuild window", source)
+
+    def test_generated_helper_keeps_independent_mac_guard_available(self) -> None:
         source = HELPER.read_text(encoding="utf-8")
         self.assertIn("kqueue", source)
         self.assertIn("KQ_NOTE_WRITE", source)
