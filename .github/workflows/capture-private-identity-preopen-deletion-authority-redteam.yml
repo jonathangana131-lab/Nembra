@@ -34,5 +34,12 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_preopen_deletion_authority.py
-          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_preopen_deletion_authority.py
+          set +e
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_preopen_deletion_authority.py 2>&1 | tee /tmp/preopen-deletion-authority.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -Fq "rejection deleted a same-UID attacker replacement using newly observed final-inode authority" /tmp/preopen-deletion-authority.log; then
+            echo "::error file=Scripts/provision_capture_tuya_identity_writer.py,title=Expected-red pre-open deletion authority demonstrated::#2899 rejection deleted the substituted same-UID canonical credential file using metadata learned from that attacker replacement."
+          fi
+          test "$status" -eq 0
           git diff --check
