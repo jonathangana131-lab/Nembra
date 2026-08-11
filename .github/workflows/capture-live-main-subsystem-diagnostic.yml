@@ -1,0 +1,119 @@
+name: Capture Live Main Subsystem Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-live-main-subsystem-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/**'
+      - 'NembraCapture.xcodeproj/**'
+      - 'NembraCapture-Info.plist'
+      - 'NembraCapture.entitlements'
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/App/NembraCaptureBuildIdentity.swift'
+      - 'NembraApp/Features/Research/ES80CaptureShellView.swift'
+      - 'NembraApp/Features/Research/TuyaAccountBridge.swift'
+
+permissions:
+  contents: read
+
+jobs:
+  live-main-subsystem:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact clean head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test -f Packages/NembraBluetoothCapture/Package.swift
+          test -f NembraCapture.xcodeproj/project.pbxproj
+
+      - name: Run complete Capture package
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-live-main-package.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize package issue matrix
+        if: always()
+        shell: bash
+        run: |
+          /usr/bin/python3 -I - "$RUNNER_TEMP/capture-live-main-package.log" <<'PY'
+          import re, sys
+          from collections import Counter
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          if not p.exists():
+              print('PACKAGE_LOG_MISSING')
+              raise SystemExit(0)
+          files=Counter()
+          for line in p.read_text(errors='replace').splitlines():
+              m=re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if m and ('recorded an issue' in line or 'Caught error' in line):
+                  files[m.group(1)] += 1
+          print('TOTAL_PACKAGE_ISSUES', sum(files.values()))
+          for name,count in files.most_common():
+              print(f'PACKAGE_ISSUES {count:3d} {name}')
+          PY
+
+      - name: Build standalone Capture on iPhone Simulator SDK
+        id: build
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-live-main-build.log"
+          sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          label="capture-v14-${sha:0:12}"
+          set +e
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/NembraCaptureLiveMainDerived" CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER='ES80-AUTHENTICATED-STATIONARY-v1' build \
+            2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Require package and standalone build green
+        if: always()
+        shell: bash
+        env:
+          PACKAGE_STATUS: ${{ steps.package.outputs.status }}
+          BUILD_STATUS: ${{ steps.build.outputs.status }}
+        run: |
+          set -euo pipefail
+          echo "PACKAGE_STATUS=$PACKAGE_STATUS"
+          echo "BUILD_STATUS=$BUILD_STATUS"
+          test "$PACKAGE_STATUS" = 0
+          test "$BUILD_STATUS" = 0
+
+      - name: Upload exact diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-live-main-subsystem-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/capture-live-main-package.log
+            ${{ runner.temp }}/capture-live-main-build.log
+          retention-days: 7
+          if-no-files-found: error
