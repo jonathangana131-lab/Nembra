@@ -1,58 +1,26 @@
-# Nembra Capture — next physical test after C7D09A22
+# DEPRECATED / DO NOT USE — Nembra Capture secure-link procedure
 
-## What C7D09A22 closed
+This file is intentionally retained only as a tombstone for older links.
 
-The first real physical artifact identified the scooter transport as Tuya BLE over service `FD50`, with the prior physical CoreBluetooth peripheral ID `6815A5F5-4D1E-E004-BAE8-6DF924123907` and advertising local name `demo`. The 17-step run completed but received zero application characteristic payloads. The connection repeatedly dropped at the unauthenticated timeout window, so repeating the ride sequence before supported Tuya authentication would waste another field run.
+**Do not execute the procedure that previously lived here.** It was superseded by the current V14 authority model and contained obsolete target-identification and private-SDK provisioning instructions.
 
-## Next test is indoor and stationary
+The only current operator runbook for the authenticated stationary Capture gate is:
 
-Do **not** repeat the old 17-step calibration.
+`docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
 
-The next test does only this:
+That current runbook requires, among other gates:
 
-1. Link/read the user's already-bound Tuya device identity.
-2. With scooter OFF, collect a short local Bluetooth baseline.
-3. Turn the scooter ON and identify it using the previous CoreBluetooth UUID plus FD50 / Tuya company-ID / power-on-delta evidence.
-4. Stop Nembra's CoreBluetooth scan before secure authentication starts.
-5. Let the official Tuya SmartLife App SDK exclusively own the authenticated BLE connection.
-6. Attach a `ThingSmartDeviceDelegate` observer for device application/DP updates. Do not publish/query DPs.
-7. Poll only Tuya's local BLE online API to prove continuity.
-8. PASS only when the SDK reports the device locally connected for more than 45 seconds and at least one genuine device application update has arrived.
-9. Export sanitized diagnostics.
+- exact compiled field-build provenance and final exact-head software acceptance;
+- current official Tuya SDK login plus exact scooter membership bound to the same current account;
+- package-owned fresh-manager `OFF1 → ON1 → OFF2 → ON2` correlation;
+- exactly one repeatable full CoreBluetooth UUID from that accepted four-window chronology;
+- explicit operator confirmation of the correlated target for the current attempt;
+- no historical UUID/name/RSSI/FD50/Tuya-hint fallback authority;
+- Tuya SDK as the sole authenticated BLE owner;
+- genuine same-generation structured application evidence and canonical continuous observation;
+- immutable accepted evidence before export;
+- no Nembra DP query/command or scooter control authority.
 
-## Safety boundary
+Private AppKey/AppSecret provisioning follows the ignored local `NembraTuyaPrivateConfig` path described by the current provisioning documentation; launch-time environment secrets are not the current field contract.
 
-This experiment must not:
-
-- turn `local_key` into a guessed BLE session key;
-- construct/fuzz raw FD50 authentication frames;
-- open a second CoreBluetooth connection after Tuya owns BLE;
-- publish or query a DP;
-- change lock, speed limit, mode, light, cruise, throttle, brake, firmware, or any scooter setting;
-- unbind/remove/reset/factory-reset the scooter;
-- assign battery, speed, mode, brake, throttle, light, power, current, voltage, odometer or other semantics to any DP yet.
-
-Opaque DP IDs/values may be recorded only as evidence for the later mapping pass.
-
-## Official Tuya integration gate
-
-The supported iOS path requires Tuya's SmartLife App SDK and the app-specific security material generated for a Tuya Developer Platform iOS app whose Bundle ID matches the Capture target. Tuya's current iOS SDK line uses CocoaPods; the required base SDK is `ThingSmartHomeKit`, and current releases list a Bluetooth extra alongside the base SDK. Tuya's generated security component and AppKey/AppSecret are private and must never be committed to this repository.
-
-The Capture source therefore compiles without Tuya SDK using `#if canImport(ThingSmartHomeKit)`, but the physical **Start secure read-only test** control remains unavailable until all of these are true at runtime:
-
-- `ThingSmartHomeKit` is present in the signed local field build;
-- the matching private Tuya security component is present;
-- `NEMBRA_TUYA_APP_KEY` and `NEMBRA_TUYA_APP_SECRET` are supplied privately for the local development run;
-- `ThingSmartUser` has an authorized SDK account session containing the already-bound scooter.
-
-The metadata QR session is intentionally not treated as an SDK BLE-authentication session.
-
-## Why one BLE owner matters
-
-An earlier scaffold authenticated through the official SDK and then attempted to attach a separate CoreBluetooth connection to read FD50 notifications. That is removed. Tuya's documented `ThingSmartBLEManager` connection and `ThingSmartDeviceDelegate` DP callback now form the sole authenticated observation path, avoiding connection ownership competition.
-
-## Acceptance artifact
-
-Share `Nembra-Secure-Link-*-Diagnostics.json` after the test. It includes identification evidence, gate states, local-BLE continuity, application-update count, opaque update values and failures. It excludes AppSecret, account tokens, passwords and `local_key`.
-
-If this secure-link test passes, the next run is a short **stationary DP mapping** sequence (idle, modes, light, brake, optional charger transition). Movement/GPS tests remain blocked until stationary DPs are visible and repeatable.
+**PHYSICAL STATUS: NO-GO unless the current flagship acceptance record explicitly flips the exact candidate to GO.** A green ancestor, this tombstone, a historical capture UUID, or a successful installer invocation cannot authorize a physical run by itself.

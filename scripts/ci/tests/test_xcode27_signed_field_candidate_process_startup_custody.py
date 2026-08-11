@@ -9,6 +9,7 @@ import unittest
 PRODUCER = Path(__file__).resolve().parents[1] / "xcode27_signed_field_candidate.sh"
 TODAY_WRAPPER = Path(__file__).resolve().parents[1] / "xcode27_today_research_field_candidate.sh"
 CLOSED_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+CURRENT_PROCEDURE = "ES80-AUTHENTICATED-STATIONARY-v1"
 
 
 class SignedFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
@@ -88,7 +89,7 @@ class TodayResearchFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
     def setUp(self):
         self.source = TODAY_WRAPPER.read_text()
 
-    def test_shell_starts_privileged_and_closes_path_before_directory_resolution(self):
+    def test_retired_wrapper_starts_privileged_and_closes_process_environment(self):
         self.assertEqual(self.source.splitlines()[0], "#!/bin/bash -p")
         expected = (
             'set -euo pipefail\n'
@@ -97,57 +98,54 @@ class TodayResearchFieldCandidateProcessStartupCustodyTests(unittest.TestCase):
             'unset BASH_ENV ENV\n'
         )
         self.assertIn(expected, self.source)
+        self.assertIn("SUPERSEDED:", self.source)
+        self.assertIn(CURRENT_PROCEDURE, self.source)
+        self.assertIn("PHYSICAL NO-GO", self.source)
+        self.assertIn("exit 64", self.source)
 
-        path_index = self.source.index(f'PATH="{CLOSED_PATH}"')
-        script_dir_index = self.source.index('SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"')
-        producer_index = self.source.index('CANONICAL_PRODUCER="$SCRIPT_DIR/xcode27_signed_field_candidate.sh"')
-        self.assertLess(path_index, script_dir_index)
-        self.assertLess(path_index, producer_index)
+    def test_retired_wrapper_never_resolves_or_delegates_to_a_producer(self):
+        self.assertNotIn('SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"', self.source)
+        self.assertNotIn('CANONICAL_PRODUCER=', self.source)
+        self.assertNotIn('exec "$CANONICAL_PRODUCER"', self.source)
+        self.assertNotIn("--nembra-today-research-build", self.source)
+        self.assertNotIn("NEMBRA_ES80_TODAY_RESEARCH", self.source)
 
-    def test_hostile_caller_path_cannot_redirect_canonical_producer_resolution(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-today-wrapper-path-custody-") as temporary:
+    def test_hostile_caller_environment_cannot_execute_before_retired_exit(self):
+        with tempfile.TemporaryDirectory(prefix="nembra-retired-today-startup-custody-") as temporary:
             directory = Path(temporary)
             hostile_bin = directory / "bin"
-            hostile_producer_dir = directory / "producer"
             hostile_bin.mkdir()
-            hostile_producer_dir.mkdir()
 
+            bash_env_marker = directory / "bash-env-ran"
             dirname_marker = directory / "hostile-dirname-ran"
-            producer_marker = directory / "hostile-producer-ran"
+            hook = directory / "malicious-bash-env.sh"
+            hook.write_text('printf "caller startup hook executed\\n" > "$NEMBRA_BASH_ENV_MARKER"\n')
             hostile_dirname = hostile_bin / "dirname"
             hostile_dirname.write_text(
                 "#!/bin/sh\n"
                 f"printf 'hostile dirname executed\\n' > '{dirname_marker}'\n"
-                f"printf '%s\\n' '{hostile_producer_dir}'\n"
+                "exit 0\n"
             )
             hostile_dirname.chmod(0o755)
 
-            hostile_producer = hostile_producer_dir / "xcode27_signed_field_candidate.sh"
-            hostile_producer.write_text(
-                "#!/bin/sh\n"
-                f"printf 'hostile producer executed\\n' > '{producer_marker}'\n"
-                "exit 0\n"
-            )
-            hostile_producer.chmod(0o755)
-
             environment = os.environ.copy()
             environment["PATH"] = f"{hostile_bin}:{environment.get('PATH', '')}"
+            environment["BASH_ENV"] = str(hook)
+            environment["NEMBRA_BASH_ENV_MARKER"] = str(bash_env_marker)
             completed = subprocess.run(
                 [str(TODAY_WRAPPER)],
                 cwd=TODAY_WRAPPER.parents[2],
                 env=environment,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
                 check=False,
+                capture_output=True,
+                text=True,
             )
 
-            self.assertNotEqual(
-                completed.returncode,
-                0,
-                "The real canonical producer should fail closed in this non-field test environment.",
-            )
-            self.assertFalse(dirname_marker.exists(), "Caller PATH selected a hostile dirname before custody closed.")
-            self.assertFalse(producer_marker.exists(), "Caller PATH redirected the TODAY wrapper to a hostile producer.")
+            self.assertEqual(completed.returncode, 64, completed.stderr)
+            self.assertIn("SUPERSEDED:", completed.stderr)
+            self.assertIn(CURRENT_PROCEDURE, completed.stderr)
+            self.assertFalse(bash_env_marker.exists(), "Caller BASH_ENV executed before retired wrapper exit.")
+            self.assertFalse(dirname_marker.exists(), "Caller PATH selected a hostile dirname in retired wrapper.")
 
     def test_wrapper_never_restores_caller_path(self):
         assignments = re.findall(r'(?m)^\s*(?:export\s+)?PATH\s*=', self.source)

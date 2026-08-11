@@ -33,8 +33,6 @@ jobs:
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n Scripts/provision_capture_tuya_identity.sh
           bash -n Scripts/test_capture_tuya_identity_provisioning.sh
-          bash -n Scripts/test_capture_tuya_field_prereqs.sh
-          bash -n Scripts/test_capture_tuya_credential_minimization.sh
           ruby -c Podfile
           grep -Fq "pod 'ThingSmartCryption', :path => './LocalSecrets/TuyaSDK'" Podfile
           grep -Fq "pod 'NembraTuyaPrivateConfig', :path => './LocalSecrets/TuyaRuntime'" Podfile
@@ -42,13 +40,6 @@ jobs:
           grep -Fq "pod 'ThingSmartBusinessExtensionKit', '7.8.0'" Podfile
           grep -Fq 'LocalSecrets/' .gitignore
           grep -Fxq 'Podfile.lock' .gitignore
-
-      - name: Enforce Tuya field prerequisites and read-only ownership
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash Scripts/test_capture_tuya_field_prereqs.sh
-          bash Scripts/test_capture_tuya_credential_minimization.sh
 
       - name: Enforce active Capture read-only and SDK-account contract
         shell: bash

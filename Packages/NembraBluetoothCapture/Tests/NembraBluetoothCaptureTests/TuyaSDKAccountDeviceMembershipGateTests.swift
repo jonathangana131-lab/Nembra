@@ -39,6 +39,76 @@ struct TuyaSDKAccountDeviceMembershipGateTests {
         )
     }
 
+    @Test("zero loaded homes cannot authorize caller-supplied membership")
+    func zeroLoadedHomesCannotAuthorizeMembership() {
+        let snapshot = TuyaSDKAccountDeviceMembershipGate.Snapshot(
+            isLoggedIn: true,
+            homeEnumerationCompleted: true,
+            loadedHomeCount: 0,
+            ownedDeviceIDs: [scooterID],
+            sharedDeviceIDs: [],
+            homeLoadFailureCount: 0
+        )
+
+        #expect(
+            TuyaSDKAccountDeviceMembershipGate.verdict(expectedDeviceID: scooterID, snapshot: snapshot)
+                == .blocked(reason: "Tuya SDK home/device membership has no successfully loaded homes.")
+        )
+    }
+
+    @Test("zero loaded homes remain an unavailable authority state")
+    func zeroLoadedHomesWithoutMembershipBlocks() {
+        let snapshot = TuyaSDKAccountDeviceMembershipGate.Snapshot(
+            isLoggedIn: true,
+            homeEnumerationCompleted: true,
+            loadedHomeCount: 0,
+            ownedDeviceIDs: [],
+            sharedDeviceIDs: [],
+            homeLoadFailureCount: 0
+        )
+
+        #expect(
+            TuyaSDKAccountDeviceMembershipGate.verdict(expectedDeviceID: scooterID, snapshot: snapshot)
+                == .blocked(reason: "Tuya SDK home/device membership has no successfully loaded homes.")
+        )
+    }
+
+    @Test("negative loaded-home count remains malformed and cannot authorize")
+    func negativeLoadedHomeCountCannotAuthorize() {
+        let snapshot = TuyaSDKAccountDeviceMembershipGate.Snapshot(
+            isLoggedIn: true,
+            homeEnumerationCompleted: true,
+            loadedHomeCount: -1,
+            ownedDeviceIDs: [scooterID],
+            sharedDeviceIDs: [],
+            homeLoadFailureCount: 0
+        )
+
+        #expect(snapshot.loadedHomeCount == -1)
+        #expect(
+            TuyaSDKAccountDeviceMembershipGate.verdict(expectedDeviceID: scooterID, snapshot: snapshot)
+                == .blocked(reason: "Tuya SDK home/device membership has no successfully loaded homes.")
+        )
+    }
+
+    @Test("negative home-load failure count cannot be normalized into authorization")
+    func negativeHomeLoadFailureCountCannotAuthorize() {
+        let snapshot = TuyaSDKAccountDeviceMembershipGate.Snapshot(
+            isLoggedIn: true,
+            homeEnumerationCompleted: true,
+            loadedHomeCount: 1,
+            ownedDeviceIDs: [scooterID],
+            sharedDeviceIDs: [],
+            homeLoadFailureCount: -1
+        )
+
+        #expect(snapshot.homeLoadFailureCount == -1)
+        #expect(
+            TuyaSDKAccountDeviceMembershipGate.verdict(expectedDeviceID: scooterID, snapshot: snapshot)
+                == .blocked(reason: "Tuya SDK home/device membership is incomplete because one or more homes failed to load.")
+        )
+    }
+
     @Test("exact owned device membership authorizes")
     func ownedMembershipAuthorizes() {
         let snapshot = TuyaSDKAccountDeviceMembershipGate.Snapshot(

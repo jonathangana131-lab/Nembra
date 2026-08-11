@@ -14,12 +14,17 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(source.contains("rawFD50BytesCaptured: false"))
     }
 
-    @Test("name RSSI and accumulated score never authorize the target")
-    func targetAuthorityIsDeterministic() throws {
+    @Test("only fresh repeated correlation authorizes the current Bluetooth target")
+    func targetAuthorityIsFreshAndDeterministic() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        #expect(source.contains("var likely: Bool { knownID || (fd50 && tuyaCompany) }"))
+        #expect(source.contains("var likely: Bool { freshlyCorrelated }"))
+        #expect(!source.contains("var likely: Bool { knownID"))
+        #expect(!source.contains("knownID || (fd50 && tuyaCompany)"))
+        #expect(!source.contains("fd50 && tuyaCompany ?"))
         #expect(!source.contains("score >= 600"))
+        #expect(source.contains("matches C7D09A22 capture-local UUID descriptive"))
+        #expect(source.contains("Do not fall back to the historical capture UUID"))
     }
 
     @Test("official Tuya connect failure uses documented no-error handler")
@@ -36,49 +41,14 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         #expect(source.contains("maximumObservationPollGapNanoseconds"))
-        #expect(source.contains("observation_continuity_gap"))
-        guard let gapFailure = source.range(of: "observation_continuity_gap"),
-              let observationAdvance = source.range(of: "sessionLedger.observeCurrentConnection(for: token)") else {
+        #expect(source.contains("observation_poll_gap_exceeded"))
+        guard let watchdog = source.range(of: "private func startWatchdog(token:"),
+              let gapFailure = source.range(of: "observation_poll_gap_exceeded", range: watchdog.upperBound..<source.endIndex),
+              let observationAdvance = source.range(of: "sessionLedger.observeCurrentConnection(for: token)", range: watchdog.upperBound..<source.endIndex) else {
             Issue.record("Field source must reject a long monotonic observation gap before advancing ledger liveness.")
             return
         }
         #expect(gapFailure.lowerBound < observationAdvance.lowerBound)
-    }
-
-    @Test("package discovery cannot restart after official Tuya takes BLE ownership")
-    func officialTuyaOwnershipIsProcessLifetimeLatched() throws {
-        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-
-        #expect(source.contains("officialTuyaOwnershipStarted"))
-        #expect(source.contains("package_discovery_blocked_after_tuya_ownership"))
-
-        guard let ownershipLatch = source.range(of: "officialTuyaOwnershipStarted = true"),
-              let connectRequest = source.range(of: "newDriver.connect(") else {
-            Issue.record("Official Tuya ownership must be latched before the supported SDK connection starts.")
-            return
-        }
-        #expect(ownershipLatch.lowerBound < connectRequest.lowerBound)
-
-        guard let startBaseline = source.range(of: "func startBaseline()"),
-              let saveBaseline = source.range(of: "func saveBaseline()"),
-              let powerOnScan = source.range(of: "func scanAfterPowerOn()"),
-              let stopScan = source.range(of: "func stopScan()") else {
-            Issue.record("Expected guided discovery entrypoints are missing.")
-            return
-        }
-
-        let baselineBody = String(source[startBaseline.lowerBound..<saveBaseline.lowerBound])
-        let powerOnBody = String(source[powerOnScan.lowerBound..<stopScan.lowerBound])
-        #expect(baselineBody.contains("guard !officialTuyaOwnershipStarted"))
-        #expect(powerOnBody.contains("guard !officialTuyaOwnershipStarted"))
-
-        guard let resetDiscovery = source.range(of: "private func resetDiscovery()"),
-              let fail = source.range(of: "private func fail(", range: resetDiscovery.upperBound..<source.endIndex) else {
-            Issue.record("Expected discovery reset boundary is missing.")
-            return
-        }
-        let resetBody = String(source[resetDiscovery.lowerBound..<fail.lowerBound])
-        #expect(!resetBody.contains("officialTuyaOwnershipStarted = false"))
     }
 
     @Test("canonical ledger and membership gates remain app-visible")

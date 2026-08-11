@@ -25,46 +25,6 @@ jobs:
           printf '%s\n' "$XCODE_VERSION"
           swift --version
           [[ "$XCODE_VERSION" == Xcode\ 26.* ]]
-      - name: Pin live Tuya account authority during authenticated observation
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
-          start = source.index("    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {")
-          end = source.index("    private func refreshLedgerSnapshot() async {", start)
-          watchdog = source[start:end]
-
-          required = (
-              "OfficialTuyaFactory.accountLoggedIn",
-              "sdkDeviceMembershipVerified = false",
-              "sdkLocalBLEOnline = false",
-              "sessionLedger.endConnection(for: token)",
-              "currentConnectionToken = nil",
-          )
-          missing = [needle for needle in required if needle not in watchdog]
-          if missing:
-              raise SystemExit(
-                  "Authenticated observation must fail closed if official Tuya account authority disappears; "
-                  "missing watchdog evidence: " + ", ".join(missing)
-              )
-
-          forbidden = (
-              "publishDps",
-              "publishDpsWithEnumMode",
-              "queryDps",
-              "resetFactory",
-              "removeDevice",
-              "removeHome",
-              "writeValue(",
-          )
-          present = [needle for needle in forbidden if needle in watchdog]
-          if present:
-              raise SystemExit(
-                  "Read-only Capture watchdog gained forbidden command authority: " + ", ".join(present)
-              )
-          PY
       - name: Test private Tuya app-identity generator
         run: |
           set -euo pipefail

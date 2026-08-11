@@ -27,10 +27,12 @@ public enum TuyaSDKAccountDeviceMembershipGate {
         ) {
             self.isLoggedIn = isLoggedIn
             self.homeEnumerationCompleted = homeEnumerationCompleted
-            self.loadedHomeCount = max(0, loadedHomeCount)
+            // Preserve malformed negative values instead of normalizing them into
+            // authoritative-looking evidence. The verdict below rejects them.
+            self.loadedHomeCount = loadedHomeCount
             self.ownedDeviceIDs = ownedDeviceIDs
             self.sharedDeviceIDs = sharedDeviceIDs
-            self.homeLoadFailureCount = max(0, homeLoadFailureCount)
+            self.homeLoadFailureCount = homeLoadFailureCount
         }
     }
 
@@ -55,6 +57,9 @@ public enum TuyaSDKAccountDeviceMembershipGate {
         }
         guard snapshot.homeLoadFailureCount == 0 else {
             return .blocked(reason: "Tuya SDK home/device membership is incomplete because one or more homes failed to load.")
+        }
+        guard snapshot.loadedHomeCount > 0 else {
+            return .blocked(reason: "Tuya SDK home/device membership has no successfully loaded homes.")
         }
 
         if snapshot.ownedDeviceIDs.contains(expected) || snapshot.sharedDeviceIDs.contains(expected) {
