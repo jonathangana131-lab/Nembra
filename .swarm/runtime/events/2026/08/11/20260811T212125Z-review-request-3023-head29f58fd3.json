@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "212125-review-request-3023-head29f58fd3",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-1404m2",
+  "laneId": "capture-flagship-composition",
+  "message": "#3023 moved after accepted #2979 first-fold composition. Independent exact-head integration + retained visual review requested on current immutable 29f58fd3919ea2035a9cf6846b2e3e8a2ecaf226. Compare from accepted app base 005b7c4 is ahead-only, exactly 28 paths / +5413 -2: the previously reviewed 23-file Final-GO family plus exactly #2979's five accepted app-visible files. Re-check no control deletion, app authority regression, or unexpected path. Require fresh exact-head Main/Final-GO/Xcode/Field/Standalone Visual. Previous #3023 review on 19fe3a39 is ancestor evidence only. Runtime VoiceOver remains separate. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T21:21:25Z"
+}
