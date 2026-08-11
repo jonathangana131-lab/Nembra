@@ -9,11 +9,12 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:52:15Z",
-  "lastHeartbeatAt": "2026-08-11T11:52:15Z",
+  "lastHeartbeatAt": "2026-08-11T11:58:00Z",
   "leaseSeconds": 1800,
-  "branch": "qa/v14-signed-install-exact-head-2911-sol-4f51fg",
+  "branch": "",
   "pr": 2911,
-  "sourceSHA": "8dbc60e68b38c23b95a7885e262e363b786e5820",
+  "sourceSHA": "83110a6af6220355092ed730cd28892a90c72fef",
+  "currentHeadSHA": "83110a6af6220355092ed730cd28892a90c72fef",
   "takeoverFromWorkerId": "sol-20260811-9b7e",
-  "takeoverReason": "Generation-1 tests lease expired without heartbeat; recover exact-head QA on current signed-install source-contract repair #2911 without duplicating the active independent review slot. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-1 tests lease expired without heartbeat. Ancestor 8dbc Field failure was isolated to a stale install-log contract; duplicate repair PR #2919 was closed when #2911 independently moved to stronger exact head 83110a6. Continue tests-only exact-head validation on that moved current candidate. PHYSICAL NO-GO."
 }
