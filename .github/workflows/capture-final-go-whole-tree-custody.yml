@@ -1,0 +1,67 @@
+name: Capture Final GO Whole Tree Custody
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-whole-tree-custody-sol-s4f9-20260811
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go_atomic.py
+      - scripts/ci/tests/test_es80_final_go_whole_tree_custody.py
+      - .github/workflows/capture-final-go-whole-tree-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  whole-tree-custody:
+    name: Reject mutation across complete raw candidate audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact successor lineage and three-path scope
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXACT_PARENT_SHA: 471cc025b332f4df8b43a98d709710aeb4e0698f
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PARENT_SHA" HEAD)" = "$EXACT_PARENT_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          mapfile -t changed < <(git diff --name-only "$EXACT_PARENT_SHA"...HEAD | sort)
+          expected=(
+            .github/workflows/capture-final-go-whole-tree-custody.yml
+            scripts/ci/es80_authenticated_stationary_private_review_final_go_atomic.py
+            scripts/ci/tests/test_es80_final_go_whole_tree_custody.py
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#changed[@]}" -eq "${#expected_sorted[@]}"
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+
+      - name: Compile exact successor and adversarial regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go_atomic.py \
+            scripts/ci/tests/test_es80_final_go_whole_tree_custody.py
+
+      - name: Prove whole-tree mutation custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_whole_tree_custody.py
+
+      - name: Preserve diff and worktree hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
