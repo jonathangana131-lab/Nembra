@@ -48,4 +48,13 @@ class T(unittest.TestCase):
   calls=[]
   def run(r,s,d):calls.append(s);return self.f.inst(r,s,d)
   i=self.f.ids['Capture Field Build Provenance'];self.f.map[f'/actions/runs/{i}']['conclusion']='cancelled';self.no(lambda:self.f.build(run_installer=run));self.assertEqual(calls,[])
+ def test_post_install_revalidation_rejects_authority_drift(self):
+  pull=f'/pulls/{self.f.pr}'
+  def move_pr(r,s,d):x=self.f.inst(r,s,d);self.f.map[pull]['head']['sha']='1'*40;return x
+  self.no(lambda:self.f.build(run_installer=move_pr));self.f.map[pull]['head']['sha']=self.f.s
+  artifact=f'/actions/artifacts/{self.f.aid}'
+  def expire(r,s,d):x=self.f.inst(r,s,d);self.f.map[artifact]['expired']=True;return x
+  self.no(lambda:self.f.build(run_installer=expire));self.f.map[artifact]['expired']=False
+  def change_device(r,s,d):x=self.f.inst(r,s,d);self.f.dev.write_text('other-device\n');return x
+  self.no(lambda:self.f.build(run_installer=change_device))
 if __name__=='__main__':unittest.main(verbosity=2)
