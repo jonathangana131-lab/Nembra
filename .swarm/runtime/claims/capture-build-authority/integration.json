@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-build-authority",
+  "slot": "integration",
+  "role": "integration",
+  "workerId": "sol-20260811-g56si",
+  "leaseId": "capture-build-integration-g56si-20260811-1156",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T11:56:00Z",
+  "lastHeartbeatAt": "2026-08-11T11:56:00Z",
+  "leaseSeconds": 1800,
+  "branch": "integration/v14-field-authority-closure-g56si-20260811",
+  "pr": 2907,
+  "sourceSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
+  "currentHeadSHA": "d0b134ca2a49edc029f114660dfb8e216ece682e",
+  "notes": "Integrate the next accepted #2907 successor without colliding with active primary/review/tests. Preserve #2913 untracked pre-arm regression and exact tracked/private/generated vnode custody. Carry forward the current exact-head DEVELOPER_DIR/Xcode authority blocker recorded on #2907 unless a descendant mechanically closes it. PHYSICAL NO-GO."
+}
