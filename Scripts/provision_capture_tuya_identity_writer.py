@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Descriptor-bound writer for Nembra's local-only Tuya app identity.
 
-The shell wrapper owns privileged startup, hidden credential input, and the fixed
-checkout root. This helper owns filesystem publication: every private directory
-is opened relative to an already-open directory descriptor with O_NOFOLLOW,
-and every output is staged with O_EXCL then atomically replaced relative to the
-same pinned parent descriptor. Credential material is read only from stdin.
+The privileged shell wrapper owns hidden credential input, pins these source
+bytes before input, and opens the admitted checkout directory before input.
+This helper inherits that exact directory descriptor and never reopens the
+checkout pathname for publication. The pathname is re-opened only as a drift
+check: its descriptor identity must still equal the inherited admitted root
+before any private descendant is created.
 """
 
 from __future__ import annotations
@@ -54,6 +55,43 @@ def _open_absolute_directory(path: Path) -> int:
     except Exception:
         os.close(descriptor)
         raise
+
+
+def _duplicate_inherited_checkout(raw_fd: str) -> int:
+    try:
+        descriptor_number = int(raw_fd, 10)
+    except ValueError as exc:
+        raise ProvisionError("inherited checkout descriptor is not a decimal file descriptor") from exc
+    if descriptor_number < 0 or str(descriptor_number) != raw_fd:
+        raise ProvisionError("inherited checkout descriptor is not canonical")
+    try:
+        descriptor = os.dup(descriptor_number)
+    except OSError as exc:
+        raise ProvisionError("inherited checkout descriptor is unavailable") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
+            raise ProvisionError("inherited checkout descriptor is not one current-user directory")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _require_checkout_path_identity(checkout_fd: int, checkout_root: Path) -> None:
+    current_fd = _open_absolute_directory(checkout_root)
+    try:
+        admitted = os.fstat(checkout_fd)
+        current = os.fstat(current_fd)
+        if (
+            admitted.st_dev != current.st_dev
+            or admitted.st_ino != current.st_ino
+            or not stat.S_ISDIR(current.st_mode)
+            or current.st_uid != os.geteuid()
+        ):
+            raise ProvisionError("checkout root identity changed after private-input admission")
+    finally:
+        os.close(current_fd)
 
 
 def _ensure_private_directory(parent_fd: int, name: str) -> int:
@@ -131,8 +169,6 @@ def _write_staged(parent_fd: int, final_name: str, payload: bytes) -> None:
         os.close(descriptor)
         descriptor = -1
 
-        # Both names are resolved relative to the already-open parent directory.
-        # A pathname swap outside this descriptor cannot redirect publication.
         os.replace(
             temporary_name,
             final_name,
@@ -190,7 +226,7 @@ def _decode_input() -> tuple[str, str]:
     return values[0], values[1]
 
 
-def provision(checkout_root: Path, app_key_b64: str, app_secret_b64: str) -> None:
+def provision(checkout_fd: int, checkout_root: Path, app_key_b64: str, app_secret_b64: str) -> None:
     podspec = b"""Pod::Spec.new do |s|\n  s.name = 'NembraTuyaPrivateConfig'\n  s.version = '1.0.0'\n  s.summary = 'Local-only Nembra Capture Tuya app identity.'\n  s.description = 'Generated private field-build configuration. Never commit this pod.'\n  s.homepage = 'https://localhost.invalid/nembra-private-config'\n  s.license = { :type => 'Private' }\n  s.author = { 'Nembra' => 'local-only' }\n  s.source = { :git => 'https://localhost.invalid/nembra-private-config.git', :tag => s.version.to_s }\n  s.platform = :ios, '17.0'\n  s.swift_version = '6.0'\n  s.source_files = 'Sources/NembraTuyaPrivateConfig/**/*.swift'\nend\n"""
     swift = f"""import Foundation
 
@@ -211,9 +247,9 @@ public enum NembraTuyaPrivateIdentity {{
 }}
 """.encode("utf-8")
 
-    checkout_fd = local_secrets_fd = runtime_fd = sources_fd = module_fd = -1
+    local_secrets_fd = runtime_fd = sources_fd = module_fd = -1
     try:
-        checkout_fd = _open_absolute_directory(checkout_root)
+        _require_checkout_path_identity(checkout_fd, checkout_root)
         local_secrets_fd = _ensure_private_directory(checkout_fd, "LocalSecrets")
         runtime_fd = _ensure_private_directory(local_secrets_fd, "TuyaRuntime")
         sources_fd = _ensure_private_directory(runtime_fd, "Sources")
@@ -224,7 +260,7 @@ public enum NembraTuyaPrivateIdentity {{
         for descriptor in (module_fd, sources_fd, runtime_fd, local_secrets_fd, checkout_fd):
             os.fsync(descriptor)
     finally:
-        for descriptor in (module_fd, sources_fd, runtime_fd, local_secrets_fd, checkout_fd):
+        for descriptor in (module_fd, sources_fd, runtime_fd, local_secrets_fd):
             if descriptor >= 0:
                 os.close(descriptor)
 
@@ -233,10 +269,15 @@ def _self_test() -> None:
     encoded_key = base64.b64encode(b"dummy-key").decode("ascii")
     encoded_secret = base64.b64encode(b"dummy-secret").decode("ascii")
     with tempfile.TemporaryDirectory(prefix="nembra-tuya-writer-") as temporary:
-        checkout = Path(temporary) / "repo"
+        root = Path(temporary)
+        checkout = root / "repo"
         checkout.mkdir()
-        provision(checkout, encoded_key, encoded_secret)
-        provision(checkout, encoded_key, encoded_secret)
+        checkout_fd = os.open(checkout, _directory_flags())
+        try:
+            provision(checkout_fd, checkout, encoded_key, encoded_secret)
+            provision(checkout_fd, checkout, encoded_key, encoded_secret)
+        finally:
+            os.close(checkout_fd)
 
         runtime = checkout / "LocalSecrets/TuyaRuntime"
         podspec = runtime / "NembraTuyaPrivateConfig.podspec"
@@ -246,19 +287,41 @@ def _self_test() -> None:
         if stat.S_IMODE(podspec.stat().st_mode) != 0o600 or stat.S_IMODE(identity.stat().st_mode) != 0o600:
             raise ProvisionError("self-test private outputs are not mode 0600")
 
-        outside = Path(temporary) / "outside"
+        outside = root / "outside"
         outside.mkdir()
-        escape_checkout = Path(temporary) / "escape-repo"
+        escape_checkout = root / "escape-repo"
         escape_checkout.mkdir()
         (escape_checkout / "LocalSecrets").symlink_to(outside, target_is_directory=True)
+        escape_fd = os.open(escape_checkout, _directory_flags())
         try:
-            provision(escape_checkout, encoded_key, encoded_secret)
-        except (ProvisionError, OSError):
-            pass
-        else:
-            raise ProvisionError("self-test followed a symlinked LocalSecrets directory")
+            try:
+                provision(escape_fd, escape_checkout, encoded_key, encoded_secret)
+            except (ProvisionError, OSError):
+                pass
+            else:
+                raise ProvisionError("self-test followed a symlinked LocalSecrets directory")
+        finally:
+            os.close(escape_fd)
         if any(outside.iterdir()):
             raise ProvisionError("self-test wrote private material through a symlink")
+
+        admitted = root / "admitted-repo"
+        admitted.mkdir()
+        admitted_fd = os.open(admitted, _directory_flags())
+        original = root / "admitted-repo-original"
+        try:
+            admitted.rename(original)
+            admitted.mkdir()
+            try:
+                provision(admitted_fd, admitted, encoded_key, encoded_secret)
+            except ProvisionError:
+                pass
+            else:
+                raise ProvisionError("self-test accepted a replaced checkout pathname")
+            if (admitted / "LocalSecrets").exists():
+                raise ProvisionError("self-test redirected private output into a replacement checkout")
+        finally:
+            os.close(admitted_fd)
 
 
 def main() -> int:
@@ -266,10 +329,16 @@ def main() -> int:
         if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
             _self_test()
             return 0
-        if len(sys.argv) != 2:
-            raise ProvisionError("usage: provision_capture_tuya_identity_writer.py <absolute-checkout-root>")
-        app_key_b64, app_secret_b64 = _decode_input()
-        provision(Path(sys.argv[1]), app_key_b64, app_secret_b64)
+        if len(sys.argv) != 3:
+            raise ProvisionError(
+                "usage: provision_capture_tuya_identity_writer.py <inherited-checkout-fd> <canonical-checkout-root>"
+            )
+        checkout_fd = _duplicate_inherited_checkout(sys.argv[1])
+        try:
+            app_key_b64, app_secret_b64 = _decode_input()
+            provision(checkout_fd, Path(sys.argv[2]), app_key_b64, app_secret_b64)
+        finally:
+            os.close(checkout_fd)
         return 0
     except (ProvisionError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
