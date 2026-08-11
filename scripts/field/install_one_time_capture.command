@@ -266,6 +266,11 @@ BUILT_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$APP_IN
 [[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]] || die "Built Capture app bundle identifier does not match the intended standalone field product. Discard this candidate."
 say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"
 
+# Xcode may need to finish device preparation, but that UI side effect must happen
+# before the signed app earns install authority. No external app-opening side effect is
+# permitted after the exact signed install subject is frozen.
+/usr/bin/open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
+
 # Entitlement/profile readback proves identity values, but it does not prove the app bundle's
 # recursive signature/seal is valid. Fail closed on the exact signed bytes before those values
 # are allowed to participate in field authority or before any device installation is attempted.
@@ -344,19 +349,37 @@ PROFILE_ROOT_TEAM_IDENTIFIER="${PROFILE_TEAM_FIELDS#*$'\t'}"
 [[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
     die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."
 say "Final signed app and embedded provisioning profile authorize Sign in with Apple for one exact App ID and the selected team"
+
+SIGNED_APP_INSTALL_GUARD="$ROOT/scripts/ci/es80_signed_app_install_guard.py"
+[[ -f "$SIGNED_APP_INSTALL_GUARD" ]] || die "Signed app install custody helper is missing from the accepted source. Discard this candidate."
+SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" digest --app "$APP")" || \
+    die "Final signed Capture app could not be admitted as one descriptor-bound install subject. Discard this candidate."
+[[ "$SIGNED_APP_SUBJECT_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+    die "Final signed Capture app install-subject fingerprint is malformed. Discard this candidate."
+say "Final signed Capture app install subject frozen for devicectl custody"
+
 unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER BUILT_APP_ID_PREFIX PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_FIELDS PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE APP_ID_SUFFIX
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"
-open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
 INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX")"
 trap 'rm -f -- "$INSTALL_LOG"' EXIT
 chmod 600 "$INSTALL_LOG"
 INSTALLED=0
 for ATTEMPT in $(seq 1 60); do
-    if xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
+    INSTALL_RESULT=0
+    if /usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" guard \
+        --app "$APP" \
+        --expected "$SIGNED_APP_SUBJECT_SHA256" \
+        -- /usr/bin/xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1
+    then
         INSTALLED=1
         break
+    else
+        INSTALL_RESULT=$?
+    fi
+    if [[ "$INSTALL_RESULT" == "74" || "$INSTALL_RESULT" == "75" ]]; then
+        die "Signed Capture app install custody failed before or during devicectl consumption. Discard this candidate and rebuild from accepted source."
     fi
     if [[ "$ATTEMPT" == "1" ]]; then
         printf '%s\n' "Xcode still appears to be preparing the intended iPhone. Keep it plugged in and unlocked; installation will retry automatically."

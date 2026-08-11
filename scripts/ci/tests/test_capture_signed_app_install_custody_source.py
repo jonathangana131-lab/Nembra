@@ -15,7 +15,7 @@ SOURCE_TEST = "scripts/ci/tests/test_capture_signed_app_install_custody_source.p
 class SignedAppInstallCustodySourceTests(unittest.TestCase):
     def test_exact_subject_is_frozen_after_authority_checks_and_before_install(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
-        xcode_open = 'open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true'
+        xcode_open = '/usr/bin/open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true'
         strict_signature = '/usr/bin/codesign --verify --deep --strict "$APP"'
         profile_acceptance = 'say "Final signed app and embedded provisioning profile authorize Sign in with Apple for one exact App ID and the selected team"'
         helper_binding = 'SIGNED_APP_INSTALL_GUARD="$ROOT/scripts/ci/es80_signed_app_install_guard.py"'
