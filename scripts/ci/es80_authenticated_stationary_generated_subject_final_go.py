@@ -315,32 +315,55 @@ def review_v3(
     }
 
 
-def _current_generated_subject(root: Path) -> str:
-    helper = root / GENERATED_HELPER_PATH
+def _accepted_helper_blob_bytes(root: Path, source: str, accepted_blob: str) -> bytes:
+    source = source.lower()
+    accepted_blob = accepted_blob.lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", source):
+        raise GeneratedSubjectGoError("generated helper source identity is not exact SHA-1 commit authority")
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_blob):
+        raise GeneratedSubjectGoError("generated helper accepted Git blob identity is invalid")
+    environment = {"PATH": "/usr/bin:/bin", "GIT_NO_REPLACE_OBJECTS": "1"}
+    try:
+        owned = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", f"{source}:{GENERATED_HELPER_PATH}"],
+            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        ).stdout.decode("ascii").strip().lower()
+        if owned != accepted_blob:
+            raise GeneratedSubjectGoError("generated helper blob is not owned by exact accepted source path")
+        raw = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "cat-file", "blob", accepted_blob],
+            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        ).stdout
+        verified = subprocess.run(
+            ["/usr/bin/git", "-C", str(root), "hash-object", "--stdin"],
+            env=environment, input=raw, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        ).stdout.decode("ascii").strip().lower()
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
+        raise GeneratedSubjectGoError("generated helper accepted Git object could not be read exactly") from error
+    if verified != accepted_blob:
+        raise GeneratedSubjectGoError("generated helper Git-object bytes failed exact identity verification")
+    return raw
+
+
+def _current_generated_subject(root: Path, *, source: str, accepted_blob: str) -> str:
+    helper_bytes = _accepted_helper_blob_bytes(root, source, accepted_blob)
     try:
         process = subprocess.run(
             [
-                "/usr/bin/python3",
-                "-I",
-                "-B",
-                str(helper),
-                "--lockfile",
-                str(root / "Podfile.lock"),
-                "--pods",
-                str(root / "Pods"),
-                "--workspace",
-                str(root / "NembraCapture.xcworkspace"),
+                "/usr/bin/python3", "-I", "-B", "-",
+                "--lockfile", str(root / "Podfile.lock"),
+                "--pods", str(root / "Pods"),
+                "--workspace", str(root / "NembraCapture.xcworkspace"),
             ],
-            cwd=root,
-            env={"PATH": "/usr/bin:/bin"},
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+            cwd=root, env={"PATH": "/usr/bin:/bin"}, input=helper_bytes,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
         )
     except OSError as error:
-        raise GeneratedSubjectGoError("generated CocoaPods build-subject helper could not run") from error
-    value = process.stdout.strip()
+        raise GeneratedSubjectGoError("generated CocoaPods build-subject accepted helper bytes could not run") from error
+    try:
+        value = process.stdout.decode("utf-8").strip()
+    except UnicodeDecodeError as error:
+        raise GeneratedSubjectGoError("generated CocoaPods build-subject helper output is not UTF-8") from error
     if process.returncode != 0 or not HEX64.fullmatch(value) or value != value.lower():
         raise GeneratedSubjectGoError("generated CocoaPods build subject could not be re-derived exactly")
     return value
@@ -410,7 +433,10 @@ def candidate_generated_authority(
     if any(fragment not in text for text, fragment in required_fragments):
         raise GeneratedSubjectGoError("candidate source lacks converged generated-build authority enforcement")
 
-    current = derive_subject(root)
+    if derive_subject is _current_generated_subject:
+        current = derive_subject(root, source=source, accepted_blob=blobs[GENERATED_HELPER_PATH])
+    else:
+        current = derive_subject(root)
     if current != accepted_digest:
         raise GeneratedSubjectGoError("candidate generated CocoaPods subject does not match reviewed authority")
     return {
