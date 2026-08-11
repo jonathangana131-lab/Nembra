@@ -175,9 +175,15 @@ LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[
   exit 15
 }
 
+# CocoaPods may represent the two local path pods with symlinks beneath Pods.
+# Those are the only external roots permitted by generated-subject admission,
+# and their actual bytes are independently fingerprinted above and guarded
+# across xcodebuild by capture_tuya_private_input_build_guard.py.
 COCOAPODS_BUILD_SUBJECT_SHA256="$(/usr/bin/python3 -I "$COCOAPODS_BUILD_SUBJECT_HELPER" fingerprint \
   --pods "$REPO_ROOT/Pods" \
-  --workspace "$REPO_ROOT/NembraCapture.xcworkspace")" || {
+  --workspace "$REPO_ROOT/NembraCapture.xcworkspace" \
+  --separately-guarded-external-root "$TUYA_PRIVATE_SDK" \
+  --separately-guarded-external-root "$TUYA_PRIVATE_IDENTITY")" || {
   echo "ERROR: generated CocoaPods build subject could not be fingerprinted." >&2
   exit 16
 }
