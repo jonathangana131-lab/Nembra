@@ -216,7 +216,7 @@ def _require_sealed_final_go_record(record: Any) -> dict[str, Any]:
 
 
 class _CandidateRetirementBoundary:
-    """One-way in-process authority switch held through predecessor teardown."""
+    """One-way Git/blob dispatch fence held through every inherited restore."""
 
     def __init__(self, base: Any) -> None:
         self.base = base
@@ -225,8 +225,26 @@ class _CandidateRetirementBoundary:
         self.token: contextvars.Token[bool] | None = None
         self.retired = False
 
+        def dispatch_git(*args: Any, **kwargs: Any) -> str:
+            if _CANDIDATE_RETIRED.get():
+                raise _retired_candidate_error()
+            return self.original_git(*args, **kwargs)
+
+        def dispatch_git_bytes(*args: Any, **kwargs: Any) -> bytes:
+            if _CANDIDATE_RETIRED.get():
+                raise _retired_candidate_error()
+            return self.original_git_bytes(*args, **kwargs)
+
+        # These stable dispatchers are installed before inherited custody enters.
+        # That means an inner finally can only restore retirement-aware functions,
+        # never the raw candidate-capable callables captured by this boundary.
+        self.dispatch_git = dispatch_git
+        self.dispatch_git_bytes = dispatch_git_bytes
+
     def __enter__(self) -> "_CandidateRetirementBoundary":
         self.token = _CANDIDATE_RETIRED.set(False)
+        self.base.git = self.dispatch_git
+        self.base.git_bytes = self.dispatch_git_bytes
         return self
 
     def retire(self, record: Any) -> dict[str, Any]:
@@ -236,18 +254,13 @@ class _CandidateRetirementBoundary:
         self.retired = True
         _CANDIDATE_RETIRED.set(True)
 
-        def retired_git(*_args: Any, **_kwargs: Any) -> str:
-            raise _retired_candidate_error()
-
-        def retired_git_bytes(*_args: Any, **_kwargs: Any) -> bytes:
-            raise _retired_candidate_error()
-
-        # #3042's inner candidate context still owns its normal finally/restore.
-        # Replacing the dispatch functions here makes any accidental candidate
-        # reopen during that teardown fail closed. The outer boundary restores
-        # the caller's originals only after inner custody has fully exited.
-        self.base.git = retired_git
-        self.base.git_bytes = retired_git_bytes
+        # Reinstall the same stable dispatchers immediately. The currently active
+        # inherited candidate context may have replaced base.git/base.git_bytes
+        # with its guarded views, but its saved "originals" are these dispatchers
+        # because they were present before that context entered. Its finally can
+        # therefore restore only retirement-aware functions during outer teardown.
+        self.base.git = self.dispatch_git
+        self.base.git_bytes = self.dispatch_git_bytes
         return accepted
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
