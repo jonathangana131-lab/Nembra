@@ -1,0 +1,60 @@
+name: TEMP Capture Tuya Approval Recovery Copy Materializer
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-tuya-approval-failclosed-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v14-capture-tuya-approval-failclosed-sol
+          fetch-depth: 2
+      - name: Verify exact parent and materializer-only trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "83b5fbdf385a1884988f1af752baf3e0ee2d0dea"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tmp-capture-tuya-approval-copy-materialize.yml"
+      - name: Align recovery copy with the actual failed-state action
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          bridge = Path("NembraApp/Features/Research/TuyaAccountBridge.swift")
+          text = bridge.read_text(encoding="utf-8")
+          old = 'statusMessage = "Tuya approved, but the account session was rejected: \\(Self.readable(error)) Tap Try again to make a fresh QR."'
+          new = 'statusMessage = "Tuya approved, but the account session was rejected: \\(Self.readable(error)) Reset the account link, then create a fresh QR."'
+          if text.count(old) != 1:
+              raise SystemExit("approved-session recovery copy drifted")
+          bridge.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          test = Path("scripts/ci/tests/test_tuya_account_transport_source.py")
+          source = test.read_text(encoding="utf-8")
+          old_assert = "        self.assertIn('account session was rejected:', SOURCE)\n        self.assertIn('pollTask?.cancel()', SOURCE)"
+          new_assert = "        self.assertIn('account session was rejected:', SOURCE)\n        self.assertIn('Reset the account link, then create a fresh QR.', SOURCE)\n        self.assertNotIn('Tap Try again to make a fresh QR.', SOURCE)\n        self.assertIn('pollTask?.cancel()', SOURCE)"
+          if source.count(old_assert) != 1:
+              raise SystemExit("transport regression anchor drifted")
+          test.write_text(source.replace(old_assert, new_assert, 1), encoding="utf-8")
+          PY
+          python3 scripts/ci/tests/test_tuya_account_transport_source.py
+      - name: Commit product copy repair and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-capture-tuya-approval-copy-materialize.yml
+          git config user.name "jonathangana131-lab"
+          git config user.email "jonathangana131@gmail.com"
+          git add NembraApp/Features/Research/TuyaAccountBridge.swift scripts/ci/tests/test_tuya_account_transport_source.py .github/workflows/tmp-capture-tuya-approval-copy-materialize.yml
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' '.github/workflows/tmp-capture-tuya-approval-copy-materialize.yml' 'NembraApp/Features/Research/TuyaAccountBridge.swift' 'scripts/ci/tests/test_tuya_account_transport_source.py' | sort)"
+          git commit -m "fix(capture): align rejected-session recovery copy"
+          git push origin HEAD:agent/v14-capture-tuya-approval-failclosed-sol
