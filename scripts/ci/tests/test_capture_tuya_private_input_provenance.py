@@ -87,7 +87,10 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         digest_shape = '[[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]'
         lock_compare = '[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]]'
         review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
-        bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
+        accepted_bootstrap_call = 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"'
+        retired_bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
+        accepted_bootstrap_blob = 'run_authority_git show "$SOURCE_SHA:$relative_path"'
+        hardened_bootstrap_shell = "/bin/bash --noprofile --norc -p -c 'source /dev/stdin'"
         build_call = "-- xcodebuild"
 
         for required in (
@@ -100,9 +103,12 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
             self.assertIn(required, bootstrap)
         self.assertLess(bootstrap.index(required_digest), bootstrap.index("pod install --repo-update"))
         self.assertLess(bootstrap.index(lock_compare), bootstrap.index("NEXT BUILD RULE:"))
-        self.assertIn(bootstrap_call, installer)
+        self.assertIn(accepted_bootstrap_call, installer)
+        self.assertNotIn(retired_bootstrap_call, installer)
+        self.assertIn(accepted_bootstrap_blob, installer)
+        self.assertIn(hardened_bootstrap_shell, installer)
         self.assertIn(build_call, installer)
-        self.assertLess(installer.index(bootstrap_call), installer.index(build_call))
+        self.assertLess(installer.index(accepted_bootstrap_call), installer.index(build_call))
 
     def test_snapshot_contains_only_fingerprints_and_is_private(self) -> None:
         current = self.snapshot()
