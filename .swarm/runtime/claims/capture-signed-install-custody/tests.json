@@ -9,15 +9,15 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:20:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:20:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:32:06Z",
   "leaseSeconds": 1800,
   "branch": "test/capture-signed-origin-prereq-sol-1312t8-20260811",
   "pr": 2955,
   "sourceSHA": "f76e6ae54b4304df5b02db4f46a72f67daa276e2",
-  "currentHeadSHA": "afdd329d8041f909c4d77fc86d78f73953bba81b",
+  "currentHeadSHA": "5d130465a5dd1d92402eab3fe2dfb89b6d8186a2",
   "takeoverFromWorkerId": "sol-20260811-4f50qa",
   "takeoverReason": "Generation-3 tests lease expired while #2955 remains the exact confirmed blocker. Recover tests independently of live primary/review owners, preserve the expected-red witness, and close the prerequisite evidence gap around transient-GID signing/process-drain research without touching production implementation paths.",
-  "durableEvidence": "Inherited: #2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b mechanically confirms post-build DerivedData substitution can become the protected staged subject under #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2. Research head dcc6779a5a7ee73292faf67efd8bbd38dac30629 attempted transient-GID signing/process-drain validation but its first workflow run failed before the intended boundary was established, so it is not acceptance evidence for or against the isolation repair.",
-  "checkpoint": "Tests recovery claimed. Next: harden the research prerequisite probe so runner/tool availability failures are explicit and cannot be misclassified as transient-GID signing incompatibility; then run exact-head evidence and hand the result to the live primary. PHYSICAL NO-GO.",
-  "acceptance": "TESTS ACTIVE. No production authority moved. #2955 remains expected-red until the live primary mechanically binds compiler output through first protected snapshot and this lane can replay the origin invariant against that exact repair head. PHYSICAL NO-GO."
+  "durableEvidence": "Inherited: #2955 exact afdd329d8041f909c4d77fc86d78f73953bba81b mechanically confirms post-build DerivedData substitution can become the protected staged subject under #2871 exact f76e6ae54b4304df5b02db4f46a72f67daa276e2. New exact research evidence: branch head 5d130465a5dd1d92402eab3fe2dfb89b6d8186a2, workflow run 31533046484, job 93917370021 SUCCESS mechanically confirms the current real run_guarded_build lifecycle can return while a direct build descendant remains alive. This is a portable process-lifetime witness only; it does not claim real Xcode leaks a descendant. It proves a transient-GID compiler-output repair cannot infer full trusted-builder drain solely from waiting for the direct xcodebuild process. Mac signing/process v2 run 31532586227 is terminal failed and is being classified from exact step evidence before any architecture conclusion.",
+  "checkpoint": "Tests generation 4 active. Portable descendant-lifetime expected-red is exact-head green-as-diagnostic at 5d130465a5dd1d92402eab3fe2dfb89b6d8186a2 / run 31533046484. Next: classify mac signing/process v2 run 31532586227 precisely; if harness-limited, repair/re-run; if a real prerequisite defect, hand the narrowed evidence to live primary. No production authority moved. #2955 remains expected-red. PHYSICAL NO-GO.",
+  "acceptance": "TESTS ACTIVE. Direct-child completion is not sufficient mechanical proof of trusted builder process-family drain. This does not itself block a design that can prove descendants lost output authority by another mechanism. Final acceptance still requires the live production repair to bind actual compiler-produced output through first protected snapshot and replay #2955 green on the exact repair head. PHYSICAL NO-GO."
 }
