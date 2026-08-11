@@ -1,0 +1,51 @@
+name: Capture Field Selected Xcode Custody
+
+on:
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_field_selected_xcode_custody.py
+      - scripts/ci/tests/test_capture_field_xcode_environment_authority.py
+      - .github/workflows/capture-field-selected-xcode-custody.yml
+  push:
+    branches:
+      - repair/v14-field-selected-xcode-custody-r2-sol-20260811
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selected-xcode-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact tested head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Require selected Xcode custody and closed child environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_field_selected_xcode_custody.py \
+            scripts/ci/tests/test_capture_field_xcode_environment_authority.py \
+            scripts/ci/tests/test_capture_field_developer_dir_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcode_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_developer_dir_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcrun_environment_authority.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
