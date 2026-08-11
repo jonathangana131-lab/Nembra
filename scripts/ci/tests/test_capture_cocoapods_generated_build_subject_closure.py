@@ -154,7 +154,7 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
         self.assertEqual(after.returncode, 0, after.stdout)
         self.assertEqual(before.stdout.strip(), after.stdout.strip())
 
-    def test_existing_build_guard_includes_generated_subject_and_manifest_mirror(self) -> None:
+    def test_existing_build_guard_includes_generated_subject_manifest_and_capacity(self) -> None:
         source = GUARD.read_text(encoding="utf-8")
         for marker in (
             '"capture_cocoapods_build_subject.py"',
@@ -166,6 +166,8 @@ class GeneratedBuildSubjectClosureTests(unittest.TestCase):
             "build_subject.build_subject_fingerprint",
             "inputs.generated_pods",
             "inputs.generated_workspace",
+            "resource.RLIMIT_NOFILE",
+            "_ensure_watch_descriptor_budget(len(watch_paths))",
         ):
             self.assertIn(marker, source)
 
