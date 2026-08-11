@@ -348,53 +348,130 @@ unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTI
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 say "Installing SDK-integrated Capture on the intended iPhone"
-open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
-INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX")"
-trap 'rm -f -- "$INSTALL_LOG"' EXIT
-chmod 600 "$INSTALL_LOG"
-INSTALLED=0
-for ATTEMPT in $(seq 1 60); do
-    if xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
-        INSTALLED=1
-        break
-    fi
-    if [[ "$ATTEMPT" == "1" ]]; then
-        printf '%s\n' "Xcode still appears to be preparing the intended iPhone. Keep it plugged in and unlocked; installation will retry automatically."
-    fi
-    sleep 3
-done
+/usr/bin/open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
 
-if [[ "$INSTALLED" != "1" ]]; then
-    if [[ -s "$INSTALL_LOG" ]]; then
-        INSTALL_DIAGNOSTIC="$(
-            printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ID" | /usr/bin/python3 -I -c '
-import re
-import sys
-from pathlib import Path
-payload = sys.stdin.buffer.read()
-try:
-    private_udid_raw, selector_raw = payload.split(b"\0", 1)
-    private_udid = private_udid_raw.decode("utf-8")
-    selector = selector_raw.decode("utf-8")
-except (ValueError, UnicodeDecodeError):
-    raise SystemExit(2)
-text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-secrets = (
-    (private_udid, "<redacted-device>"),
-    (selector, "<redacted-device-selector>"),
-)
-for secret, replacement in secrets:
-    for variant in sorted({secret, secret.replace("-", "")}, key=len, reverse=True):
-        if variant:
-            text = re.sub(re.escape(variant), replacement, text, flags=re.IGNORECASE)
-sys.stdout.write(text)
-' "$INSTALL_LOG"
-        )"
-        printf '%s\n' "$INSTALL_DIAGNOSTIC" >&2
-        unset INSTALL_DIAGNOSTIC
-    fi
-    die "The app built successfully, but the intended iPhone never became ready for installation. Keep it unlocked and connected, wait for Xcode to finish Preparing/Connecting, then run this installer again."
+# The verification/install implementation and the outer vnode guard are themselves
+# exact SOURCE_SHA Git subjects. Materialize once, open once, verify the opened
+# descriptors against their accepted Git object IDs, then unlink every pathname before
+# execution. A same-UID checkout-path swap cannot replace either authority implementation.
+SIGNED_APP_INSTALL_GUARD_RELATIVE_PATH="scripts/ci/capture_signed_app_install_guard.py"
+SIGNED_APP_VERIFY_INSTALL_RELATIVE_PATH="scripts/field/verify_install_capture_app.command"
+INSTALL_TOOL_ROOT="$(/usr/bin/mktemp -d /tmp/nembra-capture-install-tools.XXXXXX)" || die "Could not create private signed-app install-tool staging."
+GUARD_SNAPSHOT="$INSTALL_TOOL_ROOT/capture_signed_app_install_guard.py"
+VERIFY_INSTALL_SNAPSHOT="$INSTALL_TOOL_ROOT/verify_install_capture_app.command"
+trap '/bin/rm -rf -- "$INSTALL_TOOL_ROOT"' EXIT HUP INT TERM
+if ! /usr/bin/git show "$SOURCE_SHA:$SIGNED_APP_INSTALL_GUARD_RELATIVE_PATH" > "$GUARD_SNAPSHOT" \
+    || ! /usr/bin/git show "$SOURCE_SHA:$SIGNED_APP_VERIFY_INSTALL_RELATIVE_PATH" > "$VERIFY_INSTALL_SNAPSHOT"
+then
+    die "Could not materialize exact signed-app install custody tooling from SOURCE_SHA."
 fi
+GUARD_BLOB_SHA="$(/usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_INSTALL_GUARD_RELATIVE_PATH")"
+VERIFY_INSTALL_BLOB_SHA="$(/usr/bin/git rev-parse "$SOURCE_SHA:$SIGNED_APP_VERIFY_INSTALL_RELATIVE_PATH")"
+GUARD_BLOB_BYTES="$(/usr/bin/git cat-file -s "$GUARD_BLOB_SHA")"
+VERIFY_INSTALL_BLOB_BYTES="$(/usr/bin/git cat-file -s "$VERIFY_INSTALL_BLOB_SHA")"
+[[ "$GUARD_BLOB_SHA" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ && "$VERIFY_INSTALL_BLOB_SHA" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]] || \
+    die "Signed-app install custody tooling Git object identity is malformed."
+[[ "$GUARD_BLOB_BYTES" =~ ^[1-9][0-9]*$ && "$VERIFY_INSTALL_BLOB_BYTES" =~ ^[1-9][0-9]*$ ]] || \
+    die "Signed-app install custody tooling Git objects have invalid byte sizes."
+/bin/chmod 0400 "$GUARD_SNAPSHOT" "$VERIFY_INSTALL_SNAPSHOT"
+exec 7< "$VERIFY_INSTALL_SNAPSHOT"
+exec 8< "$GUARD_SNAPSHOT"
+
+verify_open_git_blob_descriptor() {
+    local descriptor_number="$1"
+    local expected_blob_sha="$2"
+    local expected_blob_bytes="$3"
+    /usr/bin/python3 -I - "$descriptor_number" "$expected_blob_sha" "$expected_blob_bytes" <<'PYVERIFY'
+import hashlib
+import os
+import stat
+import sys
+
+fd = int(sys.argv[1])
+expected = sys.argv[2]
+expected_size = int(sys.argv[3])
+if expected_size < 1:
+    raise SystemExit("accepted Git object size must be positive")
+if len(expected) == 40:
+    digest = hashlib.sha1()
+elif len(expected) == 64:
+    digest = hashlib.sha256()
+else:
+    raise SystemExit("unsupported Git object ID width")
+
+def identity(metadata):
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+        metadata.st_nlink,
+    )
+
+metadata = os.fstat(fd)
+if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != expected_size:
+    raise SystemExit("opened install-custody tool does not match accepted regular-file shape")
+before_offset = os.lseek(fd, 0, os.SEEK_CUR)
+if before_offset != 0:
+    raise SystemExit("install-custody tool descriptor was not positioned at byte zero")
+digest.update(b"blob " + str(expected_size).encode("ascii") + b"\0")
+offset = 0
+while offset < expected_size:
+    chunk = os.pread(fd, min(1024 * 1024, expected_size - offset), offset)
+    if not chunk:
+        raise SystemExit("opened install-custody tool ended before accepted Git blob size")
+    digest.update(chunk)
+    offset += len(chunk)
+if os.pread(fd, 1, expected_size):
+    raise SystemExit("opened install-custody tool exceeds accepted Git blob size")
+final_metadata = os.fstat(fd)
+if identity(final_metadata) != identity(metadata):
+    raise SystemExit("opened install-custody tool changed during descriptor verification")
+if digest.hexdigest() != expected:
+    raise SystemExit("opened install-custody tool does not match accepted Git blob")
+if os.lseek(fd, 0, os.SEEK_CUR) != before_offset:
+    raise SystemExit("install-custody descriptor verification changed execution offset")
+PYVERIFY
+}
+
+verify_open_git_blob_descriptor 7 "$VERIFY_INSTALL_BLOB_SHA" "$VERIFY_INSTALL_BLOB_BYTES" || \
+    die "Opened verify/install implementation failed exact Git-object custody."
+verify_open_git_blob_descriptor 8 "$GUARD_BLOB_SHA" "$GUARD_BLOB_BYTES" || \
+    die "Opened signed-app install guard failed exact Git-object custody."
+/bin/rm -f -- "$GUARD_SNAPSHOT" "$VERIFY_INSTALL_SNAPSHOT"
+/bin/rmdir "$INSTALL_TOOL_ROOT"
+trap - EXIT HUP INT TERM
+
+# The private intended-device UDID crosses this boundary only over stdin for diagnostic
+# redaction. The child and CoreDevice argv receive the non-private correlated selector.
+# The guard keeps every real app entry plus the app parent under vnode custody and
+# cryptographic before/after sampling for the complete provenance/signature/profile/install
+# child. Launch is intentionally later and is impossible unless this returns success.
+if ! builtin printf '%s\n' "$DEVICE_UDID" | /usr/bin/python3 -I /dev/fd/8 \
+    --pass-fd 7 \
+    --app "$APP" \
+    -- /bin/bash --noprofile --norc -p /dev/fd/7 \
+    "$APP" \
+    "$BUILD_LABEL" \
+    "$SOURCE_SHA" \
+    "$TUYA_DEPENDENCY_LOCK_SHA256" \
+    "$PROCEDURE_ID" \
+    "$BUNDLE_ID" \
+    "$TEAM_ID" \
+    "$COREDEVICE_ID" \
+    "$ROOT"
+then
+    exec 7<&-
+    exec 8<&-
+    die "Signed Capture verification/install custody failed. Do not launch or promote this field candidate."
+fi
+exec 7<&-
+exec 8<&-
+say "Signed app verification and CoreDevice install stayed bound to one guarded app subject"
 
 say "Launching privately provisioned Capture on the intended iPhone"
 if ! xcrun devicectl device process launch \
@@ -404,8 +481,6 @@ if ! xcrun devicectl device process launch \
     die "Capture installed, but devicectl could not launch it on the intended iPhone. Do not promote the physical test; relaunch through this installer after the device is ready."
 fi
 unset DEVICE_UDID COREDEVICE_ID DEVICE_OS_VERSION
-rm -f -- "$INSTALL_LOG"
-trap - EXIT
 
 say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \
