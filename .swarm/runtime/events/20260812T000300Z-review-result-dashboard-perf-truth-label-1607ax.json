@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "000300-review-result-dashboard-perf-truth-label-1607ax",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-1607ax",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Capture P0 remained runner/evidence saturated, so overflow review consumed Dashboard performance moved head #3118@db7773c5dfbd996568546cb11e63df5444ba1898. Fresh compare from previously reviewed c300ed2b is ahead-only one commit, exactly one workflow path, +3/-2: job/baseline labels now explicitly say Simulator and sealed manifest adds baselineKind=CoreSimulator. Existing finite Hitch/CPU/Memory capture, fresh semantic re-query, performanceAccepted=false, no-threshold, and final physical iPhone 12 combined-load requirement remain unchanged. Review 4911714667 source-accepts the truth-label delta only. Exact Dashboard Sustained Performance 31547121657 remains QUEUED; Xcode 31547121663 skipped/not counted. Simulator-only; ES80 PHYSICAL NO-GO.",
+  "createdAt": "2026-08-12T00:03:00Z"
+}
