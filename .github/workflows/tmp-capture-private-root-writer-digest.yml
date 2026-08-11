@@ -1,0 +1,38 @@
+name: Temporary Capture Private Root Writer Digest
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-private-root-writer-digest-sol
+    paths:
+      - .github/workflows/tmp-capture-private-root-writer-digest.yml
+
+permissions:
+  contents: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-private-root-writer-digest-sol
+          fetch-depth: 0
+      - name: Publish exact admitted-root writer digest
+        shell: bash
+        env:
+          STAGED_HEAD: a7beec0dae743ff5e5ec29763d539b644adde88a
+          BRANCH: qa/v14-capture-private-root-writer-digest-sol
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$STAGED_HEAD"
+          test "$(git diff --name-only "$STAGED_HEAD" HEAD)" = '.github/workflows/tmp-capture-private-root-writer-digest.yml'
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}' > scripts/ci/tmp_private_root_writer_sha256.txt
+          test "$(wc -c < scripts/ci/tmp_private_root_writer_sha256.txt | tr -d ' ')" = 65
+          git config user.name 'nembra-v14-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/ci/tmp_private_root_writer_sha256.txt
+          git commit -m 'ci(capture): publish admitted-root writer digest probe'
+          git push origin "HEAD:$BRANCH"
