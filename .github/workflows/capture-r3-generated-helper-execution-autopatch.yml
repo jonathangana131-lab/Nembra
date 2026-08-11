@@ -72,7 +72,7 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
 
-      - name: Commit validated repair and remove temporary tooling
+      - name: Commit and push only validated product-test repair
         shell: bash
         env:
           TARGET_BRANCH: control/v14-auth-stationary-generated-subject-r3-sol
@@ -80,6 +80,10 @@ jobs:
           set -euo pipefail
           git config user.name "Nembra Capture QA"
           git config user.email "capture@nembra.invalid"
-          git add -A
+          git add \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          git diff --cached --check
           git commit -m "fix(capture): execute accepted generated helper blob"
           git push origin "HEAD:${TARGET_BRANCH}"
