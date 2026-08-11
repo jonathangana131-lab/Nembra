@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -p
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -11,8 +11,11 @@ PODSPEC="$DEST/NembraTuyaPrivateConfig.podspec"
 IDENTITY_SWIFT="$SOURCE_DIR/NembraTuyaPrivateIdentity.swift"
 
 umask 077
-# A caller may invoke this script under `bash -x`; disable tracing before any
-# credential is read or transformed so private values never enter trace output.
+# A direct operator invocation enters privileged Bash mode from the shebang,
+# which suppresses BASH_ENV/imported startup state. Also close the executable
+# lookup surface before any credential is read or transformed.
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
 set +x
 
 # Credential output is intentionally pinned under the ignored checkout-owned
@@ -27,8 +30,8 @@ for directory in "$LOCAL_SECRETS" "$DEST" "$DEST/Sources" "$SOURCE_DIR"; do
     echo "ERROR: private Tuya destination component is not a directory: $directory" >&2
     exit 4
   fi
-  mkdir -p "$directory"
-  chmod 700 "$directory"
+  /bin/mkdir -p "$directory"
+  /bin/chmod 700 "$directory"
 done
 
 for output in "$PODSPEC" "$IDENTITY_SWIFT"; do
@@ -42,26 +45,26 @@ for output in "$PODSPEC" "$IDENTITY_SWIFT"; do
   fi
 done
 
-read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY
-printf '\n'
-read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET
-printf '\n'
+builtin read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY
+builtin printf '\n'
+builtin read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET
+builtin printf '\n'
 
 [[ -n "$APP_KEY" ]] || { echo "ERROR: AppKey is empty." >&2; exit 2; }
 [[ -n "$APP_SECRET" ]] || { echo "ERROR: AppSecret is empty." >&2; exit 3; }
 
-APP_KEY_B64="$(printf '%s' "$APP_KEY" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
-APP_SECRET_B64="$(printf '%s' "$APP_SECRET" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+APP_KEY_B64="$(builtin printf '%s' "$APP_KEY" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+APP_SECRET_B64="$(builtin printf '%s' "$APP_SECRET" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 unset APP_KEY APP_SECRET
 
-PODSPEC_TMP="$(mktemp "$DEST/.NembraTuyaPrivateConfig.podspec.XXXXXX")"
-IDENTITY_TMP="$(mktemp "$SOURCE_DIR/.NembraTuyaPrivateIdentity.swift.XXXXXX")"
+PODSPEC_TMP="$(/usr/bin/mktemp "$DEST/.NembraTuyaPrivateConfig.podspec.XXXXXX")"
+IDENTITY_TMP="$(/usr/bin/mktemp "$SOURCE_DIR/.NembraTuyaPrivateIdentity.swift.XXXXXX")"
 cleanup_private_identity_temps() {
-  rm -f "$PODSPEC_TMP" "$IDENTITY_TMP"
+  /bin/rm -f "$PODSPEC_TMP" "$IDENTITY_TMP"
 }
 trap cleanup_private_identity_temps EXIT HUP INT TERM
 
-cat > "$PODSPEC_TMP" <<'RUBY'
+/bin/cat > "$PODSPEC_TMP" <<'RUBY'
 Pod::Spec.new do |s|
   s.name = 'NembraTuyaPrivateConfig'
   s.version = '1.0.0'
@@ -77,7 +80,7 @@ Pod::Spec.new do |s|
 end
 RUBY
 
-cat > "$IDENTITY_TMP" <<SWIFT
+/bin/cat > "$IDENTITY_TMP" <<SWIFT
 import Foundation
 
 public enum NembraTuyaPrivateIdentity {
@@ -97,7 +100,7 @@ public enum NembraTuyaPrivateIdentity {
 }
 SWIFT
 unset APP_KEY_B64 APP_SECRET_B64
-chmod 600 "$PODSPEC_TMP" "$IDENTITY_TMP"
+/bin/chmod 600 "$PODSPEC_TMP" "$IDENTITY_TMP"
 
 # Recheck directory custody immediately before publication. `mv` replaces a
 # final-path symlink rather than following it, while the parent checks keep the
@@ -108,12 +111,12 @@ for directory in "$LOCAL_SECRETS" "$DEST" "$DEST/Sources" "$SOURCE_DIR"; do
     exit 4
   }
 done
-mv -f "$PODSPEC_TMP" "$PODSPEC"
-mv -f "$IDENTITY_TMP" "$IDENTITY_SWIFT"
+/bin/mv -f "$PODSPEC_TMP" "$PODSPEC"
+/bin/mv -f "$IDENTITY_TMP" "$IDENTITY_SWIFT"
 trap - EXIT HUP INT TERM
-chmod 600 "$PODSPEC" "$IDENTITY_SWIFT"
+/bin/chmod 600 "$PODSPEC" "$IDENTITY_SWIFT"
 
-cat <<EOF
+/bin/cat <<EOF
 
 Private Tuya app identity provisioned locally at:
   $DEST
