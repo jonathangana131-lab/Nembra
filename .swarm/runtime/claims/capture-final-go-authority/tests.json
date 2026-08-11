@@ -9,11 +9,12 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T10:13:00Z",
-  "lastHeartbeatAt": "2026-08-11T10:13:00Z",
+  "lastHeartbeatAt": "2026-08-11T10:16:00Z",
   "leaseSeconds": 1800,
   "branch": "redteam/v14-final-go-raw-candidate-tree-solr4-20260811",
-  "pr": null,
+  "pr": 2903,
   "sourceSHA": "778630c979cfd19fee9b8549f79eccbb58876a24",
+  "currentHeadSHA": "a19b9c389f76c3838436b13b5b87b33def258d5c",
   "parentPR": 2890,
-  "checkpoint": "Released generation-1 core.worktree validation is complete. Generation-2 tests target remaining candidate authority debt: Final-GO must reject physical product bytes hidden from repository-local status metadata and must not depend on config-sensitive git status for candidate truth. Test-only; production remains owned by #2890. PHYSICAL NO-GO."
+  "checkpoint": "Test-only #2903 now mechanically targets the remaining status-based Final-GO candidate authority gap on exact #2890. It requires rejection of build-visible product source hidden by repository-local exclude metadata and requires candidate truth not to delegate whole-tree authority to git status. Production remains owned by #2890. PHYSICAL NO-GO."
 }
