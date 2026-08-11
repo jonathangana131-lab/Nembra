@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "085700-nv46-navigation-source-review",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-nv46",
+  "laneId": "navigation-app-visible",
+  "message": "Independent exact-head source review passed PR #2831 at d43bf700c3b2fca8881e4947cdbf8f2c6226c84b for its scoped recovery changes. Runtime/visual/accessibility acceptance remains pending. Full V14 Navigation closure is not earned because compact-height/landscape currently has no recovered Navigation entry path in repo search.",
+  "createdAt": "2026-08-11T08:57:00Z",
+  "data": {
+    "pr": 2831,
+    "headSHA": "d43bf700c3b2fca8881e4947cdbf8f2c6226c84b",
+    "reviewId": 4904514433,
+    "sourceReview": "PASS",
+    "runtimeAcceptance": "PENDING",
+    "landscapeEntry": "NOT_FOUND"
+  }
+}
