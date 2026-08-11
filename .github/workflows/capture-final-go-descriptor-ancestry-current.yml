@@ -1,0 +1,74 @@
+name: Capture Final GO Descriptor Ancestry Current
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_descriptor_ancestry_race_red_team.py
+      - .github/workflows/capture-final-go-descriptor-ancestry-current.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  descriptor-ancestry-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind validation checkout to exact head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Require test-only relationship to current Final-GO parent
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python3 - "$BASE_SHA" "$HEAD_SHA" <<'PY'
+          import subprocess, sys
+          base, head = sys.argv[1:]
+          paths = subprocess.check_output(
+              ["git", "diff", "--name-only", base, head], text=True
+          ).splitlines()
+          allowed = {
+              "scripts/ci/tests/test_es80_final_go_descriptor_ancestry_race_red_team.py",
+              ".github/workflows/capture-final-go-descriptor-ancestry-current.yml",
+          }
+          unexpected = sorted(set(paths) - allowed)
+          if unexpected:
+              raise SystemExit("unexpected product/control delta: " + ", ".join(unexpected))
+          if set(paths) != allowed:
+              raise SystemExit("validation child must contain exactly the ancestry test + workflow")
+          PY
+
+      - name: Compile descriptor ancestry witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_es80_final_go_descriptor_ancestry_race_red_team.py
+
+      - name: Require live-root ancestry rebinding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_descriptor_ancestry_race_red_team.py
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha || github.sha }}"
