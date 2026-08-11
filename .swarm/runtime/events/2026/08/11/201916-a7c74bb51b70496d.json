@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "201916-a7c74bb51b70496d",
+  "type": "FINDING",
+  "workerId": "sol-20260811-1315r8",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Exact-head CI/Xcode reconciliation finding for Capture private identity: live PR #2944 is open at actual head 3b8e2182de2275a1c8b858ff8b3b614061582457, while the PR body still narrates prior head baf25d84d66296e2f061f17dfde29deaba0aecd1 and its successful run 31495894410. GitHub currently reports zero check runs on exact current 3b8e2182. Do not promote ancestor green to the moved head; require fresh exact-head evidence after the current repair stabilizes. Existing PHYSICAL NO-GO remains unchanged.",
+  "createdAt": "2026-08-11T20:19:16Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "pullRequest": 2944,
+    "currentHeadSHA": "3b8e2182de2275a1c8b858ff8b3b614061582457",
+    "bodyNarratedHeadSHA": "baf25d84d66296e2f061f17dfde29deaba0aecd1",
+    "currentCheckRunCount": 0,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
