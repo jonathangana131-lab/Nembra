@@ -1,0 +1,61 @@
+name: Capture Final GO Signed Artifact Handoff Contract
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_es80_final_go_signed_artifact_handoff_contract.py
+      - .github/workflows/capture-final-go-signed-handoff-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  signed-artifact-handoff-contract:
+    name: Prove candidate authority can retire after signed handoff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind validation to exact current production parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRODUCTION_PARENT: cb36f9265f08708c8e47564f62f4857aeae7af0f
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$PRODUCTION_PARENT" HEAD)" = "$PRODUCTION_PARENT"
+          git diff --check "$PRODUCTION_PARENT"...HEAD
+          git diff --name-only "$PRODUCTION_PARENT"...HEAD | LC_ALL=C sort > /tmp/actual-paths
+          cat > /tmp/expected-paths <<'EOF'
+          .github/workflows/capture-final-go-signed-handoff-contract.yml
+          scripts/ci/tests/test_es80_final_go_signed_artifact_handoff_contract.py
+          EOF
+          LC_ALL=C sort -o /tmp/expected-paths /tmp/expected-paths
+          diff -u /tmp/expected-paths /tmp/actual-paths
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile handoff contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_es80_final_go_signed_artifact_handoff_contract.py
+
+      - name: Prove signed-artifact handoff premise
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_signed_artifact_handoff_contract.py
+
+      - name: Confirm validation-only diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check cb36f9265f08708c8e47564f62f4857aeae7af0f...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
