@@ -18,9 +18,9 @@
       "id": "legacy-pr-active",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Canonical legacy flagship PR #2612 remains open and current authority descendants are not yet accepted/composed; do not create a competing flagship spine.",
+      "reason": "Canonical legacy flagship PR #2612 remains the single app-visible Capture spine and has moved to exact 513ebea576cd6d03132e215d80fac57397877fbf after integrating reviewed package-truth child #2824. Production/UI bytes were unchanged by that three-test repair, but the moved flagship must re-earn exact-head acceptance. On the latest live refresh, TODAY Final GO, Legacy Final GO Entrypoint, Signed Candidate Reinspection, Final GO Hardening, and Final GO GitHub API Custody are terminal SUCCESS; Main Selective Graft is queued; Standalone Visual Evidence, Field Build Provenance, and Xcode 27 PR Exact-Head QA are in progress. Security/build/private/signed-install control ingredients are not yet deliberately composed into one final flagship head. Do not create a competing flagship spine and do not promote queued/running or ancestor greens.",
       "pr": 2612,
-      "headSHA": "9e7c65cde7d33b731ea04e11cfe43a792743ed5d"
+      "headSHA": "513ebea576cd6d03132e215d80fac57397877fbf"
     }
   ],
   "mode": "exclusive",
@@ -43,12 +43,12 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "primaryPR": 2612,
-    "primaryHeadSHA": "9e7c65cde7d33b731ea04e11cfe43a792743ed5d",
-    "baseMainAtObservation": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
-    "note": "PR base metadata still points at pre-V15 main; exact-current composition must refresh main ancestry before acceptance."
+    "primaryHeadSHA": "513ebea576cd6d03132e215d80fac57397877fbf",
+    "baseMainAtObservation": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "note": "Reconciled after #2824 composition. PR base metadata remains historical; live main is V15.1 control-plane-only relative to the product candidate. Final acceptance still requires one exact composed flagship descendant with all applicable product, security, visual/runtime, field, and physical-precondition gates rerun."
   },
   "tags": ["capture", "p0", "flagship", "app-visible", "composition", "legacy-import"]
 }
