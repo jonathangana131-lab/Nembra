@@ -97,6 +97,36 @@ class CaptureFieldTrackedSourceWindowAuthorityTests(unittest.TestCase):
                 guard._accepted_tracked_source_manifest(repo, accepted_sha)
 
     @unittest.skipUnless(sys.platform == "darwin", "requires real macOS kqueue vnode delivery")
+    def test_real_macos_kqueue_reports_unexpected_directory_entry_addition(self) -> None:
+        guard = load_guard()
+        with tempfile.TemporaryDirectory(prefix="nembra-tracked-window-addition-") as directory:
+            root = Path(directory)
+            sources = root / "Sources"
+            sources.mkdir()
+            source = sources / "Capture.swift"
+            source.write_text('let authority = "accepted"\n', encoding="utf-8")
+            backend = guard.KqueueVnodeBackend()
+            watched = ()
+            try:
+                watched = guard._open_watched_inputs((root, sources, source), backend)
+                self.assertFalse(backend.events(0), "unexpected vnode event before directory addition")
+                (sources / "Injected.swift").write_text(
+                    'let authority = "attacker"\n', encoding="utf-8"
+                )
+                events = backend.events(1.0)
+                self.assertTrue(
+                    events,
+                    "real macOS kqueue lost unexpected build-directory entry evidence",
+                )
+            finally:
+                for descriptor, _ in watched:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                backend.close()
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires real macOS kqueue vnode delivery")
     def test_real_macos_kqueue_reports_mutate_restore_before_compiler_can_be_accepted(self) -> None:
         guard = load_guard()
         with tempfile.TemporaryDirectory(prefix="nembra-tracked-window-kqueue-") as directory:
