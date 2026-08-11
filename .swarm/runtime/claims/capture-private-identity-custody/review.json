@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:47:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:52:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
