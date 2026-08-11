@@ -31,15 +31,9 @@ HELPER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(HELPER)
 
 
-def drop(uid: int, gid: int, groups: list[int]):
-    normalized = sorted(set(groups))
-
-    def apply() -> None:
-        os.setgroups(normalized)
-        os.setgid(gid)
-        os.setuid(uid)
-
-    return apply
+def _diagnostic(prefix: str, stage: str, error: BaseException) -> bytes:
+    message = f"{prefix}:{stage}:{type(error).__name__}:{error}"
+    return message.encode("utf-8", errors="replace")[:1800]
 
 
 @unittest.skipUnless(sys.platform == "darwin" and os.geteuid() == 0, "requires root on macOS")
@@ -56,6 +50,7 @@ class SignedAppDetachedDirectoryFDRedTeamTests(unittest.TestCase):
         try:
             launcher_pid = os.fork()
             if launcher_pid == 0:
+                stage = "launcher-start"
                 try:
                     os.close(ready_r)
                     os.close(go_w)
@@ -63,31 +58,43 @@ class SignedAppDetachedDirectoryFDRedTeamTests(unittest.TestCase):
 
                     # Mirrors production start_new_session=True plus the one-run
                     # supplementary build capability.
+                    stage = "launcher-setsid"
                     os.setsid()
+                    stage = "launcher-setgroups"
                     os.setgroups(sorted(set(groups) | {capability_gid}))
+                    stage = "launcher-setgid"
                     os.setgid(gid)
+                    stage = "launcher-setuid"
                     os.setuid(uid)
 
+                    stage = "launcher-create-bundle"
                     bundle = derived / "Build/Products/Debug-iphoneos/Nembra Capture.app"
                     bundle.mkdir(parents=True)
                     original = bundle / "accepted.bin"
                     original.write_bytes(b"ORIGINAL_BUILD_OUTPUT\n")
+                    stage = "launcher-open-bundle-dirfd"
                     bundle_fd = os.open(
                         bundle,
                         os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
                     )
 
+                    stage = "launcher-fork-detached-writer"
                     detached_pid = os.fork()
                     if detached_pid == 0:
+                        detached_stage = "detached-start"
                         try:
                             # Escape the process group production currently retires,
                             # but retain the already-open nested product directory FD.
+                            detached_stage = "detached-setsid"
                             os.setsid()
+                            detached_stage = "detached-ready"
                             os.write(ready_w, b"R")
+                            detached_stage = "detached-wait-go"
                             if os.read(go_r, 1) != b"G":
+                                os.write(result_w, b"D:detached-wait-go:unexpected-control-byte")
                                 os._exit(91)
 
-                            succeeded = False
+                            detached_stage = "detached-openat-create"
                             try:
                                 late_fd = os.open(
                                     "late-entry.bin",
@@ -95,28 +102,34 @@ class SignedAppDetachedDirectoryFDRedTeamTests(unittest.TestCase):
                                     0o600,
                                     dir_fd=bundle_fd,
                                 )
-                                try:
-                                    os.write(late_fd, b"DETACHED_DIRFD_WRITE\n")
-                                    os.fsync(late_fd)
-                                finally:
-                                    os.close(late_fd)
-                                succeeded = True
-                            except OSError:
-                                pass
-
-                            os.write(result_w, b"1" if succeeded else b"0")
+                            except OSError as error:
+                                os.write(result_w, _diagnostic("D", detached_stage, error))
+                                os._exit(90)
+                            try:
+                                detached_stage = "detached-write"
+                                os.write(late_fd, b"DETACHED_DIRFD_WRITE\n")
+                                detached_stage = "detached-fsync"
+                                os.fsync(late_fd)
+                            finally:
+                                os.close(late_fd)
+                            detached_stage = "detached-report-success"
+                            os.write(result_w, b"1")
                             os.close(bundle_fd)
                             os._exit(0)
-                        except BaseException:
+                        except BaseException as error:
                             try:
-                                os.write(result_w, b"E")
+                                os.write(result_w, _diagnostic("D", detached_stage, error))
                             except OSError:
                                 pass
                             os._exit(92)
 
                     os.close(bundle_fd)
                     os._exit(0)
-                except BaseException:
+                except BaseException as error:
+                    try:
+                        os.write(result_w, _diagnostic("L", stage, error))
+                    except OSError:
+                        pass
                     os._exit(93)
 
             os.close(ready_w)
@@ -124,8 +137,13 @@ class SignedAppDetachedDirectoryFDRedTeamTests(unittest.TestCase):
             os.close(result_w)
 
             _, launcher_status = os.waitpid(launcher_pid, 0)
-            self.assertTrue(os.WIFEXITED(launcher_status))
-            self.assertEqual(os.WEXITSTATUS(launcher_status), 0)
+            if not os.WIFEXITED(launcher_status) or os.WEXITSTATUS(launcher_status) != 0:
+                readable, _, _ = select.select([result_r], [], [], 1.0)
+                detail = os.read(result_r, 2048) if readable else b"<no child diagnostic>"
+                self.fail(
+                    "launcher setup failed before the detached authority witness armed: "
+                    f"wait_status={launcher_status} detail={detail!r}"
+                )
             self.assertEqual(os.read(ready_r, 1), b"R", "detached directory-FD writer did not arm")
 
             bundle = derived / "Build/Products/Debug-iphoneos/Nembra Capture.app"
@@ -160,11 +178,16 @@ class SignedAppDetachedDirectoryFDRedTeamTests(unittest.TestCase):
             os.write(go_w, b"G")
             readable, _, _ = select.select([result_r], [], [], 3.0)
             self.assertTrue(readable, "detached directory-FD writer produced no post-lock result")
-            result = os.read(result_r, 1)
+            result = os.read(result_r, 2048)
 
             # EXPECTED-RED PRODUCT VERDICT: the current production boundary is
             # insufficient if the retained nested dirfd can still mint entries.
-            self.assertEqual(result, b"1", f"detached directory-FD attack was not demonstrated: {result!r}")
+            self.assertEqual(
+                result,
+                b"1",
+                "detached directory-FD attack was not demonstrated; retained diagnostic: "
+                f"{result!r}",
+            )
             self.assertEqual(late.read_bytes(), b"DETACHED_DIRFD_WRITE\n")
             self.assertEqual(original.read_bytes(), b"ORIGINAL_BUILD_OUTPUT\n")
         finally:
