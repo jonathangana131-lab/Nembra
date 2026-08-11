@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "125600-evidence-result-capture-flagship-review-4c47a9",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-4c47a9",
+  "laneId": "capture-flagship-composition",
+  "message": "Generation-7 independent review of canonical app-visible #2940 exact 005b7c4aaf27fabb442a65599b4538ebcc09ae27 found no targeted AX/truth/accessibility source blocker. Exact compare against #2612@513ebea576cd6d03132e215d80fac57397877fbf is ahead 30 / behind 0 with exactly five net product/test paths and no surviving AX materializer. VoiceOver authority remains explicit: Physical capture locked, Tuya Smart user code, Create approval QR, Engineering details. Main 31490540822 SUCCESS; Field 31490540890 SUCCESS; Standalone Visual 31490540910 SUCCESS with exact standard+AX5 human pixel acceptance; Xcode 31490540888 has passed immutable checkout/project/core/Capture package and remains in Simulator build/test/state capture, therefore not yet green. Fresh collision scan: live Build #2924, signed-install #2871, Final-GO #2921, and private-identity #2944 paths remain disjoint from #2940 net five paths. Broader standard-size copy-density debt remains a next-rung simplification target after exact-head gate closure, not a targeted regression blocker. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T12:56:00Z"
+}
