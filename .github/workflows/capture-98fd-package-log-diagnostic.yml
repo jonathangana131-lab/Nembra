@@ -1,0 +1,55 @@
+name: Capture 98fd Package Failure Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/v14-capture-98fd-package-log-sol
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: 98fd627972a788731d206aac4abdee9660f171ca
+  ARTIFACT_DIR: Artifacts/CapturePackage98fd
+
+jobs:
+  diagnose:
+    name: Retain exact 98fd Capture package output
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact rejected candidate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TARGET_SHA }}
+
+      - name: Verify exact rejected candidate
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          printf 'target=%s\nactual=%s\n' "$TARGET_SHA" "$actual"
+          test "$actual" = "$TARGET_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Capture full package test output without relabeling failure
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          set +e
+          swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee "$ARTIFACT_DIR/swift-test.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > "$ARTIFACT_DIR/swift-test-exit-code.txt"
+          printf '{"schemaVersion":1,"authority":"diagnostic-only-no-product-or-physical-authority","targetSHA":"%s","swiftTestExitCode":%s}\n' "$TARGET_SHA" "$status" > "$ARTIFACT_DIR/manifest.json"
+          echo "Exact 98fd Capture package exit code: $status"
+          # Preserve the failure as evidence but allow the artifact upload to run.
+          exit 0
+
+      - name: Upload retained diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-98fd-package-failure-diagnostic
+          path: Artifacts/CapturePackage98fd
+          if-no-files-found: error
+          retention-days: 30
