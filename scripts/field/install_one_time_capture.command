@@ -344,6 +344,12 @@ PROFILE_ROOT_TEAM_IDENTIFIER="${PROFILE_TEAM_FIELDS#*$'\t'}"
 [[ "$PROFILE_ROOT_TEAM_IDENTIFIER" == "$TEAM_ID" ]] || \
     die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."
 say "Final signed app and embedded provisioning profile authorize Sign in with Apple for one exact App ID and the selected team"
+SIGNED_APP_INSTALL_GUARD="$ROOT/Scripts/capture_signed_app_install_guard.py"
+[[ -f "$SIGNED_APP_INSTALL_GUARD" ]] || die "Signed-app install custody guard is missing from the accepted source."
+SIGNED_APP_SUBJECT_SHA256="$(/usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" --digest-only --app "$APP")" || \
+    die "Could not seal the exact signed Capture app install subject. Discard this candidate."
+[[ "$SIGNED_APP_SUBJECT_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Signed Capture app install-subject fingerprint is malformed. Discard this candidate."
+say "Final signed Capture app install subject sealed for devicectl custody"
 unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER BUILT_APP_ID_PREFIX PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_FIELDS PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE APP_ID_SUFFIX
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
@@ -354,9 +360,17 @@ trap 'rm -f -- "$INSTALL_LOG"' EXIT
 chmod 600 "$INSTALL_LOG"
 INSTALLED=0
 for ATTEMPT in $(seq 1 60); do
-    if xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
+    if /usr/bin/python3 -I "$SIGNED_APP_INSTALL_GUARD" \
+        --app "$APP" \
+        --expected-sha256 "$SIGNED_APP_SUBJECT_SHA256" \
+        -- xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
         INSTALLED=1
         break
+    else
+        INSTALL_RC="$?"
+        if [[ "$INSTALL_RC" == "74" ]]; then
+            die "The signed Capture app changed after verification or while devicectl was consuming it. Discard this candidate; no install authority remains."
+        fi
     fi
     if [[ "$ATTEMPT" == "1" ]]; then
         printf '%s\n' "Xcode still appears to be preparing the intended iPhone. Keep it plugged in and unlocked; installation will retry automatically."
