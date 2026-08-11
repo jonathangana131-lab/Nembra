@@ -28,6 +28,7 @@ import unittest
 REPOSITORY = Path(__file__).resolve().parents[3]
 PROVISIONER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity.sh"
 WRITER = REPOSITORY / "Scripts" / "provision_capture_tuya_identity_writer.py"
+DEPENDENCY_ADAPTER = REPOSITORY / "Scripts" / "capture_tuya_private_dependency_resolution_guard.py"
 
 
 class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
@@ -100,6 +101,14 @@ class PrivateIdentityCheckoutRootSwapTests(unittest.TestCase):
                 break
             captured.extend(chunk)
         return bytes(captured)
+
+    def test_dependency_resolution_adapter_uses_canonical_private_api(self) -> None:
+        source = DEPENDENCY_ADAPTER.read_text(encoding="utf-8")
+        self.assertIn("return guard.run_guarded_build(inputs, command)", source)
+        self.assertNotIn("require_accepted_generated_subject", source)
+        self.assertNotIn("require_accepted_private_review_commitment", source)
+        self.assertNotIn("require_accepted_authority_helpers", source)
+        self.assertNotIn("require_accepted_tracked_source", source)
 
     def test_checkout_root_swap_after_admission_cannot_redirect_credentials(self) -> None:
         script = self.checkout / "Scripts" / PROVISIONER.name
