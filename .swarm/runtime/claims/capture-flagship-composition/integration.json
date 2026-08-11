@@ -9,12 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:39:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:46:30Z",
+  "lastHeartbeatAt": "2026-08-11T12:50:30Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
   "pr": 2940,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "intent": "Preflight clean convergence of the exact app-visible AX candidate into the canonical Capture product lineage without importing temporary authoring workflows or stale ancestor-only evidence. Only promote after #2940 earns all required exact-head app gates. PHYSICAL NO-GO.",
-  "checkpoint": "Unchanged 005b7c4 is a strict #2612 513ebea descendant (ahead 30, behind 0), net five intended app/AX-test paths, no temp authoring workflow, and path-disjoint from current #2907/#2871/#2921/#2944 physical-control lineages. Exact #2940 gates now: Main Graft 31490540822 SUCCESS; Field Build Provenance 31490540890/job 93775735274 SUCCESS including exact checkout bind, private-input provenance, signed-app identity custody, source contract, stamped standalone build; Standalone Visual 31490540910 SUCCESS + retained exact artifact human pixel PASS; Xcode 27 31490540888 immutable-head resolver SUCCESS but build/test job 93775787237 still queued. Xcode is the only remaining declared app-visible acceptance gate. No queued job is green. Even after app-visible supersession, separate build/private/signed-install/Final-GO composition and final exact-head reacceptance remain mandatory. PHYSICAL NO-GO."
+  "intent": "Promote the exact app-visible AX candidate into canonical Capture product status without mutating historical authority-child bases. Only promote after #2940 earns all required exact-head app gates. PHYSICAL NO-GO.",
+  "checkpoint": "Unchanged 005b7c4 is strict #2612 513ebea descendant (ahead 30, behind 0), net five intended app/AX-test paths, no temp workflow, and path-disjoint from current physical-control lineages. Exact gates: Main Graft 31490540822 SUCCESS; Field 31490540890 SUCCESS; Standalone Visual 31490540910 SUCCESS + retained artifact human pixel PASS; Xcode 31490540888 resolver SUCCESS but build/test job 93775787237 still queued. Integration collision scan found open #2709 build, #2754 signed-install, and #2719 private-identity PRs still target the #2612 head branch as base. Therefore DO NOT update_ref/fast-forward `agent/v14-capture-live-main-visual-acceptance-sol`; doing so could silently retarget historical authority diffs. Safer convergence after Xcode green: designate #2940 exact 005b as canonical APP-VISIBLE successor and close/supersede PR #2612 while leaving its branch ref at 513ebea for existing child bases. #2841 visual ancestor was already closed as superseded by #2940. Separate build/private/signed-install/Final-GO composition and final exact-head reacceptance remain mandatory. PHYSICAL NO-GO."
 }
