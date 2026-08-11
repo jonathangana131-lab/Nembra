@@ -12,16 +12,20 @@ Do not restore #833's old “first artifact not yet collected” or retained-IPA
 
 ## Current flagship authority
 
-At this file's update, the live P0 software-acceptance subject is PR #2178:
+At this pointer update, the live P0 software-integration spine is PR #2602:
 
 - feature: Nembra Capture / authenticated stationary ES80 physical truth;
-- branch: `integration/v14-capture-final-stationary-convergence-sol`;
-- observed exact head: `df30de17a95c6df3e6bd2fda14b0de9ddb1d0d25`;
-- exact-head `Capture Field Build Provenance` run: `31366062131` — QUEUED at last observation;
-- exact-head `Xcode 27 PR Exact-Head QA` run: `31366062142` — QUEUED at last observation;
+- branch: `integration/v14-capture-main-selective-graft-sol`;
+- exact head at this checkpoint: `1434b27087a6c68c9de25f61ef8638aeba21acb9`;
+- exact-head `Capture Main Selective Graft Diagnostic` run `31449544886`: **SUCCESS**;
+- exact-head `Capture Field Build Provenance` run `31449544895`: **SUCCESS**;
+- exact-head `Xcode 27 PR Exact-Head QA` run `31449581249`: **CANCELLED** during full Capture-package validation, so it is **not acceptance evidence** and must be rerun successfully on the unchanged final composed head;
+- standalone visual/accessibility evidence is being recovered on stacked PR #2607 and is not inherited until its exact head is terminal green and retained PNGs receive human review;
 - physical status: **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
 
-**Always re-read live PR #2178 before acting.** If its head differs from the SHA above, this recorded SHA and every ancestor workflow result are stale for product acceptance. Queued/running/skipped/cancelled/ancestor results are non-evidence.
+**Always re-read live PR #2602 and current GitHub workflow state before acting.** If its head differs from the SHA above, this recorded SHA and every ancestor workflow result are stale for product acceptance. Queued/running/skipped/cancelled/ancestor results are non-evidence.
+
+PR #2178 / `integration/v14-capture-final-stationary-convergence-sol` and its recorded `df30de17…` head are historical/superseded integration state. Fresh GO workers must not route back to #2178 merely because older documents or comments name it.
 
 The canonical current physical procedure is:
 `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
@@ -45,9 +49,18 @@ The current accepted direction is an authenticated, stationary, read-only path:
 
 ## Current critical path
 
-Do not churn the flagship for non-blocking docs/tests/cleanup while an unchanged exact head is undergoing final acceptance. Move it only for a demonstrated product/truth/build blocker.
+Do not churn the #2602 product head for non-blocking docs/tests/cleanup while an unchanged exact head is undergoing acceptance. Use stacked, non-conflicting children for review/support work and compose only accepted deltas when the integration closer is ready.
 
-After terminal exact-head software acceptance on the unchanged current flagship head, the next legal rung is the private field candidate on the intended iPhone 12 / iOS 27:
+Current closure order:
+
+1. obtain terminal exact-head Xcode 27 package/app/Simulator success on the unchanged final composed candidate;
+2. obtain exact iPhone 12 / iOS 27 standalone Capture visual evidence and human-review the retained standard and Accessibility XXXL screenshots;
+3. complete visual/accessibility/performance and simplification review;
+4. compose accepted QA/support deltas, then rerun every gate invalidated by the final SHA;
+5. only after terminal final software acceptance, produce and inspect the private signed field candidate on the intended iPhone 12 / iOS 27;
+6. only an explicit repository GO on that exact accepted build may authorize the smallest stationary authenticated read-only physical attempt.
+
+After terminal exact-head software acceptance on the unchanged final flagship head, the next legal private-device rung is:
 
 1. invoke the private Capture installer against the **exact software-accepted 40-hex source SHA**;
 2. require a clean checkout whose HEAD exactly equals that SHA;
