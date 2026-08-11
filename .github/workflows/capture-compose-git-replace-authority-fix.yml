@@ -1,0 +1,68 @@
+name: Capture Compose Git Replace Authority Fix
+
+on:
+  push:
+    branches:
+      - repair/v14-downstream-authority-compose-gpt56-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-downstream-authority-compose-gpt56-sol-20260811
+          fetch-depth: 0
+      - name: Bind accepted-source Git traversal against replacement refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/field/install_one_time_capture.command')
+          text = path.read_text(encoding='utf-8')
+          old = '''    source = subprocess.check_output(
+        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
+        cwd=root,
+        stderr=subprocess.DEVNULL,
+    )'''
+          new = '''    git_environment = {
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
+    source = subprocess.check_output(
+        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
+        cwd=root,
+        env=git_environment,
+        stderr=subprocess.DEVNULL,
+    )'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'accepted-source runner changed unexpectedly; expected one exact block, found {count}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+          python3 -m unittest -v scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          git diff --check
+
+          rm -f .github/workflows/capture-compose-git-replace-authority-fix.yml
+          find Scripts scripts -type d -name __pycache__ -prune -exec rm -rf {} + || true
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/field/install_one_time_capture.command .github/workflows/capture-compose-git-replace-authority-fix.yml
+          git diff --cached --check
+          git commit -m 'Capture: make accepted-source Git traversal replacement-blind'
+          git push origin HEAD:repair/v14-downstream-authority-compose-gpt56-sol-20260811
