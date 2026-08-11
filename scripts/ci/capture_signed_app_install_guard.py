@@ -9,6 +9,10 @@ subject before arming and after completion so missed/non-restored mutations fail
 closed. The guarded child is expected to perform every signed-app provenance,
 signature/entitlement/profile check and the devicectl install side effect.
 
+The production caller may pass already-open exact Git-blob descriptors through to
+the guarded child. That lets verifier source be captured once, pathname-unlinked,
+and executed without reopening mutable checkout source at the install boundary.
+
 This helper creates no physical authority. It only rejects a candidate when the
 host-side signed install subject is not stable for the whole verification/install
 window.
@@ -20,6 +24,7 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+import resource
 import select
 import stat
 import subprocess
@@ -69,7 +74,7 @@ def _record(hasher: "hashlib._Hash", kind: bytes, relative: bytes, metadata: os.
     hasher.update(payload)
 
 
-def _read_regular_file_stably(path: Path, expected: os.stat_result) -> bytes:
+def _digest_regular_file_stably(path: Path, expected: os.stat_result) -> bytes:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
@@ -79,18 +84,31 @@ def _read_regular_file_stably(path: Path, expected: os.stat_result) -> bytes:
         opened = os.fstat(descriptor)
         if _identity(opened) != _identity(expected) or not stat.S_ISREG(opened.st_mode):
             raise InstallGuardError(f"signed app file changed while its subject was sampled: {path}")
-        result = bytearray()
+        digest = hashlib.sha256()
+        consumed = 0
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
             if not chunk:
                 break
-            result.extend(chunk)
+            digest.update(chunk)
+            consumed += len(chunk)
         final = os.fstat(descriptor)
-        if _identity(final) != _identity(opened) or len(result) != opened.st_size:
+        if _identity(final) != _identity(opened) or consumed != opened.st_size:
             raise InstallGuardError(f"signed app file changed during subject sampling: {path}")
-        return bytes(result)
+        return digest.digest()
     finally:
         os.close(descriptor)
+
+
+def _stable_symlink_payload(path: Path, expected: os.stat_result) -> bytes:
+    try:
+        target = os.readlink(path)
+        final = path.lstat()
+    except OSError as error:
+        raise InstallGuardError(f"signed app symlink changed during sampling: {path}") from error
+    if _identity(final) != _identity(expected):
+        raise InstallGuardError(f"signed app symlink changed during subject sampling: {path}")
+    return target.encode("utf-8")
 
 
 def bundle_subject(app: Path) -> str:
@@ -122,11 +140,7 @@ def bundle_subject(app: Path) -> str:
                 raise InstallGuardError(f"signed app directory entry disappeared during sampling: {path}") from error
             relative = path.relative_to(app).as_posix().encode("utf-8")
             if stat.S_ISLNK(metadata.st_mode):
-                try:
-                    target = os.readlink(path).encode("utf-8")
-                except OSError as error:
-                    raise InstallGuardError(f"signed app symlink changed during sampling: {path}") from error
-                _record(hasher, b"L", relative, metadata, target)
+                _record(hasher, b"L", relative, metadata, _stable_symlink_payload(path, metadata))
             elif stat.S_ISDIR(metadata.st_mode):
                 _record(hasher, b"D", relative, metadata, b"")
                 retained_directories.append(name)
@@ -142,14 +156,9 @@ def bundle_subject(app: Path) -> str:
                 raise InstallGuardError(f"signed app file entry disappeared during sampling: {path}") from error
             relative = path.relative_to(app).as_posix().encode("utf-8")
             if stat.S_ISLNK(metadata.st_mode):
-                try:
-                    target = os.readlink(path).encode("utf-8")
-                except OSError as error:
-                    raise InstallGuardError(f"signed app symlink changed during sampling: {path}") from error
-                _record(hasher, b"L", relative, metadata, target)
+                _record(hasher, b"L", relative, metadata, _stable_symlink_payload(path, metadata))
             elif stat.S_ISREG(metadata.st_mode):
-                payload_digest = hashlib.sha256(_read_regular_file_stably(path, metadata)).digest()
-                _record(hasher, b"F", relative, metadata, payload_digest)
+                _record(hasher, b"F", relative, metadata, _digest_regular_file_stably(path, metadata))
             else:
                 raise InstallGuardError(f"signed app contains unsupported file entry: {path}")
 
@@ -248,6 +257,39 @@ def watch_paths(app: Path) -> tuple[Path, ...]:
     return tuple(sorted(paths, key=lambda path: (len(path.parts), str(path))))
 
 
+def _ensure_descriptor_budget(watch_count: int) -> tuple[int, int]:
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (OSError, ValueError) as error:
+        raise InstallGuardError("could not inspect host file-descriptor limit for install custody") from error
+    required = watch_count + 64
+    if soft >= required:
+        return soft, hard
+    ceiling = required if hard == resource.RLIM_INFINITY else min(required, hard)
+    if ceiling < required:
+        raise InstallGuardError(
+            f"signed app needs {watch_count} vnode watches but host descriptor hard limit {hard} is too small"
+        )
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (ceiling, hard))
+    except (OSError, ValueError) as error:
+        raise InstallGuardError(
+            f"could not raise host descriptor limit from {soft} to {ceiling} for complete signed-app custody"
+        ) from error
+    return soft, hard
+
+
+def _restore_descriptor_budget(limits: tuple[int, int]) -> None:
+    soft, hard = limits
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+    except (OSError, ValueError):
+        # This is cleanup-only. All security-relevant child work is already complete
+        # or being failed by the enclosing path; leaving a higher soft limit does not
+        # weaken signed-app evidence.
+        pass
+
+
 def _open_watched(paths: Iterable[Path], backend: EventBackend) -> tuple[tuple[int, Path], ...]:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     opened: list[tuple[int, Path]] = []
@@ -300,10 +342,26 @@ def _stop_process(process: subprocess.Popen[bytes] | subprocess.Popen[str]) -> N
         process.wait(timeout=5)
 
 
+def _validated_pass_fds(pass_fds: Sequence[int]) -> tuple[int, ...]:
+    result: list[int] = []
+    for raw in pass_fds:
+        descriptor = int(raw)
+        if descriptor < 3:
+            raise InstallGuardError("guarded verifier descriptors must not replace stdin/stdout/stderr")
+        try:
+            os.fstat(descriptor)
+        except OSError as error:
+            raise InstallGuardError(f"requested verifier descriptor is not open: {descriptor}") from error
+        if descriptor not in result:
+            result.append(descriptor)
+    return tuple(result)
+
+
 def run_guarded_command(
     app: Path,
     command: Sequence[str],
     *,
+    pass_fds: Sequence[int] = (),
     backend_factory: Callable[[], EventBackend] = KqueueVnodeBackend,
     popen_factory: Callable[..., subprocess.Popen] = subprocess.Popen,
     poll_interval: float = 0.05,
@@ -311,14 +369,17 @@ def run_guarded_command(
     if not command:
         raise InstallGuardError("no signed-app verification/install command was supplied")
 
+    inherited = _validated_pass_fds(pass_fds)
     app = Path(os.path.abspath(os.fspath(app)))
     initial_subject = bundle_subject(app)
     initial_root = _identity(app.lstat())
+    paths = watch_paths(app)
+    original_limits = _ensure_descriptor_budget(len(paths) + len(inherited))
     backend = backend_factory()
     watched: tuple[tuple[int, Path], ...] = ()
     process: subprocess.Popen | None = None
     try:
-        watched = _open_watched(watch_paths(app), backend)
+        watched = _open_watched(paths, backend)
         armed_subject = bundle_subject(app)
         if armed_subject != initial_subject or _identity(app.lstat()) != initial_root:
             raise InstallGuardError("signed app changed while install-window custody was armed")
@@ -329,7 +390,7 @@ def run_guarded_command(
                 + _describe_events(queued, watched)
             )
 
-        process = popen_factory(list(command))
+        process = popen_factory(list(command), pass_fds=inherited)
         while process.poll() is None:
             events = backend.events(poll_interval)
             if events:
@@ -363,25 +424,27 @@ def run_guarded_command(
             except OSError:
                 pass
         backend.close()
+        _restore_descriptor_budget(original_limits)
 
 
-def _parse_args(argv: Sequence[str]) -> tuple[Path, list[str]]:
+def _parse_args(argv: Sequence[str]) -> tuple[Path, tuple[int, ...], list[str]]:
     parser = argparse.ArgumentParser(
         description="Keep one signed Capture.app stable while a child verifies and installs it."
     )
     parser.add_argument("--app", required=True, type=Path)
+    parser.add_argument("--pass-fd", action="append", type=int, default=[])
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(list(argv))
     command = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
-    return args.app, command
+    return args.app, tuple(args.pass_fd), command
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
-        app, command = _parse_args(sys.argv[1:] if argv is None else argv)
-        return run_guarded_command(app, command)
+        app, pass_fds, command = _parse_args(sys.argv[1:] if argv is None else argv)
+        return run_guarded_command(app, command, pass_fds=pass_fds)
     except InstallGuardError as error:
         print(f"ERROR: signed-app install custody rejected candidate: {error}", file=sys.stderr)
         return 76
