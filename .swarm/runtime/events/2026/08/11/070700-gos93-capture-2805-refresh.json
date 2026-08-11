@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070700-gos93-capture-2805-refresh",
+  "type": "FINDING",
+  "workerId": "sol-20260811-gos93",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Refresh after #2805 advanced again: exact current head is f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf. Generated __pycache__ residue is now removed and exact-head Helper Execution Custody, Private Review Commitment, CocoaPods Build Subject Authority, and Field Build Provenance are terminal SUCCESS; Main Selective Graft remains in progress and Xcode is SKIPPED while draft. The separately reported build-side execution-authority seam persists unchanged at this exact head: capture_tuya_private_input_build_guard.py still import-executes capture_tuya_private_input_provenance.py and capture_cocoapods_generated_build_subject.py through _load_neighbor_module() from mutable sibling worktree paths before admission. Do not discard the seam finding because of the #2805 cleanup/greens. PHYSICAL remains NO-GO.",
+  "createdAt": "2026-08-11T07:07:00Z",
+  "data": {
+    "pr": 2805,
+    "exactHead": "f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf",
+    "helperExecutionGate": "SUCCESS",
+    "privateCommitmentGate": "SUCCESS",
+    "cocoaPodsAuthorityGate": "SUCCESS",
+    "fieldProvenanceGate": "SUCCESS",
+    "selectiveGraftGate": "IN_PROGRESS",
+    "xcodeGate": "SKIPPED_DRAFT",
+    "pycacheResidue": "REMOVED",
+    "buildSideHelperExecutionSeam": "PERSISTS",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
