@@ -24,6 +24,7 @@ struct NembraCaptureApp: App {
 private struct CaptureP0Root: View {
     @StateObject private var tuya = TuyaAccountBridge()
     @State private var showEngineeringDetails = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         NavigationStack {
@@ -39,23 +40,25 @@ private struct CaptureP0Root: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("NEMBRA CAPTURE")
-                                .font(.caption2.bold())
-                                .tracking(1.5)
-                                .foregroundStyle(.cyan)
+                        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 5 : 8) {
+                            if !dynamicTypeSize.isAccessibilitySize {
+                                Text("NEMBRA CAPTURE")
+                                    .font(.caption2.bold())
+                                    .tracking(1.5)
+                                    .foregroundStyle(.cyan)
+                            }
                             Text("Prepare the scooter link")
-                                .font(.largeTitle.bold())
-                            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                                .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+                                .accessibilityAddTraits(.isHeader)
+                            if !dynamicTypeSize.isAccessibilitySize {
+                                setupContextText
+                            }
                         }
 
                         rootPanel {
-                            VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 10 : 14) {
                                 Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
-                                    .font(.title3.bold())
+                                    .font(dynamicTypeSize.isAccessibilitySize ? .headline.bold() : .title3.bold())
                                     .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
                                 Text(tuya.statusMessage)
                                     .font(.footnote)
@@ -93,6 +96,10 @@ private struct CaptureP0Root: View {
                                         .buttonStyle(.bordered)
                                 }
                             }
+                        }
+
+                        if dynamicTypeSize.isAccessibilitySize {
+                            setupContextText
                         }
 
                         if tuya.isLinked {
@@ -183,10 +190,17 @@ private struct CaptureP0Root: View {
         }
     }
 
+    private var setupContextText: some View {
+        Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     @ViewBuilder
     private func rootPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(18)
+            .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
