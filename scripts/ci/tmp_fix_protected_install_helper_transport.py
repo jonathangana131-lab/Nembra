@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
+# Temporary self-deleting materializer. The workflow validates the resulting permanent files.
 INSTALLER = Path("scripts/field/install_one_time_capture.command")
 TEST = Path("scripts/ci/tests/test_capture_signed_app_install_custody.py")
 
@@ -13,21 +14,22 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 source = INSTALLER.read_text(encoding="utf-8")
-old = '''SIGNED_APP_CUSTODY_HELPER_SOURCE="$(
-    /usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" || exit 1
-    printf '
-'
-)" || die "Could not capture signed-app custody helper from the accepted Git object."
-[[ "${SIGNED_APP_CUSTODY_HELPER_SOURCE: -1}" == $'
-' ]] || die "Signed-app custody helper capture sentinel is missing."
-SIGNED_APP_CUSTODY_HELPER_SOURCE="${SIGNED_APP_CUSTODY_HELPER_SOURCE%$'
-'}"
-[[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_SOURCE" | /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \\
-    die "Captured signed-app custody helper bytes do not match the accepted Git blob."
-SOURCE_APP_TREE_SHA256="$(/usr/bin/python3 -I -c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" fingerprint --app "$APP")" || \\
-    die "Could not bind the exact post-build signed-app tree before protected staging."
-'''
-new = '''SIGNED_APP_CUSTODY_HELPER_BASE64="$(/usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" | /usr/bin/base64)" || \\
+section_start = 'SIGNED_APP_CUSTODY_HELPER_SOURCE="$(\n'
+section_end = '    die "Could not bind the exact post-build signed-app tree before protected staging."\n'
+if source.count(section_start) != 1 or source.count(section_end) != 1:
+    raise SystemExit("raw helper transport section markers are not unique")
+start = source.index(section_start)
+end = source.index(section_end, start) + len(section_end)
+old_section = source[start:end]
+required_fragments = (
+    '/usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"',
+    'SIGNED_APP_CUSTODY_HELPER_SOURCE=',
+    '/usr/bin/git hash-object --stdin',
+    '/usr/bin/python3 -I -c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" fingerprint --app "$APP"',
+)
+if any(fragment not in old_section for fragment in required_fragments):
+    raise SystemExit("raw helper transport section no longer matches the reviewed vulnerable shape")
+new_section = '''SIGNED_APP_CUSTODY_HELPER_BASE64="$(/usr/bin/git cat-file blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" | /usr/bin/base64)" || \\
     die "Could not capture signed-app custody helper from the accepted Git object."
 [[ -n "$SIGNED_APP_CUSTODY_HELPER_BASE64" ]] || die "Captured signed-app custody helper is empty."
 [[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \\
@@ -35,7 +37,7 @@ new = '''SIGNED_APP_CUSTODY_HELPER_BASE64="$(/usr/bin/git cat-file blob "$SIGNED
 SOURCE_APP_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/python3 -I - fingerprint --app "$APP")" || \\
     die "Could not bind the exact post-build signed-app tree before protected staging."
 '''
-source = replace_once(source, old, new, "raw helper transport")
+source = source[:start] + new_section + source[end:]
 source = replace_once(
     source,
     '''STAGED_APP_TREE_SHA256="$(/usr/bin/python3 -I -c "$SIGNED_APP_CUSTODY_HELPER_SOURCE" verify-stage \\
