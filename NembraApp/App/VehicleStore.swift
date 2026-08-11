@@ -322,6 +322,12 @@ final class VehicleStore {
     /// promotes this value by itself.
     private(set) var speedEvidenceAvailability: SpeedEvidenceAvailability = .unavailable
 
+    /// Exact source-sealed Simulator power currentness most recently re-snapshotted
+    /// from the admitted Simulator source actor. Dashboard may pass this object into
+    /// NembraCore because callers can inspect it but cannot construct positive states.
+    /// Store lifecycle fencing remains a separate negative-only projection below.
+    private(set) var simulatorPowerSourceAvailability: SimulatorPowerEvidenceAvailability = .unavailable
+
     /// Persistent app-session custody for Simulator power. Unlike the previous
     /// read-time join, this remembers negative receipt fences across disconnect /
     /// reconnect so an old authentic LIVE receipt cannot be replayed as current.
@@ -580,6 +586,7 @@ final class VehicleStore {
                     // chronology. Aggregate connection is a negative veto only.
                     let current = await simulatorPowerEvidenceProvider.simulatorPowerEvidenceSnapshot()
                     guard !Task.isCancelled else { return }
+                    self.simulatorPowerSourceAvailability = current
                     self.simulatorPowerStoreAuthority.applySource(
                         current,
                         transportIsConnected: self.state.connection == .connected
@@ -587,9 +594,11 @@ final class VehicleStore {
                 }
 
                 guard let self, !Task.isCancelled else { return }
+                self.simulatorPowerSourceAvailability = .unavailable
                 self.simulatorPowerStoreAuthority.sourceBecameUnavailable()
             }
         } else {
+            simulatorPowerSourceAvailability = .unavailable
             simulatorPowerStoreAuthority.sourceBecameUnavailable()
         }
 
