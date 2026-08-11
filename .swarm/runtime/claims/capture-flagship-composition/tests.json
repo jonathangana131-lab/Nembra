@@ -9,13 +9,13 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:32:30Z",
-  "lastHeartbeatAt": "2026-08-11T20:32:30Z",
+  "lastHeartbeatAt": "2026-08-11T20:33:39Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-capture-first-fold-voiceover-contract-sol-a91c7e-20260811",
-  "pr": null,
+  "pr": 2990,
   "sourceSHA": "c8ead84fe8df4effca2a3b3d0061a1f491665aba",
-  "currentHeadSHA": "c8ead84fe8df4effca2a3b3d0061a1f491665aba",
+  "currentHeadSHA": "96ef1bc5a7ed31e0c32de91d0280870bce8ccd9f",
   "takeoverFromWorkerId": "sol-20260811-4c47a9",
-  "takeoverReason": "Generation-2 tests lease expired many hours ago and still targets obsolete runtime VoiceOver #2970 while that subline now has separate active review on #2975. Current flagship primary #2979 introduces Localizable.strings sighted-copy compaction. Source audit shows the localized long hero warning is a plain Text with no explicit nonlocalized spoken label, so normal-size VoiceOver would consume the compact localized value too. Recover tests slot only for an independent expected-red source contract on a new test path; do not touch primary-owned app/project/resource/current copy test files. PHYSICAL NO-GO.",
-  "intent": "Add a narrow test-only diagnostic proving localized visual compaction cannot silently compact the spoken physical-lock authority warning. Keep product bytes unchanged and publish expected-red evidence for #2979."
+  "checkpoint": "Expected-red PR #2990 exact 96ef1bc5 adds exactly one new NembraBluetoothCapture test source over #2979 c8ead84f. The test requires sighted Localizable.strings compaction to be paired with an explicit nonlocalized spoken accessibility semantic retaining Bluetooth/physical-evidence/lock/build/scooter/authority concepts. Product bytes unchanged. Exact PR workflows started; waiting only to classify intended test result, not for physical authority.",
+  "intent": "Validate #2990 fails for the intended missing spoken-authority override, hand exact witness to #2979 primary, and release without merging diagnostic. PHYSICAL NO-GO."
 }
