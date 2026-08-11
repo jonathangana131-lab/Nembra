@@ -7,6 +7,7 @@ TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
+COCOAPODS_BUILD_SUBJECT_HELPER="$SCRIPT_DIR/capture_cocoapods_build_subject.py"
 REVIEW_ONLY=0
 if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
   REVIEW_ONLY=1
@@ -25,9 +26,16 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
     exit 1
   }
   ACCEPTED_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
+  : "${NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 to the preaccepted 64-hex generated CocoaPods build-subject SHA-256 before field bootstrap.}"
+  [[ "$NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 must be exactly 64 hex characters." >&2
+    exit 1
+  }
+  ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" | tr '[:upper:]' '[:lower:]')"
 else
-  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 || true
   ACCEPTED_LOCK_SHA256=""
+  ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256=""
 fi
 
 if ! command -v pod >/dev/null 2>&1; then
@@ -58,6 +66,11 @@ fi
 
 if [[ ! -f "$PROVENANCE_HELPER" ]]; then
   echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
+  exit 6
+fi
+
+if [[ ! -f "$COCOAPODS_BUILD_SUBJECT_HELPER" ]]; then
+  echo "ERROR: CocoaPods generated-build subject helper is missing from the accepted source." >&2
   exit 6
 fi
 
@@ -97,6 +110,23 @@ only beneath ignored LocalSecrets/TuyaRuntime as a local Swift pod. The values
 must not be passed through xcodebuild/devicectl arguments or committed to Git.
 EOF
   exit 8
+fi
+
+if [[ "$REVIEW_ONLY" == "0" ]]; then
+  [[ -f Podfile.lock ]] || {
+    echo "ERROR: normal field bootstrap requires the reviewed Podfile.lock to already exist before CocoaPods starts. Run --resolve-lock-for-review first, review that exact lock, then retry from the unchanged workspace." >&2
+    exit 16
+  }
+  PRE_COCOAPODS_LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+  [[ "$PRE_COCOAPODS_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "ERROR: could not compute the pre-CocoaPods Podfile.lock SHA-256." >&2
+    exit 16
+  }
+  [[ "$PRE_COCOAPODS_LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]] || {
+    echo "ERROR: on-disk Podfile.lock does not match the preaccepted dependency lock before CocoaPods. Refusing to run the generator." >&2
+    exit 16
+  }
+  printf 'Preaccepted Tuya dependency lock matched before CocoaPods: %s\n' "$PRE_COCOAPODS_LOCK_SHA256"
 fi
 
 printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
@@ -154,18 +184,33 @@ LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[
   exit 15
 }
 
+if ! COCOAPODS_BUILD_SUBJECT_SHA256="$(/usr/bin/python3 -I "$COCOAPODS_BUILD_SUBJECT_HELPER" \
+  --lockfile "$REPO_ROOT/Podfile.lock" \
+  --pods "$REPO_ROOT/Pods" \
+  --workspace "$REPO_ROOT/NembraCapture.xcworkspace")"
+then
+  echo "ERROR: exact generated CocoaPods build subject could not be fingerprinted." >&2
+  exit 17
+fi
+[[ "$COCOAPODS_BUILD_SUBJECT_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "ERROR: generated CocoaPods build-subject fingerprint is malformed." >&2
+  exit 17
+}
+
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   cat <<EOF
 
-DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
+DEPENDENCY BUILD SUBJECT CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
   Podfile.lock SHA-256: $LOCK_SHA256
+  CocoaPods generated build subject SHA-256: $COCOAPODS_BUILD_SUBJECT_SHA256
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
 
-Review and bind this exact dependency-lock digest to the exact accepted Capture
-source through the current Final-GO control plane before any field build/install.
-Then rerun the normal bootstrap/installer with that accepted digest supplied as
-NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256. This review-only mode never invokes
-xcodebuild, installs Nembra, scans Bluetooth, or authorizes a physical attempt.
+Review and bind both this exact dependency-lock digest and generated CocoaPods
+build-subject digest to the exact accepted Capture source before any field build/install.
+Then rerun normal bootstrap with both reviewed values supplied as
+NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 and
+NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256. This review-only mode never
+invokes xcodebuild, installs Nembra, scans Bluetooth, or authorizes a physical attempt.
 EOF
   exit 0
 fi
@@ -174,8 +219,13 @@ fi
   echo "ERROR: resolved Podfile.lock does not match the preaccepted dependency-lock SHA-256. Stop before xcodebuild/install and review the new dependency subject." >&2
   exit 16
 }
+[[ "$COCOAPODS_BUILD_SUBJECT_SHA256" == "$ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256" ]] || {
+  echo "ERROR: generated CocoaPods build subject does not match the preaccepted build-subject SHA-256. Stop before xcodebuild/install and review the new generated build subject." >&2
+  exit 18
+}
 printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
-unset ACCEPTED_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+printf 'Preaccepted generated CocoaPods build subject matched: %s\n' "$COCOAPODS_BUILD_SUBJECT_SHA256"
+unset ACCEPTED_LOCK_SHA256 ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256 || true
 
 cat <<EOF
 
@@ -184,6 +234,7 @@ ThingSmartCryption package and local-only app identity pod.
 
 Resolved dependency provenance:
   Podfile.lock SHA-256: $LOCK_SHA256
+  CocoaPods generated build subject SHA-256: $COCOAPODS_BUILD_SUBJECT_SHA256
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
 
 NEXT BUILD RULE:
