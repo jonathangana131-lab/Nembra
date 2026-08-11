@@ -130,13 +130,25 @@ def _is_canonical_private_stage_name(name: str) -> bool:
 
 
 def _recover_private_stage_residue(checkout_fd: int) -> None:
-    """Remove only exact writer-owned crash residue; reject every ambiguous alias."""
+    """Logically sanitize exact admitted crash residue; never unlink by mutable name.
+
+    POSIX does not provide an atomic compare-and-unlink primitive that can say
+    "remove this pathname only if it still names this already-open inode". A
+    same-UID actor can therefore replace a name between any user-space identity
+    check and pathname unlink. Recovery deliberately performs the destructive
+    operation only through the already-admitted descriptor: credential bytes
+    are truncated from that exact inode and fsynced. The zero-length tombstone
+    is left in place and provisioning fails closed so an operator can remove it
+    in a quiescent trusted context. This is logical retained-byte cleanup only;
+    it is not a claim of secure physical-media erasure.
+    """
     try:
         entries = os.listdir(checkout_fd)
     except OSError as exc:
         raise ProvisionError("could not inspect private identity staging namespace") from exc
 
     reserved = sorted(name for name in entries if name.startswith(_PRIVATE_STAGE_PREFIX))
+    sanitized: list[str] = []
     for name in reserved:
         if not _is_canonical_private_stage_name(name):
             raise ProvisionError("reserved private identity staging namespace contains a non-writer entry")
@@ -161,7 +173,7 @@ def _recover_private_stage_residue(checkout_fd: int) -> None:
         try:
             descriptor = os.open(
                 name,
-                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
                 dir_fd=checkout_fd,
             )
             held = os.fstat(descriptor)
@@ -181,18 +193,48 @@ def _recover_private_stage_residue(checkout_fd: int) -> None:
             ):
                 raise ProvisionError("reserved private identity staging entry changed during recovery admission")
 
-            os.unlink(name, dir_fd=checkout_fd)
-            after_unlink = os.fstat(descriptor)
-            if after_unlink.st_dev != held.st_dev or after_unlink.st_ino != held.st_ino or after_unlink.st_nlink != 0:
-                raise ProvisionError("reserved private identity staging name changed during recovery removal")
+            os.ftruncate(descriptor, 0)
+            os.fsync(descriptor)
+            after_sanitize = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(after_sanitize.st_mode)
+                or after_sanitize.st_uid != held.st_uid
+                or stat.S_IMODE(after_sanitize.st_mode) != 0o600
+                or after_sanitize.st_dev != held.st_dev
+                or after_sanitize.st_ino != held.st_ino
+                or after_sanitize.st_nlink < 1
+                or after_sanitize.st_size != 0
+            ):
+                raise ProvisionError("private identity staging descriptor changed during recovery sanitization")
+
+            try:
+                rebound = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+            except OSError as exc:
+                raise ProvisionError("private identity staging name changed during recovery sanitization") from exc
+            if (
+                not stat.S_ISREG(rebound.st_mode)
+                or rebound.st_uid != after_sanitize.st_uid
+                or rebound.st_nlink != after_sanitize.st_nlink
+                or stat.S_IMODE(rebound.st_mode) != 0o600
+                or rebound.st_dev != after_sanitize.st_dev
+                or rebound.st_ino != after_sanitize.st_ino
+                or rebound.st_size != 0
+            ):
+                raise ProvisionError("private identity staging name changed during recovery sanitization")
             os.fsync(checkout_fd)
+            sanitized.append(name)
         except ProvisionError:
             raise
         except OSError as exc:
-            raise ProvisionError("could not safely remove writer-owned private identity crash residue") from exc
+            raise ProvisionError("could not safely sanitize writer-owned private identity crash residue") from exc
         finally:
             if descriptor >= 0:
                 os.close(descriptor)
+
+    if sanitized:
+        raise ProvisionError(
+            "private identity crash residue was descriptor-sanitized; remove the zero-length reserved tombstone in a trusted quiescent checkout and retry"
+        )
 
     try:
         leftovers = sorted(

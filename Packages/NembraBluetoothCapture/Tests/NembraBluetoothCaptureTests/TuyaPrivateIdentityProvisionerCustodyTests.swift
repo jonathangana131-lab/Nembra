@@ -179,7 +179,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"a49c6fbe38eabe4983875e2291ce97911ba82d4c4ccfe7c8d7b69ade61edeaf1\""))
+        #expect(shell.contains("WRITER_SHA256=\"f5a07089d64dec29f02c5d15e87abfddf8a1374a2e70c6ee47d3bf48fbbe6d02\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
@@ -198,6 +198,9 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("O_DIRECTORY"))
         #expect(writer.contains("O_EXCL"))
         #expect(writer.contains("_recover_private_stage_residue"))
+        #expect(writer.contains("os.ftruncate(descriptor, 0)"))
+        #expect(writer.contains("private identity staging descriptor changed during recovery sanitization"))
+        #expect(writer.contains("remove the zero-length reserved tombstone in a trusted quiescent checkout and retry"))
         #expect(writer.contains("_is_canonical_private_stage_name"))
         #expect(writer.contains("_PRIVATE_STAGE_PREFIX"))
         #expect(writer.contains("_require_descriptor_payload"))

@@ -129,10 +129,10 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
             self.assertEqual(orphan.read_bytes(), crashed_payload)
 
             # A later writer invocation is the first deterministic recovery
-            # opportunity after SIGKILL/power-loss. It may recover or fail
-            # closed, but it must not leave the prior known writer-shaped
-            # credential bytes hidden under the ignored reserved prefix.
-            run_recovery_invocation(writer, checkout)
+            # opportunity after SIGKILL/power-loss. It must sanitize the exact
+            # admitted inode through its held descriptor, then fail closed with
+            # an explicit zero-length tombstone rather than pathname-unlinking.
+            self.assertTrue(run_recovery_invocation(writer, checkout))
 
             residual_entries = sorted(checkout.glob(f"{RESERVED_PREFIX}*"))
             residual_payloads = []
@@ -149,10 +149,18 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
                 "recovery left credential-bearing hard-exit staging bytes hidden under the ignored root pattern",
             )
             self.assertEqual(
-                residual_entries,
-                [],
-                "recovery left writer-owned .nembra-private-stage-* crash residue in the checkout root",
+                len(residual_entries),
+                1,
+                "descriptor-bound recovery should retain exactly one explicit zero-length tombstone",
             )
+            tombstone = residual_entries[0]
+            tombstone_metadata = tombstone.lstat()
+            self.assertTrue(stat.S_ISREG(tombstone_metadata.st_mode))
+            self.assertEqual(tombstone_metadata.st_uid, os.geteuid())
+            self.assertEqual(tombstone_metadata.st_nlink, 1)
+            self.assertEqual(stat.S_IMODE(tombstone_metadata.st_mode), 0o600)
+            self.assertEqual(tombstone_metadata.st_size, 0)
+            self.assertEqual(tombstone.read_bytes(), b"")
 
     def test_recovery_cannot_follow_or_silently_ignore_reserved_symlink(self) -> None:
         writer = load_writer()
