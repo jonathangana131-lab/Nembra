@@ -1,0 +1,54 @@
+name: Capture Field Packed Blob Witness R2
+
+on:
+  push:
+    branches:
+      - validation/v14-field-packed-blob-witness-r2-sol-20260811
+    paths:
+      - scripts/ci/tests/test_capture_field_git_packed_blob_execution_witness_r2.py
+      - .github/workflows/capture-field-packed-blob-witness-r2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  corrected-witness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/v14-field-packed-blob-witness-r2-sol-20260811
+          fetch-depth: 0
+
+      - name: Bind validation child to untouched #2907
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD d0b134ca2a49edc029f114660dfb8e216ece682e)" = "d0b134ca2a49edc029f114660dfb8e216ece682e"
+          git diff --check d0b134ca2a49edc029f114660dfb8e216ece682e..HEAD
+
+      - name: Prove corrected stock-Git leaf-blob alias premise
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_git_packed_blob_execution_witness_r2.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_git_packed_blob_execution_witness_r2.py
+
+      - name: Prove untouched #2907 still streams returned Git bytes to interpreters
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/field/install_one_time_capture.command').read_text(encoding='utf-8')
+          required = (
+              'run_authority_git show "$SOURCE_SHA:$relative_path" |',
+              'run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py" |',
+          )
+          for needle in required:
+              if needle not in source:
+                  raise SystemExit(f'untouched #2907 no longer exposes expected direct stream: {needle}')
+          print('corrected leaf-blob primitive is paired with both untouched #2907 direct interpreter streams')
+          PY
