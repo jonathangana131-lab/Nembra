@@ -90,7 +90,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
     def test_supervisor_orders_revocation_build_lock_fingerprint_and_stage(self) -> None:
         source = ORIGIN_HELPER.read_text(encoding="utf-8")
         markers = {
-            "sudo_revoke": "_invalidate_invoker_sudo(uid, gid, child_env)",
+            "sudo_revoke": "_invalidate_invoker_sudo(uid, gid, invoking_groups, child_env)",
             "prepare": "derived_root = _prepare_derived(private_tmp, capability_gid)",
             "spawn": "process = subprocess.Popen(",
             "retire": "_terminate_remaining_process_group(process.pid)",
@@ -120,9 +120,9 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
 
         self.assertIn("os.chown(derived, 0, capability_gid)", source)
         self.assertIn("os.chmod(derived, 0o770)", source)
+        self.assertIn("credentials = _structured_credentials(uid, gid, groups)", source)
         self.assertIn("child_groups = (capability_gid,)", source)
         self.assertIn("**_structured_credentials(uid, gid, child_groups)", source)
-        self.assertIn("credentials = _structured_credentials(uid, gid, ())", source)
         self.assertNotIn("preexec_fn=", source)
         self.assertIn('["/usr/bin/sudo", "-K"]', source)
         self.assertIn('["/usr/bin/sudo", "-n", "/usr/bin/true"]', source)
@@ -164,7 +164,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertNotIn(selected, occupied)
         self.assertNotIn(selected, invoking)
 
-    def test_structured_credentials_keep_only_explicit_supplementary_authority(self) -> None:
+    def test_structured_credentials_preserve_explicit_authority_without_primary_duplication(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_credentials")
         capability_gid = (1 << 29) + 12345
         self.assertEqual(
@@ -173,6 +173,14 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
                 "user": 501,
                 "group": 20,
                 "extra_groups": [capability_gid],
+            },
+        )
+        self.assertEqual(
+            helper._structured_credentials(501, 20, (20, 80, 701, 80)),
+            {
+                "user": 501,
+                "group": 20,
+                "extra_groups": [80, 701],
             },
         )
         self.assertEqual(
@@ -226,7 +234,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         derived = helper._prepare_derived(helper._require_real_private_tmp(), capability_gid)
         target = derived / "proof.txt"
         try:
-            normal_credentials = helper._structured_credentials(uid, gid, ())
+            normal_credentials = helper._structured_credentials(uid, gid, groups)
             capability_credentials = helper._structured_credentials(uid, gid, (capability_gid,))
 
             denied = subprocess.run(
