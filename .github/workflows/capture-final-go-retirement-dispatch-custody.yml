@@ -7,11 +7,13 @@ on:
     paths:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+      - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
   pull_request:
     paths:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+      - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
   workflow_dispatch:
 
@@ -34,7 +36,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Bind exact current Final-GO parent and three-path repair
+      - name: Bind exact current Final-GO parent and four-path repair
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -44,6 +46,7 @@ jobs:
           git merge-base --is-ancestor "$EXACT_PARENT" HEAD
           mapfile -t changed < <(git diff --name-only "$EXACT_PARENT" HEAD | LC_ALL=C sort)
           expected=(
+            .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
             .github/workflows/capture-final-go-retirement-dispatch-custody.yml
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py
             scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
