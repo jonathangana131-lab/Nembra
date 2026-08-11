@@ -1,0 +1,78 @@
+name: Capture Final GO 3034 macOS Loop Replay
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_es80_final_go_whole_tree_3034_replay.py
+      - .github/workflows/capture-final-go-3034-macos-loop-replay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    name: Replay #3030 and field-input custody (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact validation child to #3034
+        shell: bash
+        env:
+          REPAIR_PARENT: 2248cc8d2b616952499cd024a3524a9a3780d2d7
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${REPAIR_PARENT}^{commit}"
+          changed_paths="$(git diff --name-only "$REPAIR_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-final-go-3034-macos-loop-replay.yml' \
+            'scripts/ci/tests/test_es80_final_go_whole_tree_3034_replay.py')"
+          test "$changed_paths" = "$expected_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile validation source without cache artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tests/test_es80_final_go_whole_tree_3034_replay.py')
+          compile(path.read_text(encoding='utf-8'), str(path), 'exec')
+          subject = Path('scripts/ci/es80_authenticated_stationary_private_review_final_go_whole_tree.py')
+          compile(subject.read_text(encoding='utf-8'), str(subject), 'exec')
+          PY
+
+      - name: Replay finite-loop and field-input mutation
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tests/test_es80_final_go_whole_tree_3034_replay.py
+
+      - name: Preserve exact validation hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'Production repair parent: 2248cc8d2b616952499cd024a3524a9a3780d2d7\n'
+          printf 'This job validates kernel mutation custody only; it performs no credential, Xcode device, Bluetooth/Tuya, install, launch, or physical action.\n'
