@@ -292,53 +292,48 @@ final class NembraAppTests: XCTestCase {
     }
 }
 
-/// V14 app-visible Experiment One authority regression. These source checks intentionally live in
-/// the already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
+/// V14 standalone Capture authority regression. These source checks intentionally live in the
+/// already-wired NembraAppTests compilation unit; they prove product wiring shape only, never
 /// physical scooter identity or runtime BLE behavior.
 extension NembraAppTests {
     func testCaptureShellUsesBoundedPresentationPolling() {
         XCTAssertEqual(ES80CaptureRefreshPolicy.statusPollInterval, 0.5)
     }
 
-    @MainActor
-    func testSignedFieldRecipeRoutesHomeScreenLaunchIntoCapture() {
-        let mode = NembraApp.resolveLaunchMode(
-            arguments: ["Nembra"],
-            environment: [:],
-            infoDictionary: [
-                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v1"
-            ]
-        )
-        XCTAssertEqual(mode, .es80PassiveCapture)
-    }
-
-    @MainActor
-    func testUnknownFieldRecipeDoesNotRouteIntoCapture() {
-        let mode = NembraApp.resolveLaunchMode(
-            arguments: ["Nembra"],
-            environment: [:],
-            infoDictionary: [
-                NembraApp.captureFieldRecipeInfoPlistKey: "ES80-FINGERPRINT-v999"
-            ]
-        )
-        XCTAssertEqual(mode, .standard)
-    }
-
-    func testCaptureFieldLaunchUsesPackageOwnedExperimentOneCoordinator() throws {
+    func testPhysicalCaptureLaunchIsOwnedByDedicatedTarget() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let app = try String(
-            contentsOf: root.appendingPathComponent("NembraApp/App/NembraApp.swift"),
+        let project = try String(
+            contentsOf: root.appendingPathComponent("NembraCapture.xcodeproj/project.pbxproj"),
             encoding: .utf8
         )
-        XCTAssertTrue(app.contains("PassiveBluetoothExperimentOneCoordinator"))
-        XCTAssertFalse(app.contains("try? ForegroundCoreBluetoothCaptureController("))
-        XCTAssertTrue(
-            app.contains("onFreshExperimentRequested: makeFreshExperimentCoordinator"),
-            "Fresh Experiment One must return through parent-owned stationary preflight."
+        let entrypoint = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"),
+            encoding: .utf8
         )
-        XCTAssertTrue(app.contains("selectedChargerState = nil"))
-        XCTAssertTrue(app.contains("disconnectedDeclarationAccepted = false"))
+
+        XCTAssertTrue(project.contains("NembraCaptureEntrypoint.swift in Sources"))
+        XCTAssertTrue(project.contains("ES80CaptureShellView.swift in Sources"))
+        XCTAssertFalse(project.contains("NembraApp.swift in Sources"))
+        XCTAssertTrue(entrypoint.contains("@main @MainActor\nstruct NembraCaptureApp: App"))
+        XCTAssertTrue(entrypoint.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        XCTAssertTrue(entrypoint.contains("guard buildIdentity.isAuthoritativeFieldBuild else"))
+    }
+
+    func testDedicatedCaptureEntrypointOwnsCurrentCorrelationAuthority() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let entrypoint = try String(
+            contentsOf: root.appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(entrypoint.contains("verifySDKMembership"))
+        XCTAssertTrue(entrypoint.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        XCTAssertTrue(entrypoint.contains("OfficialTuyaFactory.acquirePackageCorrelationLease()"))
+        XCTAssertTrue(entrypoint.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
+        XCTAssertFalse(entrypoint.contains("makeResearchAuthorizedES80ForCurrentApplication()"))
+        XCTAssertFalse(entrypoint.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
     }
 
     func testCaptureShellContinuesSameAuthorityThroughFinalShareIntegrity() throws {
