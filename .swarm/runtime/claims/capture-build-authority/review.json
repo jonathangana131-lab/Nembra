@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-a91c7e",
   "leaseId": "capture-build-review-a91c7e-20260811-2038",
   "generation": 7,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:38:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:38:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:42:20Z",
+  "releasedAt": "2026-08-11T20:42:20Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2988,
   "sourceSHA": "947f592239a800f636e0626b2a0b9233ccbac38d",
   "currentHeadSHA": "cdd12ebc4a8603d4cf8cf28a3520c518fb9cd504",
   "takeoverFromWorkerId": "sol-20260811-1316vk",
-  "takeoverReason": "Generation-6 review released with NEEDS_CHANGES on obsolete repair head 22b08488 after proving the materializer never published installer bytes and the first regression regex could not match fail-closed assignments. Active primary has since materialized a durable repair and advanced to PR #2988 exact cdd12ebc, with the exact selected-tool custody gate green and inherited contracts updated. Independently review this moved exact head; do not touch implementation paths. Verify exact executable leaf custody, resolution-before-use ordering, no later raw xcrun authority, version interrogation on the exact subject, test fidelity, construction residue removal, and physical NO-GO.",
-  "intent": "Adversarial exact-head source/gate review of PR #2988 cdd12ebc; publish acceptance or actionable blocker, release, then refresh Capture."
+  "outcome": "SOURCE_ACCEPTED_WAITING_BROADER_GATES",
+  "reviewId": 4910564121,
+  "releaseReason": "Exact moved #2988 source closes the predecessor's materialization/regex defects: durable installer now resolves exact xcodebuild/xctrace/devicectl from the admitted tree, applies real regular-file root/nonwritable custody before first use, interrogates exact xcodebuild, and removes later raw xcrun device execution. Permanent selected-tool gate 31533711990/job 93919647508 and a broad set of inherited authority gates are terminal green on cdd12ebc. Field Build Provenance 31533711807, Main Selective Graft 31533711859, and Tracked Source Window 31533711806 remain queued/nonterminal, so full exact-head acceptance is not promoted. Review 4910564121 published. PHYSICAL NO-GO."
 }
