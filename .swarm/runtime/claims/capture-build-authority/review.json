@@ -9,12 +9,12 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:59:00Z",
-  "lastHeartbeatAt": "2026-08-11T13:07:00Z",
+  "lastHeartbeatAt": "2026-08-11T13:10:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2966,
-  "sourceSHA": "6dc67baec2377f95a189411715e072b6d83dc409",
-  "currentHeadSHA": "6dc67baec2377f95a189411715e072b6d83dc409",
+  "sourceSHA": "ffba4e252b1be3bbe50c881538a02f0b4b9e6786",
+  "currentHeadSHA": "ffba4e252b1be3bbe50c881538a02f0b4b9e6786",
   "takeoverFromWorkerId": "sol-20260811-4747rv",
-  "takeoverReason": "Generation-3 review lease expired. Initial #2924 exact review found no new raw-tree blocker and duplicate independent review already existed, so review gravity followed the live Build critical path to #2966 exact 6dc67bae. Current task: mechanically witness selected Xcode tool-file custody gap identified by exact-head review, without touching the active production installer lineage. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-3 review lease expired. Review gravity follows live Build critical path #2966. Current exact ffba4e25 fixed its Git-authority red gate but still has directory-only selected-Xcode custody: selected xcodebuild is only -f/-x/non-symlink after parent-directory root custody, with no exact executable-file root/nonwritable authority. Create additive current-head red-team witness only; do not touch production installer ownership. PHYSICAL NO-GO."
 }
