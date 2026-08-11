@@ -1,0 +1,180 @@
+name: Capture Root Large Type Materializer
+
+on:
+  push:
+    branches:
+      - visual/v14-capture-root-large-type-hierarchy-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Recompose public lock screen without changing authority
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(label: str, old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "root hero",
+              '''    @ViewBuilder
+              private var rootHero: some View {
+                  VStack(alignment: .leading, spacing: isAccessibilityLayout ? 6 : 8) {
+                      if !dynamicTypeSize.isAccessibilitySize {
+                          Text("NEMBRA CAPTURE")
+                              .font(.caption2.bold())
+                              .tracking(1.5)
+                              .foregroundStyle(.cyan)
+                      }
+
+                      Text(
+                          isAccessibilityLayout
+                              ? (fieldBuildIsAuthoritative ? "Prepare Capture" : "Capture locked")
+                              : "Prepare the scooter link"
+                      )
+                      .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+                      .fixedSize(horizontal: false, vertical: true)
+                      .accessibilityAddTraits(.isHeader)
+
+                      if !isAccessibilityLayout {
+                          Text("Link the account that owns this scooter. Physical Capture still depends on the field-build gate and fresh scooter authority below.")
+                              .font(.body)
+                              .foregroundStyle(Color.white.opacity(0.78))
+                              .fixedSize(horizontal: false, vertical: true)
+                      }
+                  }
+              }
+          ''',
+              '''    @ViewBuilder
+              private var rootHero: some View {
+                  VStack(alignment: .leading, spacing: isAccessibilityLayout ? 4 : 8) {
+                      Text(isAccessibilityLayout ? "Prepare scooter link" : "Prepare the scooter link")
+                          .font(isAccessibilityLayout ? .title2.bold() : .largeTitle.bold())
+                          .fixedSize(horizontal: false, vertical: true)
+                          .accessibilityAddTraits(.isHeader)
+
+                      if !isAccessibilityLayout {
+                          Text("Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified.")
+                              .font(.body)
+                              .foregroundStyle(Color.white.opacity(0.78))
+                              .fixedSize(horizontal: false, vertical: true)
+                      }
+                  }
+              }
+          ''',
+          )
+
+          replace_once(
+              "build authority visible copy",
+              '''                Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
+                              .font(.headline)
+                              .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                              .fixedSize(horizontal: false, vertical: true)
+
+                          if !isAccessibilityLayout {
+                              Text(
+                                  fieldBuildIsAuthoritative
+                                      ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
+                                      : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."
+                              )
+                              .font(.subheadline)
+                              .foregroundStyle(Color.white.opacity(0.76))
+                              .fixedSize(horizontal: false, vertical: true)
+                          }
+          ''',
+              '''                Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
+                              .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)
+                              .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                              .fixedSize(horizontal: false, vertical: true)
+
+                          if !isAccessibilityLayout {
+                              Text(
+                                  fieldBuildIsAuthoritative
+                                      ? "The reviewed build is ready. Account and scooter authority must still be verified before Bluetooth starts."
+                                      : "Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."
+                              )
+                              .font(.subheadline)
+                              .foregroundStyle(Color.white.opacity(0.76))
+                              .fixedSize(horizontal: false, vertical: true)
+                          }
+          ''',
+          )
+
+          replace_once(
+              "compact accessibility authority row",
+              '''        .padding(.vertical, isAccessibilityLayout ? 8 : 12)
+          ''',
+              '''        .padding(.vertical, isAccessibilityLayout ? 4 : 10)
+          ''',
+          )
+
+          replace_once(
+              "account action heading",
+              '''                                : (isAccessibilityLayout ? "Account metadata" : "Prepare account metadata")
+          ''',
+              '''                                : (isAccessibilityLayout ? "Set up account metadata" : "Prepare account metadata")
+          ''',
+          )
+
+          replace_once(
+              "accessibility account footer",
+              '''                    if isAccessibilityLayout {
+                          Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")
+                              .font(.footnote.weight(.semibold))
+                              .foregroundStyle(Color.white.opacity(0.78))
+                              .fixedSize(horizontal: false, vertical: true)
+                          Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
+                              .font(.footnote)
+                              .foregroundStyle(Color.white.opacity(0.72))
+                              .fixedSize(horizontal: false, vertical: true)
+                          statusText
+                      }
+          ''',
+              '''                    if isAccessibilityLayout {
+                          Text(
+                              fieldBuildIsAuthoritative
+                                  ? "Metadata setup only here. Bluetooth stays locked until preflight verifies account and scooter authority."
+                                  : "Metadata setup only. Bluetooth and physical evidence stay locked in this public build."
+                          )
+                          .font(.footnote.weight(.semibold))
+                          .foregroundStyle(Color.white.opacity(0.78))
+                          .fixedSize(horizontal: false, vertical: true)
+
+                          if tuya.phase != .needsUserCode {
+                              statusText
+                          }
+                      }
+          ''',
+          )
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Verify patch and retire materializer
+        run: |
+          git diff --check
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
+          git rm .github/workflows/capture-root-large-type-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git config user.name "nembra-capture-bot"
+          git config user.email "capture@nembra.invalid"
+          git commit -m "Capture: recompose locked root for large type"
+          git push origin HEAD:visual/v14-capture-root-large-type-hierarchy-sol-20260811
