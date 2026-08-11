@@ -53,6 +53,27 @@ jobs:
           printf 'NEMBRA_RUNTIME_AX_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
           printf 'NEMBRA_RUNTIME_AX_PRODUCT_PARENT=%s\n' "$ACCEPTED_PRODUCT_SHA" >> "$GITHUB_ENV"
 
+      - name: Record exact Xcode and Simulator accessibility toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$RUNNER_TEMP/CaptureRuntimeVoiceOver.toolchain.txt"
+          {
+            printf '%s\n' '## xcodebuild -version'
+            xcodebuild -version
+            printf '\n%s\n' '## sw_vers'
+            sw_vers
+            printf '\n%s\n' '## simctl path'
+            xcrun --find simctl
+            printf '\n%s\n' '## simctl version'
+            xcrun simctl version || true
+            printf '\n%s\n' '## simctl help ui'
+            xcrun simctl help ui || true
+            printf '\n%s\n' '## simctl help privacy'
+            xcrun simctl help privacy || true
+          } 2>&1 | tee "$toolchain"
+          test -s "$toolchain"
+
       - name: Build exact public-unprovisioned standalone Capture app
         shell: bash
         run: |
@@ -185,14 +206,20 @@ jobs:
           product_parent="${NEMBRA_RUNTIME_AX_PRODUCT_PARENT:-005b7c4aaf27fabb442a65599b4538ebcc09ae27}"
           runtime="${NEMBRA_RUNTIME_AX_RUNTIME:-unavailable}"
           tests_json="$RUNNER_TEMP/CaptureRuntimeVoiceOver.tests.json"
+          toolchain="$RUNNER_TEMP/CaptureRuntimeVoiceOver.toolchain.txt"
           tests_sha="unavailable"
+          toolchain_sha="unavailable"
           if [[ -f "$tests_json" ]]; then
             tests_sha="$(shasum -a 256 "$tests_json" | awk '{print $1}')"
             cp "$tests_json" "$evidence/CaptureRuntimeVoiceOver.tests.json"
           fi
-          /usr/bin/python3 - "$evidence/manifest.json" "$source_sha" "$product_parent" "$runtime" "$snippet_sha" "$tests_sha" <<'PY'
+          if [[ -f "$toolchain" ]]; then
+            toolchain_sha="$(shasum -a 256 "$toolchain" | awk '{print $1}')"
+            cp "$toolchain" "$evidence/CaptureRuntimeVoiceOver.toolchain.txt"
+          fi
+          /usr/bin/python3 - "$evidence/manifest.json" "$source_sha" "$product_parent" "$runtime" "$snippet_sha" "$tests_sha" "$toolchain_sha" <<'PY'
           import json,sys
-          path,source,parent,runtime,snippet,tests_sha=sys.argv[1:]
+          path,source,parent,runtime,snippet,tests_sha,toolchain_sha=sys.argv[1:]
           record={
               "schemaVersion": 1,
               "authority": "capture-runtime-accessibility-simulator-only",
@@ -211,6 +238,7 @@ jobs:
               "targetedTestResultRequired": True,
               "targetedTestIdentifier": "testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit",
               "targetedTestResultEvidenceSHA256": tests_sha,
+              "toolchainEvidenceSHA256": toolchain_sha,
               "physicalAuthorityCreated": False,
               "protocolAuthorityCreated": False,
           }
