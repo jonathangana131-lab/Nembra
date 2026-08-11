@@ -15,7 +15,8 @@ struct PropulsionEnergyRailPublicAuthorityTests {
         #expect(live.observation != nil)
 
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
-        #expect(runtime.synchronizeSource(live))
+        let didSynchronizeLive = runtime.synchronizeSource(live)
+        #expect(didSynchronizeLive)
         let liveProjection = runtime.projection(
             atUptimeNanoseconds: live.observation?.receivedAtUptimeNanoseconds ?? 1
         )
@@ -26,7 +27,8 @@ struct PropulsionEnergyRailPublicAuthorityTests {
         let retained = await service.simulatorPowerEvidenceSnapshot()
         #expect(retained.currentness == .retained)
         #expect(retained.observation == live.observation)
-        #expect(runtime.synchronizeSource(retained))
+        let didSynchronizeRetained = runtime.synchronizeSource(retained)
+        #expect(didSynchronizeRetained)
 
         let retainedProjection = runtime.projection(
             atUptimeNanoseconds: retained.observation?.receivedAtUptimeNanoseconds ?? 1
@@ -49,21 +51,25 @@ struct PropulsionEnergyRailPublicAuthorityTests {
         }
 
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
-        #expect(runtime.synchronizeSource(live))
-        #expect(runtime.retainCurrentSource())
+        let didSynchronizeLive = runtime.synchronizeSource(live)
+        #expect(didSynchronizeLive)
+        let didRetainCurrentSource = runtime.retainCurrentSource()
+        #expect(didRetainCurrentSource)
         #expect(runtime.projection(atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds).currentness == .retained)
 
         // The availability object is authentic, but it carries the exact same source
         // receipt already demoted by app lifecycle authority. Runtime chronology must
         // not let that old receipt regain LIVE just because it is replayed.
-        #expect(runtime.synchronizeSource(live) == false)
+        let didReplayLive = runtime.synchronizeSource(live)
+        #expect(didReplayLive == false)
         #expect(runtime.projection(atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds).currentness == .retained)
     }
 
     @Test("unavailable public source state never manufactures numeric power")
     func unavailableCannotMintNumericPower() throws {
         var runtime = try PropulsionEnergyRailSimulatorRuntime()
-        #expect(runtime.synchronizeSource(.unavailable))
+        let didSynchronizeUnavailable = runtime.synchronizeSource(.unavailable)
+        #expect(didSynchronizeUnavailable)
         let projection = runtime.projection(atUptimeNanoseconds: 1)
         #expect(projection.currentness == .unavailable)
         #expect(projection.acceptedWatts == nil)
