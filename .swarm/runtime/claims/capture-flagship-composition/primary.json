@@ -9,11 +9,11 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:56:00Z",
-  "lastHeartbeatAt": "2026-08-11T10:00:00Z",
+  "lastHeartbeatAt": "2026-08-11T10:04:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-two-file-closure-sol-20260811",
   "sourceSHA": "899e0bf4de07401e2e036895aaf684373142253a",
-  "currentHeadSHA": "d85e8549486fe0b21741008d863d114fc631484e",
+  "currentHeadSHA": "9676622389a46ff76fe1cce9ed08103fd542dcad",
   "pr": 2891,
   "ownedPaths": [
     ".github/workflows/capture-root-ax-action-first-materialize.yml",
@@ -22,5 +22,6 @@
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
   ],
+  "acceptance": "Exact-head package/Main Selective Graft, Xcode 27, retained standard + AX5 pixels, independent human critique, and VoiceOver ordering required; current checks pending.",
   "intent": "Close #2841's exact retained AX5 visual rejection on a clean descendant: retire failed self-materializer, directly apply action-first Accessibility XXXL composition while preserving Physical capture locked VoiceOver/public-build truth, and align only the three root visual/source acceptance suites that are stale because of this hierarchy change. Require exact-head package/Xcode/runtime/screenshots/VoiceOver before acceptance."
 }
