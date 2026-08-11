@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-a91c7e",
   "leaseId": "capture-private-identity-tests-a91c7e-20260811-2104",
   "generation": 7,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:04:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:07:15Z",
+  "lastHeartbeatAt": "2026-08-11T21:13:30Z",
+  "releasedAt": "2026-08-11T21:13:30Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-private-provenance-contract-recovery-a91c7e-20260811",
   "pr": 2997,
@@ -17,6 +18,9 @@
   "currentHeadSHA": "1854a6194f71dc09f9bebb433fb8e1267f6a9640",
   "parentPR": 2977,
   "takeoverFromWorkerId": "sol-20260811-1313qa",
-  "checkpoint": "Recovered 9fa47617 stale provenance contract and then repaired the next exact Field harness defect on successor 1854a619: checkout-root-swap fixture now stages the mandatory capture_tuya_private_identity_authority.py helper alongside provisioner/writer, allowing the test to reach its intended AppKey/root-swap attack boundary. Product authority bytes remain unchanged. Historical 9fa Field proved provenance test now passes but root-swap fixture died before attack because helper was absent. Main Graft failure is a separate selective-composition VoiceOver dependency; the 9fa private branch itself does not contain CaptureFirstFoldVoiceOverSourceTests, so do not weaken accessibility in this lane. Fresh exact 1854 workflows required. PHYSICAL NO-GO.",
-  "intent": "Validate #2997 exact 1854a619. Field must prove provenance ordering plus root-swap attack. Treat Main selective-graft VoiceOver failure as integration dependency unless exact ancestry proves otherwise; no accessibility weakening and no product-source changes."
+  "outcome": "DURABLE_TEST_MAINTENANCE_INPUT_FOR_CONVERGENCE_PARENT",
+  "convergencePR": 2993,
+  "convergenceHeadSHA": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
+  "convergenceReviewId": 4910736753,
+  "releaseReason": "#2997 preserves two mechanically required test-maintenance deltas: guarded POD_BIN provenance ordering and staging of the mandatory private identity authority helper so root-swap reaches its attack boundary. Live #2993 is the actively owned repaired dependency-guard parent and also edits checkout-root-swap; exact ee7dd8f5 still has both stale harness defects. Review 4910736753 instructs the active convergence owner to absorb/replay #2997 semantics onto #2993 or successor, preserving its new ancestry tests. #2997 must not merge independently into older #2977 as final convergence. Fresh #2997 runners may provide ingredient evidence but cannot outrank the repaired parent. PHYSICAL NO-GO."
 }
