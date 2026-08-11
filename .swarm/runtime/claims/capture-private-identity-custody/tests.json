@@ -9,12 +9,12 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T09:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T09:19:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:24:00Z",
   "leaseSeconds": 1800,
   "branch": "adversarial/v14-private-identity-crash-residue-sol-20260811",
   "pr": 2870,
   "sourceSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432",
-  "currentHeadSHA": "2204d77a9b4cc3a047d016d14f26a199de338fe3",
+  "currentHeadSHA": "fb8a71461b636c4cac5ea14b2f04858eaaba82d0",
   "takeoverFromWorkerId": null,
-  "takeoverReason": "Released tests slot reused for a non-conflicting hard-exit crash-residue diagnostic. Re-anchored from stale #2755 head to recovery #2858 exact cb72a47e; run 31477095664/job 93733203198 is expected-red after exact checkout and compile pass. Primary/recovery production ownership remains untouched."
+  "takeoverReason": "Released tests slot reused for non-conflicting private-identity crash-residue review. Exact recovery #2858 parent cb72a47e is attacked by four independently bound cases; run 31477457435 has hard-exit, symlink, hard-link, and nonempty-directory jobs all expected-red after exact checkout and compile pass. Production ownership remains untouched; sibling #2868 owns destination-name race."
 }
