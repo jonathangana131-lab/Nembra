@@ -49,15 +49,15 @@ jobs:
           fi
           exit 0
 
-      - name: Run same built package with default scheduling
-        id: default
+      - name: Run same built package with explicit parallel scheduling
+        id: parallel
         shell: bash
         run: |
           set -uo pipefail
           root="$RUNNER_TEMP/capture-package-runner-diagnostic"
-          log="$root/full-package-default.log"
+          log="$root/full-package-parallel.log"
           set +e
-          (cd Packages/NembraBluetoothCapture && swift test --skip-build) 2>&1 | tee "$log"
+          (cd Packages/NembraBluetoothCapture && swift test --skip-build --parallel) 2>&1 | tee "$log"
           status="${PIPESTATUS[0]}"
           set -e
           echo "status=$status" >> "$GITHUB_OUTPUT"
@@ -68,23 +68,23 @@ jobs:
           fi
           exit 0
 
-      - name: Report serial versus default truth
+      - name: Report serial versus parallel truth
         env:
           SERIAL_STATUS: ${{ steps.serial.outputs.status }}
           SERIAL_RANGE_ABORT: ${{ steps.serial.outputs.range_abort }}
-          DEFAULT_STATUS: ${{ steps.default.outputs.status }}
-          DEFAULT_RANGE_ABORT: ${{ steps.default.outputs.range_abort }}
+          PARALLEL_STATUS: ${{ steps.parallel.outputs.status }}
+          PARALLEL_RANGE_ABORT: ${{ steps.parallel.outputs.range_abort }}
         run: |
-          printf 'serial_status=%s\nserial_range_abort=%s\ndefault_status=%s\ndefault_range_abort=%s\n' \
-            "$SERIAL_STATUS" "$SERIAL_RANGE_ABORT" "$DEFAULT_STATUS" "$DEFAULT_RANGE_ABORT"
+          printf 'serial_status=%s\nserial_range_abort=%s\nparallel_status=%s\nparallel_range_abort=%s\n' \
+            "$SERIAL_STATUS" "$SERIAL_RANGE_ABORT" "$PARALLEL_STATUS" "$PARALLEL_RANGE_ABORT"
 
-          if [[ "$SERIAL_STATUS" == "0" && "$DEFAULT_STATUS" == "0" ]]; then
-            echo 'Both serial and default full-package executions are green on this exact head.'
+          if [[ "$SERIAL_STATUS" == "0" && "$PARALLEL_STATUS" == "0" ]]; then
+            echo 'Both serial and explicitly parallel full-package executions are green on this exact head.'
             exit 0
           fi
 
-          if [[ "$SERIAL_STATUS" == "0" && "$DEFAULT_STATUS" != "0" && "$DEFAULT_RANGE_ABORT" == "1" ]]; then
-            echo '::error::Serial execution is green while default scheduling reproduces the Range abort. This is concurrency/runner interaction evidence; do not weaken assertions or silently waive the default red gate.'
+          if [[ "$SERIAL_STATUS" == "0" && "$PARALLEL_STATUS" != "0" && "$PARALLEL_RANGE_ABORT" == "1" ]]; then
+            echo '::error::Serial execution is green while explicit parallel scheduling reproduces the Range abort. This is concurrency/runner interaction evidence; do not weaken assertions or silently waive the parallel red gate.'
             exit 1
           fi
 
@@ -93,7 +93,7 @@ jobs:
             exit 1
           fi
 
-          echo '::error::Serial/default executions disagree or remain red for a non-Range reason; inspect retained exact-head logs before changing acceptance behavior.'
+          echo '::error::Serial/parallel executions disagree or remain red for a non-Range reason; inspect retained exact-head logs before changing acceptance behavior.'
           exit 1
 
       - name: Upload exact diagnostic logs
