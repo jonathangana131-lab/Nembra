@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:22:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:25:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:28:00Z",
   "leaseSeconds": 1800,
   "branch": "redteam/v14-signed-app-prestage-origin-sol-4f50qa-20260811",
   "pr": 2955,
@@ -17,6 +17,6 @@
   "currentHeadSHA": "afdd329d8041f909c4d77fc86d78f73953bba81b",
   "takeoverFromWorkerId": "sol-20260811-4f51fg",
   "takeoverReason": "Generation-2 tests slot released green after #2911 QA validation. Independent review 4906057134 identified a distinct unresolved xcodebuild-output -> pre-stage fingerprint authority seam. Mechanize that exact seam on the moved #2871 parent without touching production ownership.",
-  "durableEvidence": "Draft expected-red #2955 attacks exact #2871 parent f76e6ae5 with two test-only paths. The witness binds the real installer ordering, substitutes the DerivedData app after xcodebuild completion but before the first source fingerprint, uses the real signed-app custody fingerprint helper, proves the protected-stage fixture equals the self-derived substitute fingerprint, restores the original build-output pathname, and requires stage fingerprint == actual build-output fingerprint. Existing permanent Capture Signed App Install Custody test suite invokes the witness. Exact-head run 31491053333 is queued; Main Graft 31491053389 queued; Xcode is skipped by path policy and is not relevant evidence for this test-only expected-red child.",
-  "acceptance": "EXPECTED_RED_PENDING_MECHANICAL_RUN. If Signed App run fails in the intended build-output-origin assertion after exact-head binding/compile, promote seam from unconfirmed review question to confirmed signed-install authority blocker. PHYSICAL NO-GO."
+  "durableEvidence": "CONFIRMED RED on draft #2955 exact afdd329d. Permanent Capture Signed App Install Custody run 31491053333 job 93777409233 bound checkout exactly to afdd329d, then existing fingerprint mutation, external-symlink, protected-stage ordering/codesign-boundary, and permanent ACL source-contract tests all passed. New build-produced-origin invariant failed as expected. Inner witness proved staged fingerprint equals promoted post-build substitute fingerprint, restored the original DerivedData app, proved stage differs from actual build output, then failed the required origin equality. CI values: promoted/protected substitute cbe35757c4bc700eadcd20c6919e527fc831853fb94b210f6495860280e2ae29; build-produced bundle 8825e486ad2589570fc550f37d96fd5048c7ff0d4bef909e6ecefdfccf416736. Parent review 4906169989 records the confirmed blocker and repair boundary.",
+  "acceptance": "EXPECTED_RED_CONFIRMED. #2871 exact f76e6ae5 is blocked even if legacy Signed App/Field/Main-Graft/Xcode gates go green, because they do not test compiler-output origin through the first protected snapshot. Keep #2955 unmerged. Production owner must bind the xcodebuild-produced bundle through the post-build/pre-fingerprint window, replay this invariant green, then re-earn full moved-parent exact-head gates. PHYSICAL NO-GO."
 }
