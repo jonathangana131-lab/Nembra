@@ -1,0 +1,65 @@
+name: Temporary Capture Private Descriptor Custody QA
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-tuya-private-descriptor-custody-current-sol
+    paths:
+      - .github/workflows/tmp-capture-private-descriptor-custody-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - name: Checkout immutable QA head
+        uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-tuya-private-descriptor-custody-current-sol
+          fetch-depth: 0
+
+      - name: Bind workflow-only validation head
+        shell: bash
+        env:
+          EXPECTED_PRODUCT_HEAD: 80a334b2d4e59bd885a7817b901df69f8d800019
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT_HEAD"
+          test "$(git diff --name-only "$EXPECTED_PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-capture-private-descriptor-custody-qa.yml'
+          git diff --check "$EXPECTED_PRODUCT_HEAD" HEAD
+
+      - name: Validate descriptor writer and privileged wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/repo/Scripts"
+          cp Scripts/provision_capture_tuya_identity.sh Scripts/provision_capture_tuya_identity_writer.py "$tmp/repo/Scripts/"
+          chmod 700 "$tmp/repo/Scripts/provision_capture_tuya_identity.sh"
+          chmod 600 "$tmp/repo/Scripts/provision_capture_tuya_identity_writer.py"
+
+          output="$(printf 'nembra-dummy-app-key\nnembra-dummy-app-secret\n' | "$tmp/repo/Scripts/provision_capture_tuya_identity.sh" 2>&1)"
+          test -f "$tmp/repo/LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"
+          test -f "$tmp/repo/LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift"
+          ! grep -Fq 'nembra-dummy-app-key' <<< "$output"
+          ! grep -Fq 'nembra-dummy-app-secret' <<< "$output"
+          ! grep -R -Fq 'nembra-dummy-app-key' "$tmp/repo/LocalSecrets"
+          ! grep -R -Fq 'nembra-dummy-app-secret' "$tmp/repo/LocalSecrets"
+
+          # Reprovisioning must remain legitimate while publication stays pinned.
+          printf 'nembra-dummy-app-key-2\nnembra-dummy-app-secret-2\n' | "$tmp/repo/Scripts/provision_capture_tuya_identity.sh" >/dev/null 2>&1
+          ! grep -R -Fq 'nembra-dummy-app-secret-2' "$tmp/repo/LocalSecrets"
+
+      - name: Run Capture package warnings-as-errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd Packages/NembraBluetoothCapture
+          swift test -Xswiftc -warnings-as-errors
