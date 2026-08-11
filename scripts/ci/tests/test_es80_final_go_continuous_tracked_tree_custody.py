@@ -68,7 +68,7 @@ class FinalGoContinuousTrackedTreeCustodyTests(unittest.TestCase):
 
     def test_stable_candidate_passes_continuous_audit(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-finalgo-continuous-stable-") as temporary:
-            root = Path(temporary) / "repo"
+            root = Path(temporary).resolve(strict=True) / "repo"
             root.mkdir()
             source, _tracked = self._candidate(root)
             entries = MODULE._audit_candidate_tree(root, source)
@@ -76,7 +76,7 @@ class FinalGoContinuousTrackedTreeCustodyTests(unittest.TestCase):
 
     def test_post_subject_replacement_is_rejected_before_whole_audit_returns(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-finalgo-continuous-post-read-") as temporary:
-            sandbox = Path(temporary)
+            sandbox = Path(temporary).resolve(strict=True)
             root = sandbox / "repo"
             root.mkdir()
             source, tracked = self._candidate(root)
@@ -117,7 +117,7 @@ class FinalGoContinuousTrackedTreeCustodyTests(unittest.TestCase):
 
     def test_restore_before_every_read_then_mutate_after_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-finalgo-continuous-rehash-") as temporary:
-            sandbox = Path(temporary)
+            sandbox = Path(temporary).resolve(strict=True)
             root = sandbox / "repo"
             root.mkdir()
             source, tracked = self._candidate(root)
@@ -155,7 +155,7 @@ class FinalGoContinuousTrackedTreeCustodyTests(unittest.TestCase):
 
     def test_mutation_after_initial_audit_is_rejected_at_context_handoff(self) -> None:
         with tempfile.TemporaryDirectory(prefix="nembra-finalgo-continuous-context-") as temporary:
-            sandbox = Path(temporary)
+            sandbox = Path(temporary).resolve(strict=True)
             root = sandbox / "repo"
             root.mkdir()
             source, tracked = self._candidate(root)
