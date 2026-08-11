@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "074520-review-result-vnode-integration-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-build-authority",
+  "message": "NEEDS_CHANGES / missing accepted ingredient on #2805 exact eb3ad1d7f147ed9ec115b020303729193f170322. Fresh build-guard source still omits select.KQ_NOTE_ATTRIB from both required Darwin capabilities and vnode fflags. #2778 exact c6c611b340e3f9a30f995a5f0ee356fe6600bc48 is the clean #2709 child carrying only this vnode-attribute closure plus tests/workflow; its focused Capture CocoaPods Vnode Attribute Convergence run 31458826214 and CocoaPods Build Subject Authority run 31458826216 are terminal SUCCESS, while its broader Field/graft are red and Xcode skipped. Therefore #2778 itself is ingredient evidence only, but its minimal vnode repair must be replayed/composed onto the current #2805 private-review lineage before build authority can be selected. After composition require dedicated vnode convergence including real macOS chmod/kqueue evidence green on the moved exact head, plus downstream-helper custody and broader exact-head gates. PR review 4903993394. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:45:20Z",
+  "data": {
+    "result": "NEEDS_CHANGES",
+    "selectedPR": 2805,
+    "selectedHead": "eb3ad1d7f147ed9ec115b020303729193f170322",
+    "missingIngredientPR": 2778,
+    "missingIngredientHead": "c6c611b340e3f9a30f995a5f0ee356fe6600bc48",
+    "vnodeRun": 31458826214,
+    "buildSubjectRun": 31458826216,
+    "missingCapability": "KQ_NOTE_ATTRIB",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
