@@ -369,6 +369,39 @@ def _unlink_owned_relative_inode_if_named(
         return
 
 
+def _require_final_relative_name_binding(
+    checkout_fd: int,
+    relative_path: str,
+    sealed: os.stat_result,
+    payload: bytes,
+) -> None:
+    """Re-bind the canonical credential name to the accepted inode at success."""
+    rebound_fd = -1
+    try:
+        rebound_fd = _open_relative_regular_file(checkout_fd, relative_path)
+        rebound = os.fstat(rebound_fd)
+        if (
+            not stat.S_ISREG(rebound.st_mode)
+            or rebound.st_uid != os.geteuid()
+            or rebound.st_nlink != 1
+            or stat.S_IMODE(rebound.st_mode) != 0o600
+            or rebound.st_size != len(payload)
+            or rebound.st_dev != sealed.st_dev
+            or rebound.st_ino != sealed.st_ino
+        ):
+            raise ProvisionError(
+                "private identity canonical destination no longer names the accepted sealed inode"
+            )
+        _require_descriptor_payload(
+            rebound_fd,
+            payload,
+            "private identity canonical destination failed final payload binding",
+        )
+    finally:
+        if rebound_fd >= 0:
+            os.close(rebound_fd)
+
+
 class _SealedStaging:
     def __init__(self, metadata: os.stat_result, descriptor: int, payload: bytes) -> None:
         self.metadata = metadata
@@ -558,6 +591,17 @@ def _write_staged(
             _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, compromised)
             raise
         os.fsync(checkout_fd)
+        try:
+            _require_final_relative_name_binding(
+                checkout_fd,
+                destination_relative,
+                sealed,
+                payload,
+            )
+        except Exception:
+            _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, sealed)
+            os.fsync(checkout_fd)
+            raise
     except Exception:
         _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
         raise
