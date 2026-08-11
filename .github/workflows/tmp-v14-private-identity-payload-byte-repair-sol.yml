@@ -1,4 +1,4 @@
-name: TEMP V14 Private Identity Payload Byte Repair (Sol)
+name: TEMP V14 Private Identity Payload Byte Repair Sol
 
 on:
   push:
@@ -20,200 +20,18 @@ jobs:
         with:
           ref: repair/v14-private-identity-payload-byte-custody-2858-sol
           fetch-depth: 0
-
-      - name: Apply payload-byte custody and source-contract repair
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          writer_path = Path('Scripts/provision_capture_tuya_identity_writer.py')
-          writer = writer_path.read_text(encoding='utf-8')
-
-          old_import = 'import ctypes\nimport os\n'
-          new_import = 'import ctypes\nimport hmac\nimport os\n'
-          if writer.count(old_import) != 1:
-              raise SystemExit(f'expected one ctypes/os import seam, found {writer.count(old_import)}')
-          writer = writer.replace(old_import, new_import, 1)
-
-          old_final = '''        final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
-          final = os.fstat(final_fd)
-          if (
-              not stat.S_ISREG(final.st_mode)
-              or final.st_uid != os.geteuid()
-              or final.st_nlink != 1
-              or final.st_size != len(payload)
-              or final.st_dev != sealed.st_dev
-              or final.st_ino != sealed.st_ino
-          ):
-              raise ProvisionError("published private identity output is not the sealed staging inode")
-          os.fchmod(final_fd, 0o600)
-          os.fsync(final_fd)
-          os.fsync(checkout_fd)
-      except Exception:
-          _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
-          raise
-          '''
-          new_final = '''        final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
-          final = os.fstat(final_fd)
-          if (
-              not stat.S_ISREG(final.st_mode)
-              or final.st_uid != os.geteuid()
-              or final.st_nlink != 1
-              or final.st_size != len(payload)
-              or final.st_dev != sealed.st_dev
-              or final.st_ino != sealed.st_ino
-          ):
-              raise ProvisionError("published private identity output is not the sealed staging inode")
-
-          os.fchmod(final_fd, 0o600)
-          os.fsync(final_fd)
-          before_read = os.fstat(final_fd)
-          os.lseek(final_fd, 0, os.SEEK_SET)
-          published = bytearray()
-          remaining = len(payload) + 1
-          while remaining > 0:
-              chunk = os.read(final_fd, min(65536, remaining))
-              if not chunk:
-                  break
-              published.extend(chunk)
-              remaining -= len(chunk)
-          after_read = os.fstat(final_fd)
-          before_identity = (
-              before_read.st_dev,
-              before_read.st_ino,
-              before_read.st_mode,
-              before_read.st_uid,
-              before_read.st_gid,
-              before_read.st_nlink,
-              before_read.st_size,
-              before_read.st_mtime_ns,
-              before_read.st_ctime_ns,
-          )
-          after_identity = (
-              after_read.st_dev,
-              after_read.st_ino,
-              after_read.st_mode,
-              after_read.st_uid,
-              after_read.st_gid,
-              after_read.st_nlink,
-              after_read.st_size,
-              after_read.st_mtime_ns,
-              after_read.st_ctime_ns,
-          )
-          if before_identity != after_identity or not hmac.compare_digest(bytes(published), payload):
-              raise ProvisionError("published private identity payload changed during final custody verification")
-          os.fsync(checkout_fd)
-      except Exception:
-          _unlink_owned_inode_if_named(destination_parent_fd, final_name, sealed)
-          _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
-          raise
-          '''
-          if writer.count(old_final) != 1:
-              raise SystemExit(f'expected one final-custody seam, found {writer.count(old_final)}')
-          writer = writer.replace(old_final, new_final, 1)
-
-          old_self_test = '        root = Path(temporary)\n'
-          new_self_test = '        root = Path(os.path.realpath(temporary))\n'
-          if writer.count(old_self_test) != 1:
-              raise SystemExit(f'expected one raw TemporaryDirectory root, found {writer.count(old_self_test)}')
-          writer = writer.replace(old_self_test, new_self_test, 1)
-          writer_path.write_text(writer, encoding='utf-8')
-
-          # Re-anchor the already-demonstrated same-inode attack onto this exact recovery.
-          # The diagnostic commit is a direct child of the exact #2858 parent.
-          PY
-
-          git fetch --no-tags origin 11e794ba6c7050c1e4d70342c68aab5f1896bc10 --depth=2
-          test "$(git rev-parse 11e794ba6c7050c1e4d70342c68aab5f1896bc10^)" = "cb72a47ee2489235febd40ac440bc9f8462ba432"
-          git show 11e794ba6c7050c1e4d70342c68aab5f1896bc10:scripts/ci/tests/test_capture_private_identity_publication_races.py > scripts/ci/tests/test_capture_private_identity_publication_races.py
-
-          writer_sha="$(sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}')"
-          test "${#writer_sha}" = 64
-          export WRITER_SHA="$writer_sha"
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          import re
-
-          digest = os.environ['WRITER_SHA']
-          shell_path = Path('Scripts/provision_capture_tuya_identity.sh')
-          shell = shell_path.read_text(encoding='utf-8')
-          shell, count = re.subn(r'WRITER_SHA256="[0-9a-f]{64}"', f'WRITER_SHA256="{digest}"', shell, count=1)
-          if count != 1:
-              raise SystemExit(f'expected one shell writer digest pin, replaced {count}')
-          shell_path.write_text(shell, encoding='utf-8')
-
-          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift')
-          source = test_path.read_text(encoding='utf-8')
-          old_digest = '#expect(shell.contains("WRITER_SHA256=\\"920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34\\""))'
-          new_digest = f'#expect(shell.contains("WRITER_SHA256=\\"{digest}\\""))'
-          if source.count(old_digest) != 1:
-              raise SystemExit(f'expected one stale Swift digest assertion, found {source.count(old_digest)}')
-          source = source.replace(old_digest, new_digest, 1)
-
-          old_markers = '''        #expect(writer.contains("dir_fd=parent_fd"))
-          #expect(writer.contains("src_dir_fd=parent_fd"))
-          #expect(writer.contains("dst_dir_fd=parent_fd"))'''
-          new_markers = '''        #expect(writer.contains("_require_sealed_staging_name(checkout_fd, source_name, sealed)"))
-          #expect(writer.contains("_secure_replace_beneath(checkout_fd, temporary_name, destination_relative, sealed)"))
-          #expect(writer.contains("renameatx_np"))
-          #expect(writer.contains("_DARWIN_RENAME_NOFOLLOW_ANY | _DARWIN_RENAME_RESOLVE_BENEATH"))
-          #expect(writer.contains("_unlink_owned_inode_if_named(destination_parent_fd, final_name, sealed)"))
-          #expect(writer.contains("hmac.compare_digest(bytes(published), payload)"))
-          #expect(!writer.contains("src_dir_fd=parent_fd"))
-          #expect(!writer.contains("dst_dir_fd=parent_fd"))'''
-          if source.count(old_markers) != 1:
-              raise SystemExit(f'expected one retired parent-local source marker block, found {source.count(old_markers)}')
-          source = source.replace(old_markers, new_markers, 1)
-          test_path.write_text(source, encoding='utf-8')
-          PY
-
-          printf 'FINAL_WRITER_SHA256=%s\n' "$writer_sha"
-
-      - name: Validate exact repair surface
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
-          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
-          python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
-          python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
-          bash -n Scripts/provision_capture_tuya_identity.sh
-
-          writer_sha="$(sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}')"
-          grep -Fq "WRITER_SHA256=\"$writer_sha\"" Scripts/provision_capture_tuya_identity.sh
-          grep -Fq "WRITER_SHA256=\\\"$writer_sha\\\"" Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
-          grep -Fq 'hmac.compare_digest(bytes(published), payload)' Scripts/provision_capture_tuya_identity_writer.py
-          grep -Fq '_unlink_owned_inode_if_named(destination_parent_fd, final_name, sealed)' Scripts/provision_capture_tuya_identity_writer.py
-          grep -Fq 'root = Path(os.path.realpath(temporary))' Scripts/provision_capture_tuya_identity_writer.py
-          grep -Fq 'test_same_staging_inode_payload_mutation_cannot_be_accepted' scripts/ci/tests/test_capture_private_identity_publication_races.py
-
-          git diff --check
-          expected="$(cat <<'EOF'
-          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
-          Scripts/provision_capture_tuya_identity.sh
-          Scripts/provision_capture_tuya_identity_writer.py
-          scripts/ci/tests/test_capture_private_identity_publication_races.py
-          EOF
-          )"
-          actual="$(git diff --name-only | sort)"
-          test "$actual" = "$(printf '%s\n' "$expected" | sed 's/^          //' | sort)"
-
-      - name: Publish repair commit
+      - name: Materialize and validate repair
+        run: python3 .swarm-tmp/v14-private-identity-payload-byte-repair-sol.py
+      - name: Publish product repair
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            Scripts/provision_capture_tuya_identity_writer.py \
-            Scripts/provision_capture_tuya_identity.sh \
-            scripts/ci/tests/test_capture_private_identity_publication_races.py \
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
+          git add Scripts/provision_capture_tuya_identity_writer.py
+          git add Scripts/provision_capture_tuya_identity.sh
+          git add scripts/ci/tests/test_capture_private_identity_publication_races.py
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
           git diff --cached --check
           test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 4
           git commit -m 'Capture: bind published private identity payload bytes'
