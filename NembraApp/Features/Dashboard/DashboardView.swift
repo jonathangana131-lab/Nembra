@@ -412,36 +412,26 @@ struct DashboardView: View {
     private var stoppedControls: some View {
         VStack(alignment: .trailing, spacing: 10) {
             if !supportedModes.isEmpty {
-                HStack(spacing: dynamicTypeSize.isAccessibilitySize ? 4 : 5) {
-                    ForEach(supportedModes, id: \.self) { mode in
-                        let isSelected = vehicle.state.rideMode == mode
-                        let isPending = vehicle.pendingRideMode == mode
-
-                        Button {
-                            Task { await vehicle.setMode(mode) }
-                        } label: {
-                            ZStack {
-                                if isSelected {
-                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                        .fill(.white.opacity(colorSchemeContrast == .increased ? 0.20 : 0.12))
-                                }
-
-                                if isPending {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Text(modeAbbreviation(mode))
-                                        .font(.caption.weight(isSelected ? .bold : .semibold))
-                                        .foregroundStyle(isSelected ? .white : .secondary)
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .trailing, spacing: 5) {
+                            HStack(spacing: 5) {
+                                ForEach(Array(supportedModes.prefix(2)), id: \.self) { mode in
+                                    modeControl(mode)
                                 }
                             }
-                            .frame(width: 44, height: 44)
+                            HStack(spacing: 5) {
+                                ForEach(Array(supportedModes.dropFirst(2)), id: \.self) { mode in
+                                    modeControl(mode)
+                                }
+                            }
                         }
-                        .buttonStyle(.glass)
-                        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || isSelected)
-                        .accessibilityLabel(mode.displayName)
-                        .accessibilityValue(modeChoiceAccessibilityValue(selected: isSelected, pending: isPending))
-                        .accessibilityAddTraits(isSelected ? .isSelected : [])
-                        .accessibilityIdentifier("dashboard.mode.\(mode.displayName.lowercased())")
+                    } else {
+                        HStack(spacing: 5) {
+                            ForEach(supportedModes, id: \.self) { mode in
+                                modeControl(mode)
+                            }
+                        }
                     }
                 }
                 .accessibilityElement(children: .contain)
@@ -497,6 +487,37 @@ struct DashboardView: View {
             }
             .accessibilityElement(children: .contain)
         }
+    }
+
+    private func modeControl(_ mode: RideMode) -> some View {
+        let isSelected = vehicle.state.rideMode == mode
+        let isPending = vehicle.pendingRideMode == mode
+
+        return Button {
+            Task { await vehicle.setMode(mode) }
+        } label: {
+            ZStack {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(.white.opacity(colorSchemeContrast == .increased ? 0.20 : 0.12))
+                }
+
+                if isPending {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Text(modeAbbreviation(mode))
+                        .font(.caption.weight(isSelected ? .bold : .semibold))
+                        .foregroundStyle(isSelected ? .white : .secondary)
+                }
+            }
+            .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.glass)
+        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || isSelected)
+        .accessibilityLabel(mode.displayName)
+        .accessibilityValue(modeChoiceAccessibilityValue(selected: isSelected, pending: isPending))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("dashboard.mode.\(mode.displayName.lowercased())")
     }
 
     private func dashboardMetric(
