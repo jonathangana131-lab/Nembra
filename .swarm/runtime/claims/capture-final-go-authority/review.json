@@ -7,14 +7,16 @@
   "workerId": "sol-20260811-1311qy",
   "leaseId": "capture-final-go-review-1311qy-20260811-2012",
   "generation": 8,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:12:30Z",
-  "lastHeartbeatAt": "2026-08-11T20:12:30Z",
+  "lastHeartbeatAt": "2026-08-11T20:15:00Z",
+  "releasedAt": "2026-08-11T20:15:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2921,
   "sourceSHA": "8242722c0b0e4ff2bcd117419fe405db191a5985",
   "currentHeadSHA": "8242722c0b0e4ff2bcd117419fe405db191a5985",
   "takeoverFromWorkerId": "sol-20260811-54c8fgr",
-  "reviewTarget": "Recover expired Final-GO adversarial review on live #2921 head. Reconcile the stale PR-body head claim against actual head 8242722c, inspect the seven-file diff and permanent object-chain/raw-tree/vnode contracts for authority regressions, and publish exact-head review evidence. PHYSICAL NO-GO."
+  "outcome": "TEST_CONTRACT_RED_CONFIRMED_PRODUCTION_NOT_DISPROVEN",
+  "releaseReason": "Recovered expired review and published PR review 4910353622 on exact live head 8242722c. Xcode 27 run 31491239789 is green; Final-GO run 31491239824 is red because the permanent pack-index regression falsely requires stock Git ls-tree to traverse a corrupt alias. Production verified-object-chain hardening remains source-coherent. Test-only correction + fresh exact-head Final-GO rerun required. PHYSICAL NO-GO."
 }
