@@ -38,47 +38,51 @@ jobs:
           from pathlib import Path
 
           path = Path('.github/workflows/capture-field-build-provenance.yml')
-          source = path.read_text(encoding='utf-8')
-          replacements = (
-              (
-                  '''          grep -Fq 'devicectl list devices --hide-headers' "$installer"''',
-                  '''          grep -Fq '"$SELECTED_DEVICECTL" list devices --hide-headers' "$installer"''',
-                  'selected devicectl discovery',
-              ),
-              (
-                  '''          grep -Fq 'devicectl device install app --device "$COREDEVICE_ID"' "$installer"''',
-                  '''          grep -Fq '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"' "$installer"''',
-                  'selected devicectl install',
-              ),
-              (
-                  '''          build_line="$(grep -nF -- '-- /usr/bin/xcodebuild \\' "$installer" | sed -n '1s/:.*//p')"''',
-                  '''          build_line="$(grep -nF -- '-- "$SELECTED_XCODEBUILD" \\' "$installer" | sed -n '1s/:.*//p')"''',
-                  'selected guarded xcodebuild',
-              ),
-          )
-          for old, new, label in replacements:
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected exactly one stale {label} assertion, found {count}')
-              source = source.replace(old, new, 1)
+          lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+          counts = {
+              'discovery': 0,
+              'install': 0,
+              'xcodebuild': 0,
+          }
+          out = []
+          for line in lines:
+              stripped = line.strip()
+              if stripped == "grep -Fq 'devicectl list devices --hide-headers' \"$installer\"":
+                  indent = line[:len(line) - len(line.lstrip())]
+                  ending = '\n' if line.endswith('\n') else ''
+                  line = indent + "grep -Fq '\"$SELECTED_DEVICECTL\" list devices --hide-headers' \"$installer\"" + ending
+                  counts['discovery'] += 1
+              elif stripped == "grep -Fq 'devicectl device install app --device \"$COREDEVICE_ID\"' \"$installer\"":
+                  indent = line[:len(line) - len(line.lstrip())]
+                  ending = '\n' if line.endswith('\n') else ''
+                  line = indent + "grep -Fq '\"$SELECTED_DEVICECTL\" device install app --device \"$COREDEVICE_ID\"' \"$installer\"" + ending
+                  counts['install'] += 1
+              elif "build_line=\"$(grep -nF -- '-- /usr/bin/xcodebuild \\" in line:
+                  line = line.replace("-- /usr/bin/xcodebuild \\", "-- \"$SELECTED_XCODEBUILD\" \\", 1)
+                  counts['xcodebuild'] += 1
+              out.append(line)
 
+          if counts != {'discovery': 1, 'install': 1, 'xcodebuild': 1}:
+              raise SystemExit(f'unexpected stale assertion cardinality: {counts}')
+
+          source = ''.join(out)
           required = (
-              '''          grep -Fq 'read_verified_accepted_git_blob() {' "$installer"''',
-              '''          grep -Fq 'PRIVATE_DEVICE_RUNNER_RELATIVE="scripts/ci/es80_signed_field_artifact_private_runner.py"' "$installer"''',
-              '''          grep -Fq 'read_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE" |' "$installer"''',
-              '''          grep -Fq '"$SELECTED_DEVICECTL" list devices --hide-headers' "$installer"''',
-              '''          grep -Fq '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"' "$installer"''',
-              '''          build_line="$(grep -nF -- '-- "$SELECTED_XCODEBUILD" \\' "$installer" | sed -n '1s/:.*//p')"''',
+              "grep -Fq 'read_verified_accepted_git_blob() {' \"$installer\"",
+              "grep -Fq 'PRIVATE_DEVICE_RUNNER_RELATIVE=\"scripts/ci/es80_signed_field_artifact_private_runner.py\"' \"$installer\"",
+              "grep -Fq 'read_verified_accepted_git_blob \"$PRIVATE_DEVICE_RUNNER_RELATIVE\" |' \"$installer\"",
+              "grep -Fq '\"$SELECTED_DEVICECTL\" list devices --hide-headers' \"$installer\"",
+              "grep -Fq '\"$SELECTED_DEVICECTL\" device install app --device \"$COREDEVICE_ID\"' \"$installer\"",
+              "build_line=\"$(grep -nF -- '-- \"$SELECTED_XCODEBUILD\" \\",
           )
           for marker in required:
               if marker not in source:
-                  raise SystemExit(f'current stronger provenance assertion missing: {marker}')
+                  raise SystemExit(f'stronger provenance assertion missing after rewrite: {marker}')
 
           forbidden = (
-              '''grep -Fq 'run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py"' "$installer"''',
-              '''grep -Fq 'devicectl list devices --hide-headers' "$installer"''',
-              '''grep -Fq 'devicectl device install app --device "$COREDEVICE_ID"' "$installer"''',
-              '''grep -nF -- '-- /usr/bin/xcodebuild \\' "$installer"''',
+              "grep -Fq 'devicectl list devices --hide-headers' \"$installer\"",
+              "grep -Fq 'devicectl device install app --device \"$COREDEVICE_ID\"' \"$installer\"",
+              "build_line=\"$(grep -nF -- '-- /usr/bin/xcodebuild \\",
+              "run_authority_git show \"$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py\"",
           )
           for marker in forbidden:
               if marker in source:
@@ -87,23 +91,12 @@ jobs:
           path.write_text(source, encoding='utf-8')
           PY
 
-          /usr/bin/python3 - <<'PY'
-          from pathlib import Path
-          workflow = Path('.github/workflows/capture-field-build-provenance.yml').read_text(encoding='utf-8')
-          installer = Path('scripts/field/install_one_time_capture.command').read_text(encoding='utf-8')
-          required = (
-              'read_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE"',
-              '"$SELECTED_DEVICECTL" list devices --hide-headers',
-              '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"',
-              '-- "$SELECTED_XCODEBUILD" \\',
-          )
-          for marker in required:
-              if marker not in workflow:
-                  raise SystemExit(f'advanced provenance workflow marker missing: {marker}')
-              if marker not in installer:
-                  raise SystemExit(f'advanced provenance assertion does not match production installer: {marker}')
-          PY
+          bash -n scripts/field/install_one_time_capture.command
+          grep -Fq '"$SELECTED_DEVICECTL" list devices --hide-headers' scripts/field/install_one_time_capture.command
+          grep -Fq '"$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID"' scripts/field/install_one_time_capture.command
+          grep -Fq -- '-- "$SELECTED_XCODEBUILD" \' scripts/field/install_one_time_capture.command
           git diff --check
+          test "$(git diff --name-only | LC_ALL=C sort)" = '.github/workflows/capture-field-build-provenance.yml'
 
       - name: Publish clean contract and self-delete
         shell: bash
