@@ -23,12 +23,13 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: Bind clean selected-Xcode parent
+      - name: Bind construction lineage
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = '0807fc75a7edb51597d9e926c747cd5e6c400771'
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tmp-v14-selected-xcode-acl-production-sol.yml'
+          test "$(git merge-base HEAD '0807fc75a7edb51597d9e926c747cd5e6c400771')" = '0807fc75a7edb51597d9e926c747cd5e6c400771'
+          changed="$(git diff --name-only '0807fc75a7edb51597d9e926c747cd5e6c400771'...HEAD)"
+          test "$changed" = '.github/workflows/tmp-v14-selected-xcode-acl-production-sol.yml'
 
       - name: Add fail-closed extended ACL admission
         shell: bash
@@ -46,61 +47,51 @@ jobs:
               raise SystemExit('unexpected selected-Xcode custody import shape')
           text = text.replace(old_imports, new_imports, 1)
 
-          old_guard = '''    if metadata.st_uid != 0 or metadata.st_mode & 0o022:
-        raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable metadata")
-'''
-          new_guard = old_guard + '''    acl_probe = subprocess.run(
-        ["/bin/ls", "-lde", str(current)],
-        env={
-            "PATH": "/usr/bin:/bin",
-            "HOME": "/tmp",
-            "LANG": "C",
-            "LC_ALL": "C",
-        },
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
-    if acl_probe.returncode != 0:
-        raise SystemExit("selected Xcode custody could not inspect extended ACL authority")
-    acl_lines = acl_probe.stdout.splitlines()
-    if not acl_lines:
-        raise SystemExit("selected Xcode custody received no ACL metadata")
-    mode_field = acl_lines[0].split(None, 1)[0]
-    if mode_field.endswith("+") or len(acl_lines) != 1:
-        raise SystemExit("selected Xcode custody refuses extended ACL authority")
-    try:
-        after_acl = os.lstat(current)
-    except OSError as error:
-        raise SystemExit("selected Xcode custody ancestry changed during ACL admission") from error
-    before_identity = (
-        metadata.st_dev,
-        metadata.st_ino,
-        metadata.st_mode,
-        metadata.st_uid,
-        metadata.st_gid,
-        metadata.st_size,
-        metadata.st_mtime_ns,
-        metadata.st_ctime_ns,
-    )
-    after_identity = (
-        after_acl.st_dev,
-        after_acl.st_ino,
-        after_acl.st_mode,
-        after_acl.st_uid,
-        after_acl.st_gid,
-        after_acl.st_size,
-        after_acl.st_mtime_ns,
-        after_acl.st_ctime_ns,
-    )
-    if after_identity != before_identity:
-        raise SystemExit("selected Xcode custody ancestry changed during ACL admission")
-'''
+          old_guard = (
+              '    if metadata.st_uid != 0 or metadata.st_mode & 0o022:\n'
+              '        raise SystemExit("selected Xcode custody requires root-owned non-group/world-writable metadata")\n'
+          )
+          acl_guard = (
+              '    acl_probe = subprocess.run(\n'
+              '        ["/bin/ls", "-lde", str(current)],\n'
+              '        env={\n'
+              '            "PATH": "/usr/bin:/bin",\n'
+              '            "HOME": "/tmp",\n'
+              '            "LANG": "C",\n'
+              '            "LC_ALL": "C",\n'
+              '        },\n'
+              '        stdin=subprocess.DEVNULL,\n'
+              '        stdout=subprocess.PIPE,\n'
+              '        stderr=subprocess.PIPE,\n'
+              '        text=True,\n'
+              '        check=False,\n'
+              '    )\n'
+              '    if acl_probe.returncode != 0:\n'
+              '        raise SystemExit("selected Xcode custody could not inspect extended ACL authority")\n'
+              '    acl_lines = acl_probe.stdout.splitlines()\n'
+              '    if not acl_lines:\n'
+              '        raise SystemExit("selected Xcode custody received no ACL metadata")\n'
+              '    mode_field = acl_lines[0].split(None, 1)[0]\n'
+              '    if mode_field.endswith("+") or len(acl_lines) != 1:\n'
+              '        raise SystemExit("selected Xcode custody refuses extended ACL authority")\n'
+              '    try:\n'
+              '        after_acl = os.lstat(current)\n'
+              '    except OSError as error:\n'
+              '        raise SystemExit("selected Xcode custody ancestry changed during ACL admission") from error\n'
+              '    before_identity = (\n'
+              '        metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid,\n'
+              '        metadata.st_gid, metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns,\n'
+              '    )\n'
+              '    after_identity = (\n'
+              '        after_acl.st_dev, after_acl.st_ino, after_acl.st_mode, after_acl.st_uid,\n'
+              '        after_acl.st_gid, after_acl.st_size, after_acl.st_mtime_ns, after_acl.st_ctime_ns,\n'
+              '    )\n'
+              '    if after_identity != before_identity:\n'
+              '        raise SystemExit("selected Xcode custody ancestry changed during ACL admission")\n'
+          )
           if text.count(old_guard) != 1:
               raise SystemExit('unexpected selected-Xcode metadata guard shape')
-          text = text.replace(old_guard, new_guard, 1)
+          text = text.replace(old_guard, old_guard + acl_guard, 1)
           path.write_text(text, encoding='utf-8')
           PY
 
@@ -108,14 +99,13 @@ jobs:
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
           source = Path('scripts/field/install_one_time_capture.command').read_text(encoding='utf-8')
-          required = [
+          for fragment in (
               'import subprocess',
               '["/bin/ls", "-lde", str(current)]',
               'mode_field.endswith("+") or len(acl_lines) != 1',
               'selected Xcode custody refuses extended ACL authority',
               'after_identity != before_identity',
-          ]
-          for fragment in required:
+          ):
               if fragment not in source:
                   raise SystemExit(f'missing ACL custody fragment: {fragment}')
           PY
