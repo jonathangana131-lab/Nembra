@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-import re
 import shlex
 import struct
 import subprocess
@@ -104,9 +103,14 @@ class CaptureFieldVerifiedGitPayloadCurrentQA(unittest.TestCase):
             verifier.index("sys.stdout.buffer.write(source)"),
             "verified payload must not emit any prefix before identity succeeds",
         )
-        self.assertNotRegex(
+        self.assertIn(
+            "subprocess.Popen(",
             verifier,
-            re.compile(r"check_output\([^\n]*cat-file[^\n]*blob", re.MULTILINE),
+            "actual blob capture must use a bounded streaming subprocess",
+        )
+        self.assertNotIn(
+            "subprocess.check_output",
+            verifier,
             "actual blob capture must not use an unbounded check_output path",
         )
 
