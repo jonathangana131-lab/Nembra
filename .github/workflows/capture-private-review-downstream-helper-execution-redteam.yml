@@ -14,6 +14,7 @@ on:
       - scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
       - scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
       - scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py
+      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
       - .github/workflows/capture-private-review-downstream-helper-execution-redteam.yml
 
 permissions:
@@ -40,9 +41,11 @@ jobs:
           scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py
           scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py
           scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py
+          scripts/ci/tests/test_capture_field_accepted_source_path_contract.py
       - name: Reject mutable downstream authority helpers
         run: >-
           python3 -m unittest -v
           scripts.ci.tests.test_capture_private_review_downstream_helper_execution_custody
           scripts.ci.tests.test_capture_private_review_exception_proxy_custody
           scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
+          scripts.ci.tests.test_capture_field_accepted_source_path_contract
