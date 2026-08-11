@@ -192,10 +192,10 @@ private struct CaptureP0Root: View {
                     }
 
                     VStack(alignment: .leading, spacing: 7) {
-                        if !isAccessibilityLayout {
-                            Text("Tuya Smart user code")
-                                .font(.subheadline.weight(.semibold))
-                        }
+                        Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")
+                            .font(.subheadline.weight(.semibold))
+                            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                            .accessibilityHidden(true)
                         TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -3784,7 +3784,7 @@ private struct SecureLinkView: View {
             }
             .padding(.top, 12)
         } label: {
-            Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")
+            Label(dynamicTypeSize.isAccessibilitySize ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")
                 .font(.subheadline.weight(.semibold))
                 .accessibilityLabel("Engineering details")
         }
