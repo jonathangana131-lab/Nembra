@@ -10,7 +10,10 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
         #expect(bootstrap.contains("capture_tuya_private_input_provenance.py"))
-        #expect(bootstrap.contains("\"$PROVENANCE_HELPER\" snapshot"))
+        #expect(bootstrap.contains("PROVENANCE_HELPER_GIT_BLOB_OID=\""))
+        #expect(bootstrap.contains("PROVENANCE_CAPTURE=\"$({ /bin/cat -- \"$PROVENANCE_HELPER\";"))
+        #expect(bootstrap.contains("/usr/bin/python3 -I -c \"$PROVENANCE_SOURCE\" snapshot"))
+        #expect(!bootstrap.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
         #expect(bootstrap.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(bootstrap.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
         #expect(bootstrap.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))
