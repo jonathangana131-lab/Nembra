@@ -7,12 +7,16 @@
   "workerId": "sol-20260811-c4d2",
   "leaseId": "capture-private-identity-review-c4d2-20260811-0939",
   "generation": 1,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T09:39:45Z",
-  "lastHeartbeatAt": "2026-08-11T09:53:00Z",
+  "lastHeartbeatAt": "2026-08-11T09:58:30Z",
+  "releasedAt": "2026-08-11T09:58:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2755,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
-  "currentHeadSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc"
+  "currentHeadSHA": "2d8241c791d79ad04654fb1c90f7ac89ac5d5efc",
+  "outcome": "NEEDS_CHANGES",
+  "reviewId": 4904874799,
+  "reviewNote": "Exact-head review found descendant ancestry substitution can publish credential bytes into a same-UID replacement in-checkout directory tree before the later held-chain rejection; blocking event recorded at 2026/08/11/094600-review-result-private-identity-c4d2.json. Existing leaf post-open and hard-exit residue blockers remain."
 }
