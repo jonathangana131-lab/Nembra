@@ -132,7 +132,12 @@ def root_probe() -> int:
 
     normal_groups = sorted(set(os.getgrouplist(account.pw_name, gid)))
     capability_gid = helper.choose_capability_gid(normal_groups)
-    capability_groups = sorted(set(normal_groups) | {capability_gid})
+    # The APFS oracle needs only the real primary identity plus the one-run
+    # supplementary capability. Replaying the hosted runner's unrelated
+    # supplementary groups can exceed macOS/Python's setgroups ceiling before
+    # the writer reaches READY, which is fixture noise rather than authority.
+    capability_groups = [capability_gid]
+    ordinary_groups: list[int] = []
     workspace = Path(tempfile.mkdtemp(prefix="nembra-unmount-structured.", dir="/private/tmp"))
     os.chown(workspace, 0, capability_gid)
     os.chmod(workspace, 0o710)
@@ -219,7 +224,7 @@ def root_probe() -> int:
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
-                **structured_credentials(uid, gid, normal_groups),
+                **structured_credentials(uid, gid, ordinary_groups),
             )
         except (OSError, subprocess.SubprocessError) as error:
             emit_error(
