@@ -50,12 +50,12 @@ jobs:
           PY
           then
             git reset --hard HEAD
-            cp /tmp/capture-authority-materializer-error.txt .github/capture-authority-materializer-error.txt
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add .github/capture-authority-materializer-error.txt
-            git commit -m 'Capture: record authority materializer failure'
-            git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
+            python3 - <<'PY'
+          from pathlib import Path
+          message = Path('/tmp/capture-authority-materializer-error.txt').read_text(encoding='utf-8').strip()
+          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error file=.github/workflows/capture-authority-chain-materialize-runner.yml::{message}')
+          PY
             exit 1
           fi
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
