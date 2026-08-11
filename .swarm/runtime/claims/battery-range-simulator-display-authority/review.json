@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "battery-range-simulator-display-authority",
+  "slot": "review",
+  "role": "review",
+  "workerId": "sol-20260811-p1rec53",
+  "leaseId": "brsim-review-p1rec53-20260811-0820",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T08:20:10Z",
+  "lastHeartbeatAt": "2026-08-11T08:20:10Z",
+  "leaseSeconds": 1800,
+  "branch": "",
+  "pr": 2815,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+}
