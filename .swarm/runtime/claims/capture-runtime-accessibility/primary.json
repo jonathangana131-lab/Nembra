@@ -7,19 +7,17 @@
   "workerId": "sol-20260811-gpt56-transcript-retention",
   "leaseId": "capture-runtime-accessibility-primary-gpt56-transcript-20260811-2117",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:17:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:18:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:19:15Z",
   "leaseSeconds": 1800,
   "branch": "agent/v14-capture-runtime-voiceover-transcript-retention-sol-gpt56-20260811",
   "pr": 3022,
   "sourceSHA": "4ed3c579591462b6f8cdd1b2704c83ccfc4714f9",
   "currentHeadSHA": "929c729a9b0653462dbdcad2fd272050d0e8f7fc",
   "takeoverFromWorkerId": "sol-20260811-0458-go-voiceover",
-  "takeoverReason": "The prior runtime-accessibility lease expired many hours ago. Recover only the witness-source evidence-retention rung while active flagship tests worker #3007 exclusively owns .github/workflows/capture-runtime-voiceover.yml. Preserve fail-closed VoiceOver traversal and retain accumulated speech if moveForward throws; do not touch product/UI bytes or the occupied workflow path.",
-  "ownedPaths": [
-    "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
-  ],
-  "checkpoint": "Draft #3022 exact 929c729a9b0653462dbdcad2fd272050d0e8f7fc is a clean two-commit child of #2973 exact 4ed3c579591462b6f8cdd1b2704c83ccfc4714f9 and changes exactly one witness source file (+25/-13), with zero product/UI/workflow overlap. It factors transcript retention into one helper, calls it on a strict moveForward error before rethrowing unchanged, and uses the same helper on success. Parent #2973 exact run 31533392572 executed one targeted runtime test and is runner-authority red (AXSpringBoardServerInstanceErrorDomain Code 16 plus AXAuditErrorDomain Code 0), not product-semantic red. Active #3007 owns workflow-only authority diagnostics. PHYSICAL NO-GO.",
-  "acceptance": "Source review must confirm no swallowed traversal error and exact one-file scope. Compose #3022 witness delta with active #3007 workflow-only authority diagnostics on a new exact head; then require fresh Capture Runtime VoiceOver proving accessibility runner authority, testsCount > 0, audit execution, ordered required speech, forbidden authority absence, and retained transcript evidence on any traversal failure. Any head move resets runtime evidence. PHYSICAL NO-GO."
+  "takeoverReason": "The prior runtime-accessibility lease expired many hours ago. This recovery independently implemented strict-error transcript retention, then live convergence #3018 was discovered to already absorb sibling #3012 with the same intent plus stronger bounded job-log retention.",
+  "ownedPaths": [],
+  "checkpoint": "#3022 exact 929c729a9b0653462dbdcad2fd272050d0e8f7fc is CLOSED UNMERGED as superseded to avoid PR soup. It remains a durable one-file witness checkpoint only and must not be selected. Preferred runtime-AX convergence is #3018, after exact-head reconciliation against #3007 current head 7abf3432d8f6f9caab389557f07b796eda146ace and fresh runtime evidence. Parent #2973 red is runner-authority evidence (AXSpringBoardServerInstanceErrorDomain Code 16 plus AXAuditErrorDomain Code 0), not product-semantic proof. PHYSICAL NO-GO.",
+  "acceptance": "No acceptance granted by this released lane. Preserve the source requirement that strict VoiceOver traversal errors remain red while already-observed speech is retained. Runtime acceptance belongs to the selected convergence lineage only after exact-head runner authority, testsCount > 0, audit, ordered speech, negative authority, and retained evidence all pass. PHYSICAL NO-GO."
 }
