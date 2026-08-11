@@ -9,12 +9,12 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:23:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:35:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:37:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-energyrail-sol-c84e",
   "pr": 2991,
   "sourceSHA": "c150a8287463231ee9af174c38564738bab576a3",
-  "currentHeadSHA": "355689e9e8c66dec32a43e42170665c783b6d1b1",
+  "currentHeadSHA": "b15524162be97ef303502689bafce11230be273f",
   "takeoverFromWorkerId": "sol-20260811-hl6k",
   "takeoverReason": "Generation-2 lease expired many hours ago. Exact c150 AX5 evidence exposed status truncation and later independent visual review exposed Energy Rail/currentness-label intersection. Continue the same Dashboard accessibility closure through stacked exact-head successors; preserve telemetry truth and Simulator-only authority.",
   "ownedPaths": [
@@ -23,6 +23,6 @@
     "NembraUITests/NembraUITests.swift",
     "scripts/ci/xcode27_simulator_capture.sh"
   ],
-  "checkpoint": "#2981 exact c200cba repairs AX5 status reflow and adds real AX stopped-state rerun; its exact Xcode attempt 31533023076 was runner-cancelled before build then re-run without moving the head and is in flight. Independent visual review simultaneously found AX5 LIVE POWER/rail intersection on parent artifact, so opened one-file successor #2991 exact 355689e: AX rail top padding 76->92 and minimum component height 156->164 only; standard geometry unchanged. /xcode27 requested on #2991. Checkpoint != endpoint.",
-  "acceptance": "Final exact successor must keep speed/Energy Rail semantic truth, show untruncated vehicle/connection status at AX5, separate power currentness text from the rail, prove riding + connected-stopped under real system AX content size, preserve 44-pt stopped controls, avoid reintroduced vertical clipping, and earn exact-head Xcode/screenshots plus independent review. ES80 physical NO-GO."
+  "checkpoint": "#2981 exact c200cba repairs AX5 status reflow and adds the real AX stopped-state rerun; its exact Xcode run 31533023076 remains in flight on the serialized Mac. Final stacked #2991 is now exact b155241: inherited #2981 + AX Energy Rail separation + a mechanical stopped-control oracle requiring light/lock/all four mode frames to be fully contained in the app window as well as >=44 pt. The old #2991 run was cancelled before build while the Mac was occupied and targeted the superseded 355689e; do not count it. Next runner request must resolve b155241 exactly after the active Mac frees. Checkpoint != endpoint.",
+  "acceptance": "Final exact b155241 (or a reviewed descendant) must keep speed/Energy Rail semantic truth, show untruncated vehicle/connection status at AX5, separate power currentness text from the rail, prove riding + connected-stopped under real system AX content size, keep stopped controls >=44 pt and fully inside the app window, avoid reintroduced vertical clipping, and earn exact-head Xcode/screenshots plus independent review. ES80 physical NO-GO."
 }
