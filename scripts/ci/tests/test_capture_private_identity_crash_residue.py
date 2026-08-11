@@ -62,6 +62,13 @@ def path_entry_exists(path: Path) -> bool:
     return os.path.lexists(os.fspath(path))
 
 
+def canonical_spoof_name(nibble: str) -> str:
+    """Produce an attacker-controlled name that passes the writer's reserved-name grammar."""
+    if len(nibble) != 1 or nibble not in "0123456789abcdef":
+        raise ValueError("spoof nibble must be one lowercase hex character")
+    return f"{RESERVED_PREFIX}{os.getpid()}-{nibble * 24}"
+
+
 class PrivateIdentityCrashResidueTests(unittest.TestCase):
     def test_next_invocation_cannot_leave_hard_exit_stage_credentials_hidden(self) -> None:
         writer = load_writer()
@@ -156,7 +163,7 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
             checkout.mkdir(mode=0o700)
             victim = checkout / "unrelated.txt"
             victim.write_bytes(victim_payload)
-            stage = checkout / f"{RESERVED_PREFIX}attacker-symlink"
+            stage = checkout / canonical_spoof_name("a")
             stage.symlink_to(victim.name)
 
             failed_closed = run_recovery_invocation(writer, checkout)
@@ -181,7 +188,7 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
             checkout.mkdir(mode=0o700)
             victim = checkout / "unrelated.txt"
             victim.write_bytes(victim_payload)
-            stage = checkout / f"{RESERVED_PREFIX}attacker-hardlink"
+            stage = checkout / canonical_spoof_name("b")
             os.link(victim, stage)
             self.assertGreaterEqual(victim.stat().st_nlink, 2)
 
@@ -204,7 +211,7 @@ class PrivateIdentityCrashResidueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-private-directory-orphan-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
-            stage = checkout / f"{RESERVED_PREFIX}attacker-directory"
+            stage = checkout / canonical_spoof_name("c")
             stage.mkdir(mode=0o700)
             marker = stage / "do-not-delete.txt"
             marker_payload = b"attacker-controlled-directory-content"
