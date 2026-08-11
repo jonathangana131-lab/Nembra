@@ -1,19 +1,17 @@
-name: Capture Final GO Continuous Tracked Tree Custody
+name: Capture Final GO Sealed Record Handoff
 
 on:
   push:
     branches:
-      - repair/v14-final-go-continuous-tree-custody-sol-20260811
+      - repair/v14-final-go-sealed-record-handoff-sol-20260811
     paths:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
-      - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
-      - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_record_handoff.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
   pull_request:
     paths:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
-      - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
-      - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_record_handoff.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
   workflow_dispatch:
 
@@ -22,12 +20,12 @@ permissions:
   pull-requests: read
 
 jobs:
-  continuous-tracked-tree-custody:
-    name: Reject whole-tree and finite-rehash mutation races
+  sealed-record-handoff:
+    name: Seal source authority before tracked-tree release
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
-      EXACT_PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
+      EXACT_PARENT: cb36f9265f08708c8e47564f62f4857aeae7af0f
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONPYCACHEPREFIX: ${{ runner.temp }}/nembra-finalgo-pycache
     steps:
@@ -36,7 +34,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Bind exact candidate and four-path production delta
+      - name: Bind exact continuous-custody parent and three-path successor
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -44,13 +42,11 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           git merge-base --is-ancestor "$EXACT_PARENT" HEAD
-          test "$(git rev-list --count "$EXACT_PARENT"..HEAD)" -ge 1
           mapfile -t changed < <(git diff --name-only "$EXACT_PARENT" HEAD | LC_ALL=C sort)
           expected=(
             .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py
-            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
-            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+            scripts/ci/tests/test_es80_final_go_sealed_record_handoff.py
           )
           test "${#changed[@]}" -eq "${#expected[@]}"
           for index in "${!expected[@]}"; do
@@ -58,22 +54,30 @@ jobs:
           done
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile successor and permanent adversarial acceptance
+      - name: Compile sealed handoff and inherited authority contracts
         shell: bash
         run: |
           set -euo pipefail
           python3 -m py_compile \
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_sealed_record_handoff.py \
             scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
-            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py \
+            scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
 
-      - name: Reject post-subject and finite-rehash mutation races
+      - name: Prove detached authority handoff before release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_sealed_record_handoff.py
+
+      - name: Preserve continuous whole-tree mutation custody
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
 
-      - name: Preserve object-chain, descriptor, and inherited raw-candidate authority
+      - name: Preserve object-chain descriptor and raw-candidate authority
         shell: bash
         run: |
           set -euo pipefail
