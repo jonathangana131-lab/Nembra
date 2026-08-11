@@ -15,15 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 3
 
       - name: Recompose Secure Link hero at accessibility sizes
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='2495f51030b9a80859635df6d48cb7074b9eea6e'
+          expected_parent='fe1e813bcbd2a30172f2e4d01b178ac70c5b486d'
+          product_parent='4fce4861d99903eb0772e33949c3d302a1258d2a'
           test "$(git rev-parse HEAD^)" = "$expected_parent"
-          test "$(git diff --name-only "$expected_parent"..HEAD)" = '.github/workflows/tmp-capture-securelink-ax-hero.yml'
+          test "$(git diff --name-only "$product_parent"..HEAD)" = '.github/workflows/tmp-capture-securelink-ax-hero.yml'
           python3 - <<'PY'
           from pathlib import Path
           app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
