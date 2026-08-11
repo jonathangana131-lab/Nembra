@@ -1,0 +1,61 @@
+name: Capture Signed Origin Immutable FD Probe
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_immutable_fd_probe.py
+      - .github/workflows/capture-signed-origin-immutable-fd-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  immutable-fd-revocation:
+    name: Prove immutable revokes pre-opened writer FD
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact validation child to signed-origin production parent
+        shell: bash
+        env:
+          PRODUCTION_PARENT: ccaa93c5019797697144f8f7613b9e64c123ef53
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          git cat-file -e "${PRODUCTION_PARENT}^{commit}"
+          changed="$(git diff --name-only "$PRODUCTION_PARENT"...HEAD | LC_ALL=C sort)"
+          wanted="$(printf '%s\n' \
+            '.github/workflows/capture-signed-origin-immutable-fd-probe.yml' \
+            'scripts/ci/tests/test_capture_signed_app_immutable_fd_probe.py')"
+          test "$changed" = "$wanted"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile immutable-FD probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_immutable_fd_probe.py
+
+      - name: Prove immutable revocation against pre-opened writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_immutable_fd_probe.py
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check ccaa93c5019797697144f8f7613b9e64c123ef53 HEAD
