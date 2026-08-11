@@ -1,0 +1,77 @@
+name: TEMP V14 Private Identity Crash Recovery Sol
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-crash-residue-recovery-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-identity-crash-residue-recovery-sol-20260811
+          fetch-depth: 0
+      - name: Bind exact parent lineage and fetch adversarial evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 70b95a1a6be594045adf3d2e7769f682befabaf8 HEAD
+          test "$(git rev-parse HEAD:Scripts/provision_capture_tuya_identity_writer.py)" = ed473ca81fed3a729c4618c65c2fcd0d272987a5
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git fetch --no-tags origin adversarial/v14-private-identity-crash-residue-sol-20260811
+          git cat-file -e 6ef21ee7b7ca44e26ca8e478f41b14505fe90d8b^{commit}
+      - name: Materialize crash-residue recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tmp_materialize_private_identity_crash_recovery_sol.py
+      - name: Validate permanent repair and adversarial cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e scripts/ci/tmp_materialize_private_identity_crash_recovery_sol.py
+          test ! -e .github/workflows/tmp-v14-private-identity-crash-recovery-sol.yml
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          /usr/bin/python3 Scripts/provision_capture_tuya_identity_writer.py --self-test
+          NEMBRA_CRASH_RESIDUE_CASE=hard-exit /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          NEMBRA_CRASH_RESIDUE_CASE=symlink /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          NEMBRA_CRASH_RESIDUE_CASE=hardlink /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          NEMBRA_CRASH_RESIDUE_CASE=directory /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_crash_residue.py
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          /bin/rm -rf -- Scripts/__pycache__ scripts/ci/tests/__pycache__
+          git diff --check
+      - name: Verify exact publish scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          /usr/bin/python3 - <<'PY'
+          import subprocess
+          expected = {
+              "Scripts/provision_capture_tuya_identity_writer.py",
+              "Scripts/provision_capture_tuya_identity.sh",
+              "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift",
+              ".github/workflows/capture-private-identity-publication-races-redteam.yml",
+              "scripts/ci/tests/test_capture_private_identity_crash_residue.py",
+              "scripts/ci/tmp_materialize_private_identity_crash_recovery_sol.py",
+              ".github/workflows/tmp-v14-private-identity-crash-recovery-sol.yml",
+          }
+          actual = set(subprocess.check_output(["git", "diff", "--cached", "--name-only"], text=True).splitlines())
+          if actual != expected:
+              raise SystemExit(f"unexpected materialized path set: {sorted(actual)}")
+          PY
+      - name: Publish clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra V14 Sol"
+          git config user.email "nembra-v14-sol@users.noreply.github.com"
+          git commit -m "Capture: recover private identity crash staging"
+          git push origin HEAD:repair/v14-private-identity-crash-residue-recovery-sol-20260811
