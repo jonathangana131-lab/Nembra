@@ -134,6 +134,8 @@ jobs:
           path.write_text(source, encoding="utf-8")
           PY
           /usr/bin/python3 -m py_compile "$source_file"
+          grep -Fq 'fieldActiveSupplementaryGroups' "$source_file"
+          trap - EXIT
           printf '%s\n' 'NEMBRA_DEDICATED_UID_ACTIVE_FIELD_GROUPS_DIAGNOSTIC=1'
 
       - name: Run real-Xcode dedicated-UID oracle with actual field authority
@@ -146,6 +148,11 @@ jobs:
           if [[ ! -f "$backup" ]]; then
             printf 'Missing retained original source backup.\n' >&2
             exit 30
+          fi
+          if ! grep -Fq 'fieldActiveSupplementaryGroups' "$source_file"; then
+            printf 'Patched active-field authority witness was not carried into the execution step.\n' >&2
+            cp "$backup" "$source_file"
+            exit 31
           fi
           restore_source() { cp "$backup" "$source_file"; }
           trap restore_source EXIT
@@ -164,6 +171,17 @@ jobs:
           fi
           grep -Fq 'NEMBRA_REAL_XCODE_DEDICATED_UID_JSON=' "$output"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Restore source before retention and hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_file='scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py'
+          backup="$RUNNER_TEMP/nembra-dedicated-active-groups.original.py"
+          if [[ -f "$backup" ]]; then
+            cp "$backup" "$source_file"
+          fi
 
       - name: Retain exact active-field authority evidence
         if: always()
