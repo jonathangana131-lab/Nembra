@@ -1,0 +1,87 @@
+name: Capture AX5 Task-First Materializer V6
+
+on:
+  push:
+    branches:
+      - fix/v14-capture-ax5-task-first-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: fix/v14-capture-ax5-task-first-sol
+
+      - name: Apply pinned-root accessibility repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          source_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          expected_blob = "f8bf601343e89809874f5a2f488bd0db3c2d9fd8"
+          actual_blob = subprocess.check_output(["git", "hash-object", str(source_path)], text=True).strip()
+          if actual_blob != expected_blob:
+              raise SystemExit(f"refusing source drift: expected {expected_blob}, got {actual_blob}")
+
+          source = source_path.read_text()
+          start_marker = "@MainActor\nprivate struct CaptureP0Root: View {"
+          end_marker = "\n@MainActor\nprivate final class SecureLinkController"
+          if start_marker not in source or end_marker not in source:
+              raise SystemExit("CaptureP0Root boundary changed")
+          start = source.index(start_marker)
+          end = source.index(end_marker, start)
+          root = source[start:end]
+
+          def patch(old: str, new: str, label: str) -> None:
+              global root
+              if old not in root:
+                  raise SystemExit(f"missing pinned {label} anchor")
+              root = root.replace(old, new, 1)
+
+          patch("    @State private var showEngineeringDetails = false\n", "    @State private var showEngineeringDetails = false\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n\n    private var accessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }\n", "state")
+          patch("                    VStack(alignment: .leading, spacing: 22) {\n", "                    VStack(alignment: .leading, spacing: accessibilityLayout ? 14 : 22) {\n", "root spacing")
+          patch("                        VStack(alignment: .leading, spacing: 8) {\n", "                        VStack(alignment: .leading, spacing: accessibilityLayout ? 6 : 8) {\n", "hero spacing")
+          patch("                                .font(.caption2.bold())\n                                .tracking(1.5)\n", "                                .font(accessibilityLayout ? .caption.bold() : .caption2.bold())\n                                .tracking(accessibilityLayout ? 0.8 : 1.5)\n                                .dynamicTypeSize(.xSmall ... .xxxLarge)\n", "brand typography")
+          patch("                            Text(\"Prepare the scooter link\")\n                                .font(.largeTitle.bold())\n", "                            Text(accessibilityLayout ? \"Prepare scooter link\" : \"Prepare the scooter link\")\n                                .font(accessibilityLayout ? .title2.bold() : .largeTitle.bold())\n", "hero title")
+          patch("                            Text(\"One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.\")\n                                .font(.body)\n", "                            Text(accessibilityLayout ? \"Read-only setup. Scooter settings stay unchanged.\" : \"One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.\")\n                                .font(accessibilityLayout ? .callout : .body)\n", "hero explanation")
+          patch("                                Label(tuya.isLinked ? \"Account link ready\" : \"Link your scooter account\", systemImage: tuya.isLinked ? \"checkmark.circle.fill\" : \"person.crop.circle.badge.checkmark\")\n                                    .font(.title3.bold())\n", "                                Label(tuya.isLinked ? \"Account link ready\" : \"Link your scooter account\", systemImage: tuya.isLinked ? \"checkmark.circle.fill\" : \"person.crop.circle.badge.checkmark\")\n                                    .font(accessibilityLayout ? .headline.bold() : .title3.bold())\n", "account label")
+          patch("                                Text(tuya.statusMessage)\n                                    .font(.footnote)\n", "                                Text(accessibilityLayout && !tuya.isLinked ? \"Approve access to continue.\" : tuya.statusMessage)\n                                    .font(accessibilityLayout ? .callout : .footnote)\n", "account status")
+          patch("                    .padding(.top, 22)\n", "                    .padding(.top, accessibilityLayout ? 12 : 22)\n", "top padding")
+          patch("            .padding(18)\n", "            .padding(accessibilityLayout ? 14 : 18)\n", "panel padding")
+
+          required = ["@Environment(\\.dynamicTypeSize) private var dynamicTypeSize", "dynamicTypeSize.isAccessibilitySize", "Text(accessibilityLayout ? \"Prepare scooter link\" : \"Prepare the scooter link\")", "Read-only setup. Scooter settings stay unchanged.", "Approve access to continue.", ".dynamicTypeSize(.xSmall ... .xxxLarge)", ".padding(.top, accessibilityLayout ? 12 : 22)", ".padding(accessibilityLayout ? 14 : 18)"]
+          missing = [token for token in required if token not in root]
+          if missing:
+              raise SystemExit(f"postcondition missing: {missing}")
+
+          source_path.write_text(source[:start] + root + source[end:])
+
+          for workflow in (".github/workflows/capture-ax5-task-first-materializer.yml", ".github/workflows/capture-ax5-task-first-materializer-v2.yml", ".github/workflows/capture-ax5-task-first-materializer-v3.yml", ".github/workflows/capture-ax5-task-first-materializer-v4.yml", ".github/workflows/capture-ax5-task-first-materializer-v5.yml", ".github/workflows/capture-ax5-task-first-materializer-v6.yml"):
+              path = Path(workflow)
+              if path.exists():
+                  path.unlink()
+          PY
+
+          git diff --check
+          grep -F '@Environment(\.dynamicTypeSize) private var dynamicTypeSize' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -F 'Text(accessibilityLayout ? "Prepare scooter link" : "Prepare the scooter link")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -F 'Approve access to continue.' NembraApp/App/NembraCaptureEntrypoint.swift
+          test ! -e .github/workflows/capture-ax5-task-first-materializer-v6.yml
+
+      - name: Commit exact repair and self-delete materializers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(capture): recompose AX5 account setup task-first"
+          git push origin HEAD:fix/v14-capture-ax5-task-first-sol
