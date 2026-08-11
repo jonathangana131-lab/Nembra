@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "071400-blocker-primary-language-range-lgrv2353",
+  "type": "BLOCKER",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Capture package blocker isolated from exact #2805@4456c176874c7489d5f0789b51e56324205442e6 selective-graft artifact 9092226121: both normal `swift test` and diagnostic `swift test --no-parallel` terminate with Swift fatal `Range requires lowerBound <= upperBound`; `swift test list` succeeds and the standalone Capture Xcode build succeeds. Serial execution pinpoints the crash at suite `Capture primary rider language`, test `primary Capture flow stays rider-first while Engineering Details retains exact protocol truth`. Source `Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCapturePrimaryLanguageSourceTests.swift` builds `primaryStart = app.range(of: \"private var preflightPanel\")` and independently `detailsStart = app.range(of: \"private var engineeringDisclosure\")`, then slices `app[primaryStart.lowerBound..<detailsStart.lowerBound]` without proving detailsStart follows primaryStart. Current source ordering makes that Range invalid and traps the whole test process. Repair the test boundary by locating Engineering Details only in `primaryStart.lowerBound..<app.endIndex` (or otherwise explicitly require ordered markers) while preserving all rider-language/truth assertions. This inherited deterministic test-harness defect explains broad Capture package rejection on current security/build/flagship lineages; do not misclassify it as #2805 helper-execution product failure. Re-run full package/Xcode/selective-graft on every moved exact head after repair. Physical remains NO-GO.",
+  "createdAt": "2026-08-11T07:14:00Z"
+}
