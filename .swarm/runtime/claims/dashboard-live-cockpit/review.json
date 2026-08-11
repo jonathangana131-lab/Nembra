@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-1402vo",
   "leaseId": "dashboard-review-1402vo-20260811-2121",
   "generation": 8,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:21:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:21:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:26:00Z",
+  "releasedAt": "2026-08-11T21:26:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2991,
   "sourceSHA": "c150a8287463231ee9af174c38564738bab576a3",
   "currentHeadSHA": "844a144fd758ab4d54c7c2702f644794401bbe62",
-  "takeoverFromWorkerId": "sol-20260811-1402vo",
-  "takeoverReason": "Generation-7 performance review was explicitly released after durable #2980 finding. #2991 exact 844a144 independently needs ordinary source/truth review in addition to the separately occupied visual-review slot. Do not touch primary owned paths.",
-  "intent": "Adversarial source/truth review of #2991 exact 844a144. Verify AX5 reflow preserves Simulator-only authority, moving/stopped command gating, confirmed-mode semantics, Energy Rail currentness separation, touch target semantics, and exact-head CI evidence. Visual pixels remain owned by visual-review worker. ES80 PHYSICAL NO-GO."
+  "outcome": "SOURCE_TRUTH_ACCEPTED_EXACT_RUNTIME_VISUAL_PENDING",
+  "reviewId": 4910845432,
+  "durableEvidence": "Exact 844a144 product delta is geometry/layout only: AX Energy Rail separation plus deterministic RideMode.allCases 2x2 mode composition reusing unchanged modeControl command/pending/VoiceOver semantics. Stopped cluster remains admitted only by simulatorQualifiedLiveSpeedKilometersPerHour; no physical ES80 authority added. XCUI stale-handle fix re-queries post-command semantic mode and still requires exact confirmed value. Nonblocking oracle debt: midY >20 does not itself prove >=44pt mode rows are non-overlapping, so exact visual pixel review remains mandatory. Xcode run 31535702144 was nonterminal at review. ES80 PHYSICAL NO-GO.",
+  "releaseReason": "Durable source review published as 4910845432. Release ordinary review slot so another worker can inspect a moved descendant or runtime evidence. Separately active visual-review owns exact AX5 screenshot acceptance; do not duplicate it."
 }
