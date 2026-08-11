@@ -9,10 +9,14 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:38:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:38:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:40:00Z",
   "leaseSeconds": 1800,
   "branch": "redteam/v14-private-identity-failed-bootstrap-admission-sol-54c8boot",
-  "pr": null,
+  "pr": 2961,
   "sourceSHA": "462d4d3862e48af8aa2582733a7c2cf011075b30",
-  "intent": "Mechanically test whether #2944's revised fail-closed publication policy can leave attacker-controlled Swift at the canonical LocalSecrets identity path and a later normal bootstrap reaches CocoaPods with that source admitted. Expected-red only; do not modify active production repair. PHYSICAL NO-GO."
+  "currentHeadSHA": "9ff1ed6e2a7c4a8d6c3e1c219d7eeab57bf06981",
+  "findingRun": 31492270036,
+  "findingJob": 93781360990,
+  "findingState": "EXPECTED_RED_CONFIRMED",
+  "finding": "Exact clean #2944 candidate rejects the post-name-check generated Swift substitution but leaves attacker-controlled Swift at the canonical LocalSecrets identity path; a later normal bootstrap reaches CocoaPods admission with that source present. Exact witness assertion: bootstrap reached CocoaPods after failed provisioning left attacker-controlled Swift at the canonical private identity path. Diagnostic #2961 must remain unmerged. Production must close downstream admission without check-then-unlink or permanent root tombstones. PHYSICAL NO-GO."
 }
