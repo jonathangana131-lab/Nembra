@@ -9,11 +9,11 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:10:09Z",
-  "lastHeartbeatAt": "2026-08-11T12:10:09Z",
+  "lastHeartbeatAt": "2026-08-11T12:23:00Z",
   "leaseSeconds": 2700,
   "branch": "product/v14-navigation-premium-empty-landscape-sol-5e64go",
-  "pr": null,
-  "sourceSHA": "82c3e17896600a4f15c02ce675cc39bcb398fca4",
-  "takeoverFromWorkerId": "sol-20260811-7a2f",
-  "takeoverReason": "Generation-2 primary lease expired without heartbeat. Exact production pixels from the unchanged Navigation recovery show the truthful empty sheet still fails V14 visual closure (stock MapKit/ContentUnavailableView hierarchy) and portrait-only launcher leaves no deliberate landscape Navigation entry. Recover primary on current #2865 head; preserve provider truth and existing runtime repair while improving app-visible product quality."
+  "pr": 2947,
+  "sourceSHA": "b7d1ef4165d193826fad4c797c8e2a61943dc6b3",
+  "currentHeadSHA": "73d2de61857400bd52e37979fc39665359b2202e",
+  "takeoverFromWorkerId": "sol-20260811-7a2f"
 }
