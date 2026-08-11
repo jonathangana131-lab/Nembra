@@ -28,9 +28,27 @@ def materializer_payload() -> str:
         raise SystemExit("materializer payload end is not unique")
     payload = textwrap.dedent(body.split(end, 1)[0])
 
-    original = '''def replace_once(text: str, old: str, new: str, label: str) -> str:\n    count = text.count(old)\n    if count != 1:\n        raise SystemExit(f"{label}: expected one match, found {count}")\n    return text.replace(old, new, 1)\n'''
-    repaired = '''def replace_once(text: str, old: str, new: str, label: str) -> str:\n    count = text.count(old)\n    if label == "bootstrap review helper output" and count == 2:\n        candidate = "DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY"\n        marker = text.find(candidate)\n        if marker < 0:\n            raise SystemExit("bootstrap review helper output: review-candidate marker missing")\n        prefix, suffix = text[:marker], text[marker:]\n        if suffix.count(old) != 1:\n            raise SystemExit(f"bootstrap review helper output: expected one review-candidate match, found {suffix.count(old)}")\n        return prefix + suffix.replace(old, new, 1)\n    if count != 1:\n        raise SystemExit(f"{label}: expected one match, found {count}")\n    return text.replace(old, new, 1)\n'''
-    return replace_once(payload, original, repaired, "payload replace_once recovery")
+    function_start = payload.find("def replace_once(")
+    function_end_marker = "\n\n# ------------------------------------------------------------------\n# Bootstrap:"
+    function_end = payload.find(function_end_marker, function_start)
+    if function_start < 0 or function_end < 0:
+        raise SystemExit("materializer replace_once function boundary is unavailable")
+    repaired = '''def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if label == "bootstrap review helper output" and count == 2:
+        candidate = "DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY"
+        marker = text.find(candidate)
+        if marker < 0:
+            raise SystemExit("bootstrap review helper output: review-candidate marker missing")
+        prefix, suffix = text[:marker], text[marker:]
+        if suffix.count(old) != 1:
+            raise SystemExit(f"bootstrap review helper output: expected one review-candidate match, found {suffix.count(old)}")
+        return prefix + suffix.replace(old, new, 1)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one match, found {count}")
+    return text.replace(old, new, 1)
+'''
+    return payload[:function_start] + repaired.rstrip("\n") + payload[function_end:]
 
 
 def harden_exact_git_execution() -> None:
@@ -41,8 +59,21 @@ def harden_exact_git_execution() -> None:
         "import os\nimport subprocess\nimport sys\nfrom pathlib import Path\n\nroot = Path(sys.argv[1])\n",
         "installer accepted-source imports",
     )
-    old = '''    source = subprocess.check_output(\n        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],\n        cwd=root,\n        stderr=subprocess.DEVNULL,\n    )\n'''
-    new = '''    git_environment = os.environ.copy()\n    git_environment["GIT_NO_REPLACE_OBJECTS"] = "1"\n    source = subprocess.check_output(\n        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],\n        cwd=root,\n        env=git_environment,\n        stderr=subprocess.DEVNULL,\n    )\n'''
+    old = '''    source = subprocess.check_output(
+        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
+        cwd=root,
+        stderr=subprocess.DEVNULL,
+    )
+'''
+    new = '''    git_environment = os.environ.copy()
+    git_environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    source = subprocess.check_output(
+        ["/usr/bin/git", "show", f"{source_sha}:{relative_path}"],
+        cwd=root,
+        env=git_environment,
+        stderr=subprocess.DEVNULL,
+    )
+'''
     text = replace_once(text, old, new, "replacement-blind accepted Git source")
     if 'git_environment["GIT_NO_REPLACE_OBJECTS"] = "1"' not in text:
         raise SystemExit("replacement-blind Git fence missing after recovery")
