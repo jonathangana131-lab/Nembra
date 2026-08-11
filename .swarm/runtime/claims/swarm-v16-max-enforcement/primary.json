@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "swarm-v16-max-enforcement",
+  "slot": "primary",
+  "role": "implementation",
+  "workerId": "sol-20260811-maxsys",
+  "leaseId": "maxsys-v16-080320-a91c",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T08:03:20Z",
+  "lastHeartbeatAt": "2026-08-11T08:03:20Z",
+  "leaseSeconds": 3600,
+  "branch": "agent/swarm-v16-max-enforcement-sol56",
+  "pr": null,
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c"
+}
