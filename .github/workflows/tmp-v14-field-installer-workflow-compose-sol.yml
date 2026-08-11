@@ -1,0 +1,170 @@
+name: TEMP V14 Field Installer Workflow Compose
+
+on:
+  push:
+    branches:
+      - tmp/v14-field-installer-workflow-compose-sol-20260811
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 47740b53736f0dd277420693fa15e1de94075c27
+
+      - name: Compose current authority gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          field_path = Path('.github/workflows/capture-field-build-provenance.yml')
+          downstream_path = Path('.github/workflows/capture-private-review-downstream-helper-execution-redteam.yml')
+          field = field_path.read_text(encoding='utf-8')
+          downstream = downstream_path.read_text(encoding='utf-8')
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one exact match, found {count}')
+              return text.replace(old, new, 1)
+
+          field = replace_once(
+              field,
+              "\n".join([
+                  '      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+                  '      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py',
+              ]),
+              "\n".join([
+                  '      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+                  '      - scripts/ci/tests/test_capture_field_installer_git_authority.py',
+                  '      - scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py',
+              ]),
+              'Field Provenance path trigger',
+          )
+          field = replace_once(
+              field,
+              "\n".join([
+                  '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+                  '          /usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+              ]),
+              "\n".join([
+                  '          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_accepted_source_path_contract.py scripts/ci/tests/test_capture_field_installer_git_authority.py',
+                  '          /usr/bin/python3 scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+                  '          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_installer_git_authority.py',
+              ]),
+              'Field Provenance installer-authority execution',
+          )
+          field = replace_once(
+              field,
+              "\n".join([
+                  '          grep -Fq \'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"\' "$installer"',
+                  '          grep -Fq \'SOURCE_SHA="$(git rev-parse HEAD | tr \' "$installer"',
+                  '          grep -Fq \'[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]\' "$installer"',
+                  '          grep -Fq \'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA\' "$installer"',
+                  '          grep -Fq \'Exact requested Capture source matched: $SOURCE_SHA\' "$installer"',
+              ]),
+              "\n".join([
+                  '          grep -Fq \'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"\' "$installer"',
+                  '          grep -Fq \'verify_accepted_checkout() {\' "$installer"',
+                  '          grep -Fq \'# BEGIN NEMBRA_FIELD_GIT_AUTHORITY_PY\' "$installer"',
+                  '          grep -Fq \'"GIT_DIR": str(git_dir)\' "$installer"',
+                  '          grep -Fq \'"GIT_WORK_TREE": str(root)\' "$installer"',
+                  '          grep -Fq \'"GIT_CONFIG_NOSYSTEM": "1"\' "$installer"',
+                  '          grep -Fq \'"GIT_CONFIG_GLOBAL": "/dev/null"\' "$installer"',
+                  '          grep -Fq \'"GIT_NO_REPLACE_OBJECTS": "1"\' "$installer"',
+                  '          grep -Fq \'"GIT_INDEX_FILE"\' "$installer"',
+                  '          grep -Fq \'"read-tree", expected\' "$installer"',
+                  '          grep -Fq \'raw workspace blob mismatch\' "$installer"',
+                  '          grep -Fq \'if ! SOURCE_SHA="$(verify_accepted_checkout "$EXPECTED_SOURCE_SHA")"; then\' "$installer"',
+                  '          grep -Fq \'[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]\' "$installer"',
+                  '          grep -Fq \'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA\' "$installer"',
+                  '          grep -Fq \'Exact requested Capture source matched under resolver-bound authority: $SOURCE_SHA\' "$installer"',
+                  '          grep -Fq \'run_accepted_bootstrap() {\' "$installer"',
+                  '          grep -Fq \'# BEGIN NEMBRA_ACCEPTED_BOOTSTRAP_RUNNER_PY\' "$installer"',
+                  '          grep -Fq \'NEMBRA_CAPTURE_ACCEPTED_REPO_ROOT\' "$installer"',
+                  '          grep -Fq \'POST_BOOTSTRAP_SOURCE_SHA="$(verify_accepted_checkout "$SOURCE_SHA")"\' "$installer"',
+                  '          grep -Fq \'POST_BUILD_SOURCE_SHA="$(verify_accepted_checkout "$SOURCE_SHA")"\' "$installer"',
+                  '          if grep -Fq \'SOURCE_SHA="$(git rev-parse HEAD | tr \' "$installer"; then',
+                  "            echo 'ERROR: field installer source authority must not derive from ambient git rev-parse.' >&2",
+                  '            exit 1',
+                  '          fi',
+                  '          if grep -Fq \'[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]]\' "$installer"; then',
+                  "            echo 'ERROR: field installer cleanliness authority must not derive from ambient git status.' >&2",
+                  '            exit 1',
+                  '          fi',
+                  '          if grep -Fq \'"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"\' "$installer"; then',
+                  "            echo 'ERROR: field installer must execute captured accepted bootstrap bytes, not a mutable checkout pathname.' >&2",
+                  '            exit 1',
+                  '          fi',
+              ]),
+              'Field Provenance resolver-bound installer contract',
+          )
+          field_path.write_text(field, encoding='utf-8')
+
+          downstream = replace_once(
+              downstream,
+              "\n".join([
+                  '      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+                  '      - .github/workflows/capture-private-review-downstream-helper-execution-redteam.yml',
+              ]),
+              "\n".join([
+                  '      - scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+                  '      - scripts/ci/tests/test_capture_field_installer_git_authority.py',
+                  '      - .github/workflows/capture-private-review-downstream-helper-execution-redteam.yml',
+              ]),
+              'Downstream path trigger',
+          )
+          downstream = replace_once(
+              downstream,
+              "\n".join([
+                  '          scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py',
+                  '          scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+              ]),
+              "\n".join([
+                  '          scripts/ci/tests/test_capture_field_accepted_source_git_replace_custody.py',
+                  '          scripts/ci/tests/test_capture_field_accepted_source_path_contract.py',
+                  '          scripts/ci/tests/test_capture_field_installer_git_authority.py',
+              ]),
+              'Downstream compile list',
+          )
+          downstream = replace_once(
+              downstream,
+              "\n".join([
+                  '          scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody',
+                  '          scripts.ci.tests.test_capture_field_accepted_source_path_contract',
+              ]),
+              "\n".join([
+                  '          scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody',
+                  '          scripts.ci.tests.test_capture_field_accepted_source_path_contract',
+                  '          scripts.ci.tests.test_capture_field_installer_git_authority',
+              ]),
+              'Downstream unittest list',
+          )
+          downstream_path.write_text(downstream, encoding='utf-8')
+          PY
+
+      - name: Verify composed workflow contract
+        run: |
+          set -euo pipefail
+          grep -Fq 'scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'scripts/ci/tests/test_capture_field_installer_git_authority.py' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'verify_accepted_checkout() {' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'field installer source authority must not derive from ambient git rev-parse' .github/workflows/capture-field-build-provenance.yml
+          grep -Fq 'scripts.ci.tests.test_capture_field_installer_git_authority' .github/workflows/capture-private-review-downstream-helper-execution-redteam.yml
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' .github/workflows/capture-field-build-provenance.yml .github/workflows/capture-private-review-downstream-helper-execution-redteam.yml | sort)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: field-installer-authority-workflows
+          path: |
+            .github/workflows/capture-field-build-provenance.yml
+            .github/workflows/capture-private-review-downstream-helper-execution-redteam.yml
+          if-no-files-found: error
+          retention-days: 1
