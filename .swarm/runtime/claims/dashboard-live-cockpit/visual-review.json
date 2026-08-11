@@ -7,7 +7,7 @@
   "workerId": "sol-20260811-1407vr",
   "leaseId": "9122ca953d0e43d4bd233f4ea5139b3b",
   "generation": 5,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:07:03Z",
   "lastHeartbeatAt": "2026-08-11T21:22:02Z",
   "leaseSeconds": 1800,
@@ -19,5 +19,5 @@
     "sol-20260811-a91c7e"
   ],
   "currentHeadSHA": "844a144fd758ab4d54c7c2702f644794401bbe62",
-  "intent": "Independent exact-head Dashboard AX5 visual review of #2991 844a144. Inspect fresh iPhone 12/iOS 27 accessibility-size riding and connected-stopped artifacts for prior vehicle/status clipping, LIVE POWER/Energy Rail intersection, deliberate 2x2 stopped-mode hierarchy, target containment, premium visual hierarchy, and no truth regression. Do not touch primary implementation paths. Simulator-only; ES80 PHYSICAL NO-GO."
+  "intent": "Exact-head Dashboard AX5 review complete. Run 31535702144 / artifact 9119352441 mechanically green. Visual result NEEDS_CHANGES in review 4910882458: Energy Rail separation and 2x2 stopped controls improved, but exact AX5 riding/stopped pixels still ellipsize vehicle identity and connection state, violating the no-ellipsis acceptance requirement. Successor should recompose left AX rail and re-earn exact pixels. Simulator-only; ES80 PHYSICAL NO-GO."
 }
