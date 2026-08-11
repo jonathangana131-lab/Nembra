@@ -1,0 +1,35 @@
+name: Materialize HMAC Parent Gate Assertion
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-parent-gates-sol
+    paths:
+      - scripts/ci/_patch_hmac_parent_gate_assertion.py
+      - .github/workflows/_materialize-hmac-parent-gate-assertion.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-parent-gates-sol
+      - name: Patch exact inherited assertion
+        run: python3 scripts/ci/_patch_hmac_parent_gate_assertion.py
+      - name: Remove temporary materializer
+        run: |
+          rm scripts/ci/_patch_hmac_parent_gate_assertion.py
+          rm .github/workflows/_materialize-hmac-parent-gate-assertion.yml
+      - name: Commit cleaned repair
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-go-materializer'
+          git config user.email 'nembra-go-materializer@users.noreply.github.com'
+          git add -A
+          git commit -m 'test(capture): align generated rejection message contract'
+          git push origin HEAD:repair/v14-private-review-hmac-parent-gates-sol
