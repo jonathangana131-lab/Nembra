@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -26,6 +27,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 EXPECTED_PARENT = "cb36f9265f08708c8e47564f62f4857aeae7af0f"
+EXPECTED_PARENT_PATH = "scripts/ci/es80_authenticated_stationary_private_review_final_go.py"
 EXPECTED_PARENT_BLOB = "baef9de23a680bedf16f9f7b367f45f7710ac0c6"
 
 
@@ -54,7 +56,39 @@ class FakeBase:
 class RetirementDispatchCustodyTests(unittest.TestCase):
     def test_exact_continuous_custody_parent_remains_pinned(self) -> None:
         self.assertEqual(MODULE.PREDECESSOR_SOURCE, EXPECTED_PARENT)
+        self.assertEqual(MODULE.PREDECESSOR_MODULE_PATH, EXPECTED_PARENT_PATH)
         self.assertEqual(MODULE.PREDECESSOR_MODULE_GIT_BLOB, EXPECTED_PARENT_BLOB)
+
+        # The predecessor commit label and executable blob label are one
+        # provenance claim. Prove that the hard-pinned commit contains the exact
+        # executable blob at the canonical module path instead of accepting two
+        # independent reviewed-looking constants.
+        resolved_blob = subprocess.check_output(
+            [
+                "/usr/bin/git",
+                "-C",
+                str(ROOT),
+                "rev-parse",
+                f"{EXPECTED_PARENT}:{EXPECTED_PARENT_PATH}",
+            ],
+            text=True,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "HOME": "/tmp",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_NO_REPLACE_OBJECTS": "1",
+                "GIT_OPTIONAL_LOCKS": "0",
+            },
+        ).strip().lower()
+        self.assertEqual(
+            resolved_blob,
+            EXPECTED_PARENT_BLOB,
+            "Final-GO predecessor source/path does not resolve to the pinned execution blob",
+        )
+
         payload = MODULE._capture_predecessor_blob(ROOT)
         self.assertEqual(
             MODULE._canonical_git_blob_oid(payload, EXPECTED_PARENT_BLOB),
