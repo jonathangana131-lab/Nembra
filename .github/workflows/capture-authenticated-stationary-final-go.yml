@@ -9,6 +9,7 @@ on:
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
       - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py
       - .github/workflows/capture-authenticated-stationary-final-go.yml
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
       - scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
       - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py
       - .github/workflows/capture-authenticated-stationary-final-go.yml
   workflow_dispatch:
 
@@ -44,3 +46,4 @@ jobs:
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
           python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py

@@ -406,33 +406,118 @@ def reinspect_retained(
     }
 
 
-def _read_intended_device(path: Path, repository_root: Path) -> str:
-    expanded = path.expanduser()
+def _private_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _repository_directory_identity(repository_root: Path) -> tuple[int, int]:
     try:
-        resolved = expanded.resolve(strict=True)
+        repository = repository_root.expanduser().resolve(strict=True)
+        metadata = os.stat(repository)
     except OSError as error:
-        raise SignedArtifactError(
-            "private intended-device identifier cannot be resolved"
-        ) from error
-    repository = repository_root.resolve(strict=True)
-    try:
-        resolved.relative_to(repository)
-    except ValueError:
-        pass
-    else:
-        raise SignedArtifactError(
-            "private intended-device identifier must remain outside repository"
-        )
-    metadata = expanded.lstat()
+        raise SignedArtifactError("candidate repository privacy boundary is unavailable") from error
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise SignedArtifactError("candidate repository privacy boundary is not a directory")
+    return metadata.st_dev, metadata.st_ino
+
+
+def _open_private_identifier_without_symlink_components(path: Path, repository_root: Path) -> int:
     if (
-        expanded.is_symlink()
-        or not stat.S_ISREG(metadata.st_mode)
-        or stat.S_IMODE(metadata.st_mode) != 0o600
-        or metadata.st_uid != os.getuid()
-        or metadata.st_nlink != 1
+        not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_DIRECTORY")
+        or os.open not in os.supports_dir_fd
     ):
-        raise SignedArtifactError("private intended-device identifier custody is invalid")
-    raw = expanded.read_bytes()
+        raise SignedArtifactError("platform cannot enforce component-wise private-device custody")
+
+    expanded = path.expanduser()
+    if (
+        not expanded.is_absolute()
+        or expanded.anchor != os.sep
+        or not expanded.parts[1:]
+        or any(component in ("", ".", "..") for component in expanded.parts[1:])
+    ):
+        raise SignedArtifactError("private intended-device path must be canonical absolute")
+
+    repository_identity = _repository_directory_identity(repository_root)
+    close_on_exec = getattr(os, "O_CLOEXEC", 0)
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | close_on_exec
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | close_on_exec
+
+    try:
+        parent_descriptor = os.open(os.sep, directory_flags)
+    except OSError as error:
+        raise SignedArtifactError("private intended-device path root is unavailable") from error
+
+    try:
+        root_metadata = os.fstat(parent_descriptor)
+        if (root_metadata.st_dev, root_metadata.st_ino) == repository_identity:
+            raise SignedArtifactError("private intended-device identifier must remain outside repository")
+
+        for component in expanded.parts[1:-1]:
+            try:
+                next_descriptor = os.open(component, directory_flags, dir_fd=parent_descriptor)
+            except OSError as error:
+                raise SignedArtifactError(
+                    "private intended-device path contains an unsafe directory component"
+                ) from error
+            next_metadata = os.fstat(next_descriptor)
+            if (next_metadata.st_dev, next_metadata.st_ino) == repository_identity:
+                os.close(next_descriptor)
+                raise SignedArtifactError(
+                    "private intended-device identifier must remain outside repository"
+                )
+            os.close(parent_descriptor)
+            parent_descriptor = next_descriptor
+
+        try:
+            return os.open(expanded.parts[-1], file_flags, dir_fd=parent_descriptor)
+        except OSError as error:
+            raise SignedArtifactError(
+                "private intended-device identifier is not a readable non-symlink file"
+            ) from error
+    finally:
+        os.close(parent_descriptor)
+
+
+def _read_intended_device(path: Path, repository_root: Path) -> str:
+    descriptor = _open_private_identifier_without_symlink_components(path, repository_root)
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or stat.S_IMODE(before.st_mode) != 0o600
+            or before.st_uid != os.getuid()
+            or before.st_nlink != 1
+            or before.st_size < 1
+            or before.st_size > 160
+        ):
+            raise SignedArtifactError("private intended-device identifier custody is invalid")
+
+        chunks: list[bytes] = []
+        remaining = 161
+        while remaining > 0:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if len(raw) != before.st_size or _private_file_identity(after) != _private_file_identity(before):
+            raise SignedArtifactError("private intended-device identifier changed while reading")
+    finally:
+        os.close(descriptor)
+
     try:
         value = raw.decode("utf-8").strip()
     except UnicodeDecodeError as error:
