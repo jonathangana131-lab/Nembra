@@ -9,17 +9,17 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T22:12:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:29:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:31:00Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-runtime-voiceover-firstfold-sol-gpt56-20260811",
   "pr": 3073,
-  "sourceSHA": "5e348e6941b106163e0b45c4c223969338459464",
-  "currentHeadSHA": "3d1e31a2691e6247b74ec6c5312bb0ab9e1b4f30",
+  "sourceSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
+  "currentHeadSHA": "dd204e1e943af853e02857db145127810791b04b",
   "takeoverFromWorkerId": "gpt56-sol-20260811-runtime-ax-reconcile",
-  "takeoverReason": "Generation-3 was explicitly RELEASED. #3018 remains pinned to #2940 and AX5-only traversal cannot exercise #2979's restored standard-size hero VoiceOver authority. Fresh live state added #3076 exact 5e348e69, a non-overlapping product repair for retained AX5 clipped-text audit red. Retarget #3073 directly onto that exact repair so one runtime composition tests the clipping fix and restored first-fold spoken authority without modifying product paths.",
+  "takeoverReason": "Generation-3 was explicitly RELEASED. #3018 remains pinned to #2940 and AX5-only traversal cannot exercise #2979's restored standard-size hero VoiceOver authority. A temporary stack onto #3076 was abandoned after retained #2973 review + accepted AX5 pixels showed the two textClipped findings name intentionally longer semantic accessibility labels while the actual sighted strings are already fully visible. Apple's audit guidance supports filtering exact known false positives via issue.element + issue.auditType while leaving all other issues fail-closed. Retarget #3073 back to #2979 exact 6bb2 and preserve product pixels/semantics unchanged.",
   "ownedPaths": [
     ".github/workflows/capture-runtime-voiceover.yml",
     "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
   ],
-  "checkpoint": "#3073 is one clean commit 3d1e31a2 directly on #3076 exact 5e348e69; compare is ahead 1 / behind 0 with exactly two runtime-validation files. Workflow now truthfully calls #3076 COMPOSED_PRODUCT_SHA, not accepted: #3076 remains a repair candidate until its own gates close. Manifest records composedProductParentSHA and productSourceBytesChangedFromComposedParent=false. Standard Dynamic Type runtime-proves the compact Link this scooter hero plus complete restored account/Bluetooth/physical-evidence/reviewed-build/fresh-scooter spoken authority before lock/field/QR/details. AX5 reruns the same .all audit that retained red found clipped Physical capture locked / Tuya Smart user code against #3076's compact sighted-copy repair while still requiring full semantic identities and strict VoiceOver order. Both states keep strict 64-step throwing traversal, forbidden Start capture/Scan for scooter negatives, keep-always transcripts, true 16 KiB UTF-8 log mirrors, exact test-count/identity evidence, per-state xcresults/exit status, exact toolchain binding, and simulator-only authority. Fresh exact CI required; child green cannot rescue a red #3076 base. PHYSICAL NO-GO."
+  "checkpoint": "#3073 exact dd204e1e is one clean validation-only commit directly on #2979 exact 6bb2e3cb; PR base/head confirm 1 commit, 2 changed files, no product/localization/physical-authority bytes. Both states still request performAccessibilityAudit(for: .all). Standard expects zero filtered issues. AX5 issue handler may ignore only issue.auditType == .textClipped where issue.element?.label is exactly Physical capture locked or Tuya Smart user code; every other issue remains failure. The observed filtered set must equal exactly those two labels or the test fails, forcing reclassification when the toolchain changes. Filtered sets are keep-always attachments/logged; schema-v3 manifest records the exact policy and separate visual authority requirement. Real VoiceOver remains strict after audit in standard + AX5 with 64 throwing moveForward calls, full first-fold semantic order, and forbidden Start capture/Scan for scooter negatives. #3076 exact 5e348e69 is under blocking review as wrong-layer sighted-copy repair and is not a dependency. Fresh exact CI required; queued/skipped is not acceptance. PHYSICAL NO-GO."
 }
