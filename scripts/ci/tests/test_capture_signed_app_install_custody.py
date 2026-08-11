@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+import tempfile
+import unittest
+
+REPOSITORY = Path(__file__).resolve().parents[3]
+HELPER = REPOSITORY / "scripts/ci/capture_signed_app_install_custody.py"
+INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
+
+
+def load_helper():
+    spec = importlib.util.spec_from_file_location("capture_signed_app_install_custody", HELPER)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load signed-app install custody helper")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
+    def test_fingerprint_changes_with_bundle_bytes(self) -> None:
+        helper = load_helper()
+        with tempfile.TemporaryDirectory(prefix="nembra-install-custody-") as temporary:
+            app = Path(temporary) / "Nembra Capture.app"
+            app.mkdir()
+            payload = app / "subject.txt"
+            payload.write_text("accepted\n", encoding="utf-8")
+            first = helper.fingerprint(app)
+            payload.write_text("substituted\n", encoding="utf-8")
+            second = helper.fingerprint(app)
+            self.assertNotEqual(first, second)
+
+    def test_fingerprint_rejects_external_symlink(self) -> None:
+        helper = load_helper()
+        with tempfile.TemporaryDirectory(prefix="nembra-install-custody-") as temporary:
+            root = Path(temporary)
+            app = root / "Nembra Capture.app"
+            app.mkdir()
+            outside = root / "outside.txt"
+            outside.write_text("mutable\n", encoding="utf-8")
+            (app / "escape").symlink_to(outside)
+            with self.assertRaises(helper.CustodyError):
+                helper.fingerprint(app)
+
+    def test_installer_moves_authority_to_protected_stage_before_codesign(self) -> None:
+        source = INSTALLER.read_text(encoding="utf-8")
+        app_marker = 'APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"'
+        fingerprint_marker = 'capture_signed_app_install_custody.py" fingerprint --app "$APP"'
+        stage_marker = '/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX'
+        copy_marker = '/usr/bin/sudo /usr/bin/ditto "$APP" "$APP_INSTALL_STAGE"'
+        owner_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -exec /usr/sbin/chown -h root:wheel {} +'
+        verify_stage_marker = 'capture_signed_app_install_custody.py" verify-stage'
+        switch_marker = 'APP="$APP_INSTALL_STAGE"'
+        codesign_marker = '/usr/bin/codesign --verify --deep --strict "$APP"'
+        install_marker = 'xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"'
+
+        indexes = {}
+        for name, marker in (
+            ("app", app_marker),
+            ("fingerprint", fingerprint_marker),
+            ("stage", stage_marker),
+            ("copy", copy_marker),
+            ("owner", owner_marker),
+            ("verify_stage", verify_stage_marker),
+            ("switch", switch_marker),
+            ("codesign", codesign_marker),
+            ("install", install_marker),
+        ):
+            indexes[name] = source.find(marker)
+            self.assertGreaterEqual(indexes[name], 0, f"installer is missing {name} custody marker")
+
+        self.assertLess(indexes["app"], indexes["fingerprint"])
+        self.assertLess(indexes["fingerprint"], indexes["stage"])
+        self.assertLess(indexes["stage"], indexes["copy"])
+        self.assertLess(indexes["copy"], indexes["owner"])
+        self.assertLess(indexes["owner"], indexes["verify_stage"])
+        self.assertLess(indexes["verify_stage"], indexes["switch"])
+        self.assertLess(indexes["switch"], indexes["codesign"])
+        self.assertLess(indexes["codesign"], indexes["install"])
+        self.assertIn('[[ "$STAGED_APP_TREE_SHA256" == "$SOURCE_APP_TREE_SHA256" ]]', source)
+        self.assertIn('APP_INSTALL_STAGE_ROOT=""', source)
+        self.assertIn('cleanup_install_subject()', source)
+        self.assertIn('/usr/bin/sudo /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
