@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   repair:
-    if: ${{ github.actor != 'github-actions[bot]' }}
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -40,7 +40,7 @@ jobs:
             echo 'ERROR: stale mutable guard invocation remains in field provenance contract.' >&2
             exit 1
           fi
-      - name: Publish acceptance-contract repair
+      - name: Publish acceptance-contract repair without overwriting concurrent work
         shell: bash
         run: |
           set -euo pipefail
@@ -49,4 +49,12 @@ jobs:
           git rm -f .github/workflows/tmp-capture-field-guard-contract-fix.yml .github/workflows/tmp-capture-field-guard-contract-fix2.yml
           git add .github/workflows/capture-field-build-provenance.yml
           git commit -m 'Capture: align field provenance with accepted-source guard'
-          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin repair/v14-private-review-hmac-helper-execution-sol
+            if git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'ERROR: could not publish field provenance contract after safe rebase retries.' >&2
+          exit 1
