@@ -1,0 +1,111 @@
+name: Capture Root Accessibility Materializer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/v14-capture-root-accessibility-sol'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Verify exact source and materialize accessibility recompose
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='NembraApp/App/NembraCaptureEntrypoint.swift'
+          expected_blob='f8bf601343e89809874f5a2f488bd0db3c2d9fd8'
+          actual_blob="$(git hash-object "$file")"
+          test "$actual_blob" = "$expected_blob"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+          controller_marker = '\n@MainActor\nprivate final class SecureLinkController'
+          marker_index = source.index(controller_marker)
+          untouched_suffix = source[marker_index:]
+
+          def replace_once(old: str, new: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one source match, found {count}: {old[:80]!r}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '''    @StateObject private var tuya = TuyaAccountBridge()\n    @State private var showEngineeringDetails = false\n''',
+              '''    @StateObject private var tuya = TuyaAccountBridge()\n    @State private var showEngineeringDetails = false\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n'''
+          )
+
+          replace_once(
+              '''                        VStack(alignment: .leading, spacing: 8) {\n                            Text("NEMBRA CAPTURE")\n                                .font(.caption2.bold())\n                                .tracking(1.5)\n                                .foregroundStyle(.cyan)\n                            Text("Prepare the scooter link")\n                                .font(.largeTitle.bold())\n                            Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")\n                                .font(.body)\n                                .foregroundStyle(.secondary)\n                                .fixedSize(horizontal: false, vertical: true)\n                        }\n''',
+              '''                        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 5 : 8) {\n                            if !dynamicTypeSize.isAccessibilitySize {\n                                Text("NEMBRA CAPTURE")\n                                    .font(.caption2.bold())\n                                    .tracking(1.5)\n                                    .foregroundStyle(.cyan)\n                            }\n                            Text("Prepare the scooter link")\n                                .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())\n                                .accessibilityAddTraits(.isHeader)\n                            if !dynamicTypeSize.isAccessibilitySize {\n                                setupContextText\n                            }\n                        }\n'''
+          )
+
+          replace_once(
+              '''                        rootPanel {\n                            VStack(alignment: .leading, spacing: 14) {\n                                Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")\n                                    .font(.title3.bold())\n''',
+              '''                        rootPanel {\n                            VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 10 : 14) {\n                                Label(tuya.isLinked ? "Account link ready" : "Link your scooter account", systemImage: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")\n                                    .font(dynamicTypeSize.isAccessibilitySize ? .headline.bold() : .title3.bold())\n'''
+          )
+
+          replace_once(
+              '''                        }\n\n                        if tuya.isLinked {\n''',
+              '''                        }\n\n                        if dynamicTypeSize.isAccessibilitySize {\n                            setupContextText\n                        }\n\n                        if tuya.isLinked {\n'''
+          )
+
+          replace_once(
+              '''    @ViewBuilder\n    private func rootPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {\n        content()\n            .padding(18)\n''',
+              '''    private var setupContextText: some View {\n        Text("One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.")\n            .font(.body)\n            .foregroundStyle(.secondary)\n            .fixedSize(horizontal: false, vertical: true)\n    }\n\n    @ViewBuilder\n    private func rootPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {\n        content()\n            .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 18)\n'''
+          )
+
+          if source[source.index(controller_marker):] != untouched_suffix:
+              raise SystemExit('materializer touched SecureLinkController or later truth/runtime source')
+
+          root = source[:source.index(controller_marker)]
+          required = [
+              '@Environment(\\.dynamicTypeSize) private var dynamicTypeSize',
+              'if !dynamicTypeSize.isAccessibilitySize',
+              '.font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())',
+              '.accessibilityAddTraits(.isHeader)',
+              'if dynamicTypeSize.isAccessibilitySize {\n                            setupContextText',
+              '.padding(dynamicTypeSize.isAccessibilitySize ? 14 : 18)',
+              'Button("Create approval QR") { tuya.requestApproval() }',
+              'TextField("Tuya Smart User Code", text: $tuya.userCode)',
+              'Text("No scooter commands are sent by this setup flow.")',
+          ]
+          for needle in required:
+              if needle not in root:
+                  raise SystemExit(f'missing accessibility/truth contract: {needle}')
+
+          if root.count('One guided setup establishes the account and bound-device context Nembra will use before passive target correlation begins.') != 1:
+              raise SystemExit('setup-context copy must have one canonical source')
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          git diff --check -- "$file"
+          test "$(git diff --name-only | grep -c '^NembraApp/App/NembraCaptureEntrypoint.swift$')" = 1
+
+      - name: Commit clean one-file product result and retire materializer
+        shell: bash
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-v14-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git rm .github/workflows/capture-root-accessibility-materialize.yml
+          git diff --cached --check
+          git commit -m 'fix(capture): recompose root for accessibility type'
+          git push origin "HEAD:$BRANCH"
