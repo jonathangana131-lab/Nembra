@@ -786,6 +786,10 @@ struct HomeView: View {
     }
 
     private func isLockConfirmationStillValid(_ requestedLocked: Bool) -> Bool {
+        guard vehicle.state.connection == .connected,
+              !vehicle.isVehicleCommandPending else {
+            return false
+        }
         if requestedLocked {
             return vehicle.state.isLocked == false && vehicle.canLockFromCurrentSpeedEvidence
         }
