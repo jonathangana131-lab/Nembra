@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072600-go-persistence-merged",
+  "type": "INTEGRATION_RESULT",
+  "workerId": "sol-20260811-goint1",
+  "laneId": "go-worker-persistence-hardening",
+  "message": "Merged PR #2806 with expected-head guard at exact candidate 1fee236184f3eb94f58d8b04a342be7bc8323312 after independent review and successful exact-head Swarm Control Plane Shadow. Main is now d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. Fresh Go workers must continue after green/completed slices and may idle only after current-main reconciliation plus durable stop proof.",
+  "createdAt": "2026-08-11T07:26:00Z",
+  "data": {
+    "pr": 2806,
+    "candidateSHA": "1fee236184f3eb94f58d8b04a342be7bc8323312",
+    "mergeSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "shadowRun": 31468262135,
+    "reviewResult": "APPROVE",
+    "physicalAuthorityChanged": false
+  }
+}
