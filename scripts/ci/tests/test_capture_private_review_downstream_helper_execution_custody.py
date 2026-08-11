@@ -23,6 +23,8 @@ LOCK_ENV = "NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"
 GENERATED_ENV = "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"
 PRIVATE_ENV = "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_COMMITMENT_SHA256"
 PRIVATE_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PRIVATE_REVIEW_HELPER_SHA256"
+PROVENANCE_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"
+GENERATED_HELPER_ENV = "NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"
 
 
 def load_module(path: Path, name: str):
@@ -113,7 +115,7 @@ class DownstreamBootstrapHelperExecutionCustodyTests(unittest.TestCase):
             check=False,
         )
 
-    def reviewed_subjects(self) -> tuple[str, str, str, str]:
+    def reviewed_subjects(self) -> tuple[str, str, str, str, str, str]:
         snapshot = self._python(
             self.provenance,
             "snapshot",
@@ -144,10 +146,12 @@ class DownstreamBootstrapHelperExecutionCustodyTests(unittest.TestCase):
 
         lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
         private_helper = hashlib.sha256(self.commitment.read_bytes()).hexdigest()
-        return lock, generated_digest, private, private_helper
+        provenance_helper = hashlib.sha256(self.provenance.read_bytes()).hexdigest()
+        generated_helper = hashlib.sha256(self.generated.read_bytes()).hexdigest()
+        return lock, generated_digest, private, private_helper, provenance_helper, generated_helper
 
     def run_field(self, subjects: tuple[str, str, str, str]) -> subprocess.CompletedProcess[str]:
-        lock, generated, private, private_helper = subjects
+        lock, generated, private, private_helper, provenance_helper, generated_helper = subjects
         env = {
             "PATH": f"{self.fake_bin}:/usr/bin:/bin",
             "HOME": str(self.root),
@@ -157,6 +161,8 @@ class DownstreamBootstrapHelperExecutionCustodyTests(unittest.TestCase):
             GENERATED_ENV: generated,
             PRIVATE_ENV: private,
             PRIVATE_HELPER_ENV: private_helper,
+            PROVENANCE_HELPER_ENV: provenance_helper,
+            GENERATED_HELPER_ENV: generated_helper,
         }
         return subprocess.run(
             ["/bin/bash", str(self.bootstrap)],

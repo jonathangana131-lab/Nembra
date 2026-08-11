@@ -45,6 +45,8 @@ class PrivateReviewHelperExecutionCustodyTests(unittest.TestCase):
             shutil.copy2(source, scripts / source.name)
         self.helper = scripts / COMMITMENT.name
         self.accepted_helper = hashlib.sha256(self.helper.read_bytes()).hexdigest()
+        self.accepted_provenance_helper = hashlib.sha256((scripts / PROVENANCE.name).read_bytes()).hexdigest()
+        self.accepted_generated_helper = hashlib.sha256((scripts / SUBJECT_HELPER.name).read_bytes()).hexdigest()
 
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
@@ -120,6 +122,8 @@ class PrivateReviewHelperExecutionCustodyTests(unittest.TestCase):
         if private is not None:
             env[PRIVATE_ENV] = private
             env[HELPER_ENV] = self.accepted_helper
+            env["NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"] = self.accepted_provenance_helper
+            env["NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_SUBJECT_HELPER_SHA256"] = self.accepted_generated_helper
         argv = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
         if review:
             argv.append("--resolve-lock-for-review")
