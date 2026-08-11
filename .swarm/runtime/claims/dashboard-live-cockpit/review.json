@@ -7,14 +7,20 @@
   "workerId": "sol-20260811-c84e",
   "leaseId": "dashboard-review-c84e-20260811-2019",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:19:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:19:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:22:00Z",
+  "releasedAt": "2026-08-11T20:22:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2971,
   "sourceSHA": "616746f18c63801a484aa6d394fc6770c8b22cce",
   "currentHeadSHA": "c150a8287463231ee9af174c38564738bab576a3",
   "takeoverFromWorkerId": "sol-20260811-go-review-4c47",
-  "takeoverReason": "Generation-5 review lease expired many hours ago. Capture P0 is saturated by active workers, so take the V14-approved Dashboard overflow review rung. Independently review exact AX5 repair #2971, current Xcode/runtime evidence, stopped-state bounds risk, telemetry truth, and accessibility without mutating the frozen candidate. Simulator-only; ES80 physical NO-GO."
+  "outcome": "NEEDS_CHANGES_AX5_STATUS_TRUNCATION_AND_STOPPED_EVIDENCE_GAP",
+  "reviewId": 4910415701,
+  "evidenceRun": 31510207367,
+  "artifactId": 9109331207,
+  "artifactDigest": "sha256:129a235c4865b213f96110368263d51aa30510b58b9e1d9062250697ace84702",
+  "releaseReason": "Real iPhone 12 AX5 moving screenshot is vertically contained but visibly truncates Nembra Simulator -> Nembra Si… and Connected -> Connec… in the fixed 188-pt left rail. The exact run also lacks AX5 connected-stopped bounds evidence for four mode targets plus stopped controls in the 188-pt right rail. PR review 4910415701 records the required product/test repair. GitHub shared-account policy forbids formal REQUEST_CHANGES, so durable swarm outcome is NEEDS_CHANGES. Simulator only; ES80 physical NO-GO."
 }
