@@ -91,7 +91,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
     def test_supervisor_orders_revocation_build_lock_fingerprint_and_stage(self) -> None:
         source = ORIGIN_HELPER.read_text(encoding="utf-8")
         markers = {
-            "sudo_revoke": "_invalidate_invoker_sudo(uid, gid, invoking_groups, child_env)",
+            "sudo_revoke": "_invalidate_invoker_sudo(user, uid, gid, invoking_groups, child_env)",
             "prepare": "derived_root = _prepare_derived(private_tmp, capability_gid)",
             "spawn": "process = subprocess.Popen(",
             "retire": "_terminate_remaining_process_group(process.pid)",
@@ -123,12 +123,15 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertIn("os.chmod(derived, 0o770)", source)
         self.assertIn("if gid <= 0:", source)
         self.assertIn("if any(value <= 0 for value in groups):", source)
+        self.assertIn("_inspect_invoker_sudo_policy(user, groups, environment)", source)
+        self.assertIn('["/usr/bin/sudo", "-ll", "-U", user]', source)
         self.assertIn("credentials = _structured_credentials(uid, gid, groups)", source)
         self.assertIn("child_groups = (capability_gid,)", source)
         self.assertIn("**_structured_credentials(uid, gid, child_groups)", source)
         self.assertNotIn("preexec_fn=", source)
         self.assertIn('["/usr/bin/sudo", "-K"]', source)
         self.assertIn('["/usr/bin/sudo", "-n", "/usr/bin/true"]', source)
+        self.assertIn('["/usr/bin/sudo", "-n", "-l"]', source)
         self.assertIn('["/usr/bin/ditto", "--noacl"', source)
         self.assertIn("if staged_fingerprint != source_fingerprint:", source)
         self.assertIn("shutil.rmtree(derived_root, ignore_errors=True)", source)
@@ -196,6 +199,34 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             helper._structured_credentials(501, 0, ())
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._structured_credentials(0, 20, ())
+
+    def test_sudo_policy_classifier_rejects_passwordless_authority(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_sudo_policy")
+        self.assertTrue(
+            helper._sudo_policy_exposes_passwordless_authority(
+                "User field may run the following commands:\n    (ALL) NOPASSWD: /bin/kill\n",
+                ("staff", "admin"),
+            )
+        )
+        self.assertTrue(
+            helper._sudo_policy_exposes_passwordless_authority(
+                "Matching Defaults entries:\n    !authenticate\n",
+                ("staff",),
+            )
+        )
+        self.assertTrue(
+            helper._sudo_policy_exposes_passwordless_authority(
+                "Matching Defaults entries:\n    exempt_group=admin, env_reset\n",
+                ("staff", "admin"),
+            )
+        )
+        self.assertFalse(
+            helper._sudo_policy_exposes_passwordless_authority(
+                "Matching Defaults entries:\n    env_reset, secure_path=/usr/bin:/bin\n"
+                "User field may run the following commands:\n    (ALL) /usr/bin/xcodebuild\n",
+                ("staff", "admin"),
+            )
+        )
 
     def test_invoking_identity_rejects_root_primary_group(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_root_gid")
