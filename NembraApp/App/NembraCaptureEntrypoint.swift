@@ -76,67 +76,67 @@ private struct CaptureP0Root: View {
     }
 
     @ViewBuilder
-private var rootHero: some View {
-    VStack(alignment: .leading, spacing: isAccessibilityLayout ? 4 : 8) {
-        Text(isAccessibilityLayout ? "Prepare scooter link" : "Prepare the scooter link")
-            .font(isAccessibilityLayout ? .title2.bold() : .largeTitle.bold())
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.isHeader)
-
-        if !isAccessibilityLayout {
-            Text("Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified.")
-                .font(.body)
-                .foregroundStyle(Color.white.opacity(0.78))
+    private var rootHero: some View {
+        VStack(alignment: .leading, spacing: isAccessibilityLayout ? 4 : 8) {
+            Text(isAccessibilityLayout ? "Prepare scooter link" : "Prepare the scooter link")
+                .font(isAccessibilityLayout ? .title2.bold() : .largeTitle.bold())
                 .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-    private var buildAuthorityStatus: some View {
-    HStack(alignment: .top, spacing: 12) {
-        Image(systemName: fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "lock.shield.fill")
-            .font(.title3)
-            .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
-            .accessibilityHidden(true)
-
-        VStack(alignment: .leading, spacing: 4) {
-            Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
-                .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)
-                .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
-                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
 
             if !isAccessibilityLayout {
-                Text(
-                    fieldBuildIsAuthoritative
-                        ? "The reviewed build is ready. Account and scooter authority must still be verified before Bluetooth starts."
-                        : "Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."
-                )
-                .font(.subheadline)
-                .foregroundStyle(Color.white.opacity(0.76))
-                .fixedSize(horizontal: false, vertical: true)
+                Text("Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified.")
+                    .font(.body)
+                    .foregroundStyle(Color.white.opacity(0.78))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
-    .padding(.vertical, isAccessibilityLayout ? 4 : 10)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .overlay(alignment: .top) {
-        Rectangle()
-            .fill(Color.white.opacity(0.14))
-            .frame(height: 1)
+
+    private var buildAuthorityStatus: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "lock.shield.fill")
+                .font(.title3)
+                .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
+                    .font(isAccessibilityLayout ? .subheadline.weight(.semibold) : .headline)
+                    .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !isAccessibilityLayout {
+                    Text(
+                        fieldBuildIsAuthoritative
+                            ? "The reviewed build is ready. Account and scooter authority must still be verified before Bluetooth starts."
+                            : "Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.76))
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.vertical, isAccessibilityLayout ? 4 : 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.14))
+                .frame(height: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(0.10))
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
+        .accessibilityValue(
+            fieldBuildIsAuthoritative
+                ? "Build provenance is ready. Account and scooter authority are still required before Bluetooth starts."
+                : "This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."
+        )
     }
-    .overlay(alignment: .bottom) {
-        Rectangle()
-            .fill(Color.white.opacity(0.10))
-            .frame(height: 1)
-    }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
-    .accessibilityValue(
-        fieldBuildIsAuthoritative
-            ? "Build provenance is ready. Account and scooter authority are still required before Bluetooth starts."
-            : "This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."
-    )
-}
 
     private var accountSetupPanel: some View {
         rootSection {
