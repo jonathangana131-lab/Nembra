@@ -75,7 +75,8 @@ struct SimulatorBatteryDisplayAuthorityAppSourceTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+        let data = try Data(contentsOf: repositoryRoot.appendingPathComponent(relativePath))
+        return String(decoding: data, as: UTF8.self)
     }
 
     private enum SourceContractError: Error {
