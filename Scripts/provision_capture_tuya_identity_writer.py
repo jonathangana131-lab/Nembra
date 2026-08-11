@@ -197,6 +197,35 @@ def _open_relative_regular_file(checkout_fd: int, relative_path: str) -> int:
         os.close(parent_fd)
 
 
+def _require_relative_name_matches_descriptor(
+    checkout_fd: int,
+    relative_path: str,
+    held_fd: int,
+) -> None:
+    """Re-bind the canonical credential name to the exact held published inode."""
+
+    current_fd = _open_relative_regular_file(checkout_fd, relative_path)
+    try:
+        held = os.fstat(held_fd)
+        current = os.fstat(current_fd)
+        if (
+            not stat.S_ISREG(held.st_mode)
+            or not stat.S_ISREG(current.st_mode)
+            or held.st_uid != os.geteuid()
+            or current.st_uid != os.geteuid()
+            or held.st_nlink != 1
+            or current.st_nlink != 1
+            or held.st_dev != current.st_dev
+            or held.st_ino != current.st_ino
+            or held.st_size != current.st_size
+        ):
+            raise ProvisionError(
+                "canonical private identity destination no longer names the sealed published inode"
+            )
+    finally:
+        os.close(current_fd)
+
+
 def _validate_existing_output(parent_fd: int, name: str) -> None:
     try:
         metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
@@ -458,11 +487,16 @@ def _write_staged(
                 payload,
                 "published private identity payload changed before durable success",
             )
+            os.fsync(checkout_fd)
+            _require_relative_name_matches_descriptor(
+                checkout_fd,
+                destination_relative,
+                final_fd,
+            )
         except Exception:
             compromised = os.fstat(final_fd)
             _unlink_owned_relative_inode_if_named(checkout_fd, destination_relative, compromised)
             raise
-        os.fsync(checkout_fd)
     except Exception:
         _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
         raise
