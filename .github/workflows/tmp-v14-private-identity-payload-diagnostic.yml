@@ -1,0 +1,52 @@
+name: TEMP Capture Private Identity Payload Diagnostic
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-payload-publication-sol-20260811
+    paths:
+      - .github/workflows/tmp-v14-private-identity-payload-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-private-identity-payload-publication-sol-20260811
+          fetch-depth: 0
+      - name: Re-materialize exact proposed repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import re
+          workflow = Path('.github/workflows/tmp-v14-private-identity-payload-publication.yml').read_text()
+          match = re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d", workflow)
+          if match is None:
+              raise SystemExit('encoded repair payload unavailable')
+          code = base64.b64decode(match.group(1))
+          exec(compile(code, '<identity-publication-repair>', 'exec'), {})
+          PY
+      - name: Writer syntax
+        run: python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+      - name: Writer self test
+        run: python3 Scripts/provision_capture_tuya_identity_writer.py --self-test
+      - name: Adversarial test syntax
+        run: |
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+      - name: Publication substitution races
+        run: python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+      - name: Same inode payload race
+        run: python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+      - name: Shell syntax
+        run: bash -n Scripts/provision_capture_tuya_identity.sh
+      - name: Diff hygiene
+        run: git diff --check
