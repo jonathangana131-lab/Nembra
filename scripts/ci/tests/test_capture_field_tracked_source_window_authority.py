@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -94,6 +95,31 @@ class CaptureFieldTrackedSourceWindowAuthorityTests(unittest.TestCase):
 
             with self.assertRaises(guard.BuildGuardError):
                 guard._accepted_tracked_source_manifest(repo, accepted_sha)
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires real macOS kqueue vnode delivery")
+    def test_real_macos_kqueue_reports_mutate_restore_before_compiler_can_be_accepted(self) -> None:
+        guard = load_guard()
+        with tempfile.TemporaryDirectory(prefix="nembra-tracked-window-kqueue-") as directory:
+            root = Path(directory)
+            source = root / "Capture.swift"
+            accepted = 'let authority = "accepted"\n'
+            source.write_text(accepted, encoding="utf-8")
+            backend = guard.KqueueVnodeBackend()
+            watched = ()
+            try:
+                watched = guard._open_watched_inputs((root, source), backend)
+                self.assertFalse(backend.events(0), "unexpected vnode event before mutation")
+                source.write_text('let authority = "attacker"\n', encoding="utf-8")
+                source.write_text(accepted, encoding="utf-8")
+                events = backend.events(1.0)
+                self.assertTrue(events, "real macOS kqueue lost mutate-then-restore source evidence")
+            finally:
+                for descriptor, _ in watched:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                backend.close()
 
 
 if __name__ == "__main__":
