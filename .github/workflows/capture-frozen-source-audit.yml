@@ -1,0 +1,142 @@
+name: Capture Frozen Source Audit
+
+on:
+  push:
+    branches:
+      - diagnostic/v14-capture-frozen-source-audit-sol
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 2b9ca55832a9dd6500c2e2bd3f168ab5be7d95ab
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind audit to frozen candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "2b9ca55832a9dd6500c2e2bd3f168ab5be7d95ab"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Audit root visual truth and Accessibility ordering
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          start = source.index('private struct CaptureP0Root: View')
+          end = source.index('@MainActor\nprivate final class SecureLinkController', start)
+          root = source[start:end]
+
+          required = [
+              'LinearGradient(',
+              'private func rootSection<Content: View>',
+              '.scrollDismissesKeyboard(.interactively)',
+              '.accessibilityIdentifier("capture.p0-root")',
+              '.accessibilityIdentifier("nembra.capture.root.account-link-action")',
+              '.accessibilityAddTraits(.isHeader)',
+              'Build provenance ready',
+              'Continue to preflight',
+              'Physical capture locked',
+              'This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence.',
+              'This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.',
+              '.frame(maxWidth: .infinity, minHeight: 50)',
+              '.tint(.cyan)',
+          ]
+          for token in required:
+              assert token in root, f'missing frozen root contract: {token}'
+
+          forbidden = [
+              'private func rootPanel<Content: View>',
+              'RoundedRectangle(cornerRadius: 24',
+              'Field build ready',
+              'Field build authority:',
+              'Continue to Capture',
+              '.dynamicTypeSize(',
+              'environment(\\.dynamicTypeSize',
+          ]
+          for token in forbidden:
+              assert token not in root, f'forbidden/superseded root contract present: {token}'
+
+          panel_start = root.index('private var accountSetupPanel: some View')
+          panel_end = root.index('private var statusText: some View', panel_start)
+          panel = root[panel_start:panel_end]
+          field = panel.index('TextField("Paste user code"')
+          action = panel.index('Label("Create approval QR"')
+          ax_support = panel.index('Text("Account setup only in this public build.")')
+          assert field < action < ax_support, 'Accessibility first-fold ordering regressed: field/action must precede verbose AX support copy'
+
+          authority_start = root.index('private var buildAuthorityStatus: some View')
+          authority_end = root.index('private var accountSetupPanel: some View', authority_start)
+          authority = root[authority_start:authority_end]
+          assert 'if !isAccessibilityLayout {' in authority, 'AX authority detail must be compacted rather than scaled'
+          assert '.accessibilityValue(' in authority, 'compacted AX visual detail must retain semantic authority explanation'
+
+          print('Frozen root visual/truth/Accessibility source audit: PASS')
+          PY
+
+      - name: Audit account bridge remains cloud metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          bridge = Path('NembraApp/Features/Research/TuyaAccountBridge.swift').read_text()
+
+          required = [
+              'Tuya account/device metadata only',
+              'No scooter control command was sent.',
+              '"commandsSent": false',
+              'readOnlyCloudCalls',
+              'localKeyExported',
+              'accessTokenExported',
+              'refreshTokenExported',
+          ]
+          # The user-facing metadata-only sentence lives in the root; the bridge
+          # itself must still expose explicit no-command/export-custody semantics.
+          bridge_required = [
+              'No scooter control command was sent.',
+              '"commandsSent": false',
+              '"readOnlyCloudCalls": true',
+              '"localKeyExported": false',
+              '"accessTokenExported": false',
+              '"refreshTokenExported": false',
+          ]
+          for token in bridge_required:
+              assert token in bridge, f'missing bridge truth/custody contract: {token}'
+
+          forbidden = [
+              'import CoreBluetooth',
+              'ThingSmartBLEManager',
+              'publishDps',
+              'publishDPS',
+              'queryDps',
+              'queryDPS',
+              'writeValue(',
+              'setDp',
+              'setDP',
+              'connectDevice(',
+              'disconnectDevice(',
+          ]
+          for token in forbidden:
+              assert token not in bridge, f'forbidden BLE/DP/control surface in cloud bridge: {token}'
+
+          print('Frozen account-bridge source boundary audit: PASS')
+          PY
+
+      - name: Repository whitespace sanity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
