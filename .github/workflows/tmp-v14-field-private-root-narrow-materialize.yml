@@ -17,35 +17,44 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Bind exact triggering head
+      - name: Bind exact triggering head and canonical red-team input
+        shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -f scripts/ci/tmp_v14_field_private_root_narrow_materialize.py
+          git fetch --no-tags origin '+refs/heads/redteam/v14-field-untracked-arm-gap-sol-20260811:refs/remotes/origin/redteam/v14-field-untracked-arm-gap-sol-20260811'
+          test "$(git rev-parse refs/remotes/origin/redteam/v14-field-untracked-arm-gap-sol-20260811)" = '8b67673789451835acc1bed192ce66aa4113ee23'
       - name: Materialize narrow private raw-tree authority
+        shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tmp_v14_field_private_root_narrow_materialize.py
           python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           python3 -m py_compile scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
-      - name: Replay pre-arm and private-root regressions
+      - name: Replay canonical pre-arm and private-root regressions
+        shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
           python3 scripts/ci/tests/test_capture_field_tracked_source_window_authority.py
       - name: Diff hygiene
+        shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          git diff -- Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+          git diff -- Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py .github/workflows/capture-field-untracked-prearm-injection-red-team.yml
       - name: Publish clean repaired child
         env:
           BRANCH: repair/v14-field-untracked-prearm-admission-sol-20260811
+        shell: bash
         run: |
           set -euo pipefail
           git config user.name "nembra-capture-materializer[bot]"
           git config user.email "nembra-capture-materializer[bot]@users.noreply.github.com"
-          git add Scripts/capture_tuya_private_input_build_guard.py scripts/ci/tests/test_capture_field_untracked-prearm-injection-red-team.py
+          git add Scripts/capture_tuya_private_input_build_guard.py
+          git add scripts/ci/tests/test_capture_field_untracked_prearm_injection_red_team.py
+          git add .github/workflows/capture-field-untracked-prearm-injection-red-team.yml
           git rm scripts/ci/tmp_v14_field_private_root_narrow_materialize.py
           git rm .github/workflows/tmp-v14-field-private-root-narrow-materialize.yml
           git diff --cached --check
