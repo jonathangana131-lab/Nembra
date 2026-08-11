@@ -1,0 +1,57 @@
+name: Capture Live Main Contract Inventory
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/capture-live-main-contract-inventory.yml'
+      - 'Packages/NembraBluetoothCapture/Tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  external-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Bind exact head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Inventory repository-external source contracts
+        shell: bash
+        run: |
+          python3 - <<'PY' > "$RUNNER_TEMP/capture-external-contracts.txt"
+          import re
+          from pathlib import Path
+          root=Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests')
+          hits=[]
+          path_re=re.compile(r'["\']((?:NembraApp|NembraCapture\.xcodeproj|Nembra\.xcodeproj|scripts|Scripts|docs|\.github|NembraUITests|NembraAppTests|CAPTURE_[A-Z0-9_./-]+)[A-Za-z0-9_./ -]*)["\']')
+          for f in sorted(root.glob('*.swift')):
+              text=f.read_text(errors='replace')
+              for m in path_re.finditer(text):
+                  p=m.group(1)
+                  if '/' not in p and not p.startswith('CAPTURE_'):
+                      continue
+                  hits.append((p, f.name))
+          for p, owner in sorted(set(hits)):
+              exists=Path(p).exists()
+              print(f"{'PRESENT' if exists else 'MISSING'}\t{p}\t{owner}")
+          PY
+          cat "$RUNNER_TEMP/capture-external-contracts.txt"
+      - name: Upload inventory
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-live-main-contract-inventory-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/capture-external-contracts.txt
+          retention-days: 7
+          if-no-files-found: error
