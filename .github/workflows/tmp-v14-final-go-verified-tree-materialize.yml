@@ -31,19 +31,34 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize and validate verified tree authority
+      - name: Materialize production repair
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tmp_materialize_final_go_verified_tree.py
           python3 -m py_compile scripts/ci/es80_authenticated_stationary_private_review_final_go.py
           python3 -m py_compile scripts/ci/tests/test_es80_final_go_packed_tree_authority_red_team.py
-          python3 scripts/ci/tests/test_es80_final_go_packed_tree_authority_red_team.py
-          python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
-          python3 scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
-          python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
           git diff --check
+
+      - name: Replay packed-tree attack
+        shell: bash
+        run: python3 scripts/ci/tests/test_es80_final_go_packed_tree_authority_red_team.py
+
+      - name: Preserve descriptor read custody
+        shell: bash
+        run: python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+
+      - name: Preserve current vnode contract
+        shell: bash
+        run: python3 scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
+
+      - name: Preserve committed parent execution custody
+        shell: bash
+        run: python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Preserve complete current Final-GO suite
+        shell: bash
+        run: python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
 
       - name: Publish tested production bytes
         shell: bash
