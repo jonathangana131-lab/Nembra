@@ -260,24 +260,41 @@ unset NEMBRA_INTENDED_FIELD_DEVICE_UDID || true
 [[ "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || die "NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 must be exactly 64 hex characters."
 NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256="$(printf '%s' "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256" | tr '[:upper:]' '[:lower:]')"
 export NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256
-PRIVATE_DEVICE_RUNNER="$ROOT/scripts/ci/es80_signed_field_artifact_private_runner.py"
-[[ -f "$PRIVATE_DEVICE_RUNNER" ]] || die "Private intended-device reader is missing from the accepted source."
-if ! DEVICE_UDID="$(/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT" <<'PY'
+PRIVATE_DEVICE_RUNNER_RELATIVE="scripts/ci/es80_signed_field_artifact_private_runner.py"
+PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB="$(run_authority_git rev-parse "$SOURCE_SHA:$PRIVATE_DEVICE_RUNNER_RELATIVE" 2>/dev/null)" || \
+    die "Private intended-device reader is missing from the exact accepted Git tree."
+[[ "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Private intended-device reader Git blob identity is malformed."
+PRIVATE_DEVICE_RUNNER="$(run_authority_git show "$SOURCE_SHA:$PRIVATE_DEVICE_RUNNER_RELATIVE" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || \
+    die "Could not capture the private intended-device reader from exact accepted Git bytes."
+[[ -n "$PRIVATE_DEVICE_RUNNER" ]] || die "Captured private intended-device reader is empty."
+if ! DEVICE_UDID="$(/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT" <<'PY'
+import base64
 import hashlib
 import hmac
-import importlib.util
 import os
 import re
 import sys
 from pathlib import Path
 
-runner_path = Path(sys.argv[1])
-spec = importlib.util.spec_from_file_location("nembra_private_device_reader", runner_path)
-if spec is None or spec.loader is None:
-    raise RuntimeError("private intended-device reader could not be loaded")
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-value = module.read_private_identifier(Path(sys.argv[2]), Path(sys.argv[3]))
+runner_source = base64.b64decode(sys.argv[1], validate=True)
+expected_blob = sys.argv[2]
+actual_blob = hashlib.sha1(
+    b"blob " + str(len(runner_source)).encode("ascii") + b"\0" + runner_source
+).hexdigest()
+if not hmac.compare_digest(actual_blob, expected_blob):
+    raise RuntimeError("captured private intended-device reader does not match the accepted Git blob")
+runner_namespace = {
+    "__name__": "nembra_private_device_reader",
+    "__file__": "<accepted-private-device-runner>",
+}
+exec(
+    compile(runner_source, "<accepted-private-device-runner>", "exec", dont_inherit=True),
+    runner_namespace,
+)
+reader = runner_namespace.get("read_private_identifier")
+if not callable(reader):
+    raise RuntimeError("accepted private intended-device reader does not expose read_private_identifier")
+value = reader(Path(sys.argv[3]), Path(sys.argv[4]))
 expected_digest = os.environ.get("NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256", "")
 if re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None:
     raise RuntimeError("expected intended-device digest is unavailable or malformed")
@@ -290,7 +307,7 @@ PY
     die "The intended-device verification file failed private custody validation."
 fi
 [[ -n "$DEVICE_UDID" ]] || die "The intended-device verification file produced no identifier."
-unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 || true
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 PRIVATE_DEVICE_RUNNER PRIVATE_DEVICE_RUNNER_ACCEPTED_BLOB PRIVATE_DEVICE_RUNNER_RELATIVE || true
 say "Private intended-device admission validated against Final GO digest"
 
 # The physical authentication candidate is the standalone Capture product with
