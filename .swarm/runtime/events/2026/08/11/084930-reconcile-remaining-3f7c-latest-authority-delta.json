@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084930-reconcile-remaining-3f7c-latest-authority-delta",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Live #2805 advanced to exact fa35eb5181fe17b93f4875508683d99994336fe6 with an additional non-duplicated exception-proxy execution-custody closure. Compare from prior 9e0fa421 changes production capture_tuya_private_input_build_guard.py, wires the downstream-helper red-team, and adds permanent test_capture_private_review_exception_proxy_custody.py; that regression is absent from selected clean #2840. #2840 therefore remains a useful vnode/Field-contract successor but cannot close build authority until it also recovers this fa35 delta plus the already-recorded #2834 gate hardening and #2836 exact-Git guard-presence semantics, then reruns exact acceptance. PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T08:49:30Z",
+  "data": {
+    "legacyAuthorityPR": 2805,
+    "legacyAuthoritySHA": "fa35eb5181fe17b93f4875508683d99994336fe6",
+    "selectedCleanPR": 2840,
+    "selectedCleanSHA": "f3b3c31150e29699172b208dab59c2d3724a5f62",
+    "missingRegressionOnSelected": "scripts/ci/tests/test_capture_private_review_exception_proxy_custody.py",
+    "additionalRequiredInputs": [2834,2836],
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
