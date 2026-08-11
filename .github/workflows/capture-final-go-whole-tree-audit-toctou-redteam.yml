@@ -1,0 +1,77 @@
+name: Capture Final GO Whole Tree Audit TOCTOU Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_whole_tree_audit_toctou_red_team.py
+      - .github/workflows/capture-final-go-whole-tree-audit-toctou-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-final-go-whole-tree-audit-toctou-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  whole-tree-audit-toctou:
+    name: Demonstrate post-subject raw-tree mutation admission
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind exact diagnostic head to Final-GO production parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRODUCTION_PARENT_SHA: 471cc025b332f4df8b43a98d709710aeb4e0698f
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$PRODUCTION_PARENT_SHA" HEAD
+
+          actual_paths="$RUNNER_TEMP/nembra-finalgo-whole-tree-redteam-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-finalgo-whole-tree-redteam-expected.txt"
+          git diff --name-only "$PRODUCTION_PARENT_SHA"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-final-go-whole-tree-audit-toctou-redteam.yml
+          scripts/ci/tests/test_es80_final_go_whole_tree_audit_toctou_red_team.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile expected-red witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-finalgo-whole-tree-pycache"
+          python3 -m py_compile scripts/ci/tests/test_es80_final_go_whole_tree_audit_toctou_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Demonstrate inter-subject whole-tree audit race
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_es80_final_go_whole_tree_audit_toctou_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          PRODUCTION_PARENT_SHA: 471cc025b332f4df8b43a98d709710aeb4e0698f
+        run: |
+          set -euo pipefail
+          git diff --check "$PRODUCTION_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
