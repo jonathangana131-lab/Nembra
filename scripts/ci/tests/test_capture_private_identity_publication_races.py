@@ -87,14 +87,11 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
             final = parent / "identity.swift"
             final_bytes = final.read_bytes() if final.exists() else None
             self.assertTrue(attacked, "diagnostic never reached the staging publication boundary")
-            self.assertTrue(
-                rejected or final_bytes == payload,
-                "writer accepted a different inode/payload substituted under the sealed staging name",
-            )
+            self.assertTrue(rejected, "writer accepted a substituted staging inode as successful publication")
             self.assertNotEqual(
                 final_bytes,
                 attacker_payload,
-                "attacker-controlled replacement bytes were accepted as the published private identity",
+                "attacker-controlled replacement bytes remained accepted at the final private identity path",
             )
 
     def test_detached_private_directory_cannot_receive_or_stage_credential_identity(self) -> None:
@@ -128,11 +125,12 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
                 original_publish(root_fd, src, dst)
 
             writer._secure_replace_beneath = adversarial_publish
+            rejected = False
             try:
                 try:
                     writer.provision(checkout_fd, checkout, key_b64, secret_b64)
                 except (writer.ProvisionError, OSError):
-                    pass
+                    rejected = True
             finally:
                 writer._secure_replace_beneath = original_publish
                 os.close(checkout_fd)
@@ -144,6 +142,7 @@ class PrivateIdentityPublicationRaceTests(unittest.TestCase):
                 / "NembraTuyaPrivateIdentity.swift"
             )
             self.assertTrue(attacked, "diagnostic never reached credential-bearing publication")
+            self.assertTrue(rejected, "writer reported success after private ancestry was detached")
             self.assertEqual(
                 leaked_before_publish,
                 [],
