@@ -1,0 +1,74 @@
+name: TEMP V14 Field Installer Workflow Blob Upload
+
+on:
+  push:
+    branches:
+      - tmp/v14-field-installer-workflow-compose-sol-20260811
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: field-installer-authority-workflows
+          path: /tmp/composed
+          github-token: ${{ github.token }}
+          run-id: 31479903207
+
+      - name: Upload exact composed bytes as Git blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_FIELD_BLOB: fa505eb6f1f5947d69e059b74a8bab898257339c
+          EXPECTED_DOWNSTREAM_BLOB: c0ad6216bdb6250c32f0b885df56119207978857
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          import urllib.request
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          api = f"https://api.github.com/repos/{repository}/git/blobs"
+
+          def upload(path: Path, expected: str) -> str:
+              payload = json.dumps({
+                  'content': base64.b64encode(path.read_bytes()).decode('ascii'),
+                  'encoding': 'base64',
+              }).encode('utf-8')
+              request = urllib.request.Request(
+                  api,
+                  data=payload,
+                  method='POST',
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'Content-Type': 'application/json',
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  result = json.load(response)
+              actual = result['sha']
+              if actual != expected:
+                  raise SystemExit(f'Git blob identity mismatch for {path.name}: {actual} != {expected}')
+              print(f'validated Git blob {path.name}: {actual}')
+              return actual
+
+          upload(
+              Path('/tmp/composed/capture-field-build-provenance.yml'),
+              os.environ['EXPECTED_FIELD_BLOB'],
+          )
+          upload(
+              Path('/tmp/composed/capture-private-review-downstream-helper-execution-redteam.yml'),
+              os.environ['EXPECTED_DOWNSTREAM_BLOB'],
+          )
+          PY
