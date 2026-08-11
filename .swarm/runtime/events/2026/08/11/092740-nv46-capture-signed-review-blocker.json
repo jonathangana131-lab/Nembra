@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "092740-nv46-capture-signed-review-blocker",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-nv46",
+  "laneId": "capture-signed-install-custody",
+  "message": "Independent exact-head review of PR #2871 at ad5e83d2ac6c6a44678d4da5e9580f7d09ed5a9c: replacement-blind Git custody delta is source-sound and its 9 ACL + 17 signed-custody tests passed inside the materializer, but exact head is BLOCKED because temporary materializer run 31476841061/job 93732389698 fails after deleting its own workflow and then staging the missing pathspec. Temporary workflow therefore remains, permanent gate is not durably materialized, and Field/Graft remain red. Require descendant repair, self-deletion, permanent gate, terminal gates, and exact-head re-review.",
+  "createdAt": "2026-08-11T09:27:40Z",
+  "data": {
+    "pr": 2871,
+    "headSHA": "ad5e83d2ac6c6a44678d4da5e9580f7d09ed5a9c",
+    "reviewId": 4904766040,
+    "materializerRun": 31476841061,
+    "materializerJob": 93732389698,
+    "sourceReview": "BLOCKED",
+    "blocker": "self-delete-staging-pathspec",
+    "physicalStatus": "PHYSICAL_NO_GO"
+  }
+}
