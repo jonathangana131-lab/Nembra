@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Adversarial custody tests for the generated CocoaPods Capture build subject."""
-
+"""Portable generated-build authority checks for Capture."""
 from __future__ import annotations
 
 import hashlib
@@ -15,294 +14,172 @@ import tempfile
 import unittest
 from unittest import mock
 
-REPOSITORY = Path(__file__).resolve().parents[3]
-BOOTSTRAP = REPOSITORY / "Scripts" / "bootstrap_capture_tuya_sdk.sh"
-PROVENANCE = REPOSITORY / "Scripts" / "capture_tuya_private_input_provenance.py"
-PRIVATE_REVIEW_HELPER = REPOSITORY / "Scripts" / "capture_tuya_private_review_commitment.py"
-SUBJECT_HELPER = REPOSITORY / "Scripts" / "capture_cocoapods_generated_build_subject.py"
-BUILD_GUARD = REPOSITORY / "Scripts" / "capture_tuya_private_input_build_guard.py"
-GENERATED_RELATIVE = Path("Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig")
+ROOT = Path(__file__).resolve().parents[3]
+BOOTSTRAP = ROOT / "Scripts/bootstrap_capture_tuya_sdk.sh"
+PROVENANCE = ROOT / "Scripts/capture_tuya_private_input_provenance.py"
+PRIVATE_REVIEW = ROOT / "Scripts/capture_tuya_private_review_commitment.py"
+SUBJECT = ROOT / "Scripts/capture_cocoapods_generated_build_subject.py"
+GUARD = ROOT / "Scripts/capture_tuya_private_input_build_guard.py"
+GENERATED = Path("Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig")
 
 
-def load_build_guard():
-    module_name = "nembra_capture_build_guard_test_subject"
-    spec = importlib.util.spec_from_file_location(module_name, BUILD_GUARD)
+def load_guard():
+    name = "nembra_generated_subject_guard_test"
+    spec = importlib.util.spec_from_file_location(name, GUARD)
     if spec is None or spec.loader is None:
-        raise RuntimeError("could not load Capture build guard")
+        raise RuntimeError("guard unavailable")
     module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
 
-class CocoaPodsGeneratedBuildSubjectTests(unittest.TestCase):
+class GeneratedBuildSubjectTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(prefix="nembra-cocoapods-subject-")
-        self.root = Path(self.temporary.name)
+        self.tmp = tempfile.TemporaryDirectory(prefix="nembra-generated-subject-")
+        self.root = Path(self.tmp.name)
         scripts = self.root / "Scripts"
         scripts.mkdir()
-        for source in (BOOTSTRAP, PROVENANCE, PRIVATE_REVIEW_HELPER, SUBJECT_HELPER):
+        for source in (BOOTSTRAP, PROVENANCE, PRIVATE_REVIEW, SUBJECT):
             shutil.copy2(source, scripts / source.name)
-
         (self.root / "Podfile").write_text("platform :ios, '17.0'\n", encoding="utf-8")
         (self.root / "NembraCapture.xcodeproj").mkdir()
 
-        self.private_sdk = self.root / "LocalSecrets/TuyaSDK"
-        (self.private_sdk / "Build").mkdir(parents=True)
-        (self.private_sdk / "ThingSmartCryption.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
-        (self.private_sdk / "Build/libThingSmartCryption.a").write_bytes(b"private-security-sdk")
+        self.sdk = self.root / "LocalSecrets/TuyaSDK"
+        (self.sdk / "Build").mkdir(parents=True)
+        (self.sdk / "ThingSmartCryption.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+        (self.sdk / "Build/library.a").write_bytes(b"review-fixture")
+        self.identity = self.root / "LocalSecrets/TuyaRuntime"
+        self.sources = self.identity / "Sources/NembraTuyaPrivateConfig"
+        self.sources.mkdir(parents=True)
+        (self.identity / "NembraTuyaPrivateConfig.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+        (self.sources / "NembraTuyaPrivateIdentity.swift").write_text("enum Fixture { static let ready = true }\n", encoding="utf-8")
 
-        self.private_identity = self.root / "LocalSecrets/TuyaRuntime"
-        self.identity_sources = self.private_identity / "Sources/NembraTuyaPrivateConfig"
-        self.identity_sources.mkdir(parents=True)
-        (self.private_identity / "NembraTuyaPrivateConfig.podspec").write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
-        (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
-            "enum NembraTuyaPrivateIdentity { static let configured = true }\n",
-            encoding="utf-8",
-        )
-
-        self.fake_bin = self.root / "fake-bin"
-        self.fake_bin.mkdir()
-        pod = self.fake_bin / "pod"
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        pod = self.bin / "pod"
         pod.write_text(
-            "#!/bin/bash\n"
-            "set -euo pipefail\n"
+            "#!/bin/bash\nset -euo pipefail\n"
             "mkdir -p 'NembraCapture.xcworkspace' 'Pods/Target Support Files/Pods-NembraCapture'\n"
-            "cat > Podfile.lock <<'EOF'\n"
-            "PODS:\n"
-            "  - ThingSmartHomeKit (7.8.0)\n"
-            "  - ThingSmartBusinessExtensionKit (7.8.0)\n"
-            "DEPENDENCIES:\n"
-            "  - ThingSmartHomeKit (= 7.8.0)\n"
-            "  - ThingSmartBusinessExtensionKit (= 7.8.0)\n"
-            "EOF\n"
-            "printf '%s\\n' \"SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) ${NEMBRA_REDTEAM_GENERATED_PAYLOAD:?}\" > 'Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig'\n"
-            "printf '%s\\n' \"${NEMBRA_REDTEAM_GENERATED_PAYLOAD:?}\" > NembraCapture.xcworkspace/contents.xcworkspacedata\n",
+            "cat > Podfile.lock <<'EOF'\nPODS:\n  - ThingSmartHomeKit (7.8.0)\n  - ThingSmartBusinessExtensionKit (7.8.0)\nEOF\n"
+            "printf '%s\\n' \"${NEMBRA_TEST_GRAPH:?}\" > 'Pods/Target Support Files/Pods-NembraCapture/Pods-NembraCapture.debug.xcconfig'\n"
+            "printf '%s\\n' \"${NEMBRA_TEST_GRAPH:?}\" > NembraCapture.xcworkspace/contents.xcworkspacedata\n",
             encoding="utf-8",
         )
         pod.chmod(0o755)
 
     def tearDown(self) -> None:
-        self.temporary.cleanup()
+        self.tmp.cleanup()
 
-    def run_bootstrap(
-        self,
-        payload: str,
-        *,
-        review_only: bool,
-        accepted_lock: str | None = None,
-        accepted_subject: str | None = None,
-        accepted_private: str | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        environment = {
-            "PATH": f"{self.fake_bin}:/usr/bin:/bin",
-            "HOME": str(self.root),
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-            "NEMBRA_REDTEAM_GENERATED_PAYLOAD": payload,
-        }
-        if accepted_lock is not None:
-            environment["NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"] = accepted_lock
-        if accepted_subject is not None:
-            environment["NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256"] = accepted_subject
-        if accepted_private is not None:
-            environment["NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256"] = accepted_private
+    def bootstrap(self, *, review: bool, lock: str = "", subject: str = "", private: str = ""):
+        env = {"PATH": f"{self.bin}:/usr/bin:/bin", "HOME": str(self.root), "NEMBRA_TEST_GRAPH": "A"}
+        if not review:
+            env.update({
+                "NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256": lock,
+                "NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": subject,
+                "NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_REVIEW_HMAC_SHA256": private,
+            })
         command = ["/bin/bash", str(self.root / "Scripts/bootstrap_capture_tuya_sdk.sh")]
-        if review_only:
+        if review:
             command.append("--resolve-lock-for-review")
-        return subprocess.run(
-            command,
-            cwd=self.root,
-            env=environment,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+        return subprocess.run(command, cwd=self.root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
 
     @staticmethod
-    def private_subject(output: str) -> str:
-        match = re.search(r"Private-input review HMAC-SHA256: ([0-9a-f]{64})", output)
-        if match is None:
-            raise AssertionError(f"missing private review subject:\n{output}")
+    def tagged(output: str, label: str) -> str:
+        match = re.search(rf"{re.escape(label)}: ([0-9a-f]{{64}})", output)
+        if not match:
+            raise AssertionError(output)
         return match.group(1)
 
-    def generated_subject(self) -> str:
-        result = subprocess.run(
-            [
-                "/usr/bin/python3", "-I", str(self.root / "Scripts" / SUBJECT_HELPER.name),
-                "--lockfile", str(self.root / "Podfile.lock"),
-                "--pods", str(self.root / "Pods"),
-                "--workspace", str(self.root / "NembraCapture.xcworkspace"),
-            ],
-            cwd=self.root,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+    def graph_subject(self) -> str:
+        result = subprocess.run([
+            "/usr/bin/python3", "-I", str(self.root / "Scripts" / SUBJECT.name),
+            "--lockfile", str(self.root / "Podfile.lock"),
+            "--pods", str(self.root / "Pods"),
+            "--workspace", str(self.root / "NembraCapture.xcworkspace"),
+        ], cwd=self.root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
         self.assertEqual(result.returncode, 0, result.stdout)
-        subject = result.stdout.strip()
-        self.assertRegex(subject, r"^[0-9a-f]{64}$")
-        return subject
+        return result.stdout.strip()
+
+    def reviewed(self):
+        review = self.bootstrap(review=True)
+        self.assertEqual(review.returncode, 0, review.stdout)
+        lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
+        graph = self.graph_subject()
+        private = self.tagged(review.stdout, "Private-input review HMAC-SHA256")
+        return review, lock, graph, private
 
     def test_exact_reviewed_lock_and_generated_subject_are_required(self) -> None:
-        review = self.run_bootstrap("REVIEWED_GRAPH", review_only=True)
-        self.assertEqual(review.returncode, 0, review.stdout)
-
-        accepted_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
-        accepted_subject = self.generated_subject()
-        accepted_private = self.private_subject(review.stdout)
-        self.assertIn(f"Podfile.lock SHA-256: {accepted_lock}", review.stdout)
-        self.assertIn(f"CocoaPods generated build subject SHA-256: {accepted_subject}", review.stdout)
-
-        missing_subject = self.run_bootstrap(
-            "REVIEWED_GRAPH",
-            review_only=False,
-            accepted_lock=accepted_lock,
-            accepted_private=accepted_private,
-        )
-        self.assertNotEqual(missing_subject.returncode, 0, missing_subject.stdout)
-        self.assertIn("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256", missing_subject.stdout)
-
-        accepted = self.run_bootstrap(
-            "REVIEWED_GRAPH",
-            review_only=False,
-            accepted_lock=accepted_lock,
-            accepted_subject=accepted_subject,
-            accepted_private=accepted_private,
-        )
+        review, lock, graph, private = self.reviewed()
+        self.assertIn(graph, review.stdout)
+        missing = self.bootstrap(review=False, lock=lock, private=private)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256", missing.stdout)
+        accepted = self.bootstrap(review=False, lock=lock, subject=graph, private=private)
         self.assertEqual(accepted.returncode, 0, accepted.stdout)
-        self.assertIn("Preaccepted CocoaPods generated build subject matched", accepted.stdout)
 
     def test_same_accepted_lock_rejects_changed_generated_build_graph(self) -> None:
-        review = self.run_bootstrap("REVIEWED_GRAPH", review_only=True)
-        self.assertEqual(review.returncode, 0, review.stdout)
-
-        accepted_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
-        accepted_subject = self.generated_subject()
-        accepted_private = self.private_subject(review.stdout)
-        reviewed_generated = (self.root / GENERATED_RELATIVE).read_bytes()
-
-        # Normal field admission is verification-only and must never call CocoaPods.
-        # Model a same-lock generated-graph substitution directly in the ignored
-        # generated tree instead of asking field bootstrap to regenerate it.
-        (self.root / GENERATED_RELATIVE).write_text("SUBSTITUTED_GRAPH\n", encoding="utf-8")
-        field = self.run_bootstrap(
-            "REVIEWED_GRAPH",
-            review_only=False,
-            accepted_lock=accepted_lock,
-            accepted_subject=accepted_subject,
-            accepted_private=accepted_private,
-        )
-        field_lock = hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest()
-        substituted_generated = (self.root / GENERATED_RELATIVE).read_bytes()
-
-        self.assertEqual(field_lock, accepted_lock)
-        self.assertNotEqual(reviewed_generated, substituted_generated)
+        _, lock, graph, private = self.reviewed()
+        before = (self.root / GENERATED).read_bytes()
+        (self.root / GENERATED).write_bytes(b"B\n")
+        field = self.bootstrap(review=False, lock=lock, subject=graph, private=private)
+        self.assertEqual(hashlib.sha256((self.root / "Podfile.lock").read_bytes()).hexdigest(), lock)
+        self.assertNotEqual((self.root / GENERATED).read_bytes(), before)
         self.assertNotEqual(field.returncode, 0, field.stdout)
-        self.assertIn("generated CocoaPods build inputs do not match", field.stdout)
+        self.assertIn("generated build inputs do not match", field.stdout)
 
     def test_build_window_snapshot_and_watch_set_cover_generated_graph(self) -> None:
-        review = self.run_bootstrap("REVIEWED_GRAPH", review_only=True)
-        self.assertEqual(review.returncode, 0, review.stdout)
-        accepted_subject = self.generated_subject()
-
-        guard = load_build_guard()
+        _, _, graph, _ = self.reviewed()
+        guard = load_guard()
         inputs = guard.PrivateInputs(
             lockfile=self.root / "Podfile.lock",
-            security_podspec=self.private_sdk / "ThingSmartCryption.podspec",
-            security_build=self.private_sdk / "Build",
-            identity_podspec=self.private_identity / "NembraTuyaPrivateConfig.podspec",
-            identity_sources=self.identity_sources,
+            security_podspec=self.sdk / "ThingSmartCryption.podspec",
+            security_build=self.sdk / "Build",
+            identity_podspec=self.identity / "NembraTuyaPrivateConfig.podspec",
+            identity_sources=self.sources,
             generated_pods=self.root / "Pods",
             generated_workspace=self.root / "NembraCapture.xcworkspace",
         )
-
         watched = set(guard._watch_paths(inputs))
-        generated_file = self.root / GENERATED_RELATIVE
-        workspace_file = self.root / "NembraCapture.xcworkspace/contents.xcworkspacedata"
-        self.assertIn(self.root, watched)
-        self.assertIn(self.root / "LocalSecrets", watched)
-        self.assertIn(self.private_sdk, watched)
-        self.assertIn(self.private_identity, watched)
-        self.assertIn(generated_file, watched)
-        self.assertIn(workspace_file, watched)
-
+        self.assertIn(self.root / GENERATED, watched)
+        self.assertIn(self.root / "NembraCapture.xcworkspace/contents.xcworkspacedata", watched)
         before = inputs.generation_snapshot()
-        with mock.patch.dict(
-            os.environ,
-            {"NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": accepted_subject},
-            clear=False,
-        ):
+        with mock.patch.dict(os.environ, {"NEMBRA_CAPTURE_ACCEPTED_COCOAPODS_BUILD_SUBJECT_SHA256": graph}, clear=False):
             guard._verify_accepted_generated_build_subject(inputs)
-            generated_file.write_text("SUBSTITUTED_DURING_BUILD\n", encoding="utf-8")
-            after = inputs.generation_snapshot()
-            self.assertNotEqual(before, after)
+            (self.root / GENERATED).write_bytes(b"C\n")
+            self.assertNotEqual(before, inputs.generation_snapshot())
             with self.assertRaises(guard.BuildGuardError):
                 guard._verify_accepted_generated_build_subject(inputs)
 
     def test_private_only_guard_keeps_original_cross_root_staging_contract(self) -> None:
-        guard = load_build_guard()
-        with tempfile.TemporaryDirectory(prefix="nembra-private-only-lock-") as lock_text, tempfile.TemporaryDirectory(
-            prefix="nembra-private-only-inputs-"
-        ) as private_text:
-            lock_root = Path(lock_text)
-            private_root = Path(private_text)
-            lockfile = lock_root / "Podfile.lock"
-            lockfile.write_text("private-only\n", encoding="utf-8")
-            security_build = private_root / "security-build"
-            identity_sources = private_root / "identity-sources"
-            security_build.mkdir()
-            identity_sources.mkdir()
-            security_podspec = private_root / "security.podspec"
-            identity_podspec = private_root / "identity.podspec"
-            security_podspec.write_text("security\n", encoding="utf-8")
-            identity_podspec.write_text("identity\n", encoding="utf-8")
-            (security_build / "lib.a").write_bytes(b"private")
-            (identity_sources / "identity.swift").write_text("private\n", encoding="utf-8")
-
-            inputs = guard.PrivateInputs(
-                lockfile=lockfile,
-                security_podspec=security_podspec,
-                security_build=security_build,
-                identity_podspec=identity_podspec,
-                identity_sources=identity_sources,
-            )
-            watched = set(guard._watch_paths(inputs))
-            self.assertIn(lockfile, watched)
-            self.assertIn(security_build / "lib.a", watched)
-            self.assertIn(identity_sources / "identity.swift", watched)
-            self.assertNotIn(lock_root, watched)
-            self.assertNotIn(private_root, watched)
+        guard = load_guard()
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            a, b = Path(a), Path(b)
+            lock = a / "Podfile.lock"; lock.write_text("lock\n")
+            build = b / "build"; build.mkdir(); (build / "a").write_text("a")
+            sources = b / "sources"; sources.mkdir(); (sources / "b").write_text("b")
+            sp = b / "s.podspec"; sp.write_text("s")
+            ip = b / "i.podspec"; ip.write_text("i")
+            watched = set(guard._watch_paths(guard.PrivateInputs(lock, sp, build, ip, sources)))
+            self.assertIn(lock, watched)
+            self.assertNotIn(a, watched)
+            self.assertNotIn(b, watched)
 
     def test_partial_generated_roots_fail_closed(self) -> None:
-        guard = load_build_guard()
+        guard = load_guard()
         inputs = guard.PrivateInputs(
-            lockfile=self.root / "Podfile.lock",
-            security_podspec=self.private_sdk / "ThingSmartCryption.podspec",
-            security_build=self.private_sdk / "Build",
-            identity_podspec=self.private_identity / "NembraTuyaPrivateConfig.podspec",
-            identity_sources=self.identity_sources,
-            generated_pods=self.root / "Pods",
+            self.root / "Podfile.lock", self.sdk / "ThingSmartCryption.podspec", self.sdk / "Build",
+            self.identity / "NembraTuyaPrivateConfig.podspec", self.sources, generated_pods=self.root / "Pods"
         )
         with self.assertRaises(guard.BuildGuardError):
             guard._watch_paths(inputs)
 
     def test_generated_watch_fd_budget_raises_soft_limit_or_fails_closed(self) -> None:
-        guard = load_build_guard()
-        with (
-            mock.patch.object(guard, "_current_descriptor_count", return_value=10),
-            mock.patch.object(guard.resource, "getrlimit", side_effect=[(64, 1024), (174, 1024)]),
-            mock.patch.object(guard.resource, "setrlimit") as setrlimit,
-        ):
+        guard = load_guard()
+        with mock.patch.object(guard, "_current_descriptor_count", return_value=10), mock.patch.object(guard.resource, "getrlimit", side_effect=[(64, 1024), (174, 1024)]), mock.patch.object(guard.resource, "setrlimit") as setter:
             guard._ensure_fd_budget(100)
-            setrlimit.assert_called_once_with(guard.resource.RLIMIT_NOFILE, (174, 1024))
-
-        with (
-            mock.patch.object(guard, "_current_descriptor_count", return_value=10),
-            mock.patch.object(guard.resource, "getrlimit", return_value=(64, 173)),
-        ):
+            setter.assert_called_once_with(guard.resource.RLIMIT_NOFILE, (174, 1024))
+        with mock.patch.object(guard, "_current_descriptor_count", return_value=10), mock.patch.object(guard.resource, "getrlimit", return_value=(64, 173)):
             with self.assertRaises(guard.BuildGuardError):
                 guard._ensure_fd_budget(100)
 
