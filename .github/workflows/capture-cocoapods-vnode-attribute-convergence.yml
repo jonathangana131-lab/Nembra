@@ -1,0 +1,57 @@
+name: Capture CocoaPods Vnode Attribute Convergence
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/capture_tuya_private_input_build_guard.py'
+      - 'Scripts/capture_cocoapods_generated_build_subject.py'
+      - 'scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py'
+      - '.github/workflows/capture-cocoapods-vnode-attribute-convergence.yml'
+  push:
+    branches:
+      - repair/v14-capture-cocoapods-ancestry-attrib-convergence-sol
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-subscription-contract:
+    name: Require vnode attribute and capacity custody
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind acceptance to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile convergence evidence
+        run: python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+      - name: Prove mode authority, vnode subscription, and descriptor capacity
+        run: python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
+
+  macos-real-kqueue:
+    name: Real macOS chmod vnode evidence
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind acceptance to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Exercise real kqueue attribute delivery
+        run: /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_vnode_attribute_custody.py
