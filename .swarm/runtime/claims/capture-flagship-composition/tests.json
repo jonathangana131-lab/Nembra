@@ -9,11 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T12:21:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:21:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:24:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
   "pr": 2940,
-  "sourceSHA": "99fbbbb701eee16c24e1594ae54417e511a7a88e",
-  "currentHeadSHA": "99fbbbb701eee16c24e1594ae54417e511a7a88e",
-  "intent": "Independent tests-side exact-head acceptance support for the clean app-visible Capture AX closure. Verify current package/graft/Field/Xcode/standalone-visual gates on unchanged 99fbbbb, inspect retained standard+AX5 artifacts when available, and validate source-level large-type/VoiceOver contracts without overlapping primary product edits or review ownership. PHYSICAL NO-GO."
+  "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+  "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+  "intent": "Independent tests-side exact-head acceptance support for the clean app-visible Capture AX closure. Verify current package/graft/Field/Xcode/standalone-visual gates on unchanged current head, inspect retained standard+AX5 artifacts when available, and validate source-level large-type/VoiceOver contracts without overlapping primary product edits or review ownership. PHYSICAL NO-GO.",
+  "checkpoint": "PR #2940 moved one commit beyond clean product head 99fbbbb to exact 005b7c4; compare proves the only delta is additive CaptureAXScopeRegressionSourceTests.swift (78 lines), so app bytes are unchanged but all old exact-head gates reset. Independent source review confirms SecureLinkView itself owns @Environment(dynamicTypeSize), Details retains semantic Engineering details, and AX Tuya field/button sighted labels remain ordered with duplicate VoiceOver label hidden. Fresh exact 005b7c4 Field/Graft/Standalone/Xcode runs are queued/pending; none counted green yet."
 }
