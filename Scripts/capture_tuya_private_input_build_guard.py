@@ -42,7 +42,7 @@ build_subject = _load_helper(
 def _normalize_sha256(value: str) -> str:
     normalized = value.lower()
     if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
-        raise BuildGuardError("expected accepted lock digest must be exactly 64 hexadecimal characters")
+        raise BuildGuardError("accepted field-build lock digest is unavailable or malformed")
     return normalized
 
 
@@ -407,12 +407,14 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     parser.add_argument("--security-build", required=True, type=Path)
     parser.add_argument("--identity-podspec", required=True, type=Path)
     parser.add_argument("--identity-sources", required=True, type=Path)
-    parser.add_argument("--expected-lock-sha256", required=True)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(list(argv))
     command = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
+    accepted_lock_sha256 = _normalize_sha256(
+        os.environ.get("NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256", "")
+    )
     return (
         PrivateInputs(
             lockfile=args.lockfile.resolve(),
@@ -420,7 +422,7 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
             security_build=args.security_build.resolve(),
             identity_podspec=args.identity_podspec.resolve(),
             identity_sources=args.identity_sources.resolve(),
-            expected_lock_sha256=_normalize_sha256(args.expected_lock_sha256),
+            expected_lock_sha256=accepted_lock_sha256,
         ),
         command,
     )
