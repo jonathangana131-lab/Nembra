@@ -21,6 +21,10 @@ BUNDLE = {
     "scripts/ci/es80_today_crosscheck_receipt_custody.py": "3bea883a17c9a34e8d9dd5b258824d29257886f2",
     "scripts/ci/es80_today_trusted_signed_candidate_reinspection.py": "179cb50cb1f32595722cd2a53df47111a2ca6a45",
 }
+# The historical accepted bundle above remains immutable evidence for the retired
+# TODAY procedure. The live tree deliberately carries a different hardener blob:
+# its CLI now fails closed and cannot mint that retired physical authority.
+RETIRED_CURRENT_HARDENER_BLOB = "558e3265c3b37b91738ae7796d2531b1e4c958d5"
 
 
 class FinalGoExecutableBundleCustodyTests(unittest.TestCase):
@@ -37,7 +41,7 @@ class FinalGoExecutableBundleCustodyTests(unittest.TestCase):
         self.assertIn("failed only when the then-current executable-bundle regression", handoff)
         self.assertIn("failed predecessor-pin run is never promoted to acceptance evidence", handoff)
 
-    def test_handoff_checks_exact_tree_and_raw_checkout_bytes_for_every_authority_module(self):
+    def test_handoff_checks_exact_tree_and_raw_checkout_bytes_for_every_historical_authority_module(self):
         handoff = self.handoff()
         self.assertIn('status --porcelain=v1 --untracked-files=all', handoff)
         self.assertIn('rev-parse --verify "$FINAL_GO_TOOLING_HEAD:$path"', handoff)
@@ -46,8 +50,16 @@ class FinalGoExecutableBundleCustodyTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn(f"verify_final_go_blob {path} {blob}", handoff)
 
-    def test_current_authority_module_bytes_still_equal_accepted_bundle(self):
-        for relative_path, expected_blob in BUNDLE.items():
+    def test_current_tree_preserves_historical_siblings_but_uses_retired_hardener(self):
+        current_expected = dict(BUNDLE)
+        current_expected["scripts/ci/es80_today_final_go_hardened.py"] = RETIRED_CURRENT_HARDENER_BLOB
+        self.assertNotEqual(
+            RETIRED_CURRENT_HARDENER_BLOB,
+            BUNDLE["scripts/ci/es80_today_final_go_hardened.py"],
+            "retirement must not silently re-promote the historical authorizing CLI blob",
+        )
+
+        for relative_path, expected_blob in current_expected.items():
             with self.subTest(path=relative_path):
                 completed = subprocess.run(
                     (
@@ -66,6 +78,11 @@ class FinalGoExecutableBundleCustodyTests(unittest.TestCase):
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual(completed.stdout.strip(), expected_blob)
+
+        hardener = HARDENER.read_text(encoding="utf-8")
+        self.assertIn("RETIRED_DIRECT_EXECUTION_MESSAGE", hardener)
+        self.assertIn("retired ES80-FINGERPRINT-v1 Final GO authority is non-authorizing", hardener)
+        self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", hardener)
 
     def test_hardener_loads_only_the_pinned_local_authority_siblings(self):
         tree = ast.parse(HARDENER.read_text(encoding="utf-8"))
@@ -90,7 +107,7 @@ class FinalGoExecutableBundleCustodyTests(unittest.TestCase):
             loaded_names.add(filename.value)
         self.assertEqual(loaded_names, expected_loaded_names)
 
-    def test_invocation_uses_isolated_python_from_verified_worktree_and_same_tooling_repo(self):
+    def test_invocation_uses_isolated_python_from_verified_historical_worktree_and_same_tooling_repo(self):
         handoff = self.handoff()
         invocation = '/usr/bin/python3 -I "$FINAL_GO_TOOLING_SOURCE/scripts/ci/es80_today_final_go_hardened.py"'
         tooling_argument = '--tooling-repo "$FINAL_GO_TOOLING_SOURCE"'
