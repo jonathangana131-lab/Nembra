@@ -4,7 +4,7 @@
   "laneId": "capture-final-go-authority",
   "epic": "capture",
   "title": "Capture Final-GO control authority",
-  "objective": "Converge the authenticated-stationary Final-GO lineage so reviewed generated/private build authority and all parent-module execution subjects are bound to exact accepted Git bytes without regressing the sealed installer or signed-artifact custody.",
+  "objective": "Converge authenticated-stationary Final-GO so reviewed generated/private build authority, candidate worktree authority, and all parent-module execution subjects are bound to one exact accepted Git/physical candidate without regressing sealed installer or signed-artifact custody.",
   "priority": 0,
   "state": "BLOCKED_EXTERNAL",
   "dependencies": ["capture-build-authority"],
@@ -13,29 +13,22 @@
       "id": "generated-control-current",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Selected generated-subject spine #2775 is now exact b4a2172cd799d363cb503a1ecb3d15bc7382e36f, not the imported 71aee681 snapshot. Its canonical Capture Authenticated Stationary Generated Subject Final GO run 31471815137 and focused R3 Base Loader Custody Current run 31471815121 are terminal SUCCESS. The former #2803 authenticated-stationary parent-module execution seam is closed in this exact control head with accepted Git-object byte loading; Xcode on #2775 is SKIPPED and is not product acceptance. Build-side authority remains an unresolved dependency, so these greens are control ingredient evidence only.",
+      "reason": "Selected generated-subject parent #2775 exact b4a2172cd799d363cb503a1ecb3d15bc7382e36f remains control-green: canonical Generated Subject Final GO run 31471815137 and R3 Base Loader Custody Current 31471815121 are terminal SUCCESS. It closed the former mutable base-parent execution seam; Xcode there is skipped and is not product acceptance. Build authority remains a dependency.",
       "pr": 2775,
       "headSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f"
     },
     {
-      "id": "private-review-control-stale-and-red",
+      "id": "current-r4-recovery-parent-loader-green-candidate-worktree-authority-open",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Private-review R4 #2791 remains on stale generated-parent ancestry and exact current head 61dc8330f770e8378c3e92fe1b5dd481fc1ce981. Its Capture Authenticated Stationary Private Review Final GO run 31459307350 is terminal FAILURE and Xcode 31459307292 is SKIPPED. Expected-red #2798 exact 9d30d7c182ae0ad8136c0956def3b2cd7902ddde proves #2791 executes the mutable generated-parent module before later authority checks. Do not repair/promote #2791 on stale ancestry; recover its v4 owner-review/private-environment semantics directly onto current #2775 b4a2172... while loading the generated parent only from exact accepted Git bytes, then replay #2798 green. A fresh search found no current-parent recovery PR yet even though #2612 notes such a recovery lane is intended/active.",
-      "pr": 2791,
-      "headSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981"
+      "reason": "Current-parent R4 recovery #2873 exact 65e9aadc8797c7b8ff33c73616892fcac6ff217b is a clean three-file direct child of #2775. Its exact-parent loader consumes accepted generated-parent Git blob 13720f81... under a closed/replacement-blind environment, re-hashes before execution, and exact-head Private Review Final GO run 31477579857 is terminal SUCCESS including the #2798 assume-unchanged parent attack. This closes stale #2791's mutable parent-module execution seam and correctly upgrades the owner review/helper authority contract to v5. However #2873 still delegates candidate worktree acceptance to the parent `base.git` / `generated.candidate_generated_authority`; parent base.git uses `git -C <root>` with GIT_NO_REPLACE_OBJECTS only and honors repository-local worktree selection. #2869 machine-proves the same core.worktree selection primitive can make Git status/hash authority describe different bytes from the physical candidate. Before R4 promotion, add a current-R4 core.worktree decoy regression and bind candidate Git/worktree checks explicitly to the physical candidate/repository under closed config/replacement authority. Preserve exact Git-object helper execution. Rerun the moved exact R4 gate. Xcode skipped is not acceptance; this remains control ingredient work and PHYSICAL NO-GO.",
+      "pr": 2873,
+      "headSHA": "65e9aadc8797c7b8ff33c73616892fcac6ff217b"
     }
   ],
   "mode": "exclusive",
-  "allowedWriteAreas": [
-    "scripts/ci/es80_authenticated_stationary_final_go.py",
-    "scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py",
-    "scripts/ci/es80_authenticated_stationary_private_review_final_go.py"
-  ],
-  "adjacentWriteAreas": [
-    "scripts/ci/tests",
-    ".github/workflows"
-  ],
+  "allowedWriteAreas": ["scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py","scripts/ci/es80_authenticated_stationary_private_review_final_go.py"],
+  "adjacentWriteAreas": ["scripts/ci/tests",".github/workflows"],
   "slots": [
     {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
     {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
@@ -43,17 +36,17 @@
     {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":["RELEASE_INTEGRATION"]}
   ],
   "acceptance": {"independentReview": true},
-  "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
+  "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "selectedGeneratedPR": 2775,
     "selectedGeneratedHeadSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f",
-    "privateReviewPR": 2791,
-    "privateReviewHeadSHA": "61dc8330f770e8378c3e92fe1b5dd481fc1ce981",
-    "privateReviewBaseSHA": "40f835a28e3f61b125c47c1922d7da2af20eba63",
-    "lineagePRs": [2638,2775,2791,2798,2803],
-    "redTeamPRs": [2798],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T08:54Z. #2775 b4a2172 is exact-head control green and has closed #2803's base-parent execution seam. #2791 remains stale-parent and exact-head red; #2798 still proves generated-parent execution occurs before authority there. Required next control composition is a clean current-#2775 R4 recovery that preserves private-review semantics while sealing the generated-parent execution subject, after build-authority dependency convergence. No current-parent recovery PR surfaced in the latest search. PHYSICAL NO-GO remains."
+    "selectedPrivateReviewRecoveryPR": 2873,
+    "selectedPrivateReviewRecoveryHeadSHA": "65e9aadc8797c7b8ff33c73616892fcac6ff217b",
+    "stalePrivateReviewPR": 2791,
+    "redTeamInputs": [2798,2869],
+    "lineagePRs": [2638,2775,2791,2798,2803,2873],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:27Z. #2873 is the correct current-#2775 R4 recovery and its parent-loader seam is exact-head green. Independent review found candidate worktree authority still inherits parent base.git/core.worktree selection semantics now machine-proven unsafe by #2869. Harden/retest that candidate path before R4 promotion; build-side #2869 remains a separate dependency. PHYSICAL NO-GO."
   },
-  "tags": ["capture", "p0", "physical-go", "control-authority", "legacy-import"]
+  "tags": ["capture","p0","physical-go","control-authority","git-authority","legacy-import"]
 }
