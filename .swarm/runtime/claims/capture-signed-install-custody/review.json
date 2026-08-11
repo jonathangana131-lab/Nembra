@@ -7,9 +7,10 @@
   "workerId": "sol-20260811-1607ax",
   "leaseId": "capture-signed-install-review-1607ax-20260811-2345",
   "generation": 10,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:45:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:45:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:49:00Z",
+  "releasedAt": "2026-08-11T23:49:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3129,
@@ -17,5 +18,7 @@
   "currentHeadSHA": "2c687bac0331575f5b3835d66684085e9d65bfa9",
   "takeoverFromWorkerId": "sol-20260811-1609r2",
   "takeoverFromLeaseId": "capture-signed-install-review-1609r2-20260811-2311",
-  "takeoverReason": "Generation-9 review lease expired at 2026-08-11T23:41:00Z. Final stop-proof found fresh permanent dedicated-UID validator #3129 on exact #3089 parent, following diagnostic #3125 and blocking review of empty-group candidate #3126. Take over independent review only; active tests owner remains untouched. Classify the actual pre-sudo field-group authority model and exact evidence. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-9 expired; generation-10 independently reviewed fresh permanent active-group validator #3129.",
+  "outcome": "BLOCKED_MISSING_PRE_SUDO_UID_GID_BIND",
+  "checkpoint": "Blocking swarm review COMMENT 4911656711 on #3129 exact 2c687bac. Active supplementary-group model is preferred, but parent must mechanically bind returned fieldUID/fieldPrimaryGID to its pre-sudo os.getuid()/os.getgid() identity before permanent evidence can be accepted. Exact dedicated-UID and Main runs queued; Xcode skipped. Any repair moves head and resets exact evidence. PHYSICAL NO-GO."
 }
