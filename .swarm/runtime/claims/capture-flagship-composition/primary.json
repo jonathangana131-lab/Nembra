@@ -9,9 +9,9 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:11:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:23:04Z",
   "leaseSeconds": 2700,
-  "branch": "",
+  "branch": "polish/v14-capture-root-first-fold-sol-1311jx-20260811",
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
   "pr": null,
@@ -19,10 +19,12 @@
   "takeoverReason": "Generation-2 lease expired long after the accepted app-visible head 005b7c4 earned terminal exact-head Xcode 27 success. Continue the same Capture flagship upward by closing the durable standard first-fold copy-density blocker without changing security, physical authority, or the accepted AX semantics.",
   "ownedPaths": [
     "NembraApp/App/NembraCaptureEntrypoint.swift",
+    "NembraCapture.xcodeproj/project.pbxproj",
+    "NembraApp/Resources/Localizable.strings",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
   ],
-  "durableEvidence": "App-visible predecessor 005b7c4aaf27fabb442a65599b4538ebcc09ae27 is accepted: Main Selective Graft 31490540822 SUCCESS; Field Build Provenance 31490540890 SUCCESS; Standalone Visual 31490540910 SUCCESS with human standard/AX5 pixel acceptance; Xcode 27 31490540888 terminal SUCCESS. This generation targets only the remaining standard first-fold sighted-copy density blocker recorded in the lane state. Physical security lineages and runtime VoiceOver remain separate NO-GO blockers.",
-  "acceptance": "Successor must preserve semantic lock/account/CTA truth and AX layout, reduce redundant standard sighted prose so Create approval QR is materially earlier in the first fold, add focused source regression, then re-earn exact-head package/Xcode/visual evidence. Any moved head resets acceptance.",
-  "intent": "Create a clean successor directly from accepted 005b7c4. Simplify redundant standard-size sighted guidance only; do not weaken VoiceOver semantics, Tuya identity truth, build lock, QR authorization, or physical NO-GO. Keep accessibility-size composition unchanged unless required by shared source structure."
+  "durableEvidence": "App-visible predecessor 005b7c4aaf27fabb442a65599b4538ebcc09ae27 is accepted: Main Selective Graft 31490540822 SUCCESS; Field Build Provenance 31490540890 SUCCESS; Standalone Visual 31490540910 SUCCESS with human standard/AX5 pixel acceptance; Xcode 27 31490540888 terminal SUCCESS. Runtime VoiceOver PR #2970 advanced concurrently to 18707868a3251744ac7eca203396a63a37f5af60 and still fails only the direct traversal/audit step; it is actively owned elsewhere and is intentionally untouched here. This generation targets only the remaining standard first-fold sighted-copy density blocker recorded in the lane state.",
+  "acceptance": "Successor must preserve semantic lock/account/CTA truth and AX layout, reduce redundant standard sighted prose so Create approval QR is materially earlier in the first fold, add focused product-level regression/evidence, then re-earn exact-head package/Xcode/visual evidence. Any moved head resets acceptance.",
+  "intent": "Create a clean successor directly from accepted 005b7c4. Simplify redundant standard-size sighted guidance only; do not weaken VoiceOver semantics, Tuya identity truth, build lock, QR authorization, or physical NO-GO. Keep accessibility-size composition unchanged."
 }
