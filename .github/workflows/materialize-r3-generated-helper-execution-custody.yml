@@ -1,0 +1,64 @@
+name: Materialize R3 Generated Helper Execution Custody
+
+on:
+  push:
+    branches:
+      - repair/v14-r3-generated-helper-execution-custody-sol
+    paths:
+      - .github/workflows/materialize-r3-generated-helper-execution-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@v6
+        with:
+          ref: repair/v14-r3-generated-helper-execution-custody-sol
+          fetch-depth: 0
+
+      - name: Require exact R3 parent and untouched production subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 35359a273159f47428639fbde2454a977aee2ee7 HEAD
+          test "$(git hash-object --no-filters -- scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py)" = d150bb368091658bfc2e98b3b8fe9233f6118c38
+          test "$(git hash-object --no-filters -- .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml)" = 65f4e647d381185b20abc16ea16b0eb7fdbe7428
+
+      - name: Apply accepted-blob execution repair
+        run: python3 scripts/ci/materialize_r3_generated_helper_execution_custody.py
+
+      - name: Validate production source and focused custody regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          python3 scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+          git diff --check
+
+      - name: Commit clean repair checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm \
+            .github/workflows/materialize-r3-generated-helper-execution-custody.yml \
+            scripts/ci/materialize_r3_generated_helper_execution_custody.py
+          git config user.name "nembra-capture-bot"
+          git config user.email "capture-bot@nembra.invalid"
+          git add \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py \
+            .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
+          git diff --cached --check
+          git commit -m "fix(capture): pin R3 generated helper execution"
+          git push origin HEAD:repair/v14-r3-generated-helper-execution-custody-sol
