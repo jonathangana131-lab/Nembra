@@ -7,17 +7,17 @@
   "workerId": "sol-20260811-1606dg",
   "leaseId": "capture-final-go-integration-1606dg-20260811-2323",
   "generation": 3,
-  "status": "CLAIMED",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T23:23:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:23:00Z",
-  "releasedAt": null,
+  "lastHeartbeatAt": "2026-08-11T23:25:00Z",
+  "releasedAt": "2026-08-11T23:25:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-final-go-retirement-dispatch-current-sol-20260811",
   "pr": 3082,
-  "sourceSHA": "148f27219e223d9757d13e2c030a9b02ff12537f",
+  "sourceSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1",
   "resource": "RELEASE_INTEGRATION",
   "takeoverFromWorkerId": "sol-20260811-1439r8",
   "takeoverFromLeaseId": "capture-final-go-integration-r8-20260811-2222",
-  "takeoverReason": "Generation-2 integration lease was explicitly RELEASED. Exact selected #3082 moved to 148f2721 by absorbing the Darwin temp-root permanent test correction. Fresh Retirement Dispatch run 31546028300 is red only at its four-path scope bind before tests because the selected branch now legitimately has the permanent continuous-tree test as a fifth path. Claim integration to reconcile that canonical exact-current gate without changing production authority semantics.",
-  "checkpoint": "CLAIMED on exact #3082@148f27219e223d9757d13e2c030a9b02ff12537f. Canonical Final-GO 31546028263 SUCCESS; Sealed Candidate Handoff 31546028268 SUCCESS; Retirement Dispatch 31546028300 scope-only FAILURE at step 3 before tests; Xcode 31546028273 SKIPPED. Intended edit: update only retirement-dispatch canonical workflow scope/compile coverage so the newly permanent whole-tree regression is an accepted fifth path and is executed on exact current head. Then rerun exact gates and re-anchor Darwin. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-2 integration lease was explicitly RELEASED. Recovered current selected Final-GO after Darwin fixture absorption and scope reconciliation.",
+  "checkpoint": "INTEGRATION EXACT-CURRENT ACCEPTED for #3082@4a2c2002e872b294a86c4a2feecbff43b80505a1 as a software ingredient, not physical GO. Exact runs: Capture Authenticated Stationary Private Review Final GO 31546213562 SUCCESS; Capture Final GO Retirement Dispatch Custody 31546213542 SUCCESS; Capture Final GO Sealed Candidate Handoff 31546213399 SUCCESS. Xcode 31546213293 SKIPPED and not counted. Production retirement-dispatch semantics unchanged; current head adds permanent macOS temp-root fixture portability and updates canonical retirement scope to five paths plus directly replays continuous tracked-tree custody. Fresh exact-descendant Darwin/macOS kqueue evidence is still mandatory because all prior Darwin children are ancestor-only after the production head moved. PHYSICAL NO-GO."
 }
