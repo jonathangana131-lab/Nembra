@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - name: Fix recovered callback signature and self-delete
+      - name: Patch recovery transform
         shell: bash
         run: |
           set -euo pipefail
@@ -22,22 +22,21 @@ jobs:
           from pathlib import Path
           p=Path('.github/workflows/capture-final-go-reviewed-lock-r2-materializer.yml')
           s=p.read_text()
-          needle='tests = tests.replace(marker'
-          pos=s.find(needle)
-          if pos<0: raise SystemExit('recovery insertion call missing')
-          line_start=s.rfind('\n',0,pos)+1
-          line_end=s.find('\n',pos)
-          if line_end<0: raise SystemExit('recovery insertion line unterminated')
-          line=s[line_start:line_end]
-          if 'method(parent_tests, name)' not in line: raise SystemExit('recovery method call drift')
-          indent=line[:len(line)-len(line.lstrip())]
-          replacement='\n'.join([
-              indent+'recovered = method(parent_tests, name)',
-              indent+"recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):').replace('self.f.inst(r,s,d)', 'self.f.inst(r,s,d,lock)')",
-              line.replace('method(parent_tests, name)','recovered'),
-          ])
-          p.write_text(s[:line_start]+replacement+s[line_end:])
+          old="tests = tests.replace(marker, '\\n' + method(parent_tests, name) + marker, 1)"
+          if s.count(old)!=1: raise SystemExit(f'expected one callback insertion, found {s.count(old)}')
+          new="recovered = method(parent_tests, name)\n                  recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):').replace('self.f.inst(r,s,d)', 'self.f.inst(r,s,d,lock)')\n                  tests = tests.replace(marker, '\\n' + recovered + marker, 1)"
+          p.write_text(s.replace(old,new,1))
           PY
+      - name: Verify recovery transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "recovered = recovered.replace('def move_main(r,s,d):', 'def move_main(r,s,d,lock):')" .github/workflows/capture-final-go-reviewed-lock-r2-materializer.yml
+          ! grep -Fq "tests = tests.replace(marker, '\\n' + method(parent_tests, name)" .github/workflows/capture-final-go-reviewed-lock-r2-materializer.yml
+      - name: Publish transform fix and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
           git rm .github/workflows/capture-final-go-reviewed-lock-r2-transform-fix.yml
           git config user.name 'jonathangana131-lab'
           git config user.email 'jonathangana131@gmail.com'
