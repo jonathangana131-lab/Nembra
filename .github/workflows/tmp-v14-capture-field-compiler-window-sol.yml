@@ -68,7 +68,7 @@ jobs:
         run: |
           rm -rf scripts/ci/__pycache__ scripts/ci/tests/__pycache__ Scripts/__pycache__
           git diff --check
-      - name: Publish permanent result
+      - name: Stage permanent result
         shell: bash
         run: |
           set -euo pipefail
@@ -76,7 +76,14 @@ jobs:
           git diff --cached --check
           test ! -e .github/workflows/tmp-v14-capture-field-compiler-window-sol.yml
           test ! -e scripts/ci/tmp_materialize_field_compiler_window_sol.py
+          git diff --cached --quiet && exit 31 || true
+      - name: Commit permanent result
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "Nembra V14 Sol"
           git config user.email "nembra-v14-sol@users.noreply.github.com"
           git commit -m "Capture: bind tracked source through compiler window"
-          git push origin HEAD:repair/v14-capture-field-compiler-window-sol-20260811
+      - name: Push permanent result
+        shell: bash
+        run: git push origin HEAD:repair/v14-capture-field-compiler-window-sol-20260811
