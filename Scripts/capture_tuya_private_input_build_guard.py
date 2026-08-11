@@ -133,6 +133,8 @@ class PrivateInputs:
     identity_sources: Path
     generated_pods: Path | None = None
     generated_workspace: Path | None = None
+    accepted_source_root: Path | None = None
+    accepted_source_sha: str | None = None
 
     @property
     def private_provenance_record(self) -> Path:
@@ -301,6 +303,165 @@ def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Pa
     return candidate
 
 
+
+def _accepted_source_git_environment(root: Path) -> dict[str, str]:
+    return {
+        "PATH": "/usr/bin:/bin",
+        "HOME": "/tmp",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "GIT_DIR": str(root / ".git"),
+        "GIT_WORK_TREE": str(root),
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_COUNT": "5",
+        "GIT_CONFIG_KEY_0": "core.worktree",
+        "GIT_CONFIG_VALUE_0": str(root),
+        "GIT_CONFIG_KEY_1": "core.bare",
+        "GIT_CONFIG_VALUE_1": "false",
+        "GIT_CONFIG_KEY_2": "core.fsmonitor",
+        "GIT_CONFIG_VALUE_2": "false",
+        "GIT_CONFIG_KEY_3": "core.ignorestat",
+        "GIT_CONFIG_VALUE_3": "false",
+        "GIT_CONFIG_KEY_4": "core.filemode",
+        "GIT_CONFIG_VALUE_4": "true",
+    }
+
+
+def _accepted_source_manifest(inputs: PrivateInputs) -> dict[Path, tuple[str, bool]]:
+    """Read and verify the exact accepted tracked tree without checkout index/config trust."""
+
+    if inputs.accepted_source_root is None and inputs.accepted_source_sha is None:
+        return {}
+    if inputs.accepted_source_root is None or inputs.accepted_source_sha is None:
+        raise BuildGuardError("accepted tracked-source custody requires both checkout root and source SHA")
+
+    root = _lexical_absolute(inputs.accepted_source_root)
+    if root != _lexical_absolute(inputs.lockfile.parent):
+        raise BuildGuardError("accepted tracked-source root must equal the field checkout root")
+    try:
+        root_metadata = root.lstat()
+        git_metadata = (root / ".git").lstat()
+    except OSError as error:
+        raise BuildGuardError("accepted tracked-source checkout authority disappeared before build-window custody") from error
+    if not stat.S_ISDIR(root_metadata.st_mode) or stat.S_ISLNK(root_metadata.st_mode):
+        raise BuildGuardError("accepted tracked-source root must be one real directory")
+    if not stat.S_ISDIR(git_metadata.st_mode) or stat.S_ISLNK(git_metadata.st_mode):
+        raise BuildGuardError("accepted tracked-source Git authority must be one real .git directory")
+
+    source_sha = inputs.accepted_source_sha.lower()
+    if len(source_sha) != 40 or any(character not in "0123456789abcdef" for character in source_sha):
+        raise BuildGuardError("accepted tracked-source SHA must be exactly 40 hexadecimal characters")
+
+    git_environment = _accepted_source_git_environment(root)
+    try:
+        current = subprocess.check_output(
+            ["/usr/bin/git", "rev-parse", "--verify", "HEAD^{commit}"],
+            cwd=root,
+            env=git_environment,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip().lower()
+        tree = subprocess.check_output(
+            ["/usr/bin/git", "ls-tree", "-r", "-z", source_sha],
+            cwd=root,
+            env=git_environment,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise BuildGuardError("accepted tracked-source Git tree could not be read from exact authority") from error
+    if current != source_sha:
+        raise BuildGuardError("accepted tracked-source checkout HEAD no longer matches the externally accepted SHA")
+
+    manifest: dict[Path, tuple[str, bool]] = {}
+    for record in tree.split(b"\0"):
+        if not record:
+            continue
+        try:
+            header, raw_path = record.split(b"\t", 1)
+            raw_mode, raw_type, raw_oid = header.split(b" ", 2)
+            mode = raw_mode.decode("ascii")
+            object_type = raw_type.decode("ascii")
+            oid = raw_oid.decode("ascii").lower()
+        except (ValueError, UnicodeDecodeError) as error:
+            raise BuildGuardError("accepted tracked-source Git tree contains a malformed entry") from error
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            raise BuildGuardError(
+                f"accepted tracked-source entry has unsupported type/mode: {object_type} {mode}"
+            )
+        if len(oid) != 40 or any(character not in "0123456789abcdef" for character in oid):
+            raise BuildGuardError("accepted tracked-source Git blob identity is malformed")
+        relative = Path(os.fsdecode(raw_path))
+        if relative.is_absolute() or not relative.parts or ".." in relative.parts or "." in relative.parts:
+            raise BuildGuardError("accepted tracked-source Git path escapes the checkout root")
+        path = root / relative
+        try:
+            metadata = path.lstat()
+        except OSError as error:
+            raise BuildGuardError(f"accepted tracked source disappeared before custody: {relative}") from error
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+            raise BuildGuardError(f"accepted tracked source must be one real regular file: {relative}")
+        expected_executable = mode == "100755"
+        if bool(stat.S_IMODE(metadata.st_mode) & 0o111) != expected_executable:
+            raise BuildGuardError(f"accepted tracked source executable mode differs from Git authority: {relative}")
+        if path in manifest:
+            raise BuildGuardError(f"accepted tracked-source Git path is duplicated: {relative}")
+        manifest[path] = (oid, expected_executable)
+    if not manifest:
+        raise BuildGuardError("accepted tracked-source Git tree is empty")
+    return manifest
+
+
+def _verify_accepted_tracked_source_descriptors(
+    manifest: dict[Path, tuple[str, bool]],
+    watched: Sequence[tuple[int, Path]],
+) -> None:
+    """Bind watched checkout files to accepted Git blobs before/after compiler use."""
+
+    if not manifest:
+        return
+    descriptors = {path: descriptor for descriptor, path in watched}
+    for path, (expected_oid, expected_executable) in manifest.items():
+        descriptor = descriptors.get(path)
+        if descriptor is None:
+            raise BuildGuardError(f"accepted tracked source is not under descriptor custody: {path}")
+        try:
+            before = os.fstat(descriptor)
+            path_before = path.lstat()
+        except OSError as error:
+            raise BuildGuardError(f"accepted tracked source disappeared during descriptor custody: {path}") from error
+        if _stat_identity(before) != _stat_identity(path_before):
+            raise BuildGuardError(f"accepted tracked source path retargeted after descriptor admission: {path}")
+        if not stat.S_ISREG(before.st_mode):
+            raise BuildGuardError(f"accepted tracked source is not one regular file: {path}")
+        if bool(stat.S_IMODE(before.st_mode) & 0o111) != expected_executable:
+            raise BuildGuardError(f"accepted tracked source executable mode differs from exact Git authority: {path}")
+
+        digest = hashlib.sha1()
+        digest.update(b"blob " + str(before.st_size).encode("ascii") + b"\0")
+        offset = 0
+        while offset < before.st_size:
+            try:
+                chunk = os.pread(descriptor, min(65_536, before.st_size - offset), offset)
+            except OSError as error:
+                raise BuildGuardError(f"accepted tracked source could not be read under descriptor custody: {path}") from error
+            if not chunk:
+                raise BuildGuardError(f"accepted tracked source changed during descriptor read: {path}")
+            digest.update(chunk)
+            offset += len(chunk)
+
+        try:
+            after = os.fstat(descriptor)
+            path_after = path.lstat()
+        except OSError as error:
+            raise BuildGuardError(f"accepted tracked source disappeared after descriptor read: {path}") from error
+        if _stat_identity(before) != _stat_identity(after) or _stat_identity(after) != _stat_identity(path_after):
+            raise BuildGuardError(f"accepted tracked source changed during descriptor verification: {path}")
+        if not hmac.compare_digest(digest.hexdigest(), expected_oid):
+            raise BuildGuardError(f"accepted tracked source bytes differ from exact Git authority: {path}")
+
+
 def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     """Return every real file/directory whose mutation can change admitted build inputs."""
 
@@ -314,6 +475,14 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     }
     _add_tree_watch_paths(paths, inputs.security_build, label="private security build input tree")
     _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")
+
+    accepted_manifest = _accepted_source_manifest(inputs)
+    if accepted_manifest:
+        accepted_source_root = _lexical_absolute(inputs.accepted_source_root)  # type: ignore[arg-type]
+        paths.add(accepted_source_root)
+        for tracked_path in accepted_manifest:
+            paths.add(tracked_path)
+            _add_parent_watch_chain(paths, tracked_path, repository_root=accepted_source_root)
 
     # The parent-chain contract is a field-build guarantee. Preserve the
     # pre-existing private-only API for isolated tests/tools that may stage the
@@ -512,6 +681,7 @@ def run_guarded_build(
     if require_accepted_private_review_commitment:
         _verify_accepted_private_review_commitment(inputs)
     initial_snapshot = inputs.generation_snapshot()
+    accepted_source_manifest = _accepted_source_manifest(inputs)
     watch_paths = _watch_paths(inputs)
     _ensure_fd_budget(len(watch_paths))
     backend = backend_factory()
@@ -519,6 +689,7 @@ def run_guarded_build(
     process: subprocess.Popen | None = None
     try:
         watched = _open_watched_inputs(watch_paths, backend)
+        _verify_accepted_tracked_source_descriptors(accepted_source_manifest, watched)
 
         armed_snapshot = inputs.generation_snapshot()
         if armed_snapshot != initial_snapshot:
@@ -554,6 +725,7 @@ def run_guarded_build(
         final_snapshot = inputs.generation_snapshot()
         if final_snapshot != initial_snapshot:
             raise BuildGuardError("build inputs changed across the guarded xcodebuild window")
+        _verify_accepted_tracked_source_descriptors(accepted_source_manifest, watched)
         if require_accepted_generated_subject:
             _verify_accepted_generated_build_subject(inputs)
         if require_accepted_private_review_commitment:
@@ -588,6 +760,8 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
     parser.add_argument("--security-build", required=True, type=Path)
     parser.add_argument("--identity-podspec", required=True, type=Path)
     parser.add_argument("--identity-sources", required=True, type=Path)
+    parser.add_argument("--accepted-source-root", required=True, type=Path)
+    parser.add_argument("--accepted-source-sha", required=True)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(list(argv))
     command = list(args.command)
@@ -619,6 +793,8 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
             identity_sources=identity_sources,
             generated_pods=root / "Pods",
             generated_workspace=root / "NembraCapture.xcworkspace",
+            accepted_source_root=_lexical_absolute(args.accepted_source_root),
+            accepted_source_sha=args.accepted_source_sha,
         ),
         command,
     )

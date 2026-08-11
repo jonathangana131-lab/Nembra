@@ -126,7 +126,12 @@ jobs:
           grep -Fxq 'NembraCapture.xcworkspace/' "$ignore"
           grep -Fxq 'Podfile.lock' "$ignore"
           grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
-          grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"
+          grep -Fq 'AUTHORITY_GIT_DIR="$ROOT/.git"' "$installer"
+          grep -Fq 'SOURCE_SHA="$(run_authority_git rev-parse --verify ' "$installer"
+          if grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"; then
+            echo 'ERROR: field source authority regressed to ambient Git execution.' >&2
+            exit 1
+          fi
           grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"
           grep -Fq 'Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA' "$installer"
           grep -Fq 'Exact requested Capture source matched: $SOURCE_SHA' "$installer"
