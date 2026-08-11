@@ -1,0 +1,74 @@
+name: TEMP V14 Unmount Minimal Groups Materializer
+
+on:
+  push:
+    branches:
+      - validation/v14-unmount-freeze-minimal-groups-gpt56-go
+    paths:
+      - .github/workflows/tmp-v14-unmount-minimal-groups-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Bind constructor to exact failed validation parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "128ed8510e36ae3269030644a2a16e98a9183590"
+      - name: Materialize minimal supplementary-group replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/ci/tests/test_capture_signed_app_unmount_freeze_structured_credentials.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''    normal_groups = sorted(set(os.getgrouplist(account.pw_name, gid)))\n    capability_gid = helper.choose_capability_gid(normal_groups)\n    capability_groups = sorted(set(normal_groups) | {capability_gid})\n'''
+          new = '''    normal_groups = sorted(set(os.getgrouplist(account.pw_name, gid)))\n    capability_gid = helper.choose_capability_gid(normal_groups)\n    # The APFS oracle needs only the real primary identity plus the one-run\n    # supplementary capability. Replaying the hosted runner's unrelated\n    # supplementary groups can exceed macOS/Python's setgroups ceiling before\n    # the writer reaches READY, which is fixture noise rather than authority.\n    capability_groups = [capability_gid]\n    ordinary_groups: list[int] = []\n'''
+          if old not in text:
+              raise SystemExit("expected group construction not found exactly once")
+          text = text.replace(old, new, 1)
+          old_call = "**structured_credentials(uid, gid, normal_groups),"
+          if text.count(old_call) != 1:
+              raise SystemExit("ordinary structured-credential call count changed")
+          text = text.replace(old_call, "**structured_credentials(uid, gid, ordinary_groups),", 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Validate focused source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_signed_app_unmount_freeze_structured_credentials.py
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("scripts/ci/tests/test_capture_signed_app_unmount_freeze_structured_credentials.py").read_text(encoding="utf-8")
+          assert "capability_groups = [capability_gid]" in text
+          assert "ordinary_groups: list[int] = []" in text
+          assert text.count("structured_credentials(uid, gid, capability_groups)") == 2
+          assert text.count("structured_credentials(uid, gid, ordinary_groups)") == 1
+          assert "first_detach.returncode == 0" in text
+          assert "held descriptor could not demonstrate the post-lock mutation seam before quiescence" in text
+          PY
+          git diff --check
+      - name: Publish clean validation child
+        shell: bash
+        env:
+          BRANCH: validation/v14-unmount-freeze-minimal-groups-gpt56-go
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra Swarm"
+          git config user.email "nembra-swarm@users.noreply.github.com"
+          git add scripts/ci/tests/test_capture_signed_app_unmount_freeze_structured_credentials.py
+          git rm .github/workflows/tmp-v14-unmount-minimal-groups-materialize.yml
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "2"
+          git commit -m "test(capture): fit APFS credentials to macOS group limit"
+          git push origin "HEAD:${BRANCH}"
