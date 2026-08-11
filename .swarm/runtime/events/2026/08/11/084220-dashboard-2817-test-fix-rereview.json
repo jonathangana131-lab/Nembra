@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084220-dashboard-2817-test-fix-rereview",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-ui0052",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Exact-head acknowledgment required for Dashboard PR #2817 descendant 4ef988828cb18fc7118cc826e899e464b0471273. Difference from reviewed f3c166ed is only PropulsionEnergyRailPublicAuthorityTests Swift Testing syntax: mutating runtime calls are evaluated into local Bool values before #expect, fixing Xcode 27 macro compilation. Production authority, Store custody, Dashboard rendering, composed external-client regression, and accessibility capture harness are unchanged. Bind final review/visual evidence to 4ef9888; do not promote ancestor CI. Physical ES80 power/current and Capture GO remain absent.",
+  "createdAt": "2026-08-11T08:42:20Z",
+  "data": {
+    "pr": 2817,
+    "headSHA": "4ef988828cb18fc7118cc826e899e464b0471273",
+    "parentSHA": "f3c166edffd385103d64ae02651d9acea6e67304",
+    "changedPath": "Packages/NembraCore/Tests/NembraCoreTests/PropulsionEnergyRailPublicAuthorityTests.swift",
+    "requiredIndependentWorker": true
+  }
+}
