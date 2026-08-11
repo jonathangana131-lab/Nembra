@@ -1,0 +1,57 @@
+name: TEMP Capture Vnode Attribute 2838 Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-vnode-attrib-successor-2838-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-capture-vnode-attrib-successor-2838-sol
+          fetch-depth: 0
+
+      - name: Materialize vnode attribute custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          guard = Path("Scripts/capture_tuya_private_input_build_guard.py")
+          text = guard.read_text(encoding="utf-8")
+          old_required = '            "KQ_NOTE_EXTEND",\n            "KQ_NOTE_LINK",\n'
+          new_required = '            "KQ_NOTE_EXTEND",\n            "KQ_NOTE_ATTRIB",\n            "KQ_NOTE_LINK",\n'
+          if text.count(old_required) != 1:
+              raise SystemExit("expected exactly one Kqueue required-note insertion point")
+          text = text.replace(old_required, new_required, 1)
+
+          old_flags = '            | select.KQ_NOTE_EXTEND\n            | select.KQ_NOTE_LINK\n'
+          new_flags = '            | select.KQ_NOTE_EXTEND\n            | select.KQ_NOTE_ATTRIB\n            | select.KQ_NOTE_LINK\n'
+          if text.count(old_flags) != 1:
+              raise SystemExit("expected exactly one Kqueue fflags insertion point")
+          guard.write_text(text.replace(old_flags, new_flags, 1), encoding="utf-8")
+          PY
+
+          git diff --check
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Scripts/capture_tuya_private_input_build_guard.py
+          git commit -m "Capture: watch compiler-window vnode attribute mutations"
+
+      - name: Remove materializer and publish clean closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/tmp-v14-capture-vnode-attrib-2838-materialize.yml
+          git commit -m "Capture: remove vnode attribute materializer"
+          git push origin HEAD:repair/v14-capture-vnode-attrib-successor-2838-sol
