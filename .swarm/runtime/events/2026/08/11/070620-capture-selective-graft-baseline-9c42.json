@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070620-capture-selective-graft-baseline-9c42",
+  "type": "FINDING",
+  "workerId": "sol-20260811-9c42",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Selective-graft triage for P0 Capture: #2805 exact head f17a2f9 has package status nonzero only because Swift Testing aborts with unexpected signal 5 / 'Range requires lowerBound <= upperBound'; the standalone Capture Xcode build succeeds. The exact same Swift Testing fatal is present in the retained selective-graft artifact for #2805's parent #2794 at 73f910f95eea3f23c65928455c1507bf556aee0e. Therefore this remaining RED gate is inherited baseline/integration debt, not evidence that #2805's verifier-custody patch introduced the package crash. Reconciliation should model the package-runner crash separately while preserving exact-head acceptance requirements; do not waive the red gate. PHYSICAL NO-GO remains unchanged.",
+  "createdAt": "2026-08-11T07:06:20Z",
+  "data": {
+    "childPR": 2805,
+    "childHeadSHA": "f17a2f923a9d994aa98a26d9da9da4b4f6b58cbf",
+    "childSelectiveGraftRun": 31467236296,
+    "parentPR": 2794,
+    "parentHeadSHA": "73f910f95eea3f23c65928455c1507bf556aee0e",
+    "parentSelectiveGraftRun": 31460477825,
+    "standaloneBuildOnChild": "SUCCESS",
+    "packageFailureClass": "INHERITED_SWIFT_TESTING_RUNTIME_ABORT",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
