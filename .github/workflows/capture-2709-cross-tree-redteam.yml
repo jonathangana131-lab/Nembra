@@ -1,0 +1,23 @@
+name: Capture 2709 Cross-Tree Red Team
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/capture_cocoapods_generated_build_subject.py'
+      - 'scripts/ci/tests/test_capture_2709_cross_tree_generation.py'
+      - '.github/workflows/capture-2709-cross-tree-redteam.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-tree-coherence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile expected-red review
+        run: python3 -m py_compile scripts/ci/tests/test_capture_2709_cross_tree_generation.py
+      - name: Require one coherent generated generation
+        run: python3 scripts/ci/tests/test_capture_2709_cross_tree_generation.py
