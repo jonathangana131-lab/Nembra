@@ -9,13 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:04:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:15:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:20:00Z",
   "leaseSeconds": 1800,
-  "branch": "integration/v14-capture-accepted-final-go-spine-sol-1404m2",
-  "pr": 3013,
+  "branch": "integration/v14-capture-final-go-combined-sol-1404m2",
+  "pr": 3023,
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-  "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+  "currentHeadSHA": "19fe3a39ddf2d30f737b5cf50ead4712081ac308",
   "takeoverFromWorkerId": "sol-20260811-a91c7e",
-  "takeoverReason": "Generation-3 integration claim was explicitly released. Recover the flagship integration role, refresh #2979 exact gates, and reduce later composition debt by staging only independently accepted Final-GO control bytes onto the accepted app-visible #2940 baseline while #2979 visual evidence remains queued. No unaccepted build/private/signed-install bytes are composed. PHYSICAL NO-GO.",
-  "checkpoint": "Draft integration PR #3013 stages accepted Final-GO exact 471cc025b332f4df8b43a98d709710aeb4e0698f onto accepted app-visible base 005b7c4aaf27fabb442a65599b4538ebcc09ae27. Mergeable=true; diff exactly 23 Final-GO authority-family workflow/control/test paths. Fresh Private Review Final GO, Final GO, Generated Subject Final GO, and R3 custody gates were terminal SUCCESS; Main Selective Graft was queued; Xcode is policy-skipped and not counted green. Independent review requested. Separately, #2973 runtime VoiceOver reached traversal and failed after successful build/setup; failure classification is being investigated without weakening the oracle. #2979 remains unpromoted until visual/review evidence closes. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-3 integration claim was explicitly released. Recover the flagship integration role, continuously compose independently accepted Capture ingredients, and preserve exact-head acceptance. PHYSICAL NO-GO.",
+  "checkpoint": "Independent review found #3013 could only retest ingredient head 471cc025 rather than a combined exact head. Fixed the topology without changing accepted payload: pinned GitHub's clean two-parent merge commit 19fe3a39ddf2d30f737b5cf50ead4712081ac308 (parents accepted app-visible 005b7c4 and accepted Final-GO 471cc025; tree f517e9831da53c728cee7caddffbaa5a5ccc145e) to durable integration/v14-capture-final-go-combined-sol-1404m2 and opened ready PR #3023 against the unchanged 005b7c4 staging base. Relative payload remains exactly 23 Final-GO authority-family files, +5273/-0. Fresh exact-head Final-GO-family gates are running; Xcode policy must be re-evaluated after ready transition; independent exact-head review requested. #3013 closed superseded with no implementation loss. #2979/runtime-AX/build/private/signed-install successors remain excluded until independently accepted. PHYSICAL NO-GO."
 }
