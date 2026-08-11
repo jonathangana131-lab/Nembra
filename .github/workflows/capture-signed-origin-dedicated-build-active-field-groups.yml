@@ -1,0 +1,183 @@
+name: Capture Signed Origin Dedicated Build Active Field Groups
+
+on:
+  push:
+    branches:
+      - validation/v14-real-xcode-active-field-groups-sol-20260811
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-signed-origin-dedicated-active-groups-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  active-field-authority:
+    name: Prove dedicated UID against actual pre-sudo field groups
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact failed parent and one-workflow diagnostic delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+          FAILED_PARENT_SHA: ecca5b2925c336269b400f1d65de7224d36607b5
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "${FAILED_PARENT_SHA}^{commit}"
+          test "$(git merge-base HEAD "$FAILED_PARENT_SHA")" = "$FAILED_PARENT_SHA"
+          changed="$(git diff --name-only "$FAILED_PARENT_SHA"...HEAD | LC_ALL=C sort)"
+          expected='.github/workflows/capture-signed-origin-dedicated-build-active-field-groups.yml'
+          if [[ "$changed" != "$expected" ]]; then
+            printf 'Active-field-group diagnostic must remain exactly one workflow path. Changed:\n%s\n' "$changed" >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Patch validation witness to carry actual pre-sudo kernel groups
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_file='scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py'
+          backup="$RUNNER_TEMP/nembra-dedicated-active-groups.original.py"
+          cp "$source_file" "$backup"
+          restore_source() { cp "$backup" "$source_file"; }
+          trap restore_source EXIT
+
+          /usr/bin/python3 -I - "$source_file" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              if source.count(old) != 1:
+                  raise SystemExit(f"{label} source site missing or ambiguous: {source.count(old)}")
+              source = source.replace(old, new)
+
+          replace_once(
+              "def root_probe(package_root: Path) -> int:",
+              "def root_probe(package_root: Path, field_active_groups_json: str) -> int:",
+              "root-probe signature",
+          )
+
+          identity_anchor = '''    field_groups = sorted(set(os.getgrouplist(account.pw_name, field_gid)))\n    if 0 in field_groups:\n        emit_error("identity", "field identity carries root supplementary-group authority")\n        return 71\n'''
+          identity_replacement = identity_anchor + '''    try:\n        raw_active_groups = json.loads(field_active_groups_json)\n    except (TypeError, ValueError, json.JSONDecodeError) as error:\n        emit_error("identity", f"malformed pre-sudo active-group evidence: {error}")\n        return 71\n    if not isinstance(raw_active_groups, list) or any(type(value) is not int for value in raw_active_groups):\n        emit_error("identity", "pre-sudo active-group evidence must be a JSON integer list")\n        return 71\n    field_active_groups = list(raw_active_groups)\n    if field_active_groups != sorted(field_active_groups) or len(field_active_groups) != len(set(field_active_groups)):\n        emit_error("identity", "pre-sudo active-group evidence must be sorted and duplicate-free")\n        return 71\n    if field_gid in field_active_groups:\n        emit_error("identity", "primary field GID must remain separate from supplementary groups")\n        return 71\n    if 0 in field_active_groups:\n        emit_error("identity", "active field process carries root supplementary-group authority")\n        return 71\n    if not set(field_active_groups).issubset(field_groups):\n        emit_error("identity", "active field groups are not valid directory-service memberships")\n        return 71\n'''
+          replace_once(identity_anchor, identity_replacement, "root active-group validation")
+
+          replace_once(
+              "        if build_uid == field_uid or build_gid in field_groups:\n            emit_error(\"identity\", \"ephemeral build identity overlaps field authority\")\n            return 71\n",
+              "        if build_uid == field_uid or build_gid in field_groups or build_gid in field_active_groups:\n            emit_error(\"identity\", \"ephemeral build identity overlaps field authority\")\n            return 71\n",
+              "fresh build identity exclusion",
+          )
+
+          replace_once(
+              "            **structured_credentials(field_uid, field_gid, field_groups),",
+              "            **structured_credentials(field_uid, field_gid, field_active_groups),",
+              "field attack credentials",
+          )
+
+          replace_once(
+              '            "fieldPrimaryGID": field_gid,\n            "fieldGroupsContainBuildGID": build_gid in field_groups,',
+              '            "fieldPrimaryGID": field_gid,\n            "fieldActiveSupplementaryGroups": field_active_groups,\n            "fieldActiveGroupsContainBuildGID": build_gid in field_active_groups,\n            "fieldGroupsContainBuildGID": build_gid in field_groups,',
+              "retained active-group evidence",
+          )
+
+          parent_anchor = '''def parent_probe() -> int:\n    if sys.platform != "darwin":\n        emit_error("environment", "dedicated-UID real-Xcode freeze probe requires macOS")\n        return 80\n    sudo = subprocess.run(\n'''
+          parent_replacement = '''def parent_probe() -> int:\n    if sys.platform != "darwin":\n        emit_error("environment", "dedicated-UID real-Xcode freeze probe requires macOS")\n        return 80\n    field_uid = os.getuid()\n    field_gid = os.getgid()\n    if field_uid <= 0 or field_gid <= 0:\n        emit_error("identity", "pre-sudo field identity must be non-root")\n        return 80\n    field_active_groups = sorted({group for group in os.getgroups() if group != field_gid})\n    if 0 in field_active_groups:\n        emit_error("identity", "pre-sudo field process carries root supplementary-group authority")\n        return 80\n    active_groups_json = json.dumps(field_active_groups, separators=(",", ":"))\n    sudo = subprocess.run(\n'''
+          replace_once(parent_anchor, parent_replacement, "pre-sudo active-group capture")
+
+          replace_once(
+              '''                "--package-root",\n                str(package),\n            ],''',
+              '''                "--package-root",\n                str(package),\n                "--field-active-groups-json",\n                active_groups_json,\n            ],''',
+              "sudo active-group handoff",
+          )
+
+          replace_once(
+              '''            evidence.get("xcodebuildReturnCode") == 0\n            and evidence.get("fieldAttackReturnCode") != 0\n            and evidence.get("fieldGroupsContainBuildGID") is False\n''',
+              '''            evidence.get("xcodebuildReturnCode") == 0\n            and evidence.get("fieldAttackReturnCode") != 0\n            and evidence.get("fieldActiveSupplementaryGroups") == field_active_groups\n            and evidence.get("fieldActiveGroupsContainBuildGID") is False\n            and evidence.get("fieldGroupsContainBuildGID") is False\n''',
+              "parent semantic active-group bind",
+          )
+
+          replace_once(
+              '''    parser.add_argument("--package-root", type=Path)\n    args = parser.parse_args()\n    if args.root_probe:\n        if args.package_root is None:\n            emit_error("arguments", "--package-root is required for root probe")\n            return 83\n        return root_probe(args.package_root)\n''',
+              '''    parser.add_argument("--package-root", type=Path)\n    parser.add_argument("--field-active-groups-json")\n    args = parser.parse_args()\n    if args.root_probe:\n        if args.package_root is None or args.field_active_groups_json is None:\n            emit_error("arguments", "--package-root and --field-active-groups-json are required for root probe")\n            return 83\n        return root_probe(args.package_root, args.field_active_groups_json)\n''',
+              "root argument contract",
+          )
+
+          required = (
+              "field_active_groups = sorted({group for group in os.getgroups() if group != field_gid})",
+              "not set(field_active_groups).issubset(field_groups)",
+              "structured_credentials(field_uid, field_gid, field_active_groups)",
+              '"fieldActiveSupplementaryGroups": field_active_groups',
+              'evidence.get("fieldActiveSupplementaryGroups") == field_active_groups',
+          )
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit(f"patched witness missing authority marker: {marker}")
+          path.write_text(source, encoding="utf-8")
+          PY
+          /usr/bin/python3 -m py_compile "$source_file"
+          printf '%s\n' 'NEMBRA_DEDICATED_UID_ACTIVE_FIELD_GROUPS_DIAGNOSTIC=1'
+
+      - name: Run real-Xcode dedicated-UID oracle with actual field authority
+        shell: bash
+        run: |
+          set -uo pipefail
+          source_file='scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py'
+          backup="$RUNNER_TEMP/nembra-dedicated-active-groups.original.py"
+          output="$RUNNER_TEMP/nembra-real-xcode-active-field-groups-output.txt"
+          if [[ ! -f "$backup" ]]; then
+            printf 'Missing retained original source backup.\n' >&2
+            exit 30
+          fi
+          restore_source() { cp "$backup" "$source_file"; }
+          trap restore_source EXIT
+          set +e
+          /usr/bin/python3 -B -I "$source_file" >"$output" 2>&1
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/nembra-real-xcode-active-field-groups-rc.txt"
+          cat "$output"
+          restore_source
+          trap - EXIT
+          if [[ "$rc" != 0 ]]; then
+            diagnostic="$(tail -n 180 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=Dedicated UID active-field-group oracle failed::%s\n' "$diagnostic"
+            exit "$rc"
+          fi
+          grep -Fq 'NEMBRA_REAL_XCODE_DEDICATED_UID_JSON=' "$output"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Retain exact active-field authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-real-xcode-active-field-groups-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-real-xcode-active-field-groups-output.txt
+            ${{ runner.temp }}/nembra-real-xcode-active-field-groups-rc.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          FAILED_PARENT_SHA: ecca5b2925c336269b400f1d65de7224d36607b5
+        run: |
+          set -euo pipefail
+          git diff --check "$FAILED_PARENT_SHA" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Validation only: runtime patch restored; no signing, install, device, Bluetooth, Tuya, telemetry, or physical experiment occurred.\n'
