@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:11:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:41:30Z",
+  "lastHeartbeatAt": "2026-08-11T20:49:40Z",
   "leaseSeconds": 2700,
   "branch": "polish/v14-capture-root-first-fold-sol-1311jx-20260811",
   "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
@@ -26,7 +26,7 @@
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureP0RootVisualAcceptanceTests.swift",
     "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift"
   ],
-  "durableEvidence": "Accepted predecessor 005b7c4aaf27fabb442a65599b4538ebcc09ae27 remains fully green. First compact candidate c8ead84fe8df4effca2a3b3d0061a1f491665aba earned Field 31532923763 SUCCESS, Main Graft 31532923795 SUCCESS and Visual 31532923883 SUCCESS; artifact 9117799344 showed the standard QR button ~255 px earlier and AX5 byte-identical to parent. Test-only #2990 then correctly exposed a normal-size VoiceOver semantic regression: localization shortened the hero's spoken authority because the Text lacked an explicit nonlocalized semantic override. Current exact successor ce9e2bac253fedf6a61f79614519058fc6da116f consumes #2990 unchanged and adds an explicit Text(verbatim:) accessibility label containing the full Bluetooth/physical-evidence/locked reviewed-build/fresh-scooter-authority warning. Temporary materializer was deleted; durable PR diff is five paths. All c8 exact-head greens are ingredient evidence only after this source move; ce9 must re-earn required gates and visual comparison.",
-  "acceptance": "Freeze ce9e2bac253fedf6a61f79614519058fc6da116f. Require exact-head Main Graft, Field Build Provenance, Standalone Visual plus human/pixel comparison, Xcode 27, and #2990 spoken-authority source contract. Do not promote action_required/queued/ancestor results. Physical Final-GO remains separately NO-GO.",
+  "durableEvidence": "Accepted predecessor 005b7c4aaf27fabb442a65599b4538ebcc09ae27 remains fully green. First compact candidate c8ead84fe8df4effca2a3b3d0061a1f491665aba earned Field 31532923763 SUCCESS, Main Graft 31532923795 SUCCESS and Visual 31532923883 SUCCESS; artifact 9117799344 showed the standard QR button ~255 px earlier and AX5 byte-identical to parent. Test-only #2990 then correctly exposed a normal-size VoiceOver semantic regression. Current exact successor ce9e2bac253fedf6a61f79614519058fc6da116f consumes #2990 unchanged and adds an explicit Text(verbatim:) accessibility label containing the full Bluetooth/physical-evidence/locked reviewed-build/fresh-scooter-authority warning. Exact ce9 Main Selective Graft 31534132595 is terminal SUCCESS. Xcode 27 31534132605 has passed exact checkout, project structure, core package and Capture authority package and is in the real Simulator stage. Field 31534132593 and Standalone Visual 31534132613 remain queued. Temporary materializer was deleted; durable PR diff is five paths. Ancestor greens remain ingredient evidence only after the source move.",
+  "acceptance": "Freeze ce9e2bac253fedf6a61f79614519058fc6da116f. Require exact-head Field Build Provenance, Standalone Visual plus human/pixel comparison, terminal Xcode 27, and retain the already-green exact Main Graft plus #2990 spoken-authority source contract. Do not promote queued/ancestor results. Physical Final-GO remains separately NO-GO.",
   "intent": "PR #2979 is the preferred app-visible visual successor candidate only after ce9 exact-head gates pass. Preserve the 255 px standard first-fold gain while retaining full spoken authority. Do not weaken the adopted #2990 oracle and do not merge merely from visual evidence."
 }
