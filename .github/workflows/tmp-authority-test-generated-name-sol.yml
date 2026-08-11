@@ -1,0 +1,52 @@
+name: Temporary Authority Test Generated Name Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-authority-test-generated-name-sol
+    paths:
+      - .github/workflows/tmp-authority-test-generated-name-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-capture-authority-test-generated-name-sol
+      - name: Repair stale generated-helper test names and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path('scripts/ci/tests/test_capture_private_review_commitment.py'),
+              Path('scripts/ci/tests/test_capture_private_review_helper_execution_custody.py'),
+          ]
+          needle = 'scripts / SUBJECT_HELPER.name'
+          replacement = 'scripts / GENERATED.name'
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(needle)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one stale generated-helper name, found {count}')
+              path.write_text(text.replace(needle, replacement, 1), encoding='utf-8')
+          PY
+          python3 -m py_compile \
+            scripts/ci/tests/test_capture_private_review_commitment.py \
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          rm -f .github/workflows/tmp-authority-test-generated-name-sol.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/ci/tests/test_capture_private_review_commitment.py \
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py \
+            .github/workflows/tmp-authority-test-generated-name-sol.yml
+          git commit -m 'Capture: repair generated helper names in authority tests'
+          git push origin HEAD:repair/v14-capture-authority-test-generated-name-sol
