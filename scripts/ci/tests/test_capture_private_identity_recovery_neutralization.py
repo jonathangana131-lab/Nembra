@@ -2,10 +2,11 @@
 """Crash-residue recovery must neutralize only the held inode under a name swap.
 
 Production successor to expected-red #2918. The attacker swaps the admitted
-residue at the exact descriptor-neutralization boundary. Recovery must truncate
-the already-held inode, never the replacement pathname subject, then fail closed
-because the canonical name no longer binds the neutralized inode.
-Dummy bytes only; this is logical byte handling, not secure-media erasure.
+residue at the exact descriptor-neutralization boundary inside the authenticated
+LocalSecrets staging root. Recovery must truncate the already-held inode, never
+the replacement pathname subject, then fail closed because the canonical name
+no longer binds the neutralized inode. Dummy bytes only; this is logical byte
+handling, not secure-media erasure.
 """
 from __future__ import annotations
 
@@ -29,6 +30,12 @@ def load_writer():
     return module
 
 
+def make_staging_root(checkout: Path) -> Path:
+    root = checkout / "LocalSecrets"
+    root.mkdir(mode=0o700)
+    return root
+
+
 class PrivateIdentityRecoveryNeutralizationTests(unittest.TestCase):
     def test_name_swap_at_neutralization_preserves_replacement_and_zeros_held_inode(self) -> None:
         writer = load_writer()
@@ -38,14 +45,15 @@ class PrivateIdentityRecoveryNeutralizationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-private-recovery-neutralization-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
+            staging_root = make_staging_root(checkout)
             stage_name = f"{PREFIX}{os.getpid()}-{'f' * 24}"
             escaped_name = "attacker-renamed-admitted-residue"
-            stage = checkout / stage_name
-            escaped = checkout / escaped_name
+            stage = staging_root / stage_name
+            escaped = staging_root / escaped_name
             stage.write_bytes(admitted_payload)
             stage.chmod(0o600)
 
-            checkout_fd = os.open(checkout, writer._directory_flags())
+            staging_fd = os.open(staging_root, writer._directory_flags())
             real_ftruncate = writer.os.ftruncate
             attack_fired = False
 
@@ -56,8 +64,8 @@ class PrivateIdentityRecoveryNeutralizationTests(unittest.TestCase):
                     writer.os.rename(
                         stage_name,
                         escaped_name,
-                        src_dir_fd=checkout_fd,
-                        dst_dir_fd=checkout_fd,
+                        src_dir_fd=staging_fd,
+                        dst_dir_fd=staging_fd,
                     )
                     replacement_fd = writer.os.open(
                         stage_name,
@@ -67,7 +75,7 @@ class PrivateIdentityRecoveryNeutralizationTests(unittest.TestCase):
                         | writer.os.O_CLOEXEC
                         | writer.os.O_NOFOLLOW,
                         0o600,
-                        dir_fd=checkout_fd,
+                        dir_fd=staging_fd,
                     )
                     try:
                         writer.os.fchmod(replacement_fd, 0o600)
@@ -83,11 +91,16 @@ class PrivateIdentityRecoveryNeutralizationTests(unittest.TestCase):
                     writer.ProvisionError,
                     msg="recovery accepted a name swap at the credential-neutralization boundary",
                 ):
-                    writer._recover_private_stage_residue(checkout_fd)
+                    writer._recover_private_stage_residue(staging_fd)
             finally:
                 writer.os.ftruncate = real_ftruncate
-                os.close(checkout_fd)
+                os.close(staging_fd)
 
+            self.assertEqual(
+                sorted(checkout.glob(f"{PREFIX}*")),
+                [],
+                "replacement-race fixture escaped LocalSecrets into the raw checkout root",
+            )
             self.assertTrue(attack_fired, "fixture did not interpose at descriptor neutralization")
             self.assertTrue(escaped.is_file(), "fixture lost the originally admitted held residue")
             self.assertEqual(
@@ -105,19 +118,21 @@ class PrivateIdentityRecoveryNeutralizationTests(unittest.TestCase):
                 "recovery modified the replacement pathname subject outside held-inode authority",
             )
 
-    def test_zero_length_canonical_tombstone_is_inert_and_needs_no_unlink(self) -> None:
+    def test_zero_length_canonical_tombstone_is_inert_inside_local_secrets(self) -> None:
         writer = load_writer()
         with tempfile.TemporaryDirectory(prefix="nembra-private-recovery-tombstone-") as temporary:
             checkout = Path(temporary) / "repo"
             checkout.mkdir(mode=0o700)
-            stage = checkout / f"{PREFIX}{os.getpid()}-{'e' * 24}"
+            staging_root = make_staging_root(checkout)
+            stage = staging_root / f"{PREFIX}{os.getpid()}-{'e' * 24}"
             stage.write_bytes(b"")
             stage.chmod(0o600)
-            checkout_fd = os.open(checkout, writer._directory_flags())
+            staging_fd = os.open(staging_root, writer._directory_flags())
             try:
-                writer._recover_private_stage_residue(checkout_fd)
+                writer._recover_private_stage_residue(staging_fd)
             finally:
-                os.close(checkout_fd)
+                os.close(staging_fd)
+            self.assertEqual(sorted(checkout.glob(f"{PREFIX}*")), [])
             self.assertTrue(stage.is_file())
             self.assertEqual(stage.read_bytes(), b"")
 
