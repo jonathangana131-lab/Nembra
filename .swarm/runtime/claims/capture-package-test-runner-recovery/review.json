@@ -4,14 +4,15 @@
   "laneId": "capture-package-test-runner-recovery",
   "slot": "review",
   "role": "adversarial-review",
-  "workerId": "sol-20260811-gos93",
-  "leaseId": "capture-pkg-review-gos93-20260811-0719",
-  "generation": 1,
+  "workerId": "sol-20260811-e4b7",
+  "leaseId": "capture-pkg-review-e4b7-20260811-0753",
+  "generation": 2,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T07:19:55Z",
-  "lastHeartbeatAt": "2026-08-11T07:19:55Z",
+  "claimedAt": "2026-08-11T07:53:05Z",
+  "lastHeartbeatAt": "2026-08-11T07:53:05Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2808,
-  "sourceSHA": "ff70b15cd770fcfa11c37635ebf528fcf554fda0"
+  "sourceSHA": "ff70b15cd770fcfa11c37635ebf528fcf554fda0",
+  "takeoverFromWorkerId": "sol-20260811-gos93"
 }
