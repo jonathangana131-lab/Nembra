@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-INSTALLER = ROOT / "scripts/field/install_one_time_capture.command"
+INSTALLER = ROOT / "scripts" / "field" / "install_one_time_capture.command"
 BOOTSTRAP = ROOT / "Scripts/bootstrap_capture_tuya_sdk.sh"
 
 
@@ -124,11 +124,30 @@ class CaptureFieldInstallerGitAuthorityRedTeamTests(unittest.TestCase):
         self.assertIn("[[ -x /usr/bin/xcrun ]]", source)
         self.assertIn('SELECTED_DEVELOPER_DIR="$(/usr/bin/xcode-select -p)"', source)
         self.assertIn('validate_root_custodied_path "$SELECTED_DEVELOPER_DIR" directory', source)
-        self.assertIn('SELECTED_XCODEBUILD="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find xcodebuild)"', source)
+        for tool, variable in (
+            ("xcodebuild", "SELECTED_XCODEBUILD"),
+            ("xctrace", "SELECTED_XCTRACE"),
+            ("devicectl", "SELECTED_DEVICECTL"),
+        ):
+            self.assertIn(
+                f'{variable}="$(DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun --find {tool})"',
+                source,
+            )
+            self.assertIn(
+                f'validate_root_custodied_path "${variable}" file',
+                source,
+                f"{tool} must be admitted as one exact root-custodied executable file",
+            )
         self.assertIn('-- "$SELECTED_XCODEBUILD" \\', source)
         self.assertNotIn('-- /usr/bin/xcodebuild \\', source)
-        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun xctrace list devices', source)
-        self.assertIn('DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" /usr/bin/xcrun devicectl', source)
+        self.assertIn('"$SELECTED_XCTRACE" list devices', source)
+        self.assertIn('"$SELECTED_DEVICECTL" list devices', source)
+        self.assertIn('"$SELECTED_DEVICECTL" device install app', source)
+        self.assertIn('"$SELECTED_DEVICECTL" device process launch', source)
+        self.assertNotIn('/usr/bin/xcrun xctrace list devices', source)
+        self.assertNotIn('/usr/bin/xcrun devicectl list devices', source)
+        self.assertNotIn('/usr/bin/xcrun devicectl device install app', source)
+        self.assertNotIn('/usr/bin/xcrun devicectl device process launch', source)
         self.assertIn("/usr/bin/security find-identity", source)
 
     def test_bootstrap_executes_only_from_exact_accepted_git_bytes(self) -> None:
