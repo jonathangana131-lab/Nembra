@@ -68,6 +68,32 @@ jobs:
                   raise RuntimeError('accepted-source Git execution authority changed unexpectedly')
               normalized = normalized.replace(replacement_sensitive, replacement_blind, 1)
               exec(compile(normalized, '<capture-authority-chain-materializer>', 'exec'), {})
+
+              guard_path = Path('Scripts/capture_tuya_private_input_build_guard.py')
+              guard = guard_path.read_text(encoding='utf-8')
+              fixes = (
+                  ('  raise BuildGuardError(f"accepted authority helper is not one regular single-link file: {filename}")', '            raise BuildGuardError(f"accepted authority helper is not one regular single-link file: {filename}")'),
+                  ('  raise BuildGuardError(f"accepted authority helper size is outside the accepted bound: {filename}")', '            raise BuildGuardError(f"accepted authority helper size is outside the accepted bound: {filename}")'),
+                  ('  chunk = os.read(descriptor, min(65_536, remaining))', '            chunk = os.read(descriptor, min(65_536, remaining))'),
+                  ('  if not chunk:', '            if not chunk:'),
+                  ('      raise BuildGuardError(f"accepted authority helper changed during descriptor read: {filename}")', '                raise BuildGuardError(f"accepted authority helper changed during descriptor read: {filename}")'),
+                  ('  chunks.append(chunk)', '            chunks.append(chunk)'),
+                  ('  remaining -= len(chunk)', '            remaining -= len(chunk)'),
+                  ('  raise BuildGuardError(f"accepted authority helper changed during descriptor custody: {filename}")', '            raise BuildGuardError(f"accepted authority helper changed during descriptor custody: {filename}")'),
+                  ('  # Compatibility only for isolated package/unit callers. The physical', '            # Compatibility only for isolated package/unit callers. The physical'),
+                  ('  # field CLI requires accepted authority helpers before any access.', '            # field CLI requires accepted authority helpers before any access.'),
+                  ('  self._module = _load_neighbor_module(self._filename, self._module_name)', '            self._module = _load_neighbor_module(self._filename, self._module_name)'),
+              )
+              for broken, corrected in fixes:
+                  broken_count = guard.count(broken)
+                  corrected_count = guard.count(corrected)
+                  if broken_count == 1 and corrected_count == 0:
+                      guard = guard.replace(broken, corrected, 1)
+                  elif broken_count == 0 and corrected_count == 1:
+                      continue
+                  else:
+                      raise RuntimeError(f'build-guard materialized indentation contract changed: {broken!r}')
+              guard_path.write_text(guard, encoding='utf-8')
           except BaseException as error:
               message = f'{type(error).__name__}: {error}'.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print(f'::error file=.github/workflows/capture-authority-chain-materialize-runner.yml::{message}')
@@ -80,6 +106,7 @@ jobs:
           python3 -m py_compile scripts/ci/tests/test_capture_private_review_commitment.py
           python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
           python3 -m py_compile scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          python3 -m unittest -v scripts.ci.tests.test_capture_field_accepted_source_git_replace_custody
           git diff --check
           git status --short
           git config user.name github-actions[bot]
