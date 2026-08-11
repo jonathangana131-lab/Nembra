@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 8
     env:
       EXACT_PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/nembra-finalgo-pycache
     steps:
       - uses: actions/checkout@v4
         with:
