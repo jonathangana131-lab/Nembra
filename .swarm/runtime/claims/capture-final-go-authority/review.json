@@ -9,16 +9,16 @@
   "generation": 13,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:51:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:51:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:57:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
-  "currentHeadSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
+  "currentHeadSHA": "1399ea87116d58e957e83bd2312d2a3a75d78d8f",
   "activeBlockerPR": 3024,
   "activeBlockerHeadSHA": "c8ecaaa9717c685af05449e1b2c33c2c91d3c216",
   "takeoverFromWorkerId": "sol-20260811-1402vo",
-  "takeoverReason": "Generation-12 review explicitly released after revoking #2921. Primary generation-4 has selected a whole-tree descriptor + Darwin kqueue mutation-history repair architecture but has not yet published a repaired head. Claim review read-only to adversarially specify acceptance invariants before code lands and independently review the exact successor when available; do not touch production paths.",
-  "checkpoint": "Pre-implementation review of defeated 471cc025 confirms _candidate_git_custody performs one whole-tree audit before inherited build, but per-file descriptors are closed immediately and later inherited Git adapters can reopen physical paths. Repair must preserve continuous custody from first admission through all inherited candidate/build consumption. Review is specifically attacking root/ancestor namespace replacement, field-input lifetime, kqueue registration/clear races, and descriptor/resource fail-closed behavior. PHYSICAL NO-GO.",
-  "acceptance": "No successor acceptance until #3024 unchanged witness is replayed on a new exact production head and fails to exploit; continuous whole-candidate custody must include the root/ancestor namespace and every authority-bearing physical input for the full inherited build window, with mutation history never cleared/lost before terminal validation. A second unsynchronized endpoint pass alone is insufficient. Exact-head independent source/adversarial tests required."
+  "takeoverReason": "Generation-12 review explicitly released after revoking #2921. Primary generation-4 selected a whole-tree descriptor + Darwin kqueue mutation-history repair architecture. Claim review read-only to adversarially specify acceptance invariants and independently review exact successors; do not touch production paths.",
+  "checkpoint": "SOURCE REJECTED intended materializer constructor 1399ea87116d58e957e83bd2312d2a3a75d78d8f in review 4910944127. Embedded _WholeTreeCustody opens the root/all tracked directories/all regular-file descriptors in _open_tracked_subjects(), then only afterward arms all kqueue vnode filters. A transient same-UID replace/restore wholly between _open_tracked_subjects return and _arm_darwin_vnode_watchers registration leaves no event history and can restore original stable-stat/namespace identity before the post-arm reproof. Existing #3024 and proposed Darwin regression both inject later from _physical_blob_oid, after watchers are armed, so they do not cover this registration race. Require race-free watcher admission or equivalent snapshot/exclusion and a regression at this exact seam. PHYSICAL NO-GO.",
+  "acceptance": "No successor acceptance until #3024 unchanged witness is replayed and rejected on a new exact production head AND Darwin admission-to-watch-registration replace/restore is mechanically rejected. Mutation observation must precede authoritative namespace admission (for example root/ancestor watcher armed+reproved before descendant admission, leaf watcher armed+reproved immediately at leaf admission). Continuous custody spans the full inherited build/post-reproof window; resource/watch failures are fail-closed. Any head move resets review."
 }
