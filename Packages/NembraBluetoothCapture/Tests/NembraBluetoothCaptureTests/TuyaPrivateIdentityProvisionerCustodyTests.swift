@@ -179,7 +179,7 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"a49c6fbe38eabe4983875e2291ce97911ba82d4c4ccfe7c8d7b69ade61edeaf1\""))
+        #expect(shell.contains("WRITER_SHA256=\"c4c18a77731c781ca203516f061f87929adf829a6acce0b33da81ea2e6bd4f7f\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
@@ -198,6 +198,8 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("O_DIRECTORY"))
         #expect(writer.contains("O_EXCL"))
         #expect(writer.contains("_recover_private_stage_residue"))
+        #expect(writer.contains("_RecoveredPrivateStage"))
+        #expect(writer.contains("_require_recovered_stage_binding"))
         #expect(writer.contains("_is_canonical_private_stage_name"))
         #expect(writer.contains("_PRIVATE_STAGE_PREFIX"))
         #expect(writer.contains("_require_descriptor_payload"))

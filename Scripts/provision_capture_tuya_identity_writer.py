@@ -129,8 +129,29 @@ def _is_canonical_private_stage_name(name: str) -> bool:
     )
 
 
-def _recover_private_stage_residue(checkout_fd: int) -> None:
-    """Remove only exact writer-owned crash residue; reject every ambiguous alias."""
+class _RecoveredPrivateStage:
+    """Descriptor custody for one exact writer-shaped hard-exit residue."""
+
+    def __init__(self, name: str, descriptor: int, metadata: os.stat_result) -> None:
+        self.name = name
+        self.descriptor = descriptor
+        self.metadata = metadata
+
+    def take_descriptor(self) -> int:
+        if self.descriptor < 0:
+            raise ProvisionError("recovered private identity staging descriptor was already consumed")
+        descriptor = self.descriptor
+        self.descriptor = -1
+        return descriptor
+
+    def close(self) -> None:
+        if self.descriptor >= 0:
+            os.close(self.descriptor)
+            self.descriptor = -1
+
+
+def _recover_private_stage_residue(checkout_fd: int) -> _RecoveredPrivateStage | None:
+    """Admit at most one exact crash residue by descriptor; never delete by pathname."""
     try:
         entries = os.listdir(checkout_fd)
     except OSError as exc:
@@ -140,68 +161,99 @@ def _recover_private_stage_residue(checkout_fd: int) -> None:
     for name in reserved:
         if not _is_canonical_private_stage_name(name):
             raise ProvisionError("reserved private identity staging namespace contains a non-writer entry")
+    if not reserved:
+        return None
+    if len(reserved) != 1:
+        raise ProvisionError("private identity staging namespace contains multiple ambiguous crash residues")
 
-        try:
-            named = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            continue
-        except OSError as exc:
-            raise ProvisionError("could not inspect reserved private identity staging entry") from exc
-
-        if (
-            not stat.S_ISREG(named.st_mode)
-            or named.st_uid != os.geteuid()
-            or named.st_nlink != 1
-            or stat.S_IMODE(named.st_mode) != 0o600
-            or named.st_size > _PRIVATE_STAGE_MAX_BYTES
-        ):
-            raise ProvisionError("reserved private identity staging entry is not safe writer-owned crash residue")
-
-        descriptor = -1
-        try:
-            descriptor = os.open(
-                name,
-                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
-                dir_fd=checkout_fd,
-            )
-            held = os.fstat(descriptor)
-            current = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
-            if (
-                not stat.S_ISREG(held.st_mode)
-                or held.st_uid != os.geteuid()
-                or held.st_nlink != 1
-                or stat.S_IMODE(held.st_mode) != 0o600
-                or held.st_size > _PRIVATE_STAGE_MAX_BYTES
-                or current.st_dev != held.st_dev
-                or current.st_ino != held.st_ino
-                or current.st_uid != held.st_uid
-                or current.st_nlink != held.st_nlink
-                or current.st_mode != held.st_mode
-                or current.st_size != held.st_size
-            ):
-                raise ProvisionError("reserved private identity staging entry changed during recovery admission")
-
-            os.unlink(name, dir_fd=checkout_fd)
-            after_unlink = os.fstat(descriptor)
-            if after_unlink.st_dev != held.st_dev or after_unlink.st_ino != held.st_ino or after_unlink.st_nlink != 0:
-                raise ProvisionError("reserved private identity staging name changed during recovery removal")
-            os.fsync(checkout_fd)
-        except ProvisionError:
-            raise
-        except OSError as exc:
-            raise ProvisionError("could not safely remove writer-owned private identity crash residue") from exc
-        finally:
-            if descriptor >= 0:
-                os.close(descriptor)
-
+    name = reserved[0]
     try:
-        leftovers = sorted(
-            name for name in os.listdir(checkout_fd) if name.startswith(_PRIVATE_STAGE_PREFIX)
-        )
+        named = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
     except OSError as exc:
-        raise ProvisionError("could not re-inspect private identity staging namespace") from exc
-    if leftovers:
-        raise ProvisionError("private identity staging namespace is not clean after recovery")
+        raise ProvisionError("could not inspect reserved private identity staging entry") from exc
+    if (
+        not stat.S_ISREG(named.st_mode)
+        or named.st_uid != os.geteuid()
+        or named.st_nlink != 1
+        or stat.S_IMODE(named.st_mode) != 0o600
+        or named.st_size > _PRIVATE_STAGE_MAX_BYTES
+    ):
+        raise ProvisionError("reserved private identity staging entry is not safe writer-owned crash residue")
+
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
+            dir_fd=checkout_fd,
+        )
+        held = os.fstat(descriptor)
+        current = os.stat(name, dir_fd=checkout_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(held.st_mode)
+            or held.st_uid != os.geteuid()
+            or held.st_nlink != 1
+            or stat.S_IMODE(held.st_mode) != 0o600
+            or held.st_size > _PRIVATE_STAGE_MAX_BYTES
+            or named.st_dev != held.st_dev
+            or named.st_ino != held.st_ino
+            or named.st_uid != held.st_uid
+            or named.st_nlink != held.st_nlink
+            or named.st_mode != held.st_mode
+            or named.st_size != held.st_size
+            or current.st_dev != held.st_dev
+            or current.st_ino != held.st_ino
+            or current.st_uid != held.st_uid
+            or current.st_nlink != held.st_nlink
+            or current.st_mode != held.st_mode
+            or current.st_size != held.st_size
+        ):
+            raise ProvisionError("reserved private identity staging entry changed during recovery admission")
+        recovered = _RecoveredPrivateStage(name, descriptor, held)
+        descriptor = -1
+        return recovered
+    except ProvisionError:
+        raise
+    except OSError as exc:
+        raise ProvisionError("could not safely admit writer-owned private identity crash residue") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _require_recovered_stage_binding(
+    checkout_fd: int,
+    recovered: _RecoveredPrivateStage,
+    descriptor: int,
+) -> None:
+    """Re-bind the reserved name to the held inode before any recovered-byte mutation."""
+    try:
+        current = os.stat(recovered.name, dir_fd=checkout_fd, follow_symlinks=False)
+    except OSError as exc:
+        raise ProvisionError("recovered private identity staging name changed before reuse") from exc
+    held = os.fstat(descriptor)
+    admitted = recovered.metadata
+    if (
+        not stat.S_ISREG(held.st_mode)
+        or held.st_uid != os.geteuid()
+        or held.st_nlink != 1
+        or stat.S_IMODE(held.st_mode) != 0o600
+        or held.st_size > _PRIVATE_STAGE_MAX_BYTES
+        or held.st_dev != admitted.st_dev
+        or held.st_ino != admitted.st_ino
+        or held.st_uid != admitted.st_uid
+        or held.st_nlink != admitted.st_nlink
+        or held.st_mode != admitted.st_mode
+        or held.st_size != admitted.st_size
+        or current.st_dev != held.st_dev
+        or current.st_ino != held.st_ino
+        or current.st_uid != held.st_uid
+        or current.st_nlink != held.st_nlink
+        or current.st_mode != held.st_mode
+        or current.st_size != held.st_size
+    ):
+        raise ProvisionError("recovered private identity staging name no longer binds the admitted inode")
+
 
 def _ensure_private_directory(parent_fd: int, name: str) -> int:
     if not name or name in (".", "..") or "/" in name:
@@ -516,17 +568,30 @@ def _write_staged(
     final_name: str,
     destination_relative: str,
     payload: bytes,
+    recovered_stage: _RecoveredPrivateStage | None = None,
 ) -> None:
     components = _relative_components(destination_relative)
     if components[-1] != final_name:
         raise ProvisionError("private identity final name does not match its admitted relative path")
     _validate_existing_output(destination_parent_fd, final_name)
 
-    temporary_name = f"{_PRIVATE_STAGE_PREFIX}{os.getpid()}-{secrets.token_hex(12)}"
+    temporary_name = (
+        recovered_stage.name
+        if recovered_stage is not None
+        else f"{_PRIVATE_STAGE_PREFIX}{os.getpid()}-{secrets.token_hex(12)}"
+    )
     staging_fd = final_fd = -1
     sealed: os.stat_result | None = None
+    recovered_mutation_started = False
     try:
-        staging_fd = os.open(temporary_name, _file_flags(), 0o600, dir_fd=checkout_fd)
+        if recovered_stage is not None:
+            staging_fd = recovered_stage.take_descriptor()
+            _require_recovered_stage_binding(checkout_fd, recovered_stage, staging_fd)
+            recovered_mutation_started = True
+            os.ftruncate(staging_fd, 0)
+            os.lseek(staging_fd, 0, os.SEEK_SET)
+        else:
+            staging_fd = os.open(temporary_name, _file_flags(), 0o600, dir_fd=checkout_fd)
         metadata = os.fstat(staging_fd)
         if (
             not stat.S_ISREG(metadata.st_mode)
@@ -603,7 +668,15 @@ def _write_staged(
             os.fsync(checkout_fd)
             raise
     except Exception:
-        _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
+        if recovered_stage is not None:
+            if recovered_mutation_started and staging_fd >= 0:
+                try:
+                    os.ftruncate(staging_fd, 0)
+                    os.fsync(staging_fd)
+                except OSError:
+                    pass
+        else:
+            _unlink_owned_inode_if_named(checkout_fd, temporary_name, sealed)
         raise
     finally:
         if final_fd >= 0:
@@ -653,9 +726,10 @@ public enum NembraTuyaPrivateIdentity {{
 """.encode("utf-8")
 
     local_secrets_fd = runtime_fd = sources_fd = module_fd = -1
+    recovered_stage: _RecoveredPrivateStage | None = None
     try:
         _require_checkout_path_identity(checkout_fd, checkout_root)
-        _recover_private_stage_residue(checkout_fd)
+        recovered_stage = _recover_private_stage_residue(checkout_fd)
         _require_checkout_path_identity(checkout_fd, checkout_root)
         local_secrets_fd = _ensure_private_directory(checkout_fd, "LocalSecrets")
         runtime_fd = _ensure_private_directory(local_secrets_fd, "TuyaRuntime")
@@ -675,6 +749,7 @@ public enum NembraTuyaPrivateIdentity {{
             "NembraTuyaPrivateConfig.podspec",
             podspec_relative,
             podspec,
+            recovered_stage=recovered_stage,
         )
         _require_checkout_path_identity(checkout_fd, checkout_root)
         _require_private_chain(checkout_fd, local_secrets_fd, runtime_fd, sources_fd, module_fd)
@@ -692,6 +767,8 @@ public enum NembraTuyaPrivateIdentity {{
         for descriptor in (module_fd, sources_fd, runtime_fd, local_secrets_fd, checkout_fd):
             os.fsync(descriptor)
     finally:
+        if recovered_stage is not None:
+            recovered_stage.close()
         for descriptor in (module_fd, sources_fd, runtime_fd, local_secrets_fd):
             if descriptor >= 0:
                 os.close(descriptor)
