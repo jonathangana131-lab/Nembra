@@ -1,0 +1,50 @@
+name: Materialize Install Helper Execution Custody
+
+on:
+  push:
+    branches:
+      - scratch/v14-install-helper-exec-materializer-gpt56-sol
+    paths:
+      - .github/workflows/materialize-install-helper-exec-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: scratch/v14-install-helper-exec-materializer-gpt56-sol
+          fetch-depth: 0
+      - name: Preserve transform then move to product branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/ci/materialize_install_helper_exec_custody.py /tmp/materialize_install_helper_exec_custody.py
+          git fetch origin repair/v14-capture-signed-app-install-custody-gpt56-sol
+          git checkout -B repair/v14-capture-signed-app-install-custody-gpt56-sol origin/repair/v14-capture-signed-app-install-custody-gpt56-sol
+          /usr/bin/python3 /tmp/materialize_install_helper_exec_custody.py
+      - name: Validate product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          test -z "$(find scripts -type d -name __pycache__ -print -quit)"
+          git diff --name-only --exit-code -- scripts/ci/capture_signed_app_install_custody.py
+      - name: Publish hardening and remove scratch branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra Capture Sol"
+          git config user.email "nembra-capture-sol@users.noreply.github.com"
+          git add scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_signed_app_install_custody.py
+          git diff --cached --check
+          git commit -m "fix(capture): protect custody helper execution subject"
+          git push origin HEAD:repair/v14-capture-signed-app-install-custody-gpt56-sol
+          git push origin --delete scratch/v14-install-helper-exec-materializer-gpt56-sol || true
