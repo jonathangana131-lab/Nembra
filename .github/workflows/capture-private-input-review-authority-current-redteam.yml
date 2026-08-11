@@ -1,0 +1,28 @@
+name: Capture Current Private Input Review Authority Red Team
+
+on:
+  pull_request:
+    paths:
+      - 'Scripts/bootstrap_capture_tuya_sdk.sh'
+      - 'Scripts/capture_tuya_private_input_provenance.py'
+      - 'Scripts/capture_cocoapods_generated_build_subject.py'
+      - 'scripts/ci/tests/test_capture_private_input_review_authority_current.py'
+      - '.github/workflows/capture-private-input-review-authority-current-redteam.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-review-authority:
+    name: Reject stable unreviewed private generation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind diagnostic to exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Compile diagnostic
+        run: python3 -m py_compile scripts/ci/tests/test_capture_private_input_review_authority_current.py
+      - name: Hold lock/generated authority fixed and reject private substitution
+        run: python3 scripts/ci/tests/test_capture_private_input_review_authority_current.py
