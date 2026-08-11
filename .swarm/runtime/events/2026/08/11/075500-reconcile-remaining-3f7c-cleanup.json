@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "075500-reconcile-remaining-3f7c-cleanup",
+  "type": "INTEGRATION_RESULT",
+  "workerId": "sol-20260811-3f7c",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Remaining-work reconciliation closed two explicit non-product legacy PRs that their own contracts said must not merge: temporary trigger #2705 and rejected-candidate package-log diagnostic #2641. #2641's closure condition is now satisfied because the dedicated capture-package-test-runner-recovery lane / PR #2808 owns the current Range-abort diagnosis. No Capture production bytes or physical authority changed; PHYSICAL NO-GO remains.",
+  "createdAt": "2026-08-11T07:55:00Z",
+  "data": {
+    "mainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "closedPRs": [2705, 2641],
+    "replacementDiagnosticPR": 2808,
+    "physicalState": "PHYSICAL_NO_GO",
+    "productBytesChanged": false
+  }
+}
