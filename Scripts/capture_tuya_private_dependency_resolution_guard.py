@@ -2,17 +2,16 @@
 """Run pre-generated Tuya dependency work under private-input vnode custody.
 
 This is intentionally *not* the physical field-build CLI. The canonical build
-guard's CLI requires accepted tracked-source, generated CocoaPods, private-review,
-and helper authority because it protects xcodebuild. Dependency resolution runs
-one rung earlier, before those generated subjects can exist.
+guard's CLI protects the later xcodebuild window. Dependency resolution runs one
+rung earlier, before generated CocoaPods subjects can exist.
 
-The canonical guard deliberately preserves a private-only `run_guarded_build`
-API for callers whose five admitted inputs are the lock/manifest anchor plus the
-private security and identity trees. This adapter exposes only that narrow mode.
-It grants no xcodebuild, generated-build, private-review, source-acceptance, or
-physical GO authority. The child command must independently establish semantic
-authority (bootstrap uses the root-sealed private-identity receipt) after vnode
-watchers are armed.
+The canonical guard currently exposes a narrow `run_guarded_build` primitive for
+the five admitted private-input subjects. This adapter supplies those subjects,
+adds symlink-free checkout ancestry admission for this earlier call site, and
+fails closed if the canonical callable surface drifts. It grants no xcodebuild,
+generated-build, private-review, source-acceptance, or physical GO authority.
+The child command must independently establish semantic authority (bootstrap uses
+the root-sealed private-identity receipt) after vnode watchers are armed.
 """
 
 from __future__ import annotations
@@ -20,7 +19,9 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import inspect
+import os
 from pathlib import Path
+import stat
 import sys
 from typing import Sequence
 
@@ -54,14 +55,7 @@ def _load_guard():
 
 
 def _require_private_only_guard_api(guard) -> None:
-    """Fail closed if the canonical callable surface drifts under this adapter.
-
-    The current canonical guard is itself the narrow private-input vnode-custody
-    primitive. This adapter deliberately calls only its two positional authority
-    inputs and relies on the three test-injection parameters retaining their
-    current defaults. Any signature change requires an explicit adapter review
-    instead of silently inheriting a broader or differently gated authority mode.
-    """
+    """Fail closed if the canonical callable surface drifts under this adapter."""
 
     try:
         parameters = tuple(inspect.signature(guard.run_guarded_build).parameters)
@@ -71,6 +65,62 @@ def _require_private_only_guard_api(guard) -> None:
         raise ResolutionGuardError(
             "canonical private-input guard API drifted; dependency-resolution authority requires review"
         )
+
+
+def _lexical_absolute(path: Path) -> Path:
+    raw = os.fspath(path)
+    if not raw or "\x00" in raw:
+        raise ResolutionGuardError("dependency-resolution input path is invalid")
+    return Path(os.path.abspath(os.path.normpath(raw)))
+
+
+def _require_real_checkout_path(
+    path: Path,
+    root: Path,
+    *,
+    label: str,
+    expected_kind: str,
+) -> Path:
+    """Admit one path only through real, symlink-free ancestry beneath checkout root."""
+
+    authority_root = _lexical_absolute(root)
+    candidate = _lexical_absolute(path)
+    try:
+        relative = candidate.relative_to(authority_root)
+    except ValueError as error:
+        raise ResolutionGuardError(f"{label} escaped the dependency checkout root") from error
+    if not relative.parts:
+        raise ResolutionGuardError(f"{label} must name a checkout child")
+
+    current = authority_root
+    try:
+        root_metadata = os.lstat(current)
+    except OSError as error:
+        raise ResolutionGuardError("dependency checkout root is unavailable") from error
+    if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
+        raise ResolutionGuardError("dependency checkout root must be one real directory")
+
+    metadata = root_metadata
+    for index, component in enumerate(relative.parts):
+        current = current / component
+        try:
+            metadata = os.lstat(current)
+        except OSError as error:
+            raise ResolutionGuardError(f"{label} is unavailable") from error
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ResolutionGuardError(f"{label} ancestry must not contain symlinks")
+        if index < len(relative.parts) - 1 and not stat.S_ISDIR(metadata.st_mode):
+            raise ResolutionGuardError(f"{label} ancestry must contain only real directories")
+
+    if expected_kind == "file":
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ResolutionGuardError(f"{label} must be one real regular file")
+    elif expected_kind == "directory":
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ResolutionGuardError(f"{label} must be one real directory")
+    else:
+        raise ResolutionGuardError("dependency adapter requested an unknown path kind")
+    return candidate
 
 
 def _parse_args(guard, argv: Sequence[str]):
@@ -90,23 +140,25 @@ def _parse_args(guard, argv: Sequence[str]):
     if not command:
         raise ResolutionGuardError("no guarded dependency command was supplied")
 
-    # Reuse the canonical guard's ancestry admission exactly. The lockfile slot
-    # is a generic watched regular-file anchor here; bootstrap intentionally
-    # supplies the tracked Podfile because CocoaPods executes it.
-    lockfile = guard._lexical_absolute(args.lockfile)
+    # The tracked Podfile is the stable regular-file anchor and defines checkout
+    # root for this earlier dependency-resolution window. Every private subject
+    # must be physically beneath that same real, symlink-free root.
+    lockfile = _lexical_absolute(args.lockfile)
     root = lockfile.parent
-    lockfile = guard._require_real_checkout_ancestry(lockfile, root, label="dependency manifest anchor")
-    security_podspec = guard._require_real_checkout_ancestry(
-        args.security_podspec, root, label="private security podspec"
+    lockfile = _require_real_checkout_path(
+        lockfile, root, label="dependency manifest anchor", expected_kind="file"
     )
-    security_build = guard._require_real_checkout_ancestry(
-        args.security_build, root, label="private security build tree"
+    security_podspec = _require_real_checkout_path(
+        args.security_podspec, root, label="private security podspec", expected_kind="file"
     )
-    identity_podspec = guard._require_real_checkout_ancestry(
-        args.identity_podspec, root, label="private identity podspec"
+    security_build = _require_real_checkout_path(
+        args.security_build, root, label="private security build tree", expected_kind="directory"
     )
-    identity_sources = guard._require_real_checkout_ancestry(
-        args.identity_sources, root, label="private identity source tree"
+    identity_podspec = _require_real_checkout_path(
+        args.identity_podspec, root, label="private identity podspec", expected_kind="file"
+    )
+    identity_sources = _require_real_checkout_path(
+        args.identity_sources, root, label="private identity source tree", expected_kind="directory"
     )
     return (
         guard.PrivateInputs(
