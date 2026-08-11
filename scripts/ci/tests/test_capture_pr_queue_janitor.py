@@ -19,7 +19,7 @@ class CapturePRQueueJanitorTests(unittest.TestCase):
     repository = "owner/repo"
     now = dt.datetime(2026, 8, 11, 3, 0, tzinfo=dt.timezone.utc)
 
-    def run(self, **overrides):
+    def workflow_run(self, **overrides):
         value = {
             "id": 42,
             "status": "queued",
@@ -42,7 +42,7 @@ class CapturePRQueueJanitorTests(unittest.TestCase):
             },
         }
 
-    def classify(self, run=None, prs=None, **overrides):
+    def classify(self, workflow_run=None, prs=None, **overrides):
         kwargs = {
             "repository": self.repository,
             "now": self.now,
@@ -51,7 +51,9 @@ class CapturePRQueueJanitorTests(unittest.TestCase):
         }
         kwargs.update(overrides)
         return janitor.classify_run(
-            run or self.run(), [self.pr()] if prs is None else prs, **kwargs
+            workflow_run or self.workflow_run(),
+            [self.pr()] if prs is None else prs,
+            **kwargs,
         )
 
     def test_only_three_direct_capture_workflows_are_allowlisted(self):
@@ -84,16 +86,24 @@ class CapturePRQueueJanitorTests(unittest.TestCase):
         self.assertIn("synchronize-event", decision.reason)
 
     def test_api_consistency_grace_preserves_fresh_run(self):
-        run = self.run(created_at="2026-08-11T02:59:30Z")
-        self.assertFalse(self.classify(run=run, prs=[self.pr("b" * 40)]).cancel)
+        workflow_run = self.workflow_run(created_at="2026-08-11T02:59:30Z")
+        self.assertFalse(
+            self.classify(
+                workflow_run=workflow_run, prs=[self.pr("b" * 40)]
+            ).cancel
+        )
 
     def test_non_pull_request_and_non_allowlisted_workflows_are_preserved(self):
         self.assertFalse(
-            self.classify(run=self.run(event="workflow_dispatch"), prs=[]).cancel
+            self.classify(
+                workflow_run=self.workflow_run(event="workflow_dispatch"), prs=[]
+            ).cancel
         )
         self.assertFalse(
             self.classify(
-                run=self.run(path=".github/workflows/xcode27-pr-command.yml"),
+                workflow_run=self.workflow_run(
+                    path=".github/workflows/xcode27-pr-command.yml"
+                ),
                 prs=[],
             ).cancel
         )
@@ -105,9 +115,17 @@ class CapturePRQueueJanitorTests(unittest.TestCase):
         self.assertFalse(self.classify(prs=[self.pr(repo="fork/repo")]).cancel)
 
     def test_invalid_run_identity_preserves_run(self):
-        self.assertFalse(self.classify(run=self.run(head_sha="123"), prs=[]).cancel)
-        self.assertFalse(self.classify(run=self.run(head_branch=""), prs=[]).cancel)
-        self.assertFalse(self.classify(run=self.run(created_at="not-time"), prs=[]).cancel)
+        self.assertFalse(
+            self.classify(workflow_run=self.workflow_run(head_sha="123"), prs=[]).cancel
+        )
+        self.assertFalse(
+            self.classify(workflow_run=self.workflow_run(head_branch=""), prs=[]).cancel
+        )
+        self.assertFalse(
+            self.classify(
+                workflow_run=self.workflow_run(created_at="not-time"), prs=[]
+            ).cancel
+        )
 
     def test_protected_head_parser_requires_branch_and_40hex(self):
         self.assertEqual(
