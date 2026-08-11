@@ -89,7 +89,7 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
         bootstrap_call = 'run_accepted_source_bash "Scripts/bootstrap_capture_tuya_sdk.sh"'
         retired_bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
-        build_call = "-- /usr/bin/xcodebuild"
+        build_call = '-- "$SELECTED_XCODEBUILD"'
 
         for required in (
             review_mode,
@@ -102,7 +102,8 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         self.assertLess(bootstrap.index(required_digest), bootstrap.index("pod install --repo-update"))
         self.assertLess(bootstrap.index(lock_compare), bootstrap.index("NEXT BUILD RULE:"))
         self.assertIn("run_accepted_source_bash() {", installer)
-        self.assertIn('run_authority_git show "$SOURCE_SHA:$relative_path"', installer)
+        self.assertIn('read_verified_accepted_git_blob "$relative_path" |', installer)
+        self.assertNotIn('run_authority_git show "$SOURCE_SHA:$relative_path" |', installer)
         self.assertIn("/bin/bash --noprofile --norc -p -c 'source /dev/stdin'", installer)
         self.assertIn(bootstrap_call, installer)
         self.assertNotIn(
