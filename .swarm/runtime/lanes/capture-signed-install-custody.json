@@ -6,16 +6,16 @@
   "title": "Capture signed-app install custody",
   "objective": "Close the intended-device helper and protected signed-app install execution boundary, including ACL stripping/rejection and accepted-runner byte custody, then hand one clean exact descendant to flagship composition.",
   "priority": 1,
-  "state": "BLOCKED_EXTERNAL",
+  "state": "ACTIVE",
   "dependencies": [],
   "blockers": [
     {
-      "id": "legacy-pr-active",
+      "id": "exact-head-revalidation",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy signed-install repair PR #2789 remains active at exact 050cf02ddaf82a303c700954812a42a4d7e9cfc3. Its intended production direction is still valuable: accepted private-device runner bytes come from exact Git-object authority, and the permanent installer ACL fence has already been materialized with `ditto --noacl` plus a root-side BSD `find ... -acl -print -quit` fail-closed check. However this exact head is intentionally NOT a clean acceptance candidate because `.github/workflows/tmp-v14-capture-signed-app-acl-fence.yml` and `scripts/ci/tmp_materialize_signed_app_acl_fence.py` remain in the production tree. Current normal exact runs are action_required/skipped rather than runnable green. Required next rung is preserve permanent ACL/product regressions, delete only the two temporary materializer artifacts, prove no other temporary materializer residue, then rerun Signed App Install Custody (Ubuntu + real macOS), Field Provenance, Selective Graft, and Xcode on one unchanged clean head. No newer clean signed-install successor was found at the latest refresh.",
-      "pr": 2789,
-      "headSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3"
+      "reason": "Hot-swap recovery #2863 forked legacy #2789 exact 050cf02ddaf82a303c700954812a42a4d7e9cfc3 without overwriting it, deleted only the two remaining worker-only signed-app ACL materializer artifacts, proved exact compare ahead 2/behind 0 with those removals only, then merged through trusted owner action as canonical #2789 exact 02d6cb648e2506aee1ea69096c1e6a0b7038d9c1. The permanent installer retains exact-Git private-device runner execution custody plus `ditto --noacl` and root-side BSD ACL fail-closed rejection. Fresh exact-head Capture Signed App Install Custody, Field Build Provenance, Main Selective Graft, and Xcode 27 runs are now runnable/queued on 02d6cb648; queued is not green. Require all applicable exact-head gates terminal SUCCESS plus independent source/clean-tree review before this lane is accepted or composed."
+      ,"pr": 2789,
+      "headSHA": "02d6cb648e2506aee1ea69096c1e6a0b7038d9c1"
     }
   ],
   "mode": "exclusive",
@@ -39,10 +39,10 @@
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "legacy": {
     "primaryPR": 2789,
-    "primaryHeadSHA": "050cf02ddaf82a303c700954812a42a4d7e9cfc3",
-    "lineagePRs": [2688,2741,2754,2789],
-    "exactHeadGateState": "DIRTY_TEMP_MATERIALIZER_ACTION_REQUIRED",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T08:52Z. Exact 050cf02d contains the permanent ACL fence but still includes the temporary signed-app ACL workflow/materializer pair. The exact-current independent review requires deleting those worker-only artifacts before acceptance, then rerunning permanent signed-app custody with both Ubuntu and real-macOS coverage plus Field/Graft/Xcode. Old d3ff/d8f7/95ca greens are ingredient evidence only. PHYSICAL remains NO-GO."
+    "primaryHeadSHA": "02d6cb648e2506aee1ea69096c1e6a0b7038d9c1",
+    "lineagePRs": [2688,2741,2754,2789,2863],
+    "exactHeadGateState": "CLEAN_REVALIDATION_QUEUED",
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:08Z by sol-20260811-c7e19a. Recovery #2863 removed only the final temporary ACL materializer workflow/helper and merged to canonical #2789 as exact 02d6cb648. The prior bot/action_required orchestration blocker is closed: fresh Signed Install, Field, Graft, and Xcode exact-head runs are now queued/runnable. No temporary materializer residue from the two historical ACL pairs remains in the exact tree. PHYSICAL remains NO-GO."
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "legacy-import"]
 }
