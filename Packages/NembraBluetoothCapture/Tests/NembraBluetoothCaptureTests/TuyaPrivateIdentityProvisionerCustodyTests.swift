@@ -1,0 +1,225 @@
+import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Capture Tuya private identity provisioner custody")
+struct TuyaPrivateIdentityProvisionerCustodyTests {
+    private let appKey = "nembra-dummy-app-key"
+    private let appSecret = "nembra-dummy-app-secret"
+
+    @Test("credentials stay under checkout LocalSecrets and out of xtrace")
+    func fixedDestinationAndTraceRedaction() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let redirected = fixture.root.deletingLastPathComponent().appendingPathComponent("caller-controlled-runtime")
+
+        let result = try invoke(
+            fixture.script,
+            xtrace: true,
+            environment: ["NEMBRA_TUYA_RUNTIME_DIR": redirected.path]
+        )
+        #expect(result.status == 0)
+        #expect(!result.output.contains(appKey))
+        #expect(!result.output.contains(appSecret))
+        #expect(!FileManager.default.fileExists(atPath: redirected.path))
+
+        let runtime = fixture.root.appendingPathComponent("LocalSecrets/TuyaRuntime")
+        let podspec = runtime.appendingPathComponent("NembraTuyaPrivateConfig.podspec")
+        let identity = runtime.appendingPathComponent("Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")
+        #expect(FileManager.default.fileExists(atPath: podspec.path))
+        #expect(FileManager.default.fileExists(atPath: identity.path))
+        #expect(try posixPermissions(podspec) == 0o600)
+        #expect(try posixPermissions(identity) == 0o600)
+
+        let generated = try String(contentsOf: podspec, encoding: .utf8)
+            + String(contentsOf: identity, encoding: .utf8)
+        #expect(!generated.contains(appKey))
+        #expect(!generated.contains(appSecret))
+        #expect(generated.contains(Data(appKey.utf8).base64EncodedString()))
+        #expect(generated.contains(Data(appSecret.utf8).base64EncodedString()))
+    }
+
+    @Test("direct invocation ignores hostile Bash startup and caller PATH")
+    func directInvocationClosesStartupEnvironment() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let source = try String(contentsOf: fixture.script, encoding: .utf8)
+        #expect(source.hasPrefix("#!/bin/bash -p\n"))
+        #expect(source.contains("if [[ $- != *p* ]]"))
+
+        let sandbox = fixture.root.deletingLastPathComponent()
+        let sentinel = sandbox.appendingPathComponent("startup-sentinel")
+        let bashEnvironment = sandbox.appendingPathComponent("hostile-bash-env")
+        try Data("/bin/echo hostile-startup > \(sentinel.path)\n".utf8).write(to: bashEnvironment)
+        let hostilePath = sandbox.appendingPathComponent("hostile-bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: hostilePath, withIntermediateDirectories: true)
+
+        let result = try invokeDirect(
+            fixture.script,
+            environment: [
+                "BASH_ENV": bashEnvironment.path,
+                "PATH": hostilePath.path,
+            ]
+        )
+        #expect(result.status == 0)
+        #expect(!result.output.contains(appKey))
+        #expect(!result.output.contains(appSecret))
+        #expect(!FileManager.default.fileExists(atPath: sentinel.path))
+    }
+
+    @Test("checkout root derivation ignores caller PATH executables")
+    func checkoutRootDerivationIgnoresCallerPathExecutables() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let source = try String(contentsOf: fixture.script, encoding: .utf8)
+        let pathFence = source.range(of: "PATH=\"/usr/bin:/bin:/usr/sbin:/sbin\"")
+        let trustedRoot = source.range(of: "ROOT=\"$(cd \"$(/usr/bin/dirname")
+        #expect(pathFence != nil)
+        #expect(trustedRoot != nil)
+        if let pathFence, let trustedRoot {
+            #expect(pathFence.lowerBound < trustedRoot.lowerBound)
+        }
+
+        let sandbox = fixture.root.deletingLastPathComponent()
+        let hostilePath = sandbox.appendingPathComponent("hostile-root-bin", isDirectory: true)
+        let attackerRoot = sandbox.appendingPathComponent("attacker-root", isDirectory: true)
+        let attackerScripts = attackerRoot.appendingPathComponent("Scripts", isDirectory: true)
+        try FileManager.default.createDirectory(at: hostilePath, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: attackerScripts, withIntermediateDirectories: true)
+        let sentinel = sandbox.appendingPathComponent("hostile-dirname-invoked")
+        let hostileDirname = hostilePath.appendingPathComponent("dirname")
+        let fake = "#!/bin/sh\n/bin/echo invoked > \"\(sentinel.path)\"\n/bin/echo \"\(attackerScripts.path)\"\n"
+        try Data(fake.utf8).write(to: hostileDirname)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: hostileDirname.path)
+
+        let result = try invokeDirect(fixture.script, environment: ["PATH": hostilePath.path])
+        #expect(result.status == 0)
+        #expect(!FileManager.default.fileExists(atPath: sentinel.path))
+        #expect(!FileManager.default.fileExists(atPath: attackerRoot.appendingPathComponent("LocalSecrets/TuyaRuntime").path))
+        #expect(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec").path))
+    }
+
+    @Test("symlinked LocalSecrets fails before credential publication")
+    func symlinkedLocalSecretsFailsClosed() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let escape = fixture.root.deletingLastPathComponent().appendingPathComponent("escape")
+        try FileManager.default.createDirectory(at: escape, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: fixture.root.appendingPathComponent("LocalSecrets"),
+            withDestinationURL: escape
+        )
+
+        let result = try invoke(fixture.script)
+        #expect(result.status != 0)
+        #expect(!FileManager.default.fileExists(atPath: escape.appendingPathComponent("TuyaRuntime").path))
+    }
+
+    @Test("symlinked final identity output cannot receive credentials")
+    func symlinkedOutputFailsClosed() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+        let sourceDirectory = fixture.root.appendingPathComponent("LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        let sentinel = fixture.root.deletingLastPathComponent().appendingPathComponent("sentinel.txt")
+        try Data("unchanged".utf8).write(to: sentinel)
+        try FileManager.default.createSymbolicLink(
+            at: sourceDirectory.appendingPathComponent("NembraTuyaPrivateIdentity.swift"),
+            withDestinationURL: sentinel
+        )
+
+        let result = try invoke(fixture.script)
+        #expect(result.status != 0)
+        #expect(try String(contentsOf: sentinel, encoding: .utf8) == "unchanged")
+    }
+
+    @Test("regular private outputs can be reprovisioned")
+    func regularOutputsCanBeReprovisioned() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root.deletingLastPathComponent()) }
+
+        let first = try invoke(fixture.script)
+        #expect(first.status == 0)
+        let second = try invoke(fixture.script)
+        #expect(second.status == 0)
+
+        let runtime = fixture.root.appendingPathComponent("LocalSecrets/TuyaRuntime")
+        #expect(try posixPermissions(runtime.appendingPathComponent("NembraTuyaPrivateConfig.podspec")) == 0o600)
+        #expect(try posixPermissions(runtime.appendingPathComponent("Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift")) == 0o600)
+    }
+
+    private func makeFixture() throws -> (root: URL, script: URL) {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nembra-tuya-provisioner-\(UUID().uuidString)", isDirectory: true)
+        let root = sandbox.appendingPathComponent("repo", isDirectory: true)
+        let scripts = root.appendingPathComponent("Scripts", isDirectory: true)
+        try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)
+        let source = repositoryRoot.appendingPathComponent("Scripts/provision_capture_tuya_identity.sh")
+        let target = scripts.appendingPathComponent("provision_capture_tuya_identity.sh")
+        try FileManager.default.copyItem(at: source, to: target)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: target.path)
+        return (root, target)
+    }
+
+    private func invoke(
+        _ script: URL,
+        xtrace: Bool = false,
+        environment additions: [String: String] = [:]
+    ) throws -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = (xtrace ? ["-px"] : ["-p"]) + [script.path]
+        return try run(process, environment: additions)
+    }
+
+    private func invokeDirect(
+        _ script: URL,
+        environment additions: [String: String] = [:]
+    ) throws -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = script
+        return try run(process, environment: additions)
+    }
+
+    private func run(
+        _ process: Process,
+        environment additions: [String: String]
+    ) throws -> (status: Int32, output: String) {
+        var environment = ProcessInfo.processInfo.environment
+        for (key, value) in additions { environment[key] = value }
+        process.environment = environment
+
+        let input = Pipe()
+        let output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        input.fileHandleForWriting.write(Data("\(appKey)\n\(appSecret)\n".utf8))
+        try input.fileHandleForWriting.close()
+        process.waitUntilExit()
+        let outputData = output.fileHandleForReading.readDataToEndOfFile()
+        return (process.terminationStatus, String(decoding: outputData, as: UTF8.self))
+    }
+
+    private func posixPermissions(_ url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let permissions = attributes[.posixPermissions] as? NSNumber else {
+            throw TestFailure.missingPermissions
+        }
+        return permissions.intValue
+    }
+
+    private var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private enum TestFailure: Error {
+        case missingPermissions
+    }
+}
