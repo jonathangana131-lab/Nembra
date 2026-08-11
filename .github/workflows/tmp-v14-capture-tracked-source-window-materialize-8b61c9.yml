@@ -1,0 +1,231 @@
+name: tmp-v14-capture-tracked-source-window-materialize-8b61c9
+
+on:
+  push:
+    branches:
+      - repair/v14-field-installer-ignore-independent-sol-8b61c9-20260811
+    paths:
+      - .github/workflows/tmp-v14-capture-tracked-source-window-materialize-8b61c9.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rebase-safe merge current parent and materialize tracked-source custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin repair/v14-capture-field-installer-git-authority-sol-20260811
+          git merge --no-edit origin/repair/v14-capture-field-installer-git-authority-sol-20260811
+          python3 - <<'PY'
+          from pathlib import Path
+
+          guard_path = Path('Scripts/capture_tuya_private_input_build_guard.py')
+          installer_path = Path('scripts/field/install_one_time_capture.command')
+          guard = guard_path.read_text()
+          installer = installer_path.read_text()
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {text.count(old)}')
+              return text.replace(old, new, 1)
+
+          guard = replace_once(
+              guard,
+              '    generated_pods: Path | None = None\n    generated_workspace: Path | None = None\n',
+              '    generated_pods: Path | None = None\n    generated_workspace: Path | None = None\n    accepted_source_root: Path | None = None\n    accepted_source_sha: str | None = None\n',
+              'PrivateInputs accepted-source fields',
+          )
+
+          insertion = r'''
+
+def _accepted_source_manifest(inputs: PrivateInputs) -> dict[Path, tuple[str, bool]]:
+    """Read the exact accepted Git tree without trusting the checkout index/config."""
+
+    if inputs.accepted_source_root is None and inputs.accepted_source_sha is None:
+        return {}
+    if inputs.accepted_source_root is None or inputs.accepted_source_sha is None:
+        raise BuildGuardError("accepted tracked-source custody requires both checkout root and source SHA")
+
+    root = _lexical_absolute(inputs.accepted_source_root)
+    if root != _lexical_absolute(inputs.lockfile.parent):
+        raise BuildGuardError("accepted tracked-source root must equal the field checkout root")
+    try:
+        root_metadata = root.lstat()
+    except OSError as error:
+        raise BuildGuardError("accepted tracked-source root disappeared before build-window custody") from error
+    if not stat.S_ISDIR(root_metadata.st_mode) or stat.S_ISLNK(root_metadata.st_mode):
+        raise BuildGuardError("accepted tracked-source root must be one real directory")
+
+    source_sha = inputs.accepted_source_sha.lower()
+    if len(source_sha) != 40 or any(character not in "0123456789abcdef" for character in source_sha):
+        raise BuildGuardError("accepted tracked-source SHA must be exactly 40 hexadecimal characters")
+
+    git_environment = {
+        "GIT_DIR": str(root / ".git"),
+        "GIT_WORK_TREE": str(root),
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
+    try:
+        tree = subprocess.check_output(
+            ["/usr/bin/git", "ls-tree", "-r", "-z", source_sha],
+            cwd=root,
+            env=git_environment,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise BuildGuardError("accepted tracked-source Git tree could not be read from exact authority") from error
+
+    manifest: dict[Path, tuple[str, bool]] = {}
+    for record in tree.split(b"\0"):
+        if not record:
+            continue
+        try:
+            header, raw_path = record.split(b"\t", 1)
+            raw_mode, raw_type, raw_oid = header.split(b" ", 2)
+            mode = raw_mode.decode("ascii")
+            object_type = raw_type.decode("ascii")
+            oid = raw_oid.decode("ascii").lower()
+        except (ValueError, UnicodeDecodeError) as error:
+            raise BuildGuardError("accepted tracked-source Git tree contains a malformed entry") from error
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            raise BuildGuardError(
+                f"accepted tracked-source entry has unsupported type/mode: {object_type} {mode}"
+            )
+        if len(oid) != 40 or any(character not in "0123456789abcdef" for character in oid):
+            raise BuildGuardError("accepted tracked-source Git blob identity is malformed")
+        relative = Path(os.fsdecode(raw_path))
+        if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+            raise BuildGuardError("accepted tracked-source Git path escapes the checkout root")
+        path = root / relative
+        if path in manifest:
+            raise BuildGuardError(f"accepted tracked-source Git path is duplicated: {relative}")
+        manifest[path] = (oid, mode == "100755")
+    if not manifest:
+        raise BuildGuardError("accepted tracked-source Git tree is empty")
+    return manifest
+
+
+def _verify_accepted_tracked_source_descriptors(
+    manifest: dict[Path, tuple[str, bool]],
+    watched: Sequence[tuple[int, Path]],
+) -> None:
+    """Bind watched checkout files to accepted Git blobs before/after compiler use."""
+
+    if not manifest:
+        return
+    descriptors = {path: descriptor for descriptor, path in watched}
+    for path, (expected_oid, expected_executable) in manifest.items():
+        descriptor = descriptors.get(path)
+        if descriptor is None:
+            raise BuildGuardError(f"accepted tracked source is not under descriptor custody: {path}")
+        try:
+            before = os.fstat(descriptor)
+            path_before = path.lstat()
+        except OSError as error:
+            raise BuildGuardError(f"accepted tracked source disappeared during descriptor custody: {path}") from error
+        if _stat_identity(before) != _stat_identity(path_before):
+            raise BuildGuardError(f"accepted tracked source path retargeted after descriptor admission: {path}")
+        if not stat.S_ISREG(before.st_mode):
+            raise BuildGuardError(f"accepted tracked source is not one regular file: {path}")
+        if bool(stat.S_IMODE(before.st_mode) & 0o111) != expected_executable:
+            raise BuildGuardError(f"accepted tracked source executable mode differs from exact Git authority: {path}")
+
+        digest = hashlib.sha1()
+        digest.update(b"blob " + str(before.st_size).encode("ascii") + b"\0")
+        offset = 0
+        while offset < before.st_size:
+            try:
+                chunk = os.pread(descriptor, min(65_536, before.st_size - offset), offset)
+            except OSError as error:
+                raise BuildGuardError(f"accepted tracked source could not be read under descriptor custody: {path}") from error
+            if not chunk:
+                raise BuildGuardError(f"accepted tracked source changed during descriptor read: {path}")
+            digest.update(chunk)
+            offset += len(chunk)
+
+        try:
+            after = os.fstat(descriptor)
+            path_after = path.lstat()
+        except OSError as error:
+            raise BuildGuardError(f"accepted tracked source disappeared after descriptor read: {path}") from error
+        if _stat_identity(before) != _stat_identity(after) or _stat_identity(after) != _stat_identity(path_after):
+            raise BuildGuardError(f"accepted tracked source changed during descriptor verification: {path}")
+        if not hmac.compare_digest(digest.hexdigest(), expected_oid):
+            raise BuildGuardError(f"accepted tracked source bytes differ from exact Git authority: {path}")
+'''
+          guard = replace_once(
+              guard,
+              '\ndef _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:\n',
+              insertion + '\n\ndef _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:\n',
+              'accepted-source helper insertion',
+          )
+
+          guard = replace_once(
+              guard,
+              '    _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")\n\n    # The parent-chain contract',
+              '    _add_tree_watch_paths(paths, inputs.identity_sources, label="private identity source tree")\n\n    accepted_manifest = _accepted_source_manifest(inputs)\n    if accepted_manifest:\n        accepted_source_root = _lexical_absolute(inputs.accepted_source_root)  # type: ignore[arg-type]\n        paths.add(accepted_source_root)\n        for tracked_path in accepted_manifest:\n            paths.add(tracked_path)\n            _add_parent_watch_chain(paths, tracked_path, repository_root=accepted_source_root)\n\n    # The parent-chain contract',
+              'tracked-source watch-set expansion',
+          )
+
+          guard = replace_once(
+              guard,
+              '    initial_snapshot = inputs.generation_snapshot()\n    watch_paths = _watch_paths(inputs)\n',
+              '    initial_snapshot = inputs.generation_snapshot()\n    accepted_source_manifest = _accepted_source_manifest(inputs)\n    watch_paths = _watch_paths(inputs)\n',
+              'tracked manifest capture',
+          )
+          guard = replace_once(
+              guard,
+              '        watched = _open_watched_inputs(watch_paths, backend)\n\n        armed_snapshot = inputs.generation_snapshot()\n',
+              '        watched = _open_watched_inputs(watch_paths, backend)\n        _verify_accepted_tracked_source_descriptors(accepted_source_manifest, watched)\n\n        armed_snapshot = inputs.generation_snapshot()\n',
+              'pre-build tracked descriptor verification',
+          )
+          guard = replace_once(
+              guard,
+              '        final_snapshot = inputs.generation_snapshot()\n        if final_snapshot != initial_snapshot:\n            raise BuildGuardError("build inputs changed across the guarded xcodebuild window")\n',
+              '        final_snapshot = inputs.generation_snapshot()\n        if final_snapshot != initial_snapshot:\n            raise BuildGuardError("build inputs changed across the guarded xcodebuild window")\n        _verify_accepted_tracked_source_descriptors(accepted_source_manifest, watched)\n',
+              'post-build tracked descriptor verification',
+          )
+
+          guard = replace_once(
+              guard,
+              '    parser.add_argument("--identity-sources", required=True, type=Path)\n    parser.add_argument("command", nargs=argparse.REMAINDER)\n',
+              '    parser.add_argument("--identity-sources", required=True, type=Path)\n    parser.add_argument("--accepted-source-root", required=True, type=Path)\n    parser.add_argument("--accepted-source-sha", required=True)\n    parser.add_argument("command", nargs=argparse.REMAINDER)\n',
+              'accepted-source CLI arguments',
+          )
+          guard = replace_once(
+              guard,
+              '            generated_pods=root / "Pods",\n            generated_workspace=root / "NembraCapture.xcworkspace",\n',
+              '            generated_pods=root / "Pods",\n            generated_workspace=root / "NembraCapture.xcworkspace",\n            accepted_source_root=_lexical_absolute(args.accepted_source_root),\n            accepted_source_sha=args.accepted_source_sha,\n',
+              'accepted-source PrivateInputs construction',
+          )
+
+          installer = replace_once(
+              installer,
+              '    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \\\n    -- /usr/bin/xcodebuild \\\n',
+              '    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \\\n    --accepted-source-root "$ROOT" \\\n    --accepted-source-sha "$SOURCE_SHA" \\\n    -- /usr/bin/xcodebuild \\\n',
+              'field installer accepted-source custody arguments',
+          )
+
+          guard_path.write_text(guard)
+          installer_path.write_text(installer)
+          PY
+          python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          git diff --check
+          git rm .github/workflows/tmp-v14-capture-tracked-source-window-materialize-8b61c9.yml
+          git config user.name "nembra-swarm"
+          git config user.email "nembra-swarm@users.noreply.github.com"
+          git add Scripts/capture_tuya_private_input_build_guard.py scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          git commit -m "Bind accepted tracked source through field compiler window"
+          git push origin HEAD:repair/v14-field-installer-ignore-independent-sol-8b61c9-20260811
