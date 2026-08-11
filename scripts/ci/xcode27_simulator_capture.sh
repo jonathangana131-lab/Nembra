@@ -86,6 +86,7 @@ xcodebuild \
   -default-test-execution-time-allowance 120 \
   -maximum-test-execution-time-allowance 180 \
   -collect-test-diagnostics never \
+  -skip-testing:NembraUITests/NembraUITests/testLandscapeDashboardAccessibilityStoppedControlsUseTwoRows \
   CODE_SIGNING_ALLOWED=NO \
   ONLY_ACTIVE_ARCH=YES \
   test \
@@ -253,9 +254,10 @@ if ! set_accessibility_content_size; then
   exit 8
 fi
 
-# Accessibility acceptance must cover both riding and connected-stopped landscape.
-# The stopped rerun exercises all four 44-pt mode targets plus light/lock controls
-# under the same real system AX content size, retaining screenshots for inspection.
+# Accessibility acceptance covers riding, the confirmed stopped-control command flow,
+# and a dedicated AX-only geometry witness for the 2x2 mode layout. The normal full
+# suite explicitly skips that geometry-only test because its assertions are meaningful
+# only after the real system content-size switch below.
 set +e
 set -o pipefail
 xcodebuild \
@@ -271,6 +273,7 @@ xcodebuild \
   -collect-test-diagnostics never \
   -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \
   -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardStoppedControlsConfirmEveryModePersonality \
+  -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardAccessibilityStoppedControlsUseTwoRows \
   CODE_SIGNING_ALLOWED=NO \
   ONLY_ACTIVE_ARCH=YES \
   test \
