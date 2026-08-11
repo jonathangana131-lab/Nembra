@@ -9,12 +9,12 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T22:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:03:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:05:00Z",
   "leaseSeconds": 1800,
   "branch": "polish/v14-capture-root-first-fold-sol-1311jx-20260811",
   "pr": 2979,
   "sourceSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
-  "currentHeadSHA": "1f53b575fd5e3a43c31f25ff2fa001c0b87879e1",
+  "currentHeadSHA": "797d1e7abe9a4f4ba4c067f81ae671e2b0e5ec11",
   "takeoverFromWorkerId": "sol-20260811-gpt56-runtime-count",
   "takeoverReason": "Prior tests slot was RELEASED. Recover a non-conflicting Capture visual-evidence rung after human review proved exact run 31537417996's standard screenshot was blank despite workflow success. Fix only standalone visual evidence harness/tests/workflow wiring; do not alter Capture product/UI/BLE/signing/install/physical-authority bytes.",
   "ownedPaths": [
@@ -24,5 +24,5 @@
     "scripts/ci/tests/test_capture_standalone_visual_evidence.py",
     "scripts/ci/tests/test_capture_visual_png_content_guard.py"
   ],
-  "checkpoint": "At 1f53b575, guard + harness + synthetic regression exist and product bytes remain untouched. Source review found workflow wiring incomplete: helper/test paths were not pull_request triggers and the synthetic blank-vs-rendered/malformed test was not executed. Add those exact workflow hooks and require manifest readiness/guard-hash fields before trusting fresh exact-head visual evidence. PHYSICAL NO-GO."
+  "checkpoint": "Exact #2979 head 797d1e7a is validation-only ahead of product checkpoint ce9e2bac: five harness/workflow/test paths, zero product/UI/BLE/signing/install paths. The guard excludes top 1/8 status-bar region, requires >=0.2% non-dark app pixels (min 1024) across >=2 of 4 vertical bands, validates 8-bit RGB/RGBA PNG structure/CRC/filtering, and is bounded by screenshot polling. Calibration against rejected exact artifact 9119812244: standard blank => 0 non-dark vs 5185 required, 0 active bands => FAIL; AX5 => 347565 non-dark, 3 active bands => PASS. Workflow now executes synthetic status-only/rendered/corrupt regression, triggers on guard/test changes, verifies guard SHA in manifest, and always uploads diagnostics. Fresh exact runs: Visual 31539604864, Field 31539604799, Main 31539604830, Xcode 31539604844 are queued and NOT acceptance. Human comparison of accepted #2940 vs retained pre-semantic product screenshot confirms the intended standard first-fold materially improves density while pre-semantic AX5 is byte-identical to #2940; current exact screenshots still must be re-earned and inspected. PHYSICAL NO-GO."
 }
