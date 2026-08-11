@@ -8,6 +8,8 @@ on:
   pull_request:
     paths:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - .gitignore
+      - scripts/ci/es80_signed_field_artifact_private_runner.py
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraApp/Features/Research/TuyaAccountBridge.swift
       - NembraApp/Features/Research/ES80CaptureShellView.swift
@@ -88,9 +90,20 @@ jobs:
           procedure_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'
           bootstrap='Scripts/bootstrap_capture_tuya_sdk.sh'
           private_provenance='Scripts/capture_tuya_private_input_provenance.py'
+          private_device_runner='scripts/ci/es80_signed_field_artifact_private_runner.py'
+          ignore='.gitignore'
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
 
           bash -n "$installer"
+          test -f "$private_device_runner"
+          grep -Fq 'def read_private_identifier(' "$private_device_runner"
+          grep -Fq 'O_NOFOLLOW' "$private_device_runner"
+          grep -Fq 'O_DIRECTORY' "$private_device_runner"
+          grep -Fq 'dir_fd=parent_descriptor' "$private_device_runner"
+          grep -Fxq 'LocalSecrets/' "$ignore"
+          grep -Fxq 'Pods/' "$ignore"
+          grep -Fxq 'NembraCapture.xcworkspace/' "$ignore"
+          grep -Fxq 'Podfile.lock' "$ignore"
           grep -Fq 'EXPECTED_SOURCE_SHA="${1:-${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:-}}"' "$installer"
           grep -Fq 'SOURCE_SHA="$(git rev-parse HEAD | tr ' "$installer"
           grep -Fq '[[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]]' "$installer"

@@ -17,6 +17,37 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(!installer.contains("DEVICE_COUNT"))
     }
 
+    @Test("accepted source carries the hardened private intended-device reader")
+    func privateDeviceReaderExistsAndFailsClosed() throws {
+        let helper = try readRepositoryFile("scripts/ci/es80_signed_field_artifact_private_runner.py")
+
+        #expect(helper.contains("def read_private_identifier(path: Path, repository_root: Path) -> str"))
+        #expect(helper.contains("O_NOFOLLOW"))
+        #expect(helper.contains("O_DIRECTORY"))
+        #expect(helper.contains("dir_fd=parent_descriptor"))
+        #expect(helper.contains("must live outside the Nembra repository"))
+        #expect(helper.contains("stat.S_ISREG"))
+        #expect(helper.contains("metadata.st_mode & 0o077"))
+        #expect(helper.contains("metadata.st_uid != os.geteuid()"))
+        #expect(helper.contains("metadata.st_nlink != 1"))
+        #expect(helper.contains("_stable_file_identity(final_metadata) != _stable_file_identity(metadata)"))
+        #expect(helper.contains("value != value.strip()"))
+        #expect(helper.contains("value in os.fspath(path)"))
+    }
+
+    @Test("private build outputs are narrowly ignored while arbitrary untracked state remains rejected")
+    func generatedPrivateWorkspaceDoesNotTripAcceptedSourceGuard() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+        let ignore = try readRepositoryFile(".gitignore")
+
+        for expected in ["LocalSecrets/", "Pods/", "NembraCapture.xcworkspace/", "Podfile.lock"] {
+            #expect(ignore.split(separator: "\n").contains(Substring(expected)))
+        }
+        #expect(installer.components(separatedBy: "git status --porcelain=v1 --untracked-files=all").count >= 3)
+        #expect(installer.contains("Private workspace bootstrap changed tracked or unignored accepted-source inputs"))
+        #expect(installer.contains("Accepted-source inputs changed while the field build was compiling"))
+    }
+
     @Test("connected-device discovery must match the private intended iPhone exactly once")
     func arbitraryConnectedIPhoneCannotBecomeTheFieldDevice() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
