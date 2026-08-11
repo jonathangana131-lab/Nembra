@@ -4,13 +4,15 @@ import Testing
 
 @Suite("Capture private Tuya field-input provenance")
 struct TuyaPrivateFieldInputProvenanceSourceTests {
-    @Test("bootstrap snapshots every ignored private build input")
+    @Test("bootstrap snapshots every ignored private build input through accepted helper custody")
     func bootstrapOwnsExactPrivateInputSnapshot() throws {
         let bootstrap = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
         #expect(bootstrap.contains("capture_tuya_private_input_provenance.py"))
-        #expect(bootstrap.contains("\"$PROVENANCE_HELPER\" snapshot"))
+        #expect(bootstrap.contains("NEMBRA_CAPTURE_ACCEPTED_PROVENANCE_HELPER_SHA256"))
+        #expect(bootstrap.contains("/usr/bin/python3 -I - \"$helper_path\" \"$expected_sha256\" \"$@\""))
+        #expect(bootstrap.contains("run_accepted_python_helper \"$PROVENANCE_HELPER\" \"$PROVENANCE_HELPER_SHA256\" snapshot"))
         #expect(bootstrap.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(bootstrap.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
         #expect(bootstrap.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))
