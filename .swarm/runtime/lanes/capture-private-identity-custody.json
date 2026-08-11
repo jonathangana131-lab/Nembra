@@ -4,16 +4,16 @@
   "laneId": "capture-private-identity-custody",
   "epic": "capture",
   "title": "Capture private Tuya identity publication custody",
-  "objective": "Close credential-bearing private identity publication races while preserving admitted-root authority, exact writer digest fencing, secure cleanup, and package/field contracts before composition.",
+  "objective": "Close credential-bearing private identity publication races while preserving admitted-root authority, exact writer digest fencing, secure cleanup, pathname identity, and package/field contracts before composition.",
   "priority": 1,
   "state": "BLOCKED_EXTERNAL",
   "dependencies": [],
   "blockers": [
     {
-      "id": "recovery-pr-active-terminal-red-byte-and-rename-custody",
+      "id": "recovery-pr-active-terminal-red-byte-and-name-custody",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Recovery #2858 exact cb72a47ee2489235febd40ac440bc9f8462ba432 correctly closes pre-check staging-name regular/directory/symlink substitution and its narrowed four-case Publication Races run 31475822468 is SUCCESS. Two exact adversarial children now terminal-prove the remaining custody seams: #2861 exact d29a3dc6e2d1c5db3e0661a415e619134c4a5587 has Same Inode Payload Current Red Team run 31476127075 FAILURE, proving equal-length attacker bytes can overwrite the already-sealed inode while dev/ino/link/size remain accepted because final bytes are never rebound to intended payload. #2860 exact f8e9c71f0a78484de1fc8a1dacc38c112a7a2a37 has Publication Races run 31476086128 FAILURE, proving a same-UID source-name substitution can occur after `_require_sealed_staging_name()` returns but before rename resolves the pathname; later inode rejection leaves attacker bytes at the canonical destination because cleanup still targets the vanished temporary name. Do not weaken either red regression. Production must bind published bytes to the intended payload with stable descriptor metadata and close the post-check/pre-rename source/final-destination custody seam without blindly deleting unrelated preexisting/attacker state. #2858 Xcode is skipped, Selective Graft red, Field non-terminal; its green narrowed gate is ingredient evidence only.",
+      "reason": "Recovery #2858 exact cb72a47ee2489235febd40ac440bc9f8462ba432 correctly closes pre-check staging-name regular/directory/symlink substitution and its narrowed four-case Publication Races run 31475822468 is SUCCESS, but two distinct terminal-red threat classes remain. #2861 exact d29a3dc6e2d1c5db3e0661a415e619134c4a5587 has Same Inode Payload Current run 31476127075 FAILURE, proving equal-length attacker bytes can overwrite the already-sealed inode while dev/ino/link/size remain accepted because final bytes are never rebound to intended payload. Comprehensive pathname child #2868 exact d7c989d297856a5ae222a257120ee09d0ee27361 has Publication Name Binding run 31476481306 FAILURE and independently proves BOTH name re-resolution windows: source name can be swapped after the sealed-name check but before rename, and destination name can be swapped after verified final open but before success while the held descriptor still looks legitimate. A successful return therefore can coexist with attacker bytes at the credential pathname, and a rejected source substitution can leave attacker bytes there because cleanup targets the vanished temporary name. Production must bind payload bytes plus canonical destination-name identity through publication, and safely remove/quarantine only the exact inode published by this operation without blindly deleting unrelated prior/attacker state. Do not weaken either #2861 or #2868. #2858's green narrowed gate is ingredient evidence only.",
       "pr": 2858,
       "headSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432"
     },
@@ -29,7 +29,7 @@
       "id": "field-self-test-portability",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Inherited Field Build Provenance previously reached the private writer self-test on macOS and failed because trusted temporary `/var` ancestry can traverse the platform `/var -> /private/var` symlink while absolute no-follow root admission rejects it. Fix only the trusted self-test root/canonicalization path; do not weaken production admitted-checkout no-symlink custody. Revalidate on the eventual moved exact recovery after writer bytes, digest, and package contracts stabilize.",
+      "reason": "Inherited Field Build Provenance previously reached the private writer self-test on macOS and failed because trusted temporary `/var` ancestry can traverse the platform `/var -> /private/var` symlink while absolute no-follow root admission rejects it. Fix only the trusted self-test root/canonicalization path; do not weaken production admitted-checkout no-symlink custody. Revalidate on the eventual moved exact recovery after writer bytes, destination-name authority, digest, and package contracts stabilize.",
       "pr": 2858,
       "headSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432"
     }
@@ -58,10 +58,11 @@
     "primaryPR": 2858,
     "primaryHeadSHA": "cb72a47ee2489235febd40ac440bc9f8462ba432",
     "supersededPrimaryPR": 2755,
-    "lineagePRs": [2719,2733,2734,2755,2767,2858,2860,2861],
-    "redTeamPRs": [2860,2861],
-    "exactHeadGateState": "NARROW_GREEN_BUT_TWO_EXACT_TERMINAL_RED_PUBLICATION_ATTACKS_GRAFT_RED_XCODE_SKIPPED_FIELD_NONTERMINAL",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:07Z. #2858 is not private-identity closure: #2861 terminal-red proves same-inode equal-length payload mutation, and #2860 terminal-red proves post-check/pre-rename source substitution plus contaminated final-path residue. #2733 root-before-writer regression remains uncomposed; macOS self-test canonical-path portability remains separate Field debt. Final accepted successor must close all three security contracts, settle exact writer digest/package source contracts, and rerun publication/Field/Graft/Xcode on one unchanged clean head. PHYSICAL NO-GO remains."
+    "lineagePRs": [2719,2733,2734,2755,2767,2858,2860,2861,2864,2868],
+    "selectedRedTeamPRs": [2861,2868],
+    "closedDuplicateRedTeamPR": 2864,
+    "exactHeadGateState": "NARROW_GREEN_BUT_SAME_INODE_AND_TWO_NAME_BINDING_ATTACKS_TERMINAL_RED",
+    "knownExactHeadFinding": "Reconciled 2026-08-11T09:14Z. #2861 terminal-red is the selected same-inode equal-length payload attack. #2868 terminal-red consolidates and expands pathname re-resolution evidence to both source-after-check and destination-after-open swaps. #2864 is already closed duplicate PR soup; #2860 is fully subsumed by #2868's source-name case and may be retired once no active owner depends on it. #2733 root-before-writer regression remains uncomposed; macOS self-test canonical-path portability remains separate Field debt. Final accepted successor must close byte authority, source+destination name authority/cleanup, ordering regression, and self-test portability, settle writer digest/package source contracts, then rerun publication/Field/Graft/Xcode on one unchanged clean head. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "private-identity", "publication-custody", "legacy-import"]
 }
