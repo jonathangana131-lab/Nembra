@@ -5,6 +5,7 @@ on:
     paths:
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_cocoapods_generated_build_subject.py
+      - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
       - .github/workflows/capture-cocoapods-build-subject-redteam.yml
   push:
@@ -40,6 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 -m py_compile Scripts/capture_cocoapods_generated_build_subject.py
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
           /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
 
