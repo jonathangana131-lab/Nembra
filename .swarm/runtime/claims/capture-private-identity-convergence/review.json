@@ -9,12 +9,13 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:31:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:31:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:40:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2993,
   "sourceSHA": "3b8e2182de2275a1c8b858ff8b3b614061582457",
   "currentHeadSHA": "34091153f8bb4f9b024553ca628145bdec873e1e",
   "takeoverFromWorkerId": "sol-20260811-0458-go-axcompile",
-  "takeoverReason": "Generation-3 review is released and stale. Fresh primary exact 34091153 is frozen after dependency-resolution adapter/source assertion repairs and requests independent review. Review only the six-path convergence delta and exact gate evidence; do not mutate primary paths. Preserve separation from #2977 sanitation and build-authority composition. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-3 review is released and stale. Fresh primary exact 34091153 is frozen after dependency-resolution adapter/source assertion repairs and requests independent review. Review only the six-path convergence delta and exact gate evidence; do not mutate primary paths. Preserve separation from #2977 sanitation and build-authority composition. PHYSICAL NO-GO.",
+  "checkpoint": "Independent six-path source attack finds no blocker: ancestry descriptors are O_NOFOLLOW-opened, cwd↔checkout inode bound, directory identities re-proved after watcher registration, and canonical input guard still owns full mutation watchers plus generation snapshots. PR review records conditional source acceptance only. Exact Private 31537824306 is green; exact Field 31537824462 and Main 31537824338 remain queued, so no acceptance promotion yet. #2977 sanitation and final build-authority composition remain separate. PHYSICAL NO-GO."
 }
