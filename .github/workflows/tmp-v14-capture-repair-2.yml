@@ -1,0 +1,111 @@
+name: tmp-v14-capture-repair-2
+on:
+  push:
+    branches:
+      - agent/v14-capture-final-transport-bytecode-sol
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "jonathangana131-lab/Nembra"
+          test "$GITHUB_REF_NAME" = "agent/v14-capture-final-transport-bytecode-sol"
+          python3 - <<'PY'
+          from pathlib import Path
+          installer_path = Path('scripts/field/install_one_time_capture.command')
+          installer = installer_path.read_text()
+          old = '/usr/bin/python3 -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          new = '/usr/bin/python3 -B -I - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT"'
+          assert installer.count(old) == 1
+          installer_path.write_text(installer.replace(old, new, 1))
+
+          bridge_path = Path('NembraApp/Features/Research/TuyaAccountBridge.swift')
+          bridge = bridge_path.read_text()
+          old = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpoint = rawEndpoint.hasPrefix("http") ? rawEndpoint : "https://\\(rawEndpoint)"
+          '''
+          new = '''            let rawEndpoint = result["endpoint"] as? String ?? ""
+                      let endpointCandidate = rawEndpoint.contains("://") ? rawEndpoint : "https://\\(rawEndpoint)"
+                      guard let endpointURL = URL(string: endpointCandidate),
+                            endpointURL.scheme?.lowercased() == "https",
+                            let endpointHost = endpointURL.host,
+                            !endpointHost.isEmpty else {
+                          throw BridgeError.malformed("Tuya approval returned an invalid secure API endpoint.")
+                      }
+                      let endpoint = endpointURL.absoluteString
+          '''
+          assert bridge.count(old) == 1
+          bridge = bridge.replace(old, new, 1)
+          old = '        let (data, response) = try await URLSession.shared.data(for: request)'
+          new = '''        guard let requestURL = request.url,
+                requestURL.scheme?.lowercased() == "https",
+                let requestHost = requestURL.host,
+                !requestHost.isEmpty else {
+              throw BridgeError.invalidURL
+          }
+          let (data, response) = try await URLSession.shared.data(for: request)'''
+          assert bridge.count(old) == 1
+          bridge_path.write_text(bridge.replace(old, new, 1))
+
+          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAccountEndpointTransportSourceTests.swift')
+          test_path.write_text('''import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          @Suite("Tuya account endpoint transport source contract")
+          struct TuyaAccountEndpointTransportSourceTests {
+              @Test("server-selected account endpoint is HTTPS-only")
+              func serverSelectedEndpointRequiresHTTPS() throws {
+                  let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+                  #expect(!bridge.contains("rawEndpoint.hasPrefix(\\\"http\\\")"))
+                  #expect(bridge.contains("endpointURL.scheme?.lowercased() == \\\"https\\\""))
+                  #expect(bridge.contains("let endpointHost = endpointURL.host"))
+                  #expect(bridge.contains("requestURL.scheme?.lowercased() == \\\"https\\\""))
+              }
+
+              @Test("private reader import suppresses Python bytecode")
+              func installerPrivateReaderImportIsBytecodeFree() throws {
+                  let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+                  #expect(installer.contains("/usr/bin/python3 -B -I - \\\"$PRIVATE_DEVICE_RUNNER\\\""))
+                  #expect(!installer.contains("/usr/bin/python3 -I - \\\"$PRIVATE_DEVICE_RUNNER\\\""))
+              }
+
+              private func readRepositoryFile(_ relativePath: String) throws -> String {
+                  let repositoryRoot = URL(fileURLWithPath: #filePath)
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                      .deletingLastPathComponent()
+                  return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+              }
+          }
+          '''.replace('          ', ''))
+          PY
+          bash -n scripts/field/install_one_time_capture.command
+          grep -Fq '/usr/bin/python3 -B -I - "$PRIVATE_DEVICE_RUNNER"' scripts/field/install_one_time_capture.command
+          ! grep -Fq 'rawEndpoint.hasPrefix("http")' NembraApp/Features/Research/TuyaAccountBridge.swift
+          grep -Fq 'endpointURL.scheme?.lowercased() == "https"' NembraApp/Features/Research/TuyaAccountBridge.swift
+          grep -Fq 'requestURL.scheme?.lowercased() == "https"' NembraApp/Features/Research/TuyaAccountBridge.swift
+          git diff --check
+      - name: Commit and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-capture-final-transport-bytecode-sol.yml
+          rm -f .github/workflows/tmp-v14-capture-repair-2.yml
+          git config user.name nembra-v14-bot
+          git config user.email nembra-v14-bot@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(capture): close HTTPS and bytecode blockers'
+          git push origin "HEAD:$GITHUB_REF_NAME"
