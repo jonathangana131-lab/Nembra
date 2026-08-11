@@ -16,8 +16,10 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(body.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
         #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
         #expect(body.contains("buildIdentity.isAuthoritativeFieldBuild"))
-        #expect(body.contains("Text(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
-        #expect(body.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
+        #expect(body.contains("isAccessibilityLayout ? \"Physical lock\" : \"Physical capture locked\""))
+        #expect(body.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
+        #expect(body.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
+        #expect(body.contains("Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."))
         #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
         #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
 
@@ -35,14 +37,15 @@ struct CaptureP0RootVisualAcceptanceTests {
         ))
 
         #expect(root.contains("private var isAccessibilityLayout: Bool"))
-        #expect(root.contains("if !dynamicTypeSize.isAccessibilitySize"))
-        #expect(root.contains("fieldBuildIsAuthoritative ? \"Prepare Capture\" : \"Capture locked\""))
-        #expect(root.contains("Account setup only in this public build."))
-        #expect(root.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())"))
-        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
-        #expect(root.contains("Text(\"Tuya Smart user code\")"))
-        #expect(root.contains("TextField(\"Paste user code\""))
-        #expect(root.contains(".accessibilityLabel(\"Tuya Smart user code\")"))
+        #expect(root.contains("private var rootHero: some View"))
+        #expect(root.contains("if !isAccessibilityLayout"))
+        #expect(root.contains("isAccessibilityLayout ? \"Physical lock\" : \"Physical capture locked\""))
+        #expect(root.contains(".font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)"))
+        #expect(root.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
+        #expect(root.contains("isAccessibilityLayout ? \"Account setup\" : \"Prepare account metadata\""))
+        #expect(root.contains("TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
+        #expect(root.contains("Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
+        #expect(root.contains(".accessibilityLabel(\"Create approval QR\")"))
         #expect(root.contains(".accessibilityIdentifier(\"nembra.capture.root.account-link-action\")"))
         #expect(root.contains(".accessibilityIdentifier(\"capture.p0-root\")"))
         #expect(root.contains("private func rootSection"))
@@ -53,13 +56,17 @@ struct CaptureP0RootVisualAcceptanceTests {
             from: "private var accountSetupPanel: some View",
             to: "private var statusText: some View"
         ))
-        let field = try #require(panel.range(of: "TextField(\"Paste user code\""))
-        let action = try #require(panel.range(of: "Label(\"Create approval QR\", systemImage: \"qrcode\")"))
+        let field = try #require(panel.range(of: "TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
+        let action = try #require(panel.range(of: "Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
         let accessibilitySupport = try #require(
-            panel.range(of: "if isAccessibilityLayout {", range: action.upperBound..<panel.endIndex)
+            panel.range(
+                of: "if isAccessibilityLayout, tuya.phase != .needsUserCode",
+                range: action.upperBound..<panel.endIndex
+            )
         )
         #expect(field.lowerBound < action.lowerBound)
         #expect(action.lowerBound < accessibilitySupport.lowerBound)
+        #expect(!panel.contains("Account setup only in this public build."))
 
         let authority = String(try section(
             in: root,
@@ -67,7 +74,8 @@ struct CaptureP0RootVisualAcceptanceTests {
             to: "private var accountSetupPanel: some View"
         ))
         #expect(authority.contains("if !isAccessibilityLayout"))
-        #expect(authority.contains("This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence."))
+        #expect(authority.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
+        #expect(authority.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
     }
 
     @Test("Accessibility action remains full-width and precedes verbose status")
@@ -79,15 +87,15 @@ struct CaptureP0RootVisualAcceptanceTests {
             to: "private var statusText: some View"
         ))
 
-        let standardBranch = try #require(panel.range(of: "if !isAccessibilityLayout {"))
-        let field = try #require(panel.range(of: "TextField(\"Paste user code\""))
-        let action = try #require(panel.range(of: "Label(\"Create approval QR\", systemImage: \"qrcode\")"))
+        let standardSupport = try #require(panel.range(of: "This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
+        let field = try #require(panel.range(of: "TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
+        let action = try #require(panel.range(of: "Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
         let standardStatus = try #require(panel.range(
             of: "statusText",
-            range: standardBranch.upperBound..<field.lowerBound
+            range: standardSupport.upperBound..<field.lowerBound
         ))
         let accessibilityBranch = try #require(panel.range(
-            of: "if isAccessibilityLayout {",
+            of: "if isAccessibilityLayout, tuya.phase != .needsUserCode",
             range: action.upperBound..<panel.endIndex
         ))
         let accessibilityStatus = try #require(panel.range(
@@ -101,6 +109,7 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(accessibilityBranch.lowerBound < accessibilityStatus.lowerBound)
         #expect(panel.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
         #expect(panel.contains(".tint(.cyan)"))
+        #expect(panel.contains(".accessibilityLabel(\"Create approval QR\")"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
