@@ -7,13 +7,14 @@
   "workerId": "sol-20260811-f4c2e7",
   "leaseId": "reconcapture-f4c2e7-20260811-1203",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T12:03:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:03:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:10:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
   "takeoverFromWorkerId": "sol-20260811-f4c2e7",
-  "takeoverReason": "generation-5 reconciliation was intentionally released after first pass; live signed-install #2911 moved to a stronger exact head immediately afterward, so resume reconciliation to keep authoritative lane state current while production/test/review slots remain occupied"
+  "takeoverReason": "generation-5 reconciliation was intentionally released after first pass; live signed-install #2911 moved to a stronger exact head immediately afterward, so resume reconciliation to keep authoritative lane state current while production/test/review slots remain occupied",
+  "checkpoint": "Second reconciliation pass advanced signed-install #2911 to exact 83110a6 Field+Graft green/Xcode running, corrected flagship #2891 current 86928ed as temporary self-mutating compile-repair staging rather than acceptance, and preserved newer build-authority expected-red #2913/#2915/#2917 findings. PHYSICAL NO-GO."
 }
