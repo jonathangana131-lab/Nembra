@@ -8,7 +8,7 @@ on:
       - .github/workflows/tmp-v14-capture-field-compiler-window-sol.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   materialize:
@@ -25,7 +25,7 @@ jobs:
           set -euo pipefail
           git merge-base --is-ancestor 2d2b1197eab18570195532a1d401756d5c9582d2 HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-      - name: Keep temporary workflow outside materialized commit
+      - name: Keep temporary workflow outside materialized bytes
         shell: bash
         run: |
           /usr/bin/python3 - <<'PY'
@@ -37,32 +37,19 @@ jobs:
               raise SystemExit('unexpected workflow cleanup marker count')
           path.write_text(text.replace(marker, '', 1), encoding='utf-8')
           PY
-      - name: Compile materializer
-        shell: bash
-        run: /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_field_compiler_window_sol.py
-      - name: Apply materializer
-        shell: bash
-        run: /usr/bin/python3 scripts/ci/tmp_materialize_field_compiler_window_sol.py
-      - name: Verify temporary script cleanup
+      - name: Materialize validated authority repair
         shell: bash
         run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tmp_materialize_field_compiler_window_sol.py
+          /usr/bin/python3 scripts/ci/tmp_materialize_field_compiler_window_sol.py
           test -e .github/workflows/tmp-v14-capture-field-compiler-window-sol.yml
           test ! -e scripts/ci/tmp_materialize_field_compiler_window_sol.py
-      - name: Verify installer shell syntax
-        shell: bash
-        run: bash -n scripts/field/install_one_time_capture.command
-      - name: Verify guard Python syntax
-        shell: bash
-        run: /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
-      - name: Run field Git-authority regression
-        shell: bash
-        run: /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
-      - name: Run provenance package regression
-        shell: bash
-        run: /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
-      - name: Normalize generated whitespace
-        shell: bash
-        run: |
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_installer_git_authority_red_team.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          rm -rf scripts/ci/__pycache__ scripts/ci/tests/__pycache__ Scripts/__pycache__
           /usr/bin/python3 - <<'PY'
           from pathlib import Path
           for raw in (
@@ -75,75 +62,22 @@ jobs:
               text = path.read_text(encoding='utf-8')
               path.write_text('\n'.join(line.rstrip() for line in text.splitlines()) + '\n', encoding='utf-8')
           PY
-      - name: Verify diff hygiene
-        shell: bash
-        run: |
-          rm -rf scripts/ci/__pycache__ scripts/ci/tests/__pycache__ Scripts/__pycache__
           git diff --check
-      - name: Create validated remote Git commit object
+      - name: Assemble exact validated output
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EXPECTED_PARENT: ${{ github.sha }}
-          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          /usr/bin/python3 - <<'PY'
-          import base64
-          import json
-          import os
-          from pathlib import Path
-          import subprocess
-          import urllib.request
-
-          repository = os.environ['REPOSITORY']
-          token = os.environ['GH_TOKEN']
-          parent = os.environ['EXPECTED_PARENT']
-          observed = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-          if observed != parent:
-              raise SystemExit('checkout moved before Git-object publication')
-          base_tree = subprocess.check_output(['git', 'rev-parse', f'{parent}^{{tree}}'], text=True).strip()
-
-          def api(path: str, payload: dict) -> dict:
-              request = urllib.request.Request(
-                  f'https://api.github.com/repos/{repository}{path}',
-                  data=json.dumps(payload).encode('utf-8'),
-                  headers={
-                      'Authorization': f'Bearer {token}',
-                      'Accept': 'application/vnd.github+json',
-                      'X-GitHub-Api-Version': '2022-11-28',
-                      'Content-Type': 'application/json',
-                  },
-                  method='POST',
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)
-
-          changed = (
-              'Scripts/capture_tuya_private_input_build_guard.py',
-              'scripts/field/install_one_time_capture.command',
-              'scripts/ci/tests/test_capture_tuya_private_input_provenance.py',
-              '.github/workflows/capture-field-build-provenance.yml',
-          )
-          entries = []
-          for raw in changed:
-              path = Path(raw)
-              mode = subprocess.check_output(['git', 'ls-tree', parent, '--', raw], text=True).split(None, 1)[0]
-              payload = base64.b64encode(path.read_bytes()).decode('ascii')
-              blob = api('/git/blobs', {'content': payload, 'encoding': 'base64'})
-              entries.append({'path': raw, 'mode': mode, 'type': 'blob', 'sha': blob['sha']})
-          entries.append({
-              'path': 'scripts/ci/tmp_materialize_field_compiler_window_sol.py',
-              'mode': '100644',
-              'type': 'blob',
-              'sha': None,
-          })
-          tree = api('/git/trees', {'base_tree': base_tree, 'tree': entries})
-          commit = api('/git/commits', {
-              'message': 'Capture: bind tracked source through compiler window',
-              'tree': tree['sha'],
-              'parents': [parent],
-          })
-          sha = commit['sha']
-          print(f'::notice title=Materialized Capture commit::{sha}')
-          PY
+          rm -rf materialized-output
+          mkdir -p materialized-output/Scripts materialized-output/scripts/field materialized-output/scripts/ci/tests materialized-output/.github/workflows
+          cp Scripts/capture_tuya_private_input_build_guard.py materialized-output/Scripts/
+          cp scripts/field/install_one_time_capture.command materialized-output/scripts/field/
+          cp scripts/ci/tests/test_capture_tuya_private_input_provenance.py materialized-output/scripts/ci/tests/
+          cp .github/workflows/capture-field-build-provenance.yml materialized-output/.github/workflows/
+          (cd materialized-output && sha256sum Scripts/capture_tuya_private_input_build_guard.py scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_tuya_private_input_provenance.py .github/workflows/capture-field-build-provenance.yml > SHA256SUMS)
+      - name: Upload exact validated output
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-field-compiler-window-${{ github.sha }}
+          path: materialized-output
+          if-no-files-found: error
+          retention-days: 1
