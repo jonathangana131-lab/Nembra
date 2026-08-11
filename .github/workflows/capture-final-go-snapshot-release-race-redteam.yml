@@ -1,0 +1,64 @@
+name: Capture Final GO Snapshot Release Race Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v14-final-go-snapshot-release-race-sol-s4f9-20260811
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_es80_final_go_snapshot_release_race_red_team.py
+      - .github/workflows/capture-final-go-snapshot-release-race-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot-release-race:
+    name: Prove descriptor snapshot release gap
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact attacked parent and validation-only scope
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXACT_PARENT_SHA: bf541121cde85bad271ce6c6ab0e6a2047dd4e4f
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PARENT_SHA" HEAD)" = "$EXACT_PARENT_SHA"
+          mapfile -t changed < <(git diff --name-only "$EXACT_PARENT_SHA"...HEAD | sort)
+          expected=(
+            .github/workflows/capture-final-go-snapshot-release-race-redteam.yml
+            scripts/ci/tests/test_es80_final_go_snapshot_release_race_red_team.py
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#changed[@]}" -eq "${#expected_sorted[@]}"
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile release-race witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_es80_final_go_snapshot_release_race_red_team.py
+
+      - name: Reproduce final descriptor-snapshot release race
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_snapshot_release_race_red_team.py
+
+      - name: Preserve validation-only hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          find scripts/ci -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
