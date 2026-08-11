@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "083700-dashboard-2817-final-head-review-request",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260811-ui0052",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Final exact-head independent review requested for Dashboard PR #2817 at f3c166edffd385103d64ae02651d9acea6e67304. Authority repair itself is unchanged from independently cleared 28c7e886, but final head additionally composes child #2833 external-client compile regression and adds a mandatory real CoreSimulator accessibility content-size landscape rerun with xcresult/attachment export. Review must bind to f3c166ed, verify no raw external Simulator authority mint is reintroduced, inspect the capture harness for truthful fail-closed Dynamic Type evidence, and require actual exact-head screenshots before visual acceptance. Ancestor review/CI must not be promoted. Physical ES80 power/current and Capture GO remain out of scope/NO-GO.",
+  "createdAt": "2026-08-11T08:37:00Z",
+  "data": {
+    "pr": 2817,
+    "headSHA": "f3c166edffd385103d64ae02651d9acea6e67304",
+    "authorityClearedAncestorSHA": "28c7e886f1152ab92a673029b4a1e966f2610e01",
+    "composedChildPR": 2833,
+    "composedChildHeadSHA": "f9250b38facff51e79e324934b3c6f2a936fd18a",
+    "accessibilityCaptureCommit": "dd9b586a8a8491bd626eb51dd805d682f2e98f61",
+    "requiredIndependentWorker": true
+  }
+}
