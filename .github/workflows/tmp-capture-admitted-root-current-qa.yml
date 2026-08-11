@@ -1,0 +1,63 @@
+name: Temporary Capture Admitted Root Current QA
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-admitted-root-current-sol
+    paths:
+      - .github/workflows/tmp-capture-admitted-root-current-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  mechanics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-admitted-root-current-sol
+          fetch-depth: 0
+      - name: Bind workflow-only child
+        shell: bash
+        env:
+          PRODUCT_HEAD: c6593e8c04f5453c63a6b209c88f1e3997c9e859
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-capture-admitted-root-current-qa.yml'
+          git diff --check "$PRODUCT_HEAD" HEAD
+      - name: Run admitted-root security regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
+          /usr/bin/python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          test "$(sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}')" = '920e4c416fdf71909bdafecf6e69ed8b76986b87462efee979fc1fe01106be34'
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py
+
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-admitted-root-current-sol
+          fetch-depth: 0
+      - name: Bind workflow-only child
+        shell: bash
+        env:
+          PRODUCT_HEAD: c6593e8c04f5453c63a6b209c88f1e3997c9e859
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-capture-admitted-root-current-qa.yml'
+          git diff --check "$PRODUCT_HEAD" HEAD
+      - name: Run Capture package warnings-as-errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd Packages/NembraBluetoothCapture
+          swift test -Xswiftc -warnings-as-errors
