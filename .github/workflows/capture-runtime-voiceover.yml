@@ -155,23 +155,49 @@ jobs:
           set -euo pipefail
           result="$RUNNER_TEMP/CaptureRuntimeVoiceOver.xcresult"
           tests_json="$RUNNER_TEMP/CaptureRuntimeVoiceOver.tests.json"
+          legacy_json="$RUNNER_TEMP/CaptureRuntimeVoiceOver.legacy-root.json"
+          count_txt="$RUNNER_TEMP/CaptureRuntimeVoiceOver.executed-test-count.txt"
           test -d "$result"
 
-          # Extract on both green and red. The prior xcodebuild step keeps any
-          # runtime failure red, while this step preserves whether the exact
-          # targeted XCTest actually executed instead of losing that fact.
+          # Keep the modern structured test listing for exact target identity.
           xcrun xcresulttool get test-results tests \
             --path "$result" \
             --compact > "$tests_json"
 
-          /usr/bin/python3 - "$tests_json" <<'PY'
+          # Xcode 27 beta 4's retained xcresult root exposes ResultMetrics.testsCount.
+          # Apple keeps the deprecated object API behind --legacy. Use it only to
+          # prove the explicit nonzero execution count that #2973's acceptance
+          # contract requires; modern test-results output remains the identity proof.
+          xcrun xcresulttool get object --legacy \
+            --path "$result" \
+            --format json > "$legacy_json"
+
+          /usr/bin/python3 - "$tests_json" "$legacy_json" "$count_txt" <<'PY'
           import json
           import sys
 
-          path = sys.argv[1]
+          tests_path, legacy_path, count_path = sys.argv[1:]
           needle = "testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit"
-          with open(path, "r", encoding="utf-8") as handle:
-              document = json.load(handle)
+
+          with open(tests_path, "r", encoding="utf-8") as handle:
+              tests_document = json.load(handle)
+          with open(legacy_path, "r", encoding="utf-8") as handle:
+              legacy_document = json.load(handle)
+
+          try:
+              raw_count = legacy_document["metrics"]["testsCount"]["_value"]
+              executed_count = int(raw_count)
+          except (KeyError, TypeError, ValueError) as error:
+              raise SystemExit(
+                  "Runtime accessibility acceptance could not read exact root "
+                  f"ResultMetrics.testsCount from retained xcresult: {error}"
+              )
+
+          if executed_count <= 0:
+              raise SystemExit(
+                  "Runtime accessibility acceptance requires testsCount > 0; "
+                  f"retained xcresult reports {executed_count}."
+              )
 
           strings = []
           def walk(value):
@@ -184,15 +210,21 @@ jobs:
               elif isinstance(value, str):
                   strings.append(value)
 
-          walk(document)
+          walk(tests_document)
           matches = [value for value in strings if needle in value]
           if not matches:
               raise SystemExit(
-                  "Runtime accessibility acceptance requires retained xcresult "
-                  "evidence for the targeted VoiceOver test; no executed test "
+                  "Runtime accessibility acceptance requires retained modern "
+                  "test-results evidence for the targeted VoiceOver test; no "
                   f"identifier containing {needle!r} was found."
               )
-          print(f"targeted VoiceOver xcresult entries: {len(matches)}")
+
+          with open(count_path, "w", encoding="utf-8") as handle:
+              handle.write(f"{executed_count}\n")
+          print(
+              f"xcresult testsCount={executed_count}; targeted VoiceOver "
+              f"entries={len(matches)}"
+          )
           PY
 
       - name: Seal runtime accessibility evidence manifest
@@ -207,20 +239,40 @@ jobs:
           product_parent="${NEMBRA_RUNTIME_AX_PRODUCT_PARENT:-005b7c4aaf27fabb442a65599b4538ebcc09ae27}"
           runtime="${NEMBRA_RUNTIME_AX_RUNTIME:-unavailable}"
           tests_json="$RUNNER_TEMP/CaptureRuntimeVoiceOver.tests.json"
+          legacy_json="$RUNNER_TEMP/CaptureRuntimeVoiceOver.legacy-root.json"
+          count_txt="$RUNNER_TEMP/CaptureRuntimeVoiceOver.executed-test-count.txt"
           toolchain="$RUNNER_TEMP/CaptureRuntimeVoiceOver.toolchain.txt"
           tests_sha="unavailable"
+          legacy_sha="unavailable"
+          count_sha="unavailable"
           toolchain_sha="unavailable"
+          executed_count="unavailable"
           if [[ -f "$tests_json" ]]; then
             tests_sha="$(shasum -a 256 "$tests_json" | awk '{print $1}')"
             cp "$tests_json" "$evidence/CaptureRuntimeVoiceOver.tests.json"
+          fi
+          if [[ -f "$legacy_json" ]]; then
+            legacy_sha="$(shasum -a 256 "$legacy_json" | awk '{print $1}')"
+            cp "$legacy_json" "$evidence/CaptureRuntimeVoiceOver.legacy-root.json"
+          fi
+          if [[ -f "$count_txt" ]]; then
+            count_sha="$(shasum -a 256 "$count_txt" | awk '{print $1}')"
+            executed_count="$(tr -d '[:space:]' < "$count_txt")"
+            cp "$count_txt" "$evidence/CaptureRuntimeVoiceOver.executed-test-count.txt"
           fi
           if [[ -f "$toolchain" ]]; then
             toolchain_sha="$(shasum -a 256 "$toolchain" | awk '{print $1}')"
             cp "$toolchain" "$evidence/CaptureRuntimeVoiceOver.toolchain.txt"
           fi
-          /usr/bin/python3 - "$evidence/manifest.json" "$source_sha" "$product_parent" "$runtime" "$snippet_sha" "$tests_sha" "$toolchain_sha" <<'PY'
+          /usr/bin/python3 - "$evidence/manifest.json" "$source_sha" "$product_parent" "$runtime" "$snippet_sha" "$tests_sha" "$legacy_sha" "$count_sha" "$toolchain_sha" "$executed_count" <<'PY'
           import json,sys
-          path,source,parent,runtime,snippet,tests_sha,toolchain_sha=sys.argv[1:]
+          path,source,parent,runtime,snippet,tests_sha,legacy_sha,count_sha,toolchain_sha,executed_count=sys.argv[1:]
+          parsed_count = None
+          if executed_count != "unavailable":
+              try:
+                  parsed_count = int(executed_count)
+              except ValueError:
+                  parsed_count = None
           record={
               "schemaVersion": 1,
               "authority": "capture-runtime-accessibility-simulator-only",
@@ -238,7 +290,10 @@ jobs:
               "runtimeWitnessSHA256": snippet,
               "targetedTestResultRequired": True,
               "targetedTestIdentifier": "testStandaloneCaptureRuntimeVoiceOverTraversalAndAudit",
+              "executedTestCount": parsed_count,
               "targetedTestResultEvidenceSHA256": tests_sha,
+              "legacyRootResultEvidenceSHA256": legacy_sha,
+              "executedTestCountEvidenceSHA256": count_sha,
               "toolchainEvidenceSHA256": toolchain_sha,
               "physicalAuthorityCreated": False,
               "protocolAuthorityCreated": False,
