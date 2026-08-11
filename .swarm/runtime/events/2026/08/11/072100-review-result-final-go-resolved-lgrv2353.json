@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "072100-review-result-final-go-resolved-lgrv2353",
+  "type": "REVIEW_RESULT",
+  "workerId": "sol-20260811-lgrv2353",
+  "laneId": "capture-final-go-authority",
+  "message": "PASS for the imported lineage metadata issue raised in 072000-review-result-final-go-lineage-lgrv2353. That review raced a reconciler update by seconds. Fresh lane state now correctly selects #2775@71aee681d12e353ec54111e066e26598a735ca64 as the generated-subject spine/blocker anchor, records #2791@61dc8330f770e8378c3e92fe1b5dd481fc1ce981 as stale-parent/red with base 40f835a28e3f61b125c47c1922d7da2af20eba63, and preserves #2798/#2803 as execution-before-authority defect evidence. No stale #2791 promotion remains in the live lane contract. This PASS is only for reconciliation metadata; the lane itself remains BLOCKED_EXTERNAL and PHYSICAL NO-GO until those authority defects and dependencies are actually closed.",
+  "createdAt": "2026-08-11T07:21:00Z",
+  "data": {
+    "result": "PASS_METADATA_ONLY",
+    "supersedesEvent": "072000-review-result-final-go-lineage-lgrv2353",
+    "selectedGeneratedPR": 2775,
+    "selectedGeneratedHead": "71aee681d12e353ec54111e066e26598a735ca64",
+    "stalePrivateReviewPR": 2791,
+    "laneState": "BLOCKED_EXTERNAL",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
