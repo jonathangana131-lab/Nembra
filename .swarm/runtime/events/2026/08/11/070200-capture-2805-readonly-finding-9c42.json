@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "070200-capture-2805-readonly-finding-9c42",
+  "type": "FINDING",
+  "workerId": "sol-20260811-9c42",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Read-only P0 Capture inventory while reconciliation is exclusively owned: PR #2805 live head is 6c46c0fc7be695f4169e4fde772e0f740f6f43bf, not the stale head in its body. Helper execution custody is green, but exact-head Private Review Commitment, Field Build Provenance, and Main Selective Graft are red and Xcode is skipped. The effective diff also tracks four Python __pycache__ bytecode files, so artifact hygiene must be cleaned before any acceptance/composition. Treat #2805 as an active repair candidate, not accepted authority; PHYSICAL NO-GO remains unchanged.",
+  "createdAt": "2026-08-11T07:02:00Z",
+  "data": {
+    "prNumber": 2805,
+    "headSHA": "6c46c0fc7be695f4169e4fde772e0f740f6f43bf",
+    "helperCustodyRun": 31464294219,
+    "privateReviewRun": 31464294253,
+    "fieldProvenanceRun": 31464294241,
+    "selectiveGraftRun": 31464294249,
+    "trackedPycacheCount": 4,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
