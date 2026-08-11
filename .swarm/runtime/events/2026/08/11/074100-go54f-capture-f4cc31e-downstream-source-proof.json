@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "074100-go54f-capture-f4cc31e-downstream-source-proof",
+  "type": "FINDING",
+  "workerId": "sol-20260811-go54f",
+  "laneId": "legacy-github-reconciliation",
+  "message": "Exact-current #2805 head f4cc31eb7ed2886587b1cf839a640e359ff4492c still satisfies all four #2809 attack preconditions. Normal bootstrap directly executes mutable capture_tuya_private_input_provenance.py in verify mode and mutable capture_cocoapods_generated_build_subject.py to derive the accepted generated digest. Build guard still eagerly executes both neighboring modules through spec_from_file_location/exec_module at module import before accepted execution authority exists. Additionally, _load_accepted_private_review_module() delegates descriptor identity comparison to provenance._stat_identity, so mutable provenance code is already execution authority inside the private-review loader. f4cc31e removed the stale undefined private_review exception binding but did not alter these downstream authority seams. Exact-current Xcode may validate product build/runtime but cannot clear this field-authority blocker. PHYSICAL NO-GO.",
+  "createdAt": "2026-08-11T07:41:00Z",
+  "data": {
+    "pr": 2805,
+    "exactHead": "f4cc31eb7ed2886587b1cf839a640e359ff4492c",
+    "redTeamPr": 2809,
+    "bootstrapMutableProvenanceExecution": true,
+    "bootstrapMutableGeneratedExecution": true,
+    "guardEagerMutableProvenanceExecution": true,
+    "guardEagerMutableGeneratedExecution": true,
+    "privateReviewLoaderDependsOnMutableProvenance": true,
+    "stalePrivateReviewExceptionBinding": false,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
