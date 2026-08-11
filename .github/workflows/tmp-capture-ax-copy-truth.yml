@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='fd1ba71c3f3df0f2a0a78b445138c85cb05c1181'
+          expected_parent='73af943aef4e32d8924d06ea52c6e432306a8b3f'
           actual_parent="$(git rev-parse HEAD^)"
           test "$actual_parent" = "$expected_parent"
           python3 - <<'PY'
