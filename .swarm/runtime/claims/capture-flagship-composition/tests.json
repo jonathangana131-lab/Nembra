@@ -9,19 +9,20 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T22:00:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:00:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:03:00Z",
   "leaseSeconds": 1800,
   "branch": "polish/v14-capture-root-first-fold-sol-1311jx-20260811",
   "pr": 2979,
   "sourceSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
-  "currentHeadSHA": "ce9e2bac253fedf6a61f79614519058fc6da116f",
+  "currentHeadSHA": "1f53b575fd5e3a43c31f25ff2fa001c0b87879e1",
   "takeoverFromWorkerId": "sol-20260811-gpt56-runtime-count",
-  "takeoverReason": "Prior tests slot was RELEASED. Recover a non-conflicting Capture visual-evidence rung after human review proved exact run 31537417996's standard screenshot was blank despite workflow success. Fix only the standalone visual evidence harness and its tests; do not alter Capture product/UI/BLE/signing/install/physical-authority bytes.",
+  "takeoverReason": "Prior tests slot was RELEASED. Recover a non-conflicting Capture visual-evidence rung after human review proved exact run 31537417996's standard screenshot was blank despite workflow success. Fix only standalone visual evidence harness/tests/workflow wiring; do not alter Capture product/UI/BLE/signing/install/physical-authority bytes.",
   "ownedPaths": [
+    ".github/workflows/capture-standalone-visual-evidence.yml",
     "scripts/ci/capture_standalone_visual_evidence.sh",
     "scripts/ci/capture_visual_png_content_guard.py",
     "scripts/ci/tests/test_capture_standalone_visual_evidence.py",
     "scripts/ci/tests/test_capture_visual_png_content_guard.py"
   ],
-  "checkpoint": "Build a bounded screenshot-readiness contract based on actual PNG app-content evidence rather than arbitrary sleeps. Poll simctl screenshots, require non-trivial rendered content below the status-bar region with a pure-stdlib fail-closed PNG parser, preserve failed pending screenshots through always-upload artifact behavior, apply to standard and AX5 captures, add synthetic blank-vs-rendered/malformed guard tests, and require fresh exact-head visual evidence before #2979 acceptance. PHYSICAL NO-GO."
+  "checkpoint": "At 1f53b575, guard + harness + synthetic regression exist and product bytes remain untouched. Source review found workflow wiring incomplete: helper/test paths were not pull_request triggers and the synthetic blank-vs-rendered/malformed test was not executed. Add those exact workflow hooks and require manifest readiness/guard-hash fields before trusting fresh exact-head visual evidence. PHYSICAL NO-GO."
 }
