@@ -75,23 +75,32 @@ class FinalGoIndexMetadataRedTeamTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-final-go-no-status-") as temporary:
             base, root, source = self._fixture(temporary)
             original_run = MODULE.subprocess.run
-            git_commands: list[tuple[str, ...]] = []
+            original_popen = MODULE.subprocess.Popen
+            run_commands: list[tuple[str, ...]] = []
+            popen_commands: list[tuple[str, ...]] = []
 
             def recording_run(command, *args, **kwargs):
                 if isinstance(command, (list, tuple)) and command and command[0] == "/usr/bin/git":
-                    git_commands.append(tuple(str(item) for item in command))
+                    run_commands.append(tuple(str(item) for item in command))
                 return original_run(command, *args, **kwargs)
 
+            def recording_popen(command, *args, **kwargs):
+                if isinstance(command, (list, tuple)) and command and command[0] == "/usr/bin/git":
+                    popen_commands.append(tuple(str(item) for item in command))
+                return original_popen(command, *args, **kwargs)
+
             MODULE.subprocess.run = recording_run
+            MODULE.subprocess.Popen = recording_popen
             try:
                 with MODULE._candidate_git_custody(base, root, source):
                     base.candidate(root, source)
             finally:
+                MODULE.subprocess.Popen = original_popen
                 MODULE.subprocess.run = original_run
-            self.assertFalse(any("status" in command for command in git_commands))
+            self.assertFalse(any("status" in command for command in run_commands + popen_commands))
             self.assertTrue(
-                any("cat-file" in command for command in git_commands),
-                "fixture did not exercise verified accepted-object authority",
+                any("cat-file" in command for command in popen_commands),
+                "fixture did not exercise bounded verified accepted-object capture",
             )
 
 
