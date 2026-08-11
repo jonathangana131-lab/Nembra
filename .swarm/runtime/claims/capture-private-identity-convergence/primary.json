@@ -9,7 +9,7 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:38:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:15:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:23:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-private-resolution-adapter-api-sol-1316vk",
   "pr": 2993,
@@ -21,8 +21,10 @@
     "Scripts/capture_tuya_private_dependency_resolution_guard.py",
     "scripts/ci/tests/test_capture_private_identity_failed_bootstrap_authority.py",
     "scripts/ci/tests/test_capture_private_identity_checkout_root_swap.py",
-    "scripts/ci/tests/test_capture_tuya_private_input_provenance.py"
+    "scripts/ci/tests/test_capture_tuya_private_input_provenance.py",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift",
+    "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityCheckoutRootCustodySourceTests.swift"
   ],
-  "checkpoint": "PR #2993 moved to exact c20484aec3c003143c9ebf034a40166a6d0ff94f after exact prior-head Field run 31534679589 failed before new Mac ancestry witnesses on stale inherited test text: test_capture_tuya_private_input_provenance.py searched literal `pod install --repo-update`, while bootstrap truthfully runs `\"$POD_BIN\" install --repo-update` as the child of PRIVATE_INPUT_RESOLUTION_GUARD after accepted-lock admission and receipt re-verification. Test-only +6/-1 correction now requires preaccepted digest < resolution guard < exact guarded POD_BIN child. Exact compare from #2944 is four paths total; writer/recovery and installer paths untouched. Prior review 4910650978 and private green 31534679538 are now ancestor evidence only. Fresh exact-head Private/Field/Main and independent review required. Selective-composition manifest remains valid with this test path already in candidate whitelist; tmp-v14-bootstrap-resolution-adapter.yml remains excluded. PHYSICAL NO-GO.",
-  "intent": "Hold c20484ae immutable, classify fresh exact Private/Field/Main gates, obtain independent review on unchanged head, then hand the accepted four-path delta into selective private-identity composition onto newest build-authority lineage before layering #2977 sanitation."
+  "checkpoint": "Exact c204 Main Selective Graft run 31536891353 retained artifact 9119234285. Standalone Xcode BUILD SUCCEEDED. Package failed exactly two source-contract expectations: TuyaFieldSDKDependencyProvenanceSourceTests still expects literal `pod install --repo-update` instead of guarded `\"$POD_BIN\" install --repo-update`; TuyaPrivateIdentityCheckoutRootCustodySourceTests expects the writer's provision(...) call on one line, while current writer duplicates the inherited checkout descriptor and invokes the same descriptor-bound provision across a multiline call. No runtime/domain test failures. Expand ownership to those two source tests only; production writer/bootstrap remain unchanged. After repair, all exact-head gates/review must rerun. PHYSICAL NO-GO.",
+  "intent": "Converge the two stale package source contracts without weakening descriptor or guarded-CocoaPods authority, then hold the moved head for exact Private/Field/Main and independent review before selective composition."
 }
