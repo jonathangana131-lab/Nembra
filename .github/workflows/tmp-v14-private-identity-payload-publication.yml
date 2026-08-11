@@ -1,0 +1,308 @@
+name: TEMP Capture Private Identity Payload Publication Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-payload-publication-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-private-identity-payload-publication-sol-20260811
+          fetch-depth: 0
+      - name: Bind exact repair input
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Bind staged and published bytes to accepted payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Scripts/provision_capture_tuya_identity_writer.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('import ctypes\nimport os\n', 'import ctypes\nimport hashlib\nimport hmac\nimport os\n', 1)
+          old_flags = '    return os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW\n'
+          new_flags = '    return os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW\n'
+          if text.count(old_flags) != 1:
+              raise SystemExit(f'writer staging flags anchor changed: {text.count(old_flags)} matches')
+          text = text.replace(old_flags, new_flags, 1)
+
+          anchor = '\ndef _secure_replace_beneath(\n'
+          helper = r'''
+
+def _payload_stat_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _require_descriptor_payload(descriptor: int, payload: bytes, label: str) -> None:
+    before = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(before.st_mode)
+        or before.st_uid != os.geteuid()
+        or before.st_nlink != 1
+        or before.st_size != len(payload)
+    ):
+        raise ProvisionError(f"{label}: descriptor metadata no longer matches accepted payload custody")
+
+    chunks: list[bytes] = []
+    offset = 0
+    while offset < before.st_size:
+        chunk = os.pread(descriptor, min(65_536, before.st_size - offset), offset)
+        if not chunk:
+            raise ProvisionError(f"{label}: descriptor bytes changed during accepted payload read")
+        chunks.append(chunk)
+        offset += len(chunk)
+    if os.pread(descriptor, 1, before.st_size):
+        raise ProvisionError(f"{label}: descriptor grew during accepted payload read")
+
+    after = os.fstat(descriptor)
+    if _payload_stat_identity(before) != _payload_stat_identity(after):
+        raise ProvisionError(f"{label}: descriptor metadata changed during accepted payload read")
+    actual = hashlib.sha256(b"".join(chunks)).digest()
+    expected = hashlib.sha256(payload).digest()
+    if not hmac.compare_digest(actual, expected):
+        raise ProvisionError(f"{label}: descriptor bytes do not match the accepted payload")
+'''
+          if helper.strip() not in text:
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'writer secure publication anchor changed: {text.count(anchor)} matches')
+              text = text.replace(anchor, helper + anchor, 1)
+
+          old_signature = '''def _secure_replace_beneath(
+    checkout_fd: int,
+    source_name: str,
+    destination_relative: str,
+    sealed: os.stat_result,
+) -> None:
+    _relative_components(source_name)
+    _relative_components(destination_relative)
+    _require_sealed_staging_name(checkout_fd, source_name, sealed)
+'''
+          new_signature = '''def _secure_replace_beneath(
+    checkout_fd: int,
+    source_name: str,
+    destination_relative: str,
+    sealed: os.stat_result,
+    staging_fd: int,
+    payload: bytes,
+) -> None:
+    _relative_components(source_name)
+    _relative_components(destination_relative)
+    _require_sealed_staging_name(checkout_fd, source_name, sealed)
+    _require_descriptor_payload(
+        staging_fd,
+        payload,
+        "private identity staging payload changed immediately before publication",
+    )
+'''
+          if text.count(old_signature) != 1:
+              raise SystemExit(f'writer publication signature anchor changed: {text.count(old_signature)} matches')
+          text = text.replace(old_signature, new_signature, 1)
+
+          old_call = '        _secure_replace_beneath(checkout_fd, temporary_name, destination_relative, sealed)\n\n        final_fd = _open_relative_regular_file(checkout_fd, destination_relative)\n'
+          new_call = '''        _require_descriptor_payload(
+            staging_fd,
+            payload,
+            "private identity staging payload changed before publication",
+        )
+        _secure_replace_beneath(
+            checkout_fd,
+            temporary_name,
+            destination_relative,
+            sealed,
+            staging_fd,
+            payload,
+        )
+
+        final_fd = _open_relative_regular_file(checkout_fd, destination_relative)
+'''
+          if text.count(old_call) != 1:
+              raise SystemExit(f'writer publication call anchor changed: {text.count(old_call)} matches')
+          text = text.replace(old_call, new_call, 1)
+
+          old_final = '''        if (
+            not stat.S_ISREG(final.st_mode)
+            or final.st_uid != os.geteuid()
+            or final.st_nlink != 1
+            or final.st_size != len(payload)
+            or final.st_dev != sealed.st_dev
+            or final.st_ino != sealed.st_ino
+        ):
+            raise ProvisionError("published private identity output is not the sealed staging inode")
+        os.fchmod(final_fd, 0o600)
+        os.fsync(final_fd)
+        os.fsync(checkout_fd)
+'''
+          new_final = '''        if (
+            not stat.S_ISREG(final.st_mode)
+            or final.st_uid != os.geteuid()
+            or final.st_nlink != 1
+            or final.st_size != len(payload)
+            or final.st_dev != sealed.st_dev
+            or final.st_ino != sealed.st_ino
+        ):
+            _unlink_owned_inode_if_named(destination_parent_fd, final_name, final)
+            raise ProvisionError("published private identity output is not the sealed staging inode")
+        try:
+            _require_descriptor_payload(
+                final_fd,
+                payload,
+                "published private identity payload failed post-publication authority",
+            )
+            os.fchmod(final_fd, 0o600)
+            os.fsync(final_fd)
+            _require_descriptor_payload(
+                final_fd,
+                payload,
+                "published private identity payload changed before durable success",
+            )
+        except Exception:
+            compromised = os.fstat(final_fd)
+            _unlink_owned_inode_if_named(destination_parent_fd, final_name, compromised)
+            raise
+        os.fsync(checkout_fd)
+'''
+          if text.count(old_final) != 1:
+              raise SystemExit(f'writer final authority anchor changed: {text.count(old_final)} matches')
+          text = text.replace(old_final, new_final, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Carry exact adversarial regressions
+        shell: bash
+        env:
+          POST_CHECK_SHA: f8e9c71f0a78484de1fc8a1dacc38c112a7a2a37
+          SAME_INODE_SHA: d29a3dc6e2d1c5db3e0661a415e619134c4a5587
+        run: |
+          set -euo pipefail
+          export GIT_NO_REPLACE_OBJECTS=1
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_GLOBAL=/dev/null
+          git fetch --no-tags origin "$POST_CHECK_SHA" "$SAME_INODE_SHA"
+          /usr/bin/git show "$POST_CHECK_SHA:scripts/ci/tests/test_capture_private_identity_publication_races.py" > scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /usr/bin/git show "$SAME_INODE_SHA:scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py" > scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-private-identity-publication-races-redteam.yml')
+          text = workflow.read_text(encoding='utf-8')
+          path_anchor = '      - scripts/ci/tests/test_capture_private_identity_publication_races.py\n'
+          path_line = '      - scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py\n'
+          if path_line not in text:
+              if text.count(path_anchor) != 1:
+                  raise SystemExit(f'publication workflow path anchor changed: {text.count(path_anchor)} matches')
+              text = text.replace(path_anchor, path_anchor + path_line, 1)
+          compile_anchor = '          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py\n'
+          compile_line = '          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py\n'
+          if compile_line not in text:
+              if text.count(compile_anchor) != 1:
+                  raise SystemExit(f'publication workflow compile anchor changed: {text.count(compile_anchor)} matches')
+              text = text.replace(compile_anchor, compile_anchor + compile_line, 1)
+          run_anchor = '          python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py\n'
+          run_line = '          python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py\n'
+          if run_line not in text:
+              if text.count(run_anchor) != 1:
+                  raise SystemExit(f'publication workflow run anchor changed: {text.count(run_anchor)} matches')
+              text = text.replace(run_anchor, run_anchor + run_line, 1)
+          workflow.write_text(text, encoding='utf-8')
+          PY
+      - name: Re-pin privileged writer and package source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          writer = Path('Scripts/provision_capture_tuya_identity_writer.py')
+          digest = hashlib.sha256(writer.read_bytes()).hexdigest()
+
+          shell = Path('Scripts/provision_capture_tuya_identity.sh')
+          shell_text = shell.read_text(encoding='utf-8')
+          import re
+          shell_text, count = re.subn(
+              r'WRITER_SHA256="[0-9a-f]{64}"',
+              f'WRITER_SHA256="{digest}"',
+              shell_text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'writer digest shell anchor changed: {count} matches')
+          shell.write_text(shell_text, encoding='utf-8')
+
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift')
+          source = test.read_text(encoding='utf-8')
+          source, count = re.subn(
+              r'WRITER_SHA256=\\"[0-9a-f]{64}\\"',
+              f'WRITER_SHA256=\\"{digest}\\"',
+              source,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'writer digest package anchor changed: {count} matches')
+          source = source.replace(
+              '#expect(writer.contains("src_dir_fd=parent_fd"))',
+              '#expect(writer.contains("src_dir_fd=checkout_fd"))',
+          ).replace(
+              '#expect(writer.contains("dst_dir_fd=parent_fd"))',
+              '#expect(writer.contains("dst_dir_fd=checkout_fd"))',
+          )
+          old_contract = '#expect(writer.contains("dir_fd=parent_fd"))'
+          if old_contract in source:
+              source = source.replace(
+                  old_contract,
+                  '#expect(writer.contains("_require_descriptor_payload"))\n        #expect(writer.contains("hashlib.sha256"))\n        #expect(writer.contains("dir_fd=checkout_fd"))',
+                  1,
+              )
+          test.write_text(source, encoding='utf-8')
+          print(digest)
+          PY
+      - name: Validate payload and publication closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          python3 Scripts/provision_capture_tuya_identity_writer.py --self-test
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+          python3 -I scripts/ci/tests/test_capture_private_identity_same_inode_payload_current.py
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          git diff --check
+      - name: Expose clean repair candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-private-identity-payload-publication.yml
+          find Scripts scripts -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet && { echo 'ERROR: no publication repair delta' >&2; exit 1; }
+          git commit -m 'Capture: bind private identity payload across publication'
+          candidate="$(git rev-parse HEAD)"
+          tree="$(git rev-parse HEAD^{tree})"
+          echo "::notice title=Private identity publication candidate::$candidate tree=$tree"
+          git push origin HEAD:repair/v14-private-identity-payload-publication-sol-20260811
