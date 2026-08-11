@@ -156,17 +156,19 @@ struct DashboardView: View {
     }
 
     private var accessibilityStatusSummary: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(vehicle.profile.identity.displayName)
                 .font(.headline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             Label(connectionText, systemImage: connectionIcon)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(connectionStyle)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             compactAccessibilityMetric(
                 title: "Battery",
