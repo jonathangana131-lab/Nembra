@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'repair final Capture premium root patch'
+    if: github.event.head_commit.message == 'harden final Capture premium root patch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -27,6 +27,7 @@ jobs:
           test "$(git hash-object "$file")" = "$expected_blob"
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text(encoding='utf-8')
@@ -36,17 +37,20 @@ jobs:
 
           hero = '.font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())\n            .fixedSize(horizontal: false, vertical: true)'
           hero_new = hero + '\n            .accessibilityAddTraits(.isHeader)'
-          assert root.count(hero) == 1
+          assert root.count(hero) == 1, ('hero', root.count(hero))
           root = root.replace(hero, hero_new, 1)
 
           combine = '        .accessibilityElement(children: .combine)\n'
-          assert root.count(combine) >= 2
+          assert root.count(combine) >= 2, ('combine', root.count(combine))
           root = root.replace(combine, '', 1)
 
-          hint = '            .foregroundStyle(.black)\n            .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")'
-          hint_new = '            .foregroundStyle(.black)\n            .accessibilityIdentifier("nembra.capture.root.account-link-action")\n            .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")'
-          assert root.count(hint) == 1
-          root = root.replace(hint, hint_new, 1)
+          pattern = re.compile(r'(?m)^(\s*)\.accessibilityHint\("Creates the account-metadata approval QR\. It does not start Bluetooth or physical Capture\."\)$')
+          matches = list(pattern.finditer(root))
+          assert len(matches) == 1, ('hint', len(matches))
+          match = matches[0]
+          indent = match.group(1)
+          insertion = indent + '.accessibilityIdentifier("nembra.capture.root.account-link-action")\n'
+          root = root[:match.start()] + insertion + root[match.start():]
 
           assert root.count('.accessibilityAddTraits(.isHeader)') == 1
           assert root.count('nembra.capture.root.account-link-action') == 1
