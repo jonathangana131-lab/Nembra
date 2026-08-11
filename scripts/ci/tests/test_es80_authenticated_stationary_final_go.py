@@ -36,6 +36,16 @@ class T(unittest.TestCase):
  def test_go_control_plane_authority_is_required(self):
   def bad(repo,pr,run,get):raise go.GoError("unaccepted GO control plane")
   self.no(lambda:self.f.build(control_authority=bad))
+ def test_go_control_plane_requires_exact_current_main_ancestor(self):
+    paths=("scripts/ci/es80_authenticated_stationary_final_go.py","scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py",go.AUTH_WORKFLOW_PATH,"scripts/ci/tests/test_es80_authenticated_stationary_final_go.py")
+    for rel in paths:
+     q=self.f.repo/rel;q.parent.mkdir(parents=True,exist_ok=True);q.write_text(rel+'\n')
+    subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'add','.'],check=True);subprocess.run(['/usr/bin/git','-C',str(self.f.repo),'commit','-qm','control fixture'],check=True)
+    source=subprocess.check_output(['/usr/bin/git','-C',str(self.f.repo),'rev-parse','HEAD'],text=True).strip();self.f.main='0'*40
+    self.f.map['/pulls/2638']={'state':'open','draft':False,'merged_at':None,'head':{'sha':source,'ref':'control/final','repo':{'full_name':go.REPO}},'base':{'ref':'main'}}
+    self.f.map['/actions/runs/900']={'name':go.AUTH_WORKFLOW_NAME,'path':go.AUTH_WORKFLOW_PATH,'head_sha':source,'status':'completed','conclusion':'success','event':'push','head_branch':'control/final','pull_requests':[]}
+    self.f.compare_status='diverged';self.no(lambda:go.control_plane(self.f.repo,2638,900,self.f.get))
+    self.f.compare_status='ahead';r=go.control_plane(self.f.repo,2638,900,self.f.get);self.assertEqual(r['mainSHA'],'0'*40)
  def test_production_default_refuses_go_without_retained_signed_artifact_authority(self):
   a=dict(authority_repo=self.f.repo,authority_pr=2638,authority_run=900,candidate_repo=self.f.repo,source=self.f.s,pr=self.f.pr,runs=self.f.ids,artifact_id=self.f.aid,review_id=self.f.rid,archive=self.f.arc,device_file=self.f.dev,retained_ipa=self.f.r/'retained.ipa',get=self.f.get,control_authority=self.f.control,run_installer=self.f.inst)
   self.no(lambda:go.build(**a))
