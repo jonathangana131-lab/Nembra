@@ -4,6 +4,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 SOURCE = (ROOT / "NembraApp/Features/Research/TuyaAccountBridge.swift").read_text(encoding="utf-8")
+ENTRYPOINT = (ROOT / "NembraApp/App/NembraCaptureEntrypoint.swift").read_text(encoding="utf-8")
 
 class TuyaAccountTransportSourceTests(unittest.TestCase):
     def test_plaintext_server_endpoint_is_not_admitted(self):
@@ -32,6 +33,16 @@ class TuyaAccountTransportSourceTests(unittest.TestCase):
         self.assertIn('if approvalSucceeded {\n                // Make every sibling approval callback stale', SOURCE)
         self.assertIn('invalidateAsyncOperations()\n                phase = .failed', SOURCE)
         self.assertNotIn('if approvalSucceeded {\n                phase = .failed', SOURCE)
+
+    def test_failed_approval_token_cannot_be_manually_repolled(self):
+        check = SOURCE[SOURCE.index('    func checkApprovalNow() {'):SOURCE.index('    func refreshDevices() {')]
+        self.assertIn('guard phase == .waitingForApproval else { return }', check)
+        poll_start = SOURCE.index('    private func pollApprovalOnce(userCode: String, token: String, generation: UInt64) async {')
+        poll_end = SOURCE.index('    private func scheduleDeviceLoad(generation: UInt64) {', poll_start)
+        self.assertEqual(SOURCE[poll_start:poll_end].count('phase == .waitingForApproval,'), 4)
+        qr_start = ENTRYPOINT.index('                if let data = tuya.qrPNGData,')
+        qr_end = ENTRYPOINT.index('                if tuya.phase == .failed {', qr_start)
+        self.assertIn('if tuya.phase == .waitingForApproval {', ENTRYPOINT[qr_start:qr_end])
 
 if __name__ == "__main__":
     unittest.main()

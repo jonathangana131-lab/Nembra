@@ -150,6 +150,7 @@ final class TuyaAccountBridge: ObservableObject {
     }
 
     func checkApprovalNow() {
+        guard phase == .waitingForApproval else { return }
         guard let token = qrToken, let boundUserCode = approvalUserCode else {
             requestApproval()
             return
@@ -358,7 +359,8 @@ final class TuyaAccountBridge: ObservableObject {
     }
 
     private func pollApprovalOnce(userCode: String, token: String, generation: UInt64) async {
-        guard generation == operationGeneration,
+        guard phase == .waitingForApproval,
+              generation == operationGeneration,
               qrToken == token,
               session == nil else { return }
         var approvalSucceeded = false
@@ -374,6 +376,7 @@ final class TuyaAccountBridge: ObservableObject {
             request.timeoutInterval = 15
             let object = try await Self.requestJSON(request)
             guard !Task.isCancelled,
+                  phase == .waitingForApproval,
                   generation == operationGeneration,
                   qrToken == token,
                   session == nil else { return }
@@ -400,6 +403,7 @@ final class TuyaAccountBridge: ObservableObject {
                 throw BridgeError.malformed("Tuya approval succeeded but the account session was incomplete.")
             }
             guard !Task.isCancelled,
+                  phase == .waitingForApproval,
                   generation == operationGeneration,
                   qrToken == token,
                   session == nil else { return }
@@ -423,6 +427,7 @@ final class TuyaAccountBridge: ObservableObject {
             manualApprovalTask = nil
         } catch {
             guard !Task.isCancelled,
+                  phase == .waitingForApproval,
                   generation == operationGeneration,
                   qrToken == token,
                   session == nil else { return }

@@ -252,10 +252,12 @@ private struct CaptureP0Root: View {
                             .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .accessibilityLabel("Tuya account approval QR code")
 
-                        Button("I approved it · check now") { tuya.checkApprovalNow() }
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
-                            .frame(maxWidth: isAccessibilityLayout ? .infinity : nil, alignment: .leading)
+                        if tuya.phase == .waitingForApproval {
+                            Button("I approved it · check now") { tuya.checkApprovalNow() }
+                                .buttonStyle(.bordered)
+                                .controlSize(.large)
+                                .frame(maxWidth: isAccessibilityLayout ? .infinity : nil, alignment: .leading)
+                        }
                     }
                 }
 
