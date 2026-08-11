@@ -5,6 +5,7 @@ from .model import _dict
 from .store import *
 from .engine import *
 from .policy import claim_slot, takeover_claim, recommend_slots
+from .resources import heartbeat_resource, release_resource
 
 CONFIG_PATH='.swarm/config.json'
 
@@ -20,7 +21,8 @@ def remote(p):
 def parser():
     p=argparse.ArgumentParser(description='Nembra Swarm Control Plane');sub=p.add_subparsers(dest='cmd',required=True)
     q=sub.add_parser('simulate');q.add_argument('--workers',type=int,default=30)
-    for name in ('remote-validate','register','claim','takeover','heartbeat','release','event','recommend','board'):
+    names=('remote-validate','register','claim','takeover','heartbeat','release','event','recommend','board','resource-acquire','resource-heartbeat','resource-release')
+    for name in names:
         q=sub.add_parser(name);remote(q)
         if name=='register':q.add_argument('--worker',required=True);q.add_argument('--branch',default='')
         if name in {'claim','takeover'}:q.add_argument('--lane',required=True);q.add_argument('--slot',required=True);q.add_argument('--worker',required=True);q.add_argument('--branch',default='');q.add_argument('--pr',type=int);q.add_argument('--source-sha')
@@ -28,6 +30,8 @@ def parser():
         if name=='event':q.add_argument('--type',choices=sorted(EVENT_TYPES),required=True);q.add_argument('--worker',required=True);q.add_argument('--lane');q.add_argument('--message',required=True);q.add_argument('--data')
         if name=='recommend':q.add_argument('--red-main',action='store_true');q.add_argument('--limit',type=int,default=20)
         if name=='board':q.add_argument('--red-main',action='store_true')
+        if name=='resource-acquire':q.add_argument('--resource',action='append',choices=sorted(RESOURCE_CLASSES),required=True);q.add_argument('--worker',required=True);q.add_argument('--lane',required=True)
+        if name in {'resource-heartbeat','resource-release'}:q.add_argument('--resource',choices=sorted(RESOURCE_CLASSES),required=True);q.add_argument('--worker',required=True);q.add_argument('--lease-id',required=True);q.add_argument('--generation',type=int,required=True)
     return p
 def main(argv=None):
     try:
@@ -47,6 +51,10 @@ def main(argv=None):
             l,c,_,_,r=snapshot(s);print(pretty_json([asdict(x) for x in recommend_slots(l,c,r,config,utc_now(),a.red_main)[:a.limit]]),end='');return 0
         elif a.cmd=='board':
             l,c,w,e,r=snapshot(s);print(render_dashboard(l,c,w,r,e,utc_now(),a.red_main),end='');return 0
+        elif a.cmd=='resource-acquire':
+            values=acquire_resources(s,a.resource,a.worker,a.lane,utc_now(),config['resourceOrder']);print(pretty_json([value.value for value in values]),end='');return 0
+        elif a.cmd=='resource-heartbeat':x=heartbeat_resource(s,a.resource,a.worker,a.lease_id,a.generation,utc_now())
+        elif a.cmd=='resource-release':x=release_resource(s,a.resource,a.worker,a.lease_id,a.generation,utc_now())
         else:raise ValidationError('unknown command')
         print(pretty_json(x.value),end='');return 0
     except (SwarmError,ValueError,json.JSONDecodeError) as e:print(f'swarm-control error: {e}',file=sys.stderr);return 2
