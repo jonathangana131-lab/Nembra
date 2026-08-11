@@ -179,7 +179,20 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
             encoding: .utf8
         )
 
-        #expect(shell.contains("WRITER_SHA256=\"683865d663d98295a0a60498e42d579cef8b3588aae091bbafe8b4431343badc\""))
+        let authority = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Scripts/capture_tuya_private_identity_authority.py"),
+            encoding: .utf8
+        )
+        let bootstrap = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("Scripts/bootstrap_capture_tuya_sdk.sh"),
+            encoding: .utf8
+        )
+
+        #expect(shell.contains("WRITER_SHA256=\"6a27f9f0640a00dfe5f74a1cc4a65a0faf76994fe584efe23afb8f7ee1638fc2\""))
+        #expect(shell.contains("AUTHORITY_HELPER_SHA256=\"ca8491135545ad97ef4dc8e995f307720f25e3265ded0881fbfdf37ca845e9a1\""))
+        #expect(shell.contains("invalidate \"$ROOT\""))
+        #expect(shell.contains("seal \"$ROOT\" \"$WRITER_SHA256\" \"$PODSPEC_SHA256\" \"$IDENTITY_SHA256\""))
+        #expect(shell.contains("verify \"$ROOT\" \"$WRITER_SHA256\""))
         #expect(shell.contains("WRITER_CAPTURE=\"$({ /bin/cat -- \"$WRITER\"; builtin printf '\\001'; })\""))
         #expect(shell.contains("/usr/bin/shasum -a 256"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT_FD\" \"$ROOT\""))
@@ -204,11 +217,26 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(writer.contains("_is_canonical_private_stage_name"))
         #expect(writer.contains("_PRIVATE_STAGE_PREFIX"))
         #expect(writer.contains("_require_descriptor_payload"))
-        #expect(writer.contains("_unlink_owned_relative_inode_if_named"))
+        #expect(!writer.contains("_unlink_owned_relative_inode_if_named"))
+        #expect(!writer.contains("_unlink_owned_inode_if_named"))
         #expect(writer.contains("_require_final_relative_name_binding"))
         #expect(writer.contains("os.path.realpath(temporary)"))
         #expect(writer.contains("private identity canonical destination no longer names the accepted sealed inode"))
         #expect(writer.contains("hashlib.sha256"))
+        #expect(writer.contains("NEMBRA_PRIVATE_IDENTITY_RECEIPT_V1"))
+        #expect(authority.contains("nembra-private-identity-authority-v1"))
+        #expect(authority.contains("/private/tmp/nembra-capture-private-identity-authority-v1"))
+        #expect(authority.contains("SUDO_UID"))
+        #expect(authority.contains("_invalidate_current_subject"))
+        #expect(authority.contains("_seal_current_subject"))
+        #expect(authority.contains("_verify_current_subject"))
+        let bootstrapVerify = bootstrap.range(of: "verify \"$REPO_ROOT\" \"$PRIVATE_IDENTITY_WRITER_SHA256\"")
+        let podDiscovery = bootstrap.range(of: "command -v pod")
+        #expect(bootstrapVerify != nil)
+        #expect(podDiscovery != nil)
+        if let bootstrapVerify, let podDiscovery {
+            #expect(bootstrapVerify.lowerBound < podDiscovery.lowerBound)
+        }
         #expect(writer.contains("dir_fd=checkout_fd"))
         #expect(writer.contains("src_dir_fd=checkout_fd"))
         #expect(writer.contains("dst_dir_fd=checkout_fd"))
@@ -230,6 +258,31 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         let targetWriter = scripts.appendingPathComponent("provision_capture_tuya_identity_writer.py")
         try FileManager.default.copyItem(at: sourceWriter, to: targetWriter)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: targetWriter.path)
+
+        let sourceAuthority = repositoryRoot.appendingPathComponent("Scripts/capture_tuya_private_identity_authority.py")
+        let targetAuthority = scripts.appendingPathComponent("capture_tuya_private_identity_authority.py")
+        try FileManager.default.copyItem(at: sourceAuthority, to: targetAuthority)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: targetAuthority.path)
+
+        // Unit fixtures exercise the unprivileged writer/shell custody paths.
+        // Production source contracts above separately require the real root
+        // revocation/seal/verify commands; only this copied fixture replaces
+        // those three privileged calls so Xcode tests never request sudo.
+        var fixtureShell = try String(contentsOf: targetScript, encoding: .utf8)
+        fixtureShell = fixtureShell.replacingOccurrences(
+            of: "/usr/bin/sudo /usr/bin/python3 -I -c \"$AUTHORITY_SOURCE\" invalidate \"$ROOT\"",
+            with: "/usr/bin/true"
+        )
+        fixtureShell = fixtureShell.replacingOccurrences(
+            of: "/usr/bin/sudo /usr/bin/python3 -I -c \"$AUTHORITY_SOURCE\" seal \"$ROOT\" \"$WRITER_SHA256\" \"$PODSPEC_SHA256\" \"$IDENTITY_SHA256\" >/dev/null",
+            with: "/usr/bin/true"
+        )
+        fixtureShell = fixtureShell.replacingOccurrences(
+            of: "/usr/bin/python3 -I -c \"$AUTHORITY_SOURCE\" verify \"$ROOT\" \"$WRITER_SHA256\" >/dev/null",
+            with: "/usr/bin/true"
+        )
+        try Data(fixtureShell.utf8).write(to: targetScript)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: targetScript.path)
         return (root, targetScript)
     }
 

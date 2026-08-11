@@ -534,7 +534,7 @@ def _write_staged(
     destination_relative: str,
     payload: bytes,
     recovered_stage: _RecoveredPrivateStage | None = None,
-) -> None:
+) -> str:
     components = _relative_components(destination_relative)
     if components[-1] != final_name:
         raise ProvisionError("private identity final name does not match its admitted relative path")
@@ -625,6 +625,7 @@ def _write_staged(
             )
         except Exception:
             raise
+        return hashlib.sha256(payload).hexdigest()
     except Exception:
         if staging_fd >= 0:
             _sanitize_held_private_descriptor(staging_fd)
@@ -655,7 +656,7 @@ def _decode_input() -> tuple[str, str]:
     return values[0], values[1]
 
 
-def provision(checkout_fd: int, checkout_root: Path, app_key_b64: str, app_secret_b64: str) -> None:
+def provision(checkout_fd: int, checkout_root: Path, app_key_b64: str, app_secret_b64: str) -> tuple[str, str]:
     podspec = b"""Pod::Spec.new do |s|\n  s.name = 'NembraTuyaPrivateConfig'\n  s.version = '1.0.0'\n  s.summary = 'Local-only Nembra Capture Tuya app identity.'\n  s.description = 'Generated private field-build configuration. Never commit this pod.'\n  s.homepage = 'https://localhost.invalid/nembra-private-config'\n  s.license = { :type => 'Private' }\n  s.author = { 'Nembra' => 'local-only' }\n  s.source = { :git => 'https://localhost.invalid/nembra-private-config.git', :tag => s.version.to_s }\n  s.platform = :ios, '17.0'\n  s.swift_version = '6.0'\n  s.source_files = 'Sources/NembraTuyaPrivateConfig/**/*.swift'\nend\n"""
     swift = f"""import Foundation
 
@@ -694,7 +695,7 @@ public enum NembraTuyaPrivateIdentity {{
         )
 
         _require_private_chain(checkout_fd, local_secrets_fd, runtime_fd, sources_fd, module_fd)
-        _write_staged(
+        podspec_sha256 = _write_staged(
             checkout_fd,
             runtime_fd,
             "NembraTuyaPrivateConfig.podspec",
@@ -705,7 +706,7 @@ public enum NembraTuyaPrivateIdentity {{
         _require_checkout_path_identity(checkout_fd, checkout_root)
         _require_private_chain(checkout_fd, local_secrets_fd, runtime_fd, sources_fd, module_fd)
 
-        _write_staged(
+        identity_sha256 = _write_staged(
             checkout_fd,
             module_fd,
             "NembraTuyaPrivateIdentity.swift",
@@ -717,6 +718,7 @@ public enum NembraTuyaPrivateIdentity {{
 
         for descriptor in (module_fd, sources_fd, runtime_fd, local_secrets_fd, checkout_fd):
             os.fsync(descriptor)
+        return podspec_sha256, identity_sha256
     finally:
         if recovered_stage is not None:
             recovered_stage.close()
@@ -796,7 +798,12 @@ def main() -> int:
         checkout_fd = _duplicate_inherited_checkout(sys.argv[1])
         try:
             app_key_b64, app_secret_b64 = _decode_input()
-            provision(checkout_fd, Path(sys.argv[2]), app_key_b64, app_secret_b64)
+            podspec_sha256, identity_sha256 = provision(
+                checkout_fd, Path(sys.argv[2]), app_key_b64, app_secret_b64
+            )
+            print(
+                f"NEMBRA_PRIVATE_IDENTITY_RECEIPT_V1\t{podspec_sha256}\t{identity_sha256}"
+            )
         finally:
             os.close(checkout_fd)
         return 0

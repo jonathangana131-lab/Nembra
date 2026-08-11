@@ -7,6 +7,9 @@ TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
+PRIVATE_IDENTITY_AUTHORITY_HELPER="$SCRIPT_DIR/capture_tuya_private_identity_authority.py"
+PRIVATE_IDENTITY_AUTHORITY_HELPER_SHA256="ca8491135545ad97ef4dc8e995f307720f25e3265ded0881fbfdf37ca845e9a1"
+PRIVATE_IDENTITY_WRITER_SHA256="6a27f9f0640a00dfe5f74a1cc4a65a0faf76994fe584efe23afb8f7ee1638fc2"
 REVIEW_ONLY=0
 if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
   REVIEW_ONLY=1
@@ -29,6 +32,36 @@ else
   unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
   ACCEPTED_LOCK_SHA256=""
 fi
+
+# CocoaPods must never admit LocalSecrets identity bytes solely because they
+# occupy the canonical path. Capture and pin the verifier from accepted source,
+# then require a root-sealed receipt from the last successful transaction before
+# executable discovery or dependency resolution.
+[[ -f "$PRIVATE_IDENTITY_AUTHORITY_HELPER" && ! -L "$PRIVATE_IDENTITY_AUTHORITY_HELPER" ]] || {
+  echo "ERROR: private identity authority helper is missing from accepted source." >&2
+  exit 17
+}
+AUTHORITY_CAPTURE="$({ /bin/cat -- "$PRIVATE_IDENTITY_AUTHORITY_HELPER"; printf '\001'; })"
+[[ "$AUTHORITY_CAPTURE" == *$'\001' ]] || {
+  unset AUTHORITY_CAPTURE
+  echo "ERROR: private identity authority helper could not be captured." >&2
+  exit 17
+}
+AUTHORITY_SOURCE="${AUTHORITY_CAPTURE%$'\001'}"
+unset AUTHORITY_CAPTURE
+CAPTURED_AUTHORITY_SHA256="$(printf '%s' "$AUTHORITY_SOURCE" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+[[ "$CAPTURED_AUTHORITY_SHA256" == "$PRIVATE_IDENTITY_AUTHORITY_HELPER_SHA256" ]] || {
+  unset AUTHORITY_SOURCE CAPTURED_AUTHORITY_SHA256
+  echo "ERROR: private identity authority helper bytes do not match accepted source." >&2
+  exit 17
+}
+unset CAPTURED_AUTHORITY_SHA256
+if ! /usr/bin/python3 -I -c "$AUTHORITY_SOURCE" verify "$REPO_ROOT" "$PRIVATE_IDENTITY_WRITER_SHA256" >/dev/null; then
+  unset AUTHORITY_SOURCE
+  echo "ERROR: private app identity is not backed by the root-sealed last successful provisioning transaction. Run Scripts/provision_capture_tuya_identity.sh successfully before bootstrap." >&2
+  exit 17
+fi
+unset AUTHORITY_SOURCE
 
 if ! command -v pod >/dev/null 2>&1; then
   cat >&2 <<'EOF'

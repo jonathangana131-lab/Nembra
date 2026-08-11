@@ -18,7 +18,9 @@ LOCAL_SECRETS="$ROOT/LocalSecrets"
 # output is fixed to the checkout-owned ignored LocalSecrets tree.
 DEST="$LOCAL_SECRETS/TuyaRuntime"
 WRITER="$ROOT/Scripts/provision_capture_tuya_identity_writer.py"
-WRITER_SHA256="683865d663d98295a0a60498e42d579cef8b3588aae091bbafe8b4431343badc"
+WRITER_SHA256="6a27f9f0640a00dfe5f74a1cc4a65a0faf76994fe584efe23afb8f7ee1638fc2"
+AUTHORITY_HELPER="$ROOT/Scripts/capture_tuya_private_identity_authority.py"
+AUTHORITY_HELPER_SHA256="ca8491135545ad97ef4dc8e995f307720f25e3265ded0881fbfdf37ca845e9a1"
 ROOT_FD=9
 
 umask 077
@@ -43,6 +45,14 @@ trap close_root_fd EXIT
   builtin printf '%s\n' 'ERROR: system Python 3 and SHA-256 tooling are required for private identity publication.' >&2
   exit 4
 }
+[[ -f "$AUTHORITY_HELPER" && ! -L "$AUTHORITY_HELPER" ]] || {
+  builtin printf '%s\n' 'ERROR: private identity authority helper is missing or symlinked.' >&2
+  exit 4
+}
+[[ -x /usr/bin/sudo ]] || {
+  builtin printf '%s\n' 'ERROR: system sudo is required to seal private identity transaction authority.' >&2
+  exit 4
+}
 
 # Capture the helper exactly once before credential input. Appending a non-newline
 # sentinel prevents command substitution from stripping the helper's trailing
@@ -63,6 +73,34 @@ CAPTURED_WRITER_SHA256="$(builtin printf '%s' "$WRITER_SOURCE" | /usr/bin/shasum
 }
 unset CAPTURED_WRITER_SHA256
 
+# Capture and digest-pin the non-secret authority helper before privilege or
+# credential input. Root executes only these captured accepted bytes, never a
+# mutable checkout pathname.
+AUTHORITY_CAPTURE="$({ /bin/cat -- "$AUTHORITY_HELPER"; builtin printf '\001'; })"
+[[ "$AUTHORITY_CAPTURE" == *$'\001' ]] || {
+  unset WRITER_SOURCE AUTHORITY_CAPTURE
+  builtin printf '%s\n' 'ERROR: could not capture private identity authority helper bytes.' >&2
+  exit 4
+}
+AUTHORITY_SOURCE="${AUTHORITY_CAPTURE%$'\001'}"
+unset AUTHORITY_CAPTURE
+CAPTURED_AUTHORITY_SHA256="$(builtin printf '%s' "$AUTHORITY_SOURCE" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+[[ "$CAPTURED_AUTHORITY_SHA256" == "$AUTHORITY_HELPER_SHA256" ]] || {
+  unset WRITER_SOURCE AUTHORITY_SOURCE CAPTURED_AUTHORITY_SHA256
+  builtin printf '%s\n' 'ERROR: private identity authority helper bytes do not match the accepted digest.' >&2
+  exit 4
+}
+unset CAPTURED_AUTHORITY_SHA256
+
+# A new attempt must revoke any older successful transaction before secrets are
+# requested. If this attempt later fails, bootstrap remains mechanically blocked
+# rather than silently falling back to stale authority.
+if ! /usr/bin/sudo /usr/bin/python3 -I -c "$AUTHORITY_SOURCE" invalidate "$ROOT"; then
+  unset WRITER_SOURCE AUTHORITY_SOURCE
+  builtin printf '%s\n' 'ERROR: prior private identity transaction authority could not be revoked.' >&2
+  exit 4
+fi
+
 builtin read -r -s -p "Tuya SmartLife SDK AppKey (input hidden): " APP_KEY
 builtin printf '\n'
 builtin read -r -s -p "Tuya SmartLife SDK AppSecret (input hidden): " APP_SECRET
@@ -75,12 +113,44 @@ APP_KEY_B64="$(builtin printf '%s' "$APP_KEY" | /usr/bin/base64 | /usr/bin/tr -d
 APP_SECRET_B64="$(builtin printf '%s' "$APP_SECRET" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
 unset APP_KEY APP_SECRET
 
-if ! builtin printf '%s\0%s' "$APP_KEY_B64" "$APP_SECRET_B64" | /usr/bin/python3 -I -c "$WRITER_SOURCE" "$ROOT_FD" "$ROOT"; then
-  unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE
-  builtin printf '%s\n' 'ERROR: private Tuya identity publication failed closed.' >&2
+if ! WRITER_RECEIPT="$(builtin printf '%s\0%s' "$APP_KEY_B64" "$APP_SECRET_B64" | /usr/bin/python3 -I -c "$WRITER_SOURCE" "$ROOT_FD" "$ROOT")"; then
+  unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE AUTHORITY_SOURCE
+  builtin printf '%s\n' 'ERROR: private Tuya identity publication failed closed; transaction authority remains revoked.' >&2
   exit 4
 fi
 unset APP_KEY_B64 APP_SECRET_B64 WRITER_SOURCE
+[[ "$WRITER_RECEIPT" != *$'\n'* ]] || {
+  unset WRITER_RECEIPT AUTHORITY_SOURCE
+  builtin printf '%s\n' 'ERROR: private identity writer returned a malformed transaction receipt.' >&2
+  exit 4
+}
+IFS=$'\t' builtin read -r RECEIPT_SCHEMA PODSPEC_SHA256 IDENTITY_SHA256 RECEIPT_EXTRA <<< "$WRITER_RECEIPT"
+unset WRITER_RECEIPT
+[[ "$RECEIPT_SCHEMA" == "NEMBRA_PRIVATE_IDENTITY_RECEIPT_V1" &&
+   "$PODSPEC_SHA256" =~ ^[0-9a-f]{64}$ &&
+   "$IDENTITY_SHA256" =~ ^[0-9a-f]{64}$ &&
+   -z "${RECEIPT_EXTRA:-}" ]] || {
+  unset RECEIPT_SCHEMA PODSPEC_SHA256 IDENTITY_SHA256 RECEIPT_EXTRA AUTHORITY_SOURCE
+  builtin printf '%s\n' 'ERROR: private identity writer returned an invalid transaction fingerprint.' >&2
+  exit 4
+}
+unset RECEIPT_SCHEMA RECEIPT_EXTRA
+
+# Seal only non-secret hashes of the exact successful held output inodes into a
+# root-owned receipt outside the user-writable checkout. The privileged helper
+# independently re-opens and fingerprints current outputs before sealing.
+if ! /usr/bin/sudo /usr/bin/python3 -I -c "$AUTHORITY_SOURCE" seal "$ROOT" "$WRITER_SHA256" "$PODSPEC_SHA256" "$IDENTITY_SHA256" >/dev/null; then
+  unset PODSPEC_SHA256 IDENTITY_SHA256 AUTHORITY_SOURCE
+  builtin printf '%s\n' 'ERROR: private identity transaction could not be sealed; bootstrap remains blocked.' >&2
+  exit 4
+fi
+unset PODSPEC_SHA256 IDENTITY_SHA256
+if ! /usr/bin/python3 -I -c "$AUTHORITY_SOURCE" verify "$ROOT" "$WRITER_SHA256" >/dev/null; then
+  unset AUTHORITY_SOURCE
+  builtin printf '%s\n' 'ERROR: freshly sealed private identity transaction failed local verification.' >&2
+  exit 4
+fi
+unset AUTHORITY_SOURCE
 
 close_root_fd
 trap - EXIT
