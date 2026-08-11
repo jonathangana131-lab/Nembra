@@ -6,7 +6,7 @@
   "title": "GitHub-native swarm control plane foundation",
   "objective": "Implement, adversarially validate, and safely shadow-roll out atomic GitHub-native coordination without weakening Nembra product or physical-safety truth.",
   "priority": 0,
-  "state": "INTEGRATION_READY",
+  "state": "DONE",
   "dependencies": [],
   "blockers": [],
   "mode": "exclusive",
