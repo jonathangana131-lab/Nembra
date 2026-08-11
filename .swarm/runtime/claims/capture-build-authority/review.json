@@ -7,15 +7,17 @@
   "workerId": "sol-20260811-1402vo",
   "leaseId": "capture-build-review-1402vo-20260811-2204",
   "generation": 14,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:04:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:04:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:08:00Z",
+  "releasedAt": "2026-08-11T22:08:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3028,
   "sourceSHA": "0807fc75a7edb51597d9e926c747cd5e6c400771",
   "currentHeadSHA": "4689d621a79430a570eb6d5466d3fa767155ff5a",
-  "takeoverFromWorkerId": "sol-20260811-1402vo",
-  "takeoverReason": "Generation-13 was explicitly released. Current primary claim heartbeat is stale beyond its lease, while test worker #3028 has published a clean-parent exact ACL authority witness. Review only the diagnostic; do not touch its two owned validation paths.",
-  "intent": "Independently review #3028 exact selected-Xcode ACL witness against clean #3008 parent. Validate real macOS leaf named-user write ACL and ancestor add_file/delete_child replacement authority, exact production validator extraction, real selected-tool non-regression control, and exact-head run classification. If mechanically valid and primary ownership remains stale, define production recovery boundary. PHYSICAL NO-GO."
+  "outcome": "DIAGNOSTIC_SOURCE_VALID_WORKFLOW_SCOPE_INVALID",
+  "reviewId": 4910944515,
+  "durableEvidence": "Exact #3028 is clean two-path validation-only child of #3008. Test source mechanically proves leaf named-user write ACL and ancestor add_file/delete_child replacement authority while preserving root uid + BSD nonwritable mode, plus clean real-Xcode controls. However workflow Bind exact clean repair scope incorrectly requires four changed paths including installer/provenance production files absent from the PR, so run 31538150550 cannot reach ACL tests on this exact tree. Any scope-gate red is fixture invalidity, not product evidence. Review 4910944515 requires expected path set correction or deliberate separate four-path production successor. PHYSICAL NO-GO.",
+  "releaseReason": "Durable diagnostic review published. Release slot for corrected exact diagnostic or later production successor; do not hold while the xcode-27 queue runs an invalid scope contract."
 }
