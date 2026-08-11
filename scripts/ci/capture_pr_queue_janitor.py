@@ -86,8 +86,6 @@ def classify_run(
     minimum_age_seconds: int,
     protected_heads: set[tuple[str, str]],
 ) -> Decision:
-    """Classify one direct Capture workflow run using only closed-form authority."""
-
     if run.get("status") not in CANCELLABLE_STATUSES:
         return Decision(False, "status is not cancellable")
     if run.get("event") not in ALLOWED_EVENTS:
@@ -122,8 +120,7 @@ def classify_run(
         return Decision(False, "open-PR subject is ambiguous; preserve")
 
     for pr in prs:
-        head = pr["head"]
-        if head["sha"] == sha:
+        if pr["head"]["sha"] == sha:
             return Decision(False, "protected current exact head of an open PR")
 
     if not prs:
@@ -261,7 +258,9 @@ def self_test() -> None:
     assert classify_run(run(), [pr("b" * 40)], **common).cancel
     assert classify_run(run(), [], **common).cancel
     assert not classify_run(
-        run(), [pr("b" * 40)], **{**common, "protected_heads": {("agent/capture", "a" * 40)}}
+        run(),
+        [pr("b" * 40)],
+        **{**common, "protected_heads": {("agent/capture", "a" * 40)}},
     ).cancel
     assert not classify_run(
         run(created_at="2026-08-11T02:29:30Z"), [pr("b" * 40)], **common
@@ -302,9 +301,7 @@ def self_test() -> None:
 
     ordinary = FakeAPI([None])
     assert ordinary.cancel_run(8) is False
-    assert ordinary.calls == [
-        ("POST", "/repos/owner/repo/actions/runs/8/cancel")
-    ]
+    assert ordinary.calls == [("POST", "/repos/owner/repo/actions/runs/8/cancel")]
 
     failed = GitHubAPIError(
         "POST", "/repos/owner/repo/actions/runs/9/cancel", 500, "server error"
@@ -349,7 +346,7 @@ def main() -> int:
 
     if args.self_test:
         self_test()
-        if not args.apply and not args.repository:
+        if not args.apply:
             return 0
     if not args.repository:
         parser.error("--repository or GITHUB_REPOSITORY is required")
@@ -432,9 +429,7 @@ def main() -> int:
             print(f"REFUSE run={run_id}: cancellation failed closed: {exc}", file=sys.stderr)
             continue
         cancelled += 1
-        print(
-            f"CANCELLED run={run_id} forced={forced} reason={decision.reason}"
-        )
+        print(f"CANCELLED run={run_id} forced={forced} reason={decision.reason}")
 
     print(f"Capture direct-PR Mac queue cancellations={cancelled}")
     return 0
