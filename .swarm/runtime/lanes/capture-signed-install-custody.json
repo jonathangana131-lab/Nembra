@@ -4,20 +4,11 @@
   "laneId": "capture-signed-install-custody",
   "epic": "capture",
   "title": "Capture signed-app install custody",
-  "objective": "Close the intended-device helper and protected signed-app install execution boundary, including replacement-blind exact-Git helper custody, ACL stripping/rejection, and accepted-runner byte custody, then hand one clean exact descendant to flagship composition.",
+  "objective": "Close intended-device helper and protected signed-app install execution custody, then align exact acceptance contracts with the selected protected-stage and private-log lifecycle before flagship composition.",
   "priority": 1,
-  "state": "ACTIVE",
+  "state": "NEEDS_CHANGES",
   "dependencies": [],
-  "blockers": [
-    {
-      "id": "security-child-exact-head-revalidation",
-      "state": "ACTIVE",
-      "scope": "lane",
-      "reason": "Active #2871 exact 15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e is now a clean three-file delta over canonical #2789 02d6cb648e2506aee1ea69096c1e6a0b7038d9c1: installer signed-helper Git reads are replacement-blind/config-isolated; permanent regression pins and rejects unfenced reads; permanent Capture Signed App Install Custody workflow now re-earns real-macOS inherited-ACL strip proof on every exact candidate. Temporary materializer residue is absent. Fresh exact Signed Install, Field Build Provenance, Main Selective Graft, and Xcode 27 runs are queued/pending on 15e607805; queued is not green. Require all applicable exact-head gates terminal SUCCESS plus independent source review before composition into #2789. Any head move resets acceptance.",
-      "pr": 2871,
-      "headSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e"
-    }
-  ],
+  "blockers": [],
   "mode": "exclusive",
   "allowedWriteAreas": [
     "scripts/field/install_one_time_capture.command",
@@ -36,15 +27,18 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "sourceSHA": "8dbc60e68b38c23b95a7885e262e363b786e5820",
   "legacy": {
     "primaryPR": 2789,
-    "primaryHeadSHA": "02d6cb648e2506aee1ea69096c1e6a0b7038d9c1",
-    "activeSecurityChildPR": 2871,
-    "activeSecurityChildHeadSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e",
-    "lineagePRs": [2688,2741,2754,2789,2863,2871],
-    "exactHeadGateState": "CLEAN_SECURITY_CHILD_GATES_QUEUED",
-    "knownExactHeadFinding": "Reconciled 2026-08-11T09:31Z by sol-20260811-c7e19a. #2871 is no longer the dirty ad5 materializer head: exact 15e607805 is clean and contains only permanent signed-helper replacement-ref hardening, its regression, and the permanent real-macOS ACL exact-head gate. Do not compose until Signed Install/Field/Graft/Xcode are terminal green on this exact head; after composition the moved canonical #2789 head must re-earn applicable exact gates. PHYSICAL NO-GO."
+    "selectedSecurityParentPR": 2871,
+    "selectedSecurityParentHeadSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e",
+    "currentQAChildPR": 2911,
+    "currentQAChildLaneMetadata": "capture-signed-install-current-source-contracts",
+    "currentQAHeadSHA": "8dbc60e68b38c23b95a7885e262e363b786e5820",
+    "lineagePRs": [2688,2741,2754,2789,2863,2871,2911],
+    "exactHeadGateState": "QA_MAIN_GRAFT_AND_XCODE_GREEN_FIELD_CONTRACT_RED",
+    "fieldFailureRun": 31484031852,
+    "knownExactHeadFinding": "Reconciled 2026-08-11T11:54Z. #2911 exact 8dbc60e6 is the live tests-only acceptance child over selected signed-install #2871. Main Selective Graft 31484032164 and Xcode 27 31484031811 are terminal SUCCESS. Field Build Provenance 31484031852 fails only in Verify source contract because the workflow still greps for retired mktemp nembra-authenticated-capture-install.XXXXXX plus the old simple INSTALL_LOG trap. The selected installer already uses the stronger protected signed-app stage and separate unpredictable private diagnostic log; align the canonical Field workflow contract without weakening that custody, then rerun exact head. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "git-authority", "legacy-import"]
 }
