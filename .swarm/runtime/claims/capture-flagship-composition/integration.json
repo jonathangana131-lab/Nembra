@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-flagship-composition",
+  "slot": "integration",
+  "role": "integration",
+  "workerId": "sol-20260811-f4c2e7",
+  "leaseId": "capture-flagship-integration-f4c2e7-20260811-1239",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-11T12:39:00Z",
+  "lastHeartbeatAt": "2026-08-11T12:39:00Z",
+  "leaseSeconds": 1800,
+  "branch": "repair/v14-capture-root-axcompile-acceptance-sol-20260811",
+  "pr": 2940,
+  "sourceSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+  "currentHeadSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
+  "intent": "Preflight clean convergence of the exact app-visible AX candidate into the canonical Capture product lineage without importing temporary authoring workflows or stale ancestor-only evidence. Determine exact ancestry/delta against #2612 and current main, identify overlap/conflicts with security/control lanes, and only compose after #2940 earns all required exact-head app gates. PHYSICAL NO-GO."
+}
