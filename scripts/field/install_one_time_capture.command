@@ -306,8 +306,12 @@ APP_INSTALL_STAGE_ROOT="$(/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-a
 [[ "$APP_INSTALL_STAGE_ROOT" == /private/tmp/nembra-authenticated-capture-install.* ]] || \
     die "Protected signed-app install custody directory is outside the canonical private temporary root."
 APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"
-/usr/bin/sudo /usr/bin/ditto "$APP" "$APP_INSTALL_STAGE" || \
-    die "Could not snapshot the exact signed app into protected install custody."
+/usr/bin/sudo /usr/bin/ditto --noacl "$APP" "$APP_INSTALL_STAGE" || \
+    die "Could not snapshot the exact signed app into protected install custody without inherited ACL authority."
+STAGED_ACL_PATH="$(/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -acl -print -quit 2>/dev/null || true)"
+[[ -z "$STAGED_ACL_PATH" ]] || \
+    die "Protected signed-app install stage retained an ACL at $STAGED_ACL_PATH; refuse to expose or install it."
+unset STAGED_ACL_PATH || true
 # The stage root is still root mode-0700 here, so the invoking user cannot race this seal. BSD
 # find does not follow symlinks by default; chown -h changes a symlink object rather than an
 # external target. The verifier below rejects broken/escaping links before the stage is admitted.
