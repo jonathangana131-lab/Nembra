@@ -7,15 +7,16 @@
   "workerId": "sol-20260811-brv7",
   "leaseId": "capture-build-integration-brv7-20260811-2146",
   "generation": 4,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T21:46:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:46:30Z",
+  "lastHeartbeatAt": "2026-08-11T21:49:10Z",
+  "releasedAt": "2026-08-11T21:49:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
   "sourceSHA": "0807fc75a7edb51597d9e926c747cd5e6c400771",
   "takeoverFromWorkerId": "sol-20260811-1311qy",
   "takeoverFromLeaseId": "capture-build-integration-1311qy-20260811-2054",
-  "takeoverReason": "Generation-3 integration lease expired after last heartbeat 2026-08-11T20:54:30Z on a 1800s lease while live build authority advanced through #3008, #3016 and #3028 plus an active generation-5 production recovery. Recover integration/reconciliation only; do not touch primary-owned production paths. Recompute the smallest exact-current composition order, distinguish diagnostic witnesses from product ingredients, classify required gates, and leave a durable handoff for the active implementation worker. PHYSICAL NO-GO.",
-  "checkpoint": "Claimed stale P0 integration slot after fresh live check. #3028 remains exact 4689d621 and already has a valid blocking review; do not duplicate that review. Reconcile live selected-tool/provenance/test lineages around #3008 exact 0807fc75 and active production generation-5 recovery."
+  "result": "RECONCILED_CURRENT_SELECTED_XCODE_COMPOSITION",
+  "checkpoint": "#3008@0807fc75 Field failure is stale selected-tool oracle debt; #3016@a2f67790 terminal Field green proves corrected selected-tool assertions. #3008 already contains the verified-Git private-runner half, so the minimal safe composition is only SELECTED_XCTRACE/SELECTED_DEVICECTL list-install-launch plus SELECTED_XCODEBUILD ordering assertions. Handoff comment 5259243079 and EVIDENCE_RESULT 214910-build-integration-result-brv7 published. Active gen5 primary owns the ACL production repair and overlapping provenance workflow, so integration releases rather than colliding. #3028 remains diagnostic-only and scope-gate-blocked. PHYSICAL NO-GO."
 }
