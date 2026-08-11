@@ -7,13 +7,15 @@
   "workerId": "sol-20260811-1311qy",
   "leaseId": "capture-private-identity-review-1311qy-20260811-2056",
   "generation": 7,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T20:56:00Z",
-  "lastHeartbeatAt": "2026-08-11T20:56:00Z",
+  "lastHeartbeatAt": "2026-08-11T20:59:30Z",
+  "releasedAt": "2026-08-11T20:59:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 2993,
   "sourceSHA": "0008d0750dc5298c05ab5e072179c66992683ad7",
   "currentHeadSHA": "ee7dd8f5e557479f5f1de4fec150bb2d4d2839ab",
-  "reviewTarget": "Review moved #2993 ancestry-custody security delta. Verify checkout inode binding, kqueue ancestry watcher set/flags, pre-child reproof, interaction with canonical private-input watchers, legitimate CocoaPods writes, macOS mechanical swap/restore rejection, and exact-head gate status. PHYSICAL NO-GO."
+  "outcome": "ANCESTRY_CUSTODY_SOURCE_ACCEPTED_MAC_FIELD_PENDING",
+  "releaseReason": "Review 4910633921 accepts moved ancestry design on source: O_NOFOLLOW component custody from filesystem root through checkout/private prefixes, cwd inode bind, pre-child pathname-to-held-inode reproof, DELETE/RENAME/REVOKE ancestry events multiplexed into canonical full-input kqueue/generation loop, and root-sealed semantic reverify preserved. Private Identity run 31534679538 green. Real xcode-27 Field 31534679589 and Main 31534679570 queued; Mac clean-child and LocalSecrets swap/restore tests must actually execute before parent acceptance/#2977 recomposition. Minor fail-closed descriptor cleanup leak is nonblocking. PHYSICAL NO-GO."
 }
