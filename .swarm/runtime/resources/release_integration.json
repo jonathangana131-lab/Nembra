@@ -7,11 +7,13 @@
   "workerId": "sol-20260811-1439r8",
   "leaseId": "release-integration-r8-20260811-2222",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-11T22:22:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:22:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:27:30Z",
+  "releasedAt": "2026-08-11T22:27:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3082,
-  "resource": "RELEASE_INTEGRATION"
+  "resource": "RELEASE_INTEGRATION",
+  "checkpoint": "Integration generation-2 accepted exact #3082@36b531b2 for the nested teardown Git/blob reopen blocker. Canonical/sealed/retirement Linux gates green; independent review/replay and fresh Darwin exact-descendant evidence still required. Resource released. PHYSICAL NO-GO."
 }
