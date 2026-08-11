@@ -6,24 +6,32 @@
   "title": "Capture Final-GO control authority",
   "objective": "Converge authenticated-stationary Final-GO so reviewed generated/private build authority, candidate worktree authority, and all parent-module execution subjects are bound to one exact accepted Git/physical candidate without regressing sealed installer or signed-artifact custody.",
   "priority": 0,
-  "state": "VERIFYING",
+  "state": "NEEDS_CHANGES",
   "dependencies": ["capture-build-authority"],
   "blockers": [
     {
       "id": "build-authority-current-convergence-not-accepted",
       "state": "ACTIVE",
       "scope": "dependency",
-      "reason": "Final-GO control successor #2921 exact bf33fb64f9ffcc1301984d4fba5ca468631151a8 is exact-head control green, but current selected build-authority convergence #2968 exact 3c2244ed599d2d0cc557132ef89ea043b68697b3 is NEEDS_CHANGES and has no promotable Field/Graft/Xcode acceptance. Final-GO cannot authorize or outrun that dependency.",
+      "reason": "Current selected build-authority convergence #2968 exact 3c2244ed599d2d0cc557132ef89ea043b68697b3 is NEEDS_CHANGES and has no promotable exact-head Field/Graft/Xcode acceptance. Final-GO cannot authorize or outrun that dependency.",
       "pr": 2968,
       "headSHA": "3c2244ed599d2d0cc557132ef89ea043b68697b3"
     },
     {
-      "id": "final-go-independent-review-and-final-composition-pending",
+      "id": "final-go-current-canonical-regression-fixture-red",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "#2921 exact bf33fb64 has Capture Authenticated Stationary Private Review Final GO runs 31490569648 and 31491154798 terminal SUCCESS. Xcode is skipped by path policy and is not counted. Fresh independent exact-head review and deliberate final flagship composition against accepted build/private/signed/app-visible subjects are still required; control green alone is not physical GO.",
+      "reason": "#2921 current exact 8242722c0b0e4ff2bcd117419fe405db191a5985 has latest Capture Authenticated Stationary Private Review Final GO run 31491239824/job 93778006514 terminal FAILURE. The failing Git-object-chain attack fixture creates pack indexes with current Git 2.54 mode 0444 and then attempts index.write_bytes without first making the test artifact writable, producing PermissionError before the authority assertion runs. Repair fixture portability without weakening the forged-object attack, then rerun exact head. Earlier same-head success runs are historical evidence only while the latest canonical run is red.",
       "pr": 2921,
-      "headSHA": "bf33fb64f9ffcc1301984d4fba5ca468631151a8"
+      "headSHA": "8242722c0b0e4ff2bcd117419fe405db191a5985"
+    },
+    {
+      "id": "final-composed-product-authority-pending",
+      "state": "ACTIVE",
+      "scope": "flagship",
+      "reason": "Signed-install origin custody, private-identity convergence, app/runtime acceptance, and one final unchanged composed exact-head gate remain separate requirements. Xcode run 31491126406 on #2921 was cancelled and is non-evidence. Control-plane success cannot promote PHYSICAL GO by itself.",
+      "pr": 2921,
+      "headSHA": "8242722c0b0e4ff2bcd117419fe405db191a5985"
     }
   ],
   "mode": "exclusive",
@@ -37,20 +45,25 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "bf33fb64f9ffcc1301984d4fba5ca468631151a8",
+  "sourceSHA": "8242722c0b0e4ff2bcd117419fe405db191a5985",
   "legacy": {
     "selectedGeneratedPR": 2775,
     "selectedGeneratedHeadSHA": "b4a2172cd799d363cb503a1ecb3d15bc7382e36f",
     "selectedPrivateReviewRecoveryPR": 2873,
     "selectedPrivateReviewRecoveryHeadSHA": "3c8711f8520b93e2647ec9e3b52d50894193bc30",
     "selectedProductionPR": 2921,
-    "selectedProductionHeadSHA": "bf33fb64f9ffcc1301984d4fba5ca468631151a8",
+    "selectedProductionHeadSHA": "8242722c0b0e4ff2bcd117419fe405db191a5985",
     "rawTreeRedTeamPR": 2903,
     "rawTreeRedTeamHeadSHA": "a19b9c389f76c3838436b13b5b87b33def258d5c",
-    "finalGoSuccessRuns": [31490569648,31491154798],
-    "redTeamInputs": [2798,2869,2903,2936],
-    "lineagePRs": [2638,2775,2791,2798,2803,2873,2890,2903,2936,2938,2921],
-    "knownExactHeadFinding": "Reconciled 2026-08-11T20:15Z by sol-20260811-b7c1a2. #2921 exact bf33fb64 is the current Final-GO control successor and its canonical private-review Final-GO workflow is terminal SUCCESS twice on that unchanged head. This supersedes the stale #2890 self-test-red lane snapshot. Xcode on #2921 remains skipped by path policy and is not product acceptance. Current build authority #2968 is red/nonpromotable, private identity and signed-install remain separate unfinished dependencies, and the final composed unchanged candidate has not re-earned all product/security/device gates. Therefore Final-GO is control-ready only, not physical authority. PHYSICAL NO-GO."
+    "historicalSameHeadFinalGoSuccessRuns": [31490569648,31491154798],
+    "currentFailedFinalGoRun": 31491239824,
+    "currentFailedFinalGoJob": 93778006514,
+    "descriptorAncestryCurrentValidationPR": 2972,
+    "descriptorAncestryCurrentValidationHeadSHA": "59000710ad38f693091feed17a040d8943d0b3cf",
+    "descriptorAncestryCurrentValidationRun": 31531987091,
+    "redTeamInputs": [2798,2869,2903,2936,2972],
+    "lineagePRs": [2638,2775,2791,2798,2803,2873,2890,2903,2936,2938,2921,2972],
+    "knownExactHeadFinding": "Reconciled 2026-08-11T20:22Z by sol-20260811-b7c1a2. Live #2921 head is 8242722c, not the older bf33fb64 snapshot. The latest canonical private-review Final-GO run is red because the mechanical forged-pack fixture assumes a writable .idx, while current Git 2.54 creates the pack index mode 0444; the attack never reaches its authority assertion. This is test-fixture portability debt and must be repaired without weakening the forged-object test. Independent current-head descriptor-ancestry replay #2972 exact 59000710 is terminal SUCCESS and shows #2921 rejects that demonstrated detached-parent namespace attack; it remains validation-only and does not grant overall GO. Build authority #2968 remains nonpromotable, other flagship dependencies remain unfinished, and Xcode cancelled/skipped results are non-evidence. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","physical-go","control-authority","git-authority","legacy-import"]
 }
