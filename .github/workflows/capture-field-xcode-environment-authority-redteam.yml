@@ -1,0 +1,27 @@
+name: Capture Field Xcode Environment Authority Red Team
+
+on:
+  pull_request:
+    paths:
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_xcode_environment_authority.py
+      - .github/workflows/capture-field-xcode-environment-authority-redteam.yml
+
+permissions:
+  contents: read
+
+jobs:
+  xcode-environment-authority:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run field Xcode environment regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_xcode_environment_authority.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_xcode_environment_authority.py
+          /bin/bash -n scripts/field/install_one_time_capture.command
+          git diff --check
