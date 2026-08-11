@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T21:34:30Z",
-  "lastHeartbeatAt": "2026-08-11T21:44:38Z",
+  "lastHeartbeatAt": "2026-08-11T21:49:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
@@ -21,5 +21,5 @@
     "sol-20260811-1315r8"
   ],
   "takeoverReason": "Generation-2 lease expired after last heartbeat 2026-08-11T20:52:00Z. Recover CI/Xcode reconciliation against current Capture P0 live GitHub, especially moved/defeated Final-GO authority, runtime accessibility evidence, build-authority and signed-install exact-head gate truth. Reconciliation only; no product implementation or physical authority.",
-  "checkpoint": "Reconciliation in progress. Exploit-positive #3024 exact head c8ecaaa9717c685af05449e1b2c33c2c91d3c216 succeeded and invalidates old Final-GO 471cc025 authority. Primary whole-tree repair candidate 1399ea87116d58e957e83bd2312d2a3a75d78d8f failed focused closure regressions and was not published; independent review rejects its watcher-registration seam. #3026 exact head a6172620e1c9256f2358d8d7efe186420785c7df has focused custody greens but Xcode 27 QA failure. Refreshing all moving exact heads before final scheduler matrix. Queued/in-progress/skipped/ancestor green are not acceptance. PHYSICAL NO-GO."
+  "checkpoint": "Scheduler reconciliation at main d8e38d0a786d4fd97e7eb641d97c6cec76adee0c. PHYSICAL NO-GO. Former Final-GO #2921@471cc025 is revoked by terminal-success validation heads #3024@c8ecaaa9 and #3030@40d180d6. Live production candidate #3042@cb36f926 is NOT ACCEPTED: Final-GO run 31539372746 failed during hosted-runner provisioning with AWS 503 before meaningful test execution, so this is infrastructure/non-accepting rather than a product verdict; exact-head Xcode was skipped. Exact-current validation #3047@15a522ed has both its focused gate and Xcode queued, so no result is promotable. Independent review generation 13 still selects no Final-GO successor and requires the full unchanged-head oracle set plus Darwin/macOS evidence before acceptance. Private-identity #3026@a6172620 has two focused greens but Field and Xcode failures and Main cancelled; fixture repair #3031@11fc7e08 is Field/Main queued and Xcode in progress. Runtime AX #3018@140c99e0 remains simulator-only with VoiceOver/Main queued and Xcode skipped. Queued, in-progress, skipped, cancelled, infrastructure-failed, and ancestor-green states do not count as acceptance. Final physical authorization requires deliberate recomposition and terminal exact-head acceptance across all applicable Capture gates."
 }
