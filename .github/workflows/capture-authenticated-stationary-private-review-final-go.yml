@@ -60,9 +60,14 @@ jobs:
             scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
 
-      - name: Red-team current private review Final-GO carriage
+      - name: Red-team raw candidate authority
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+
+      - name: Red-team committed parent execution custody
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
