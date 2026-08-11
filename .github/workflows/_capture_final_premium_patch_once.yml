@@ -1,0 +1,86 @@
+name: Capture Final Premium Root Patch Once
+
+on:
+  push:
+    branches:
+      - agent/v14-capture-final-premium-root-convergence-sol
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'bootstrap final Capture premium root polish'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Preserve AX semantics on premium root
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='NembraApp/App/NembraCaptureEntrypoint.swift'
+          expected_blob='4259fcbb0d79b78711b0e7b179827008f2df74ae'
+          test "$(git hash-object "$file")" = "$expected_blob"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          hero = '''            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+              .fixedSize(horizontal: false, vertical: true)
+
+              Text('''
+          hero_new = '''            .font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .largeTitle.bold())
+              .fixedSize(horizontal: false, vertical: true)
+              .accessibilityAddTraits(.isHeader)
+
+              Text('''
+          assert source.count(hero) == 1
+          source = source.replace(hero, hero_new, 1)
+
+          combined = '''        }
+              .accessibilityElement(children: .combine)
+          }
+
+          private var buildAuthorityStatus: some View {'''
+          uncombined = '''        }
+          }
+
+          private var buildAuthorityStatus: some View {'''
+          assert source.count(combined) == 1
+          source = source.replace(combined, uncombined, 1)
+
+          action = '''                .buttonStyle(.borderedProminent)
+                      .tint(.cyan)
+                      .foregroundStyle(.black)
+                      .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")'''
+          action_new = '''                .buttonStyle(.borderedProminent)
+                      .tint(.cyan)
+                      .foregroundStyle(.black)
+                      .accessibilityIdentifier("nembra.capture.root.account-link-action")
+                      .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")'''
+          assert source.count(action) == 1
+          source = source.replace(action, action_new, 1)
+
+          assert source.count('.accessibilityAddTraits(.isHeader)') >= 1
+          assert source.count('nembra.capture.root.account-link-action') == 1
+          assert 'private func rootSection<Content: View>' in source
+          assert 'private func rootPanel<Content: View>' not in source
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          git diff --check
+          test "$(git diff --name-only | wc -l | tr -d ' ')" = 1
+          test "$(git diff --name-only)" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+
+          git config user.name 'Nembra Capture Closure'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git rm .github/workflows/_capture_final_premium_patch_once.yml
+          git commit -m 'ui(capture): preserve premium root AX semantics'
+          git push origin HEAD:${GITHUB_REF_NAME}
