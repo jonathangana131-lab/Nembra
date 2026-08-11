@@ -1,3 +1,2 @@
 Temporary same-repository trigger only. Never merge.
-Retry after narrowing runner checkpoint to product/test files only.
-Retry again after base branch advanced to the narrowed checkpoint workflow.
+Final retry uses the live repair branch ref so the validated product commit can fast-forward.
