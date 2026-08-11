@@ -4,15 +4,16 @@
   "laneId": "legacy-github-reconciliation",
   "slot": "reconcile-capture",
   "role": "scheduler-reconciler",
-  "workerId": "sol-20260811-lgrv2353",
-  "leaseId": "reconcapture074811",
-  "generation": 2,
+  "workerId": "sol-20260811-f3a8",
+  "leaseId": "reconcapture-f3a8-20260811-0819",
+  "generation": 3,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T07:48:11Z",
-  "lastHeartbeatAt": "2026-08-11T07:48:11Z",
+  "claimedAt": "2026-08-11T08:19:10Z",
+  "lastHeartbeatAt": "2026-08-11T08:19:10Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
-  "sourceSHA": "3f587b8d4cadd824c8c6da2af3e89cd5e1538cbc",
-  "takeoverFromWorkerId": "sol-20260811-cap2805r"
+  "sourceSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "takeoverFromWorkerId": "sol-20260811-lgrv2353",
+  "takeoverReason": "prior reconciliation lease expired without heartbeat; preserve prior durable state and reconcile live Capture lineage only"
 }
