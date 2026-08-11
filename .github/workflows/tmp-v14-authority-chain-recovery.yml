@@ -1,0 +1,58 @@
+name: V14 Authority Chain Recovery
+
+on:
+  push:
+    branches:
+      - recovery/v14-private-review-authority-chain-materializer-sol-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v14-private-review-authority-chain-materializer-sol-20260811
+          fetch-depth: 0
+      - name: Reconstruct and run intended authority materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('.github/workflows/capture-authority-chain-materialize.yml')
+          source = source_path.read_text()
+          marker = '        run: |\n'
+          if source.count(marker) != 1:
+              raise SystemExit(f'expected one materializer run block, found {source.count(marker)}')
+          body = source.split(marker, 1)[1]
+
+          normalized = []
+          in_triple_single = False
+          for raw in body.splitlines(keepends=True):
+              line = raw
+              if not in_triple_single and line.startswith('          '):
+                  line = line[10:]
+              triple_count = line.count("'''")
+              normalized.append(line)
+              if triple_count % 2 == 1:
+                  in_triple_single = not in_triple_single
+
+          if in_triple_single:
+              raise SystemExit('unterminated triple-single-quoted string while reconstructing materializer')
+
+          script = ''.join(normalized)
+          old_push = 'git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol'
+          new_push = 'git push origin HEAD:recovery/v14-private-review-authority-chain-materializer-sol-20260811'
+          if script.count(old_push) != 1:
+              raise SystemExit(f'expected one materializer push target, found {script.count(old_push)}')
+          script = script.replace(old_push, new_push, 1)
+          Path('/tmp/nembra-authority-materialize.sh').write_text(script)
+          PY
+          bash -n /tmp/nembra-authority-materialize.sh
+          bash /tmp/nembra-authority-materialize.sh
