@@ -1,0 +1,54 @@
+name: V14 Capture Prune Stale Canonical Runs
+
+on:
+  push:
+    branches:
+      - ops/v14-capture-prune-stale-canonical-runs-sol
+    paths:
+      - '.github/workflows/v14-capture-prune-stale-canonical-runs.yml'
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      CANONICAL_BRANCH: agent/v14-capture-live-main-visual-acceptance-sol
+      CURRENT_HEAD: 89843dcaf63a0c3c48a0dc605878df2e4362f0fd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Cancel only stale queued runs from canonical Capture branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          live="$(gh api "/repos/$REPO/git/ref/heads/$CANONICAL_BRANCH" --jq '.object.sha')"
+          test "$live" = "$CURRENT_HEAD"
+          stale="$(mktemp)"
+          gh api --paginate "/repos/$REPO/actions/runs?status=queued&per_page=100" \
+            --jq '.workflow_runs[] | select(.head_branch == env.CANONICAL_BRANCH and .head_sha != env.CURRENT_HEAD) | [.id, .head_sha, .name] | @tsv' > "$stale"
+          count=0
+          while IFS=$'\t' read -r id sha name; do
+            [[ -n "${id:-}" ]] || continue
+            echo "Cancel stale canonical run $id $sha $name"
+            gh api -X POST "/repos/$REPO/actions/runs/$id/cancel" >/dev/null
+            count=$((count + 1))
+          done < "$stale"
+          echo "Cancelled $count stale queued canonical runs; exact current head preserved: $CURRENT_HEAD"
+
+      - name: Self-delete helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/v14-capture-prune-stale-canonical-runs.yml
+          git config user.name 'Nembra Capture Closure'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'ci(capture): remove stale-run maintenance helper'
+          git push origin HEAD:ops/v14-capture-prune-stale-canonical-runs-sol
