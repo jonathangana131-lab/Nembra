@@ -35,6 +35,16 @@ def load_writer():
 
 
 class FailedPrivateIdentityBootstrapAuthorityTests(unittest.TestCase):
+    def test_authority_verification_precedes_cocoapods_discovery(self) -> None:
+        source = BOOTSTRAP_PATH.read_text(encoding="utf-8")
+        verify = source.index('verify "$REPO_ROOT" "$PRIVATE_IDENTITY_WRITER_SHA256"')
+        pod_discovery = source.index("command -v pod")
+        self.assertLess(verify, pod_discovery)
+        self.assertIn(
+            'PRIVATE_IDENTITY_AUTHORITY_HELPER_SHA256="ca8491135545ad97ef4dc8e995f307720f25e3265ded0881fbfdf37ca845e9a1"',
+            source,
+        )
+
     def test_failed_publication_attacker_source_is_blocked_before_pod(self) -> None:
         writer = load_writer()
         with tempfile.TemporaryDirectory(prefix="nembra-private-failed-bootstrap-") as temporary:
