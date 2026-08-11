@@ -43,7 +43,41 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 -m py_compile scripts/ci/capture_signed_app_install_custody.py scripts/ci/tests/test_capture_signed_app_install_custody.py
+          bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+
+      - name: Prove accepted helper blob is non-user-writable while executed
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo /bin/mkdir -p /private/tmp
+          helper_root="$(sudo /usr/bin/mktemp -d /private/tmp/nembra-capture-install-helper.XXXXXX)"
+          helper_subject="$helper_root/capture_signed_app_install_custody.py"
+          fixture_root="$(mktemp -d)"
+          cleanup() {
+            rm -rf -- "$fixture_root"
+            sudo /bin/rm -rf -- "$helper_root"
+          }
+          trap cleanup EXIT
+
+          accepted_blob="$(GIT_NO_REPLACE_OBJECTS=1 git rev-parse HEAD:scripts/ci/capture_signed_app_install_custody.py)"
+          GIT_NO_REPLACE_OBJECTS=1 git cat-file blob "$accepted_blob" | sudo /usr/bin/tee "$helper_subject" >/dev/null
+          sudo /usr/bin/chown root:root "$helper_subject"
+          sudo /bin/chmod 0444 "$helper_subject"
+          sudo /bin/chmod 0755 "$helper_root"
+          test "$(GIT_NO_REPLACE_OBJECTS=1 git hash-object --no-filters -- "$helper_subject")" = "$accepted_blob"
+
+          if printf 'ATTACKER_HELPER\n' > "$helper_subject" 2>/dev/null; then
+            echo 'ERROR: same-UID runner mutated the protected accepted helper subject' >&2
+            exit 1
+          fi
+          test "$(GIT_NO_REPLACE_OBJECTS=1 git hash-object --no-filters -- "$helper_subject")" = "$accepted_blob"
+
+          mkdir -p "$fixture_root/Nembra Capture.app"
+          printf 'accepted signed subject\n' > "$fixture_root/Nembra Capture.app/subject.txt"
+          helper_digest="$(/usr/bin/python3 -I -B "$helper_subject" fingerprint --app "$fixture_root/Nembra Capture.app")"
+          [[ "$helper_digest" =~ ^[0-9a-f]{64}$ ]]
+          test "$(GIT_NO_REPLACE_OBJECTS=1 git hash-object --no-filters -- "$helper_subject")" = "$accepted_blob"
 
       - name: Prove root-owned stage rejects same-UID mutation
         shell: bash
