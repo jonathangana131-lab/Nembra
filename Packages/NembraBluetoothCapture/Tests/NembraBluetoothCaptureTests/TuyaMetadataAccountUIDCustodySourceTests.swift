@@ -31,8 +31,16 @@ struct TuyaMetadataAccountUIDCustodySourceTests {
         #expect(load.contains("Self.redactAccountUID("))
         #expect(load.contains("Self.redactSecrets(rawDetail)"))
         #expect(load.contains("Self.redactSecrets(specs[\"result\"]"))
-        #expect(load.contains("Self.redactSecrets(strategy[\"result\"]"))
         #expect(load.contains("Self.redactSecrets(statusMap)"))
+
+        // Status authority now comes only from the status entries in the
+        // device-detail response. A separate `/status` request was removed after
+        // it had been mislabeled as a local strategy; this custody test must not
+        // demand or silently restore that false provenance.
+        #expect(load.contains("if let statuses = rawDetail[\"status\"] as? [[String: Any]]"))
+        #expect(!load.contains("/status"))
+        #expect(!load.contains("selectedDeviceLocalStrategy"))
+        #expect(!load.contains("strategy[\"result\"]"))
     }
 
     @Test("final export scrubs the exact account UID across the complete envelope")
