@@ -3,7 +3,7 @@ name: TEMP Capture Authority Chain Runner
 on:
   push:
     branches:
-      - repair/v14-private-review-hmac-helper-execution-sol
+      - repair/v14-private-review-helper-authority-chain-recovery-sol
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: repair/v14-private-review-hmac-helper-execution-sol
+          ref: repair/v14-private-review-helper-authority-chain-recovery-sol
           fetch-depth: 0
       - name: Execute reviewed materializer payload
         shell: bash
@@ -51,7 +51,7 @@ jobs:
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add .nembra-authority-materializer-error
             git commit -m 'Capture: retain authority materializer failure'
-            git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
+            git push origin HEAD:repair/v14-private-review-helper-authority-chain-recovery-sol
             exit 1
           fi
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
@@ -68,4 +68,4 @@ jobs:
           git add Scripts/bootstrap_capture_tuya_sdk.sh Scripts/capture_tuya_private_input_build_guard.py scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_private_review_downstream_helper_execution_custody.py scripts/ci/tests/test_capture_private_review_commitment.py scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py scripts/ci/tests/test_capture_private_review_helper_execution_custody.py Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldSDKDependencyProvenanceSourceTests.swift
           git diff --cached --quiet && { echo 'ERROR: materializer produced no production/test diff' >&2; exit 1; }
           git commit -m 'Capture: bind complete field authority helper chain'
-          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
+          git push origin HEAD:repair/v14-private-review-helper-authority-chain-recovery-sol
