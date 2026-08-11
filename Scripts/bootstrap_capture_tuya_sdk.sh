@@ -7,6 +7,7 @@ TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
+PRIVATE_INPUT_RESOLUTION_GUARD="$SCRIPT_DIR/capture_tuya_private_input_build_guard.py"
 PRIVATE_IDENTITY_AUTHORITY_HELPER="$SCRIPT_DIR/capture_tuya_private_identity_authority.py"
 PRIVATE_IDENTITY_AUTHORITY_HELPER_SHA256="40f5aee5c5e39c0a6146ba2ca7bc6bad7cf6abd6576fff8835d02f714589ae71"
 PRIVATE_IDENTITY_WRITER_SHA256="6a27f9f0640a00dfe5f74a1cc4a65a0faf76994fe584efe23afb8f7ee1638fc2"
@@ -61,9 +62,10 @@ if ! /usr/bin/python3 -I -c "$AUTHORITY_SOURCE" verify "$REPO_ROOT" "$PRIVATE_ID
   echo "ERROR: private app identity is not backed by the root-sealed last successful provisioning transaction. Run Scripts/provision_capture_tuya_identity.sh successfully before bootstrap." >&2
   exit 17
 fi
-unset AUTHORITY_SOURCE
 
-if ! command -v pod >/dev/null 2>&1; then
+POD_BIN="$(command -v pod || true)"
+if [[ -z "$POD_BIN" || ! -x "$POD_BIN" ]]; then
+  unset AUTHORITY_SOURCE
   cat >&2 <<'EOF'
 ERROR: CocoaPods is not installed.
 
@@ -75,22 +77,32 @@ EOF
 fi
 
 [[ -x /usr/bin/python3 ]] || {
+  unset AUTHORITY_SOURCE
   echo "ERROR: System Python 3 is required for private Tuya input provenance." >&2
   exit 3
 }
 
 if [[ ! -f Podfile ]]; then
+  unset AUTHORITY_SOURCE
   echo "ERROR: Podfile is missing at $REPO_ROOT/Podfile" >&2
   exit 4
 fi
 
 if [[ ! -d NembraCapture.xcodeproj ]]; then
+  unset AUTHORITY_SOURCE
   echo "ERROR: NembraCapture.xcodeproj is missing." >&2
   exit 5
 fi
 
 if [[ ! -f "$PROVENANCE_HELPER" ]]; then
+  unset AUTHORITY_SOURCE
   echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
+  exit 6
+fi
+
+if [[ ! -f "$PRIVATE_INPUT_RESOLUTION_GUARD" || -L "$PRIVATE_INPUT_RESOLUTION_GUARD" ]]; then
+  unset AUTHORITY_SOURCE
+  echo "ERROR: private-input vnode custody guard is missing from the accepted source." >&2
   exit 6
 fi
 
@@ -98,6 +110,7 @@ fi
 # for the exact Developer Platform app/bundle identity. It must never be
 # replaced with a public placeholder or omitted just to make CocoaPods resolve.
 if [[ ! -f "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" || ! -d "$TUYA_PRIVATE_SDK/Build" ]]; then
+  unset AUTHORITY_SOURCE
   cat >&2 <<EOF
 ERROR: Tuya's app-specific iOS security SDK is not provisioned.
 
@@ -119,6 +132,7 @@ fi
 if [[ ! -f "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" ||
       ! -d "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" ||
       ! -f "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig/NembraTuyaPrivateIdentity.swift" ]]; then
+  unset AUTHORITY_SOURCE
   cat >&2 <<EOF
 ERROR: Tuya's private app identity is not provisioned for the field workspace.
 
@@ -132,18 +146,48 @@ EOF
   exit 8
 fi
 
+# The existing field-build guard is generic vnode custody: its --lockfile slot
+# is a watched regular-file anchor. During dependency resolution we deliberately
+# use the tracked Podfile as that stable anchor because CocoaPods itself executes
+# the Podfile while the private SDK/identity inputs are read. The child re-verifies
+# the root-sealed identity receipt only after every watcher is armed, then runs
+# CocoaPods under the same watcher set. A swap/restore race therefore cannot turn
+# unsealed podspec/source bytes into dependency-resolution authority.
+AUTHORITY_REVERIFY_AND_EXEC='set -euo pipefail
+AUTHORITY_SOURCE_INNER="$1"
+REPO_ROOT_INNER="$2"
+WRITER_SHA_INNER="$3"
+shift 3
+/usr/bin/python3 -I -c "$AUTHORITY_SOURCE_INNER" verify "$REPO_ROOT_INNER" "$WRITER_SHA_INNER" >/dev/null
+exec "$@"'
+
 printf 'Resolving the official Tuya SmartLife iOS SDK and private field identity for Nembra Capture...\n'
 # `pod install` preserves an existing Podfile.lock instead of silently upgrading
 # resolved transitive SDK inputs. `--repo-update` refreshes specs only; the two
 # public Tuya products themselves are exact-pinned in Podfile at 7.8.0.
-pod install --repo-update
+if ! /usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD" \
+  --lockfile "$REPO_ROOT/Podfile" \
+  --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+  --security-build "$TUYA_PRIVATE_SDK/Build" \
+  --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+  --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+  -- /bin/bash -c "$AUTHORITY_REVERIFY_AND_EXEC" _ \
+     "$AUTHORITY_SOURCE" "$REPO_ROOT" "$PRIVATE_IDENTITY_WRITER_SHA256" \
+     "$POD_BIN" install --repo-update
+then
+  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
+  echo "ERROR: private-input custody rejected guarded CocoaPods dependency resolution." >&2
+  exit 18
+fi
 
 if [[ ! -d NembraCapture.xcworkspace ]]; then
+  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
   echo "ERROR: CocoaPods did not create NembraCapture.xcworkspace." >&2
   exit 9
 fi
 
 if [[ ! -f Podfile.lock ]]; then
+  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
   echo "ERROR: CocoaPods did not create Podfile.lock; exact field dependency provenance is unavailable." >&2
   exit 10
 fi
@@ -153,25 +197,38 @@ for expected in \
   "  - ThingSmartBusinessExtensionKit (7.8.0)"
 do
   if ! grep -Fq -- "$expected" Podfile.lock; then
+    unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
     echo "ERROR: resolved Tuya SDK does not match the exact reviewed 7.8.0 field dependency: $expected" >&2
     exit 11
   fi
 done
 
 # Snapshot every ignored input that can materially change the private field
-# build. The helper writes only SHA-256 fingerprints + public reviewed versions;
-# it never serializes credentials, SDK bytes, or device identifiers.
-if ! /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
-  --lockfile "$REPO_ROOT/Podfile.lock" \
+# build. Re-arm the same vnode custody and re-verify the root receipt inside that
+# watched window before running the snapshot helper. The resulting record can
+# therefore only describe the same sealed private generation admitted by the
+# successful transaction; the field installer independently verifies it again.
+if ! /usr/bin/python3 -I "$PRIVATE_INPUT_RESOLUTION_GUARD" \
+  --lockfile "$REPO_ROOT/Podfile" \
   --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
   --security-build "$TUYA_PRIVATE_SDK/Build" \
   --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
   --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-  --record "$DEPENDENCY_PROVENANCE"
+  -- /bin/bash -c "$AUTHORITY_REVERIFY_AND_EXEC" _ \
+     "$AUTHORITY_SOURCE" "$REPO_ROOT" "$PRIVATE_IDENTITY_WRITER_SHA256" \
+     /usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot \
+       --lockfile "$REPO_ROOT/Podfile.lock" \
+       --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+       --security-build "$TUYA_PRIVATE_SDK/Build" \
+       --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+       --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+       --record "$DEPENDENCY_PROVENANCE"
 then
-  echo "ERROR: exact private Tuya build-input provenance could not be snapshotted." >&2
+  unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
+  echo "ERROR: exact private Tuya build-input provenance could not be snapshotted under vnode custody." >&2
   exit 12
 fi
+unset AUTHORITY_SOURCE AUTHORITY_REVERIFY_AND_EXEC
 
 LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
 [[ "$LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
