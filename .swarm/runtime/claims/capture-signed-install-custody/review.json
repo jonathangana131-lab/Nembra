@@ -4,14 +4,16 @@
   "laneId": "capture-signed-install-custody",
   "slot": "review",
   "role": "adversarial-review",
-  "workerId": "sol-20260811-nv46",
-  "leaseId": "9a7c6745cce544a8bc5e44a3c122e07f",
-  "generation": 2,
+  "workerId": "sol-20260811-c4d2",
+  "leaseId": "capture-signed-install-review-c4d2-20260811-1011",
+  "generation": 3,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T09:30:05Z",
-  "lastHeartbeatAt": "2026-08-11T09:30:05Z",
+  "claimedAt": "2026-08-11T10:11:00Z",
+  "lastHeartbeatAt": "2026-08-11T10:11:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-signed-helper-replace-blind-c7e19a",
   "pr": 2871,
-  "sourceSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e"
+  "sourceSHA": "15e60780574a50e1df56b5fdf8a6f04f4bdf7c7e",
+  "takeoverFromWorkerId": "sol-20260811-nv46",
+  "takeoverReason": "Generation-2 review lease expired without heartbeat; prior worker lastSeenAt is 2026-08-11T08:46:42Z. Recover exact-head independent review for active P0 signed-install custody child and revalidate live CI/source before any composition."
 }
