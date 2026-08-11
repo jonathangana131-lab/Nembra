@@ -1,0 +1,32 @@
+name: Capture CocoaPods Symlink Target Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v14-capture-cocoapods-symlink-target-custody-sol
+  pull_request:
+    paths:
+      - Scripts/capture_cocoapods_build_subject.py
+      - scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py
+      - .github/workflows/capture-cocoapods-symlink-target-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  red-team:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify generated build-subject symlink custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            Scripts/capture_cocoapods_build_subject.py \
+            scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py
+          python3 scripts/ci/tests/test_capture_cocoapods_symlink_target_custody.py
