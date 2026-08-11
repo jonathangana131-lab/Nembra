@@ -1,26 +1,19 @@
 #!/usr/bin/env python3
 """Final-GO successor that keeps the accepted physical source tree under custody.
 
-The exact #2921 Final-GO implementation correctly descriptor-binds each tracked
-payload while that one payload is read, but expected-red #3024 proves a tracked
-pathname can be replaced after its individual read/rebind has completed and
-before the whole candidate audit returns.
+Expected-red #3024 proves the exact #2921 Final-GO implementation can finish one
+tracked pathname's descriptor-bound proof and then lose authority over that path
+while the remainder of the candidate tree is still being audited.
 
-This successor does not attempt to paper over that race with an unsynchronised
-second hash pass. On the physical macOS path it arms kqueue vnode custody over
-every accepted tracked regular file plus every tracked directory/ancestor before
-#2921 is allowed to audit or build. The held descriptors remain live through the
-entire inherited Final-GO build. Namespace identities are re-proved while all
-watches are armed, queued vnode events are fail-closed, and the complete raw
-candidate audit is replayed before custody is released.
+This successor wraps the exact reviewed #2921 implementation in continuous
+macOS vnode/namespace custody. Every tracked regular file and every tracked
+ancestor directory stays watched across the entire inherited Final-GO build.
+The final candidate re-audit also runs before those watches are released, while
+queued vnode events make replace/restore activity fail closed rather than merely
+sampling endpoint bytes twice.
 
-Therefore a replace/restore race cannot become invisible merely because endpoint
-bytes happen to match again: the namespace/file vnode event remains authority-
-invalidating. A persistent replacement is additionally rejected by held-inode
-namespace reproof and the final raw audit.
-
-No Bluetooth, Tuya, credential, install, launch, telemetry, scooter-command, or
-physical evidence semantics are introduced here.
+No Bluetooth, Tuya, credential, signing, install, launch, telemetry, scooter
+command, or physical evidence semantics are introduced here.
 """
 from __future__ import annotations
 
@@ -71,9 +64,8 @@ def _blob_oid(payload: bytes, accepted_oid: str) -> str:
     raise WholeTreeCustodyError("Final-GO parent blob identity has unsupported width")
 
 
-def _capture_exact_parent_module() -> types.ModuleType:
-    """Execute only the independently hash-bound #2921 parent bytes."""
-    root = Path(__file__).resolve().parents[2]
+def _bounded_parent_blob(root: Path) -> bytes:
+    """Capture the pinned parent blob without allowing object lookup to exhaust memory."""
     marker = root / ".git"
     try:
         marker_metadata = marker.lstat()
@@ -81,22 +73,42 @@ def _capture_exact_parent_module() -> types.ModuleType:
         raise WholeTreeCustodyError("Final-GO parent Git directory is unavailable") from error
     if not stat.S_ISDIR(marker_metadata.st_mode) or stat.S_ISLNK(marker_metadata.st_mode):
         raise WholeTreeCustodyError("Final-GO parent requires one real checkout Git directory")
+
+    process: subprocess.Popen[bytes] | None = None
     try:
-        process = subprocess.run(
+        process = subprocess.Popen(
             ["/usr/bin/git", f"--git-dir={marker}", "cat-file", "blob", PARENT_MODULE_GIT_BLOB],
-            check=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             env=_closed_git_environment(),
         )
-    except (OSError, subprocess.CalledProcessError) as error:
+        if process.stdout is None:
+            raise WholeTreeCustodyError("Final-GO exact parent capture pipe is unavailable")
+        payload = process.stdout.read(MAX_PARENT_BYTES + 1)
+        if len(payload) > MAX_PARENT_BYTES:
+            process.kill()
+            process.wait()
+            raise WholeTreeCustodyError("Final-GO exact parent bytes exceed the accepted bound")
+        returncode = process.wait()
+        if returncode != 0 or not payload:
+            raise WholeTreeCustodyError("Final-GO exact parent bytes could not be captured")
+        if _blob_oid(payload, PARENT_MODULE_GIT_BLOB) != PARENT_MODULE_GIT_BLOB:
+            raise WholeTreeCustodyError("Final-GO exact parent Git lookup returned different bytes")
+        return payload
+    except OSError as error:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
         raise WholeTreeCustodyError("Final-GO exact parent bytes could not be captured") from error
-    payload = process.stdout
-    if not payload or len(payload) > MAX_PARENT_BYTES:
-        raise WholeTreeCustodyError("Final-GO exact parent bytes exceed the accepted bound")
-    if _blob_oid(payload, PARENT_MODULE_GIT_BLOB) != PARENT_MODULE_GIT_BLOB:
-        raise WholeTreeCustodyError("Final-GO exact parent Git lookup returned different bytes")
+    finally:
+        if process is not None and process.stdout is not None:
+            process.stdout.close()
 
+
+def _capture_exact_parent_module() -> types.ModuleType:
+    """Execute only the independently hash-bound #2921 parent bytes."""
+    root = Path(__file__).resolve().parents[2]
+    payload = _bounded_parent_blob(root)
     module = types.ModuleType("nembra_final_go_parent_2921_whole_tree")
     module.__file__ = str(Path(__file__).resolve())
     filename = f"git:{PARENT_SOURCE}:{PARENT_MODULE_PATH}"
@@ -232,7 +244,7 @@ def _ensure_fd_budget(watcher_count: int) -> None:
 
 
 def _watch_paths(root: Path, entries: dict[str, tuple[bytes, str]]) -> tuple[Path, ...]:
-    """Watch every tracked regular file and every directory that can replace a leaf."""
+    """Watch every regular leaf and every directory that can replace a tracked leaf."""
     paths: set[Path] = {root}
     for relative, (mode, _) in entries.items():
         parts = PurePosixPath(relative).parts
@@ -259,20 +271,30 @@ def _open_watched_subjects(paths: Sequence[Path], backend: EventBackend) -> tupl
             try:
                 before = os.lstat(path)
             except OSError as error:
-                raise WholeTreeCustodyError("Final-GO watched source disappeared before custody: " + str(path)) from error
-            if stat.S_ISLNK(before.st_mode) or not (stat.S_ISDIR(before.st_mode) or stat.S_ISREG(before.st_mode)):
-                raise WholeTreeCustodyError("Final-GO watched source is not a real file/directory: " + str(path))
+                raise WholeTreeCustodyError(
+                    "Final-GO watched source disappeared before custody: " + str(path)
+                ) from error
+            if stat.S_ISLNK(before.st_mode) or not (
+                stat.S_ISDIR(before.st_mode) or stat.S_ISREG(before.st_mode)
+            ):
+                raise WholeTreeCustodyError(
+                    "Final-GO watched source is not a real file/directory: " + str(path)
+                )
             flags = os.O_RDONLY | cloexec | nofollow
             if stat.S_ISDIR(before.st_mode):
                 flags |= getattr(os, "O_DIRECTORY", 0)
             try:
                 descriptor = os.open(path, flags)
             except OSError as error:
-                raise WholeTreeCustodyError("Final-GO watched source could not be opened: " + str(path)) from error
+                raise WholeTreeCustodyError(
+                    "Final-GO watched source could not be opened: " + str(path)
+                ) from error
             try:
                 after = os.fstat(descriptor)
                 if _stable_stat(before) != _stable_stat(after):
-                    raise WholeTreeCustodyError("Final-GO watched source changed during custody admission: " + str(path))
+                    raise WholeTreeCustodyError(
+                        "Final-GO watched source changed during custody admission: " + str(path)
+                    )
                 backend.register(descriptor)
             except Exception:
                 os.close(descriptor)
@@ -310,7 +332,8 @@ def _drain_events(backend: EventBackend, watched: Sequence[WatchedSubject], *, p
             raise WholeTreeCustodyError("Final-GO vnode event volume exceeded the accepted bound")
     if observed:
         raise WholeTreeCustodyError(
-            f"Final-GO whole-tree vnode mutation observed during {phase}: " + _describe_events(observed, watched)
+            f"Final-GO whole-tree vnode mutation observed during {phase}: "
+            + _describe_events(observed, watched)
         )
 
 
@@ -335,8 +358,8 @@ def _require_quiet(
     *,
     phase: str,
 ) -> None:
-    # Rebind first and then drain while every watcher remains armed. If a race
-    # occurs during this pass, its vnode event remains queued for the drain.
+    # Rebind first, then drain while every watcher remains armed. A race during
+    # this pass leaves a queued vnode event for the drain.
     _reprove_namespace(watched, phase=phase)
     _drain_events(backend, watched, phase=phase)
 
@@ -367,9 +390,8 @@ def _whole_tree_custody(
         watched = _open_watched_subjects(_watch_paths(root, entries), backend)
         _require_quiet(backend, watched, phase="watch admission")
         yield
-        # Re-audit while every source watcher is still armed. This second pass is
-        # not relied upon alone: replace/restore activity is independently fatal
-        # because queued vnode events survive until the quiet barrier below.
+        # This re-audit is not the sole race defense. It executes while all vnode
+        # watches remain armed, so replace/restore activity is independently fatal.
         _parent._audit_candidate_tree(root, normalized_source)
         _require_quiet(backend, watched, phase="final candidate authority")
     finally:
