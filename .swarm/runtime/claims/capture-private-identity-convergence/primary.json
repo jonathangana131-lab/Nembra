@@ -9,12 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T11:58:00Z",
-  "lastHeartbeatAt": "2026-08-11T12:16:30Z",
+  "lastHeartbeatAt": "2026-08-11T12:19:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-private-recovery-unlink-race-sol-4f57unlink-20260811",
   "pr": 2944,
   "sourceSHA": "9e14bdf0813fe6d3fe930692f75e7060efa58889",
-  "currentHeadSHA": "df700cf0481d96725da833e4059bae237ac0d7de",
+  "currentHeadSHA": "c5284f22349011821df143362c6b445dfa8c1f51",
   "takeoverFromWorkerId": null,
-  "takeoverReason": "No durable convergence claim existed. #2899 merged at 9e14bdf0813fe6d3fe930692f75e7060efa58889; expected-red #2918 demonstrated replacement-inode deletion outside held-inode authority. #2944 now carries the descriptor-reuse production repair and permanent regression on the moved merged lineage; fresh exact-head PR gates are required before composition."
+  "takeoverReason": "No durable convergence claim existed. #2899 merged at 9e14bdf0813fe6d3fe930692f75e7060efa58889; expected-red #2918 demonstrated replacement-inode deletion outside held-inode authority. #2944 carries the descriptor-reuse production repair plus pre-rebind and post-rebind replacement-preservation regressions on the moved merged lineage; fresh exact-head PR gates are required before composition."
 }
