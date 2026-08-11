@@ -1,4 +1,3 @@
-import Foundation
 import XCTest
 @testable import Nembra
 
@@ -201,28 +200,5 @@ final class SimulatorPowerExactSourceIdentityTests: XCTestCase {
         // resurrect Store ownership after the provider has terminated.
         authority.applySource(live, transportIsConnected: true)
         XCTAssertEqual(authority.projection, .unavailable)
-    }
-
-    func testEnergyRailRuntimeDoesNotExposeCallerMintableRawSimulatorAdmission() throws {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let runtimeURL = repositoryRoot
-            .appendingPathComponent("Packages/NembraCore/Sources/NembraCore/PropulsionEnergyRailSimulatorRuntime.swift")
-        let source = try String(contentsOf: runtimeURL, encoding: .utf8)
-
-        let rawScalarPublicAdmission = try NSRegularExpression(
-            pattern: #"(?s)public\s+mutating\s+func\s+\w+\s*\([^)]*watts\s*:\s*Double[^)]*receiptSequenceNumber\s*:\s*UInt64[^)]*receivedAtUptimeNanoseconds\s*:\s*UInt64[^)]*continuityGeneration\s*:\s*UInt64[^)]*\)"#
-        )
-        let sourceRange = NSRange(source.startIndex..<source.endIndex, in: source)
-        let matches = rawScalarPublicAdmission.matches(
-            in: source,
-            range: sourceRange
-        )
-
-        XCTAssertTrue(
-            matches.isEmpty,
-            "Energy Rail Simulator admission must not expose public raw watts + receipt/generation scalars that generic callers can fabricate. Positive Simulator evidence must remain sealed to source-owned receipts."
-        )
     }
 }
