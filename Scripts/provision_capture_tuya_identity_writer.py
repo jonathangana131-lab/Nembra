@@ -202,7 +202,7 @@ def _recover_private_stage_residue(checkout_fd: int) -> None:
                 or stat.S_IMODE(after_sanitize.st_mode) != 0o600
                 or after_sanitize.st_dev != held.st_dev
                 or after_sanitize.st_ino != held.st_ino
-                or after_sanitize.st_nlink < 1
+                or after_sanitize.st_nlink != held.st_nlink
                 or after_sanitize.st_size != 0
             ):
                 raise ProvisionError("private identity staging descriptor changed during recovery sanitization")
