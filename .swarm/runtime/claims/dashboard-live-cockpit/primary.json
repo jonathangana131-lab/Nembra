@@ -9,7 +9,7 @@
   "generation": 3,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T20:23:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:24:00Z",
+  "lastHeartbeatAt": "2026-08-11T21:40:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-energyrail-sol-c84e",
   "pr": 2991,
@@ -23,6 +23,6 @@
     "NembraUITests/NembraUITests.swift",
     "scripts/ci/xcode27_simulator_capture.sh"
   ],
-  "checkpoint": "Exact predecessor 844a144 completed Xcode run 31535702144 SUCCESS with artifact 9119352441 digest sha256:3c23993391a52db193719599104b7d03e27f56aa44f6739a45da08e8779a070e. Real system AX content size was accessibility-extra-extra-extra-large; riding, stopped command flow, and dedicated 2x2 geometry witness all passed. Pixel review still found critical left-rail truncation in both stopped and riding: Nembra Simulator rendered Nem- / bra Si… and Connected rendered Con- / nect…. The 2x2 mode grid is clean and the LIVE POWER/Energy Rail overlap is closed. Successor bdd37315 changes only the AX left status rail width 188->224 pt; standard layout and 188-pt AX control rail remain unchanged. Exact synchronize run 31537938694 is queued automatically; do not post duplicate /xcode27. Parent green is ingredient evidence only until moved-head pixels prove full identity/connection. P0 Capture ce9e2bac exact Xcode and standalone visual are green; exact standalone artifact 9119075830 is durably recorded on #2979 and creates no physical/protocol authority.",
+  "checkpoint": "Exact predecessor 844a144 completed Xcode run 31535702144 SUCCESS with artifact 9119352441 digest sha256:3c23993391a52db193719599104b7d03e27f56aa44f6739a45da08e8779a070e. Real system AX XXXL riding/stopped/control-grid tests all passed, but pixels still showed Nem-/bra Si… and Con-/nect…. Current bdd37315 changes only AX left status rail 188->224 pt; standard geometry and 188-pt control rail unchanged. Exact run 31537938694 resolver is green and build job 93933478080 is in-progress inside the real Simulator build/test/capture step; head is frozen and no duplicate /xcode27 is allowed. Independent exact pixels will decide full identity/connection and center fit. P0 #2993 conditional review is active separately and does not touch Dashboard paths. PHYSICAL NO-GO.",
   "acceptance": "Final exact bdd37315 (or a reviewed descendant) must keep speed/Energy Rail semantic truth, show full vehicle identity and connection state at AX5 without ellipsis, retain the closed power-label/rail separation, prove riding + connected-stopped under real system AX content size, preserve deliberate 2x2 AX mode geometry with every stopped target >=44 pt and inside the app window, avoid reintroduced center/vertical clipping after widening the left rail, preserve exact confirmed mode semantics through fresh AX queries, and earn exact-head Xcode/screenshots plus independent visual review. Sustained performance separately still requires recorded frame-pacing/hitch evidence. ES80 physical NO-GO."
 }
