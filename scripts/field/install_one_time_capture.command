@@ -118,7 +118,7 @@ sys.argv = [str(root / relative_path), *helper_argv]
 exec(compile(source, f"<accepted-{source_sha}:{relative_path}>", "exec"), namespace)
 PY
 }
-[[ -f "$TUYA_BUILD_WINDOW_GUARD" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."
+[[ -f "$ROOT/$TUYA_BUILD_WINDOW_GUARD_RELATIVE" ]] || die "Private Tuya build-window custody guard is missing from the accepted source."
 TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
 TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
