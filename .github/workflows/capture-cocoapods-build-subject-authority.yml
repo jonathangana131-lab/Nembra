@@ -1,0 +1,43 @@
+name: Capture CocoaPods Generated Build Authority
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_cocoapods_generated_build_subject.py
+      - scripts/ci/tests/test_capture_cocoapods_generated_build_authority.py
+      - .github/workflows/capture-cocoapods-build-subject-authority.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-build-authority:
+    name: Bind exact generated CocoaPods build subject
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind validation to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Validate generated-build authority tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          /usr/bin/python3 -m py_compile Scripts/capture_cocoapods_generated_build_subject.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_authority.py
+          /usr/bin/python3 -I Scripts/capture_cocoapods_generated_build_subject.py --self-test
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_cocoapods_generated_build_authority.py
