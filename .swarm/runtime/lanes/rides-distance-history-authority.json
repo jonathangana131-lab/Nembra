@@ -22,9 +22,11 @@
       "id": "stacked-child-waits-parent",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Legacy child PR #443 remains stacked on stale #438 and must not be merged independently. After #3058 is independently accepted on its unchanged current-main head, replay/reconcile only the durable history attachment semantics onto that selected parent; persisted bytes/UUID matching remain non-authoritative and statistics consumption must wait for exact immutable-history binding.",
+      "reason": "Legacy child #443 remains blocked only on current-parent acceptance, not on a discovered API port. Integration preflight proved #443's required RideHistoryCommit.swift blob 88d064f5, RideStatistics.swift blob 1624732b, and LiveDistanceIntegration.swift blob 5e0b23dc are byte-identical on current main; #3058 restores the exact RideDistanceReconciliation.swift blob 7245b17b that #443 was built against. No alternative RideHistoryDistanceCheckpoint/Coordinator implementation exists on current main, and RideHistoryDistanceAttachment.swift is not selected in Nembra.xcodeproj. After #3058 is independently accepted unchanged, replay exactly #443 source blob 58b20483 and test blob 23fb5c59 onto that accepted head, then earn fresh package/integration acceptance. Do not replay stale commits or label this app-visible; persisted bytes/UUID matching remain non-authoritative and statistics consumption still requires exact immutable-history binding.",
       "pr": 443,
-      "headSHA": "c213118e482fbd862725b4a07cfd13a743651374"
+      "headSHA": "c213118e482fbd862725b4a07cfd13a743651374",
+      "readySourceBlob": "58b20483f8e818b8aaf0960863b6de14180a2670",
+      "readyTestBlob": "23fb5c5944c4df36ec50e1437298b987847986ae"
     }
   ],
   "mode": "exclusive",
@@ -60,7 +62,7 @@
     "childPR": 443,
     "childHeadSHA": "c213118e482fbd862725b4a07cfd13a743651374",
     "supersededPredecessorPRs": [204],
-    "knownExactHeadFinding": "#438 preserves the selected source's own coverage and seals UUID-only convenience composition; #3058 reuses those exact reviewed blobs on current main without stale ancestry. #443 still waits for current-parent acceptance and replay."
+    "knownExactHeadFinding": "#438 preserves the selected source's own coverage and seals UUID-only convenience composition; #3058 reuses those exact reviewed blobs on current main without stale ancestry. #443 preflight is READY-TO-REPLAY after #3058 acceptance because every required dependency blob is current-main-identical and its two additive blobs are isolated; app project wiring remains absent."
   },
   "tags": ["rides", "p3", "distance", "history", "authority", "legacy-import"]
 }
