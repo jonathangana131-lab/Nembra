@@ -36,7 +36,7 @@
     {"name":"primary","role":"implementation","exclusive":true,"leaseSeconds":2700,"resources":[]},
     {"name":"tests","role":"tests","exclusive":true,"leaseSeconds":1800,"resources":[]},
     {"name":"review","role":"adversarial-review","exclusive":true,"leaseSeconds":1800,"resources":[]},
-    {"name":"visual-review","role":"visual-review","exclusive":true,"leaseSeconds":1800,"resources":["IOS_SIMULATOR"]},
+    {"name":"visual-review","role":"review","exclusive":true,"leaseSeconds":1800,"resources":["IOS_SIMULATOR"]},
     {"name":"integration","role":"integration","exclusive":true,"leaseSeconds":1800,"resources":["RELEASE_INTEGRATION"]}
   ],
   "acceptance": {"independentReview": true},
