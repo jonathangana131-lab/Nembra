@@ -36,8 +36,6 @@ class BootstrapHMACHelperExecutionTests(authority.PrivateReviewCommitmentTests):
     def test_substituted_hmac_helper_cannot_admit_generation_b(self) -> None:
         lock, generated, accepted_private = self.review_authority()
 
-        # Create coherent same-UID private generation B + local witness. The
-        # externally accepted HMAC tag remains A and must be the authority fence.
         self.security_binary.write_bytes(b"SUBSTITUTED-PRIVATE-SECURITY-B")
         self.identity_source.write_text(
             "enum NembraTuyaPrivateIdentity { static let appSecret = \"SYNTHETIC-SECRET-B\" }\n",
@@ -61,8 +59,6 @@ class BootstrapHMACHelperExecutionTests(authority.PrivateReviewCommitmentTests):
         )
         self.assertEqual(snapshot.returncode, 0, snapshot.stdout)
 
-        # Replace only the current helper implementation. It cannot compute A
-        # for B; it lies by returning success for the caller-supplied expected tag.
         helper = self.root / "Scripts/capture_private_review_commitment.py"
         helper.write_text(
             "#!/usr/bin/env python3\n"
@@ -104,8 +100,6 @@ class BuildGuardHMACHelperExecutionTests(unittest.TestCase):
             for source in (GUARD, PROVENANCE, GENERATED):
                 shutil.copy2(source, scripts / source.name)
 
-            # Satisfy the API expected by the guard while making the commitment
-            # verifier attacker-controlled. Accepted guard bytes must not trust it.
             (scripts / "capture_private_review_commitment.py").write_text(
                 "KEY_BYTES = 32\n"
                 "MAX_WITNESS_BYTES = 1048576\n"
@@ -120,19 +114,49 @@ class BuildGuardHMACHelperExecutionTests(unittest.TestCase):
                 scripts / GUARD.name,
                 "nembra_selected_private_hmac_guard_neighbor_redteam",
             )
-            inputs = guard.PrivateInputs(
-                lockfile=root / "Podfile.lock",
-                security_podspec=root / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec",
-                security_build=root / "LocalSecrets/TuyaSDK/Build",
-                identity_podspec=root / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec",
-                identity_sources=root / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig",
-                generated_pods=root / "Pods",
-                generated_workspace=root / "NembraCapture.xcworkspace",
+
+            lockfile = root / "Podfile.lock"
+            lockfile.write_text("reviewed-lock\n", encoding="utf-8")
+            security_root = root / "LocalSecrets/TuyaSDK"
+            security_build = security_root / "Build"
+            security_build.mkdir(parents=True)
+            security_podspec = security_root / "ThingSmartCryption.podspec"
+            security_podspec.write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+            (security_build / "libThingSmartCryption.a").write_bytes(b"reviewed-private-security")
+
+            identity_root = root / "LocalSecrets/TuyaRuntime"
+            identity_sources = identity_root / "Sources/NembraTuyaPrivateConfig"
+            identity_sources.mkdir(parents=True)
+            identity_podspec = identity_root / "NembraTuyaPrivateConfig.podspec"
+            identity_podspec.write_text("Pod::Spec.new do |s|\nend\n", encoding="utf-8")
+            (identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+                "enum NembraTuyaPrivateIdentity { static let configured = true }\n",
+                encoding="utf-8",
             )
+
+            inputs = guard.PrivateInputs(
+                lockfile=lockfile,
+                security_podspec=security_podspec,
+                security_build=security_build,
+                identity_podspec=identity_podspec,
+                identity_sources=identity_sources,
+            )
+            current = guard.provenance.build_record(
+                lockfile=lockfile,
+                security_podspec=security_podspec,
+                security_build=security_build,
+                identity_podspec=identity_podspec,
+                identity_sources=identity_sources,
+            )
+            guard.provenance.write_record(inputs.private_provenance_record, current)
+
             with mock.patch.dict(os.environ, {ENV_NAME: "a" * 64}, clear=False):
                 with self.assertRaises(
                     guard.BuildGuardError,
-                    msg="accepted build guard imported substituted private-review HMAC helper bytes",
+                    msg=(
+                        "accepted build guard imported substituted private-review HMAC helper bytes "
+                        "even though the private inputs and provenance witness were otherwise valid"
+                    ),
                 ):
                     guard._verify_accepted_private_review_commitment(inputs)
 
