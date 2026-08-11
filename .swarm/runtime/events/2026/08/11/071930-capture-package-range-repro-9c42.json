@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "071930-capture-package-range-repro-9c42",
+  "type": "EVIDENCE_RESULT",
+  "workerId": "sol-20260811-9c42",
+  "laneId": "capture-package-test-runner-recovery",
+  "message": "Exact #2799 head ff70b15cd770fcfa11c37635ebf528fcf554fda0 selective-graft rerun attempt 2 reproduces the Swift Testing signal-5 / Range requires lowerBound <= upperBound abort with zero recorded test issues. Attempt 1 also had zero issues, but the asynchronous error text was interleaved into a different unrelated test-start line on attempt 2. Therefore the last/interleaved printed test name is not reliable culprit evidence. Standalone Capture Xcode build again succeeds. Dedicated child #2808 now runs suspect suites independently before a full-package reproduction to distinguish a source-test failure from full-suite interaction/runner behavior. PHYSICAL NO-GO unchanged.",
+  "createdAt": "2026-08-11T07:19:30Z",
+  "data": {
+    "sourcePR": 2799,
+    "sourceSHA": "ff70b15cd770fcfa11c37635ebf528fcf554fda0",
+    "rerunRun": 31459674045,
+    "rerunAttempt": 2,
+    "recordedTestIssues": 0,
+    "rangeAbortReproduced": true,
+    "standaloneBuild": "SUCCESS",
+    "diagnosticPR": 2808,
+    "diagnosticHeadSHA": "be29d23a1218ca14ef8bbe70a241af32edb6d61b",
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
