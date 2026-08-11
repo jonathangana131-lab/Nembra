@@ -186,15 +186,18 @@ struct TuyaPrivateIdentityProvisionerCustodyTests {
         #expect(shell.contains("metadata = os.stat(path, follow_symlinks=False)"))
         #expect(shell.contains("/usr/bin/python3 -I -c \"$WRITER_SOURCE\" \"$ROOT\" \"$ROOT_DEVICE\" \"$ROOT_INODE\""))
         #expect(!shell.contains("/usr/bin/python3 -I \"$WRITER\""))
-        let digestFence = shell.range(of: "[[ \"$CAPTURED_WRITER_SHA256\" == \"$WRITER_SHA256\" ]]")
         let rootIdentityFence = shell.range(of: "ROOT_IDENTITY_CAPTURE=\"$(/usr/bin/python3 -I - \"$ROOT\"")
+        let writerPathUse = shell.range(of: "WRITER=\"$ROOT/Scripts/provision_capture_tuya_identity_writer.py\"")
+        let digestFence = shell.range(of: "[[ \"$CAPTURED_WRITER_SHA256\" == \"$WRITER_SHA256\" ]]")
         let credentialRead = shell.range(of: "builtin read -r -s -p \"Tuya SmartLife SDK AppKey (input hidden): \" APP_KEY")
-        #expect(digestFence != nil)
         #expect(rootIdentityFence != nil)
+        #expect(writerPathUse != nil)
+        #expect(digestFence != nil)
         #expect(credentialRead != nil)
-        if let digestFence, let rootIdentityFence, let credentialRead {
-            #expect(digestFence.lowerBound < rootIdentityFence.lowerBound)
-            #expect(rootIdentityFence.lowerBound < credentialRead.lowerBound)
+        if let rootIdentityFence, let writerPathUse, let digestFence, let credentialRead {
+            #expect(rootIdentityFence.lowerBound < writerPathUse.lowerBound)
+            #expect(writerPathUse.lowerBound < digestFence.lowerBound)
+            #expect(digestFence.lowerBound < credentialRead.lowerBound)
         }
 
         #expect(!shell.contains("/usr/bin/mktemp"))
