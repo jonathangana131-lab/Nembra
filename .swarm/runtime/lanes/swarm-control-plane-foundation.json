@@ -16,6 +16,7 @@
     "scripts/swarm_control.py",
     "scripts/ci/tests/test_swarm_control_plane.py",
     "scripts/ci/tests/test_swarm_control_plane_regressions.py",
+    "scripts/ci/tests/test_swarm_resource_lifecycle.py",
     ".github/workflows/swarm-control-plane-shadow.yml",
     "docs/SWARM_CONTROL_PLANE.md",
     "docs/adr/ADR-0015-github-native-swarm-control-plane.md",
