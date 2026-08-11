@@ -9,14 +9,15 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T23:13:00Z",
-  "lastHeartbeatAt": "2026-08-11T23:22:00Z",
+  "lastHeartbeatAt": "2026-08-11T23:27:00Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-apfs-mmap-ready-diagnostics-r2-sol-1607k9",
   "pr": 3116,
   "sourceSHA": "93feb6160ae053dbc71c9cb0919f78f59494eeba",
   "currentHeadSHA": "2e388a5dc6f7f63aeed893d548be214e64e94674",
+  "relatedValidationPRs": [3125],
   "takeoverFromWorkerId": "gpt56-sol-20260811-1437",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-sol-20260811-2154",
-  "takeoverReason": "Generation-5 tests lease expired at 2026-08-11T22:44:15Z. Recovered the shared-mmap lane, consumed the first exact macOS result, and advanced only the validation harness after the evidence proved a pre-READY fixture/credential failure rather than a filesystem verdict.",
-  "checkpoint": "#3064 exact 93feb616 macOS run 31541485138/job 93944622552 is terminal RED before READY: mapped writer exited 1 on os.open(target,O_RDWR) with PermissionError errno 13; physicalAuthorityCreated=false. Exact scope, non-root runner group gate, compile/source-contract gate, retained diagnostic, and hygiene all passed. This is NOT APFS detach/mmap authority evidence because no mapping was established. Diagnostics child #3116 exact 2e388a5d changes only the already-registered workflow; the committed Python oracle remains byte-identical. At runtime it temporarily instruments the child before first open to retain real/effective UID/GID, supplementary groups, and child-visible workspace/mount/target owner-group-mode/access metadata, then restores the witness before hygiene. Exact diagnostic workflow run 31546153450 is queued on macos-15 and is NOT evidence yet. A first additive-workflow attempt did not register and is not counted. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-5 tests lease expired at 2026-08-11T22:44:15Z. Recovered the signed-install retained-writer validation work, consumed terminal Mac evidence, and advanced only diagnostics after exact failures proved fixture/credential blockers rather than filesystem verdicts.",
+  "checkpoint": "Primary active diagnostic: #3116 exact 2e388a5d, child of #3064 exact 93feb616. #3064 run 31541485138/job 93944622552 is terminal RED before READY: mapped writer exited 1 on os.open(target,O_RDWR) with PermissionError errno 13 and physicalAuthorityCreated=false, so APFS detach/shared-mmap authority is still unclassified. #3116 keeps the committed oracle byte-identical and temporarily retains child UID/GID/groups plus child-visible workspace/mount/target owner-group-mode/access before first open; run 31546153450/job 93958988498 is queued on macos-15 and is NOT evidence. Related architecture evidence consumed: #3089 exact ecca5b29 real-Xcode run 31543061748/job 93949552390 reached real Xcode and then crashed only in the field-user negative-control Popen with ValueError 'too many groups'; detach/quiescence was never classified. Diagnostics-only child #3125 exact ea89976b changes only the registered workflow, temporarily bypasses unrelated supplementary groups after mechanically requiring the fresh build GID be absent and the synthetic mount boundary be build-owned mode 0700, then restores source before hygiene; run 31546372729 is queued on xcode-27 and is NOT evidence. No production bytes moved. PHYSICAL NO-GO."
 }
