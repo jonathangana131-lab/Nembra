@@ -1,0 +1,88 @@
+name: TEMP Final GO Control Module Materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-control-module-execution-sol
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind canonical parent and patch issuer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 797c14156b9d5be842f884626267f25644281a2f HEAD
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/es80_authenticated_stationary_final_go.py')
+          source = path.read_text()
+
+          source = source.replace(
+              'import argparse, hashlib, importlib.util, json, os, pwd, re, stat, subprocess, sys, tempfile, urllib.request, zipfile',
+              'import argparse, hashlib, importlib.util, json, os, pwd, re, stat, subprocess, sys, tempfile, types, urllib.request, zipfile',
+              1,
+          )
+
+          git_anchor = '''def git_bytes(repo:Path,*args)->bytes:\n    try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=_git_environment()).stdout\n    except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate Git byte custody failed") from e\n\n'''
+          loader = '''def git_bytes(repo:Path,*args)->bytes:\n    try:return subprocess.run(["/usr/bin/git","-C",str(repo),*args],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=_git_environment()).stdout\n    except (OSError,subprocess.CalledProcessError) as e: raise GoError("candidate Git byte custody failed") from e\n\ndef _load_accepted_control_module(authority_repo:Path,source:str,relative:str,accepted_blob:str,module_name:str):\n    root=authority_repo.expanduser().resolve(strict=True); source=canon(source,"accepted control-module source")\n    if relative not in {"scripts/ci/es80_authenticated_stationary_signed_artifact.py","scripts/ci/es80_today_final_go_publication.py"}: raise GoError("unsupported accepted control-module path")\n    if not isinstance(accepted_blob,str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",accepted_blob.lower()): raise GoError("accepted control-module blob identity invalid")\n    accepted_blob=accepted_blob.lower(); source_blob=git(root,"rev-parse",f"{source}:{relative}").lower()\n    if source_blob!=accepted_blob: raise GoError("accepted control-module blob is not owned by exact control-plane source path")\n    raw=git_bytes(root,"cat-file","blob",accepted_blob)\n    if not raw: raise GoError("accepted control-module Git blob is empty")\n    try:\n        verified=subprocess.run(["/usr/bin/git","-C",str(root),"hash-object","--stdin"],input=raw,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=_git_environment()).stdout.decode().strip().lower()\n    except (OSError,subprocess.CalledProcessError,UnicodeDecodeError) as e: raise GoError("accepted control-module Git blob verification failed") from e\n    if verified!=accepted_blob: raise GoError("accepted control-module Git blob bytes failed identity verification")\n    filename=f"git:{source}:{relative}"; module=types.ModuleType(module_name); module.__file__=filename\n    try: exec(compile(raw,filename,"exec"),module.__dict__)\n    except Exception as e: raise GoError("accepted control-module Git blob could not execute") from e\n    return module\n\ndef _control_module_subject(authority_repo:Path|None,control:dict[str,Any]|None,relative:str)->tuple[Path,str,str]:\n    root=(authority_repo if authority_repo is not None else Path(__file__).resolve().parents[2]).expanduser().resolve(strict=True)\n    if control is None:\n        source=canon(git(root,"rev-parse","HEAD"),"control-module fallback HEAD"); blob=git(root,"rev-parse",f"{source}:{relative}").lower()\n        return root,source,blob\n    if not isinstance(control,dict) or control.get("authority")!="nembra-authenticated-stationary-go-control-plane-v1": raise GoError("accepted control-module context invalid")\n    source=canon(control.get("sourceCommitSHA"),"accepted control-module source"); blobs=control.get("gitBlobs")\n    if not isinstance(blobs,dict) or relative not in blobs: raise GoError("accepted control-module blob missing from control-plane context")\n    blob=blobs[relative]\n    if not isinstance(blob,str): raise GoError("accepted control-module blob identity invalid")\n    return root,source,blob.lower()\n\n'''
+          if git_anchor not in source:
+              raise SystemExit('git helper anchor missing')
+          source = source.replace(git_anchor, loader, 1)
+
+          old_retained = '''def retained_signed_artifact(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path)->dict[str,Any]:\n    module_path=Path(__file__).with_name("es80_authenticated_stationary_signed_artifact.py")\n    spec=importlib.util.spec_from_file_location("nembra_authenticated_signed_artifact",module_path)\n    if not spec or not spec.loader: raise GoError("retained signed-artifact module unavailable")\n    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n    try: return module.retain_and_reinspect(repo,source,device,install,output)\n    except Exception as error: raise GoError(f"retained signed-artifact production failed: {error}") from error\n\ndef retained_signed_artifact_reinspect(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path)->dict[str,Any]:\n    module_path=Path(__file__).with_name("es80_authenticated_stationary_signed_artifact.py")\n    spec=importlib.util.spec_from_file_location("nembra_authenticated_signed_artifact",module_path)\n    if not spec or not spec.loader: raise GoError("retained signed-artifact module unavailable")\n    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n    try: return module.reinspect_retained(output,repo,source,device,install)\n    except Exception as error: raise GoError(f"retained signed-artifact reinspection failed: {error}") from error\n'''
+          new_retained = '''def retained_signed_artifact(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path,*,authority_repo:Path|None=None,control:dict[str,Any]|None=None)->dict[str,Any]:\n    relative="scripts/ci/es80_authenticated_stationary_signed_artifact.py"; root,control_source,blob=_control_module_subject(authority_repo,control,relative)\n    module=_load_accepted_control_module(root,control_source,relative,blob,"nembra_authenticated_signed_artifact")\n    try: return module.retain_and_reinspect(repo,source,device,install,output)\n    except Exception as error: raise GoError(f"retained signed-artifact production failed: {error}") from error\n\ndef retained_signed_artifact_reinspect(repo:Path,source:str,device:Path,install:dict[str,Any],output:Path,*,authority_repo:Path|None=None,control:dict[str,Any]|None=None)->dict[str,Any]:\n    relative="scripts/ci/es80_authenticated_stationary_signed_artifact.py"; root,control_source,blob=_control_module_subject(authority_repo,control,relative)\n    module=_load_accepted_control_module(root,control_source,relative,blob,"nembra_authenticated_signed_artifact_reinspect")\n    try: return module.reinspect_retained(output,repo,source,device,install)\n    except Exception as error: raise GoError(f"retained signed-artifact reinspection failed: {error}") from error\n'''
+          if old_retained not in source:
+              raise SystemExit('retained helper anchor missing')
+          source = source.replace(old_retained, new_retained, 1)
+
+          source = source.replace(
+              '    signed=inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)\n',
+              '    signed=(inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa,authority_repo=authority_repo,control=control) if inspect_signed_artifact is retained_signed_artifact else inspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa))\n',
+              1,
+          )
+          source = source.replace(
+              'post_dh=device_hash(device_file); post_signed=reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa)\n',
+              'post_dh=device_hash(device_file); post_signed=(reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa,authority_repo=authority_repo,control=control) if reinspect_signed_artifact is retained_signed_artifact_reinspect else reinspect_signed_artifact(candidate_repo,source,device_file,got,retained_ipa))\n',
+              1,
+          )
+
+          old_pub = '''def publication():\n    p=Path(__file__).with_name("es80_today_final_go_publication.py"); s=importlib.util.spec_from_file_location("pub",p)\n    if not s or not s.loader: raise GoError("publication helper unavailable")\n    m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m\n'''
+          new_pub = '''def publication(*,authority_repo:Path|None=None,control:dict[str,Any]|None=None):\n    relative="scripts/ci/es80_today_final_go_publication.py"; root,control_source,blob=_control_module_subject(authority_repo,control,relative)\n    return _load_accepted_control_module(root,control_source,relative,blob,"nembra_final_go_publication")\n'''
+          if old_pub not in source:
+              raise SystemExit('publication helper anchor missing')
+          source = source.replace(old_pub, new_pub, 1)
+          source = source.replace(
+              'd=publication().publish_record_no_replace(a.output,raw)',
+              'd=publication(authority_repo=a.authority_repo,control=r["finalGOControlPlane"]).publish_record_no_replace(a.output,raw)',
+              1,
+          )
+          path.write_text(source)
+          PY
+
+          /usr/bin/python3 -B -m py_compile scripts/ci/es80_authenticated_stationary_final_go.py scripts/ci/tests/test_es80_final_go_control_module_execution_custody.py
+          /usr/bin/python3 -B scripts/ci/tests/test_es80_final_go_control_module_execution_custody.py
+          git diff --check
+
+      - name: Publish issuer repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- scripts/ci/es80_authenticated_stationary_final_go.py; then
+            exit 0
+          fi
+          git config user.name 'nembra-sol'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/ci/es80_authenticated_stationary_final_go.py
+          git commit -m 'fix(capture): bind Final-GO control module execution'
+          git push origin HEAD:repair/v14-final-go-control-module-execution-sol
