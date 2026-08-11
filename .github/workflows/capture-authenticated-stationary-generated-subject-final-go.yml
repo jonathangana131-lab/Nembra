@@ -8,6 +8,7 @@ on:
       - scripts/ci/es80_authenticated_stationary_signed_artifact.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
       - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - scripts/ci/es80_authenticated_stationary_signed_artifact.py
       - scripts/ci/es80_today_final_go_publication.py
       - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
       - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
   workflow_dispatch:
 
@@ -49,10 +51,17 @@ jobs:
           python3 -m py_compile \
             scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
             scripts/ci/es80_authenticated_stationary_final_go.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
 
       - name: Red-team exact parent, review, build, and publication custody
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+
+      - name: Prove generated custody workflows are mandatory release authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
