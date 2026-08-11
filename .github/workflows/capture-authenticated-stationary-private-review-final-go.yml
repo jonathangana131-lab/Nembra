@@ -1,0 +1,64 @@
+name: Capture Authenticated Stationary Private Review Final GO
+
+on:
+  push:
+    branches:
+      - recovery/v14-auth-stationary-private-review-r4-current-sol-20260811
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/es80_today_final_go_publication.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+      - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/es80_today_final_go_publication.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+      - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  private-review-final-go:
+    name: Bind current private review authority to sealed Final GO
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind control tests to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile current control recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+
+      - name: Red-team current private review Final-GO carriage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
