@@ -1,0 +1,102 @@
+name: Capture Final GO Retirement Dispatch Darwin Kqueue
+
+on:
+  push:
+    branches:
+      - validation/v14-final-go-retirement-darwin-r3-sol-20260811
+    paths:
+      - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
+  pull_request:
+    paths:
+      - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  darwin-retirement-authority:
+    name: Prove repaired Final-GO on real Darwin kqueue
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      EXACT_PRODUCTION_PARENT: d4a44db4ad69947dede5b20e91e506297514a0bb
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-retirement-darwin-pycache
+    steps:
+      - name: Checkout immutable exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact repaired production parent and one-path validation delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PRODUCTION_PARENT" HEAD)" = "$EXACT_PRODUCTION_PARENT"
+          git diff --name-only "$EXACT_PRODUCTION_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' .github/workflows/capture-final-go-retirement-dispatch-darwin.yml > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exact Final-GO authority surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
+            scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Prove production selects real Darwin kqueue backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          import sys
+
+          path = Path("scripts/ci/es80_authenticated_stationary_private_review_final_go.py").resolve()
+          spec = importlib.util.spec_from_file_location("nembra_final_go_darwin_retirement_subject", path)
+          if spec is None or spec.loader is None:
+              raise SystemExit("could not load Final-GO subject")
+          module = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = module
+          spec.loader.exec_module(module)
+          backend = module._previous._default_backend()
+          try:
+              name = type(backend).__name__
+              if name != "_KqueueMutationBackend":
+                  raise SystemExit(f"expected _KqueueMutationBackend on Darwin, got {name}")
+          finally:
+              backend.close()
+          PY
+
+      - name: Replay whole-tree races through real kqueue custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+
+      - name: Prove sealed retirement dispatch on Darwin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+          python3 scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+          python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Diff and worktree hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PRODUCTION_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
