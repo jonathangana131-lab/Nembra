@@ -1,0 +1,60 @@
+name: TEMP V14 Fix Generated Helper Test Symbol (Sol)
+
+on:
+  push:
+    branches:
+      - repair/v14-private-review-hmac-helper-execution-sol
+    paths:
+      - .github/workflows/tmp-v14-fix-generated-helper-test-symbol-sol.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-review-hmac-helper-execution-sol
+          fetch-depth: 0
+      - name: Repair two materialized test symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path('scripts/ci/tests/test_capture_private_review_commitment.py'),
+              Path('scripts/ci/tests/test_capture_private_review_helper_execution_custody.py'),
+          ]
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              old = '(scripts / SUBJECT_HELPER.name).read_bytes()'
+              new = '(scripts / GENERATED.name).read_bytes()'
+              if text.count(old) != 1:
+                  raise SystemExit(f'{path}: expected exactly one stale SUBJECT_HELPER reference, found {text.count(old)}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 -m py_compile \
+            scripts/ci/tests/test_capture_private_review_commitment.py \
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          python3 -m unittest -v \
+            scripts.ci.tests.test_capture_private_review_commitment \
+            scripts.ci.tests.test_capture_private_review_helper_execution_custody
+          git diff --check
+      - name: Publish scoped regression repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-v14-fix-generated-helper-test-symbol-sol.yml
+          git add \
+            scripts/ci/tests/test_capture_private_review_commitment.py \
+            scripts/ci/tests/test_capture_private_review_helper_execution_custody.py
+          git commit -m 'Capture: repair generated-helper authority test symbol'
+          git push origin HEAD:repair/v14-private-review-hmac-helper-execution-sol
