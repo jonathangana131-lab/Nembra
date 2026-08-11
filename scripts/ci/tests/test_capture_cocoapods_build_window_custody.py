@@ -10,6 +10,8 @@ from types import SimpleNamespace
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -143,6 +145,33 @@ class CocoaPodsBuildWindowCustodyTests(unittest.TestCase):
         self.assertNotEqual(
             guard.cocoapods_build_subject.fingerprint(self.root),
             self.accepted_digest,
+        )
+
+    @unittest.skipUnless(sys.platform == "darwin", "real vnode custody requires macOS kqueue")
+    def test_real_kqueue_terminates_build_on_generated_file_mutation(self) -> None:
+        def mutate_after_admission() -> None:
+            time.sleep(1.0)
+            self.generated_file.write_text("REAL_KQUEUE_SUBSTITUTION\n", encoding="utf-8")
+
+        worker = threading.Thread(target=mutate_after_admission, daemon=True)
+        worker.start()
+        started = time.monotonic()
+        with self.assertRaises(guard.BuildGuardError) as raised:
+            guard.run_guarded_build(
+                self.inputs,
+                [sys.executable, "-c", "import time; time.sleep(15)"],
+                build_subject=self.subject,
+                backend_factory=guard.KqueueVnodeBackend,
+                poll_interval=0.02,
+            )
+        worker.join(timeout=2)
+        elapsed = time.monotonic() - started
+        self.assertFalse(worker.is_alive(), "mutation worker did not complete")
+        self.assertIn("mutation was observed", str(raised.exception))
+        self.assertLess(
+            elapsed,
+            8.0,
+            "guard waited for child completion instead of reacting to the live vnode mutation",
         )
 
     def test_generated_regular_files_and_directories_are_watched(self) -> None:
