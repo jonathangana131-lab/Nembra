@@ -1,0 +1,67 @@
+name: Temporary Capture AX materializer cleanup
+
+on:
+  pull_request:
+    types: [ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: >-
+      github.repository == 'jonathangana131-lab/Nembra' &&
+      github.event.pull_request.number == 2612 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/v14-capture-live-main-visual-acceptance-sol'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact admitted head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify landed truth repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          desired = 'Text(fieldBuildIsAuthoritative ? "Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority." : "Account setup only in this public build.")'
+          if root.count(desired) != 1:
+              raise SystemExit(f'expected exactly one authority-scoped AX copy, found {root.count(desired)}')
+          if root.count('Text("Account setup only in this public build.")') != 0:
+              raise SystemExit('unconditional public-build AX copy still survives')
+
+          tests = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCaptureRootProductSurfaceSourceTests.swift').read_text()
+          expected = '#expect(root.contains("fieldBuildIsAuthoritative ? \\"Account metadata only here. Bluetooth stays locked until preflight verifies account and scooter authority.\\" : \\"Account setup only in this public build.\\""))'
+          if tests.count(expected) != 1:
+              raise SystemExit(f'expected exactly one authority-scoped source contract, found {tests.count(expected)}')
+          PY
+          git diff --check
+
+      - name: Remove temporary materializers and seal clean tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-capture-ax-copy-truth.yml
+          rm -f .github/workflows/tmp-capture-ax-copy-truth-repair.yml
+          rm -f scripts/ci/tmp_capture_ax_copy_truth.py
+          rm -f scripts/ci/tmp_capture_ax_copy_truth_v2.py
+          git diff --check
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/tmp-capture-ax-copy-truth-repair.yml \
+            .github/workflows/tmp-capture-ax-copy-truth.yml \
+            scripts/ci/tmp_capture_ax_copy_truth.py \
+            scripts/ci/tmp_capture_ax_copy_truth_v2.py | sort)"
+          test "$actual" = "$expected"
+          git config user.name 'Nembra Capture Closure'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore(capture): remove temporary AX materializers'
+          git push origin HEAD:agent/v14-capture-live-main-visual-acceptance-sol
