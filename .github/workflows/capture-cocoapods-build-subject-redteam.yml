@@ -7,6 +7,7 @@ on:
       - Scripts/capture_cocoapods_generated_build_subject.py
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+      - scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
       - .github/workflows/capture-cocoapods-build-subject-redteam.yml
   push:
     branches:
@@ -43,6 +44,7 @@ jobs:
           /usr/bin/python3 -m py_compile Scripts/capture_cocoapods_generated_build_subject.py
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
           /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
 
       - name: Require lock-preserving generated substitutions to fail closed
@@ -50,3 +52,9 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_generated_build_subject.py
+
+      - name: Require generated symlinks to stay inside accepted authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/ci/tests/test_capture_cocoapods_generated_symlink_authority.py
