@@ -158,13 +158,13 @@ struct DashboardView: View {
     private var accessibilityStatusSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(vehicle.profile.identity.displayName)
-                .font(.headline.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
 
             Label(connectionText, systemImage: connectionIcon)
-                .font(.caption.weight(.medium))
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(connectionStyle)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
