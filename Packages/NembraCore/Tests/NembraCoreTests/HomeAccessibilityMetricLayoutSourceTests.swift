@@ -41,4 +41,11 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(recovery.contains("if dynamicTypeSize.isAccessibilitySize"))
     #expect(recovery.contains(".frame(minWidth: 44, minHeight: 44)"))
     #expect(recovery.contains(".accessibilityHidden(true)"))
+
+    let recoveryTextStart = try #require(source.range(of: "private func connectionRecoveryText", range: recoveryStart.upperBound..<recoveryEnd.lowerBound))
+    let recoveryActionStart = try #require(source.range(of: "private func connectionRecoveryAction", range: recoveryTextStart.upperBound..<recoveryEnd.lowerBound))
+    let recoveryText = String(source[recoveryTextStart.lowerBound..<recoveryActionStart.lowerBound])
+    #expect(recoveryText.contains("Text(presentation.title)"))
+    #expect(recoveryText.contains("Text(presentation.message)"))
+    #expect(!recoveryText.contains("switch presentation.action"))
 }
