@@ -9,17 +9,17 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-11T22:12:00Z",
-  "lastHeartbeatAt": "2026-08-11T22:17:00Z",
+  "lastHeartbeatAt": "2026-08-11T22:25:00Z",
   "leaseSeconds": 1800,
   "branch": "integration/v14-capture-runtime-voiceover-firstfold-sol-gpt56-20260811",
   "pr": 3073,
-  "sourceSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
-  "currentHeadSHA": "e76ebdf4a2e2edf10faf3929cf33d6a9a783100b",
+  "sourceSHA": "5e348e6941b106163e0b45c4c223969338459464",
+  "currentHeadSHA": "08c094db51f2e23d95725f61ea6f9bf8519b3929",
   "takeoverFromWorkerId": "gpt56-sol-20260811-runtime-ax-reconcile",
-  "takeoverReason": "Generation-3 was explicitly RELEASED. #3018 remains pinned to #2940 and AX5-only traversal cannot exercise #2979's restored standard-size hero VoiceOver authority. Converge runtime AX onto #2979's current visual-hardened head without changing product, visual-harness, BLE/Tuya, signing/install, credential, or physical-authority files.",
+  "takeoverReason": "Generation-3 was explicitly RELEASED. #3018 remains pinned to #2940 and AX5-only traversal cannot exercise #2979's restored standard-size hero VoiceOver authority. Fresh live state then added #3076 exact 5e348e69, a non-overlapping product repair for the retained AX5 clipped-text audit red. Retarget #3073 directly onto that exact repair so one runtime composition tests the clipping fix and restored first-fold spoken authority without modifying product paths.",
   "ownedPaths": [
     ".github/workflows/capture-runtime-voiceover.yml",
     "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
   ],
-  "checkpoint": "Opened draft #3073 as one clean commit e76ebdf4 directly on #2979 exact base 6bb2e3cb; compare is ahead 1 with exactly two runtime-validation files. Standard Dynamic Type now runtime-proves the compact Link this scooter hero plus the full restored account/Bluetooth/physical-evidence/reviewed-build/fresh-scooter spoken authority from #2990 before lock/field/QR/details. AX5 separately proves action-first hero absence, hierarchy, audit, and VoiceOver ordering. Both states preserve strict 64-step throwing traversal, forbidden Start capture/Scan for scooter negatives, keep-always transcripts, true 16 KiB UTF-8 log mirrors, exact test-count/identity evidence, per-state xcresults and exit status. Simulator content-size transitions are fail-fast; only xcodebuild calls temporarily disable shell -e so both red diagnostics can run. Fresh exact CI required; child green cannot rescue a red #2979 base. PHYSICAL NO-GO."
+  "checkpoint": "#3073 is now one clean commit 08c094db directly on #3076 exact 5e348e69; compare is ahead 1 / behind 0 with exactly two runtime-validation files. Workflow hard-pins the exact #3076 parent and fails unless no other paths differ. Standard Dynamic Type runtime-proves the compact Link this scooter hero plus the complete restored account/Bluetooth/physical-evidence/reviewed-build/fresh-scooter spoken authority before lock/field/QR/details. AX5 reruns the same .all audit that retained red found clipped Physical capture locked / Tuya Smart user code, now against #3076's sighted compact-copy repair while still requiring the full semantic identities and strict VoiceOver order. Both states preserve strict 64-step throwing traversal, forbidden Start capture/Scan for scooter negatives, keep-always transcripts, true 16 KiB UTF-8 log mirrors, exact test-count/identity evidence, per-state xcresults and exit status, and simulator-only manifest authority. Fresh exact CI is required; child green cannot rescue a red #3076 base. PHYSICAL NO-GO."
 }
