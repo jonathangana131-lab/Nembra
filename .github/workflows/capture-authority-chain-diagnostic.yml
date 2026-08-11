@@ -3,7 +3,7 @@ name: Capture Authority Chain Diagnostic
 on:
   push:
     branches:
-      - repair/v14-private-review-hmac-helper-execution-sol
+      - diag/v14-authority-compile-f8cd-sol
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: repair/v14-private-review-hmac-helper-execution-sol
+          ref: diag/v14-authority-compile-f8cd-sol
       - name: Exercise authority-chain materializer
         shell: bash
         run: |
@@ -81,6 +81,12 @@ jobs:
           set -euo pipefail
           if ! python3 -m py_compile Scripts/capture_tuya_private_input_build_guard.py 2>capture-build-guard-compile-error.txt; then
             cat capture-build-guard-compile-error.txt >&2
+            python3 - <<'PY'
+          from pathlib import Path
+          message = Path('capture-build-guard-compile-error.txt').read_text(encoding='utf-8')
+          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=Materialized build guard compile::{message}')
+          PY
             exit 1
           fi
           rm -f capture-build-guard-compile-error.txt
