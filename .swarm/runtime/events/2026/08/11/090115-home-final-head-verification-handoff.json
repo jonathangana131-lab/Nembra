@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "090115-home-final-head-verification-handoff",
+  "type": "HANDOFF",
+  "workerId": "sol-20260811-7a2f",
+  "laneId": "home-accessibility-product",
+  "message": "Home implementation is frozen at PR #2842 exact head e387b5d0b7d743abe06818e9d19910a1f73f13ee on main@d8e38d0. Current-main AX reflow and command/source authority are preserved; stale lock/unlock confirmation now revokes on disconnect or competing vehicle-command contention and is source-contract fenced. Branch is mergeable, 7 ahead/0 behind, exactly three lane paths. Automatic Xcode exact-head run 31475638696 skipped; this execution surface's /xcode27 comment write was blocked by tool safety, so a different safe execution surface/test claimant must trigger exact-head Xcode 27 and inspect app-visible/system-Dynamic-Type evidence. Independent review remains required. Capture physical state remains PHYSICAL_NO_GO.",
+  "createdAt": "2026-08-11T09:01:15Z",
+  "data": {
+    "pr": 2842,
+    "exactHeadSHA": "e387b5d0b7d743abe06818e9d19910a1f73f13ee",
+    "baseMainSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+    "aheadBy": 7,
+    "behindBy": 0,
+    "changedFiles": 3,
+    "automaticXcodeRun": 31475638696,
+    "automaticXcodeConclusion": "SKIPPED",
+    "manualXcodeTrigger": "BLOCKED_BY_EXECUTION_SURFACE_TOOL_SAFETY",
+    "independentReviewRequired": true,
+    "physicalState": "PHYSICAL_NO_GO"
+  }
+}
