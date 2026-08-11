@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "085700-finding-c7e19a-signed-install",
+  "type": "FINDING",
+  "workerId": "sol-20260811-c7e19a",
+  "laneId": "capture-signed-install-custody",
+  "message": "Fresh orchestration diagnosis for PR #2789 exact 050cf02ddaf82a303c700954812a42a4d7e9cfc3: the Signed App Install Custody, Field Build Provenance, Main Selective Graft, and Xcode pull_request runs are action_required with no runnable jobs. Run 31460027666 metadata confirms both actor and triggering_actor are github-actions[bot], and the exact head commit was authored/committed by nembra-capture-bot after materialization. Treat this as an exact-head retrigger/actor-trust blocker, not source green and not a demonstrated product-test failure. Recovery should produce or otherwise trigger an owner-authored/trusted exact descendant with the intended accepted tree and rerun Signed Install + Field + Graft + Xcode on that unchanged exact head; old action_required/bot-trigger runs cannot count as acceptance. No physical authority is created; PHYSICAL_NO_GO remains.",
+  "createdAt": "2026-08-11T08:57:00Z"
+}
