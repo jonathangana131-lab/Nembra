@@ -61,11 +61,11 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
     def test_installer_moves_authority_to_protected_stage_before_codesign(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
         app_marker = 'APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"'
-        fingerprint_marker = 'capture_signed_app_install_custody.py" fingerprint --app "$APP"'
+        fingerprint_marker = 'run_accepted_signed_app_custody_helper fingerprint --app "$APP"'
         stage_marker = '/usr/bin/sudo /usr/bin/mktemp -d /private/tmp/nembra-authenticated-capture-install.XXXXXX'
         copy_marker = '/usr/bin/sudo /usr/bin/ditto "$APP" "$APP_INSTALL_STAGE"'
         owner_marker = '/usr/bin/sudo /usr/bin/find "$APP_INSTALL_STAGE_ROOT" -exec /usr/sbin/chown -h root:wheel {} +'
-        verify_stage_marker = 'capture_signed_app_install_custody.py" verify-stage'
+        verify_stage_marker = 'run_accepted_signed_app_custody_helper verify-stage'
         switch_marker = 'APP="$APP_INSTALL_STAGE"'
         codesign_marker = '/usr/bin/codesign --verify --deep --strict "$APP"'
         install_marker = 'xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"'
@@ -97,6 +97,7 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         self.assertIn('git ls-files -t -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
         self.assertIn('git rev-parse "HEAD:$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
         self.assertIn('git hash-object --no-filters -- "$SIGNED_APP_CUSTODY_HELPER_RELATIVE"', source)
+        self.assertIn('actual_oid = hash_factory(git_object).hexdigest()', source)
         self.assertLess(source.find('HELPER_ACTUAL_BLOB='), indexes["fingerprint"])
         self.assertIn('[[ "$STAGED_APP_TREE_SHA256" == "$SOURCE_APP_TREE_SHA256" ]]', source)
         self.assertIn('APP_INSTALL_STAGE_ROOT=""', source)
