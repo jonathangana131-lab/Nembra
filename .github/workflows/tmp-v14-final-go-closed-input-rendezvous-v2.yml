@@ -1,0 +1,51 @@
+name: TEMP V14 Final-GO closed-input rendezvous v2
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-closed-input-rendezvous-sol
+    paths:
+      - .github/workflows/tmp-v14-final-go-closed-input-rendezvous-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 4
+      - name: Correct demonstrated live build seam
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/ci/tmp_v14_compose_closed_input_rendezvous.py')
+          s=p.read_text()
+          old="old_call='    got=run_installer(candidate_repo,source,device_file,dh); expected='"
+          new="old_call='    got=run_installer(candidate_repo,source,device_file); expected='"
+          if s.count(old)!=1:
+              raise SystemExit(f'composer handoff seam drifted: {s.count(old)}')
+          p.write_text(s.replace(old,new,1))
+          PY
+          python3 -B scripts/ci/tmp_v14_compose_closed_input_rendezvous.py
+      - name: Remove helpers and checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/tmp-v14-final-go-closed-input-rendezvous.yml \
+            .github/workflows/tmp-v14-final-go-closed-input-rendezvous-v2.yml \
+            scripts/ci/tmp_v14_compose_closed_input_rendezvous.py
+          expected=$'scripts/ci/es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go.py\nscripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py'
+          actual="$(git diff --name-only 5fc7eb8f0eb08ae309e021ed4c8c3c62d543300c | sort)"
+          test "$actual" = "$expected"
+          git config user.name "nembra-v14-closure-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): bind Final-GO closed input rendezvous"
+          git push origin HEAD:repair/v14-final-go-closed-input-rendezvous-sol
