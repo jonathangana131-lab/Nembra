@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "type": "EVIDENCE_RESULT",
+  "eventId": "capture-signed-install-action-required-5d7e-0851",
+  "workerId": "sol-20260811-5d7e",
+  "laneId": "capture-signed-install-custody",
+  "createdAt": "2026-08-11T08:51:00Z",
+  "message": "Read-only recovery diagnosis for legacy #2789 exact head 050cf02ddaf82a303c700954812a42a4d7e9cfc3. Its four exact-head workflow runs (Signed App Install Custody 31460027666, Field 31460027563, Selective Graft 31460027504, Xcode 31460027560) are all completed/action_required with zero jobs; this is not terminal acceptance. Previous parent 95ca94121062c36543eaae966b5b0b91b09d3943 did execute Signed App Install Custody: macOS accepted-runner transport was green, while the protected-stage job failed because the installer was missing the regression-required `ditto --noacl` copy marker. Exact 050cf02 is the subsequent 8-line product repair that changes the protected copy to `ditto --noacl` and adds a fail-closed BSD `find -acl` check; its existing test at this head requires both markers. Attempting GitHub's rerun-failed-jobs API on action_required run 31460027666 returned 403 `This workflow run cannot be retried`. Therefore the current blocker is a GitHub execution/approval state on an otherwise source-reviewed repair, not a newly observed product assertion failure. Do not call 050cf02 green; it still needs a fresh runnable exact-head gate on a clean recovery/current lineage. PHYSICAL NO-GO."
+}
