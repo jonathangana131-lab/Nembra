@@ -162,7 +162,13 @@ jobs:
           fi
 
           grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' "$installer"
-          grep -Fq 'run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py"' "$installer"
+          grep -Fq 'read_verified_accepted_git_blob() {' "$installer"
+          grep -Fq 'PRIVATE_DEVICE_RUNNER_RELATIVE="scripts/ci/es80_signed_field_artifact_private_runner.py"' "$installer"
+          grep -Fq 'read_verified_accepted_git_blob "$PRIVATE_DEVICE_RUNNER_RELATIVE" |' "$installer"
+          if grep -Fq 'run_authority_git show "$SOURCE_SHA:scripts/ci/es80_signed_field_artifact_private_runner.py"' "$installer"; then
+            echo 'ERROR: private intended-device runner must use tree-bound verified blob bytes, not direct git show payload authority.' >&2
+            exit 1
+          fi
           grep -Fq '/usr/bin/env -i' "$installer"
           grep -Fq '/usr/bin/python3 -I -B -c' "$installer"
           grep -Fq 'read_private_identifier' "$installer"
