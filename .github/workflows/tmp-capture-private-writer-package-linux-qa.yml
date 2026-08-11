@@ -1,0 +1,36 @@
+name: Temporary Capture Private Writer Package Linux QA
+
+on:
+  push:
+    branches:
+      - qa/v14-capture-private-writer-package-linux-sol
+    paths:
+      - .github/workflows/tmp-capture-private-writer-package-linux-qa.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: qa/v14-capture-private-writer-package-linux-sol
+          fetch-depth: 0
+      - name: Bind workflow-only QA child
+        shell: bash
+        env:
+          PRODUCT_HEAD: 2ef97ef10c6be9d84ecd422fb78af98bac2a260e
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_HEAD"
+          test "$(git diff --name-only "$PRODUCT_HEAD" HEAD)" = '.github/workflows/tmp-capture-private-writer-package-linux-qa.yml'
+          git diff --check "$PRODUCT_HEAD" HEAD
+      - name: Run Capture package warnings-as-errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd Packages/NembraBluetoothCapture
+          swift test -Xswiftc -warnings-as-errors
