@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import resource
 import select
 import stat
 import subprocess
@@ -226,6 +227,35 @@ def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
     return tuple(sorted(paths, key=lambda item: str(item)))
 
 
+def _ensure_watch_descriptor_budget(path_count: int) -> None:
+    """Raise only this process' soft file-descriptor limit when the OS permits it."""
+
+    # Keep headroom for Python, kqueue, xcodebuild launch plumbing, and the
+    # installer's inherited descriptors. The hard limit remains unchanged.
+    required = path_count + 128
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (OSError, ValueError) as error:
+        raise BuildGuardError("could not inspect the field-build vnode descriptor limit") from error
+    if soft >= required:
+        return
+    if hard != resource.RLIM_INFINITY and hard < required:
+        raise BuildGuardError(
+            f"accepted generated build subject requires {required} vnode descriptors but the process hard limit is {hard}"
+        )
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (required, hard))
+        raised_soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (OSError, ValueError) as error:
+        raise BuildGuardError(
+            f"could not raise the field-build vnode descriptor limit from {soft} to {required}"
+        ) from error
+    if raised_soft < required:
+        raise BuildGuardError(
+            f"field-build vnode descriptor limit remained {raised_soft}; {required} are required for exact generated-input custody"
+        )
+
+
 def _open_watched_inputs(paths: Iterable[Path], backend: EventBackend) -> tuple[tuple[int, Path], ...]:
     opened: list[tuple[int, Path]] = []
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -292,11 +322,13 @@ def run_guarded_build(
         raise BuildGuardError("no build command was supplied")
 
     initial_snapshot = inputs.generation_snapshot()
+    watch_paths = _watch_paths(inputs)
+    _ensure_watch_descriptor_budget(len(watch_paths))
     backend = backend_factory()
     watched: tuple[tuple[int, Path], ...] = ()
     process: subprocess.Popen | None = None
     try:
-        watched = _open_watched_inputs(_watch_paths(inputs), backend)
+        watched = _open_watched_inputs(watch_paths, backend)
 
         # Registration itself has a race boundary. Reprove the complete private
         # + generated build subject after every vnode watch is armed, then reject
