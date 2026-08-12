@@ -9,14 +9,14 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:47:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:51:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:55:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-final-go-retirement-dispatch-current-sol-20260811",
   "pr": 3082,
   "sourceSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1",
-  "currentHeadSHA": "3bc0418687bb4709df664ac74eb7d31019fa9ddf",
+  "currentHeadSHA": "01217c20215c31c7380405dc1e2bd1330136894e",
   "takeoverFromWorkerId": "sol-20260812-93a1",
   "takeoverFromLeaseId": "capture-final-go-primary-93a1-20260812-0801",
   "takeoverReason": "Generation 5 expired after its sole 2026-08-12T08:01:00Z heartbeat. Generation 10 tests mechanically classified the exact #3120 Darwin red and generation 6 consumed that evidence on the selected production lineage.",
-  "checkpoint": "Permanent repair PR #3153 exact 1c8d699a was verified as exactly one diff line and squash-merged into selected #3082. New exact production head is 3bc0418687bb4709df664ac74eb7d31019fa9ddf. Only scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py changed relative prior selected 4a2c2002: fixture root now uses Path(temporary).resolve(strict=True). Production Final-GO Python/canonicalization/retirement/seal logic is unchanged. The move stales prior exact-head software greens for promotion; require fresh canonical Sealed Candidate Handoff / Retirement Dispatch / Private Review gates on 3bc04186, then a new real-Darwin one-workflow descendant exact-bound to 3bc04186. PHYSICAL NO-GO."
+  "checkpoint": "#3154 exact 0f1463ea was patch-verified as workflow-scope-only and squash-merged into selected #3082. New exact production head is 01217c20215c31c7380405dc1e2bd1330136894e. Retirement workflow now recognizes the accepted sealed-candidate-handoff fixture as the sixth exact path; EXACT_PARENT and all runtime authority assertions remain unchanged. Previous exact-head greens are stale for promotion. Require fresh Sealed Candidate Handoff, Retirement Dispatch Custody, and Authenticated Stationary Private Review Final GO on 01217c20; only after all are terminal green may a new one-workflow real-Darwin witness be based on this exact head. PHYSICAL NO-GO."
 }
