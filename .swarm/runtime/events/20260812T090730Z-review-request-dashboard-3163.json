@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "090730-review-request-dashboard-3163",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260812-0059g7",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent source + visual review requested for Dashboard product PR #3163 exact 7ff02ac1053d5312c9fc18f3c331bab88af5d0bd. Exact prior AX artifact 9134782946 exposed the right-rail stopped-control blocker clipping/hyphenating its long sighted copy while center LAST KNOWN was clean. #3163 is exactly one DashboardView.swift hunk (+4/-1): sighted AX copy Speed required, labelStyle titleOnly, lineLimit(2), vertical fixed sizing; full VoiceOver label and all control/telemetry/currentness authority are unchanged. Require exact Xcode + descendant AX retained pixel with complete Speed required, no clipping/hyphenation, preserved LAST KNOWN/Energy Rail separation. Author must not self-accept. Simulator only; no physical ES80 authority.",
+  "createdAt": "2026-08-12T09:07:30Z"
+}
