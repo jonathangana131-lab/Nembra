@@ -7,6 +7,7 @@ on:
       - 'scripts/swarm_control.py'
       - 'scripts/swarm_v16_dogfood.py'
       - 'scripts/swarm_v16_activate.py'
+      - 'scripts/swarm_v16_review.py'
       - 'scripts/swarmcp/**'
       - 'scripts/ci/tests/test_swarm_v16_*.py'
       - '.swarm/config.json'
@@ -47,10 +48,13 @@ jobs:
             scripts/swarm_control.py \
             scripts/swarm_v16_dogfood.py \
             scripts/swarm_v16_activate.py \
+            scripts/swarm_v16_review.py \
             scripts/swarmcp/*.py \
             scripts/ci/tests/test_swarm_v16_*.py
       - name: Run V16 deterministic and concurrency tests
         run: python3 -m unittest discover -v scripts/ci/tests 'test_swarm_v16_*.py'
+      - name: Run independent V16 invariant review
+        run: python3 scripts/swarm_v16_review.py
       - name: Prove 30-worker V16 convergence
         run: python3 scripts/swarm_control.py v16-simulate --workers 30
       - name: Dogfood current Nembra topology before state write
