@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "082000-dashboard-performance-blocker-db7773c5",
+  "type": "BLOCKER",
+  "workerId": "sol-20260812-0059g7",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Fresh reconciliation of expired performance generation 3: PR #3118 exact db7773c5dfbd996568546cb11e63df5444ba1898 is NOT queued. Run 31547121657 is terminal FAILURE. Build/test/simulator boot succeeded; the dedicated simulator-frame proof then failed before metric evidence because xcrun xctrace returned exit 64 while launching the built Nembra.app with template NembraRenderCadence. The verifier failure is downstream FileNotFoundError for missing dashboard-sim-perf-proof.json. This does not establish a cockpit frame-budget failure or performance acceptance. Recover performance on a fresh generation only after inspecting the xctrace CLI/template invocation; fail closed and keep Simulator metric capture separate from physical iPhone 12 performance authority."
+  ,"createdAt": "2026-08-12T08:20:00Z"
+}
