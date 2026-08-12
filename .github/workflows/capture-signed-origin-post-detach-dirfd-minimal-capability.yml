@@ -1,0 +1,138 @@
+name: Capture Signed Origin Post-Detach Directory FD Minimal Capability Replay
+
+on:
+  push:
+    branches:
+      - validation/v14-post-detach-dirfd-minimal-capability-sol-20260812
+    paths:
+      - .github/workflows/capture-signed-origin-post-detach-dirfd-minimal-capability.yml
+      - scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_minimal_capability_replay.py
+  pull_request:
+    paths:
+      - .github/workflows/capture-signed-origin-post-detach-dirfd-minimal-capability.yml
+      - scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_minimal_capability_replay.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-post-detach-dirfd-minimal-capability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  minimal-capability-replay:
+    name: Replay directory FD oracle below macOS group ceiling
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact recovery to #3130 red
+        shell: bash
+        env:
+          EXACT_PARENT: b0b687ddb29f6220a342143996ad8fcb0439521d
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual_paths="$RUNNER_TEMP/nembra-dirfd-minimal-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-dirfd-minimal-expected.txt"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-signed-origin-post-detach-dirfd-minimal-capability.yml
+          scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_minimal_capability_replay.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and source-audit replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-dirfd-minimal-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
+            scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py \
+            scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_minimal_capability_replay.py
+          replay='scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_minimal_capability_replay.py'
+          grep -Fq 'effective = capability' "$replay"
+          grep -Fq 'field_calls[0].get("effective") == field_active_groups' "$replay"
+          grep -Fq 'len(capability_calls) == 2' "$replay"
+          grep -Fq 'completed = subprocess.run(' "$replay"
+          if grep -Fq 'preexec_fn=' "$replay"; then
+            printf 'Minimal-capability replay must not use opaque preexec credential demotion.\n' >&2
+            exit 21
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run exact APFS directory-FD replay
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-post-detach-dirfd-minimal-capability.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_minimal_capability_replay.py 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'probe_status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Emit retained classification
+        if: always()
+        shell: bash
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/nembra-post-detach-dirfd-minimal-capability.log"
+          classification="$RUNNER_TEMP/nembra-post-detach-dirfd-minimal-capability.json"
+          /usr/bin/python3 - "$log" "$classification" "${PROBE_STATUS:-missing}" <<'PY'
+          import json, pathlib, sys
+          log = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          status = sys.argv[3]
+          text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+          payload = {
+              "schemaVersion": 1,
+              "probeStatus": status,
+              "parentEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_JSON=")],
+              "replayEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_MINIMAL_GROUPS_JSON=")],
+              "parentErrors": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_ERROR=")],
+              "replayErrors": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_MINIMAL_GROUPS_ERROR=")],
+              "physicalAuthorityCreated": False,
+          }
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: Retain minimal-capability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-post-detach-dirfd-minimal-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-post-detach-dirfd-minimal-capability.log
+            ${{ runner.temp }}/nembra-post-detach-dirfd-minimal-capability.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          EXACT_PARENT: b0b687ddb29f6220a342143996ad8fcb0439521d
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
