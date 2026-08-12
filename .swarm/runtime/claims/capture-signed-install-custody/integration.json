@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "claim",
+  "laneId": "capture-signed-install-custody",
+  "slot": "integration",
+  "role": "integration",
+  "workerId": "gpt56-sol-20260812-1137-signing-scope",
+  "leaseId": "capture-signed-install-integration-gpt56-20260812-113700",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-12T11:37:00Z",
+  "lastHeartbeatAt": "2026-08-12T11:37:00Z",
+  "leaseSeconds": 1800,
+  "branch": "validation/v14-field-uid-apple-development-codesign-gpt56-sol-20260812",
+  "pr": 3152,
+  "sourceSHA": "09cbc817c018580967ff16460459a59fc62c6359",
+  "currentHeadSHA": "09cbc817c018580967ff16460459a59fc62c6359",
+  "intent": "Consume the already-reviewed one-file four-path exact-scope repair 9cab8087 onto #3152, re-run its hosted signing-context gate, and classify only validation transport/environment evidence. Do not touch signing oracle, private receipt semantics, production signed-build helper, device, provisioning or physical actions.",
+  "checkpoint": "Current exact #3152@09cbc817 has terminal red run 31589324958 at scope binding before the oracle; dedicated redaction run 31589325046 is terminal green. Repair commit 9cab8087 is a direct one-commit descendant changing only the signing workflow +4/-1 to include the fourth redaction path in triggers and exact-delta binding. Separate caller-constructible receipt-authority finding remains unresolved and is not waived by this integration. PHYSICAL NO-GO."
+}
