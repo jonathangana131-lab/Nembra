@@ -1,0 +1,195 @@
+name: Capture V16 Trusted Standalone Exact-Head
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  resolve:
+    name: Resolve trusted standalone PR head
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/capture-xcode27' &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      same_repo: ${{ steps.pr.outputs.same_repo }}
+
+    steps:
+      - name: Resolve immutable current PR head
+        id: pr
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            if (pr.state !== 'open') {
+              core.setFailed(`PR #${pr.number} is not open`)
+              return
+            }
+            const sameRepo = pr.head.repo?.full_name === repository
+            if (!sameRepo) {
+              core.setFailed(`PR #${pr.number} is not a same-repository candidate`)
+              return
+            }
+            core.setOutput('head_sha', pr.head.sha)
+            core.setOutput('pr_number', String(pr.number))
+            core.setOutput('same_repo', 'true')
+
+  standalone-qa:
+    name: Build and test trusted standalone Capture head
+    needs: resolve
+    if: needs.resolve.outputs.same_repo == 'true'
+    concurrency:
+      group: capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
+      cancel-in-progress: true
+    runs-on: xcode-27
+    timeout-minutes: 40
+
+    steps:
+      - name: Revalidate live PR before executing candidate bytes
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          EXPECTED_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.EXPECTED_PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            if (pr.state !== 'open') {
+              core.setFailed(`PR #${pr.number} stopped being open before candidate execution`)
+              return
+            }
+            if (pr.head.repo?.full_name !== repository) {
+              core.setFailed(`PR #${pr.number} stopped being a same-repository candidate`)
+              return
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed(`PR #${pr.number} moved from ${process.env.EXPECTED_HEAD_SHA} to ${pr.head.sha}`)
+            }
+
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+
+      - name: Verify immutable PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact Capture head: %s\nActual checkout: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Record toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Validate standalone project inputs
+        run: |
+          set -euo pipefail
+          test -f NembraCapture.xcodeproj/project.pbxproj
+          test -f NembraCapture-Info.plist
+          test -f NembraCapture.entitlements
+          test -f 'NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme'
+          plutil -lint NembraCapture.xcodeproj/project.pbxproj
+          plutil -lint NembraCapture-Info.plist
+          plutil -lint NembraCapture.entitlements
+          xcodebuild -list -project NembraCapture.xcodeproj
+
+      - name: Compile Capture package against candidate Core
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift build
+
+      - name: Run standalone-scope Capture truth tests
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter CoreBluetoothCaptureMappingTests
+          swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
+          swift test --filter CaptureFirstFoldCopySourceTests
+
+      - name: Preserve deferred field-contract boundary
+        run: |
+          set -euo pipefail
+          contract='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerProcedureSourceTests.swift'
+          test -f "$contract"
+          grep -Fq 'scripts/field/install_one_time_capture.command' "$contract"
+          test ! -e scripts/field/install_one_time_capture.command
+
+      - name: Build standalone Capture for Simulator
+        run: |
+          set -euo pipefail
+          mkdir -p Artifacts/CaptureV16TrustedStandalone
+          rm -rf "${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData"
+          set -o pipefail
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee Artifacts/CaptureV16TrustedStandalone/xcodebuild.log
+
+      - name: Verify software-only standalone product
+        run: |
+          set -euo pipefail
+          app="${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData/Build/Products/Debug-iphonesimulator/Nembra Capture.app"
+          plist="$app/Info.plist"
+          test -d "$app"
+          test -f "$plist"
+
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
+          test "$bundle_id" = 'com.jonathangana131.nembra.capturelearn'
+
+          for key in \
+            NembraCaptureBuildIdentifier \
+            NembraCaptureSourceCommitSHA \
+            NembraCaptureTuyaDependencyLockSHA256 \
+            NembraCaptureProcedureIdentifier
+          do
+            value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null || true)"
+            if [[ -n "$value" ]]; then
+              printf 'Trusted public/unprovisioned build carried forbidden field authority %s=%q\n' "$key" "$value" >&2
+              exit 1
+            fi
+          done
+
+          cp "$plist" Artifacts/CaptureV16TrustedStandalone/Info.plist
+          printf '%s\n' "$EXPECTED_HEAD_SHA" > Artifacts/CaptureV16TrustedStandalone/exact-head.txt
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+
+      - name: Upload trusted standalone evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/CaptureV16TrustedStandalone
+          if-no-files-found: warn
+          retention-days: 30
