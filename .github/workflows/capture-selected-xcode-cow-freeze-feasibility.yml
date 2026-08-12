@@ -50,6 +50,33 @@ jobs:
           test -x /usr/bin/stat
           test -x /usr/bin/python3
 
+          annotate_file() {
+            local level="$1"
+            local title="$2"
+            local file="$3"
+            local body
+            body="$(tail -n 80 "$file" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::%s title=%s::%s\n' "$level" "$title" "$body"
+          }
+
+          run_root_hardening() {
+            local title="$1"
+            shift
+            local output="$RUNNER_TEMP/nembra-cow-${title// /-}.txt"
+            set +e
+            /usr/bin/sudo -n "$@" >"$output" 2>&1
+            local rc=$?
+            set -e
+            if [[ "$rc" -ne 0 ]]; then
+              printf 'command rc=%s: ' "$rc" >> "$output"
+              printf '%q ' "$@" >> "$output"
+              printf '\n' >> "$output"
+              annotate_file error "$title failed" "$output"
+              exit "$rc"
+            fi
+            printf '::notice title=%s::passed\n' "$title"
+          }
+
           source_developer="$(/usr/bin/xcode-select -p)"
           test -n "$source_developer"
           case "$source_developer" in
@@ -82,10 +109,17 @@ jobs:
           printf '::notice title=COW clone complete::elapsed=%s seconds\n' "$((finished - started))"
           test -d "$frozen_app/Contents/Developer"
 
-          /usr/bin/sudo -n /usr/sbin/chown -R root:wheel "$frozen_app"
-          /usr/bin/sudo -n /bin/chmod -RN "$frozen_app"
-          /usr/bin/sudo -n /bin/chmod -R go-w "$frozen_app"
-          /usr/bin/sudo -n /bin/chmod 0755 "$freeze_root"
+          printf '::notice title=Clone root metadata::app=%s contents=%s developer=%s\n' \
+            "$(/usr/bin/stat -f '%u:%g:%Lp' "$frozen_app")" \
+            "$(/usr/bin/stat -f '%u:%g:%Lp' "$frozen_app/Contents")" \
+            "$(/usr/bin/stat -f '%u:%g:%Lp' "$frozen_app/Contents/Developer")"
+
+          # Explicit -h ensures symlink nodes themselves become root-owned rather
+          # than granting the copied source owner authority through a link inode.
+          run_root_hardening "COW chown" /usr/sbin/chown -Rh root:wheel "$frozen_app"
+          run_root_hardening "COW ACL strip" /bin/chmod -RN "$frozen_app"
+          run_root_hardening "COW mode strip" /bin/chmod -R go-w "$frozen_app"
+          run_root_hardening "COW namespace mode" /bin/chmod 0755 "$freeze_root"
           printf '::notice title=Frozen Xcode hardening::recursive root ownership and writable ACL/mode stripping complete\n'
 
           /usr/bin/env -i \
