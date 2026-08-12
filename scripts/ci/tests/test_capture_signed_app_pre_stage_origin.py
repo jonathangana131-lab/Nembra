@@ -92,9 +92,9 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             "sudo_revoke": "_invalidate_invoker_sudo(field_user, field_uid, field_gid, field_groups, field_env)",
             "identity_id": "build_uid = _choose_ephemeral_id()",
             "identity_create": "_create_local_build_identity(build_name, build_uid, build_gid, home)",
-            "group_attestation": "_attest_build_identity_groups(\n            build_name,",
             "image": "_create_apfs_image(image)",
             "attach_rw": "writable_device = _attach_apfs(image, mountpoint, readonly=False)",
+            "group_attestation": "attested_command = _credential_attesting_exec_command(\n            guarded_command,",
             "spawn": "build = subprocess.run(",
             "lock_owner": "os.chown(mountpoint, 0, 0)",
             "lock_mode": "os.chmod(mountpoint, 0o700)",
@@ -115,7 +115,8 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             indexes[name] = index
             search_from = index + 1
 
-        self.assertLess(indexes["group_attestation"], indexes["image"])
+        self.assertLess(indexes["attach_rw"], indexes["group_attestation"])
+        self.assertLess(indexes["group_attestation"], indexes["spawn"])
         self.assertLess(indexes["detach_rw"], indexes["status"])
         self.assertLess(indexes["status"], indexes["attach_ro"])
         self.assertLess(indexes["readonly_probe"], indexes["source_hash"])
@@ -127,8 +128,13 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)
         self.assertIn('"-owners",\n        "on",', source)
         self.assertEqual(source.count('"-owners"'), 1)
-        self.assertIn("if effective != expected:", source)
-        self.assertIn("if effective.intersection(field_only):", source)
+        self.assertIn("attested_command = _credential_attesting_exec_command(", source)
+        self.assertIn("build = subprocess.run(\n            attested_command,", source)
+        self.assertIn("raw_groups=sorted(set(os.getgroups()))", source)
+        self.assertIn("if not identity_exact or not groups_exact or field_only_leak:", source)
+        self.assertIn("os.execve(command[0], command, os.environ)", source)
+        self.assertIn("effectiveZeroSupplementaryGroupsClaim':False", source)
+        self.assertNotIn("def _attest_build_identity_groups(", source)
         self.assertIn("if detach.returncode != 0:", source)
         self.assertIn("normal non-forced quiescence", source)
         self.assertIn('["/usr/bin/ditto", "--noacl"', source)
@@ -182,71 +188,27 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._structured_credentials(0, 20, ())
 
-    def test_effective_build_groups_must_match_fresh_directory_service_baseline(self) -> None:
-        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_groups")
-        payload = {
-            "uid": 55001,
-            "euid": 55001,
-            "gid": 55001,
-            "egid": 55001,
-            "groups": [12, 61, 100, 701, 55001],
-            "user": "nembrabuildtest",
-        }
-        completed = mock.Mock(
-            returncode=0,
-            stdout=helper.GROUP_ATTESTOR_MARKER + __import__("json").dumps(payload) + "\n",
-            stderr="",
-        )
-        with (
-            mock.patch.object(helper.os, "getuid", return_value=0),
-            mock.patch.object(helper.os, "getgrouplist", return_value=[55001, 12, 61, 100, 701]),
-            mock.patch.object(helper.subprocess, "run", return_value=completed) as run,
-        ):
-            baseline = helper._attest_build_identity_groups(
-                "nembrabuildtest",
-                55001,
-                55001,
-                (20, 80, 12, 61, 100, 701),
-                {"PATH": "/usr/bin:/bin"},
-                Path("/private/tmp"),
+    def test_credential_attesting_exec_binds_fresh_ds_baseline_to_same_compiler_process(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_attest_exec")
+        with mock.patch.object(helper.os, "getgrouplist", return_value=[12, 61, 100, 701, 55001]):
+            wrapped = helper._credential_attesting_exec_command(
+                ["/usr/bin/true", "accepted-compiler-argument"], name="nembrabuildtest",
+                uid=55001, gid=55001, field_groups=(20, 33, 61, 80, 701),
             )
-        self.assertEqual(baseline, (12, 61, 100, 701, 55001))
-        self.assertEqual(run.call_args.kwargs["user"], 55001)
-        self.assertEqual(run.call_args.kwargs["group"], 55001)
-        self.assertEqual(run.call_args.kwargs["extra_groups"], [])
-
-    def test_effective_build_groups_reject_field_only_leakage_or_baseline_drift(self) -> None:
-        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_group_rejection")
-        base_payload = {
-            "uid": 55001,
-            "euid": 55001,
-            "gid": 55001,
-            "egid": 55001,
-            "groups": [12, 61, 100, 701, 55001],
-            "user": "nembrabuildtest",
-        }
-        for bad_groups in ([12, 61, 80, 100, 701, 55001], [12, 61, 100, 55001]):
-            payload = dict(base_payload)
-            payload["groups"] = bad_groups
-            completed = mock.Mock(
-                returncode=0,
-                stdout=helper.GROUP_ATTESTOR_MARKER + __import__("json").dumps(payload) + "\n",
-                stderr="",
+        self.assertEqual(wrapped[:4], ["/usr/bin/python3", "-B", "-I", "-c"])
+        child_source = wrapped[4]
+        contract = helper.json.loads(wrapped[5])
+        self.assertEqual(contract["effectiveGroups"], [12, 61, 100, 701])
+        self.assertEqual(contract["fieldOnlyGroups"], [20, 33, 80])
+        self.assertEqual(wrapped[6:], ["/usr/bin/true", "accepted-compiler-argument"])
+        self.assertIn("os.getgroups()", child_source)
+        self.assertIn("raise SystemExit(126)", child_source)
+        self.assertIn("os.execve(command[0], command, os.environ)", child_source)
+        self.assertIn("effectiveZeroSupplementaryGroupsClaim", child_source)
+        with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._credential_attesting_exec_command(
+                ["xcodebuild"], name="nembrabuildtest", uid=55001, gid=55001, field_groups=(),
             )
-            with (
-                mock.patch.object(helper.os, "getuid", return_value=0),
-                mock.patch.object(helper.os, "getgrouplist", return_value=[55001, 12, 61, 100, 701]),
-                mock.patch.object(helper.subprocess, "run", return_value=completed),
-                self.assertRaises(helper.BuildOriginCustodyError),
-            ):
-                helper._attest_build_identity_groups(
-                    "nembrabuildtest",
-                    55001,
-                    55001,
-                    (20, 80, 12, 61, 100, 701),
-                    {"PATH": "/usr/bin:/bin"},
-                    Path("/private/tmp"),
-                )
 
     def test_verified_identity_retirement_requires_name_and_numeric_absence(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_retirement")
