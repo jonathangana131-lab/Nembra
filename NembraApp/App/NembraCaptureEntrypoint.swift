@@ -108,7 +108,6 @@ private struct CaptureP0Root: View {
                         : (isAccessibilityLayout ? "Capture locked" : "Physical capture locked")
                 )
                 .font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)
-                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -195,7 +194,6 @@ private struct CaptureP0Root: View {
                     VStack(alignment: .leading, spacing: 7) {
                         Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")
                             .font(.subheadline.weight(.semibold))
-                            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                             .accessibilityHidden(true)
                         TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)
                             .textInputAutocapitalization(.never)
