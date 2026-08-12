@@ -28,7 +28,7 @@ class ActivationScaleTests(unittest.TestCase):
         self.assertEqual(len(migration['classifiedPRs']),MAX_PERSISTED_PR_CLASSIFICATIONS)
         for number in summary['selectedCanonicalPRs']+summary['duplicatesSuppressed']:
             self.assertIn(str(number),migration['classifiedPRs'])
-        sc.validate_v16_graph(graph)
+        sc.validate_graph(graph)
 
     def test_global_data_only_map_limit_remains_strict(self):
         with self.assertRaises(sc.ValidationError):
