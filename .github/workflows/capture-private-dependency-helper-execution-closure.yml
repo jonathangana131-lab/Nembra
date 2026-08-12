@@ -43,7 +43,15 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           git cat-file -e "${SELECTED_PARENT_SHA}^{commit}"
           git cat-file -e "${PR_BASE_SHA}^{commit}"
-          git merge-base --is-ancestor "$SELECTED_PARENT_SHA" "$PR_BASE_SHA"
+          git merge-base --is-ancestor "$SELECTED_PARENT_SHA" HEAD
+          if git merge-base --is-ancestor "$SELECTED_PARENT_SHA" "$PR_BASE_SHA"; then
+            : # child convergence: selected parent -> PR base -> HEAD
+          elif git merge-base --is-ancestor "$PR_BASE_SHA" "$SELECTED_PARENT_SHA"; then
+            : # selected parent PR moved: PR base -> selected parent -> HEAD
+          else
+            printf 'ERROR: selected private convergence and PR base are not on one ancestry chain.\n' >&2
+            exit 71
+          fi
           git merge-base --is-ancestor "$PR_BASE_SHA" HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
