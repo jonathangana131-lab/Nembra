@@ -1,0 +1,90 @@
+name: Capture V16 Standalone Exact-Head
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'NembraCapture.xcodeproj/**'
+      - 'NembraCapture-Info.plist'
+      - 'NembraCapture.entitlements'
+      - 'NembraApp/App/NembraCapture*.swift'
+      - 'NembraApp/Features/Research/**'
+      - 'NembraApp/Resources/Localizable.strings'
+      - 'Packages/NembraBluetoothCapture/**'
+      - 'Packages/NembraCore/**'
+      - '.github/workflows/capture-v16-standalone.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-v16-standalone-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  standalone:
+    name: Test package and build standalone Capture
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout immutable PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout dispatched ref
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v6
+
+      - name: Verify immutable PR head
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact head: %s\nActual checkout: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+      - name: Record toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Validate standalone project inputs
+        run: |
+          set -euo pipefail
+          plutil -lint NembraCapture.xcodeproj/project.pbxproj
+          plutil -lint NembraCapture-Info.plist
+          plutil -lint NembraCapture.entitlements
+          test -f 'NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme'
+          xcodebuild -list -project NembraCapture.xcodeproj
+
+      - name: Test Capture package against current Core
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test
+
+      - name: Build standalone Capture for Simulator
+        run: |
+          set -euo pipefail
+          rm -rf "${RUNNER_TEMP}/NembraCaptureV16DerivedData"
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureV16DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify standalone app product
+        run: |
+          set -euo pipefail
+          app="${RUNNER_TEMP}/NembraCaptureV16DerivedData/Build/Products/Debug-iphonesimulator/Nembra Capture.app"
+          test -d "$app"
+          test -f "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist"
