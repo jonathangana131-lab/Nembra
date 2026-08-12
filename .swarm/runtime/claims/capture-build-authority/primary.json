@@ -9,15 +9,15 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:49:00Z",
+  "lastHeartbeatAt": "2026-08-12T09:02:00Z",
   "leaseSeconds": 2700,
   "branch": "validation/v14-selected-xcode-cow-freeze-sol-0059ac-20260812",
   "pr": 3146,
   "sourceSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020",
-  "currentHeadSHA": "6f688577c9a8b05a7da529108b12e427dc2d2222",
+  "currentHeadSHA": "955d1c2b27424eb815af3c47bfb8f9ad0401c81c",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-build-primary-1607ax-20260811-2357",
   "takeoverReason": "Generation-6 implementation was explicitly released while diagnostic evidence was pending. Exact #3093/#3135 retained evidence classified the source-tree blocker, so primary continues through the smallest security-preserving real-macOS remediation validation.",
   "intent": "Prove or reject a root-custodied COW-cloned, Apple-signature-verified selected-Xcode execution subject on the real xcode-27 host without weakening #3072 production custody or creating physical authority.",
-  "checkpoint": "Exact a1a52985 custom run 31579473770 remains in progress and is useful feasibility evidence but is no longer sufficient for acceptance after source red-team found a pre-admission traversal window and incomplete root/path equivalence. Head 6f688577 seals the fresh /Library namespace at root-only 0700 through clone, recursive root ownership, ACL/no-write/symlink-containment oracle and Apple signature verification; only then opens root-owned 0755. It also validates frozen Developer/xcodebuild/xctrace/devicectl with a production-equivalent no-symlink ancestry + root/no-write + ACL oracle before xcodebuild executes, then retains field mutation/replacement negatives and post-attack signature. PHYSICAL NO-GO."
+  "checkpoint": "#3146 exact 6f688577 run 31579907278 sealed the /Library namespace root-only 0700, confirmed same-device COW clone and completed 3438064 KiB clone in 62s, then stopped before COW chown. Exact source inspection identified the post-copy root existence probe as `/usr/bin/test`, which is not the macOS system test path. Head 955d1c2b changes only that probe to `/bin/test`; the sealed namespace, root ownership, ACL/no-write/symlink-containment oracle, Apple signature, production-equivalent frozen Developer/xcodebuild/xctrace/devicectl ancestry custody, field mutation/replacement negatives and post-attack signature remain unchanged. PHYSICAL NO-GO."
 }
