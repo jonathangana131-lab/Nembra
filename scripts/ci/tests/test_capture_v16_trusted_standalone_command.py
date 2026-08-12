@@ -24,14 +24,23 @@ class CaptureV16TrustedStandaloneCommandTests(unittest.TestCase):
         self.assertIn("pr.head.repo?.full_name === repository", source)
         self.assertIn("core.setOutput('head_sha', pr.head.sha)", source)
 
-    def test_live_head_is_revalidated_before_candidate_checkout(self) -> None:
+    def test_live_head_is_revalidated_before_and_after_candidate_qa(self) -> None:
         source = self.source
-        revalidate = source.index("- name: Revalidate live PR before executing candidate bytes")
+        preflight = source.index("- name: Revalidate live PR before executing candidate bytes")
         checkout = source.index("- name: Checkout immutable PR head")
         verify = source.index("- name: Verify immutable PR head")
-        self.assertLess(revalidate, checkout)
+        product = source.index("- name: Verify software-only standalone product")
+        postflight = source.index("- name: Revalidate exact PR head after standalone QA")
+        upload = source.index("- name: Upload trusted standalone evidence")
+
+        self.assertLess(preflight, checkout)
         self.assertLess(checkout, verify)
-        self.assertIn("pr.head.sha !== process.env.EXPECTED_HEAD_SHA", source[revalidate:checkout])
+        self.assertLess(verify, product)
+        self.assertLess(product, postflight)
+        self.assertLess(postflight, upload)
+        self.assertIn("pr.head.sha !== process.env.EXPECTED_HEAD_SHA", source[preflight:checkout])
+        self.assertIn("pr.head.sha !== process.env.EXPECTED_HEAD_SHA", source[postflight:upload])
+        self.assertIn("moved during QA", source[postflight:upload])
         self.assertIn("ref: ${{ needs.resolve.outputs.head_sha }}", source[checkout:verify])
         self.assertIn('test "$actual" = "$EXPECTED_HEAD_SHA"', source[verify:])
         self.assertIn(
