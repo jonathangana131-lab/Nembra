@@ -1,0 +1,94 @@
+name: Swarm V16 Live Topology Refresh
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
+      - converted_to_draft
+      - closed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+  GITHUB_REPOSITORY: ${{ github.repository }}
+
+concurrency:
+  group: swarm-v16-live-topology-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh-live-topology:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # pull_request_target intentionally has a write-capable token. Never check
+      # out or execute the PR head here; all executable bytes come from trusted
+      # current default-branch code, while PR metadata is ingested only as data.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind refresh to trusted default-branch code
+        id: trusted
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'main_sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Compile trusted refresh code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/swarm_control.py \
+            scripts/swarm_v16_dogfood.py \
+            scripts/swarm_v16_activate.py \
+            scripts/swarmcp/*.py \
+            scripts/ci/tests/test_swarm_v16_activation_scale.py
+
+      - name: Prove non-destructive refresh invariants
+        shell: bash
+        run: python3 scripts/ci/tests/test_swarm_v16_activation_scale.py
+
+      - name: Refresh active Mission Graph topology
+        shell: bash
+        env:
+          TRUSTED_MAIN_SHA: ${{ steps.trusted.outputs.main_sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_v16_activate.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --state-branch swarm-state \
+            --main-sha "$TRUSTED_MAIN_SHA" \
+            --output /tmp/swarm-v16-live-topology-refresh.json
+
+      - name: Validate refreshed V16 status
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_control.py v16-status \
+            --repo "$GITHUB_REPOSITORY" \
+            --state-branch swarm-state \
+            --config-ref "${{ steps.trusted.outputs.main_sha }}"
+
+      - name: Preserve refresh evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-v16-live-topology-refresh-${{ github.run_id }}
+          path: /tmp/swarm-v16-live-topology-refresh.json
+          if-no-files-found: warn
+          retention-days: 7
