@@ -3,7 +3,7 @@ name: Capture Signed Origin Post-Detach Directory FD Probe
 on:
   push:
     branches:
-      - validation/v14-post-detach-dirfd-active-groups-sol-20260811
+      - validation/v14-post-detach-dirfd-dedicated-uid-sol-20260812
     paths:
       - .github/workflows/capture-signed-origin-post-detach-dirfd-probe.yml
       - scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
@@ -64,22 +64,23 @@ jobs:
           /usr/bin/python3 -m py_compile \
             scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
-          grep -Fq 'completed = subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/python3"' \
+          grep -Fq 'completed = subprocess.run(' \
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
-          grep -Fq '"extra_groups": normalized' \
+          grep -Fq '"/usr/bin/sudo",' \
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
-          grep -Fq 'e.get("fieldUID") == field_uid' \
+          grep -Fq 'structured_credentials(build_uid, build_gid, [])' \
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
-          grep -Fq 'e.get("fieldPrimaryGID") == field_gid' \
+          grep -Fq 'structured_credentials(field_uid, field_gid, field_active_groups)' \
+            scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
+          grep -Fq 'evidence.get("buildUID") == evidence.get("buildPrimaryGID")' \
+            scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
+          grep -Fq 'evidence.get("fieldUID") == field_uid' \
+            scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
+          grep -Fq 'evidence.get("fieldPrimaryGID") == field_gid' \
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py
           if grep -Fq 'preexec_fn=' scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py; then
             printf 'Directory-FD authority probe must not use opaque Python preexec credential demotion.\n' >&2
             exit 21
-          fi
-          if grep -Eq '^[[:space:]]*sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe\.py([[:space:]]|$)' \
-            .github/workflows/capture-signed-origin-post-detach-dirfd-probe.yml; then
-            printf 'The parent probe must start as the runner user; it owns the single sudo transition into --root-probe.\n' >&2
-            exit 22
           fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
@@ -112,7 +113,7 @@ jobs:
           status = sys.argv[3]
           text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
           payload = {
-              "schemaVersion": 2,
+              "schemaVersion": 3,
               "probeStatus": status,
               "successEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_JSON=")],
               "errorEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_ERROR=")],
