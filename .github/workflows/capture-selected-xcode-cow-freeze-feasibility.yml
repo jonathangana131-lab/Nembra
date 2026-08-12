@@ -103,20 +103,28 @@ jobs:
           }
           trap cleanup EXIT INT TERM
 
+          # mktemp creates the root-owned namespace as 0700. That is secure but
+          # also prevents the ordinary field identity from traversing to the
+          # frozen execution subject after root has populated it. Convert only
+          # the namespace itself to root-owned 0755 with no ACL before cloning:
+          # traverse/read is admitted, mutation remains root-only.
+          /usr/bin/sudo -n /bin/chmod -N "$freeze_root"
+          /usr/bin/sudo -n /bin/chmod 0755 "$freeze_root"
+          namespace_uid="$(/usr/bin/stat -f '%u' "$freeze_root")"
+          namespace_mode="$(/usr/bin/stat -f '%Lp' "$freeze_root")"
+          test "$namespace_uid" = 0
+          test "$namespace_mode" = 755
+          printf '::notice title=Frozen namespace authority::uid=%s mode=%s\n' "$namespace_uid" "$namespace_mode"
+
           started="$(/bin/date +%s)"
           /usr/bin/sudo -n /bin/cp -cR "$source_app" "$frozen_app"
           finished="$(/bin/date +%s)"
           printf '::notice title=COW clone complete::elapsed=%s seconds\n' "$((finished - started))"
           test -d "$frozen_app/Contents/Developer"
 
-          # The pre-hardening metadata sample is intentionally omitted: two exact
-          # runs proved that diagnostic itself was brittle and it carried no
-          # authority. The authoritative recursive oracle below validates the
-          # entire hardened clone before any Xcode code executes.
           run_root_hardening "COW chown" /usr/sbin/chown -Rh root:wheel "$frozen_app"
           run_root_hardening "COW ACL strip" /bin/chmod -RN "$frozen_app"
           run_root_hardening "COW mode strip" /bin/chmod -R go-w "$frozen_app"
-          run_root_hardening "COW namespace mode" /bin/chmod 0755 "$freeze_root"
           printf '::notice title=Frozen Xcode hardening::recursive root ownership and writable ACL/mode stripping complete\n'
 
           /usr/bin/env -i \
