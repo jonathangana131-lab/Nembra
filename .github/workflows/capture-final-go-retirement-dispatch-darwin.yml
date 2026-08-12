@@ -1,0 +1,232 @@
+name: Capture Final GO Retirement Dispatch Darwin Kqueue
+
+on:
+  push:
+    branches:
+      - validation/v14-final-go-darwin-01217-sol-0058jx
+    paths:
+      - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
+  pull_request:
+    paths:
+      - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  darwin-retirement-authority:
+    name: Validate sealed retirement on real Darwin kqueue
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      EXACT_PRODUCTION_PARENT: 01217c20215c31c7380405dc1e2bd1330136894e
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-retirement-darwin-pycache
+    steps:
+      - name: Checkout immutable exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact accepted production parent and one-path validation delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PRODUCTION_PARENT" HEAD)" = "$EXACT_PRODUCTION_PARENT"
+          git diff --name-only "$EXACT_PRODUCTION_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' .github/workflows/capture-final-go-retirement-dispatch-darwin.yml > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exact Final-GO authority surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
+            scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Prove production selects real Darwin kqueue backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          import sys
+
+          path = Path("scripts/ci/es80_authenticated_stationary_private_review_final_go.py").resolve()
+          spec = importlib.util.spec_from_file_location("nembra_final_go_darwin_retirement_subject", path)
+          if spec is None or spec.loader is None:
+              raise SystemExit("could not load Final-GO subject")
+          module = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = module
+          spec.loader.exec_module(module)
+          backend = module._previous._default_backend()
+          try:
+              name = type(backend).__name__
+              if name != "_KqueueMutationBackend":
+                  raise SystemExit(f"expected _KqueueMutationBackend on Darwin, got {name}")
+          finally:
+              backend.close()
+          PY
+
+      - name: Replay whole-tree races through real kqueue custody
+        id: whole_tree
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          evidence="$RUNNER_TEMP/NembraFinalGoDarwinAcceptance"
+          mkdir -p "$evidence"
+          log="$evidence/continuous-tracked-tree.log"
+          set +e
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py >"$log" 2>&1
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$evidence/continuous-tracked-tree.rc"
+          cat "$log"
+          if [ "$rc" -ne 0 ]; then
+            diagnostic="$(tail -n 180 "$log" | python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=Darwin whole-tree custody regression::%s\n' "$diagnostic"
+          fi
+          exit "$rc"
+
+      - name: Replay sealed retirement authority suites on Darwin
+        id: sealed_retirement
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          evidence="$RUNNER_TEMP/NembraFinalGoDarwinAcceptance"
+          mkdir -p "$evidence"
+          overall=0
+
+          run_suite() {
+            label="$1"
+            script="$2"
+            log="$evidence/${label}.log"
+            rc_file="$evidence/${label}.rc"
+            set +e
+            python3 "$script" >"$log" 2>&1
+            rc=$?
+            set -e
+            printf '%s\n' "$rc" > "$rc_file"
+            printf '%s\n' "===== $label (rc=$rc) ====="
+            cat "$log"
+            if [ "$rc" -ne 0 ]; then
+              diagnostic="$(tail -n 180 "$log" | python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+              printf '::error title=Darwin Final-GO %s red::%s\n' "$label" "$diagnostic"
+              if [ "$overall" -eq 0 ]; then
+                overall="$rc"
+              fi
+            fi
+          }
+
+          run_suite sealed-candidate-handoff scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+          run_suite retirement-dispatch-custody scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+          run_suite committed-parent-execution scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+          exit "$overall"
+
+      - name: Seal exact Darwin acceptance evidence
+        if: always()
+        shell: bash
+        env:
+          WHOLE_TREE_OUTCOME: ${{ steps.whole_tree.outcome }}
+          SUITE_OUTCOME: ${{ steps.sealed_retirement.outcome }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/NembraFinalGoDarwinAcceptance"
+          mkdir -p "$evidence"
+          python3 - "$evidence/manifest.json" "$evidence" "$(git rev-parse HEAD)" "$EXACT_PRODUCTION_PARENT" "$WHOLE_TREE_OUTCOME" "$SUITE_OUTCOME" <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import sys
+
+          manifest_path = Path(sys.argv[1])
+          root = Path(sys.argv[2])
+          head = sys.argv[3].lower()
+          parent = sys.argv[4].lower()
+          whole_tree_outcome = sys.argv[5]
+          suite_outcome = sys.argv[6]
+          labels = (
+              "continuous-tracked-tree",
+              "sealed-candidate-handoff",
+              "retirement-dispatch-custody",
+              "committed-parent-execution",
+          )
+          suites = {}
+          for label in labels:
+              rc_path = root / f"{label}.rc"
+              log_path = root / f"{label}.log"
+              raw_rc = rc_path.read_text(encoding="utf-8").strip() if rc_path.exists() else "missing"
+              try:
+                  rc = int(raw_rc)
+              except ValueError:
+                  rc = None
+              payload = log_path.read_bytes() if log_path.exists() else b""
+              suites[label] = {
+                  "returnCode": rc,
+                  "logPresent": log_path.exists(),
+                  "logSHA256": hashlib.sha256(payload).hexdigest(),
+              }
+          accepted = whole_tree_outcome == "success" and suite_outcome == "success" and all(
+              value["returnCode"] == 0 and value["logPresent"] for value in suites.values()
+          )
+          manifest = {
+              "schemaVersion": 1,
+              "authority": "capture-final-go-darwin-exact-parent-validation",
+              "exactValidationHead": head,
+              "exactProductionParent": parent,
+              "realDarwinKqueueRequired": True,
+              "suites": suites,
+              "darwinSoftwareAuthorityAccepted": accepted,
+              "productionAcceptanceClaimed": False,
+              "physicalAuthorityCreated": False,
+          }
+          manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          shasum -a 256 "$evidence"/* > "$evidence/SHA256SUMS.txt"
+
+      - name: Upload exact Darwin acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-final-go-darwin-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraFinalGoDarwinAcceptance
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce exact Darwin verdict and worktree hygiene
+        if: always()
+        shell: bash
+        env:
+          WHOLE_TREE_OUTCOME: ${{ steps.whole_tree.outcome }}
+          SUITE_OUTCOME: ${{ steps.sealed_retirement.outcome }}
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PRODUCTION_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test "$WHOLE_TREE_OUTCOME" = success
+          test "$SUITE_OUTCOME" = success
+          python3 - "$RUNNER_TEMP/NembraFinalGoDarwinAcceptance/manifest.json" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if manifest.get("darwinSoftwareAuthorityAccepted") is not True:
+              raise SystemExit("sealed Darwin evidence did not accept exact software authority")
+          if manifest.get("physicalAuthorityCreated") is not False:
+              raise SystemExit("Darwin software validation must not create physical authority")
+          PY
+          echo 'Exact-parent real-Darwin Final-GO software authority accepted.'
