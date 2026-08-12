@@ -9,14 +9,14 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:37:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:37:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:38:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-capture-ax5-source-oracle-sol-0054j7-20260812",
-  "pr": null,
+  "pr": 3148,
   "sourceSHA": "48dc64f7a0f3188f0cca5dd4300f09f079d3aa80",
-  "currentHeadSHA": "48dc64f7a0f3188f0cca5dd4300f09f079d3aa80",
+  "currentHeadSHA": "417991ff6f4e63c4c0b5678f1ec63cf9eece62ac",
   "takeoverFromWorkerId": "gpt56-sol-20260811-visual-readiness-guard",
   "takeoverFromLeaseId": "capture-flagship-tests-visual-readiness-20260811-2200",
-  "takeoverReason": "Generation-6 was explicitly RELEASED. Exact #3145 Main artifact 9133873065 has now classified one deterministic stale source oracle at CaptureAXScopeRegressionSourceTests.swift:49 that requires the Dynamic Type cap #3145 intentionally removes to repair a real AX5 audit defect. Generation-7 owns only the test-oracle repair on exact #3145 product bytes; no shipping product files.",
-  "intent": "Retarget the source contract to preserve persistent sighted identity, semantic Tuya Smart user code, hidden duplicate, field/action order, and explicitly forbid reintroducing the Accessibility-1 textual cap. Rerun exact Main on a clean one-path test descendant. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-6 was explicitly RELEASED. Exact #3145 Main artifact 9133873065 classified one deterministic stale source oracle at CaptureAXScopeRegressionSourceTests.swift:49 that requires the Dynamic Type cap #3145 intentionally removes to repair a real AX5 audit defect. Generation-7 owns only the test-oracle repair on exact #3145 product bytes; no shipping product files.",
+  "checkpoint": "Published draft #3148 exact 417991ff6f4e63c4c0b5678f1ec63cf9eece62ac as one-path test-only descendant of #3145@48dc64f7. Changed only the stale cap expectation from positive to negative while retaining sighted-label / hidden-duplicate / field / semantic-label / action ordering assertions. Capture Main 31579134372 is QUEUED; Xcode 31579134349 SKIPPED/not acceptance. Queued != green. PHYSICAL NO-GO."
 }
