@@ -699,7 +699,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "d1479f0dc3b350d0065318b39efd0eb6aa13e44d",
+        "headSHA": "b9164701da15d7a773698599bf24ed3cb923f8ac",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -974,8 +974,140 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 295,
+    "classifiedPRTotal": 283,
     "classifiedPRs": {
+      "2680": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2680,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.361,
+        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
+      },
+      "2688": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2688,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.357,
+        "title": "[Capture P0][RED TEAM] Pin signed app install subject"
+      },
+      "2709": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2709,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.331,
+        "title": "[Capture P0][REPAIR] Bind CocoaPods generated build authority"
+      },
+      "2711": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2711,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.221,
+        "title": "[Capture P0][RED TEAM] Bind checkout root before trusting private writer path"
+      },
+      "2719": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2719,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.26,
+        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
+      },
+      "2733": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2733,
+        "recommendedAction": "independent-review",
+        "similarity": 0.278,
+        "title": "[Capture P0][REVIEW] Lock root admission before private writer capture"
+      },
+      "2734": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2734,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.365,
+        "title": "[Capture P0][RED TEAM] Break private identity publication custody"
+      },
+      "2741": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2741,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.256,
+        "title": "[Capture P0][RED TEAM] Pin signed-app custody helper execution bytes"
+      },
+      "2754": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2754,
+        "recommendedAction": "independent-review",
+        "similarity": 0.359,
+        "title": "[Capture P0][FIELD] Protect exact signed app install subject"
+      },
+      "2755": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2755,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.378,
+        "title": "[Capture P0][REPAIR] Close private identity publication races"
+      },
+      "2767": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2767,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.228,
+        "title": "[Capture P0][RED TEAM] Bind sealed staging payload bytes"
+      },
+      "2775": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2775,
+        "recommendedAction": "independent-review",
+        "similarity": 0.216,
+        "title": "[Capture P0][PHYSICAL GO] Pin generated build authority onto current Final GO modules"
+      },
       "2779": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1215,7 +1347,7 @@
         "lane": "",
         "pr": 2868,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.319,
+        "similarity": 0.309,
         "title": "[Capture P0][RED TEAM] Reject private identity destination-name re-resolution"
       },
       "2869": {
@@ -1259,7 +1391,7 @@
         "lane": "",
         "pr": 2872,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.297,
+        "similarity": 0.281,
         "title": "[Capture P0][SECURITY] Bind private identity publication bytes"
       },
       "2873": {
@@ -1272,17 +1404,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.3,
         "title": "[Capture P0][PHYSICAL GO] Recover current private-review Final-GO authority"
-      },
-      "2874": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2874,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.309,
-        "title": "[Capture P0][SECURITY] Bind private identity payload across publication"
       },
       "2875": {
         "classification": "validation",
@@ -1537,17 +1658,6 @@
         "similarity": 0.44,
         "title": "[Capture P0][RED TEAM] Close residual caller Xcode build environment"
       },
-      "2918": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-identity-convergence",
-        "pr": 2918,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.449,
-        "title": "[Capture P0][RED TEAM] Preserve replacement inode during crash-residue recovery"
-      },
       "2920": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1624,17 +1734,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.521,
         "title": "[Capture P0][SECURITY] Verify accepted Git payload bytes before execution"
-      },
-      "2935": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-identity-convergence",
-        "pr": 2935,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.471,
-        "title": "[Capture P0][SECURITY] Bind crash-residue cleanup to held inode"
       },
       "2936": {
         "classification": "validation",
@@ -1713,17 +1812,6 @@
         "similarity": 0.379,
         "title": "[Dashboard V15][QA] Fail closed on Dynamic Type reset"
       },
-      "2944": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-identity-convergence",
-        "pr": 2944,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.37,
-        "title": "[Capture P0][SECURITY] Seal and guard private identity build authority"
-      },
       "2946": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1801,17 +1889,6 @@
         "similarity": 0.169,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
-      "2961": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-identity-custody",
-        "pr": 2961,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.266,
-        "title": "[Capture P0][RED TEAM] Block failed private identity from later bootstrap admission"
-      },
       "2962": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1833,17 +1910,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.379,
         "title": "[Dashboard V15][QA] Capture real dark landscape cockpit evidence"
-      },
-      "2964": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2964,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.335,
-        "title": "[Capture P0][EXPECTED RED] Sanitize admitted residue on early output rejection"
       },
       "2965": {
         "classification": "canonical-candidate",
@@ -1888,17 +1954,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.322,
         "title": "[Dashboard V15][AX5] Recompose accessibility landscape cockpit"
-      },
-      "2977": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "0d78918148471dd3721c276bde27e379b04b7abd",
-        "lane": "capture-private-identity-custody",
-        "pr": 2977,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.318,
-        "title": "[Capture P0][SECURITY] Sanitize admitted residue on early destination rejection"
       },
       "2979": {
         "classification": "validation",
@@ -1977,28 +2032,6 @@
         "similarity": 0.241,
         "title": "[Dashboard V15][AX5] Separate Energy Rail from power status"
       },
-      "2993": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "34091153f8bb4f9b024553ca628145bdec873e1e",
-        "lane": "capture-private-identity-convergence",
-        "pr": 2993,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.207,
-        "title": "[Capture P0][SECURITY] Restore private dependency guard adapter API contract"
-      },
-      "2997": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "1854a6194f71dc09f9bebb433fb8e1267f6a9640",
-        "lane": "capture-private-identity-custody",
-        "pr": 2997,
-        "recommendedAction": "independent-review",
-        "similarity": 0.206,
-        "title": "[Capture P0][TEST] Recover private provenance ordering contract"
-      },
       "3006": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2043,17 +2076,6 @@
         "similarity": 0.405,
         "title": "[Capture P0][RED TEAM] Reject selected-tool ACL mutation and replacement authority"
       },
-      "3031": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "11fc7e0813709a45b10a13d914e5a0275555ec0b",
-        "lane": "capture-private-identity-custody",
-        "pr": 3031,
-        "recommendedAction": "independent-review",
-        "similarity": 0.313,
-        "title": "[Capture P0][TEST] Repair private Field fixture real ancestry"
-      },
       "3053": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2075,17 +2097,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.264,
         "title": "[Rides P3] Reconcile selected-distance truth onto current main"
-      },
-      "3060": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "4b0279d4567a2480eefc94cde45dd39003712862",
-        "lane": "capture-private-identity-custody",
-        "pr": 3060,
-        "recommendedAction": "independent-review",
-        "similarity": 0.293,
-        "title": "[Capture P0][CLEANUP] Remove private bootstrap construction publisher"
       },
       "3061": {
         "classification": "validation",
@@ -2168,11 +2179,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "31f3da411581bf99836287cd68b905f7c4368bc3",
+        "headSHA": "d1479f0dc3b350d0065318b39efd0eb6aa13e44d",
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.367,
+        "similarity": 0.354,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3145": {
@@ -2238,7 +2249,7 @@
         "lane": "",
         "pr": 3168,
         "recommendedAction": "independent-review",
-        "similarity": 0.153,
+        "similarity": 0.107,
         "title": "Capture V16: converge standalone build on canonical mission"
       },
       "3169": {
@@ -2260,7 +2271,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3175,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.359,
+        "similarity": 0.346,
         "title": "[Capture P0][VALIDATION] Bind dedicated UID credential attestation to exec"
       },
       "3177": {
@@ -2315,19 +2326,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3184,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.24,
+        "similarity": 0.234,
         "title": "[Capture P0][VALIDATION] Reap direct child before final principal retirement"
-      },
-      "3187": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "d3f11e6d589add81e94c278be5bc7289a049ea16",
-        "lane": "capture-signed-install-custody",
-        "pr": 3187,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.291,
-        "title": "[Capture P0][VALIDATION] Repair Apple-signing four-path exact scope"
       },
       "3188": {
         "classification": "validation",
@@ -2344,12 +2344,12 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "59d5a05dd89afd2f41a5389ef7b37367afd91fe7",
+        "headSHA": "171005a44a30bec6b047e6e8b3d9dad99384390d",
         "lane": "capture-standalone-build",
         "pr": 3190,
         "recommendedAction": "independent-review",
-        "similarity": 0.153,
-        "title": "[Capture V16][CI] Add trusted standalone exact-head gate"
+        "similarity": 0.14,
+        "title": "[Capture V16][CI] Harden trusted standalone exact-head gate"
       },
       "3191": {
         "classification": "canonical-candidate",
@@ -2411,8 +2411,8 @@
     "livePRBranchMismatches": [],
     "livePRHeadUpdates": [
       {
-        "from": "627a77a368e8f992abbf48a24d2145cd1b56d1f3",
-        "to": "d1479f0dc3b350d0065318b39efd0eb6aa13e44d",
+        "from": "d1479f0dc3b350d0065318b39efd0eb6aa13e44d",
+        "to": "b9164701da15d7a773698599bf24ed3cb923f8ac",
         "workItemId": "live-pr-3142"
       }
     ],
@@ -2421,11 +2421,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-12T11:20:40Z",
+    "liveRefreshAt": "2026-08-12T11:27:09Z",
     "liveRefreshDuplicatesSuppressed": [
       3192
     ],
-    "liveRefreshMainSHA": "a0d61248e789d39e475be30dd5e568f435929050",
+    "liveRefreshMainSHA": "17a9c74a265159bd32c9fb8cff5e8ae5a3c8a43f",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -6175,10 +6175,10 @@
       "userValue": 7
     }
   },
-  "revision": 2,
+  "revision": 3,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-12T11:23:31Z",
+  "updatedAt": "2026-08-12T11:29:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6247,14 +6247,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "d1479f0dc3b350d0065318b39efd0eb6aa13e44d",
+        "headSHA": "b9164701da15d7a773698599bf24ed3cb923f8ac",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-12T11:20:40Z",
+      "updatedAt": "2026-08-12T11:27:09Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
