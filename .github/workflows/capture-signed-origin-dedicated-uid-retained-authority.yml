@@ -1,0 +1,157 @@
+name: Capture Dedicated UID Retained Authority Matrix
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py
+      - .github/workflows/capture-signed-origin-dedicated-uid-retained-authority.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-dedicated-uid-retained-authority-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retained-authority:
+    name: Prove dedicated UID retained authority freezes at APFS detach
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind exact validation child to accepted dedicated-UID parent
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ACCEPTED_PARENT_SHA: 98fdc404048812f6d3af6791710c57ece21dafd3
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$ACCEPTED_PARENT_SHA" HEAD
+
+          actual_paths="$RUNNER_TEMP/nembra-retained-authority-paths.txt"
+          expected_paths="$RUNNER_TEMP/nembra-retained-authority-expected.txt"
+          git diff --name-only "$ACCEPTED_PARENT_SHA"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-signed-origin-dedicated-uid-retained-authority.yml
+          scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and inspect retained-authority witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-retained-authority-pycache"
+          witness='scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py'
+          dedicated='scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py'
+          /usr/bin/python3 -m py_compile "$witness" "$dedicated"
+          /usr/bin/python3 - <<'PY'
+          import inspect
+          from pathlib import Path
+          import subprocess
+
+          parameters = inspect.signature(subprocess.Popen).parameters
+          required_popen = {"user", "group", "extra_groups"}
+          missing = sorted(required_popen.difference(parameters))
+          if missing:
+              raise SystemExit(f"runner Python lacks structured POSIX credential arguments: {missing}")
+
+          source = Path("scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py").read_text()
+          required_markers = (
+              "test_capture_signed_app_real_xcode_dedicated_uid_freeze.py",
+              "mmap.ACCESS_WRITE",
+              "dir_fd=fd",
+              '["/usr/bin/hdiutil", "info", "-plist"]',
+              '"detachClassification"',
+              '"postDetachMutationPersisted": False',
+              '"fieldUID"',
+              '"buildUID"',
+              '"physicalAuthorityCreated": False',
+          )
+          for marker in required_markers:
+              if marker not in source:
+                  raise SystemExit(f"retained-authority witness missing contract marker: {marker}")
+          if "preexec_fn=" in source:
+              raise SystemExit("retained-authority witness reintroduced opaque preexec credentials")
+          print("NEMBRA_DEDICATED_UID_RETAINED_AUTHORITY_SOURCE_CONTRACT=1")
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Exercise nested directory-FD authority
+        id: dirfd
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          output="$RUNNER_TEMP/nembra-dedicated-uid-dirfd.txt"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py \
+            --authority dirfd >"$output" 2>&1
+          rc=$?
+          set -e
+          cat "$output"
+          if [[ "$rc" != 0 ]]; then
+            diagnostic="$(tail -n 220 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            echo "::error title=Dedicated UID directory-FD oracle red::$diagnostic"
+          fi
+          exit "$rc"
+
+      - name: Exercise escaped shared mmap authority
+        id: mmap
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          output="$RUNNER_TEMP/nembra-dedicated-uid-mmap.txt"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py \
+            --authority mmap >"$output" 2>&1
+          rc=$?
+          set -e
+          cat "$output"
+          if [[ "$rc" != 0 ]]; then
+            diagnostic="$(tail -n 220 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            echo "::error title=Dedicated UID shared-mmap oracle red::$diagnostic"
+          fi
+          exit "$rc"
+
+      - name: Retain dedicated-UID authority evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-dedicated-uid-retained-authority-${{ github.event.pull_request.number || github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-dedicated-uid-dirfd.txt
+            ${{ runner.temp }}/nembra-dedicated-uid-mmap.txt
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Require complete retained-authority matrix
+        if: always()
+        shell: bash
+        env:
+          DIRFD_OUTCOME: ${{ steps.dirfd.outcome }}
+          MMAP_OUTCOME: ${{ steps.mmap.outcome }}
+        run: |
+          set -euo pipefail
+          test "$DIRFD_OUTCOME" = success
+          test "$MMAP_OUTCOME" = success
+          echo 'NEMBRA_DEDICATED_UID_RETAINED_AUTHORITY_MATRIX=1'
