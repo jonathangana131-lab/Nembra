@@ -396,6 +396,8 @@ def _attach_apfs(image: Path, mountpoint: Path, *, readonly: bool) -> str:
         "attach",
         "-plist",
         "-nobrowse",
+        "-owners",
+        "on",
         "-mountpoint",
         str(mountpoint),
     ]
