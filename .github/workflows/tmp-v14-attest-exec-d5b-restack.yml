@@ -25,11 +25,29 @@ jobs:
           git config user.name nembra-swarm
           git config user.email nembra-swarm@users.noreply.github.com
           git reset --hard "$OWNER_HEAD"
-          if ! git cherry-pick "$PRODUCT_COMMIT"; then
-            git status --short
-            echo '::error title=Attest-exec restack conflict::Product commit did not cherry-pick cleanly onto d5b owner head.'
-            exit 11
-          fi
+          git cherry-pick "$PRODUCT_COMMIT"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py")
+          source = path.read_text(encoding="utf-8")
+          old = '''        with (
+                      mock.patch.object(helper.pwd, "getpwnam", return_value=object()),
+                      self.assertRaises(helper.BuildOriginCustodyError),
+                  ):
+                      helper._assert_local_build_identity_retired("nembrabuildtest", 55001)
+          '''
+          new = '''        with (
+                      mock.patch.object(helper.pwd, "getpwnam", return_value=object()),
+                      self.assertRaises(helper.BuildOriginCustodyError),
+                  ):
+                      helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
+          '''
+          if source.count(old) != 1:
+              raise SystemExit("expected one moved-owner retirement failure assertion")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+          git add scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          git commit --amend --no-edit
       - name: Run portable moved-head regressions
         shell: bash
         run: |
@@ -55,6 +73,7 @@ jobs:
           grep -Fq '_numeric_principal_in_use(candidate)' scripts/ci/capture_signed_app_build_origin_custody.py
           ! grep -Fq 'def _attest_build_identity_groups(' scripts/ci/capture_signed_app_build_origin_custody.py
           grep -Fq 'buildCredentialAttestationSameExecTransition' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          grep -Fq '_assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           git diff "$OWNER_HEAD"..HEAD --check
           actual="$(git diff --name-only "$OWNER_HEAD"..HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' scripts/ci/capture_signed_app_build_origin_custody.py scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
