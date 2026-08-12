@@ -136,9 +136,11 @@ jobs:
           }
           trap cleanup_receipt EXIT
           log="$RUNNER_TEMP/nembra-field-apple-signing-transport.log"
+          workspace_physical="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+          [[ "$workspace_physical" == /* ]] || { echo 'ERROR: Actions workspace did not resolve to one physical absolute path.' >&2; exit 43; }
           set +e
           /bin/bash scripts/field/run_apple_signing_context_preflight.command \
-            "$GITHUB_WORKSPACE" "$(git rev-parse HEAD)" "$receipt" >"$log" 2>&1
+            "$workspace_physical" "$(git rev-parse HEAD)" "$receipt" >"$log" 2>&1
           transport_rc=$?
           set -e
           cat "$log"
