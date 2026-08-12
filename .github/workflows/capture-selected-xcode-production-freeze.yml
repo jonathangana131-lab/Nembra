@@ -1,0 +1,143 @@
+name: Capture Selected Xcode Production Freeze
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_freeze.py
+      - .github/workflows/capture-selected-xcode-production-freeze.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-freeze:
+    name: Prove frozen-Xcode production handoff and root janitor
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact construction parent and source contract
+        shell: bash
+        env:
+          EXACT_PARENT: 627a77a368e8f992abbf48a24d2145cd1b56d1f3
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-selected-xcode-production-freeze.yml \
+            scripts/ci/capture_selected_xcode_freeze.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          /usr/bin/python3 -m py_compile scripts/ci/capture_selected_xcode_freeze.py
+          /usr/bin/python3 -I - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/ci/capture_selected_xcode_freeze.py').read_text()
+          required = (
+              '/usr/bin/xcode-select',
+              '/bin/cp',
+              '-cR',
+              'NembraSelectedXcodeFreeze.',
+              '/usr/sbin/chown',
+              'root:wheel',
+              '/usr/bin/find',
+              '-acl',
+              'anchor apple generic and identifier',
+              'com.apple.dt.Xcode',
+              'xcodebuild',
+              'xctrace',
+              'devicectl',
+              '_start_cleanup_janitor',
+              '_require_field_shell_ancestor',
+              'field identity retained mutation/replacement authority',
+          )
+          for fragment in required:
+              if fragment not in source:
+                  raise SystemExit(f'missing production freeze invariant: {fragment}')
+          forbidden = (
+              'list devices',
+              'device install app',
+              'device process launch',
+              'CoreBluetooth',
+              'CBCentralManager',
+              'NEMBRA_TUYA_',
+              'LocalSecrets',
+              'allowProvisioningUpdates',
+              'allowProvisioningDeviceRegistration',
+          )
+          lowered = source.lower()
+          for fragment in forbidden:
+              if fragment.lower() in lowered:
+                  raise SystemExit(f'production freeze helper crossed physical/product boundary: {fragment}')
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact production freeze source contract bound at %s\n' "$source_sha"
+
+      - name: Materialize admitted frozen Xcode and exercise tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          receipt="$RUNNER_TEMP/nembra-selected-xcode-production-freeze.tsv"
+          result="$(/usr/bin/sudo -n /usr/bin/python3 -I scripts/ci/capture_selected_xcode_freeze.py --field-pid "$$")"
+          printf '%s\n' "$result" > "$receipt"
+          chmod 600 "$receipt"
+
+          IFS=$'\t' read -r freeze_root frozen_developer selected_xcodebuild selected_xctrace selected_devicectl janitor_pid < "$receipt"
+          test -n "$freeze_root"
+          test -n "$frozen_developer"
+          test -x "$selected_xcodebuild"
+          test -x "$selected_xctrace"
+          test -x "$selected_devicectl"
+          test "$janitor_pid" -gt 1
+          case "$freeze_root" in /Library/NembraSelectedXcodeFreeze.*) ;; *) exit 41 ;; esac
+          case "$frozen_developer" in "$freeze_root"/Xcode.app/Contents/Developer) ;; *) exit 42 ;; esac
+          for tool in "$selected_xcodebuild" "$selected_xctrace" "$selected_devicectl"; do
+            case "$tool" in "$frozen_developer"/*) ;; *) exit 43 ;; esac
+          done
+
+          version="$(DEVELOPER_DIR="$frozen_developer" "$selected_xcodebuild" -version)"
+          first_line="${version%%$'\n'*}"
+          case "$first_line" in 'Xcode 27'|'Xcode 27.'*) ;; *) exit 44 ;; esac
+
+          # Do not call any device verb. Prove only that the admitted tool leaves
+          # are executable after the privileged freeze helper has returned.
+          DEVELOPER_DIR="$frozen_developer" "$selected_xcodebuild" -version >/dev/null
+          "$selected_xctrace" version >/dev/null 2>&1 || true
+          "$selected_devicectl" help >/dev/null 2>&1 || true
+          test -d "$freeze_root"
+          printf 'FROZEN_XCODE_RUNTIME_ACCEPTED physicalAuthorityCreated=false\n'
+
+      - name: Prove root janitor removes clone after field shell exits
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/nembra-selected-xcode-production-freeze.tsv"
+          test -f "$receipt"
+          IFS=$'\t' read -r freeze_root _ _ _ _ _ < "$receipt"
+          case "$freeze_root" in /Library/NembraSelectedXcodeFreeze.*) ;; *) exit 51 ;; esac
+          for _ in $(seq 1 120); do
+            if [[ ! -e "$freeze_root" ]]; then
+              printf 'ROOT_JANITOR_CLEANUP_ACCEPTED physicalAuthorityCreated=false\n'
+              exit 0
+            fi
+            sleep 1
+          done
+          printf 'ERROR: root freeze janitor did not remove %s after the exact field shell exited\n' "$freeze_root" >&2
+          exit 52
+
+      - name: Preserve physical truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 627a77a368e8f992abbf48a24d2145cd1b56d1f3 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'PRODUCTION INGREDIENT ONLY. NO DEVICE DISCOVERY / INSTALL / BLUETOOTH / TUYA / PHYSICAL GO.\n'
