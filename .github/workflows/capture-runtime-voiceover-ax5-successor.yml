@@ -1,4 +1,4 @@
-name: Capture Runtime VoiceOver AX5 Successor
+name: Capture Runtime VoiceOver AX5 Semantic Successor
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   runtime-voiceover:
-    name: Exact f557 iPhone 12 first-fold VoiceOver matrix
+    name: Exact f557 iPhone 12 first-fold VoiceOver semantic matrix
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
     timeout-minutes: 35
@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Bind exact validation head and generate repaired witness
+      - name: Bind exact validation head and generate classified witness
         shell: bash
         env:
           COMPOSED_PRODUCT_SHA: f557f0aa9b9cd7afb2942a48a28a1212a464192f
@@ -55,19 +55,51 @@ jobs:
           /usr/bin/python3 - "$witness_source" "$witness" <<'PY'
           import pathlib, sys
           source = pathlib.Path(sys.argv[1]).read_text()
-          old = '            app.staticTexts[heroAuthority].waitForExistence(timeout: 3),'
-          new = '            app.staticTexts.matching(NSPredicate(format: "label == %@", heroAuthority)).firstMatch.waitForExistence(timeout: 3),'
-          if source.count(old) != 1:
-              raise SystemExit(f'expected exactly one long-string identifier query, found {source.count(old)}')
-          repaired = source.replace(old, new)
-          if repaired.count(new) != 1 or old in repaired:
-              raise SystemExit('deterministic label-predicate repair did not bind exactly')
+
+          old_query = '            app.staticTexts[heroAuthority].waitForExistence(timeout: 3),'
+          new_query = '            app.staticTexts.matching(NSPredicate(format: "label == %@", heroAuthority)).firstMatch.waitForExistence(timeout: 3),'
+          old_set = '''    private let knownAX5SemanticTextClippedFalsePositives: Set<String> = [
+                  "Physical capture locked",
+                  "Tuya Smart user code"
+              ]'''
+          new_set = '''    private let knownSemanticTextClippedFalsePositive: Set<String> = [
+                  "Tuya Smart user code"
+              ]'''
+          old_standard = '            expectedFilteredTextClippedLabels: []'
+          new_standard = '            expectedFilteredTextClippedLabels: knownSemanticTextClippedFalsePositive'
+          old_ax5 = '            expectedFilteredTextClippedLabels: knownAX5SemanticTextClippedFalsePositives'
+          new_ax5 = '            expectedFilteredTextClippedLabels: knownSemanticTextClippedFalsePositive'
+
+          required = {
+              'long-string identifier query': (old_query, new_query),
+              'stale AX5 semantic exception declaration': (old_set, new_set),
+              'standard zero-exception call': (old_standard, new_standard),
+              'AX5 stale-pair call': (old_ax5, new_ax5),
+          }
+          repaired = source
+          for label, (old, new) in required.items():
+              count = repaired.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one source occurrence, found {count}')
+              repaired = repaired.replace(old, new)
+
+          for label, (old, new) in required.items():
+              if old in repaired:
+                  raise SystemExit(f'{label}: legacy source survived deterministic classification')
+              if repaired.count(new) != 1 and label != 'standard zero-exception call' and label != 'AX5 stale-pair call':
+                  raise SystemExit(f'{label}: replacement did not bind exactly once')
+
+          shared_call = '            expectedFilteredTextClippedLabels: knownSemanticTextClippedFalsePositive'
+          if repaired.count(shared_call) != 2:
+              raise SystemExit(f'expected exact semantic singleton in both states, found {repaired.count(shared_call)} calls')
+          if repaired.count('"Tuya Smart user code"') < 1:
+              raise SystemExit('semantic singleton label disappeared unexpectedly')
           pathlib.Path(sys.argv[2]).write_text(repaired)
           PY
 
           grep -Fq 'testStandaloneCaptureStandardVoiceOverPreservesFirstFoldAuthority' "$witness"
           grep -Fq 'testStandaloneCaptureAccessibilityXXXLVoiceOverRemainsActionFirst' "$witness"
-          grep -Fq 'knownAX5SemanticTextClippedFalsePositives' "$witness"
+          grep -Fq 'knownSemanticTextClippedFalsePositive' "$witness"
           grep -Fq 'issue.auditType == .textClipped' "$witness"
           grep -Fq 'expectedFilteredTextClippedLabels.contains(label)' "$witness"
           grep -Fq 'performAccessibilityAudit(for: .all)' "$witness"
@@ -79,6 +111,10 @@ jobs:
           if grep -Fq 'app.staticTexts[heroAuthority]' "$witness"; then
             printf 'Legacy >128-character identifier query survived deterministic repair.\n' >&2
             exit 21
+          fi
+          if grep -Fq 'knownAX5SemanticTextClippedFalsePositives' "$witness"; then
+            printf 'Stale AX5 semantic exception set survived deterministic classification.\n' >&2
+            exit 22
           fi
 
           source_witness_sha="$(shasum -a 256 "$witness_source" | awk '{print $1}')"
@@ -269,7 +305,7 @@ jobs:
                   'structuredTestResultsSHA256':hashlib.sha256((evidence/f'{state}.tests.json').read_bytes()).hexdigest(),
               })
           manifest={
-              'schemaVersion':4,
+              'schemaVersion':5,
               'authority':'capture-runtime-accessibility-simulator-only',
               'sourceCommitSHA':source,
               'composedProductParentSHA':parent,
@@ -281,12 +317,12 @@ jobs:
               'witnessSourceCommitSHA':witness_source_commit,
               'witnessSourceSHA256':witness_source_sha,
               'generatedWitnessSHA256':witness_sha,
-              'witnessTransformation':'replace one >128-character staticText identifier lookup with exact label NSPredicate lookup',
+              'witnessTransformation':'replace one >128-character staticText identifier lookup with exact label NSPredicate lookup; narrow semantic textClipped policy to exact Tuya Smart user code singleton in both states',
               'voiceOverService':'XCUIDevice.shared.voiceOverService',
               'accessibilityAuditRequested':'all',
-              'auditIssueHandlerPolicy':'fail-all-except-exact-known-ax5-semantic-label-textClipped-false-positive-candidates',
-              'standardExpectedFilteredTextClippedLabels':[],
-              'accessibilityXXXLExpectedFilteredTextClippedLabels':['Physical capture locked','Tuya Smart user code'],
+              'auditIssueHandlerPolicy':'fail-all-except-exact-tuya-user-code-semantic-label-textClipped-false-positive',
+              'standardExpectedFilteredTextClippedLabels':['Tuya Smart user code'],
+              'accessibilityXXXLExpectedFilteredTextClippedLabels':['Tuya Smart user code'],
               'standardFirstFoldHeroAuthorityRequired':True,
               'accessibilityXXXLActionFirstRequired':True,
               'states':states,
@@ -301,7 +337,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: nembra-capture-runtime-voiceover-f557-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          name: nembra-capture-runtime-voiceover-semantic-f557-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/CaptureRuntimeVoiceOverEvidence
           if-no-files-found: error
           retention-days: 14
