@@ -17,10 +17,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  overlay-witness:
-    name: Prove same-path read-only private input overlay
-    runs-on: xcode-27
-    timeout-minutes: 10
+  source-contract:
+    name: Prove private-input overlay source contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-overlay-pycache"
           probe='scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py'
-          /usr/bin/python3 -m py_compile "$probe"
+          python3 -m py_compile "$probe"
           grep -Fq '"-owners",' "$probe"
           grep -Fq '"on",' "$probe"
           grep -Fq 'command.append("-readonly")' "$probe"
@@ -83,6 +83,51 @@ jobs:
             printf 'Private-input overlay witness crossed its validation scope.\n' >&2
             exit 21
           fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          EXACT_PARENT: d1479f0dc3b350d0065318b39efd0eb6aa13e44d
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+  overlay-witness:
+    name: Prove same-path read-only private input overlay
+    needs: source-contract
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Re-bind exact macOS witness scope
+        shell: bash
+        env:
+          EXACT_PARENT: d1479f0dc3b350d0065318b39efd0eb6aa13e44d
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual_paths="$RUNNER_TEMP/nembra-private-overlay-actual.txt"
+          expected_paths="$RUNNER_TEMP/nembra-private-overlay-expected.txt"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-dedicated-uid-private-input-apfs-overlay.yml
+          scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Run real macOS APFS overlay witness
