@@ -9,7 +9,7 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T07:54:45Z",
-  "lastHeartbeatAt": "2026-08-12T07:54:45Z",
+  "lastHeartbeatAt": "2026-08-12T08:04:51Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3116,
@@ -19,5 +19,5 @@
   "takeoverFromWorkerId": "sol-20260811-1607k9",
   "takeoverFromLeaseId": "capture-signed-install-tests-1607k9-20260811-2313",
   "takeoverReason": "Generation-6 lease expired. Recover the retained-writer validation matrix, classify fresh exact-head Mac evidence, and close only test/acceptance defects without changing product authority.",
-  "checkpoint": "Recovered tests slot. First action is fresh exact-head evidence classification for #3116/#3130/#3132 and related APFS retained-writer probes. PHYSICAL NO-GO."
+  "checkpoint": "Classified fresh Mac evidence: #3116 mmap writer never reached READY because requested fresh capability GID was absent from effective groups and root:capability 0710 workspace traversal failed; #3130 directory-FD recovery never reached READY because active field groups plus fresh capability exceed Python 3.9/macOS group-vector limit (ValueError: too many groups). #3132 merged test-only provenance repair. Converge retained-writer validation on the accepted dedicated-build-UID/APFS architecture; PHYSICAL NO-GO."
 }
