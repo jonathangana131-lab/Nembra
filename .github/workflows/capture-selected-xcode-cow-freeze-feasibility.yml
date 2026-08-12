@@ -1,0 +1,184 @@
+name: Capture Selected Xcode COW Freeze Feasibility
+
+on:
+  push:
+    branches:
+      - validation/v14-selected-xcode-cow-freeze-sol-0059ac-20260812
+    paths:
+      - .github/workflows/capture-selected-xcode-cow-freeze-feasibility.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selected-xcode-cow-freeze:
+    name: Prove root-custodied Apple-signed COW Xcode freeze
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact validation scope
+        shell: bash
+        env:
+          EXACT_PARENT: 449a4da1932cf3f368059fb84dd3c3c2a5b90020
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$source_sha" = "$expected"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          test "$changed_paths" = '.github/workflows/capture-selected-xcode-cow-freeze-feasibility.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Freeze selected Xcode into root COW clone and prove authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test -x /usr/bin/xcode-select
+          test -x /usr/bin/codesign
+          test -x /bin/cp
+          test -x /usr/bin/stat
+          test -x /usr/bin/python3
+
+          source_developer="$(/usr/bin/xcode-select -p)"
+          test -n "$source_developer"
+          case "$source_developer" in
+            /Applications/*.app/Contents/Developer) ;;
+            *) printf 'Unexpected selected Xcode developer path: %s\n' "$source_developer" >&2; exit 21 ;;
+          esac
+          source_app="${source_developer%/Contents/Developer}"
+          test -d "$source_app"
+          test ! -L "$source_app"
+
+          source_device="$(/usr/bin/stat -f '%d' "$source_app")"
+          library_device="$(/usr/bin/stat -f '%d' /Library)"
+          printf 'source device=%s library device=%s\n' "$source_device" "$library_device"
+          test "$source_device" = "$library_device"
+
+          source_kib="$(/usr/bin/du -sk "$source_app" | /usr/bin/awk '{print $1}')"
+          printf 'selected Xcode logical size KiB=%s\n' "$source_kib"
+
+          freeze_root="$(/usr/bin/sudo -n /usr/bin/mktemp -d /Library/NembraSelectedXcodeFreeze.XXXXXX)"
+          test -n "$freeze_root"
+          frozen_app="$freeze_root/Xcode.app"
+          cleanup() {
+            /usr/bin/sudo -n /bin/rm -rf -- "$freeze_root" || true
+          }
+          trap cleanup EXIT INT TERM
+
+          started="$(/bin/date +%s)"
+          /usr/bin/sudo -n /bin/cp -cR "$source_app" "$frozen_app"
+          finished="$(/bin/date +%s)"
+          printf 'COW clone elapsed seconds=%s\n' "$((finished - started))"
+          test -d "$frozen_app/Contents/Developer"
+
+          # The mutable field account must not retain bundle mutation or replacement
+          # authority in the frozen execution subject. Metadata-only hardening does
+          # not alter signed file bytes.
+          /usr/bin/sudo -n /usr/sbin/chown -R root:wheel "$frozen_app"
+          /usr/bin/sudo -n /bin/chmod -RN "$frozen_app"
+          /usr/bin/sudo -n /bin/chmod -R go-w "$frozen_app"
+          /usr/bin/sudo -n /bin/chmod 0755 "$freeze_root"
+
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LANG=C \
+            LC_ALL=C \
+            NEMBRA_FROZEN_XCODE="$frozen_app" \
+            /usr/bin/python3 -I - <<'PY'
+          import os
+          from pathlib import Path
+          import stat
+
+          root = Path(os.environ['NEMBRA_FROZEN_XCODE'])
+          if not root.is_absolute() or root.is_symlink():
+              raise SystemExit('frozen Xcode root must be one real absolute directory')
+          subjects = 0
+          for current, directories, files in os.walk(root, followlinks=False):
+              for name in [*directories, *files]:
+                  path = Path(current) / name
+                  metadata = os.lstat(path)
+                  subjects += 1
+                  if metadata.st_uid != 0:
+                      raise SystemExit(f'frozen Xcode subject is not root-owned: {path}')
+                  if stat.S_ISLNK(metadata.st_mode):
+                      continue
+                  if metadata.st_mode & 0o022:
+                      raise SystemExit(f'frozen Xcode subject retains group/world write authority: {path}')
+          if subjects < 1000:
+              raise SystemExit('frozen Xcode tree unexpectedly small')
+          print(f'validated frozen Xcode metadata subjects={subjects}')
+          PY
+
+          # Verify the frozen bytes, not the mutable source, against Apple's signing
+          # anchor and Xcode bundle identifier. --deep verifies nested signed code;
+          # --strict also validates sealed resource structure.
+          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
+            /usr/bin/codesign --verify --deep --strict --verbose=4 \
+            -R '=anchor apple generic and identifier "com.apple.dt.Xcode"' \
+            "$frozen_app"
+
+          frozen_developer="$frozen_app/Contents/Developer"
+          frozen_xcodebuild="$frozen_developer/usr/bin/xcodebuild"
+          test -x "$frozen_xcodebuild"
+          version="$(DEVELOPER_DIR="$frozen_developer" "$frozen_xcodebuild" -version)"
+          printf '%s\n' "$version"
+          first_line="${version%%$'\n'*}"
+          [[ "$first_line" =~ ^Xcode[[:space:]]27([.]|$) ]]
+
+          for tool in xcodebuild xctrace devicectl; do
+            selected="$(DEVELOPER_DIR="$frozen_developer" /usr/bin/xcrun --find "$tool")"
+            case "$selected" in
+              "$frozen_developer"/*) ;;
+              *) printf 'Frozen selected %s escaped clone: %s\n' "$tool" "$selected" >&2; exit 22 ;;
+            esac
+            test -x "$selected"
+            metadata="$(/usr/bin/stat -f '%u %p' "$selected")"
+            printf 'frozen selected %s %s metadata=%s\n' "$tool" "$selected" "$metadata"
+          done
+
+          # The ordinary field identity must fail both direct file mutation and
+          # parent replacement inside the root-custodied clone.
+          leaf_before="$(/usr/bin/shasum -a 256 "$frozen_xcodebuild" | /usr/bin/awk '{print $1}')"
+          set +e
+          /bin/sh -c "printf attack >> \"$frozen_xcodebuild\"" >/tmp/nembra-cow-leaf.out 2>/tmp/nembra-cow-leaf.err
+          leaf_rc=$?
+          /usr/bin/touch "$frozen_developer/usr/bin/nembra-field-replacement-probe" >/tmp/nembra-cow-parent.out 2>/tmp/nembra-cow-parent.err
+          parent_rc=$?
+          set -e
+          test "$leaf_rc" -ne 0
+          test "$parent_rc" -ne 0
+          test ! -e "$frozen_developer/usr/bin/nembra-field-replacement-probe"
+          leaf_after="$(/usr/bin/shasum -a 256 "$frozen_xcodebuild" | /usr/bin/awk '{print $1}')"
+          test "$leaf_before" = "$leaf_after"
+
+          # Prove copied bundle still verifies after negative attacks and that the
+          # field path remains a read-only execution subject for this validation.
+          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
+            /usr/bin/codesign --verify --deep --strict \
+            -R '=anchor apple generic and identifier "com.apple.dt.Xcode"' \
+            "$frozen_app"
+
+          printf 'NEMBRA_COW_FREEZE_RESULT=SUCCESS\n'
+          printf 'physicalAuthorityCreated=false\n'
+          printf 'No device discovery, install, launch, Bluetooth, Tuya, telemetry, or physical action occurred.\n'
+
+      - name: Preserve physical truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 449a4da1932cf3f368059fb84dd3c3c2a5b90020 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'VALIDATION ONLY. PHYSICAL NO-GO.\n'
