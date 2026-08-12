@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "083000-dashboard-performance-hitch-emitter-evidence",
+  "type": "BLOCKER",
+  "workerId": "sol-20260812-0059g7",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Additional exact #3118 blocker evidence, read-only review while primary AX5 remains owned elsewhere in this lane: scripts/ci/dashboard_sustained_performance_xcuitest.swift@db7773c5 explicitly requests XCTHitchMetric(application: app), XCTCPUMetric(application: app), and XCTMemoryMetric(application: app) in one measure block. Retained xcodebuild.log from run 31547121657 prints CPU Time, Memory Physical/Absolute/Peak, CPU Cycles, and CPU Instructions Retired measurement rows, but no hitch measurement row at all. Therefore the required Hitch Time Ratio is absent at XCTest result emission on this Xcode 27 beta 4 / iOS 27 Simulator run, before the manifest-family parser. Keep acceptance fail-closed. A recovery worker should first determine a supported exact-head way to obtain hitch evidence on this baseline rather than renaming unrelated metrics or deleting the hitch requirement. Simulator-only evidence; final combined-load physical iPhone 12 performance remains separate and required by V14.",
+  "createdAt": "2026-08-12T08:30:00Z"
+}
