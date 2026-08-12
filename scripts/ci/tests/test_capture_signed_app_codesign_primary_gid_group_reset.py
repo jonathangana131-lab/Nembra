@@ -12,7 +12,9 @@ This validation-only adapter changes only credential launch mechanics:
   primary GID once in the raw `extra_groups` vector, forcing a real setgroups transition;
 - the child path-attestation retains the raw kernel `os.getgroups()` vector and separately
   normalizes it by removing only the already-primary GID;
-- acceptance still requires zero *distinct* supplementary GIDs before codesign.
+- acceptance still requires zero *distinct* supplementary GIDs before codesign;
+- the imported parent's self-path is rebound to this wrapper, so its sudo transition
+  executes this same adapter rather than silently falling back to the predecessor oracle.
 
 The duplicate-primary sentinel adds no GID authority beyond the primary credential. It is
 only acceptable if the real child reports no other supplementary GID. This does not create
@@ -23,7 +25,6 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-import sys
 from typing import Iterable
 
 HERE = Path(__file__).resolve().parent
@@ -89,6 +90,9 @@ def install_group_reset_adapter(parent) -> None:
 
 def main() -> int:
     parent = load_parent()
+    # Parent parent_probe re-enters itself through sudo using Path(__file__). Rebind that
+    # module-global path before invoking it so the privileged phase also loads this wrapper.
+    parent.__file__ = str(Path(__file__).resolve())
     install_group_reset_adapter(parent)
     return parent.main()
 
