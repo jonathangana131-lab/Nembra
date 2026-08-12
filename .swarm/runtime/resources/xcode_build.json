@@ -7,11 +7,13 @@
   "workerId": "sol-20260812-0058jx",
   "leaseId": "res-xcode-build-0058jx-20260812-0803",
   "generation": 2,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T08:03:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:19:30Z",
+  "lastHeartbeatAt": "2026-08-12T08:36:00Z",
+  "releasedAt": "2026-08-12T08:36:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-signed-origin-apfs-signing-sol-0058jx",
   "pr": 3138,
-  "resource": "XCODE_BUILD"
+  "resource": "XCODE_BUILD",
+  "checkpoint": "Released after #3138 exact 03bda94b run 31578319818 retained RED proving Xcode cannot use /dev/fd/<n> as stable DerivedData. No further Mac cycle is justified for this defeated architecture family."
 }
