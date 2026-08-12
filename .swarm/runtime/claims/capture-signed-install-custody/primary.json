@@ -9,14 +9,14 @@
   "generation": 8,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T07:59:00Z",
-  "lastHeartbeatAt": "2026-08-12T07:59:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:12:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-apfs-signing-sol-0058jx",
-  "pr": 3056,
+  "pr": 3138,
   "sourceSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
-  "currentHeadSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
+  "currentHeadSHA": "2b2de6d56a099f69ced470c9a5c724235f56f4b6",
   "takeoverFromWorkerId": "sol-20260811-1607k9",
   "takeoverFromLeaseId": "capture-signed-install-primary-1607k9-20260811-2341",
-  "takeoverReason": "Generation 7 expired after its 2026-08-11T23:54:00Z heartbeat. Live GitHub has since advanced #3056 to b8653985 via merged test repair #3132. This takeover preserves that accepted work and continues the same P0 signed-install custody objective without overwriting the predecessor lineage.",
-  "checkpoint": "Live exact head b8653985 has Capture Field Build Provenance 31548257895 SUCCESS and Capture Main Selective Graft Diagnostic 31548257805 SUCCESS. Capture Signed App Install Custody 31548257832 is terminal FAILURE in two obsolete pre-APFS/group-isolation assumptions: macOS capability test cannot acquire the intended same-UID write capability, and real-Xcode group-isolated DerivedData returns permission errors while resolving SourcePackages/log stores. Dedicated ephemeral-build-UID + normal APFS detach + byte-identical read-only remount is already validation-proven on #3131 exact 98fdc404048812f6d3af6791710c57ece21dafd3. Next production rung is a signing-compatible composition that preserves field/private/keychain authority while mechanically freezing compiler output before protected stage/sign/install, then replays retained-writer adversarial acceptance. PHYSICAL NO-GO."
+  "takeoverReason": "Generation 7 expired after its 2026-08-11T23:54:00Z heartbeat. Live GitHub advanced #3056 to b8653985 via merged test repair #3132. Generation 8 preserves that accepted lineage and continues the same P0 signed-install custody objective without overwriting predecessor work.",
+  "checkpoint": "Exact production parent #3056@b8653985 has Field Build Provenance 31548257895 SUCCESS and Main Selective Graft 31548257805 SUCCESS; Signed App Install Custody 31548257832 is terminal red in obsolete supplementary-GID output assumptions. Validation PR #3138 exact 2b2de6d56a099f69ced470c9a5c724235f56f4b6 now tests a signing-compatible authority boundary: real field UID/GID/active groups retain private Tuya + Apple signing identity, writable APFS is hidden beneath root-only pathname custody, and its directory capability is carried as standard input fd 0 through an intermediate ordinary Python Popen into real xcodebuild at /dev/fd/0/DerivedData. This corrects an earlier direct-pass_fds probe that source review showed would not survive the real Tuya build guard's nested Popen. Acceptance requires same-UID no-FD denial, normal non-forced detach, byte-identical read-only remount, root + explicitly delegated field readonly mutation denial, and physicalAuthorityCreated=false. No production helper changed yet. PHYSICAL NO-GO."
 }
