@@ -9,15 +9,15 @@
   "generation": 12,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T11:10:26Z",
-  "lastHeartbeatAt": "2026-08-12T11:16:04Z",
+  "lastHeartbeatAt": "2026-08-12T11:20:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812",
   "pr": 3142,
   "sourceSHA": "c4996ea91cc3482ca8a8d661fd1436a2eee745df",
-  "currentHeadSHA": "71ab16dc9564be87024c50ab5cd4837835756aa6",
+  "currentHeadSHA": "b9164701da15d7a773698599bf24ed3cb923f8ac",
   "takeoverFromWorkerId": "gpt56-sol-20260812-0356-primary",
   "takeoverFromLeaseId": "capture-signed-install-primary-gpt56-20260812-105611",
-  "takeoverReason": "Generation-11 released after coordination. Generation-12 atomically claimed the production slot; concurrent in-flight commits were preserved and reviewed instead of overwritten.",
-  "intent": "Continue the selected #3142 carrier from exact 71ab16dc. Process-aware numeric-principal allocation/retirement and same-exec credential binding have landed concurrently. Generation-12 will now close only the still-unfinished non-conflicting authority gates: caller-independent build environment and permanent writable pre-detach former-build pathname denial. Use an exact-fragment one-shot materializer that self-deletes; fail closed on any branch movement. Then validate and release for independent review.",
-  "checkpoint": "Preserved c4996ea9 -> 31f3da41 process-custody commits and 31f3da41 -> 71ab16dc same-exec credential commit. A first materializer ref update based on stale 31f3 was correctly rejected as non-fast-forward; no stale bytes were applied. Current exact helper 71ab uses _run_exec_bound_build but still copies ambient DEVELOPER_DIR/SDKROOT/TOOLCHAINS/LANG/LC_ALL into build_env, and the real-Xcode permanent witness still lacks former-build writable-path denial after root chown/chmod before detach. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-11 released after coordination. Generation-12 atomically claimed the production slot and preserves concurrent fast-forwards rather than overwriting them.",
+  "intent": "Continue selected #3142 from exact b9164701. Production now has process-aware principal custody, same-exec credential binding, owners-on, truthful group attestation, and caller-independent build environment. Close only the still-missing permanent regressions: poisoned-environment rejection and the former-build writable fresh-path denial after root chown/chmod before normal detach. Use exact-head self-deleting materialization and fail closed on movement; then validate and release for independent review.",
+  "checkpoint": "Exact b9164701 changed only the production helper from bacc2a1 and now returns a closed build environment with dedicated HOME/USER/LOGNAME/TMPDIR, fixed system PATH, and fixed en_US.UTF-8 locale; no ambient DEVELOPER_DIR/SDKROOT/TOOLCHAINS/__CF_USER_TEXT_ENCODING/LANG/LC_ALL are copied. Repo search still finds no test_build_environment_rejects_ambient_xcode_selector_authority and no formerBuildWritablePathAttackReturnCode/BUILD_UID_AFTER_PATH_REVOKE witness. Temporary materializer workflow still exists and must be narrowed/self-deleted. PHYSICAL NO-GO."
 }
