@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
-"""Replay the post-detach directory-FD oracle without overflowing macOS groups.
+"""Replay the post-detach directory-FD oracle with primary-group authority.
 
 #3130 correctly preserved the real field process's active supplementary groups,
-but then added the fresh synthetic capability GID to that entire vector for the
-authority-bearing writer. On the hosted macOS runner the active vector already
-fills the kernel/Python supplementary-group ceiling, so adding one more group
-raises ``ValueError: too many groups`` before the writer reaches READY.
+but its synthetic authority-bearing writer never reached READY: adding the fresh
+capability GID overflowed the hosted macOS supplementary-group ceiling. The first
+minimal-group replay removed that overflow but APFS still denied traversal when
+the fresh unnamed capability existed only as a supplementary group.
 
 This validation-only successor changes no production bytes. It runs the exact
 #3130 APFS/directory-FD oracle while adapting only synthetic child credentials:
-- the ordinary field negative control keeps the exact pre-sudo active groups;
-- any child that carries the one fresh capability GID receives only that GID as
-  a supplementary group (primary GID remains separate);
-- the wrapper records requested versus effective groups and fail-closes unless
-  exactly two capability-bearing launches were minimized and the one field
-  negative-control launch remained exact.
+- the ordinary field negative control keeps the exact pre-sudo primary GID and
+  exact pre-sudo active supplementary groups;
+- any child carrying the one fresh capability GID uses that capability as its
+  primary GID with zero supplementary groups;
+- requested versus effective primary/supplementary credentials are retained and
+  acceptance requires exactly two capability-bearing launches plus one exact
+  field negative-control launch.
 
-No signing, install, device, Bluetooth, Tuya, telemetry, or physical action is
-performed. A green result is architecture evidence only.
+Using a dedicated primary group matches the accepted dedicated-build-identity
+shape more closely than the failed supplementary-only fixture. No signing,
+install, device, Bluetooth, Tuya, telemetry, or physical action is performed.
+A green result is architecture evidence only.
 """
 from __future__ import annotations
 
@@ -58,7 +61,7 @@ def emit_error(kind: str, message: str, **extra: object) -> None:
     print(ERROR_MARKER + json.dumps(payload, sort_keys=True), file=sys.stderr)
 
 
-def _install_minimal_capability_replay(parent, field_active_groups: list[int]):
+def _install_primary_capability_replay(parent, field_active_groups: list[int]):
     active = set(field_active_groups)
     original = parent.structured_credentials
     calls: list[dict[str, object]] = []
@@ -71,17 +74,19 @@ def _install_minimal_capability_replay(parent, field_active_groups: list[int]):
                 raise parent.ProbeError(
                     "synthetic capability launch exposed more than one non-field supplementary group"
                 )
-            effective = capability
-            role = "capability"
+            capability_gid = capability[0]
+            result = original(uid, capability_gid, [])
+            role = "capability-primary"
         else:
-            effective = requested
+            result = original(uid, gid, requested)
             role = "field"
-        result = original(uid, gid, effective)
         calls.append(
             {
                 "role": role,
-                "requested": requested,
-                "effective": list(result["extra_groups"]),
+                "requestedPrimaryGID": gid,
+                "requestedSupplementaryGroups": requested,
+                "effectivePrimaryGID": result["group"],
+                "effectiveSupplementaryGroups": list(result["extra_groups"]),
             }
         )
         return result
@@ -92,10 +97,10 @@ def _install_minimal_capability_replay(parent, field_active_groups: list[int]):
 
 def root_probe(field_uid: int, field_primary_gid: int, field_active_groups: list[int]) -> int:
     if sys.platform != "darwin" or os.geteuid() != 0:
-        emit_error("environment", "minimal-group replay root probe requires sudo on real macOS")
+        emit_error("environment", "primary-capability replay root probe requires sudo on real macOS")
         return 70
     parent = load_parent()
-    calls = _install_minimal_capability_replay(parent, field_active_groups)
+    calls = _install_primary_capability_replay(parent, field_active_groups)
     status = parent.root_probe(field_uid, field_primary_gid, field_active_groups)
     if status != 0:
         return status
@@ -103,7 +108,7 @@ def root_probe(field_uid: int, field_primary_gid: int, field_active_groups: list
         REPLAY_MARKER
         + json.dumps(
             {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "fieldUID": field_uid,
                 "fieldPrimaryGID": field_primary_gid,
                 "fieldActiveSupplementaryGroups": field_active_groups,
@@ -116,7 +121,13 @@ def root_probe(field_uid: int, field_primary_gid: int, field_active_groups: list
     return 0
 
 
-def _semantic_accept(parent_evidence: dict[str, object], replay_evidence: dict[str, object], field_uid: int, field_gid: int, field_active_groups: list[int]) -> bool:
+def _semantic_accept(
+    parent_evidence: dict[str, object],
+    replay_evidence: dict[str, object],
+    field_uid: int,
+    field_gid: int,
+    field_active_groups: list[int],
+) -> bool:
     capability = parent_evidence.get("capabilityGID")
     if not isinstance(capability, int) or capability <= 0:
         return False
@@ -124,15 +135,29 @@ def _semantic_accept(parent_evidence: dict[str, object], replay_evidence: dict[s
     calls = replay_evidence.get("credentialCalls")
     if not isinstance(calls, list):
         return False
-    capability_calls = [call for call in calls if isinstance(call, dict) and call.get("role") == "capability"]
-    field_calls = [call for call in calls if isinstance(call, dict) and call.get("role") == "field"]
+    capability_calls = [
+        call
+        for call in calls
+        if isinstance(call, dict) and call.get("role") == "capability-primary"
+    ]
+    field_calls = [
+        call
+        for call in calls
+        if isinstance(call, dict) and call.get("role") == "field"
+    ]
     group_replay_is_exact = (
         len(capability_calls) == 2
-        and all(call.get("effective") == [capability] for call in capability_calls)
-        and all(capability in call.get("requested", []) for call in capability_calls)
+        and all(call.get("effectivePrimaryGID") == capability for call in capability_calls)
+        and all(call.get("effectiveSupplementaryGroups") == [] for call in capability_calls)
+        and all(
+            capability in call.get("requestedSupplementaryGroups", [])
+            for call in capability_calls
+        )
         and len(field_calls) == 1
-        and field_calls[0].get("requested") == field_active_groups
-        and field_calls[0].get("effective") == field_active_groups
+        and field_calls[0].get("requestedPrimaryGID") == field_gid
+        and field_calls[0].get("effectivePrimaryGID") == field_gid
+        and field_calls[0].get("requestedSupplementaryGroups") == field_active_groups
+        and field_calls[0].get("effectiveSupplementaryGroups") == field_active_groups
     )
 
     busy_evidence = (
@@ -166,7 +191,7 @@ def _semantic_accept(parent_evidence: dict[str, object], replay_evidence: dict[s
 
 def parent_probe() -> int:
     if sys.platform != "darwin":
-        emit_error("environment", "minimal-group replay requires macOS")
+        emit_error("environment", "primary-capability replay requires macOS")
         return 80
     field_uid = os.getuid()
     field_gid = os.getgid()
@@ -248,7 +273,7 @@ def parent_probe() -> int:
     ):
         emit_error(
             "evidence",
-            "minimal-group replay failed semantic acceptance",
+            "primary-capability replay failed semantic acceptance",
             parentEvidence=parent_evidence,
             replayEvidence=replay_evidence,
         )
