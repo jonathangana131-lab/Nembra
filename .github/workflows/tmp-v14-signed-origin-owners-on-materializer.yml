@@ -28,8 +28,9 @@ jobs:
           EXACT_PARENT: f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
-          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = ".github/workflows/tmp-v14-signed-origin-owners-on-materializer.yml"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$actual" = ".github/workflows/tmp-v14-signed-origin-owners-on-materializer.yml"
 
       - name: Materialize accepted ownership invariant
         shell: bash
@@ -52,8 +53,7 @@ jobs:
           '''
           if text.count(old) != 1:
               raise SystemExit("expected exactly one production APFS attach command shape")
-          text = text.replace(old, new, 1)
-          helper.write_text(text, encoding="utf-8")
+          helper.write_text(text.replace(old, new, 1), encoding="utf-8")
 
           test = Path("scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py")
           source = test.read_text(encoding="utf-8")
@@ -67,8 +67,7 @@ jobs:
           '''
           if source.count(marker) != 1:
               raise SystemExit("expected exactly one pre-stage production marker")
-          source = source.replace(marker, insertion + marker, 1)
-          test.write_text(source, encoding="utf-8")
+          test.write_text(source.replace(marker, insertion + marker, 1), encoding="utf-8")
           PY
 
           rm .github/workflows/tmp-v14-signed-origin-owners-on-materializer.yml
@@ -81,12 +80,23 @@ jobs:
           python3 -m py_compile \
             scripts/ci/capture_signed_app_build_origin_custody.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
-          python3 -m unittest -v scripts.ci.tests.test_capture_signed_app_pre_stage_origin
-          grep -Fq '"-owners",' scripts/ci/capture_signed_app_build_origin_custody.py
-          grep -Fq '"on",' scripts/ci/capture_signed_app_build_origin_custody.py
-          test "$(grep -Fc '"'"'"-owners"'"'"' scripts/ci/capture_signed_app_build_origin_custody.py)" -eq 1
+          python3 scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py -v
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("scripts/ci/capture_signed_app_build_origin_custody.py").read_text(encoding="utf-8")
+          assert source.count('"-owners",') == 1
+          owners = source.index('"-owners",')
+          enabled = source.index('"on",', owners)
+          mountpoint = source.index('"-mountpoint",', enabled)
+          assert owners < enabled < mountpoint
+          PY
           git diff --check
-          test "$(git diff --name-only | LC_ALL=C sort | tr '\n' ' ')" = ".github/workflows/tmp-v14-signed-origin-owners-on-materializer.yml scripts/ci/capture_signed_app_build_origin_custody.py scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py "
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/tmp-v14-signed-origin-owners-on-materializer.yml \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
 
       - name: Publish clean product delta
         shell: bash
