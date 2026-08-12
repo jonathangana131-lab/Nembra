@@ -42,7 +42,11 @@ ORACLE_BLOB="$("${GIT_ENV[@]}" "${GIT[@]}" rev-parse "$SOURCE_SHA:$ORACLE_PATH" 
 
 # Refuse a mutable-worktree wrapper. The shell has already loaded this file, but its
 # bytes must still match the exact accepted Git object named by SOURCE_SHA.
-CURRENT_SCRIPT_BLOB="$("${GIT_ENV[@]}" "${GIT[@]}" hash-object "$0" 2>/dev/null)" || fail "Could not fingerprint executing preflight bytes."
+EXECUTING_SCRIPT="$0"
+if [[ "$EXECUTING_SCRIPT" != /* ]]; then
+    EXECUTING_SCRIPT="$(pwd -P)/$EXECUTING_SCRIPT"
+fi
+CURRENT_SCRIPT_BLOB="$("${GIT_ENV[@]}" "${GIT[@]}" hash-object "$EXECUTING_SCRIPT" 2>/dev/null)" || fail "Could not fingerprint executing preflight bytes."
 [[ "$CURRENT_SCRIPT_BLOB" == "$SCRIPT_BLOB" ]] || fail "Executing field-preflight bytes do not match the accepted Git object."
 
 mkdir -p "$OUTPUT_DIR"
@@ -59,10 +63,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 ORACLE_EXEC="$ROOT_EXEC_DIR/apple-signing-oracle.py"
 
-# Feed only accepted Git-object bytes to a root verifier. Root recomputes the Git blob
-# OID itself before publishing mode-0555 bytes, closing same-UID path substitution.
-"${GIT_ENV[@]}" "${GIT[@]}" cat-file blob "$ORACLE_BLOB" | \
-/usr/bin/sudo -n /usr/bin/python3 -B -I - "$ORACLE_EXEC" "$ORACLE_BLOB" <<'PY'
+# Feed only accepted Git-object bytes on stdin to a root verifier whose program arrives
+# through -c. Do not combine a pipe with `python3 -`/heredoc: stdin is reserved solely
+# for the accepted oracle blob. Root recomputes the Git object ID before publication.
+ROOT_MATERIALIZER="$(/bin/cat <<'PY'
 import hashlib
 import os
 from pathlib import Path
@@ -100,6 +104,11 @@ with path.open("rb") as handle:
 if frozen != raw:
     raise SystemExit("root oracle publication bytes changed")
 PY
+)"
+
+"${GIT_ENV[@]}" "${GIT[@]}" cat-file blob "$ORACLE_BLOB" | \
+    /usr/bin/sudo -n /usr/bin/python3 -B -I -c "$ROOT_MATERIALIZER" "$ORACLE_EXEC" "$ORACLE_BLOB"
+unset ROOT_MATERIALIZER
 
 [[ -f "$ORACLE_EXEC" && ! -L "$ORACLE_EXEC" ]] || fail "Root-owned accepted oracle was not materialized."
 ORACLE_OWNER="$(/usr/bin/stat -f '%u:%g:%Lp' "$ORACLE_EXEC")" || fail "Could not inspect root-owned oracle metadata."
@@ -119,7 +128,7 @@ printf '%s\n' "$PROBE_RC" > "$PROBE_RC_FILE"
 chmod 600 "$PROBE_RC_FILE"
 
 # The oracle is designed to emit only redacted identity hashes/counts. Fail closed if
-# it accidentally emits the raw Apple Development label grammar anyway.
+# it accidentally emits a raw Apple Development label grammar anyway.
 if /usr/bin/grep -E 'Apple Development:[^<[:space:]]' "$PROBE_OUTPUT" >/dev/null 2>&1; then
     : > "$PROBE_OUTPUT"
     printf '%s\n' 'ERROR: preflight output was suppressed because raw Apple identity text escaped the oracle.' > "$PROBE_OUTPUT"
