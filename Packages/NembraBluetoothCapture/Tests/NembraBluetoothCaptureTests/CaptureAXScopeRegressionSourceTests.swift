@@ -46,7 +46,7 @@ struct CaptureAXScopeRegressionSourceTests {
             range: semanticLabel.upperBound..<account.endIndex
         ))
 
-        #expect(account.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
+        #expect(!account.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
         #expect(visibleLabel.lowerBound < hiddenDuplicate.lowerBound)
         #expect(hiddenDuplicate.lowerBound < field.lowerBound)
         #expect(field.lowerBound < semanticLabel.lowerBound)
