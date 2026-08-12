@@ -1,0 +1,108 @@
+name: Capture Dedicated UID Outer Workspace Gate Probe
+
+on:
+  push:
+    branches:
+      - validation/v14-dedicated-uid-outer-workspace-gate-sol-0054q9
+    paths:
+      - .github/workflows/capture-signed-origin-dedicated-uid-outer-workspace-gate-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  outer-workspace-gate:
+    name: Re-run retained authority behind root-owned outer gate
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact diagnostic child
+        shell: bash
+        env:
+          EXACT_RED_PARENT: 13004842cfe1bde9d8099821c8e251dda8b86e06
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git merge-base --is-ancestor "$EXACT_RED_PARENT" HEAD
+          actual="$RUNNER_TEMP/outer-gate-paths.txt"
+          git diff --name-only "$EXACT_RED_PARENT"...HEAD | LC_ALL=C sort > "$actual"
+          printf '%s\n' '.github/workflows/capture-signed-origin-dedicated-uid-outer-workspace-gate-probe.yml' > "$RUNNER_TEMP/outer-gate-expected.txt"
+          diff -u "$RUNNER_TEMP/outer-gate-expected.txt" "$actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Build diagnostic-only outer-gate witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          source='scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py'
+          diagnostic='scripts/ci/tests/.nembra_outer_workspace_gate_probe.py'
+          cp "$source" "$diagnostic"
+          /usr/bin/python3 - "$diagnostic" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          needle = '''        os.chown(mountpoint, 0, 0)
+                  os.chmod(mountpoint, 0o700)
+          '''
+          replacement = needle + '''        os.chown(workspace, 0, 0)
+                  os.chmod(workspace, 0o700)
+          '''
+          if source.count(needle) != 1:
+              raise SystemExit(f"expected exactly one mountpoint revocation seam, found {source.count(needle)}")
+          path.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
+          PY
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-outer-gate-pycache"
+          /usr/bin/python3 -m py_compile "$diagnostic"
+          grep -Fq 'os.chown(workspace, 0, 0)' "$diagnostic"
+          grep -Fq 'os.chmod(workspace, 0o700)' "$diagnostic"
+
+      - name: Exercise both retained-authority classes behind outer gate
+        id: matrix
+        shell: bash
+        run: |
+          set -uo pipefail
+          diagnostic='scripts/ci/tests/.nembra_outer_workspace_gate_probe.py'
+          dirfd_log="$RUNNER_TEMP/nembra-outer-gate-dirfd.txt"
+          mmap_log="$RUNNER_TEMP/nembra-outer-gate-mmap.txt"
+          set +e
+          /usr/bin/python3 -B -I "$diagnostic" --authority dirfd >"$dirfd_log" 2>&1
+          dirfd_rc=$?
+          /usr/bin/python3 -B -I "$diagnostic" --authority mmap >"$mmap_log" 2>&1
+          mmap_rc=$?
+          set -e
+          cat "$dirfd_log"
+          cat "$mmap_log"
+          printf 'NEMBRA_OUTER_GATE_DIRFD_RC=%s\n' "$dirfd_rc"
+          printf 'NEMBRA_OUTER_GATE_MMAP_RC=%s\n' "$mmap_rc"
+          test "$dirfd_rc" = 0
+          test "$mmap_rc" = 0
+
+      - name: Retain outer-gate evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-dedicated-uid-outer-workspace-gate-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-outer-gate-dirfd.txt
+            ${{ runner.temp }}/nembra-outer-gate-mmap.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Clean temporary witness and require hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/ci/tests/.nembra_outer_workspace_gate_probe.py
+          git diff --check 13004842cfe1bde9d8099821c8e251dda8b86e06 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
