@@ -1,5 +1,7 @@
 #!/bin/bash
 set -euo pipefail
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
 
 # Validation-only field-Mac transport for the exact Apple signing-context oracle.
 #
@@ -7,7 +9,7 @@ set -euo pipefail
 # install/launch an app, enumerate CoreDevice, use Bluetooth, or touch the scooter.
 # It only materializes exact accepted Git-object bytes for the #3152 signing oracle
 # into a root-owned temporary execution subject, runs that oracle as the invoking
-# field user, and seals a redacted local receipt.
+# field user, and seals a redacted local receipt outside the accepted checkout.
 
 ORACLE_PATH="scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py"
 SCRIPT_PATH="scripts/field/run_apple_signing_context_preflight.command"
@@ -19,7 +21,7 @@ fail() {
 
 [[ "$(uname -s)" == "Darwin" ]] || fail "Apple signing-context preflight requires macOS."
 [[ "${EUID:-$(id -u)}" -ne 0 ]] || fail "Run this preflight as the field user, not root. It invokes sudo only for exact-byte materialization and the oracle's isolated root supervisor."
-[[ "$#" == 3 ]] || fail "Usage: $0 <absolute-repository-root> <40-hex-accepted-source-sha> <absolute-output-directory>"
+[[ "$#" == 3 ]] || fail "Usage: $0 <absolute-repository-root> <40-hex-accepted-source-sha> <absolute-output-directory-outside-repository>"
 
 REPOSITORY_ROOT="$1"
 SOURCE_SHA="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
@@ -28,9 +30,14 @@ OUTPUT_DIR="$3"
 [[ "$OUTPUT_DIR" == /* ]] || fail "Output directory must be absolute."
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "Accepted source SHA must be exactly 40 lowercase hex characters."
 [[ -d "$REPOSITORY_ROOT/.git" ]] || fail "Repository root does not contain the Nembra Git checkout."
+REPOSITORY_ABS="$(cd "$REPOSITORY_ROOT" && pwd -P)"
+[[ "$REPOSITORY_ABS" == "$REPOSITORY_ROOT" ]] || fail "Repository root must already be one canonical absolute path."
+case "$OUTPUT_DIR/" in
+    "$REPOSITORY_ROOT/"*) fail "Field-preflight receipt directory must remain outside the accepted repository." ;;
+esac
 
 GIT=(/usr/bin/git -C "$REPOSITORY_ROOT" -c core.hooksPath=/dev/null)
-GIT_ENV=(env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null)
+GIT_ENV=(/usr/bin/env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null)
 
 HEAD_SHA="$("${GIT_ENV[@]}" "${GIT[@]}" rev-parse HEAD 2>/dev/null | tr '[:upper:]' '[:lower:]')" || fail "Could not resolve repository HEAD."
 [[ "$HEAD_SHA" == "$SOURCE_SHA" ]] || fail "Repository HEAD is not the exact accepted preflight source. Checkout the accepted SHA and retry."
@@ -54,6 +61,9 @@ chmod 700 "$OUTPUT_DIR"
 [[ -d "$OUTPUT_DIR" && ! -L "$OUTPUT_DIR" ]] || fail "Output directory must be one real private directory."
 OUTPUT_ABS="$(cd "$OUTPUT_DIR" && pwd -P)"
 [[ "$OUTPUT_ABS" == "$OUTPUT_DIR" ]] || fail "Output directory must already be one canonical absolute path."
+case "$OUTPUT_ABS/" in
+    "$REPOSITORY_ROOT/"*) fail "Canonical field-preflight receipt directory resolved inside the accepted repository." ;;
+esac
 
 ROOT_EXEC_DIR="$(/usr/bin/sudo -n /usr/bin/mktemp -d /private/tmp/nembra-apple-signing-preflight.XXXXXX)" || fail "Noninteractive sudo is required to materialize the exact root-owned oracle."
 [[ "$ROOT_EXEC_DIR" == /private/tmp/nembra-apple-signing-preflight.* ]] || fail "Root execution directory escaped the expected /private/tmp namespace."
