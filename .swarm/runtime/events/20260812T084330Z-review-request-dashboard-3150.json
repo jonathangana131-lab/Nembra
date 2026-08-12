@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "084330-review-request-dashboard-3150",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260812-0059g7",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent test-instrument review requested for stacked QA PR #3150 exact 7a41abd85899585a29d96d55e8a69f1bf4fa4d53. It is exactly one additive workflow on product #3141@ae527b7c and must only prove the missing real Accessibility XXXL retained-speed/currentness state. Review immutable-head binding, real iPhone 12/iOS 27 CoreSimulator + real content-size provenance, exact existing test selection, artifact retention, and absence of production/telemetry/physical-authority changes. Exact run 31579467611 is currently in progress; queued/running is not acceptance. The author must not self-accept this review. Simulator only."
+  ,"createdAt": "2026-08-12T08:43:30Z"
+}
