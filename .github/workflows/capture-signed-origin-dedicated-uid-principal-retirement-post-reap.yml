@@ -39,6 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I - <<'PY'
+          import os
           from pathlib import Path
 
           source_path = Path('scripts/ci/tests/test_capture_signed_app_dedicated_uid_principal_retirement.py')
@@ -62,7 +63,7 @@ jobs:
               if not final_state["retirementAccepted"]:
                   raise ProbeError(f"dedicated principal survived checked retirement: commands={commands} state={final_state}")
               return commands, final_state
-          '''.replace('          ', '')
+          '''
 
           new_retire = '''def wait_for_destructive_retirement(name: str, uid: int, timeout: float = 6.0) -> dict[str, object]:
               deadline = time.monotonic() + timeout
@@ -105,7 +106,7 @@ jobs:
                       f"commands={commands} state={destructive_state}"
                   )
               return commands, destructive_state
-          '''.replace('          ', '')
+          '''
 
           old_call = '''        commands, retirement_state = retire_identity(positive_name, positive_uid)
                   positive_created = False
@@ -113,7 +114,7 @@ jobs:
                   post_reap_state = lookup_state(positive_name, positive_uid)
                   if not post_reap_state["retirementAccepted"] or post_reap_state["liveUIDProcesses"] or post_reap_state["zombieUIDProcesses"]:
                       raise ProbeError(f"reaped positive principal did not remain retired: {post_reap_state}")
-          '''.replace('          ', '')
+          '''
 
           new_call = '''        commands, retirement_state = retire_identity(positive_name, positive_uid)
                   if retirement_state["liveUIDProcesses"]:
@@ -126,20 +127,16 @@ jobs:
                   if not post_reap_state["retirementAccepted"] or post_reap_state["liveUIDProcesses"] or post_reap_state["zombieUIDProcesses"]:
                       raise ProbeError(f"reaped positive principal did not fully converge to retirement: {post_reap_state}")
                   positive_created = False
-          '''.replace('          ', '')
+          '''
 
-          if source.count(old_retire) != 1:
-              raise SystemExit(f'expected one exact retire_identity ordering block, found {source.count(old_retire)}')
-          if source.count(old_call) != 1:
-              raise SystemExit(f'expected one exact positive retirement call block, found {source.count(old_call)}')
+          if source.count(old_retire) != 1 or source.count(old_call) != 1:
+              raise SystemExit('exact 05ada retirement ordering blocks were not found once each')
           repaired = source.replace(old_retire, new_retire).replace(old_call, new_call)
-          if repaired == source:
-              raise SystemExit('post-reap repair made no change')
-          if 'final_state = wait_for_retirement(name, uid)' in repaired:
-              raise SystemExit('pre-reap cached-lookup acceptance survived repair')
+          if repaired == source or 'final_state = wait_for_retirement(name, uid)' in repaired:
+              raise SystemExit('post-reap repair did not remove pre-reap cache acceptance')
           if 'post_reap_state = wait_for_retirement(positive_name, positive_uid)' not in repaired:
               raise SystemExit('post-reap bounded convergence is absent')
-          output = Path('${{ runner.temp }}') / 'principal-retirement-post-reap.py'
+          output = Path(os.environ['RUNNER_TEMP']) / 'principal-retirement-post-reap.py'
           output.write_text(repaired, encoding='utf-8')
           compile(repaired, str(output), 'exec', dont_inherit=True)
           PY
@@ -168,28 +165,24 @@ jobs:
           import json
           from pathlib import Path
           import sys
-
           marker = 'NEMBRA_DEDICATED_UID_PRINCIPAL_RETIREMENT_JSON='
           lines = [line for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines() if line.startswith(marker)]
           if len(lines) != 1:
               raise SystemExit(f'expected one success marker, found {len(lines)}')
           evidence = json.loads(lines[0][len(marker):])
-          if evidence.get('principalRetirementAccepted') is not True:
-              raise SystemExit('principal retirement was not accepted')
-          if evidence.get('zombieClassifiedNonAuthoritative') is not True:
-              raise SystemExit('direct-child zombie was not classified separately')
           before = evidence.get('checkedRetirementStateBeforeDirectChildReap') or {}
           after = evidence.get('checkedRetirementStateAfterDirectChildReap') or {}
+          required_true = ('principalRetirementAccepted', 'zombieClassifiedNonAuthoritative', 'partialGroupSurvivalRejected')
+          if any(evidence.get(key) is not True for key in required_true):
+              raise SystemExit(f'required retirement evidence missing: {evidence}')
           if before.get('liveUIDProcesses') != []:
               raise SystemExit(f'non-zombie process authority survived destructive cleanup: {before}')
           if before.get('userDirectoryServiceRecordResolved') is not False or before.get('groupDirectoryServiceRecordResolved') is not False:
               raise SystemExit(f'Directory Services identity survived destructive cleanup: {before}')
           if not before.get('zombieUIDProcesses'):
-              raise SystemExit(f'expected the direct child to be retained as an explicit pre-reap zombie witness: {before}')
+              raise SystemExit(f'direct-child zombie was not retained as explicit pre-reap evidence: {before}')
           if after.get('retirementAccepted') is not True or after.get('liveUIDProcesses') != [] or after.get('zombieUIDProcesses') != []:
               raise SystemExit(f'post-reap retirement did not converge: {after}')
-          if evidence.get('partialGroupSurvivalRejected') is not True:
-              raise SystemExit('partial user-only deletion negative did not remain fail-closed')
           if evidence.get('productionBytesChanged') is not False or evidence.get('productionAcceptanceClaimed') is not False:
               raise SystemExit('validation crossed production acceptance boundary')
           if evidence.get('physicalAuthorityCreated') is not False:
