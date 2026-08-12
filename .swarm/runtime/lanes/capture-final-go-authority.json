@@ -29,7 +29,7 @@
       "id": "final-composed-product-authority-pending",
       "state": "ACTIVE",
       "scope": "flagship",
-      "reason": "Final-GO remains one ingredient. Selected build authority, signed compiler-output/install custody, private identity convergence, runtime VoiceOver/accessibility, accepted app-visible Capture product bytes, and one final unchanged exact-head composition remain separate requirements. Current #3120 Xcode red also contains inherited/cross-carrier composition debt and cannot be counted as product acceptance. No software ingredient creates physical ES80 evidence or authorizes a field run.",
+      "reason": "Final-GO remains one ingredient. Selected build authority, signed compiler-output/install custody, the now-accepted private software ingredient plus its unconsumed source-root interface, runtime VoiceOver/accessibility, accepted app-visible Capture product bytes, and one final unchanged exact-head composition remain separate requirements. Current #3120 Xcode red also contains inherited/cross-carrier composition debt and cannot be counted as product acceptance. No software ingredient creates physical ES80 evidence or authorizes a field run.",
       "pr": 3082,
       "headSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1"
     }
@@ -47,7 +47,7 @@
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
   "sourceSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1",
   "legacy": {
-    "reconciledAt": "2026-08-12T08:07:00Z",
+    "reconciledAt": "2026-08-12T08:22:00Z",
     "selectedProductionPR": 3082,
     "selectedProductionHeadSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1",
     "currentDarwinValidationPR": 3120,
@@ -57,12 +57,12 @@
     "currentDarwinPassedBeforeFailure": ["exact parent/one-path bind","compile authority surface","real _KqueueMutationBackend selection","continuous tracked-tree races via real kqueue"],
     "currentDarwinFailedStep": "Prove sealed retirement dispatch on Darwin",
     "currentDarwinInnerCause": "UNCLASSIFIED_LOG_REQUIRED",
-    "supersededDarwinPRs": [3087,3098,3100,3119,3122],
+    "supersededDarwinPRs": [3087,3098,3100,3119,3122,3124],
     "currentSoftwareSuccessRuns": [31546213399,31546213542,31546213562],
     "skippedXcodeRun": 31546213293,
     "previousAcceptedIngredientPR": 2921,
     "previousAcceptedIngredientHeadSHA": "471cc025b332f4df8b43a98d709710aeb4e0698f",
-    "knownExactHeadFinding": "Reconciled generation 17 on 2026-08-12. Live Final-GO production is #3082 exact 4a2c2002. Three current software-authority gates are terminal green, but current exact Darwin child #3120 is terminal red only after real kqueue selection and the complete continuous tracked-tree race suite passed. The later sealed-retirement replay step failed; inner command/assertion is not connector-visible and remains unclassified. Build authority and downstream flagship composition remain independently unaccepted. PHYSICAL NO-GO."
+    "knownExactHeadFinding": "Generation-9 test-claim cleanup on 2026-08-12 confirms #3124 is closed/superseded and #3120 is the selected current-parent Darwin witness. Production #3082@4a2c2002 has three exact software-authority greens; #3120 is terminal red only after real kqueue selection and the complete continuous tracked-tree race suite passed. The later sealed-retirement replay step failed and remains log-unclassified. Build authority and downstream flagship composition remain independently unaccepted. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","physical-go","control-authority","git-authority","legacy-import"]
 }
