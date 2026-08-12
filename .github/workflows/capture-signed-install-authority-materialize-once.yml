@@ -23,7 +23,7 @@ jobs:
       - name: Bind exact parent
         shell: bash
         env:
-          EXPECTED_PARENT: 71ab16dc9564be87024c50ab5cd4837835756aa6
+          EXPECTED_PARENT: d1479f0dc3b350d0065318b39efd0eb6aa13e44d
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
         run: |
           set -euo pipefail
