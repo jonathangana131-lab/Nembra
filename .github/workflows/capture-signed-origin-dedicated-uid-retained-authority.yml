@@ -154,11 +154,40 @@ jobs:
               '    global _DIAGNOSTIC_EVENT_INDEX\n    _DIAGNOSTIC_EVENT_INDEX += 1\n    if process.stdout is None:\n',
               1,
           )
-          source = source.replace(
-              '    raise ProbeError("timed out waiting for retained-authority writer event")\n',
-              '    raise ProbeError(f"timed out waiting for retained-authority writer event index={_DIAGNOSTIC_EVENT_INDEX} pid={process.pid} poll={process.poll()}")\n',
-              1,
-          )
+          needle = '    raise ProbeError("timed out waiting for retained-authority writer event")\n'
+          replacement = '''    diagnostic_poll = process.poll()
+              diagnostic_ps = subprocess.run(
+                  ["/bin/ps", "-o", "pid=,ppid=,state=,user=,group=,command=", "-p", str(process.pid)],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True,
+                  check=False,
+              ).stdout.strip()
+              diagnostic_sample = ""
+              if diagnostic_poll is None:
+                  try:
+                      sampled = subprocess.run(
+                          ["/usr/bin/sample", str(process.pid), "1", "1"],
+                          stdin=subprocess.DEVNULL,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT,
+                          text=True,
+                          check=False,
+                          timeout=6,
+                      )
+                      diagnostic_sample = "\\n".join(sampled.stdout.splitlines()[-100:])
+                  except BaseException as error:
+                      diagnostic_sample = f"sample-error:{type(error).__name__}:{error}"
+              raise ProbeError(
+                  "timed out waiting for retained-authority writer event "
+                  f"index={_DIAGNOSTIC_EVENT_INDEX} pid={process.pid} poll={diagnostic_poll} "
+                  f"ps={diagnostic_ps!r} sampleTail={diagnostic_sample!r}"
+              )
+          '''
+          if source.count(needle) != 1:
+              raise SystemExit("retained-authority timeout diagnostic target missing or ambiguous")
+          source = source.replace(needle, replacement, 1)
           path.write_text(source, encoding="utf-8")
           PY
 
