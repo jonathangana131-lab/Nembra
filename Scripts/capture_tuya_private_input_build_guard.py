@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import os
 import select
@@ -11,6 +12,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Callable, Iterable, Protocol, Sequence
 
 
@@ -18,13 +20,70 @@ class BuildGuardError(RuntimeError):
     pass
 
 
+_PINNED_PROVENANCE_GIT_BLOB_OID = "66c21083dca625da11ad72bb6c652a09c2434ef6"
+_PINNED_PROVENANCE_FD_ENV = "NEMBRA_CAPTURE_PINNED_PROVENANCE_SOURCE_FD"
+_MAX_PINNED_HELPER_BYTES = 2 * 1024 * 1024
+
+
+def _git_blob_oid(payload: bytes) -> str:
+    return hashlib.sha1(
+        b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+    ).hexdigest()
+
+
+def _read_pinned_provenance_source(descriptor: int) -> bytes:
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+    except OSError as error:
+        raise BuildGuardError("pinned private-input provenance source is not seekable") from error
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = os.read(descriptor, min(65536, _MAX_PINNED_HELPER_BYTES + 1 - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+        if total > _MAX_PINNED_HELPER_BYTES:
+            raise BuildGuardError("pinned private-input provenance source exceeds the bounded limit")
+    source = b"".join(chunks)
+    if not source:
+        raise BuildGuardError("pinned private-input provenance source is empty")
+    if _git_blob_oid(source) != _PINNED_PROVENANCE_GIT_BLOB_OID:
+        raise BuildGuardError("pinned private-input provenance source does not match accepted Git identity")
+    return source
+
+
 def _load_provenance_module():
+    pinned_fd_raw = os.environ.pop(_PINNED_PROVENANCE_FD_ENV, "")
+    if pinned_fd_raw:
+        if not pinned_fd_raw.isdecimal():
+            raise BuildGuardError("pinned private-input provenance descriptor is malformed")
+        source = _read_pinned_provenance_source(int(pinned_fd_raw, 10))
+        module_name = "capture_tuya_private_input_provenance"
+        module = ModuleType(module_name)
+        module.__file__ = "<accepted-capture_tuya_private_input_provenance.py>"
+        sys.modules[module_name] = module
+        try:
+            exec(compile(source, module.__file__, "exec"), module.__dict__)
+        except Exception:
+            if sys.modules.get(module_name) is module:
+                sys.modules.pop(module_name, None)
+            raise
+        return module
+
     helper = Path(__file__).with_name("capture_tuya_private_input_provenance.py")
     spec = importlib.util.spec_from_file_location("capture_tuya_private_input_provenance", helper)
     if spec is None or spec.loader is None:
         raise BuildGuardError("private-input provenance helper could not be loaded")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        if sys.modules.get(spec.name) is module:
+            sys.modules.pop(spec.name, None)
+        raise
     return module
 
 

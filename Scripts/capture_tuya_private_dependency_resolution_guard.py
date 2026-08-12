@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
 """Run pre-generated Tuya dependency work under private-input vnode custody.
 
-This is intentionally *not* the physical field-build CLI. The canonical build
-guard's CLI protects the later xcodebuild window. Dependency resolution runs one
-rung earlier, before generated CocoaPods subjects can exist.
-
-The canonical guard deliberately preserves a private-only `run_guarded_build`
-API whose authority is exactly the five admitted inputs plus the child command.
-This adapter exposes only that narrow mode. It grants no xcodebuild,
-generated-build, private-review, source-acceptance, or physical GO authority.
-The child command must independently establish semantic authority (bootstrap
-uses the root-sealed private-identity receipt) after vnode watchers are armed.
+This is intentionally *not* the physical field-build CLI. Dependency resolution
+runs before generated CocoaPods subjects exist, but the code that creates custody
+must itself be accepted authority. This adapter therefore executes only captured
+Git-identity-pinned canonical guard/provenance bytes, then extends the canonical
+private-input event loop with checkout-ancestry rename custody.
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib.util
+import hashlib
 import os
 from pathlib import Path
 import select
 import stat
 import sys
+import tempfile
+from types import ModuleType
 from typing import Sequence
 
 
@@ -29,18 +26,113 @@ class ResolutionGuardError(RuntimeError):
     pass
 
 
-def _load_guard():
-    guard_path = Path(__file__).with_name("capture_tuya_private_input_build_guard.py")
-    if not guard_path.is_file() or guard_path.is_symlink():
-        raise ResolutionGuardError("canonical private-input build guard is missing or symlinked")
-    spec = importlib.util.spec_from_file_location(
-        "nembra_private_dependency_resolution_build_guard",
-        guard_path,
+_CANONICAL_GUARD_GIT_BLOB_OID = "e1481b1e2ac0321ab4198ae960b5439a00acf3c1"
+_PROVENANCE_HELPER_GIT_BLOB_OID = "66c21083dca625da11ad72bb6c652a09c2434ef6"
+_CANONICAL_GUARD_MODULE_NAME = "nembra_private_dependency_resolution_build_guard"
+_PINNED_PROVENANCE_FD_ENV = "NEMBRA_CAPTURE_PINNED_PROVENANCE_SOURCE_FD"
+_MAX_HELPER_BYTES = 2 * 1024 * 1024
+
+
+def _git_blob_oid(payload: bytes) -> str:
+    return hashlib.sha1(
+        b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+    ).hexdigest()
+
+
+def _source_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
     )
-    if spec is None or spec.loader is None:
-        raise ResolutionGuardError("canonical private-input build guard could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+
+
+def _capture_accepted_python_source(path: Path, expected_oid: str, *, label: str) -> bytes:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is None:
+        raise ResolutionGuardError(f"{label} capture requires O_NOFOLLOW")
+    flags = os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ResolutionGuardError(f"{label} could not be opened without following links") from error
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_size <= 0 or before.st_size > _MAX_HELPER_BYTES:
+            raise ResolutionGuardError(f"{label} must be one bounded regular file")
+        before_identity = _source_identity(before)
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(65536, _MAX_HELPER_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > _MAX_HELPER_BYTES:
+                raise ResolutionGuardError(f"{label} exceeds the bounded source limit")
+        after = os.fstat(descriptor)
+        if _source_identity(after) != before_identity or total != after.st_size:
+            raise ResolutionGuardError(f"{label} changed while accepted bytes were captured")
+        try:
+            current = path.lstat()
+        except OSError as error:
+            raise ResolutionGuardError(f"{label} pathname disappeared during capture") from error
+        if stat.S_ISLNK(current.st_mode) or _source_identity(current) != before_identity:
+            raise ResolutionGuardError(f"{label} pathname changed while accepted bytes were captured")
+    finally:
+        os.close(descriptor)
+
+    source = b"".join(chunks)
+    if _git_blob_oid(source) != expected_oid:
+        raise ResolutionGuardError(f"{label} bytes do not match accepted Git identity")
+    return source
+
+
+def _load_guard(guard_path: Path, provenance_path: Path, checkout: Path):
+    guard_path = _require_real_checkout_ancestry(
+        guard_path, checkout, label="canonical private-input build guard source"
+    )
+    provenance_path = _require_real_checkout_ancestry(
+        provenance_path, checkout, label="private-input provenance helper source"
+    )
+    guard_source = _capture_accepted_python_source(
+        guard_path,
+        _CANONICAL_GUARD_GIT_BLOB_OID,
+        label="canonical private-input build guard source",
+    )
+    provenance_source = _capture_accepted_python_source(
+        provenance_path,
+        _PROVENANCE_HELPER_GIT_BLOB_OID,
+        label="private-input provenance helper source",
+    )
+
+    with tempfile.TemporaryFile(prefix="nembra-private-provenance-source-") as pinned_provenance:
+        pinned_provenance.write(provenance_source)
+        pinned_provenance.flush()
+        pinned_provenance.seek(0)
+        previous_fd = os.environ.get(_PINNED_PROVENANCE_FD_ENV)
+        os.environ[_PINNED_PROVENANCE_FD_ENV] = str(pinned_provenance.fileno())
+
+        module = ModuleType(_CANONICAL_GUARD_MODULE_NAME)
+        module.__file__ = "<accepted-capture_tuya_private_input_build_guard.py>"
+        sys.modules[_CANONICAL_GUARD_MODULE_NAME] = module
+        try:
+            exec(compile(guard_source, module.__file__, "exec"), module.__dict__)
+        except Exception:
+            if sys.modules.get(_CANONICAL_GUARD_MODULE_NAME) is module:
+                sys.modules.pop(_CANONICAL_GUARD_MODULE_NAME, None)
+            raise
+        finally:
+            if previous_fd is None:
+                os.environ.pop(_PINNED_PROVENANCE_FD_ENV, None)
+            else:
+                os.environ[_PINNED_PROVENANCE_FD_ENV] = previous_fd
     return module
 
 
@@ -67,14 +159,7 @@ def _directory_flags() -> int:
 
 
 def _require_real_checkout_ancestry(path: Path, root: Path, *, label: str) -> Path:
-    """Admit one existing subject only through real descendants of one checkout root.
-
-    Every pathname component from the checkout root through the supplied subject
-    must exist without a symlink hop. The canonical guard remains the authority
-    for final file/tree type, generation snapshots, exact descriptors, and vnode
-    monitoring. A separate backend below keeps the ancestry directories themselves
-    under rename/delete custody while that canonical window is live.
-    """
+    """Admit one existing subject only through real descendants of one checkout root."""
     checkout = _lexical_absolute(root)
     candidate = _lexical_absolute(path)
     try:
@@ -120,13 +205,7 @@ def _subject_parent_prefixes(checkout: Path, subjects: Sequence[Path]) -> tuple[
 
 
 class _AncestryCustodyBackend:
-    """Canonical event backend plus rename custody for absolute + checkout ancestry.
-
-    CocoaPods legitimately writes generated siblings beneath the checkout, so
-    ancestry directories deliberately watch only deletion/rename/revocation.
-    Canonical private input descriptors still use the full mutation flags when
-    `register` is called by `run_guarded_build`.
-    """
+    """Canonical event backend plus rename custody for absolute + checkout ancestry."""
 
     def __init__(self, checkout: Path, inputs) -> None:
         required = (
@@ -247,10 +326,6 @@ class _AncestryCustodyBackend:
             self._hold_directory(descriptor, path)
             prefix_fds[prefix] = descriptor
 
-        # Registration has its own race boundary. Reprove every canonical
-        # directory pathname against the exact held inode after every ancestry
-        # watcher is armed. Any later swap is queued for the canonical guard's
-        # pre-child `events(0)` check or its live event loop.
         for descriptor, path, identity in self._held_directories:
             try:
                 current_metadata = path.lstat()
@@ -293,10 +368,12 @@ class _AncestryCustodyBackend:
             pass
 
 
-def _parse_args(guard, argv: Sequence[str]):
+def _parse_args(argv: Sequence[str]):
     parser = argparse.ArgumentParser(
         description="Run pre-generated private Tuya dependency work under vnode custody."
     )
+    parser.add_argument("--canonical-guard-source", required=True, type=Path)
+    parser.add_argument("--provenance-helper-source", required=True, type=Path)
     parser.add_argument("--lockfile", required=True, type=Path)
     parser.add_argument("--security-podspec", required=True, type=Path)
     parser.add_argument("--security-build", required=True, type=Path)
@@ -310,44 +387,50 @@ def _parse_args(guard, argv: Sequence[str]):
     if not command:
         raise ResolutionGuardError("no guarded dependency command was supplied")
 
-    # The tracked Podfile is the root anchor because CocoaPods itself executes it.
-    # The adapter admits only real descendants, and the backend additionally binds
-    # that root to the inherited bootstrap cwd plus watched directory ancestry.
     lockfile = _lexical_absolute(args.lockfile)
-    root = lockfile.parent
-    lockfile = _require_real_checkout_ancestry(lockfile, root, label="dependency manifest anchor")
-    security_podspec = _require_real_checkout_ancestry(
-        args.security_podspec, root, label="private security podspec"
-    )
-    security_build = _require_real_checkout_ancestry(
-        args.security_build, root, label="private security build tree"
-    )
-    identity_podspec = _require_real_checkout_ancestry(
-        args.identity_podspec, root, label="private identity podspec"
-    )
-    identity_sources = _require_real_checkout_ancestry(
-        args.identity_sources, root, label="private identity source tree"
-    )
-    return (
-        guard.PrivateInputs(
-            lockfile=lockfile,
-            security_podspec=security_podspec,
-            security_build=security_build,
-            identity_podspec=identity_podspec,
-            identity_sources=identity_sources,
+    checkout = lockfile.parent
+    admitted = {
+        "lockfile": _require_real_checkout_ancestry(
+            lockfile, checkout, label="dependency manifest anchor"
         ),
-        command,
-        root,
-    )
+        "security_podspec": _require_real_checkout_ancestry(
+            args.security_podspec, checkout, label="private security podspec"
+        ),
+        "security_build": _require_real_checkout_ancestry(
+            args.security_build, checkout, label="private security build tree"
+        ),
+        "identity_podspec": _require_real_checkout_ancestry(
+            args.identity_podspec, checkout, label="private identity podspec"
+        ),
+        "identity_sources": _require_real_checkout_ancestry(
+            args.identity_sources, checkout, label="private identity source tree"
+        ),
+        "canonical_guard_source": _require_real_checkout_ancestry(
+            args.canonical_guard_source, checkout, label="canonical private-input build guard source"
+        ),
+        "provenance_helper_source": _require_real_checkout_ancestry(
+            args.provenance_helper_source, checkout, label="private-input provenance helper source"
+        ),
+    }
+    return args, admitted, command, checkout
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    guard = None
     try:
-        guard = _load_guard()
-        inputs, command, checkout = _parse_args(guard, sys.argv[1:] if argv is None else argv)
-        # The canonical guard still owns exact input generation + live mutation
-        # authority. The accepted backend keyword is used only to add checkout and
-        # intermediate-directory rename custody to that same event loop.
+        _, admitted, command, checkout = _parse_args(sys.argv[1:] if argv is None else argv)
+        guard = _load_guard(
+            admitted["canonical_guard_source"],
+            admitted["provenance_helper_source"],
+            checkout,
+        )
+        inputs = guard.PrivateInputs(
+            lockfile=admitted["lockfile"],
+            security_podspec=admitted["security_podspec"],
+            security_build=admitted["security_build"],
+            identity_podspec=admitted["identity_podspec"],
+            identity_sources=admitted["identity_sources"],
+        )
         return guard.run_guarded_build(
             inputs,
             command,
@@ -357,7 +440,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
     except Exception as error:
-        guard_error = getattr(locals().get("guard", None), "BuildGuardError", ())
+        guard_error = getattr(guard, "BuildGuardError", ()) if guard is not None else ()
         if guard_error and isinstance(error, guard_error):
             print(f"ERROR: {error}", file=sys.stderr)
             return 74
