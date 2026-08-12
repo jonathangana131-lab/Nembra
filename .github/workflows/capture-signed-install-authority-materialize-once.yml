@@ -1,0 +1,215 @@
+name: Capture signed-install authority materialize once
+
+on:
+  push:
+    branches:
+      - repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812
+    paths:
+      - .github/workflows/capture-signed-install-authority-materialize-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact parent
+        shell: bash
+        env:
+          EXPECTED_PARENT: 71ab16dc9564be87024c50ab5cd4837835756aa6
+          MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only HEAD^..HEAD)" = "$MATERIALIZER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Apply exact authority transforms
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one transform subject, found {count}")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          origin = "scripts/ci/capture_signed_app_build_origin_custody.py"
+          replace_once(
+              origin,
+              '''def _build_environment(user: str, home: Path) -> dict[str, str]:
+              temp = home / "tmp"
+              temp.mkdir(parents=True, exist_ok=True)
+              environment = {
+                  "HOME": str(home),
+                  "USER": user,
+                  "LOGNAME": user,
+                  "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                  "TMPDIR": str(temp),
+                  "LANG": os.environ.get("LANG", "C"),
+                  "LC_ALL": os.environ.get("LC_ALL", "C"),
+              }
+              for key in ("DEVELOPER_DIR", "SDKROOT", "TOOLCHAINS", "__CF_USER_TEXT_ENCODING"):
+                  value = os.environ.get(key)
+                  if value:
+                      environment[key] = value
+              return environment
+          ''',
+              '''def _build_environment(user: str, home: Path) -> dict[str, str]:
+              """Return the complete caller-independent environment admitted to the build guard.
+
+              Toolchain selection belongs to the separately accepted command/selected-Xcode
+              boundary. Ambient root or field selectors must not regain compiler authority.
+              """
+              temp = home / "tmp"
+              temp.mkdir(parents=True, exist_ok=True)
+              return {
+                  "HOME": str(home),
+                  "USER": user,
+                  "LOGNAME": user,
+                  "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                  "TMPDIR": str(temp),
+                  "LANG": "en_US.UTF-8",
+                  "LC_ALL": "en_US.UTF-8",
+              }
+          ''',
+          )
+
+          pre_stage = "scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py"
+          anchor = '''    def test_structured_credentials_preserve_explicit_authority_without_primary_duplication(self) -> None:
+          '''
+          addition = '''    def test_build_environment_rejects_ambient_xcode_selector_authority(self) -> None:
+              helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_environment")
+              poison = {
+                  "DEVELOPER_DIR": "/tmp/poison-developer",
+                  "SDKROOT": "/tmp/poison-sdk",
+                  "TOOLCHAINS": "poison-toolchain",
+                  "__CF_USER_TEXT_ENCODING": "poison-encoding",
+                  "CC": "/tmp/poison-cc",
+                  "CXX": "/tmp/poison-cxx",
+                  "SWIFT_EXEC": "/tmp/poison-swift",
+                  "DYLD_INSERT_LIBRARIES": "/tmp/poison.dylib",
+                  "LANG": "poison_LANG",
+                  "LC_ALL": "poison_LC_ALL",
+              }
+              with tempfile.TemporaryDirectory(prefix="nembra-build-env-") as temporary:
+                  home = Path(temporary)
+                  with mock.patch.dict(helper.os.environ, poison, clear=True):
+                      environment = helper._build_environment("nembrabuildtest", home)
+              self.assertEqual(
+                  environment,
+                  {
+                      "HOME": str(home),
+                      "USER": "nembrabuildtest",
+                      "LOGNAME": "nembrabuildtest",
+                      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                      "TMPDIR": str(home / "tmp"),
+                      "LANG": "en_US.UTF-8",
+                      "LC_ALL": "en_US.UTF-8",
+                  },
+              )
+              self.assertTrue(set(poison).isdisjoint(environment))
+
+          '''
+          replace_once(pre_stage, anchor, addition + anchor)
+
+          real_xcode = "scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py"
+          replace_once(
+              real_xcode,
+              '''        os.chown(mountpoint, 0, 0)
+                  os.chmod(mountpoint, 0o700)
+                  detach = helper._detach_apfs(writable_device)
+          ''',
+              '''        os.chown(mountpoint, 0, 0)
+                  os.chmod(mountpoint, 0o700)
+                  former_build_writable_attack = subprocess.run(
+                      ["/bin/sh", "-c", 'printf "BUILD_UID_AFTER_PATH_REVOKE\\n" >> "$1"', "sh", str(product)],
+                      env=build_environment,
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      check=False,
+                      **structured_credentials(build_uid, build_gid, []),
+                  )
+                  if former_build_writable_attack.returncode == 0 or sha256(product) != before:
+                      emit_error(
+                          "path-revocation",
+                          "former build identity retained fresh writable pathname authority after root revocation",
+                      )
+                      return 75
+
+                  detach = helper._detach_apfs(writable_device)
+          ''',
+          )
+          replace_once(
+              real_xcode,
+              '''            "fieldAttackReturnCode": attack.returncode,
+                      "nonForcedDetachReturnCode": detach.returncode,
+          ''',
+              '''            "fieldAttackReturnCode": attack.returncode,
+                      "formerBuildWritablePathAttackReturnCode": former_build_writable_attack.returncode,
+                      "nonForcedDetachReturnCode": detach.returncode,
+          ''',
+          )
+          replace_once(
+              real_xcode,
+              '''            and evidence.get("fieldAttackReturnCode") != 0
+                      and evidence.get("nonForcedDetachReturnCode") == 0
+          ''',
+              '''            and evidence.get("fieldAttackReturnCode") != 0
+                      and evidence.get("formerBuildWritablePathAttackReturnCode") != 0
+                      and evidence.get("nonForcedDetachReturnCode") == 0
+          ''',
+          )
+          PY
+
+          python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          python3 -B scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          grep -Fq 'formerBuildWritablePathAttackReturnCode' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          grep -Fq '"LANG": "en_US.UTF-8"' scripts/ci/capture_signed_app_build_origin_custody.py
+          if grep -Eq 'os\.environ\.get\("(DEVELOPER_DIR|SDKROOT|TOOLCHAINS|__CF_USER_TEXT_ENCODING|LANG|LC_ALL)"' scripts/ci/capture_signed_app_build_origin_custody.py; then
+            echo 'ERROR: ambient compiler selector or locale authority survived.' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Self-delete and push
+        shell: bash
+        env:
+          MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
+          BRANCH: repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812
+        run: |
+          set -euo pipefail
+          git rm "$MATERIALIZER"
+          git add \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            "$MATERIALIZER" \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'Capture: close build environment and pathname revocation'
+          git push origin "HEAD:$BRANCH"
