@@ -142,6 +142,8 @@ jobs:
           fi
           printf '::notice title=Frozen Xcode ACL oracle::no extended ACL subjects found\n'
 
+          tree_probe="$RUNNER_TEMP/nembra-cow-tree-oracle.txt"
+          set +e
           /usr/bin/sudo -n /usr/bin/env -i \
             PATH=/usr/bin:/bin \
             HOME=/tmp \
@@ -149,7 +151,7 @@ jobs:
             LC_ALL=C \
             NEMBRA_FROZEN_NAMESPACE="$freeze_root" \
             NEMBRA_FROZEN_XCODE="$frozen_app" \
-            /usr/bin/python3 -I - <<'PY_TREE'
+            /usr/bin/python3 -I - >"$tree_probe" 2>&1 <<'PY_TREE'
           import os
           from pathlib import Path
           import stat
@@ -192,6 +194,13 @@ jobs:
               raise SystemExit('frozen Xcode tree unexpectedly small')
           print(f'validated frozen Xcode metadata subjects={subjects} contained_symlinks={symlinks}')
           PY_TREE
+          tree_rc=$?
+          set -e
+          if [[ "$tree_rc" -ne 0 ]]; then
+            annotate_file error "Frozen Xcode metadata oracle red" "$tree_probe"
+            exit "$tree_rc"
+          fi
+          cat "$tree_probe"
           printf '::notice title=Frozen Xcode metadata::root/no-write custody and symlink containment passed\n'
 
           if ! /usr/bin/sudo -n /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
