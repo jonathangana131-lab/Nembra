@@ -18,6 +18,7 @@ import argparse
 import base64
 import errno
 import grp
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -37,6 +38,7 @@ MOUNT_NAME = "compiler-output"
 APFS_VOLUME_NAME = "NembraCaptureOrigin"
 DEFAULT_APP_RELATIVE = Path("Build/Products/Debug-iphoneos/Nembra Capture.app")
 DERIVED_PLACEHOLDER = "__NEMBRA_PROTECTED_DERIVED__"
+GROUP_ATTESTOR_MARKER = "NEMBRA_BUILD_IDENTITY_GROUPS="
 
 
 class BuildOriginCustodyError(RuntimeError):
@@ -88,6 +90,79 @@ def _structured_credentials(
     if any(value <= 0 for value in normalized):
         raise BuildOriginCustodyError("structured child supplementary groups contain invalid authority")
     return {"user": uid, "group": gid, "extra_groups": normalized}
+
+
+def _attest_build_identity_groups(
+    name: str,
+    uid: int,
+    gid: int,
+    field_groups: Sequence[int],
+    environment: dict[str, str],
+    cwd: Path,
+) -> tuple[int, ...]:
+    baseline = tuple(sorted(set(os.getgrouplist(name, gid))))
+    if gid not in baseline or any(value <= 0 for value in baseline):
+        raise BuildOriginCustodyError("fresh build Directory Services group baseline is invalid")
+    if uid <= 0 or gid <= 0 or uid == os.getuid():
+        raise BuildOriginCustodyError("fresh build identity is not isolated from root authority")
+
+    child_source = (
+        "import json,os,pwd;"
+        "print('NEMBRA_BUILD_IDENTITY_GROUPS='+json.dumps({"
+        "'uid':os.getuid(),'euid':os.geteuid(),'gid':os.getgid(),'egid':os.getegid(),"
+        "'groups':sorted(set(os.getgroups())),'user':pwd.getpwuid(os.getuid()).pw_name},sort_keys=True))"
+    )
+    completed = subprocess.run(
+        ["/usr/bin/python3", "-B", "-I", "-c", child_source],
+        cwd=cwd,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+        **_structured_credentials(uid, gid, ()),
+    )
+    records = [
+        line[len(GROUP_ATTESTOR_MARKER):]
+        for line in (completed.stdout or "").splitlines()
+        if line.startswith(GROUP_ATTESTOR_MARKER)
+    ]
+    if completed.returncode != 0 or len(records) != 1:
+        detail = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
+        raise BuildOriginCustodyError(
+            "could not attest effective dedicated-build credentials"
+            + (f": {detail[-1200:]}" if detail else "")
+        )
+    try:
+        payload = json.loads(records[0])
+    except json.JSONDecodeError as error:
+        raise BuildOriginCustodyError("dedicated-build credential attestor emitted malformed JSON") from error
+    if not isinstance(payload, dict):
+        raise BuildOriginCustodyError("dedicated-build credential attestor emitted no object")
+
+    identity_exact = (
+        payload.get("uid") == uid
+        and payload.get("euid") == uid
+        and payload.get("gid") == gid
+        and payload.get("egid") == gid
+        and payload.get("user") == name
+    )
+    raw_groups = payload.get("groups")
+    if not isinstance(raw_groups, list) or any(not isinstance(value, int) for value in raw_groups):
+        raise BuildOriginCustodyError("dedicated-build credential attestor emitted an invalid group vector")
+    effective = {value for value in raw_groups if value != gid}
+    expected = {value for value in baseline if value != gid}
+    field_only = set(int(value) for value in field_groups).difference(baseline)
+    if not identity_exact:
+        raise BuildOriginCustodyError("dedicated-build child did not retain its exact UID/GID identity")
+    if effective != expected:
+        raise BuildOriginCustodyError(
+            "dedicated-build child effective groups diverged from its Directory Services baseline"
+        )
+    if effective.intersection(field_only):
+        raise BuildOriginCustodyError("field-only group authority leaked into the dedicated-build child")
+    return baseline
 
 
 def _group_names(groups: Sequence[int]) -> tuple[str, ...]:
@@ -578,6 +653,14 @@ def run_custodied_build(
         build_env = _build_environment(build_name, home)
         os.chown(home / "tmp", build_uid, build_gid)
         os.chmod(home / "tmp", 0o700)
+        _attest_build_identity_groups(
+            build_name,
+            build_uid,
+            build_gid,
+            field_groups,
+            build_env,
+            home,
+        )
 
         _create_apfs_image(image)
         writable_device = _attach_apfs(image, mountpoint, readonly=False)
