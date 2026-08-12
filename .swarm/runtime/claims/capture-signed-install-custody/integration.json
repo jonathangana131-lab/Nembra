@@ -9,12 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T11:37:00Z",
-  "lastHeartbeatAt": "2026-08-12T11:48:30Z",
+  "lastHeartbeatAt": "2026-08-12T12:02:00Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-field-uid-apple-development-codesign-gpt56-sol-20260812",
   "pr": 3152,
   "sourceSHA": "09cbc817c018580967ff16460459a59fc62c6359",
-  "currentHeadSHA": "dd19880ae78b9e70ebb8e87bb949a51268dedd49",
-  "intent": "Close #3152 validation transport authority: exact moved-lineage scope plus non-caller-constructible private field-Mac receipt sealing. Classify only field-account signing-context evidence. Do not claim dedicated-UID production signing, private Tuya, provisioning/device or physical authority.",
-  "checkpoint": "Consumed one-file four-path scope repair 9cab8087, then continued the same integration rung to close review 4915779866. Current #3152@dd19880a is ahead-only from #3137@2e375451 by exactly five paths: two workflows, oracle, field command, and new root receipt sealer. Field wrapper now fences ambient Git, root-materializes exact oracle+sealer blobs, and root sealer captures the field-credential oracle directly. Canonical receipt publication uses a root-owned replacement-safe parent, O_NOFOLLOW|O_EXCL files, root 0444 files + 0555 namespace, and both in-sealer and workflow field mutation/rename negatives. Durable PR comment 5266389200 records the boundary. Current signing workflow run 31593341161 pending and redaction run 31593341160 in progress at last refresh; queued/in-progress != accepted. PHYSICAL NO-GO."
+  "currentHeadSHA": "fb75a30fb5b0a698e02d6a59ef9a7b3996ec20c1",
+  "intent": "Close #3152 validation transport authority: exact moved-lineage scope plus non-caller-writable private field-Mac receipt sealing. Classify only field-account signing-context evidence; do not claim dedicated-UID production signing, private Tuya, provisioning/device or physical authority.",
+  "checkpoint": "#3152 remains an exact five-path validation vertical over #3137@2e375451. Root receipt sealer + strict field wrapper close review 4915779866 structurally. Exact 71c4 Mac run 31593696921 proved a harness-only red before the sealer: GITHUB_WORKSPACE was an alias while wrapper correctly requires a physical canonical repo path. Commit 77286d8f fixes only the caller with `pwd -P`; wrapper guard unchanged. Redaction source review also found its validator used `py_compile` despite repo not ignoring __pycache__, so fb75a30f replaces that with side-effect-free built-in compile() before the AST regex test. New exact fb75 runs 31594443398 redaction and 31594443410 xcode-27 are queued at this checkpoint; queued != accepted. Hosted direct Apple-signing oracle may remain environment-red independently of transport custody. PHYSICAL NO-GO."
 }
