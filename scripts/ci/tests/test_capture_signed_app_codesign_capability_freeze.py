@@ -40,6 +40,7 @@ HERE = Path(__file__).resolve().parent
 FREEZE_HELPER_PATH = HERE / "test_capture_signed_app_unmount_freeze_probe.py"
 MARKER = "NEMBRA_CODESIGN_CAPABILITY_FREEZE_JSON="
 ERROR_MARKER = "NEMBRA_CODESIGN_CAPABILITY_FREEZE_ERROR="
+PATH_PROBE_MARKER = "NEMBRA_CODESIGN_CAPABILITY_PATH_PROBE="
 
 
 class ProbeError(RuntimeError):
@@ -165,6 +166,76 @@ def make_unsigned_app(app: Path, capability_gid: int) -> None:
             os.chmod(child, 0o770 if child == executable else 0o660)
 
 
+def probe_signer_path_authority(
+    app: Path,
+    *,
+    environment: dict[str, str],
+    field_uid: int,
+    field_gid: int,
+    signer_groups: list[int],
+) -> dict[str, object]:
+    code = r'''
+import json
+import os
+from pathlib import Path
+import sys
+
+app = Path(sys.argv[1])
+probe = app / "Contents" / "signer-capability-probe.tmp"
+record = {
+    "effectiveUID": os.geteuid(),
+    "realUID": os.getuid(),
+    "effectivePrimaryGID": os.getegid(),
+    "realPrimaryGID": os.getgid(),
+    "effectiveSupplementaryGroups": sorted(os.getgroups()),
+    "appMode": oct(app.stat().st_mode & 0o7777),
+    "appUID": app.stat().st_uid,
+    "appGID": app.stat().st_gid,
+    "contentsMode": oct((app / "Contents").stat().st_mode & 0o7777),
+    "contentsUID": (app / "Contents").stat().st_uid,
+    "contentsGID": (app / "Contents").stat().st_gid,
+    "writeSucceeded": False,
+    "cleanupSucceeded": False,
+}
+try:
+    probe.write_text("SIGNER_CAPABILITY_PATH_PROBE\n", encoding="utf-8")
+    record["writeSucceeded"] = True
+    probe.unlink()
+    record["cleanupSucceeded"] = True
+except OSError as error:
+    record["writeErrno"] = error.errno
+    record["writeError"] = str(error)
+print("NEMBRA_CODESIGN_CAPABILITY_PATH_PROBE=" + json.dumps(record, sort_keys=True))
+'''
+    completed = subprocess.run(
+        ["/usr/bin/python3", "-B", "-I", "-c", code, str(app)],
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+        **structured_credentials(field_uid, field_gid, signer_groups),
+    )
+    records = [
+        line[len(PATH_PROBE_MARKER):]
+        for line in completed.stdout.splitlines()
+        if line.startswith(PATH_PROBE_MARKER)
+    ]
+    if completed.returncode != 0 or len(records) != 1:
+        raise ProbeError(
+            "signer capability path probe did not return one canonical record: "
+            + (completed.stdout + "\n" + completed.stderr)[-6000:]
+        )
+    try:
+        evidence = json.loads(records[0])
+    except json.JSONDecodeError as error:
+        raise ProbeError("signer capability path probe returned malformed JSON") from error
+    if not isinstance(evidence, dict):
+        raise ProbeError("signer capability path probe returned a non-object record")
+    return evidence
+
+
 def root_probe(field_active_groups: list[int]) -> int:
     if sys.platform != "darwin" or os.geteuid() != 0:
         emit_error("environment", "codesign capability probe requires sudo on real macOS")
@@ -261,10 +332,42 @@ def root_probe(field_active_groups: list[int]) -> int:
         # replays the field process's actual active groups; the signer receives only the fresh
         # filesystem capability, avoiding a synthetic union that can exceed macOS setgroups limits.
         signer_groups = [capability_gid]
+        path_probe = probe_signer_path_authority(
+            app,
+            environment=field_environment,
+            field_uid=field_uid,
+            field_gid=field_gid,
+            signer_groups=signer_groups,
+        )
+        expected_signer_groups = sorted(signer_groups)
+        if not (
+            path_probe.get("effectiveUID") == field_uid
+            and path_probe.get("realUID") == field_uid
+            and path_probe.get("effectivePrimaryGID") == field_gid
+            and path_probe.get("realPrimaryGID") == field_gid
+            and path_probe.get("effectiveSupplementaryGroups") == expected_signer_groups
+            and path_probe.get("appUID") == 0
+            and path_probe.get("appGID") == capability_gid
+            and path_probe.get("contentsUID") == 0
+            and path_probe.get("contentsGID") == capability_gid
+            and path_probe.get("writeSucceeded") is True
+            and path_probe.get("cleanupSucceeded") is True
+        ):
+            emit_error(
+                "signer-path-authority",
+                "fresh signing capability did not establish the intended direct filesystem authority",
+                pathProbe=path_probe,
+            )
+            return 73
+        if tree_fingerprint(app) != unsigned:
+            emit_error("signer-path-authority", "signer path probe did not restore the unsigned fixture exactly")
+            return 73
+
         signing = subprocess.run(
             [
                 "/usr/bin/codesign",
                 "--force",
+                "--verbose=4",
                 "--sign",
                 "-",
                 "--timestamp=none",
@@ -281,10 +384,11 @@ def root_probe(field_active_groups: list[int]) -> int:
         if signing.returncode != 0:
             emit_error(
                 "codesign",
-                f"direct codesign could not use the one-run filesystem capability: {signing.returncode}",
+                f"direct codesign failed after signer path authority was proven: {signing.returncode}",
+                signerPathProbe=path_probe,
                 signingOutput=(signing.stdout + "\n" + signing.stderr)[-6000:],
             )
-            return 73
+            return 74
 
         verify_live = subprocess.run(
             ["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)],
@@ -300,11 +404,11 @@ def root_probe(field_active_groups: list[int]) -> int:
                 "ad-hoc signature did not verify before freeze",
                 verifyOutput=verify_live.stderr[-6000:],
             )
-            return 74
+            return 75
         signed = tree_fingerprint(app)
         if signed == unsigned:
             emit_error("codesign", "codesign reported success without changing the proof bundle")
-            return 74
+            return 75
 
         detach = helper.hdiutil_detach(device)
         detach_output = (detach.stdout or "") + "\n" + (detach.stderr or "")
@@ -314,7 +418,7 @@ def root_probe(field_active_groups: list[int]) -> int:
                 "signed output could not reach a normal non-forced APFS detach",
                 detachOutput=detach_output[-6000:],
             )
-            return 75
+            return 76
         device = None
 
         device = helper.hdiutil_attach(image, mountpoint, readonly=True)
@@ -327,7 +431,7 @@ def root_probe(field_active_groups: list[int]) -> int:
                 signed=signed,
                 frozen=frozen,
             )
-            return 76
+            return 77
 
         verify_frozen = subprocess.run(
             ["/usr/bin/codesign", "--verify", "--deep", "--strict", str(frozen_app)],
@@ -343,7 +447,7 @@ def root_probe(field_active_groups: list[int]) -> int:
                 "signature failed verification after read-only remount",
                 verifyOutput=verify_frozen.stderr[-6000:],
             )
-            return 76
+            return 77
 
         root_attack = subprocess.run(
             [
@@ -361,7 +465,7 @@ def root_probe(field_active_groups: list[int]) -> int:
         )
         if root_attack.returncode == 0 or tree_fingerprint(frozen_app) != frozen:
             emit_error("readonly-remount", "root mutated the read-only signed bundle")
-            return 77
+            return 78
 
         former_signer = subprocess.run(
             [
@@ -381,16 +485,17 @@ def root_probe(field_active_groups: list[int]) -> int:
         )
         if former_signer.returncode == 0 or tree_fingerprint(frozen_app) != frozen:
             emit_error("readonly-remount", "former signing capability mutated the read-only bundle")
-            return 78
+            return 79
 
         evidence = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "fieldUID": field_uid,
             "fieldPrimaryGID": field_gid,
             "fieldActiveSupplementaryGroups": field_active_groups,
             "fieldActiveGroupsSubsetOfDirectoryService": set(field_active_groups).issubset(directory_groups),
             "signingCapabilityGID": capability_gid,
             "signerSupplementaryGroups": signer_groups,
+            "signerPathProbe": path_probe,
             "fieldGroupsContainSigningCapability": capability_gid in directory_groups,
             "fieldActiveGroupsContainSigningCapability": capability_gid in field_active_groups,
             "ordinaryFieldAttackReturnCode": ordinary_attack.returncode,
@@ -412,7 +517,7 @@ def root_probe(field_active_groups: list[int]) -> int:
         return 0
     except (OSError, subprocess.CalledProcessError, ProbeError, KeyError) as error:
         emit_error("fixture", f"codesign capability fixture failed: {type(error).__name__}: {error}")
-        return 79
+        return 80
     finally:
         if device is not None:
             try:
@@ -425,16 +530,16 @@ def root_probe(field_active_groups: list[int]) -> int:
 def parent_probe() -> int:
     if sys.platform != "darwin":
         emit_error("environment", "codesign capability freeze probe requires macOS")
-        return 80
+        return 81
     field_uid = os.getuid()
     field_gid = os.getgid()
     if field_uid <= 0 or os.geteuid() != field_uid or os.getegid() != field_gid:
         emit_error("identity", "field probe requires one stable non-root identity before sudo")
-        return 80
+        return 81
     field_active_groups = sorted({group for group in os.getgroups() if group != field_gid})
     if any(group <= 0 for group in field_active_groups):
         emit_error("identity", "field process carries root or invalid active group authority")
-        return 80
+        return 81
 
     sudo = subprocess.run(
         ["/usr/bin/sudo", "-n", "/usr/bin/true"],
@@ -445,7 +550,7 @@ def parent_probe() -> int:
     )
     if sudo.returncode != 0:
         emit_error("environment", "runner does not expose noninteractive sudo for validation")
-        return 80
+        return 81
 
     active_args = [
         item
@@ -483,16 +588,26 @@ def parent_probe() -> int:
     ]
     if len(records) != 1:
         emit_error("evidence", "missing or ambiguous codesign capability freeze evidence")
-        return 81
+        return 82
     evidence = json.loads(records[0])
+    path_probe = evidence.get("signerPathProbe")
     required = (
-        evidence.get("fieldUID") == field_uid
+        evidence.get("schemaVersion") == 2
+        and evidence.get("fieldUID") == field_uid
         and evidence.get("fieldPrimaryGID") == field_gid
         and evidence.get("fieldActiveSupplementaryGroups") == field_active_groups
         and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
         and evidence.get("fieldGroupsContainSigningCapability") is False
         and evidence.get("fieldActiveGroupsContainSigningCapability") is False
         and evidence.get("signerSupplementaryGroups") == [evidence.get("signingCapabilityGID")]
+        and isinstance(path_probe, dict)
+        and path_probe.get("effectiveUID") == field_uid
+        and path_probe.get("realUID") == field_uid
+        and path_probe.get("effectivePrimaryGID") == field_gid
+        and path_probe.get("realPrimaryGID") == field_gid
+        and path_probe.get("effectiveSupplementaryGroups") == evidence.get("signerSupplementaryGroups")
+        and path_probe.get("writeSucceeded") is True
+        and path_probe.get("cleanupSucceeded") is True
         and evidence.get("ordinaryFieldAttackReturnCode") != 0
         and evidence.get("codesignReturnCode") == 0
         and evidence.get("liveCodesignVerifyReturnCode") == 0
@@ -509,7 +624,7 @@ def parent_probe() -> int:
     )
     if not required:
         emit_error("evidence", f"codesign capability evidence failed semantic checks: {evidence}")
-        return 82
+        return 83
     return 0
 
 
@@ -525,11 +640,11 @@ def main() -> int:
             or args.field_active_group_count != len(args.field_active_group)
         ):
             emit_error("arguments", "root probe requires one explicit captured active-group vector")
-            return 83
+            return 84
         return root_probe(args.field_active_group)
     if args.field_active_group or args.field_active_group_count is not None:
         emit_error("arguments", "root-only active-group arguments are unavailable in parent mode")
-        return 83
+        return 84
     return parent_probe()
 
 
