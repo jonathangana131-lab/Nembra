@@ -23,7 +23,7 @@ jobs:
       - name: Bind exact parent
         shell: bash
         env:
-          EXPECTED_PARENT: d1479f0dc3b350d0065318b39efd0eb6aa13e44d
+          EXPECTED_PARENT: b9164701da15d7a773698599bf24ed3cb923f8ac
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
         run: |
           set -euo pipefail
@@ -31,7 +31,7 @@ jobs:
           test "$(git diff --name-only HEAD^..HEAD)" = "$MATERIALIZER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Apply exact authority transforms
+      - name: Materialize permanent authority regressions
         shell: bash
         run: |
           set -euo pipefail
@@ -46,49 +46,8 @@ jobs:
                   raise SystemExit(f"{path}: expected exactly one transform subject, found {count}")
               file.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          origin = "scripts/ci/capture_signed_app_build_origin_custody.py"
-          replace_once(
-              origin,
-              '''def _build_environment(user: str, home: Path) -> dict[str, str]:
-              temp = home / "tmp"
-              temp.mkdir(parents=True, exist_ok=True)
-              environment = {
-                  "HOME": str(home),
-                  "USER": user,
-                  "LOGNAME": user,
-                  "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                  "TMPDIR": str(temp),
-                  "LANG": os.environ.get("LANG", "C"),
-                  "LC_ALL": os.environ.get("LC_ALL", "C"),
-              }
-              for key in ("DEVELOPER_DIR", "SDKROOT", "TOOLCHAINS", "__CF_USER_TEXT_ENCODING"):
-                  value = os.environ.get(key)
-                  if value:
-                      environment[key] = value
-              return environment
-          ''',
-              '''def _build_environment(user: str, home: Path) -> dict[str, str]:
-              """Return the complete caller-independent environment admitted to the build guard.
-
-              Toolchain selection belongs to the separately accepted command/selected-Xcode
-              boundary. Ambient root or field selectors must not regain compiler authority.
-              """
-              temp = home / "tmp"
-              temp.mkdir(parents=True, exist_ok=True)
-              return {
-                  "HOME": str(home),
-                  "USER": user,
-                  "LOGNAME": user,
-                  "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                  "TMPDIR": str(temp),
-                  "LANG": "en_US.UTF-8",
-                  "LC_ALL": "en_US.UTF-8",
-              }
-          ''',
-          )
-
           pre_stage = "scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py"
-          anchor = '''    def test_structured_credentials_preserve_explicit_authority_without_primary_duplication(self) -> None:
+          anchor = '''    def test_placeholder_is_exactly_single_use(self) -> None:
           '''
           addition = '''    def test_build_environment_rejects_ambient_xcode_selector_authority(self) -> None:
               helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_environment")
@@ -108,18 +67,18 @@ jobs:
                   home = Path(temporary)
                   with mock.patch.dict(helper.os.environ, poison, clear=True):
                       environment = helper._build_environment("nembrabuildtest", home)
-              self.assertEqual(
-                  environment,
-                  {
-                      "HOME": str(home),
-                      "USER": "nembrabuildtest",
-                      "LOGNAME": "nembrabuildtest",
-                      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                      "TMPDIR": str(home / "tmp"),
-                      "LANG": "en_US.UTF-8",
-                      "LC_ALL": "en_US.UTF-8",
-                  },
-              )
+                  self.assertEqual(
+                      environment,
+                      {
+                          "HOME": str(home),
+                          "USER": "nembrabuildtest",
+                          "LOGNAME": "nembrabuildtest",
+                          "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                          "TMPDIR": str(home / "tmp"),
+                          "LANG": "en_US.UTF-8",
+                          "LC_ALL": "en_US.UTF-8",
+                      },
+                  )
               self.assertTrue(set(poison).isdisjoint(environment))
 
           '''
@@ -177,19 +136,15 @@ jobs:
           PY
 
           python3 -m py_compile \
-            scripts/ci/capture_signed_app_build_origin_custody.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
             scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           python3 -B scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          grep -Fq 'def test_build_environment_rejects_ambient_xcode_selector_authority' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          grep -Fq 'BUILD_UID_AFTER_PATH_REVOKE' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           grep -Fq 'formerBuildWritablePathAttackReturnCode' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
-          grep -Fq '"LANG": "en_US.UTF-8"' scripts/ci/capture_signed_app_build_origin_custody.py
-          if grep -Eq 'os\.environ\.get\("(DEVELOPER_DIR|SDKROOT|TOOLCHAINS|__CF_USER_TEXT_ENCODING|LANG|LC_ALL)"' scripts/ci/capture_signed_app_build_origin_custody.py; then
-            echo 'ERROR: ambient compiler selector or locale authority survived.' >&2
-            exit 1
-          fi
           git diff --check
 
-      - name: Self-delete and push
+      - name: Self-delete and push permanent tests
         shell: bash
         env:
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
@@ -198,18 +153,16 @@ jobs:
           set -euo pipefail
           git rm "$MATERIALIZER"
           git add \
-            scripts/ci/capture_signed_app_build_origin_custody.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
             scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           git diff --cached --check
           actual="$(git diff --cached --name-only | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             "$MATERIALIZER" \
-            scripts/ci/capture_signed_app_build_origin_custody.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
             scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
           test "$actual" = "$expected"
           git config user.name 'nembra-swarm-materializer'
           git config user.email 'nembra-swarm@users.noreply.github.com'
-          git commit -m 'Capture: close build environment and pathname revocation'
+          git commit -m 'Capture: lock environment and pathname authority regressions'
           git push origin "HEAD:$BRANCH"
