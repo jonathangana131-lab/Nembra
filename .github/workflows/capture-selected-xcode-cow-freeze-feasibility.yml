@@ -172,6 +172,7 @@ jobs:
 
           subjects = 1
           symlinks = 0
+          contained_dangling_symlinks = 0
           for current, directories, files in os.walk(root, followlinks=False):
               for name in [*directories, *files]:
                   path = Path(current) / name
@@ -181,18 +182,33 @@ jobs:
                       raise SystemExit(f'frozen Xcode subject is not root-owned: {path}')
                   if stat.S_ISLNK(metadata.st_mode):
                       symlinks += 1
+                      raw_target = os.readlink(path)
+                      if os.path.isabs(raw_target):
+                          raise SystemExit(f'frozen Xcode contains absolute symlink authority: {path} -> {raw_target}')
                       try:
-                          resolved = path.resolve(strict=True)
-                      except OSError as error:
-                          raise SystemExit(f'frozen Xcode contains dangling symlink: {path}') from error
+                          resolved = path.resolve(strict=False)
+                      except (OSError, RuntimeError) as error:
+                          raise SystemExit(f'frozen Xcode symlink cannot be normalized safely: {path}') from error
                       if resolved != root and root not in resolved.parents:
                           raise SystemExit(f'frozen Xcode symlink escapes the admitted clone: {path} -> {resolved}')
+                      try:
+                          strict_resolved = path.resolve(strict=True)
+                      except FileNotFoundError:
+                          contained_dangling_symlinks += 1
+                      except (OSError, RuntimeError) as error:
+                          raise SystemExit(f'frozen Xcode symlink resolution failed unexpectedly: {path}') from error
+                      else:
+                          if strict_resolved != root and root not in strict_resolved.parents:
+                              raise SystemExit(f'frozen Xcode symlink resolves outside the admitted clone: {path} -> {strict_resolved}')
                       continue
                   if metadata.st_mode & 0o022:
                       raise SystemExit(f'frozen Xcode subject retains group/world write authority: {path}')
           if subjects < 1000:
               raise SystemExit('frozen Xcode tree unexpectedly small')
-          print(f'validated frozen Xcode metadata subjects={subjects} contained_symlinks={symlinks}')
+          print(
+              f'validated frozen Xcode metadata subjects={subjects} symlinks={symlinks} '
+              f'contained_dangling_symlinks={contained_dangling_symlinks}'
+          )
           PY_TREE
           tree_rc=$?
           set -e
@@ -201,7 +217,7 @@ jobs:
             exit "$tree_rc"
           fi
           cat "$tree_probe"
-          printf '::notice title=Frozen Xcode metadata::root/no-write custody and symlink containment passed\n'
+          printf '::notice title=Frozen Xcode metadata::root/no-write custody and contained-symlink authority passed\n'
 
           if ! /usr/bin/sudo -n /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
             /usr/bin/codesign --verify --deep --strict --verbose=4 \
