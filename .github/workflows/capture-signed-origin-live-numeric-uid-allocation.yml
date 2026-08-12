@@ -1,0 +1,88 @@
+name: Capture Signed Origin Live Numeric UID Allocation
+
+on:
+  push:
+    branches:
+      - validation/v14-dedicated-uid-live-numeric-allocation-sol-20260812
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_live_numeric_uid_allocation.py
+      - .github/workflows/capture-signed-origin-live-numeric-uid-allocation.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_signed_app_live_numeric_uid_allocation.py
+      - .github/workflows/capture-signed-origin-live-numeric-uid-allocation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-live-numeric-uid-allocation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-numeric-uid:
+    name: Prove process-aware numeric UID admission
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact production parent and validation-only scope
+        shell: bash
+        env:
+          EXACT_PARENT: b9164701da15d7a773698599bf24ed3cb923f8ac
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          event_sha="$(printf '%s' "$EVENT_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$source_sha" = "$event_sha"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-signed-origin-live-numeric-uid-allocation.yml \
+            scripts/ci/tests/test_capture_signed_app_live_numeric_uid_allocation.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          /usr/bin/python3 -I -c 'from pathlib import Path; compile(Path("scripts/ci/tests/test_capture_signed_app_live_numeric_uid_allocation.py").read_text(), "<live-numeric-uid-allocation>", "exec", dont_inherit=True)'
+          git diff --check "$EXACT_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact validation-only scope bound at %s\n' "$source_sha"
+
+      - name: Run real macOS numeric-principal allocation witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          field_uid="$(id -u)"
+          field_gid="$(id -g)"
+          test "$field_uid" -gt 0
+          test "$field_gid" -gt 0
+          log="$RUNNER_TEMP/nembra-live-numeric-uid-allocation.log"
+          /usr/bin/sudo -n /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_signed_app_live_numeric_uid_allocation.py \
+            --root-probe --field-uid "$field_uid" --field-gid "$field_gid" \
+            >"$log" 2>&1
+          cat "$log"
+          grep -Fq 'NEMBRA_LIVE_NUMERIC_UID_ALLOCATION_JSON=' "$log"
+          grep -Fq '"numericPrincipalAllocationAccepted": true' "$log"
+          grep -Fq '"resolverOnlyInUseWhileLive": false' "$log"
+          grep -Fq '"processAwareInUseWhileLive": true' "$log"
+          grep -Fq '"processAwareInUseWhileZombie": true' "$log"
+          grep -Fq '"processAwareInUseAfterReap": false' "$log"
+          grep -Fq '"productionAcceptanceClaimed": false' "$log"
+          grep -Fq '"physicalAuthorityCreated": false' "$log"
+
+      - name: Preserve validation truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check b9164701da15d7a773698599bf24ed3cb923f8ac HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'VALIDATION ONLY. PRODUCTION BYTES UNCHANGED. NO SIGNING / DEVICE / BLUETOOTH / TUYA / PHYSICAL AUTHORITY.\n'
