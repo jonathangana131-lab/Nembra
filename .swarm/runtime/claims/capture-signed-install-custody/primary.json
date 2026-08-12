@@ -7,16 +7,18 @@
   "workerId": "gpt56-sol-20260812-go-0348",
   "leaseId": "capture-signed-install-primary-go-0348-20260812-1048",
   "generation": 10,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T10:48:45Z",
-  "lastHeartbeatAt": "2026-08-12T10:48:45Z",
+  "lastHeartbeatAt": "2026-08-12T10:53:20Z",
+  "releasedAt": "2026-08-12T10:53:20Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812",
   "pr": 3142,
   "sourceSHA": "4214c2c9dce8194b718494f294eee87a2019b099",
-  "currentHeadSHA": "4214c2c9dce8194b718494f294eee87a2019b099",
+  "currentHeadSHA": "920598f27c200ac663faec44e8ed8fcce770758e",
   "takeoverFromWorkerId": "sol-20260812-0345p0",
   "takeoverFromLeaseId": "capture-signed-install-primary-0345p0-20260812-1045",
-  "takeoverReason": "Generation 9 explicitly RELEASED after preserving a concurrent fast-forward. Recover the now-unoccupied production-primary lane at exact #3142 head 4214c2c9 and close only the remaining accepted authority defects without overwriting concurrent work.",
-  "checkpoint": "Claimed exact-head production-primary custody after fresh GitHub reconciliation. Current known blockers: effective fresh build-child kernel group attestation, verified ephemeral principal/process retirement, and real private Tuya/Apple signing feasibility. PHYSICAL NO-GO."
+  "takeoverReason": "Generation 9 explicitly RELEASED. Generation 10 recovered the slot, then detected immediate concurrent fast-forwards on the exact production carrier and released rather than overwrite active convergence.",
+  "outcome": "CONCURRENT_CONVERGENCE_PRESERVED",
+  "checkpoint": "Fresh exact-head review followed #3142 from 4214c2c9 through 0aa74250 to 920598f2. The carrier now includes owners-on, checked user/group retirement, and truthful fresh-account effective-group attestation. Review 4915661782 recorded the remaining exact blockers seen at 0aa; 920598f2 closes the group-attestation item, while outer-workspace closure and deterministic no-live-build-UID process retirement remain to verify/repair. Another review worker owns generation 16, so primary is released to avoid collision. PHYSICAL NO-GO."
 }
