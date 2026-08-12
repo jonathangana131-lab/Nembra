@@ -7,10 +7,12 @@ on:
     paths:
       - .github/workflows/capture-dedicated-uid-apple-signing-field-preflight.yml
       - scripts/field/capture_dedicated_uid_apple_signing_preflight.py
+      - scripts/field/run_dedicated_uid_apple_signing_preflight.command
   pull_request:
     paths:
       - .github/workflows/capture-dedicated-uid-apple-signing-field-preflight.yml
       - scripts/field/capture_dedicated_uid_apple_signing_preflight.py
+      - scripts/field/run_dedicated_uid_apple_signing_preflight.command
   workflow_dispatch:
 
 permissions:
@@ -32,7 +34,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Bind exact two-path validation delta
+      - name: Bind exact three-path validation delta
         shell: bash
         env:
           EXACT_PARENT: c4996ea91cc3482ca8a8d661fd1436a2eee745df
@@ -50,25 +52,30 @@ jobs:
           cat > "$expected_paths" <<'EOF'
           .github/workflows/capture-dedicated-uid-apple-signing-field-preflight.yml
           scripts/field/capture_dedicated_uid_apple_signing_preflight.py
+          scripts/field/run_dedicated_uid_apple_signing_preflight.command
           EOF
           LC_ALL=C sort -o "$expected_paths" "$expected_paths"
           diff -u "$expected_paths" "$actual_paths"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile and run portable redaction/parser self-test
+      - name: Compile, parse, and shell-check exact transport
         shell: bash
         run: |
           set -euo pipefail
           export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-dedicated-signing-pycache"
           probe='scripts/field/capture_dedicated_uid_apple_signing_preflight.py'
+          transport='scripts/field/run_dedicated_uid_apple_signing_preflight.command'
           python3 -m py_compile "$probe"
           python3 -B "$probe" --self-test
+          bash -n "$transport"
 
       - name: Source-audit dedicated UID signing boundary
         shell: bash
         run: |
           set -euo pipefail
           probe='scripts/field/capture_dedicated_uid_apple_signing_preflight.py'
+          transport='scripts/field/run_dedicated_uid_apple_signing_preflight.command'
+
           grep -Fq 'PRODUCTION_PARENT = "c4996ea91cc3482ca8a8d661fd1436a2eee745df"' "$probe"
           grep -Fq 'fresh-dedicated-uid-gid-and-home' "$probe"
           grep -Fq 'NFSHomeDirectory' "$probe"
@@ -94,12 +101,32 @@ jobs:
           grep -Fq '"deviceInstallExercised": False' "$probe"
           grep -Fq '"bluetoothExercised": False' "$probe"
           grep -Fq '"physicalAuthorityCreated": False' "$probe"
+
+          grep -Fq '#!/bin/bash -p' "$transport"
+          grep -Fq 'unset BASH_ENV ENV CDPATH GIT_DIR GIT_WORK_TREE' "$transport"
+          grep -Fq 'GIT_NO_REPLACE_OBJECTS=1' "$transport"
+          grep -Fq 'GIT_CONFIG_NOSYSTEM=1' "$transport"
+          grep -Fq 'GIT_CONFIG_GLOBAL=/dev/null' "$transport"
+          grep -Fq 'hash-object "$EXECUTING_SCRIPT"' "$transport"
+          grep -Fq 'cat-file blob "$ORACLE_BLOB"' "$transport"
+          grep -Fq 'actual_blob = hashlib.sha1(b"blob "' "$transport"
+          grep -Fq 'namespace["SELF_SOURCE_B64"] = base64.b64encode(raw).decode("ascii")' "$transport"
+          grep -Fq 'namespace["root_probe"]' "$transport"
+          grep -Fq 'Apple Development:[[:space:]]*[^<[:space:]]' "$transport"
+          grep -Fq 'NEMBRA_DEDICATED_UID_APPLE_SIGNING_PREFLIGHT_RECEIPT=' "$transport"
+          grep -Fq '"productionAcceptanceClaimed": False' "$transport"
+          grep -Fq '"physicalAuthorityCreated": False' "$transport"
+
           if grep -Fq -- '-allowProvisioningUpdates' "$probe" || \
              grep -Fq -- '-allowProvisioningDeviceRegistration' "$probe" || \
              grep -Fq 'devicectl device' "$probe" || \
              grep -Fq 'bootstrap_capture_tuya_sdk.sh' "$probe"; then
-            printf 'Dedicated signing feasibility preflight crossed its validation scope.\n' >&2
+            printf 'Dedicated signing feasibility oracle crossed its validation scope.\n' >&2
             exit 21
+          fi
+          if grep -Fq 'devicectl device' "$transport" || grep -Fq 'bootstrap_capture_tuya_sdk.sh' "$transport"; then
+            printf 'Dedicated signing exact-byte transport crossed its validation scope.\n' >&2
+            exit 22
           fi
 
       - name: Diff hygiene
