@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
-"""Validation-only signing-compatible APFS freeze through the real guard process shape.
+"""Validation-only signing-compatible APFS freeze through a nested private-input guard.
 
-The production installer does not invoke xcodebuild directly. A field-owned Python private-input
-guard watches admitted Tuya inputs and then launches xcodebuild with ordinary subprocess.Popen.
-That default child launch closes non-standard inherited descriptors, so a direct pass_fds proof is
-not sufficient production evidence.
+The field account must keep its legitimate private Tuya inputs and Apple signing/keychain identity,
+while unrelated same-UID processes must not gain pathname authority over compiler output. The
+writable APFS mount therefore lives beneath a root-only parent and is delegated as one non-standard
+directory descriptor only to the authorized guard process tree.
 
-This oracle delegates the root-hidden APFS directory descriptor as standard input (fd 0) to an
-intermediate field-UID Python guard shim. The shim launches real xcodebuild with ordinary Popen,
-without pass_fds or close_fds overrides. Standard fd 0 therefore remains the narrow compiler-output
-capability through the same process boundary used by the production private-input guard, while the
-field account keeps its legitimate HOME/keychain/signing/private-input identity. DerivedData is
-addressed only as /dev/fd/0/DerivedData.
+Unlike the rejected fd-0 experiment, this probe keeps ordinary stdin valid. Root explicitly passes
+the directory descriptor to an intermediate field-UID Python guard, and that guard explicitly
+propagates the same descriptor to real xcodebuild with pass_fds. This models the narrow production
+change required in capture_tuya_private_input_build_guard.py instead of assuming Python preserves a
+directory-valued standard stream.
 
-After the guard/Xcode process group returns, root closes its descriptor and requires a normal,
-non-forced APFS detach before any compiler-output hash becomes authoritative. A byte-identical
-read-only remount must reject root writes and a field-UID write even when the frozen directory is
-again explicitly delegated as fd 0.
-
-This creates architecture evidence only. No signing, install, device, Bluetooth, Tuya traffic,
-telemetry, or physical scooter authority is created.
+After guard/Xcode returns, root closes its descriptor, retires the original process group, and
+requires a normal non-forced APFS detach. Only a byte-identical read-only remount can become
+fingerprint authority. This is architecture evidence only; it creates no signing/install/device/
+Bluetooth/Tuya/telemetry/physical authority.
 """
 from __future__ import annotations
 
@@ -30,6 +26,7 @@ import os
 from pathlib import Path
 import pwd
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -37,8 +34,8 @@ from typing import Iterable
 
 HERE = Path(__file__).resolve().parent
 DIRECT_ORACLE_PATH = HERE / "test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py"
-MARKER = "NEMBRA_REAL_XCODE_STDIO_DIRFD_APFS_JSON="
-ERROR_MARKER = "NEMBRA_REAL_XCODE_STDIO_DIRFD_APFS_ERROR="
+MARKER = "NEMBRA_REAL_XCODE_GUARD_FD_APFS_JSON="
+ERROR_MARKER = "NEMBRA_REAL_XCODE_GUARD_FD_APFS_ERROR="
 
 
 class ProbeError(RuntimeError):
@@ -73,19 +70,30 @@ def structured_credentials(uid: int, gid: int, groups: Iterable[int]) -> dict[st
 
 
 def guard_shim_code() -> str:
-    # Deliberately ordinary Popen: no pass_fds and no close_fds override. The only delegated
-    # compiler-output capability is standard fd 0, matching the real guard's inherited-stdio shape.
+    # The real production guard already owns the Xcode Popen boundary. Production promotion would
+    # add only this explicit descriptor validation/propagation shape; private-input watching stays
+    # independent and the descriptor never becomes a caller-selected pathname.
     return r'''
 import json
+import os
+import stat
 import subprocess
 import sys
-command = json.loads(sys.argv[1])
+fd = int(sys.argv[1])
+metadata = os.fstat(fd)
+if not stat.S_ISDIR(metadata.st_mode):
+    raise SystemExit("delegated compiler-output capability is not a directory")
+command = json.loads(sys.argv[2])
+expected = f"/dev/fd/{fd}/DerivedData"
+if command.count(expected) != 1:
+    raise SystemExit("xcode command is not bound exactly once to delegated compiler-output capability")
 process = subprocess.Popen(
     command,
-    stdin=None,
+    stdin=subprocess.DEVNULL,
     stdout=sys.stdout,
     stderr=sys.stderr,
     text=True,
+    pass_fds=(fd,),
 )
 raise SystemExit(process.wait())
 '''
@@ -111,7 +119,7 @@ def field_environment(account: pwd.struct_passwd) -> dict[str, str]:
 def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_groups: list[int]) -> int:
     helper = load_direct_oracle()
     if sys.platform != "darwin" or os.geteuid() != 0:
-        emit_error("environment", "stdio directory-FD APFS root probe requires sudo on real macOS")
+        emit_error("environment", "guard-FD APFS root probe requires sudo on real macOS")
         return 70
     try:
         sudo_uid = int(os.environ["SUDO_UID"])
@@ -139,7 +147,7 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
         emit_error("identity", "active field groups exceed Directory Services membership")
         return 71
 
-    workspace = Path(tempfile.mkdtemp(prefix="nembra-real-xcode-stdio-dirfd-apfs.", dir="/private/tmp"))
+    workspace = Path(tempfile.mkdtemp(prefix="nembra-real-xcode-guard-fd-apfs.", dir="/private/tmp"))
     image = workspace / "field-output.sparseimage"
     mountpoint = workspace / "mount"
     mountpoint.mkdir()
@@ -154,9 +162,8 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
         device = helper.hdiutil_attach(image, mountpoint, readonly=False)
         os.chown(mountpoint, sudo_uid, sudo_gid)
         os.chmod(mountpoint, 0o700)
-
         mount_fd = os.open(mountpoint, os.O_RDONLY | os.O_DIRECTORY)
-        os.set_inheritable(mount_fd, True)
+        os.set_inheritable(mount_fd, False)
 
         no_fd_attack = subprocess.run(
             ["/bin/mkdir", str(mountpoint / "same-uid-sibling")],
@@ -169,16 +176,17 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
             check=False,
         )
         if no_fd_attack.returncode == 0:
-            emit_error("field-isolation", "same-UID sibling reached root-hidden writable mount without delegated stdio FD")
+            emit_error("field-isolation", "same-UID sibling reached root-hidden writable mount without delegated FD")
             return 72
 
+        derived_via_fd = f"/dev/fd/{mount_fd}/DerivedData"
         xcode_command = [
             "/usr/bin/xcodebuild",
             "-scheme", "OriginDirFDFreezeProof",
             "-configuration", "Debug",
             "-sdk", "macosx",
             "-destination", "generic/platform=macOS",
-            "-derivedDataPath", "/dev/fd/0/DerivedData",
+            "-derivedDataPath", derived_via_fd,
             "CODE_SIGNING_ALLOWED=NO",
             "COMPILER_INDEX_STORE_ENABLE=NO",
             "build",
@@ -186,15 +194,16 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
         process = subprocess.Popen(
             [
                 "/usr/bin/python3", "-I", "-c", guard_shim_code(),
-                json.dumps(xcode_command, separators=(",", ":")),
+                str(mount_fd), json.dumps(xcode_command, separators=(",", ":")),
             ],
             cwd=package_root,
             env=field_environment(account),
-            stdin=mount_fd,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             start_new_session=True,
+            pass_fds=(mount_fd,),
             **structured_credentials(sudo_uid, sudo_gid, normalized_active),
         )
         output, _ = process.communicate()
@@ -205,14 +214,14 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
         if returncode != 0:
             emit_error(
                 "xcodebuild",
-                f"real Xcode could not build through stdio directory-FD custody: {returncode}",
+                f"real Xcode could not build through explicitly propagated guard FD: {returncode}",
                 output=output,
             )
             return 73
 
         product = mountpoint / "DerivedData/Build/Products/Debug/OriginDirFDFreezeProof"
         if not product.is_file() or product.is_symlink():
-            emit_error("product", f"real-Xcode product missing behind stdio directory FD: {product}", output=output)
+            emit_error("product", f"real-Xcode product missing behind propagated guard FD: {product}", output=output)
             return 74
         before = helper.sha256(product)
 
@@ -227,7 +236,7 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
             check=False,
         )
         if post_build_no_fd_attack.returncode == 0 or helper.sha256(product) != before:
-            emit_error("field-isolation", "same-UID sibling changed compiler output without delegated stdio FD", output=output)
+            emit_error("field-isolation", "same-UID sibling changed compiler output without delegated FD", output=output)
             return 75
 
         os.chown(mountpoint, 0, 0)
@@ -237,7 +246,7 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
         if detach.returncode != 0:
             emit_error(
                 "quiescence",
-                "guard/Xcode returned but stdio-delegated output could not reach normal non-forced detach",
+                "guard/Xcode returned but delegated output could not reach normal non-forced detach",
                 output=output,
                 detach_output=detach_text,
             )
@@ -267,25 +276,22 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
             return 78
 
         readonly_fd = os.open(mountpoint, os.O_RDONLY | os.O_DIRECTORY)
-        os.set_inheritable(readonly_fd, True)
+        readonly_target = f"/dev/fd/{readonly_fd}/DerivedData/Build/Products/Debug/OriginDirFDFreezeProof"
         readonly_field_attack = subprocess.run(
-            [
-                "/bin/sh", "-c",
-                'printf "FIELD_AFTER_FREEZE\\n" >> "$1"',
-                "sh", "/dev/fd/0/DerivedData/Build/Products/Debug/OriginDirFDFreezeProof",
-            ],
+            ["/bin/sh", "-c", 'printf "FIELD_AFTER_FREEZE\\n" >> "$1"', "sh", readonly_target],
             env=field_environment(account),
-            stdin=readonly_fd,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            pass_fds=(readonly_fd,),
             **structured_credentials(sudo_uid, sudo_gid, normalized_active),
             check=False,
         )
         os.close(readonly_fd)
         readonly_fd = None
         if readonly_field_attack.returncode == 0 or helper.sha256(frozen_product) != frozen:
-            emit_error("readonly-remount", "field identity mutated product through delegated stdio FD after freeze")
+            emit_error("readonly-remount", "field identity mutated product through explicitly delegated FD after freeze")
             return 78
 
         evidence = {
@@ -295,21 +301,21 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
             "fieldActiveSupplementaryGroups": normalized_active,
             "fieldActiveGroupsSubsetOfDirectoryService": set(normalized_active).issubset(directory_groups),
             "sameUIDNoFDPreBuildReturnCode": no_fd_attack.returncode,
-            "guardShimReturnCode": returncode,
+            "guardAndXcodeReturnCode": returncode,
             "sameUIDNoFDPostBuildReturnCode": post_build_no_fd_attack.returncode,
             "nonForcedDetachReturnCode": detach.returncode,
             "compilerProductSHA256": before,
             "readonlyRemountSHA256": frozen,
             "rootReadonlyWriteErrno": root_errno,
-            "fieldReadonlyStdioFDAttackReturnCode": readonly_field_attack.returncode,
-            "derivedDataUsedStandardInputDirectoryFD": True,
-            "guardShimUsedOrdinaryPopen": True,
+            "fieldReadonlyFDAttackReturnCode": readonly_field_attack.returncode,
+            "derivedDataUsedExplicitGuardPropagatedDirectoryFD": True,
+            "guardExplicitlyPropagatedNonstandardFD": True,
             "physicalAuthorityCreated": False,
         }
         print(MARKER + json.dumps(evidence, sort_keys=True))
         return 0
     except (OSError, ProbeError, subprocess.CalledProcessError) as error:
-        emit_error("fixture", f"stdio directory-FD APFS fixture failed: {type(error).__name__}: {error}")
+        emit_error("fixture", f"guard-FD APFS fixture failed: {type(error).__name__}: {error}")
         return 79
     finally:
         if mount_fd is not None:
@@ -339,7 +345,7 @@ def root_probe(package_root: Path, expected_uid: int, expected_gid: int, active_
 def parent_probe() -> int:
     helper = load_direct_oracle()
     if sys.platform != "darwin":
-        emit_error("environment", "stdio directory-FD APFS real-Xcode probe requires macOS")
+        emit_error("environment", "guard-FD APFS real-Xcode probe requires macOS")
         return 80
     field_uid = os.getuid()
     field_gid = os.getgid()
@@ -362,7 +368,7 @@ def parent_probe() -> int:
         return 80
 
     active_args = [item for group in active_groups for item in ("--field-active-group", str(group))]
-    with tempfile.TemporaryDirectory(prefix="nembra-real-xcode-stdio-dirfd-source-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="nembra-real-xcode-guard-fd-source-") as temporary:
         package_root = Path(temporary)
         helper.make_package(package_root)
         completed = subprocess.run(
@@ -388,7 +394,7 @@ def parent_probe() -> int:
             return completed.returncode
         records = [line[len(MARKER):] for line in completed.stdout.splitlines() if line.startswith(MARKER)]
         if len(records) != 1:
-            emit_error("evidence", "missing or ambiguous stdio directory-FD APFS evidence")
+            emit_error("evidence", "missing or ambiguous guard-FD APFS evidence")
             return 81
         evidence = json.loads(records[0])
         required = (
@@ -397,18 +403,18 @@ def parent_probe() -> int:
             and evidence.get("fieldActiveSupplementaryGroups") == active_groups
             and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
             and evidence.get("sameUIDNoFDPreBuildReturnCode") != 0
-            and evidence.get("guardShimReturnCode") == 0
+            and evidence.get("guardAndXcodeReturnCode") == 0
             and evidence.get("sameUIDNoFDPostBuildReturnCode") != 0
             and evidence.get("nonForcedDetachReturnCode") == 0
             and evidence.get("compilerProductSHA256") == evidence.get("readonlyRemountSHA256")
             and evidence.get("rootReadonlyWriteErrno") is not None
-            and evidence.get("fieldReadonlyStdioFDAttackReturnCode") != 0
-            and evidence.get("derivedDataUsedStandardInputDirectoryFD") is True
-            and evidence.get("guardShimUsedOrdinaryPopen") is True
+            and evidence.get("fieldReadonlyFDAttackReturnCode") != 0
+            and evidence.get("derivedDataUsedExplicitGuardPropagatedDirectoryFD") is True
+            and evidence.get("guardExplicitlyPropagatedNonstandardFD") is True
             and evidence.get("physicalAuthorityCreated") is False
         )
         if not required:
-            emit_error("evidence", f"stdio directory-FD APFS evidence failed semantic checks: {evidence}")
+            emit_error("evidence", f"guard-FD APFS evidence failed semantic checks: {evidence}")
             return 82
         return 0
 
@@ -429,19 +435,8 @@ def main() -> int:
         if args.field_active_group_count is None or args.field_active_group_count != len(args.field_active_group):
             emit_error("arguments", "root probe requires one counted active supplementary-group vector")
             return 83
-        return root_probe(
-            args.package_root,
-            args.field_uid,
-            args.field_primary_gid,
-            args.field_active_group,
-        )
-    if (
-        args.package_root is not None
-        or args.field_uid is not None
-        or args.field_primary_gid is not None
-        or args.field_active_group
-        or args.field_active_group_count is not None
-    ):
+        return root_probe(args.package_root, args.field_uid, args.field_primary_gid, args.field_active_group)
+    if args.package_root is not None or args.field_uid is not None or args.field_primary_gid is not None or args.field_active_group or args.field_active_group_count is not None:
         emit_error("arguments", "root-only fixture arguments are unavailable in parent mode")
         return 83
     return parent_probe()
