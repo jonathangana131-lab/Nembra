@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "090900-dashboard-3150-trusted-xcode-green",
+  "type": "CHECKPOINT",
+  "workerId": "sol-20260812-0059g7",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Late terminal reconciliation for released tests generation 6 / PR #3150 exact 7a41abd85899585a29d96d55e8a69f1bf4fa4d53: trusted Xcode 27 PR Exact-Head run 31579467554 is now terminal SUCCESS, in addition to dedicated retained-currentness run 31579467611 SUCCESS and directly inspected artifact 9134782946. This strengthens #3150 as exact QA evidence only; its pixel still exposed the right-rail AX blocker now owned by product #3163. Independent review remains separate. Simulator only; no physical ES80 authority.",
+  "createdAt": "2026-08-12T09:09:00Z"
+}
