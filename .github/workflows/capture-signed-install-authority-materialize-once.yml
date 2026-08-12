@@ -23,71 +23,34 @@ jobs:
       - name: Bind exact parent
         shell: bash
         env:
-          EXPECTED_PARENT: bfa7514d49e7ea2d046f177c0ac8931a55022d19
-          PRODUCT_PARENT: b9164701da15d7a773698599bf24ed3cb923f8ac
+          EXPECTED_PARENT: 6dbf1b1d1d7e6bf58f0da1976ac11deb54e73502
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
-          test "$(git diff --name-only "$PRODUCT_PARENT"...HEAD)" = "$MATERIALIZER"
+          test "$(git diff --name-only HEAD^..HEAD)" = "$MATERIALIZER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Apply narrow permanent-test transforms
+      - name: Add writable-path revocation witness
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_once(path: str, old: str, new: str) -> None:
-              file = Path(path)
-              text = file.read_text(encoding="utf-8")
+          path = Path("scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str) -> None:
+              global text
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f"{path}: expected one anchor {old!r}, found {count}")
-              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+                  raise SystemExit(f"expected one anchor {old!r}, found {count}")
+              text = text.replace(old, new, 1)
 
-          pre_stage = "scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py"
-          anchor = "    def test_placeholder_is_exactly_single_use(self) -> None:\n"
-          addition = '''    def test_build_environment_rejects_ambient_xcode_selector_authority(self) -> None:
-              helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_environment")
-              poison = {
-                  "DEVELOPER_DIR": "/tmp/poison-developer",
-                  "SDKROOT": "/tmp/poison-sdk",
-                  "TOOLCHAINS": "poison-toolchain",
-                  "__CF_USER_TEXT_ENCODING": "poison-encoding",
-                  "CC": "/tmp/poison-cc",
-                  "CXX": "/tmp/poison-cxx",
-                  "SWIFT_EXEC": "/tmp/poison-swift",
-                  "DYLD_INSERT_LIBRARIES": "/tmp/poison.dylib",
-                  "LANG": "poison_LANG",
-                  "LC_ALL": "poison_LC_ALL",
-              }
-              with tempfile.TemporaryDirectory(prefix="nembra-build-env-") as temporary:
-                  home = Path(temporary)
-                  with mock.patch.dict(helper.os.environ, poison, clear=True):
-                      environment = helper._build_environment("nembrabuildtest", home)
-                  self.assertEqual(
-                      environment,
-                      {
-                          "HOME": str(home),
-                          "USER": "nembrabuildtest",
-                          "LOGNAME": "nembrabuildtest",
-                          "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                          "TMPDIR": str(home / "tmp"),
-                          "LANG": "en_US.UTF-8",
-                          "LC_ALL": "en_US.UTF-8",
-                      },
-                  )
-              self.assertTrue(set(poison).isdisjoint(environment))
-
-          '''
-          replace_once(pre_stage, anchor, addition + anchor)
-
-          real_xcode = "scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py"
-          detach_anchor = "        detach = helper._detach_apfs(writable_device)\n"
+          detach = "        detach = helper._detach_apfs(writable_device)\n"
           attack = '''        former_build_writable_attack = subprocess.run(
-              ["/bin/sh", "-c", 'printf "BUILD_UID_AFTER_PATH_REVOKE\\n" >> "$1"', "sh", str(product)],
+              ["/bin/sh", "-c", 'printf X >> "$1"', "sh", str(product)],
               env=build_environment,
               stdin=subprocess.DEVNULL,
               stdout=subprocess.PIPE,
@@ -104,43 +67,36 @@ jobs:
               return 75
 
           '''
-          replace_once(real_xcode, detach_anchor, attack + detach_anchor)
+          replace_once(detach, attack + detach)
           replace_once(
-              real_xcode,
               '            "fieldAttackReturnCode": attack.returncode,\n',
               '            "fieldAttackReturnCode": attack.returncode,\n'
               '            "formerBuildWritablePathAttackReturnCode": former_build_writable_attack.returncode,\n',
           )
           replace_once(
-              real_xcode,
               '            and evidence.get("fieldAttackReturnCode") != 0\n',
               '            and evidence.get("fieldAttackReturnCode") != 0\n'
               '            and evidence.get("formerBuildWritablePathAttackReturnCode") != 0\n',
           )
+          replace_once('            "schemaVersion": 4,\n', '            "schemaVersion": 5,\n')
+          replace_once('            evidence.get("schemaVersion") == 4\n', '            evidence.get("schemaVersion") == 5\n')
+          path.write_text(text, encoding="utf-8")
           PY
 
-      - name: Compile pre-stage regression
-        shell: bash
-        run: python3 -m py_compile scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
-
-      - name: Compile real-Xcode regression
+      - name: Compile real-Xcode witness
         shell: bash
         run: python3 -m py_compile scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
 
-      - name: Run focused pre-stage regressions
-        shell: bash
-        run: python3 -B scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
-
-      - name: Assert semantic witness source
+      - name: Assert witness semantics
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq 'def test_build_environment_rejects_ambient_xcode_selector_authority' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
-          grep -Fq 'BUILD_UID_AFTER_PATH_REVOKE' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           grep -Fq 'formerBuildWritablePathAttackReturnCode' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          grep -Fq 'former build identity retained fresh writable pathname authority after root revocation' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          grep -Fq 'evidence.get("schemaVersion") == 5' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           git diff --check
 
-      - name: Self-delete and push permanent tests
+      - name: Self-delete and push witness
         shell: bash
         env:
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
@@ -148,12 +104,12 @@ jobs:
         run: |
           set -euo pipefail
           git rm "$MATERIALIZER"
-          git add scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          git add scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           git diff --cached --check
           actual="$(git diff --cached --name-only | LC_ALL=C sort)"
-          expected="$(printf '%s\n' "$MATERIALIZER" scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$MATERIALIZER" scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
           test "$actual" = "$expected"
           git config user.name 'nembra-swarm-materializer'
           git config user.email 'nembra-swarm@users.noreply.github.com'
-          git commit -m 'Capture: lock environment and pathname authority regressions'
+          git commit -m 'Capture: prove former-build pathname revocation before detach'
           git push origin "HEAD:$BRANCH"
