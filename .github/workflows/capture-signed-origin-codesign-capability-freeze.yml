@@ -65,9 +65,11 @@ jobs:
             scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py
           oracle=scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py
           grep -Fq '"/usr/bin/codesign"' "$oracle"
-          grep -Fq 'signer_groups = [capability_gid]' "$oracle"
+          grep -Fq 'signer_gid = capability_gid' "$oracle"
+          grep -Fq 'signer_groups: list[int] = []' "$oracle"
           grep -Fq 'structured_credentials(field_uid, field_gid, field_active_groups)' "$oracle"
-          grep -Fq 'structured_credentials(field_uid, field_gid, signer_groups)' "$oracle"
+          grep -Fq 'structured_credentials(field_uid, signer_gid, signer_groups)' "$oracle"
+          grep -Fq 'PATH_PROBE_MARKER' "$oracle"
           grep -Fq 'detach = helper.hdiutil_detach(device)' "$oracle"
           grep -Fq 'readonly=True' "$oracle"
           grep -Fq '"appleIdentityExercised": False' "$oracle"
