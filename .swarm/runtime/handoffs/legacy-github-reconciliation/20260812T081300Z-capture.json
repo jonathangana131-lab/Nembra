@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "kind": "handoff",
+  "laneId": "legacy-github-reconciliation",
+  "workerId": "sol-20260812-0054f7",
+  "branch": "swarm-state",
+  "headSHA": "d8e38d0a786d4fd97e7eb641d97c6cec76adee0c",
+  "pr": null,
+  "completed": [
+    "fresh-inspected live Capture P0 state, active claims and exact workflow evidence",
+    "reconciled capture-signed-install-custody lane from stale queued evidence to current exact production truth",
+    "separated accepted validation-only dedicated-build-UID/APFS evidence from unsigned production acceptance",
+    "classified current build-authority selected-Xcode witness independently from unrelated Main graft integration failures",
+    "preserved PHYSICAL NO-GO and avoided occupied production paths"
+  ],
+  "remaining": [
+    "compose accepted dedicated-build-UID/APFS freeze architecture from #3131 into selected signed-install production carrier #3056 and re-earn exact-head signed/install/adversarial gates",
+    "resolve trusted selected-Xcode anchor policy for #3135 on a runner where the selected Xcode install tree satisfies immutable/trusted ownership requirements, or deliberately redesign the trusted boundary without weakening exploit controls",
+    "resolve the three Main selective-graft assertions against NembraResearchCaptureView.swift before treating the build-authority carrier as main-composable",
+    "close current Final-GO isolated runtime-bundle field-build exit 65 and re-run exact-head validation",
+    "converge signed install, build authority, runtime/accessibility and Final-GO on one exact composed head before any device authorization"
+  ],
+  "testsRun": [
+    "#3056@b8653985ff35538491c6a1c6f9e3461b52a7e4e6: Field Build run 31548257797 SUCCESS",
+    "#3056@b8653985ff35538491c6a1c6f9e3461b52a7e4e6: Main Selective Graft run 31548257656 SUCCESS",
+    "#3056@b8653985ff35538491c6a1c6f9e3461b52a7e4e6: Signed App Install Custody run 31548257832 FAILURE in compiler-output composition fixtures under the old capability/group-isolated writer model",
+    "#3131@98fdc404048812f6d3af6791710c57ece21dafd3: real-macOS dedicated-build-UID/APFS architecture validation run 31547634222 SUCCESS",
+    "#3135@449a4da1932cf3f368059fb84dd3c3c2a5b90020: Build Authority 31576838725 SUCCESS; Field 31576838760 SUCCESS; Signed App Install Custody 31576838717 SUCCESS; Combined Frozen Build Identity 31576838645 SUCCESS",
+    "#3135@449a4da1932cf3f368059fb84dd3c3c2a5b90020: Selected Xcode ACL run 31576838635 FAILURE only on real-Xcode trusted-owner witness; corrected regression/exploit controls pass",
+    "#3135@449a4da1932cf3f368059fb84dd3c3c2a5b90020: Main Selective Graft run 31576838780 FAILURE with 100 passed / 3 failed assertions against NembraResearchCaptureView.swift",
+    "#3124@c39c9fb089f6245db7d56c416c65f56872ff428b: Final-GO real-Darwin validation run 31546349431 reached actual validator after 14 test passes, then capture_field_build.sh exited 65"
+  ],
+  "knownFailures": [
+    "#3056 production signed-install compiler-output composition cannot reliably create/read DerivedData/SourcePackages under the superseded capability/group isolation model",
+    "#3135 real-Xcode selected-Xcode ACL witness rejects the hosted Xcode 27 tree because /Applications/Xcode_27.0.0_beta_1.app and nested developer ancestors are runner-owned rather than satisfying the configured trusted-owner anchor",
+    "#3135 Main graft full acceptance finds three runtime-source expectations not met by NembraResearchCaptureView.swift: repository-derived identity, structural identity registration, and retained failure state instead of replacing root-load failure with .empty",
+    "#3124 Final-GO isolated runtime bundle remains red at real field-build execution with exit 65"
+  ],
+  "evidence": [
+    "Accepted architecture validation #3131 is explicitly validation-only/unsigned; it must not be promoted to signed install or physical authority.",
+    "#3135 changed paths are build-authority workflows/scripts/tests; the three Main graft failures all assert against NembraResearchCaptureView.swift, so they are integration/base-composition debt rather than a direct failure inside the selected-Xcode ACL implementation. They still block main composition and must not be ignored.",
+    "The #3135 selected-Xcode real-macOS failure is policy/evidence about hosted runner ownership, not an excuse to weaken the path/ACL exploit controls; those adversarial controls pass on the exact head.",
+    "Current default main remains d8e38d0a786d4fd97e7eb641d97c6cec76adee0c during this reconciliation."
+  ],
+  "importantFindings": [
+    "Capture remains P0 and PHYSICAL NO-GO.",
+    "The signed-install bottleneck has advanced from speculative design to a validated dedicated-build-UID/APFS architecture witness; production consumption is now the required rung.",
+    "Build authority has multiple independent evidence dimensions: most exact-head gates are green, but the real selected-Xcode ownership witness is correctly red on the hosted runner and Main graft is separately red in app integration assertions.",
+    "Final-GO validation is past harness syntax failure and now reaches the real field build; its current blocker is an actual isolated runtime-build exit 65, not the former collection error."
+  ],
+  "recommendedNextAction": "Keep production ownership with the active Capture workers. Highest-value path is: (1) finish deliberate #3131 dedicated-UID/APFS composition into #3056 and exact-head signed install gates; (2) in parallel, solve #3135 trusted selected-Xcode anchor without weakening corrected exploit controls and repair/absorb the three Main graft runtime-source blockers; (3) close Final-GO exit 65; (4) compose one final exact head and only then evaluate physical GO.",
+  "takeoverNotes": "Do not modify occupied signed-install/build-authority/Final-GO production files from this reconciliation lane. Refresh live heads before acting because these PRs are active. Validation success, package gates, simulator results and isolated green jobs do not authorize ES80 interaction.",
+  "physicalState": "PHYSICAL_NO_GO",
+  "createdAt": "2026-08-12T08:13:00Z"
+}
