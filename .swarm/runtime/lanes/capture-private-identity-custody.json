@@ -6,32 +6,40 @@
   "title": "Capture private Tuya identity publication custody",
   "objective": "Close credential-bearing private identity publication, dependency-resolution custody, crash recovery, and exact accepted input authority before selective composition into the current field-build lineage.",
   "priority": 1,
-  "state": "NEEDS_CHANGES",
+  "state": "VERIFYING",
   "dependencies": [],
   "blockers": [
     {
-      "id": "current-private-convergence-main-package-contract-red",
-      "state": "ACTIVE",
+      "id": "current-private-convergence-software-accepted",
+      "state": "RESOLVED",
       "scope": "lane",
-      "reason": "Current convergence #3086 exact b62c59bab76630aebdf3be17e66f822c4305f2ca has terminal SUCCESS for Private Current Convergence 31541906774, Dependency Helper Execution Closure 31541906751, Private Identity Publication Races 31541906753, and Field Build Provenance 31541906737. Main Selective Graft 31541906770 and Xcode 31541906746 are terminal FAILURE. The Main diagnostic completed the full Capture package execution and standalone Capture build, then retained exactly one stale source-contract issue: TuyaFieldPythonIsolationSourceTests still required pathname execution of PROVENANCE_HELPER even though production intentionally executes already-captured PROVENANCE_SOURCE with isolated Python -I -c. Do not weaken captured provenance custody to satisfy the stale assertion.",
+      "reason": "Selected private convergence #3086 exact e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb has now earned terminal SUCCESS on every declared exact software gate without a head move: Capture Private Current Convergence 31546075745, Private Identity Publication Races Red Team 31546075814, Private Dependency Helper Execution Closure 31546075874, Main Selective Graft 31546075878, Field Build Provenance 31546075937, and Xcode 27 PR Exact-Head QA 31546075785. Independent exact-head reviews found no source-level authority broadening and required the captured-provenance / isolated python -I -c / explicit physical source-root contracts to remain fail-closed. The PR is merged into its selected private parent lineage. This is accepted private software ingredient evidence only, not final field/product/physical authority.",
       "pr": 3086,
-      "headSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca"
+      "headSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb"
     },
     {
-      "id": "python-isolation-captured-provenance-repair-pending",
-      "state": "ACTIVE",
+      "id": "python-isolation-captured-provenance-repair-absorbed",
+      "state": "RESOLVED",
       "scope": "tests",
-      "reason": "Selected one-file repair #3102 exact 3e48f6122dc823de5de15b64dc1530b745250854 updates only TuyaFieldPythonIsolationSourceTests to require captured-provenance execution and reject mutable-helper pathname execution. At the last exact refresh Main Selective Graft run 31545631866 was IN_PROGRESS, Field Build Provenance 31545631807 was QUEUED, and Xcode 31545631909 was SKIPPED. Queued/running/skipped are not acceptance. If this child earns exact green and independent acceptance, absorb only the one-file correction into #3086/current private convergence and reset every applicable exact-head gate on the moved production carrier.",
-      "pr": 3102,
-      "headSHA": "3e48f6122dc823de5de15b64dc1530b745250854"
+      "reason": "The selected Python-isolation/captured-provenance source-contract correction formerly carried by #3102 was absorbed into #3086. Current exact convergence mechanically requires isolated execution of already-captured accepted provenance bytes and rejects direct mutable-helper pathname execution and non-isolated captured-source execution. No separate #3102 promotion is needed after e454b1e9 exact acceptance.",
+      "pr": 3086,
+      "headSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb"
     },
     {
-      "id": "private-to-current-build-lineage-composition-pending",
+      "id": "private-to-current-build-lineage-source-root-consumer-pending",
+      "state": "ACTIVE",
+      "scope": "integration",
+      "reason": "Accepted private bootstrap requires NEMBRA_ACCEPTED_SOURCE_ROOT, when supplied by an admitted parent, to be absolute and exactly equal physical pwd -P before verified-stdin execution proceeds. The current selected-Xcode launcher lineage still pipes verified Git bootstrap bytes through /bin/bash ... source /dev/stdin without passing that already-admitted physical checkout root. A naive graft would recreate the previously proven /dev/stdin/BASH_SOURCE root mismatch. Do not weaken private custody. Once selected build authority itself is accepted, the composed launcher must explicitly pass the admitted physical checkout root into the verified-stdin bootstrap process and re-earn private, Field, Main, Xcode and build-authority gates on the new exact SHA.",
+      "pr": 3086,
+      "headSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb"
+    },
+    {
+      "id": "private-final-flagship-composition-pending",
       "state": "ACTIVE",
       "scope": "flagship",
-      "reason": "Private identity remains a separately converging authority family. After the package/source-contract repair is accepted, its exact durable authority set still must be deliberately composed with the current selected build-authority lineage without replaying stale construction workflows or losing newer selected-Xcode custody. The resulting exact SHA must re-earn private, Field, Main Graft, Xcode and independent review before flagship physical composition.",
+      "reason": "Private identity software is accepted as an ingredient but is not yet app-visible physical authority. It must be deliberately composed with the accepted selected-Xcode/build, signed compiler-output/install, Final-GO, runtime accessibility and app-visible product lineages on one unchanged exact head. The resulting composition resets all applicable exact-head gates and remains PHYSICAL NO-GO until those gates and authenticated physical evidence close.",
       "pr": 3086,
-      "headSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca"
+      "headSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb"
     }
   ],
   "mode": "exclusive",
@@ -56,20 +64,17 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca",
+  "sourceSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb",
   "legacy": {
-    "reconciledAt": "2026-08-11T23:17:38Z",
+    "reconciledAt": "2026-08-12T08:18:00Z",
     "selectedConvergencePR": 3086,
-    "selectedConvergenceHeadSHA": "b62c59bab76630aebdf3be17e66f822c4305f2ca",
-    "currentRepairPR": 3102,
-    "currentRepairHeadSHA": "3e48f6122dc823de5de15b64dc1530b745250854",
-    "selectedConvergenceSuccessRuns": [31541906774,31541906751,31541906753,31541906737],
-    "selectedConvergenceFailedRuns": [31541906770,31541906746],
-    "currentRepairMainRun": 31545631866,
-    "currentRepairFieldRun": 31545631807,
-    "currentRepairSkippedXcodeRun": 31545631909,
-    "supersededDuplicateRepairPR": 3101,
-    "knownExactHeadFinding": "Reconciled generation 10 on 2026-08-11. The old #2993/#2977 snapshot is obsolete. Current private convergence is #3086 exact b62c59b with four authority gates green; its broader Main/Xcode red is now precisely classified to one stale Python-isolation source contract after the actual package/app build succeeded. #3102 exact 3e48f61 is the selected one-file correction and is awaiting exact Main/Field evidence. Private authority must still be deliberately composed into the current build lineage and reaccepted. PHYSICAL NO-GO."
+    "selectedConvergenceHeadSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb",
+    "selectedConvergenceSuccessRuns": [31546075745,31546075814,31546075874,31546075878,31546075937,31546075785],
+    "selectedConvergenceFailedRuns": [],
+    "pythonIsolationRepairAbsorbed": true,
+    "privateSoftwareIngredientAccepted": true,
+    "privateToBuildSourceRootInterfaceConsumed": false,
+    "knownExactHeadFinding": "Generation-5 reconciliation on 2026-08-12: #3086 exact e454b1e9 has now completed every declared exact private/Main/Field/Xcode gate SUCCESS and has independent source acceptance. The private software ingredient is accepted. Remaining work is cross-lineage consumption: selected-Xcode verified-stdin execution still must pass the already-admitted physical checkout root as NEMBRA_ACCEPTED_SOURCE_ROOT on the future composed exact head. No physical authority is created. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","private-identity","publication-custody","dependency-resolution","lifecycle","legacy-import"]
 }
