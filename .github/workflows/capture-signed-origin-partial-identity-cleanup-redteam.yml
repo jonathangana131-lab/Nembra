@@ -1,0 +1,170 @@
+name: Capture Signed Origin Partial Identity Cleanup Red-Team
+
+on:
+  push:
+    branches:
+      - validation/v14-dedicated-uid-partial-create-cleanup-sol-20260812
+    paths:
+      - .github/workflows/capture-signed-origin-partial-identity-cleanup-redteam.yml
+      - scripts/ci/tests/test_capture_signed_app_partial_identity_creation_cleanup.py
+  pull_request:
+    paths:
+      - .github/workflows/capture-signed-origin-partial-identity-cleanup-redteam.yml
+      - scripts/ci/tests/test_capture_signed_app_partial_identity_creation_cleanup.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-partial-identity-cleanup-redteam-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prove-parent-cleanup-gap:
+    name: Prove pinned parent partial-creation cleanup gap
+    runs-on: xcode-27
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact validation scope
+        shell: bash
+        env:
+          EXACT_PARENT: c4996ea91cc3482ca8a8d661fd1436a2eee745df
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual_paths="$RUNNER_TEMP/nembra-partial-cleanup-actual.txt"
+          expected_paths="$RUNNER_TEMP/nembra-partial-cleanup-expected.txt"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-signed-origin-partial-identity-cleanup-redteam.yml
+          scripts/ci/tests/test_capture_signed_app_partial_identity_creation_cleanup.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and source-audit red-team
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-partial-cleanup-pycache"
+          probe='scripts/ci/tests/test_capture_signed_app_partial_identity_creation_cleanup.py'
+          helper='scripts/ci/capture_signed_app_build_origin_custody.py'
+          /usr/bin/python3 -m py_compile "$helper" "$probe"
+          grep -Fq 'helper._create_local_build_identity(name, uid, gid, home)' "$probe"
+          grep -Fq 'productionCleanupGroupDeleteSuppressed' "$probe"
+          grep -Fq 'survivingGroupRecordObserved' "$probe"
+          grep -Fq 'parentExceptionCleanupFailClosed' "$probe"
+          grep -Fq 'fixtureCleanupVerified' "$probe"
+          grep -Fq 'physicalAuthorityCreated' "$probe"
+          grep -Fq '_remove_local_build_identity(name, uid)' "$helper"
+          if grep -Fq '_remove_local_build_identity(name, uid, require_absent=True)' "$helper"; then
+            echo 'Pinned parent already uses strict partial-creation cleanup; this expected-red witness is stale.' >&2
+            exit 22
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run real-macOS partial-creation cleanup red-team
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-partial-identity-cleanup-redteam.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_partial_identity_creation_cleanup.py 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'probe_status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Seal retained red classification
+        if: always()
+        shell: bash
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/nembra-partial-identity-cleanup-redteam.log"
+          out="$RUNNER_TEMP/nembra-partial-identity-cleanup-redteam.json"
+          /usr/bin/python3 - "$log" "$out" "${PROBE_STATUS:-missing}" "$EXACT_HEAD" <<'PY'
+          import hashlib, json, pathlib, sys
+          log = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          status = sys.argv[3]
+          head = sys.argv[4].lower()
+          text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+          payload = {
+              "schemaVersion": 1,
+              "exactValidationHead": head,
+              "exactProductionParent": "c4996ea91cc3482ca8a8d661fd1436a2eee745df",
+              "probeStatus": status,
+              "successEvidence": [
+                  line for line in text.splitlines()
+                  if line.startswith("NEMBRA_PARTIAL_IDENTITY_CLEANUP_REDTEAM_JSON=")
+              ],
+              "errorEvidence": [
+                  line for line in text.splitlines()
+                  if line.startswith("NEMBRA_PARTIAL_IDENTITY_CLEANUP_REDTEAM_ERROR=")
+              ],
+              "classification": "validation-success-means-pinned-production-parent-red",
+              "probeLogSHA256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+              "productionAcceptanceClaimed": False,
+              "physicalAuthorityCreated": False,
+          }
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: Retain exact red-team evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-partial-identity-cleanup-redteam-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-partial-identity-cleanup-redteam.log
+            ${{ runner.temp }}/nembra-partial-identity-cleanup-redteam.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require exact expected-red witness
+        shell: bash
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+        run: |
+          set -euo pipefail
+          test "${PROBE_STATUS:-missing}" = 0
+          log="$RUNNER_TEMP/nembra-partial-identity-cleanup-redteam.log"
+          grep -q '^NEMBRA_PARTIAL_IDENTITY_CLEANUP_REDTEAM_JSON=' "$log"
+          grep -q '"groupCreateReached": true' "$log"
+          grep -q '"midCreationFailureInjected": true' "$log"
+          grep -q '"productionCleanupGroupDeleteSuppressed": true' "$log"
+          grep -q '"productionCreateRaised": true' "$log"
+          grep -q '"survivingGroupRecordObserved": true' "$log"
+          grep -q '"parentExceptionCleanupFailClosed": false' "$log"
+          grep -q '"fixtureCleanupVerified": true' "$log"
+          grep -q '"productionBytesChanged": false' "$log"
+          grep -q '"productionAcceptanceClaimed": false' "$log"
+          grep -q '"physicalAuthorityCreated": false' "$log"
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          EXACT_PARENT: c4996ea91cc3482ca8a8d661fd1436a2eee745df
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
