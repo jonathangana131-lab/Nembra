@@ -109,24 +109,10 @@ jobs:
           printf '::notice title=COW clone complete::elapsed=%s seconds\n' "$((finished - started))"
           test -d "$frozen_app/Contents/Developer"
 
-          NEMBRA_FROZEN_APP="$frozen_app" /usr/bin/python3 -I - <<'PY_METADATA'
-          import os
-          from pathlib import Path
-          import stat
-
-          root = Path(os.environ["NEMBRA_FROZEN_APP"])
-          rows = []
-          for subject in (root, root / "Contents", root / "Contents" / "Developer"):
-              metadata = os.lstat(subject)
-              rows.append(
-                  f"{subject.name or '/'}={metadata.st_uid}:{metadata.st_gid}:"
-                  f"{stat.S_IMODE(metadata.st_mode):04o}"
-              )
-          print("::notice title=Clone root metadata::" + " ".join(rows))
-          PY_METADATA
-
-          # Explicit -h ensures symlink nodes themselves become root-owned rather
-          # than granting the copied source owner authority through a link inode.
+          # The pre-hardening metadata sample is intentionally omitted: two exact
+          # runs proved that diagnostic itself was brittle and it carried no
+          # authority. The authoritative recursive oracle below validates the
+          # entire hardened clone before any Xcode code executes.
           run_root_hardening "COW chown" /usr/sbin/chown -Rh root:wheel "$frozen_app"
           run_root_hardening "COW ACL strip" /bin/chmod -RN "$frozen_app"
           run_root_hardening "COW mode strip" /bin/chmod -R go-w "$frozen_app"
