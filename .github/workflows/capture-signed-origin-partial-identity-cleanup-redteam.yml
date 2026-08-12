@@ -69,11 +69,26 @@ jobs:
           grep -Fq 'parentExceptionCleanupFailClosed' "$probe"
           grep -Fq 'fixtureCleanupVerified' "$probe"
           grep -Fq 'physicalAuthorityCreated' "$probe"
-          grep -Fq '_remove_local_build_identity(name, uid)' "$helper"
-          if grep -Fq '_remove_local_build_identity(name, uid, require_absent=True)' "$helper"; then
-            echo 'Pinned parent already uses strict partial-creation cleanup; this expected-red witness is stale.' >&2
-            exit 22
-          fi
+          /usr/bin/python3 - "$helper" <<'PY'
+          import ast
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          tree = ast.parse(source, filename=str(path))
+          target = next(
+              (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_create_local_build_identity"),
+              None,
+          )
+          if target is None:
+              raise SystemExit("pinned parent no longer contains _create_local_build_identity")
+          segment = ast.get_source_segment(source, target) or ""
+          if "_remove_local_build_identity(name, uid)" not in segment:
+              raise SystemExit("pinned creation exception no longer contains the non-strict cleanup call")
+          if "require_absent=True" in segment:
+              raise SystemExit("pinned creation exception is already fail-closed; expected-red witness is stale")
+          PY
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Run real-macOS partial-creation cleanup red-team
