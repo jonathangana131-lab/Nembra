@@ -9,7 +9,7 @@
   "generation": 17,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T11:00:51Z",
-  "lastHeartbeatAt": "2026-08-12T11:00:51Z",
+  "lastHeartbeatAt": "2026-08-12T11:07:50Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3142,
@@ -18,6 +18,6 @@
   "takeoverFromWorkerId": "gpt56-sol-20260812-0352-review",
   "takeoverFromLeaseId": "capture-signed-install-review-gpt56-20260812-105200",
   "takeoverReason": "Generation-16 explicitly released before a non-code implementation-coordination checkpoint. Generation-17 reviews subsequent concurrent code only; it will not self-accept any source authored by this worker.",
-  "intent": "Track the selected #3142 carrier after c4996ea9, verify the two remaining authority gates if/when they land, classify exact-head CI without ancestor promotion, and preserve external Apple/private-Tuya feasibility as an independent blocker.",
-  "checkpoint": "Exact c4996ea9 composes owners-on, truthful fresh-account effective-group attestation, strict DS principal absence, real-Xcode group/retirement witness coverage, and provenance source audit. Still blocking on current bytes: no numeric process-table proof of zero surviving build-UID processes, and no former-build fresh-path writable mutation negative after root chown/chmod before writable detach. Exact implementation contract is PR comment 5265804939. PHYSICAL NO-GO."
+  "intent": "Track selected #3142 after c4996ea9, verify incoming authority repairs, classify exact-head CI/validation without ancestor promotion, and keep private Apple/Tuya feasibility independent.",
+  "checkpoint": "Exact #3142 remains c4996ea91cc3482ca8a8d661fd1436a2eee745df. Owners-on and truthful fresh-account group attestation are composed, but current production still has four concrete authority gaps: (1) _id_in_use/_choose_ephemeral_id consult only pwd/grp and can reuse a numeric UID still owned by a stale process; (2) successful retirement does not prove no surviving non-zombie process under build_uid; (3) _build_environment admits ambient DEVELOPER_DIR/SDKROOT/TOOLCHAINS and the inherited private-input guard launches xcodebuild with no explicit env, regressing accepted #2949/#2968 closed-child-environment authority; (4) permanent real-Xcode acceptance still lacks a former-build fresh-path mutation negative after writable root chown/chmod before normal detach. #3169 exact 05ada65e run 31589477357 is RED due a validation-order defect: retained artifact 9138614460 proves direct DS records absent + liveUIDProcesses=[] + one Z< direct-child zombie, but cached pwd/grp still resolve before the fixture reaches its intended reap; review 4915726626 correctly requires split destructive retirement -> reap -> final cache/no-process assertion. #3169 also independently flags process-aware UID allocation. Real private Tuya + Apple Development/keychain/provisioning remains external/unproven. PHYSICAL NO-GO."
 }
