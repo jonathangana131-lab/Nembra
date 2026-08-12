@@ -11,106 +11,26 @@ permissions:
   contents: write
 
 jobs:
-  materialize:
+  diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
-
+          persist-credentials: false
       - name: Bind exact parent
         shell: bash
         env:
-          EXPECTED_PARENT: 384afa11dcc9939c6544c4dfdaa04c209515a868
+          EXPECTED_PARENT: 2df8268de57319bfcf860d8ac20cb47536974090
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
           test "$(git diff --name-only HEAD^..HEAD)" = "$MATERIALIZER"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Add writable-path revocation witness
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py")
-          text = path.read_text(encoding="utf-8")
-
-          def replace_once(old: str, new: str) -> None:
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"expected one anchor {old!r}, found {count}")
-              text = text.replace(old, new, 1)
-
-          detach = "        detach = helper._detach_apfs(writable_device)\n"
-          attack = '''        former_build_writable_attack = subprocess.run(
-              ["/bin/sh", "-c", 'printf X >> "$1"', "sh", str(product)],
-              env=build_environment,
-              stdin=subprocess.DEVNULL,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE,
-              text=True,
-              check=False,
-              **structured_credentials(build_uid, build_gid, []),
-          )
-          if former_build_writable_attack.returncode == 0 or sha256(product) != before:
-              emit_error(
-                  "path-revocation",
-                  "former build identity retained fresh writable pathname authority after root revocation",
-              )
-              return 75
-
-          '''
-          attack = "\n".join(line[2:] if line.startswith("          ") else line for line in attack.split("\n"))
-          replace_once(detach, attack + detach)
-          replace_once(
-              '            "fieldAttackReturnCode": attack.returncode,\n',
-              '            "fieldAttackReturnCode": attack.returncode,\n'
-              '            "formerBuildWritablePathAttackReturnCode": former_build_writable_attack.returncode,\n',
-          )
-          replace_once(
-              '            and evidence.get("fieldAttackReturnCode") != 0\n',
-              '            and evidence.get("fieldAttackReturnCode") != 0\n'
-              '            and evidence.get("formerBuildWritablePathAttackReturnCode") != 0\n',
-          )
-          replace_once('            "schemaVersion": 4,\n', '            "schemaVersion": 5,\n')
-          replace_once('            evidence.get("schemaVersion") == 4\n', '            evidence.get("schemaVersion") == 5\n')
-          path.write_text(text, encoding="utf-8")
-          PY
-
-      - name: Compile real-Xcode witness
+      - name: Compile untouched real-Xcode witness
         shell: bash
         run: python3 -m py_compile scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
-
-      - name: Assert witness semantics
+      - name: Compile untouched pre-stage witness
         shell: bash
-        run: |
-          set -euo pipefail
-          grep -Fq 'formerBuildWritablePathAttackReturnCode' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
-          grep -Fq 'former build identity retained fresh writable pathname authority after root revocation' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
-          grep -Fq 'evidence.get("schemaVersion") == 5' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
-          git diff --check
-
-      - name: Self-delete and push witness
-        shell: bash
-        env:
-          MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
-          BRANCH: repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812
-        run: |
-          set -euo pipefail
-          git rm "$MATERIALIZER"
-          git add scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
-          git diff --cached --check
-          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
-          expected="$(printf '%s\n' "$MATERIALIZER" scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
-          test "$actual" = "$expected"
-          git config user.name 'nembra-swarm-materializer'
-          git config user.email 'nembra-swarm@users.noreply.github.com'
-          git commit -m 'Capture: prove former-build pathname revocation before detach'
-          git push origin "HEAD:$BRANCH"
+        run: python3 -m py_compile scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
