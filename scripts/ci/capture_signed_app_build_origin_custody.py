@@ -29,6 +29,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Iterable, Sequence
 
 WORKSPACE_PREFIX = "nembra-authenticated-capture-origin."
@@ -350,13 +351,57 @@ def _id_in_use(candidate: int) -> bool:
         return False
 
 
+def _process_state_for_uid(uid: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    if uid <= 0:
+        raise BuildOriginCustodyError("cannot inspect process authority for root or invalid UID")
+    completed = subprocess.run(
+        ["/bin/ps", "-axo", "pid=,uid=,state="],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or "").strip()
+        raise BuildOriginCustodyError(
+            "could not inspect numeric build-principal process authority"
+            + (f": {detail[-1000:]}" if detail else "")
+        )
+    live: list[int] = []
+    zombies: list[int] = []
+    for line in completed.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        try:
+            pid = int(parts[0])
+            owner = int(parts[1])
+        except ValueError:
+            continue
+        if owner != uid:
+            continue
+        if parts[2].upper().startswith("Z"):
+            zombies.append(pid)
+        else:
+            live.append(pid)
+    return tuple(sorted(live)), tuple(sorted(zombies))
+
+
+def _numeric_principal_in_use(candidate: int) -> bool:
+    if candidate <= 0 or _id_in_use(candidate):
+        return True
+    live, zombies = _process_state_for_uid(candidate)
+    return bool(live or zombies)
+
+
 def _choose_ephemeral_id() -> int:
     start = 52000 + (os.getpid() % 7000)
     for candidate in range(start, 62000):
-        if candidate > 0 and not _id_in_use(candidate):
+        if not _numeric_principal_in_use(candidate):
             return candidate
     for candidate in range(52000, start):
-        if not _id_in_use(candidate):
+        if not _numeric_principal_in_use(candidate):
             return candidate
     raise BuildOriginCustodyError("could not allocate one isolated ephemeral build UID/GID")
 
@@ -372,9 +417,8 @@ def _run_root_checked(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _assert_local_build_identity_retired(name: str, uid: int) -> None:
-    if uid <= 0:
-        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+def _identity_lookup_survivors(name: str, uid: int) -> tuple[str, ...]:
+    survivors: list[str] = []
     checks = (
         (pwd.getpwnam, name, "build user name"),
         (pwd.getpwuid, uid, "build user UID"),
@@ -386,20 +430,54 @@ def _assert_local_build_identity_retired(name: str, uid: int) -> None:
             lookup(key)
         except KeyError:
             continue
-        raise BuildOriginCustodyError(f"ephemeral {label} survived retirement")
+        survivors.append(label)
+    return tuple(survivors)
+
+
+def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:
+    if uid <= 0:
+        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+    deadline = time.monotonic() + timeout
+    latest_live: tuple[int, ...] = ()
+    latest_zombies: tuple[int, ...] = ()
+    latest_lookups: tuple[str, ...] = ()
+    while True:
+        latest_live, latest_zombies = _process_state_for_uid(uid)
+        latest_lookups = _identity_lookup_survivors(name, uid)
+        if not latest_live and not latest_lookups:
+            return
+        if time.monotonic() >= deadline:
+            break
+        subprocess.run(
+            ["/usr/bin/dscacheutil", "-flushcache"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        time.sleep(0.05)
+    raise BuildOriginCustodyError(
+        "ephemeral build principal survived retirement: "
+        f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)} "
+        f"identity_lookups={list(latest_lookups)}"
+    )
 
 
 def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:
     if sys.platform != "darwin":
         return
     if uid is not None and uid > 0:
-        subprocess.run(
+        killed = subprocess.run(
             ["/usr/bin/pkill", "-9", "-u", str(uid)],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
         )
+        if require_absent and killed.returncode not in (0, 1):
+            raise BuildOriginCustodyError(
+                f"could not retire live build-principal processes: pkill exit {killed.returncode}"
+            )
     subprocess.run(
         ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],
         stdin=subprocess.DEVNULL,
