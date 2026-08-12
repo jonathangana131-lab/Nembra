@@ -7,9 +7,10 @@
   "workerId": "sol-20260812-0054j7",
   "leaseId": "capture-flagship-integration-0054j7-20260812-0810",
   "generation": 8,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T08:10:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:10:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:15:00Z",
+  "releasedAt": "2026-08-12T08:15:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
   "takeoverFromWorkerId": "sol-20260811-1607r4",
   "takeoverFromLeaseId": "capture-flagship-integration-1607r4-20260811-2340",
-  "takeoverReason": "Generation-7 lease expired many hours ago without heartbeat. Fresh GO reconciliation already moved Final-GO and signed-install state materially; generation-8 performs read-only exact closure-graph reconciliation while the runtime review slot remains independently owned by sol-20260812-0055r9.",
-  "intent": "Refresh exact app-visible/visual, runtime accessibility, Final-GO, build authority, private identity, and signed-install heads/evidence; do not modify product bytes or duplicate active runtime/build reviews; preserve PHYSICAL NO-GO until one exact composed candidate earns all gates."
+  "takeoverReason": "Generation-7 lease expired many hours ago without heartbeat. Fresh GO reconciliation moved Final-GO, signed-install, private and runtime states materially; generation-8 reconciled the exact closure graph without duplicating active runtime/build reviews.",
+  "outcome": "EXACT_FLAGSHIP_GRAPH_RECONCILED",
+  "checkpoint": "Updated capture-flagship-composition at swarm-state commit 2d42f230e31cc77de9fdc060735bde54b2fda8df. #2979@6bb2e3cb visual/evidence instrument is fully exact-head green + human accepted (artifact 9122036074). #3086@e454b1e9 private convergence is now all declared software gates green, but NEMBRA_ACCEPTED_SOURCE_ROOT is still unconsumed by selected-Xcode verified-stdin launcher. #3073@dd204e1e runtime VoiceOver 31542656345 is terminal RED and retained-evidence classification is independently owned. #3082/#3120 Final-GO Darwin is terminal RED after kqueue/tree races passed. #3072/#3093 build authority is RED and actively reviewed. #3056@b8653985 signed-install is RED on old supplementary-group Xcode architecture; dedicated-build-UID/APFS production composition remains required. No final composed exact head. PHYSICAL NO-GO."
 }
