@@ -9,15 +9,15 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:52:30Z",
-  "lastHeartbeatAt": "2026-08-12T09:03:00Z",
+  "lastHeartbeatAt": "2026-08-12T09:05:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-control-message-sol-0059g7",
-  "pr": null,
+  "pr": 3163,
   "sourceSHA": "ae527b7c6b3057c1f8ff71520840c26ac9eb5b6b",
   "currentHeadSHA": "7ff02ac1053d5312c9fc18f3c331bab88af5d0bd",
   "takeoverFromWorkerId": "sol-20260812-0059g7",
   "takeoverFromLeaseId": "dashboard-primary-0059g7-20260812-0803",
   "takeoverReason": "Generation 5 was explicitly RELEASED after exact #3141 green while a missing retained-speed AX witness moved to the tests slot. Tests generation 6 has now produced terminal exact AX evidence on #3150 that closes LAST KNOWN but exposes a new right-rail visual defect in the same retained state. Recover primary on a clean product successor rather than mixing test-workflow bytes into production.",
   "intent": "Repair only the Accessibility XXXL right-rail stopped-control blocker presentation exposed by exact artifact 9134782946: preserve readable full-size Dynamic Type, full VoiceOver meaning, stopped-control truth, and all telemetry/currentness/physical-authority behavior. Prefer shorter sighted copy and reclaim decorative icon width rather than scaling text down.",
-  "checkpoint": "Clean product successor 7ff02ac is exactly one DashboardView.swift file ahead of #3141@ae527b7c, cumulative +4/-1 after formatting cleanup. The AX-only unavailable-control message now uses sighted Speed required, title-only Label styling, two full-size lines, and vertical fixed sizing; the existing complete VoiceOver label is unchanged. Standard context rail, stopped-control authority, mode/command behavior, telemetry, currentness and Energy Rail code are untouched. Next: open stacked product PR, inspect exact patch, run exact trusted Xcode plus a fresh AX retained-state descendant witness, then independent review. Simulator only; no physical ES80 authority."
+  "checkpoint": "PR #3163 opened on exact 7ff02ac, stacked directly on product #3141. GitHub cumulative patch is exactly one DashboardView.swift hunk: Live speed required for controls -> Speed required, add titleOnly, lineLimit(2), and vertical fixed sizing; full existing accessibility label is unchanged. Exact trusted Xcode run 31581115507 is queued and not acceptance. Next: launch a test-only exact AX retained descendant from this product head while Xcode runs, then direct pixel review and independent review. Simulator only; no physical ES80 authority."
 }
