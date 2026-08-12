@@ -13,10 +13,8 @@ jobs:
     name: Resolve trusted standalone PR head
     if: >-
       github.event.issue.pull_request &&
-      github.event.comment.body == '/capture-xcode27' &&
-      (github.event.comment.author_association == 'OWNER' ||
-       github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'COLLABORATOR')
+      github.event.comment.body == '/capture-standalone-xcode27' &&
+      github.actor == github.repository_owner
     runs-on: ubuntu-latest
     outputs:
       head_sha: ${{ steps.pr.outputs.head_sha }}
@@ -26,7 +24,7 @@ jobs:
     steps:
       - name: Resolve immutable current PR head
         id: pr
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const response = await github.rest.pulls.get({
@@ -55,13 +53,13 @@ jobs:
     if: needs.resolve.outputs.same_repo == 'true'
     concurrency:
       group: capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     runs-on: xcode-27
     timeout-minutes: 40
 
     steps:
       - name: Revalidate live PR before executing candidate bytes
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           EXPECTED_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
@@ -87,7 +85,7 @@ jobs:
             }
 
       - name: Checkout immutable PR head
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ needs.resolve.outputs.head_sha }}
           persist-credentials: false
@@ -188,11 +186,11 @@ jobs:
 
       - name: Upload trusted standalone evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: Artifacts/CaptureV16TrustedStandalone
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
   accept-current-head:
@@ -203,7 +201,7 @@ jobs:
 
     steps:
       - name: Revalidate exact PR head after standalone QA
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           EXPECTED_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
