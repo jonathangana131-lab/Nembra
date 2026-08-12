@@ -1,0 +1,114 @@
+name: Capture Signed Origin Real Product Dedicated UID Freeze
+
+on:
+  push:
+    branches:
+      - validation/v14-capture-dedicated-uid-product-freeze-sol-20260812
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xcode27-real-product-freeze:
+    name: Build real Capture through dedicated UID APFS freeze
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      PARENT_SHA: b8653985ff35538491c6a1c6f9e3461b52a7e4e6
+      PROBE: scripts/ci/tests/test_capture_signed_app_real_product_dedicated_uid_freeze.py
+      WORKFLOW: .github/workflows/capture-signed-origin-real-product-dedicated-uid-freeze.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Bind exact head and narrow validation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$GITHUB_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          git fetch --no-tags --depth=1 origin "$PARENT_SHA"
+          test "$(git merge-base HEAD "$PARENT_SHA")" = "$PARENT_SHA"
+          mapfile -t changed < <(git diff --name-only "$PARENT_SHA"...HEAD | LC_ALL=C sort)
+          expected_paths=("$WORKFLOW" "$PROBE")
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected_paths[@]}" | LC_ALL=C sort)
+          test "${#changed[@]}" -eq "${#expected_sorted[@]}"
+          for index in "${!expected_sorted[@]}"; do
+            test "${changed[$index]}" = "${expected_sorted[$index]}"
+          done
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact validation head: %s\n' "$actual"
+          /usr/bin/xcodebuild -version
+
+      - name: Compile permanent real-product oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-real-product-dedicated-uid-pycache"
+          /usr/bin/python3 -m py_compile "$PROBE"
+          /usr/bin/grep -Fq 'CODE_SIGNING_ALLOWED=NO' "$PROBE"
+          /usr/bin/grep -Fq 'No compiler-output fingerprint is authoritative before this kernel quiescence boundary.' "$PROBE"
+          /usr/bin/grep -Fq 'nonForcedDetachReturnCode' "$PROBE"
+          /usr/bin/grep -Fq 'signedIdentityAuthorityCreated' "$PROBE"
+          if /usr/bin/grep -Eq 'device install app|device process launch|CoreBluetooth|ThingSmart|Tuya.*(query|write|control)' "$PROBE"; then
+            echo 'ERROR: validation probe contains device/Bluetooth/Tuya action surface' >&2
+            exit 22
+          fi
+
+      - name: Run real public Capture product under dedicated UID freeze
+        shell: bash
+        run: |
+          set -uo pipefail
+          output="$RUNNER_TEMP/nembra-real-product-dedicated-uid.txt"
+          set +e
+          /usr/bin/python3 -B -I "$PROBE" >"$output" 2>&1
+          rc=$?
+          set -e
+          cat "$output"
+          if [[ "$rc" != 0 ]]; then
+            diagnostic="$(tail -n 160 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=Real Capture dedicated-UID/APFS feasibility failed::%s\n' "$diagnostic"
+            exit "$rc"
+          fi
+          /usr/bin/grep -q '^NEMBRA_REAL_PRODUCT_DEDICATED_UID_JSON=' "$output"
+          /usr/bin/python3 -B -I - "$output" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          marker = "NEMBRA_REAL_PRODUCT_DEDICATED_UID_JSON="
+          records = [line[len(marker):] for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() if line.startswith(marker)]
+          if len(records) != 1:
+              raise SystemExit("missing or ambiguous real-product evidence")
+          evidence = json.loads(records[0])
+          required = (
+              evidence.get("xcodebuildReturnCode") == 0
+              and evidence.get("fieldAttackReturnCode") != 0
+              and evidence.get("nonForcedDetachReturnCode") == 0
+              and evidence.get("rootReadonlyAttackReturnCode") != 0
+              and evidence.get("formerBuildReadonlyAttackReturnCode") != 0
+              and evidence.get("fieldGroupsContainBuildGID") is False
+              and evidence.get("fieldActiveGroupsContainBuildGID") is False
+              and evidence.get("buildIdentityDistinctFromField") is True
+              and re.fullmatch(r"[0-9a-f]{64}", str(evidence.get("productTreeSHA256", ""))) is not None
+              and evidence.get("physicalAuthorityCreated") is False
+              and evidence.get("signedIdentityAuthorityCreated") is False
+          )
+          if not required:
+              raise SystemExit(f"real-product evidence failed workflow semantics: {evidence}")
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Retain exact feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-real-product-dedicated-uid-${{ github.sha }}
+          path: ${{ runner.temp }}/nembra-real-product-dedicated-uid.txt
+          if-no-files-found: warn
+          retention-days: 30
