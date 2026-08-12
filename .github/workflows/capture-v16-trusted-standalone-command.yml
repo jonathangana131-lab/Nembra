@@ -185,6 +185,32 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
 
+      - name: Revalidate exact PR head after standalone QA
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          EXPECTED_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.EXPECTED_PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            if (pr.state !== 'open') {
+              core.setFailed(`PR #${pr.number} stopped being open before exact-head acceptance completed`)
+              return
+            }
+            if (pr.head.repo?.full_name !== repository) {
+              core.setFailed(`PR #${pr.number} stopped being a same-repository candidate`)
+              return
+            }
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed(`PR #${pr.number} moved during QA from ${process.env.EXPECTED_HEAD_SHA} to ${pr.head.sha}`)
+            }
+
       - name: Upload trusted standalone evidence
         if: always()
         uses: actions/upload-artifact@v4
