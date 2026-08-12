@@ -9,14 +9,14 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:03:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:03:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:10:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-closure-sol-0059g7",
   "pr": null,
   "sourceSHA": "0d71ca7408db4a80e67d74fcdcd8f86b4a431fb8",
-  "currentHeadSHA": "0d71ca7408db4a80e67d74fcdcd8f86b4a431fb8",
+  "currentHeadSHA": "ae527b7c6b3057c1f8ff71520840c26ac9eb5b6b",
   "takeoverFromWorkerId": "sol-20260811-1611dn",
   "takeoverFromLeaseId": "dashboard-primary-1611dn-20260811-2320",
   "takeoverReason": "Generation 4 was explicitly RELEASED while exact AX5 runtime was pending. Live #3117 has since advanced to 0d71ca7408db4a80e67d74fcdcd8f86b4a431fb8 and fresh exact-head Xcode run 31562104926 is terminal SUCCESS. Recover the same Dashboard product objective on a clean successor lineage, inspect the retained AX5 evidence, and repair only any remaining app-visible defect without weakening Dynamic Type or telemetry truth.",
-  "checkpoint": "Claimed after fresh live-state refresh. #3117@0d71ca74 has a non-skipped exact-head Xcode 27 SUCCESS. Next action is retained artifact/pixel inspection of stopped + retained/riding AX5 states against the explicit Nembra Simulator / Connected / LAST KNOWN / Energy Rail / 44pt-control acceptance contract. Simulator evidence only; no physical telemetry authority."
+  "checkpoint": "Retained artifact 9128416580 from exact #3117@0d71ca74 was downloaded and directly inspected. AX5 fixed the connection word but retained currentness still rendered LAST KNO… in the center instrument. Clean successor ae527b7c changes only SpeedInstrumentModel.swift (+6/-2): add Dynamic Type environment, retire decorative tracking at accessibility sizes, and force the semantic cue to its ideal horizontal width while preserving full Dynamic Type size. Standard-size tracking and telemetry/authority behavior are unchanged. Next: exact diff review, PR/Xcode 27+iPhone 12 AX5 rerun, then inspect retained pixels. Simulator evidence only; no physical telemetry authority."
 }
