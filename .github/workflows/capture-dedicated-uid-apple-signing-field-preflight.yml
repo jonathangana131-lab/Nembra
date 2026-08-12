@@ -1,0 +1,113 @@
+name: Capture Dedicated UID Apple Signing Field Preflight
+
+on:
+  push:
+    branches:
+      - validation/v14-dedicated-uid-apple-signing-field-preflight-sol-20260812
+    paths:
+      - .github/workflows/capture-dedicated-uid-apple-signing-field-preflight.yml
+      - scripts/field/capture_dedicated_uid_apple_signing_preflight.py
+  pull_request:
+    paths:
+      - .github/workflows/capture-dedicated-uid-apple-signing-field-preflight.yml
+      - scripts/field/capture_dedicated_uid_apple_signing_preflight.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-dedicated-uid-apple-signing-field-preflight-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    name: Prove exact redacted field-preflight transport
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact two-path validation delta
+        shell: bash
+        env:
+          EXACT_PARENT: c4996ea91cc3482ca8a8d661fd1436a2eee745df
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual_paths="$RUNNER_TEMP/actual-paths"
+          expected_paths="$RUNNER_TEMP/expected-paths"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-dedicated-uid-apple-signing-field-preflight.yml
+          scripts/field/capture_dedicated_uid_apple_signing_preflight.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and run portable redaction/parser self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-dedicated-signing-pycache"
+          probe='scripts/field/capture_dedicated_uid_apple_signing_preflight.py'
+          python3 -m py_compile "$probe"
+          python3 -B "$probe" --self-test
+
+      - name: Source-audit dedicated UID signing boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe='scripts/field/capture_dedicated_uid_apple_signing_preflight.py'
+          grep -Fq 'PRODUCTION_PARENT = "c4996ea91cc3482ca8a8d661fd1436a2eee745df"' "$probe"
+          grep -Fq 'fresh-dedicated-uid-gid-and-home' "$probe"
+          grep -Fq 'NFSHomeDirectory' "$probe"
+          grep -Fq 'PrimaryGroupID' "$probe"
+          grep -Fq 'IsHidden' "$probe"
+          grep -Fq 'os.getgrouplist(name, uid)' "$probe"
+          grep -Fq 'extra_groups=[]' "$probe"
+          grep -Fq '"HOME": str(home)' "$probe"
+          grep -Fq '"find-identity", "-v", "-p", "codesigning"' "$probe"
+          grep -Fq '"--force",' "$probe"
+          grep -Fq '"--sign",' "$probe"
+          grep -Fq '"--timestamp=none",' "$probe"
+          grep -Fq '"--verify", "--strict"' "$probe"
+          grep -Fq 'Authority=Apple Development:' "$probe"
+          grep -Fq 'identityDetailsRedacted' "$probe"
+          grep -Fq 'directoryServiceRecordsAbsent' "$probe"
+          grep -Fq 'liveUIDProcesses' "$probe"
+          grep -Fq 'zombieUIDProcesses' "$probe"
+          grep -Fq '"xcodebuildExercised": False' "$probe"
+          grep -Fq '"automaticProvisioningExercised": False' "$probe"
+          grep -Fq '"privateTuyaInputExercised": False' "$probe"
+          grep -Fq '"deviceDiscoveryExercised": False' "$probe"
+          grep -Fq '"deviceInstallExercised": False' "$probe"
+          grep -Fq '"bluetoothExercised": False' "$probe"
+          grep -Fq '"physicalAuthorityCreated": False' "$probe"
+          if grep -Fq -- '-allowProvisioningUpdates' "$probe" || \
+             grep -Fq -- '-allowProvisioningDeviceRegistration' "$probe" || \
+             grep -Fq 'devicectl device' "$probe" || \
+             grep -Fq 'bootstrap_capture_tuya_sdk.sh' "$probe"; then
+            printf 'Dedicated signing feasibility preflight crossed its validation scope.\n' >&2
+            exit 21
+          fi
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          EXACT_PARENT: c4996ea91cc3482ca8a8d661fd1436a2eee745df
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
