@@ -4,11 +4,16 @@ on:
   pull_request:
     paths:
       - scripts/ci/capture_selected_xcode_freeze.py
+      - scripts/ci/capture_selected_xcode_freeze_launcher.py
       - .github/workflows/capture-selected-xcode-production-freeze.yml
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: capture-selected-xcode-production-freeze-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   production-freeze:
@@ -34,62 +39,218 @@ jobs:
           changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected_paths="$(printf '%s\n' \
             .github/workflows/capture-selected-xcode-production-freeze.yml \
-            scripts/ci/capture_selected_xcode_freeze.py | LC_ALL=C sort)"
+            scripts/ci/capture_selected_xcode_freeze.py \
+            scripts/ci/capture_selected_xcode_freeze_launcher.py | LC_ALL=C sort)"
           test "$changed_paths" = "$expected_paths"
-          /usr/bin/python3 -I -c 'from pathlib import Path; compile(Path("scripts/ci/capture_selected_xcode_freeze.py").read_text(), "scripts/ci/capture_selected_xcode_freeze.py", "exec", dont_inherit=True)'
+          /usr/bin/python3 -I -c 'from pathlib import Path; [compile(Path(p).read_text(), p, "exec", dont_inherit=True) for p in ("scripts/ci/capture_selected_xcode_freeze.py", "scripts/ci/capture_selected_xcode_freeze_launcher.py")]'
           /usr/bin/python3 -I - <<'PY'
           from pathlib import Path
-          source = Path('scripts/ci/capture_selected_xcode_freeze.py').read_text()
-          required = (
-              '/usr/bin/xcode-select',
-              '/bin/cp',
-              '-cR',
-              'NembraSelectedXcodeFreeze.',
-              '/usr/sbin/chown',
-              'root:wheel',
-              '/usr/bin/find',
-              '-acl',
-              'anchor apple generic and identifier',
-              'com.apple.dt.Xcode',
-              'xcodebuild',
-              'xctrace',
-              'devicectl',
-              '_start_cleanup_janitor',
-              '_require_field_shell_ancestor',
-              'field identity retained mutation/replacement authority',
+          helper = Path('scripts/ci/capture_selected_xcode_freeze.py').read_text()
+          launcher = Path('scripts/ci/capture_selected_xcode_freeze_launcher.py').read_text()
+          helper_required = (
+              '/usr/bin/xcode-select', '/bin/cp', '-cR', 'NembraSelectedXcodeFreeze.',
+              '/usr/sbin/chown', 'root:wheel', '/usr/bin/find', '-acl',
+              'anchor apple generic and identifier', 'com.apple.dt.Xcode',
+              'xcodebuild', 'xctrace', 'devicectl', '_start_cleanup_janitor',
+              '_require_field_shell_ancestor', 'field identity retained mutation/replacement authority',
           )
-          for fragment in required:
-              if fragment not in source:
-                  raise SystemExit(f'missing production freeze invariant: {fragment}')
+          launcher_required = (
+              '_decode_verified_git_blob', '_invalidate_invoker_sudo', '_recover_stale_freezes',
+              '.nembra-freeze-lifecycle.json', 'fieldStartIdentity', 'helperGitBlob',
+              'noninteractive sudo remains available after invalidation', '_write_lifecycle',
+          )
+          for fragment in helper_required:
+              if fragment not in helper:
+                  raise SystemExit(f'missing freeze-helper invariant: {fragment}')
+          for fragment in launcher_required:
+              if fragment not in launcher:
+                  raise SystemExit(f'missing freeze-launcher invariant: {fragment}')
           forbidden = (
-              'list devices',
-              'device install app',
-              'device process launch',
-              'CoreBluetooth',
-              'CBCentralManager',
-              'NEMBRA_TUYA_',
-              'LocalSecrets',
-              'allowProvisioningUpdates',
-              'allowProvisioningDeviceRegistration',
+              'list devices', 'device install app', 'device process launch',
+              'CoreBluetooth', 'CBCentralManager', 'NEMBRA_TUYA_', 'LocalSecrets',
+              'allowProvisioningUpdates', 'allowProvisioningDeviceRegistration',
           )
-          lowered = source.lower()
+          combined = (helper + '\n' + launcher).lower()
           for fragment in forbidden:
-              if fragment.lower() in lowered:
-                  raise SystemExit(f'production freeze helper crossed physical/product boundary: {fragment}')
+              if fragment.lower() in combined:
+                  raise SystemExit(f'freeze custody crossed physical/product boundary: {fragment}')
           PY
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'Exact production freeze source contract bound at %s\n' "$source_sha"
 
-      - name: Materialize admitted frozen Xcode and exercise tools
+      - name: Materialize admitted frozen Xcode through one privileged boundary
         shell: bash
         run: |
           set -euo pipefail
           test "$(uname -s)" = Darwin
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          helper_path='scripts/ci/capture_selected_xcode_freeze.py'
+          launcher_path='scripts/ci/capture_selected_xcode_freeze_launcher.py'
+          git_env=(/usr/bin/env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null)
+          git_cmd=(/usr/bin/git -c core.hooksPath=/dev/null)
+
+          helper_blob="$("${git_env[@]}" "${git_cmd[@]}" rev-parse "$source_sha:$helper_path")"
+          launcher_blob="$("${git_env[@]}" "${git_cmd[@]}" rev-parse "$source_sha:$launcher_path")"
+          [[ "$helper_blob" =~ ^[0-9a-f]{40}$ && "$launcher_blob" =~ ^[0-9a-f]{40}$ ]]
+          helper_base64="$("${git_env[@]}" "${git_cmd[@]}" cat-file blob "$helper_blob" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+          launcher_base64="$("${git_env[@]}" "${git_cmd[@]}" cat-file blob "$launcher_blob" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+          test -n "$helper_base64"
+          test -n "$launcher_base64"
+          test "$(printf '%s' "$helper_base64" | /usr/bin/base64 -D | "${git_env[@]}" "${git_cmd[@]}" hash-object --stdin)" = "$helper_blob"
+          test "$(printf '%s' "$launcher_base64" | /usr/bin/base64 -D | "${git_env[@]}" "${git_cmd[@]}" hash-object --stdin)" = "$launcher_blob"
+
+          # Prove root execution never reopens caller-writable helper/launcher paths.
+          attack_marker='/tmp/nembra-selected-xcode-worktree-attack-executed'
+          /bin/rm -f -- "$attack_marker"
+          test ! -e "$attack_marker"
+          cat > "$helper_path" <<'PY_ATTACK'
+          from pathlib import Path
+          Path('/tmp/nembra-selected-xcode-worktree-attack-executed').write_text('helper attacker executed\n')
+          raise SystemExit(97)
+          PY_ATTACK
+          cat > "$launcher_path" <<'PY_ATTACK'
+          from pathlib import Path
+          Path('/tmp/nembra-selected-xcode-worktree-attack-executed').write_text('launcher attacker executed\n')
+          raise SystemExit(98)
+          PY_ATTACK
+
+          restore_worktree() {
+            printf '%s' "$helper_base64" | /usr/bin/base64 -D > "$helper_path"
+            printf '%s' "$launcher_base64" | /usr/bin/base64 -D > "$launcher_path"
+          }
+          trap restore_worktree EXIT INT TERM
+
+          root_bootstrap="$(/bin/cat <<'PY_ROOT'
+          import base64
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import stat
+          import sys
+
+          def decode(encoded, expected, label):
+              if re.fullmatch(r'[0-9a-f]{40}', expected) is None:
+                  raise SystemExit(f'{label} expected blob is malformed')
+              raw = base64.b64decode(encoded, validate=True)
+              actual = hashlib.sha1(b'blob ' + str(len(raw)).encode('ascii') + b'\0' + raw).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f'{label} failed root Git-blob verification')
+              return raw
+
+          launcher_encoded, launcher_blob, helper_encoded, helper_blob, field_pid_raw, source_sha = sys.argv[1:]
+          launcher_raw = decode(launcher_encoded, launcher_blob, 'freeze launcher')
+          decode(helper_encoded, helper_blob, 'freeze helper')
+          if re.fullmatch(r'[0-9a-f]{40}', source_sha) is None:
+              raise SystemExit('accepted source SHA is malformed')
+          field_pid = int(field_pid_raw)
+
+          namespace = {
+              '__name__': 'nembra_selected_xcode_freeze_launcher',
+              '__file__': '<accepted-selected-xcode-freeze-launcher>',
+          }
+          exec(compile(launcher_raw, '<accepted-selected-xcode-freeze-launcher>', 'exec', dont_inherit=True), namespace)
+          recover = namespace.get('_recover_stale_freezes')
+          error_type = namespace.get('FreezeLauncherError')
+          main = namespace.get('main')
+          prefix = namespace.get('FREEZE_PREFIX')
+          lifecycle_name = namespace.get('LIFECYCLE_NAME')
+          if not callable(recover) or not callable(main) or not isinstance(error_type, type):
+              raise SystemExit('accepted freeze launcher exposes no validated callable contract')
+          if not isinstance(prefix, str) or not isinstance(lifecycle_name, str):
+              raise SystemExit('accepted freeze launcher lifecycle constants are unavailable')
+
+          # Recovery negative: an unclassified root-owned prefix is never broad-deleted.
+          unclassified = Path('/Library') / f'{prefix}000-unclassified-{os.getpid()}'
+          os.mkdir(unclassified, 0o700)
+          os.chown(unclassified, 0, 0)
+          try:
+              try:
+                  recover()
+              except error_type as error:
+                  if str(unclassified) not in str(error) or 'unclassified' not in str(error):
+                      raise
+              else:
+                  raise SystemExit('unclassified stale freeze was incorrectly accepted or deleted')
+              if not unclassified.exists():
+                  raise SystemExit('unclassified stale freeze was broad-deleted')
+          finally:
+              shutil.rmtree(unclassified, ignore_errors=True)
+
+          # Recovery positive: a root-sealed lifecycle record whose exact field process
+          # identity is gone is reclaimed on the next privileged entry.
+          stale = Path('/Library') / f'{prefix}000-classified-{os.getpid()}'
+          os.mkdir(stale, 0o700)
+          os.chown(stale, 0, 0)
+          record = {
+              'schemaVersion': 1,
+              'namespace': str(stale),
+              'fieldPid': 2147483000,
+              'fieldUID': int(os.environ['SUDO_UID']),
+              'fieldStartIdentity': 'dead-validation-field-process',
+              'sourceSHA': source_sha,
+              'helperGitBlob': helper_blob,
+              'janitorPid': 2147483001,
+              'physicalAuthorityCreated': False,
+          }
+          lifecycle = stale / lifecycle_name
+          fd = os.open(lifecycle, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400)
+          try:
+              os.write(fd, (json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
+              os.fsync(fd)
+          finally:
+              os.close(fd)
+          os.chown(lifecycle, 0, 0)
+          os.chmod(lifecycle, 0o400)
+          try:
+              recover()
+          except error_type:
+              if stale.exists():
+                  raise
+          if stale.exists():
+              raise SystemExit('classified stale freeze was not reclaimed')
+
+          rc = main([
+              '--field-pid', str(field_pid),
+              '--source-sha', source_sha,
+              '--helper-base64', helper_encoded,
+              '--helper-blob', helper_blob,
+          ])
+          raise SystemExit(int(rc))
+          PY_ROOT
+          )"
+
           receipt="$RUNNER_TEMP/nembra-selected-xcode-production-freeze.tsv"
-          result="$(/usr/bin/sudo -n /usr/bin/python3 -I scripts/ci/capture_selected_xcode_freeze.py --field-pid "$$")"
+          set +e
+          result="$(/usr/bin/sudo -n /usr/bin/python3 -B -I -c "$root_bootstrap" \
+            "$launcher_base64" "$launcher_blob" "$helper_base64" "$helper_blob" "$$" "$source_sha")"
+          root_rc=$?
+          set -e
+          restore_worktree
+          trap - EXIT INT TERM
+          unset root_bootstrap
+          test "$root_rc" = 0
+          test ! -e "$attack_marker"
+          test "$("${git_env[@]}" "${git_cmd[@]}" hash-object "$helper_path")" = "$helper_blob"
+          test "$("${git_env[@]}" "${git_cmd[@]}" hash-object "$launcher_path")" = "$launcher_blob"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          # The clone is not usable until this exact property holds: the current sudo
+          # process returned, but no field process can reuse its timestamp for mutation.
+          if /usr/bin/sudo -n /usr/bin/true >/dev/null 2>&1; then
+            printf 'ERROR: noninteractive sudo survived selected-Xcode publication.\n' >&2
+            exit 45
+          fi
+          if /usr/bin/sudo -n -l >/dev/null 2>&1; then
+            printf 'ERROR: noninteractive sudo policy listing survived selected-Xcode publication.\n' >&2
+            exit 46
+          fi
+
           printf '%s\n' "$result" > "$receipt"
           chmod 600 "$receipt"
-
           IFS=$'\t' read -r freeze_root frozen_developer selected_xcodebuild selected_xctrace selected_devicectl janitor_pid < "$receipt"
           test -n "$freeze_root"
           test -n "$frozen_developer"
@@ -102,18 +263,18 @@ jobs:
           for tool in "$selected_xcodebuild" "$selected_xctrace" "$selected_devicectl"; do
             case "$tool" in "$frozen_developer"/*) ;; *) exit 43 ;; esac
           done
+          lifecycle="$freeze_root/.nembra-freeze-lifecycle.json"
+          test -f "$lifecycle"
+          test "$(/usr/bin/stat -f '%u:%Lp' "$lifecycle")" = '0:400'
 
           version="$(DEVELOPER_DIR="$frozen_developer" "$selected_xcodebuild" -version)"
           first_line="${version%%$'\n'*}"
           case "$first_line" in 'Xcode 27'|'Xcode 27.'*) ;; *) exit 44 ;; esac
-
-          # Do not call any device verb. Each admitted tool must execute successfully
-          # after the privileged freeze helper has returned to the ordinary field shell.
           DEVELOPER_DIR="$frozen_developer" "$selected_xcodebuild" -version >/dev/null
           DEVELOPER_DIR="$frozen_developer" "$selected_xctrace" version >/dev/null
           DEVELOPER_DIR="$frozen_developer" "$selected_devicectl" help >/dev/null
           test -d "$freeze_root"
-          printf 'FROZEN_XCODE_RUNTIME_ACCEPTED physicalAuthorityCreated=false\n'
+          printf 'FROZEN_XCODE_RUNTIME_ACCEPTED privilegedBytesGitBound=true sudoRetiredBeforeExposure=true staleRecoveryBound=true physicalAuthorityCreated=false\n'
 
       - name: Prove root janitor removes clone after field shell exits
         shell: bash
@@ -140,4 +301,5 @@ jobs:
           set -euo pipefail
           git diff --check c4996ea91cc3482ca8a8d661fd1436a2eee745df HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test ! -e /tmp/nembra-selected-xcode-worktree-attack-executed
           printf 'PRODUCTION INGREDIENT ONLY. NO DEVICE DISCOVERY / INSTALL / BLUETOOTH / TUYA / PHYSICAL GO.\n'
