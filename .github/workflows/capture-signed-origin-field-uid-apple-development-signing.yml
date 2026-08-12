@@ -6,10 +6,12 @@ on:
       - validation/v14-field-uid-apple-development-codesign-gpt56-sol-20260812
     paths:
       - scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py
+      - scripts/field/run_apple_signing_context_preflight.command
       - .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py
+      - scripts/field/run_apple_signing_context_preflight.command
       - .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml
   workflow_dispatch:
 
@@ -36,7 +38,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind accepted signing bridge and exact two-path validation delta
+      - name: Bind accepted signing bridge and exact three-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -51,20 +53,23 @@ jobs:
           printf '%s\n' \
             .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml \
             scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py \
+            scripts/field/run_apple_signing_context_preflight.command \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
           diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           /usr/bin/xcodebuild -version
 
-      - name: Compile and source-review Apple signing oracle
+      - name: Compile and source-review Apple signing oracle and field transport
         shell: bash
         run: |
           set -euo pipefail
           oracle=scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py
+          preflight=scripts/field/run_apple_signing_context_preflight.command
           /usr/bin/python3 -m py_compile "$oracle"
+          /bin/bash -n "$preflight"
+
           grep -Fq 'security", "find-identity", "-v", "-p", "codesigning"' "$oracle"
           grep -Fq 'Apple Development:' "$oracle"
-          grep -Fq 'structured' "$oracle" || true
           grep -Fq 'credentials(field_uid, field_gid, field_active_groups)' "$oracle"
           grep -Fq 'credentials(field_uid, capability_gid, [])' "$oracle"
           grep -Fq 'rawSupplementaryGroups' "$oracle"
@@ -79,9 +84,34 @@ jobs:
           grep -Fq '"privateTuyaInputExercised": False' "$oracle"
           grep -Fq '"productionAcceptanceClaimed": False' "$oracle"
           grep -Fq '"physicalAuthorityCreated": False' "$oracle"
+
+          grep -Fq 'ORACLE_PATH="scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py"' "$preflight"
+          grep -Fq 'GIT_NO_REPLACE_OBJECTS=1' "$preflight"
+          grep -Fq 'cat-file blob "$ORACLE_BLOB"' "$preflight"
+          grep -Fq 'hashlib.sha1(b"blob "' "$preflight"
+          grep -Fq '/usr/bin/python3 -B -I -c "$ROOT_MATERIALIZER"' "$preflight"
+          grep -Fq 'ORACLE_OWNER' "$preflight"
+          grep -Fq '"identityDetailsRedacted": True' "$preflight"
+          grep -Fq '"tuyaBootstrapExercised": False' "$preflight"
+          grep -Fq '"privateTuyaInputExercised": False' "$preflight"
+          grep -Fq '"xcodebuildExercised": False' "$preflight"
+          grep -Fq '"automaticProvisioningExercised": False' "$preflight"
+          grep -Fq '"deviceDiscoveryExercised": False' "$preflight"
+          grep -Fq '"coreDeviceExercised": False' "$preflight"
+          grep -Fq '"deviceInstallExercised": False' "$preflight"
+          grep -Fq '"bluetoothExercised": False' "$preflight"
+          grep -Fq '"physicalAuthorityCreated": False' "$preflight"
+          ! grep -Fq '/usr/bin/xcodebuild' "$preflight"
+          ! grep -Fq 'xcrun ' "$preflight"
+          ! grep -Fq -- '-allowProvisioningUpdates' "$preflight"
+          ! grep -Fq -- '-allowProvisioningDeviceRegistration' "$preflight"
+          ! grep -Fq 'devicectl' "$preflight"
+          ! grep -Fq 'bootstrap_capture_tuya_sdk.sh' "$preflight"
+          ! grep -Fq 'LocalSecrets' "$preflight"
+          ! grep -Fq 'install_one_time_capture.command' "$preflight"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Run Apple Development signing-context oracle
+      - name: Run hosted Apple Development signing-context oracle
         id: probe
         continue-on-error: true
         shell: bash
@@ -98,7 +128,7 @@ jobs:
           cat "$output"
           if [[ "$rc" != 0 ]]; then
             diagnostic="$(tail -n 200 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
-            printf '::error title=Field UID Apple signing oracle red::%s\n' "$diagnostic"
+            printf '::error title=Hosted field-UID Apple signing oracle red::%s\n' "$diagnostic"
           fi
           exit "$rc"
 
@@ -124,13 +154,14 @@ jobs:
           except ValueError:
               rc = None
           record = {
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "authority": "capture-field-uid-apple-development-signing-validation-only",
               "exactValidationHead": head.lower(),
               "exactAcceptedParent": parent.lower(),
               "probeReturnCode": rc,
               "successEvidencePresent": "NEMBRA_FIELD_UID_APPLE_SIGNING_JSON=" in output,
               "redEvidencePresent": "NEMBRA_FIELD_UID_APPLE_SIGNING_ERROR=" in output,
+              "fieldMacExactBytePreflightIncluded": True,
               "identityDetailsRedacted": True,
               "automaticProvisioningExercised": False,
               "privateTuyaInputExercised": False,
@@ -151,13 +182,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Enforce Apple signing verdict and hygiene
+      - name: Enforce hosted Apple signing verdict and hygiene
         if: always()
         shell: bash
         env:
           PROBE_OUTCOME: ${{ steps.probe.outcome }}
         run: |
           set -euo pipefail
+          # This remains a real runtime verdict: hosted xcode-27 currently has no Apple
+          # Development identity, so a red here is retained evidence rather than waived.
           test "$PROBE_OUTCOME" = success
           test "$(cat "$RUNNER_TEMP/nembra-field-uid-apple-signing-rc.txt")" = 0
           output="$RUNNER_TEMP/nembra-field-uid-apple-signing-output.txt"
