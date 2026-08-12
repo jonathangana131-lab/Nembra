@@ -61,7 +61,10 @@ def refresh_active_topology(existing: dict, candidate: dict, summary: dict, *, m
     reviewer, evidence, integration world, branch state, agents, memory,
     blockers, feature genomes and merge-train state stay owned by the ACTIVE
     graph. A selected PR disappearing from the open snapshot is recorded for
-    reconciliation rather than being auto-closed or archived.
+    reconciliation rather than being auto-closed or archived. A selected PR
+    whose freshly migrated mission/objective/blocker parent is not yet present
+    in the ACTIVE graph is likewise deferred for explicit topology migration;
+    refresh never invents or partially copies scheduling authority.
     """
     migration=existing.get('migration',{})
     if migration.get('phase')!='ACTIVE' or not migration.get('legacyImported'):
@@ -81,11 +84,25 @@ def refresh_active_topology(existing: dict, candidate: dict, summary: dict, *, m
     current_live={wid:item for wid,item in existing.get('workItems',{}).items() if wid.startswith(LIVE_WORK_PREFIX)}
     added=[]
     refreshed=[]
+    deferred=[]
     head_updates=[]
     branch_mismatches=[]
 
     for wid,fresh in fresh_live.items():
         if wid not in current_live:
+            missing_parents=[]
+            mission_id=str(fresh.get('missionId') or '')
+            objective_id=str(fresh.get('objectiveId') or '')
+            blocker_id=str(fresh.get('blockerId') or '')
+            if mission_id not in existing.get('missions',{}):
+                missing_parents.append(f'mission:{mission_id}')
+            if objective_id not in existing.get('objectives',{}):
+                missing_parents.append(f'objective:{objective_id}')
+            if blocker_id and blocker_id not in existing.get('blockers',{}):
+                missing_parents.append(f'blocker:{blocker_id}')
+            if missing_parents:
+                deferred.append({'workItemId':wid,'missingParents':missing_parents})
+                continue
             existing['workItems'][wid]=_copy_json(fresh)
             branch=fresh.get('branch','')
             if branch and branch in candidate.get('branches',{}) and branch not in existing.get('branches',{}):
@@ -128,9 +145,11 @@ def refresh_active_topology(existing: dict, candidate: dict, summary: dict, *, m
     migration['livePRBranchMismatches']=branch_mismatches
     migration['livePRHeadUpdates']=head_updates
     migration['livePRWorkItemsAdded']=added
+    migration['livePRWorkItemsDeferred']=deferred
     return {
         'refreshedWorkItems':sorted(refreshed),
         'addedWorkItems':sorted(added),
+        'deferredWorkItems':deferred,
         'missingOpenWorkItems':missing,
         'headUpdates':head_updates,
         'branchMismatches':branch_mismatches,
