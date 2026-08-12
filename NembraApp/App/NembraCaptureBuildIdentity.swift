@@ -1,4 +1,11 @@
+import CoreBluetooth
 import Foundation
+
+// Apple exposes the connectability advertisement dictionary key as
+// `CBAdvertisementDataIsConnectable` (without the `Key` suffix). Keep the
+// retained guided-capture shell source-compatible with the current CoreBluetooth
+// SDK without changing what is observed or introducing any BLE writes.
+let CBAdvertisementDataIsConnectableKey = CBAdvertisementDataIsConnectable
 
 struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
     static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"
