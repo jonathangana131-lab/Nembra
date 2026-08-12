@@ -699,7 +699,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "b9164701da15d7a773698599bf24ed3cb923f8ac",
+        "headSHA": "83ed9001385518e979a7b37265877054938ae5c0",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -2183,7 +2183,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.354,
+        "similarity": 0.32,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3145": {
@@ -2263,17 +2263,6 @@
         "similarity": 0.35,
         "title": "[Capture P0][VALIDATION] Prove dedicated build principal retirement"
       },
-      "3175": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "7e9f80b3f8dce5e504afc18d6fadec9db2f4ec00",
-        "lane": "capture-signed-install-custody",
-        "pr": 3175,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.346,
-        "title": "[Capture P0][VALIDATION] Bind dedicated UID credential attestation to exec"
-      },
       "3177": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2326,7 +2315,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3184,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.234,
+        "similarity": 0.316,
         "title": "[Capture P0][VALIDATION] Reap direct child before final principal retirement"
       },
       "3188": {
@@ -2383,6 +2372,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.11,
         "title": "[Swarm V16] Preserve scheduled authority on live branch mismatch"
+      },
+      "3197": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3197,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.32,
+        "title": "[Capture P0][VALIDATION] Prove live numeric UID allocation rejection"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2411,8 +2411,8 @@
     "livePRBranchMismatches": [],
     "livePRHeadUpdates": [
       {
-        "from": "d1479f0dc3b350d0065318b39efd0eb6aa13e44d",
-        "to": "b9164701da15d7a773698599bf24ed3cb923f8ac",
+        "from": "b9164701da15d7a773698599bf24ed3cb923f8ac",
+        "to": "83ed9001385518e979a7b37265877054938ae5c0",
         "workItemId": "live-pr-3142"
       }
     ],
@@ -2421,9 +2421,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-12T11:27:09Z",
+    "liveRefreshAt": "2026-08-12T11:29:20Z",
     "liveRefreshDuplicatesSuppressed": [
-      3192
+      3197
     ],
     "liveRefreshMainSHA": "17a9c74a265159bd32c9fb8cff5e8ae5a3c8a43f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6175,10 +6175,10 @@
       "userValue": 7
     }
   },
-  "revision": 3,
+  "revision": 4,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-12T11:29:50Z",
+  "updatedAt": "2026-08-12T11:31:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6247,14 +6247,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "b9164701da15d7a773698599bf24ed3cb923f8ac",
+        "headSHA": "83ed9001385518e979a7b37265877054938ae5c0",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-12T11:27:09Z",
+      "updatedAt": "2026-08-12T11:29:20Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
