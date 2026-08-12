@@ -129,7 +129,8 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertIn("normal non-forced quiescence", source)
         self.assertIn('["/usr/bin/ditto", "--noacl"', source)
         self.assertIn("if staged_fingerprint != source_fingerprint:", source)
-        self.assertIn("_remove_local_build_identity(build_name, build_uid)", source)
+        self.assertIn("_remove_local_build_identity(build_name, build_uid, require_absent=True)", source)
+        self.assertIn("if retirement_error is not None:", source)
         self.assertIn("_detach_apfs(readonly_device, force=True)", source)
         self.assertIn("_detach_apfs(writable_device, force=True)", source)
 
@@ -177,6 +178,37 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._structured_credentials(0, 20, ())
 
+    def test_verified_identity_retirement_requires_name_and_numeric_absence(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_retirement")
+        missing = mock.Mock(side_effect=KeyError)
+        with (
+            mock.patch.object(helper.pwd, "getpwnam", missing),
+            mock.patch.object(helper.pwd, "getpwuid", missing),
+            mock.patch.object(helper.grp, "getgrnam", missing),
+            mock.patch.object(helper.grp, "getgrgid", missing),
+        ):
+            helper._assert_local_build_identity_retired("nembrabuildtest", 55001)
+
+        with (
+            mock.patch.object(helper.pwd, "getpwnam", return_value=object()),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._assert_local_build_identity_retired("nembrabuildtest", 55001)
+
+        with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._assert_local_build_identity_retired("nembrabuildtest", 0)
+
+    def test_strict_identity_removal_invokes_retirement_postcondition(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_strict_retirement")
+        completed = mock.Mock(returncode=0)
+        with (
+            mock.patch.object(helper.sys, "platform", "darwin"),
+            mock.patch.object(helper.subprocess, "run", return_value=completed),
+            mock.patch.object(helper, "_assert_local_build_identity_retired") as verify,
+        ):
+            helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
+            verify.assert_called_once_with("nembrabuildtest", 55001)
+
     def test_sudo_policy_classifier_rejects_passwordless_authority(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_sudo_policy")
         self.assertTrue(
@@ -194,7 +226,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertTrue(
             helper._sudo_policy_exposes_passwordless_authority(
                 "Matching Defaults entries:\n    exempt_group=admin, env_reset\n",
-                ("staff", "admin"),
+                ("staff",),
             )
         )
         self.assertFalse(
