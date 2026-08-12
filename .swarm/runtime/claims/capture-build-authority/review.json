@@ -7,9 +7,10 @@
   "workerId": "sol-20260812-0055xa",
   "leaseId": "capture-build-review-0055xa-20260812-0755",
   "generation": 18,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T07:55:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:08:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:14:18Z",
+  "releasedAt": "2026-08-12T08:14:18Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3072,
@@ -19,5 +20,5 @@
   "takeoverFromLeaseId": "capture-build-review-1606br-20260811-2306",
   "takeoverReason": "Prior review lease expired after its last heartbeat at 2026-08-11T23:20:20Z. Fresh GO reconciliation shows Capture remains P0 and selected-Xcode ACL authority is still a critical physical-GO dependency; take over the independent read-only review slot to classify current exact evidence and drive the next non-conflicting closure action.",
   "intent": "Independently review current selected-Xcode ACL production and diagnostic evidence; preserve PHYSICAL NO-GO and do not modify active implementation paths without a separate claim.",
-  "checkpoint": "Exact diagnostic child #3093 head 49e51aef23b843f8790d36508b4f6d33025c2df4 reviewed. Its one-workflow delta remains fail-closed and source-safe. Runtime run 31543820090 is terminal FAILURE in Bootstrap Xcode (workspace contract); raw job-log retrieval via connector returned 404 twice, so no invented line-level cause. Parent #3072 preserved structured ACL evidence still shows approved roots lock correctly while sibling/outside-approved paths remain appendable by the runner actor. Posted durable review 4914278868 on #3093: diagnostic evidence is not promotable authority; remediation must change runner execution/ownership/ACL substrate, not weaken the oracle. PHYSICAL NO-GO remains. Next: refresh live claims/heads and inspect the highest-value unoccupied Capture closure rung."
+  "checkpoint": "RELEASED after terminal independent review. Exact diagnostic child #3093 head 49e51aef23b843f8790d36508b4f6d33025c2df4 reviewed; workflow delta remains fail-closed/source-safe, but run 31543820090 is terminal FAILURE in Bootstrap Xcode and raw job logs were unavailable via connector. Parent #3072 preserved ACL evidence remains decisive: approved roots lock while sibling/outside-approved paths remain appendable by the runner actor. Durable review 4914278868 requires runner execution/ownership/ACL substrate remediation rather than oracle weakening. PHYSICAL NO-GO remains."
 }
