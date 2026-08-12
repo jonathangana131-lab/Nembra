@@ -10,28 +10,28 @@
   "dependencies": [],
   "blockers": [
     {
-      "id": "selected-xcode-acl-custody-red-unclassified",
+      "id": "selected-xcode-trusted-anchor-red",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Current production candidate #3072 exact 3e41ecd07b020523ccfedc365c201db9799c3e7e has terminal Main Graft SUCCESS but terminal Xcode/ACL acceptance failure. The dedicated ACL workflow run 31540635879 reached the unchanged ACL regression and failed, but the retained annotation did not classify whether the red is a fixture incompatibility, legitimate selected-Xcode ACL state, or a production bypass. Validation child #3093 exact 49e51aef23b843f8790d36508b4f6d33025c2df4 preserves the same oracle while retaining bounded failure diagnostics; run 31543820090 is QUEUED. Do not weaken the ACL authority rule before that exact red is classified.",
-      "pr": 3093,
-      "headSHA": "49e51aef23b843f8790d36508b4f6d33025c2df4"
+      "reason": "Current active build-authority carrier #3135 exact 449a4da1932cf3f368059fb84dd3c3c2a5b90020 has corrected selected-Xcode ACL/path exploit controls and exact-head Linux coverage green, but real-Xcode Selected Xcode ACL run 31576838635 is terminal FAILURE because the hosted Xcode 27 install tree under /Applications/Xcode_27.0.0_beta_1.app exposes runner-owned ancestors instead of satisfying the configured trusted-owner anchor. The adversarial mutation/oracle controls pass. Treat this as a real authority/policy evidence gap on the hosted runner, not a parser failure and not permission to weaken the ACL rule.",
+      "pr": 3135,
+      "headSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020"
     },
     {
-      "id": "field-selected-tool-source-contract-converged-but-parent-unaccepted",
+      "id": "main-selective-graft-runtime-integration-red",
       "state": "ACTIVE",
       "scope": "integration",
-      "reason": "#3088 exact 31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4 composes only the selected-tool Field source-oracle correction onto #3072 and has terminal Capture Field Build Provenance SUCCESS run 31542271509. Its Xcode result 31542271777 is SKIPPED. This is valid Field integration evidence but cannot accept or replace #3072's unresolved ACL production authority. If #3072 moves after red classification/repair, the Field correction must be deliberately absorbed and applicable exact-head gates reset.",
-      "pr": 3088,
-      "headSHA": "31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4"
+      "reason": "#3135 exact Main Selective Graft run 31576838780 is terminal FAILURE with 100 passed / 3 failed. All three failures assert against NembraResearchCaptureView.swift: repository-derived identity, structural identity registration, and retained failure state instead of replacing root-load failure with .empty. #3135's changed paths are build-authority workflows/scripts/tests, so these failures are outside the selected-Xcode ACL implementation itself, but they still block main composition and must be repaired or deliberately absorbed before acceptance.",
+      "pr": 3135,
+      "headSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020"
     },
     {
       "id": "final-build-authority-composition-pending",
       "state": "ACTIVE",
       "scope": "flagship",
-      "reason": "Even after selected-Xcode ACL closure, final build authority must converge with current private identity, signed compiler-output/install custody, Final-GO and app/runtime lineages on one unchanged exact head. Skipped Xcode or ancestor greens are not promotable.",
-      "pr": 3072,
-      "headSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e"
+      "reason": "On #3135 exact head, Build Authority run 31576838725, Field Build run 31576838760, Signed App Install Custody run 31576838717 and Combined Frozen Build Identity run 31576838645 are green, but those isolated greens do not waive the real selected-Xcode authority failure, Main graft failure, the separate signed-install production carrier work, or Final-GO closure. Final authority must converge on one unchanged exact head and re-earn every applicable gate.",
+      "pr": 3135,
+      "headSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020"
     }
   ],
   "mode": "exclusive",
@@ -45,19 +45,24 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true,"state":"PHYSICAL_NO_GO"},
-  "sourceSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
+  "sourceSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020",
   "legacy": {
-    "reconciledAt": "2026-08-11T23:16:22Z",
-    "selectedProductionPR": 3072,
-    "selectedProductionHeadSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
-    "aclDiagnosticPR": 3093,
-    "aclDiagnosticHeadSHA": "49e51aef23b843f8790d36508b4f6d33025c2df4",
-    "aclDiagnosticRun": 31543820090,
-    "fieldConvergencePR": 3088,
-    "fieldConvergenceHeadSHA": "31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4",
-    "fieldConvergenceSuccessRun": 31542271509,
-    "fieldConvergenceSkippedXcodeRun": 31542271777,
-    "knownExactHeadFinding": "Reconciled generation 10 on 2026-08-11. The old #2968/#2969 snapshot is obsolete. Selected production is #3072 exact 3e41ecd0. Its real selected-Xcode ACL regression is terminal red and is not yet classified; #3093 is the exact diagnostic child and remains queued. #3088 has independently made the selected-tool Field source contract green on its exact one-workflow child, but that cannot waive ACL authority or skipped Xcode. PHYSICAL NO-GO."
+    "reconciledAt": "2026-08-12T08:16:00Z",
+    "selectedProductionPR": 3135,
+    "selectedProductionHeadSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020",
+    "buildAuthorityRun": 31576838725,
+    "buildAuthorityOutcome": "SUCCESS",
+    "selectedXcodeACLRun": 31576838635,
+    "selectedXcodeACLOutcome": "FAILURE",
+    "fieldRun": 31576838760,
+    "fieldOutcome": "SUCCESS",
+    "signedAppRun": 31576838717,
+    "signedAppOutcome": "SUCCESS",
+    "combinedFrozenIdentityRun": 31576838645,
+    "combinedFrozenIdentityOutcome": "SUCCESS",
+    "mainGraftRun": 31576838780,
+    "mainGraftOutcome": "FAILURE",
+    "knownExactHeadFinding": "Reconciled generation 11 on 2026-08-12. #3135@449a4da1 is the current active build-authority carrier. Corrected selected-Xcode exploit controls are green, but the real hosted Xcode 27 tree fails the trusted-owner anchor because its /Applications Xcode ancestors are runner-owned. Main graft separately finds three NembraResearchCaptureView.swift integration assertions. Build Authority, Field, Signed App and Combined Frozen Identity are green on this head, but exact-head product acceptance remains red. PHYSICAL NO-GO."
   },
   "tags": ["capture","p0","security","build-authority","field-installer","filesystem-authority","vnode","xcode-authority","legacy-import"]
 }
