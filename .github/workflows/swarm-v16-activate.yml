@@ -1,0 +1,85 @@
+name: Swarm V16 Activate Mission Graph
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/swarm_control.py'
+      - 'scripts/swarm_v16_dogfood.py'
+      - 'scripts/swarm_v16_activate.py'
+      - 'scripts/swarmcp/**'
+      - 'scripts/ci/tests/test_swarm_v16_*.py'
+      - '.swarm/config.json'
+      - 'SWARM_GO.md'
+      - 'docs/SWARM_CONTROL_PLANE.md'
+      - '.github/workflows/swarm-v16-activate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+  GITHUB_REPOSITORY: ${{ github.repository }}
+
+concurrency:
+  group: swarm-v16-activation
+  cancel-in-progress: false
+
+jobs:
+  accept-and-activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Bind activation to exact main head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Compile V16 trusted code
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/swarm_control.py \
+            scripts/swarm_v16_dogfood.py \
+            scripts/swarm_v16_activate.py \
+            scripts/swarmcp/*.py \
+            scripts/ci/tests/test_swarm_v16_*.py
+      - name: Run V16 deterministic and concurrency tests
+        run: python3 -m unittest discover -v scripts/ci/tests 'test_swarm_v16_*.py'
+      - name: Prove 30-worker V16 convergence
+        run: python3 scripts/swarm_control.py v16-simulate --workers 30
+      - name: Dogfood current Nembra topology before state write
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_v16_dogfood.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --state-branch swarm-state \
+            --self-integration-proof \
+            --output /tmp/swarm-v16-preactivation.json
+      - name: Atomically activate V16 on swarm-state
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_v16_activate.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --state-branch swarm-state \
+            --main-sha "$GITHUB_SHA" \
+            --output /tmp/swarm-v16-activation.json
+      - name: Validate activated V16 status
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_control.py v16-status --repo "$GITHUB_REPOSITORY" --state-branch swarm-state --config-ref "$GITHUB_SHA"
+          python3 scripts/swarm_control.py v16-cleanup-plan --repo "$GITHUB_REPOSITORY" --state-branch swarm-state --config-ref "$GITHUB_SHA"
+      - name: Preserve activation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-v16-activation-${{ github.sha }}
+          path: |
+            /tmp/swarm-v16-preactivation.json
+            /tmp/swarm-v16-activation.json
+          if-no-files-found: error
+          retention-days: 30
