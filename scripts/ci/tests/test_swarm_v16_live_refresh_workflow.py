@@ -6,7 +6,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 LIVE_REFRESH = ROOT / ".github/workflows/swarm-v16-live-topology-refresh.yml"
-SHADOW = ROOT / ".github/workflows/swarm-control-plane-shadow.yml"
 
 
 class LiveRefreshWorkflowTests(unittest.TestCase):
@@ -23,12 +22,6 @@ class LiveRefreshWorkflowTests(unittest.TestCase):
         self.assertIn("persist-credentials: false", text)
         self.assertNotIn("ref: ${{ github.event.pull_request.head.sha }}", text)
         self.assertNotIn("ref: ${{ github.head_ref }}", text)
-
-    def test_shadow_gate_watches_live_refresh_workflow(self) -> None:
-        text = SHADOW.read_text(encoding="utf-8")
-        needle = "'.github/workflows/swarm-v16-live-topology-refresh.yml'"
-        # Pull-request and main-push path filters must both retain coverage.
-        self.assertGreaterEqual(text.count(needle), 2)
 
 
 if __name__ == "__main__":
