@@ -9,7 +9,7 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:11:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:11:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:14:18Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3073,
@@ -22,5 +22,5 @@
     ".github/workflows/capture-runtime-voiceover.yml",
     "scripts/ci/capture_runtime_voiceover_xcuitest.swift"
   ],
-  "checkpoint": "Claim recovered on terminal exact runtime evidence. Capture Runtime VoiceOver run 31542656345 is FAILURE; selective-graft diagnostic on same head is SUCCESS; Xcode exact-head QA is SKIPPED. Next: inspect job steps/logs and classify whether red is runner/substrate, harness, or product accessibility behavior before mutating any owned path. Simulator-only; PHYSICAL NO-GO."
+  "checkpoint": "Heartbeat after claim recovery. Capture Runtime VoiceOver run 31542656345 is terminal FAILURE; selective-graft diagnostic on same head is SUCCESS; Xcode exact-head QA is SKIPPED. Classifying exact job steps/logs before mutating owned paths. Simulator-only; PHYSICAL NO-GO."
 }
