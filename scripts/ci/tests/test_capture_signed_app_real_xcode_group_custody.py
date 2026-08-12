@@ -200,19 +200,6 @@ def root_probe(
         build_environment = helper._build_environment(build_name, home)
         os.chown(home / "tmp", build_uid, build_gid)
         os.chmod(home / "tmp", 0o700)
-        try:
-            build_directory_groups = helper._attest_build_identity_groups(
-                build_name,
-                build_uid,
-                build_gid,
-                field_groups,
-                build_environment,
-                home,
-            )
-        except Exception as error:
-            emit_error("effective-credentials", f"production build-group attestation failed: {error}")
-            return 71
-
         helper._create_apfs_image(image)
         writable_device = helper._attach_apfs(image, mountpoint, readonly=False)
         os.chown(mountpoint, build_uid, build_gid)
@@ -234,8 +221,11 @@ def root_probe(
             "COMPILER_INDEX_STORE_ENABLE=NO",
             "build",
         ]
+        attested_command = helper._credential_attesting_exec_command(
+            command, name=build_name, uid=build_uid, gid=build_gid, field_groups=field_groups,
+        )
         build = subprocess.run(
-            command,
+            attested_command,
             cwd=source_root,
             env=build_environment,
             stdin=subprocess.DEVNULL,
@@ -245,6 +235,28 @@ def root_probe(
             check=False,
             **structured_credentials(build_uid, build_gid, []),
         )
+        credential_records = [
+            line[len(helper.GROUP_ATTESTOR_MARKER):]
+            for line in (build.stdout or "").splitlines()
+            if line.startswith(helper.GROUP_ATTESTOR_MARKER)
+        ]
+        if len(credential_records) != 1:
+            emit_error("effective-credentials", "missing or ambiguous same-process build credential attestation", build_output=build.stdout)
+            return 72
+        try:
+            credential_attestation = json.loads(credential_records[0])
+        except json.JSONDecodeError:
+            emit_error("effective-credentials", "same-process build credential attestation is malformed", build_output=build.stdout)
+            return 72
+        if not (credential_attestation.get("identityExact") is True and credential_attestation.get("groupsExact") is True and credential_attestation.get("fieldOnlyLeak") == [] and credential_attestation.get("effectiveZeroSupplementaryGroupsClaim") is False):
+            emit_error("effective-credentials", "same-process compiler credential authority rejected", build_output=build.stdout)
+            return 72
+        expected_effective_groups = credential_attestation.get("expectedEffectiveGroups")
+        if not isinstance(expected_effective_groups, list) or any(not isinstance(group, int) for group in expected_effective_groups):
+            emit_error("effective-credentials", "same-process credential baseline is malformed", build_output=build.stdout)
+            return 72
+        build_directory_groups = sorted(set([build_gid, *expected_effective_groups]))
+
         if build.returncode != 0:
             emit_error(
                 "xcodebuild",
@@ -356,6 +368,9 @@ def root_probe(
             "buildPrimaryGID": build_gid,
             "buildDirectoryServiceGroups": list(build_directory_groups),
             "buildEffectiveGroupAuthorityAttested": True,
+            "buildCredentialAttestation": credential_attestation,
+            "buildCredentialAttestationSameExecTransition": True,
+            "effectiveZeroSupplementaryGroupsClaim": False,
             "buildIdentityDistinctFromField": build_uid != field_uid,
             "fieldGroupsContainBuildGID": build_gid in field_groups,
             "fieldActiveGroupsContainBuildGID": build_gid in field_active_groups,
@@ -459,6 +474,11 @@ def parent_probe() -> int:
             and isinstance(build_directory_groups, list)
             and evidence.get("buildPrimaryGID") in build_directory_groups
             and evidence.get("buildEffectiveGroupAuthorityAttested") is True
+            and evidence.get("buildCredentialAttestationSameExecTransition") is True
+            and evidence.get("effectiveZeroSupplementaryGroupsClaim") is False
+            and evidence.get("buildCredentialAttestation", {}).get("identityExact") is True
+            and evidence.get("buildCredentialAttestation", {}).get("groupsExact") is True
+            and evidence.get("buildCredentialAttestation", {}).get("fieldOnlyLeak") == []
             and evidence.get("fieldGroupsContainBuildGID") is False
             and evidence.get("fieldActiveGroupsContainBuildGID") is False
             and evidence.get("buildIdentityDistinctFromField") is True
