@@ -7,9 +7,10 @@
   "workerId": "gpt56-sol-20260812-0400-review",
   "leaseId": "capture-signed-install-review-gpt56-20260812-110051",
   "generation": 17,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T11:00:51Z",
-  "lastHeartbeatAt": "2026-08-12T11:07:50Z",
+  "lastHeartbeatAt": "2026-08-12T11:10:26Z",
+  "releasedAt": "2026-08-12T11:10:26Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3142,
@@ -17,7 +18,7 @@
   "currentHeadSHA": "c4996ea91cc3482ca8a8d661fd1436a2eee745df",
   "takeoverFromWorkerId": "gpt56-sol-20260812-0352-review",
   "takeoverFromLeaseId": "capture-signed-install-review-gpt56-20260812-105200",
-  "takeoverReason": "Generation-16 explicitly released before a non-code implementation-coordination checkpoint. Generation-17 reviews subsequent concurrent code only; it will not self-accept any source authored by this worker.",
-  "intent": "Track selected #3142 after c4996ea9, verify incoming authority repairs, classify exact-head CI/validation without ancestor promotion, and keep private Apple/Tuya feasibility independent.",
-  "checkpoint": "Exact #3142 remains c4996ea91cc3482ca8a8d661fd1436a2eee745df. Owners-on and truthful fresh-account group attestation are composed, but current production still has four concrete authority gaps: (1) _id_in_use/_choose_ephemeral_id consult only pwd/grp and can reuse a numeric UID still owned by a stale process; (2) successful retirement does not prove no surviving non-zombie process under build_uid; (3) _build_environment admits ambient DEVELOPER_DIR/SDKROOT/TOOLCHAINS and the inherited private-input guard launches xcodebuild with no explicit env, regressing accepted #2949/#2968 closed-child-environment authority; (4) permanent real-Xcode acceptance still lacks a former-build fresh-path mutation negative after writable root chown/chmod before normal detach. #3169 exact 05ada65e run 31589477357 is RED due a validation-order defect: retained artifact 9138614460 proves direct DS records absent + liveUIDProcesses=[] + one Z< direct-child zombie, but cached pwd/grp still resolve before the fixture reaches its intended reap; review 4915726626 correctly requires split destructive retirement -> reap -> final cache/no-process assertion. #3169 also independently flags process-aware UID allocation. Real private Tuya + Apple Development/keychain/provisioning remains external/unproven. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-16 explicitly released before a non-code implementation-coordination checkpoint. Generation-17 independently reviewed subsequent bytes and evidence.",
+  "outcome": "FOUR_AUTHORITY_GAPS_CLASSIFIED_AND_IMPLEMENTATION_READY",
+  "checkpoint": "Exact #3142 remains c4996ea9. Review classified process-aware UID allocation, no surviving non-zombie build-UID process retirement, closed xcodebuild child environment, and writable pre-detach former-build pathname denial as required. #3169 run 31589477357/artifact 9138614460 is a validation-order RED, not production evidence; direct DS records were absent and liveUIDProcesses empty, but cached pwd/grp resolved before the direct child zombie could be reaped. Generation-17 released before implementation so later source cannot self-accept. PHYSICAL NO-GO."
 }
