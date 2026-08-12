@@ -104,6 +104,21 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Verify reviewed standalone build graph custody
+        run: |
+          set -euo pipefail
+          verify_blob() {
+            path="$1"
+            expected="$2"
+            actual="$(/usr/bin/git rev-parse "HEAD:$path")"
+            printf '%s expected=%s actual=%s\n' "$path" "$expected" "$actual"
+            test "$actual" = "$expected"
+          }
+          verify_blob 'NembraCapture.xcodeproj/project.pbxproj' '4aabfe313663659862a3d8e12e362db2fdca9a34'
+          verify_blob 'NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme' '0d36de1f4cf35961d32cd1d4b19a8919624ce63e'
+          verify_blob 'Packages/NembraCore/Package.swift' '9148fd1683d5bed1682bba3eb713c657de068ad8'
+          verify_blob 'Packages/NembraBluetoothCapture/Package.swift' '3bcda7fa8a350ade75bd8b7b228c3c95ca319bda'
+
       - name: Validate standalone project and evidence-model closure
         run: |
           set -euo pipefail
