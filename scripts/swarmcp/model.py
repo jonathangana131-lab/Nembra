@@ -12,6 +12,11 @@ DEFAULT_RESOURCE_LEASE_SECONDS=1800
 MAX_EVENT_MESSAGE=4000
 MAX_TEXT_FIELD=8000
 MAX_LIST_ITEMS=256
+MAX_DATA_ONLY_OBJECT_KEYS=128
+# V16 live migration intentionally inspects at most four GitHub PR pages of
+# 100 entries each. Preserve the default object bound everywhere else while
+# allowing that complete, data-only classification index to survive validation.
+DATA_ONLY_OBJECT_KEY_LIMITS={'$.migration.classifiedPRs':400}
 ID_RE=re.compile(r'^[a-z0-9][a-z0-9._-]{0,63}$')
 WORKER_RE=re.compile(r'^sol-[0-9]{8}-[a-z0-9]{4,16}$')
 SHA40_RE=re.compile(r'^[0-9a-f]{40}$')
@@ -86,7 +91,8 @@ def _schema(r):
 
 def validate_data_only(v,path='$'):
     if isinstance(v,dict):
-        if len(v)>128: raise ValidationError(f'{path} too many keys')
+        key_limit=DATA_ONLY_OBJECT_KEY_LIMITS.get(path,MAX_DATA_ONLY_OBJECT_KEYS)
+        if len(v)>key_limit: raise ValidationError(f'{path} too many keys')
         for k,x in v.items():
             if not isinstance(k,str) or len(k)>128: raise ValidationError(f'{path} invalid key')
             if k.lower().replace('_','').replace('-','') in FORBIDDEN_KEYS: raise ValidationError(f'{path}.{k} executable control field forbidden')
