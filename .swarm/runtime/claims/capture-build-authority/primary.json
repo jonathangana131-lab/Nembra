@@ -9,15 +9,15 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:25:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:30:00Z",
   "leaseSeconds": 2700,
   "branch": "validation/v14-selected-xcode-cow-freeze-sol-0059ac-20260812",
   "pr": 3146,
   "sourceSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020",
-  "currentHeadSHA": "38f8c7ba862a8386c3e171889be8f632d27f18a3",
+  "currentHeadSHA": "38f54359d6ee7e246447a1ba49e184c84af60f7d",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-build-primary-1607ax-20260811-2357",
   "takeoverReason": "Generation-6 implementation was explicitly released while diagnostic evidence was pending. Exact #3093/#3135 retained evidence classified the source-tree blocker, so primary continues through the smallest security-preserving real-macOS remediation validation.",
   "intent": "Prove or reject a root-custodied COW-cloned, Apple-signature-verified selected-Xcode execution subject on the real xcode-27 host without weakening #3072 production custody or creating physical authority.",
-  "checkpoint": "#3146 exact b435e272 run 31577918134 confirmed source and /Library share device 16777232; selected Xcode logical size is 3438064 KiB; COW clone completed in 60s; failure occurred before hardening-complete. Head 38f8c7ba now retains clone root metadata plus command-specific chown/ACL-strip/mode-strip diagnostics and explicitly chowns symlink nodes with -h. No custody/signature/negative requirement weakened. PHYSICAL NO-GO."
+  "checkpoint": "#3146 exact 38f8c7ba run 31578247886 again confirmed same APFS device and completed 3438064 KiB COW clone in 67s, then died before the immediately following clone-root-metadata notice. That localizes the red to the non-authoritative diagnostic expression itself, not hardening. Head 38f54359 replaces only that diagnostic with isolated Python lstat; all chown/ACL/mode, Apple signature, frozen-tool and field-mutation gates are unchanged. PHYSICAL NO-GO."
 }
