@@ -139,7 +139,7 @@ chmod 600 "$PROBE_RC_FILE"
 
 # The oracle is designed to emit only redacted identity hashes/counts. Fail closed if
 # it accidentally emits a raw Apple Development label grammar anyway.
-if /usr/bin/grep -E 'Apple Development:[^<[:space:]]' "$PROBE_OUTPUT" >/dev/null 2>&1; then
+if /usr/bin/grep -E 'Apple Development:[[:space:]]*[^<[:space:]]' "$PROBE_OUTPUT" >/dev/null 2>&1; then
     : > "$PROBE_OUTPUT"
     printf '%s\n' 'ERROR: preflight output was suppressed because raw Apple identity text escaped the oracle.' > "$PROBE_OUTPUT"
     PROBE_RC=90
