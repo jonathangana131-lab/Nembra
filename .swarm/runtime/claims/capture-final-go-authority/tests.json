@@ -9,14 +9,14 @@
   "generation": 10,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:43:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:43:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:45:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-final-go-retirement-darwin-diagnostic-sol-0058jx",
-  "pr": 0,
+  "pr": 3151,
   "sourceSHA": "5b9dab6d9ab5fb456222e955fd20a144c230d2d6",
-  "currentHeadSHA": "5b9dab6d9ab5fb456222e955fd20a144c230d2d6",
+  "currentHeadSHA": "7be03224c0f290bba4d2f1c624204c8c04047563",
   "takeoverFromWorkerId": "sol-20260812-0054j7",
   "takeoverFromLeaseId": "capture-final-go-tests-recovery-0054j7-20260812-0821",
-  "takeoverReason": "Generation 9 explicitly released after selecting #3120 as the sole current-parent Darwin witness. Exact #3120 run 31546285366 is terminal red only in the combined three-command sealed-retirement step, and connector-visible logs are empty. Generation 10 does not open a competing product validator: it creates a workflow-only diagnostic successor of the selected witness that retains each existing permanent suite's stdout/stderr and return code separately so the old red can be mechanically classified without touching production or weakening assertions.",
-  "checkpoint": "Source review confirms #3120 step 7 runs sealed-candidate handoff, retirement-dispatch custody, and committed-parent execution sequentially with set -e and no per-suite retention. Exact real-kqueue backend and all four continuous tracked-tree races already passed on #3120 and will not be relitigated as product authority. Next: successor workflow-only diagnostic on 5b9dab6d that preserves the same exact production parent, runs the three existing permanent suites independently, uploads bounded raw outputs for all outcomes, then fail-closes if any suite is red. PHYSICAL NO-GO."
+  "takeoverReason": "Generation 9 explicitly released after selecting #3120 as the sole current-parent Darwin witness. Exact #3120 run 31546285366 is terminal red only in the combined three-command sealed-retirement step, and connector-visible old-run logs are empty. Generation 10 is diagnostic-only, not a competing product validator.",
+  "checkpoint": "Draft diagnostic PR #3151 exact 7be03224c0f290bba4d2f1c624204c8c04047563 is a one-workflow successor of selected #3120@5b9dab6d. It preserves exact #3082 parent bind, current Final-GO compile, real _KqueueMutationBackend requirement, and full continuous tracked-tree replay. The old three-command step is replaced only with independent execution/retention for sealed-candidate-handoff, retirement-dispatch-custody, and committed-parent-execution; each raw log + return code is artifacted on all outcomes, SHA-sealed, and final verdict remains fail-closed. No production/permanent-test bytes changed. Initial exact-head generic Xcode is correctly SKIPPED for this workflow-only diagnostic; dedicated Darwin workflow has not yet appeared in connector run listing immediately after PR creation. PHYSICAL NO-GO."
 }
