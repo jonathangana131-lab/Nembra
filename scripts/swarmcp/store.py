@@ -67,7 +67,9 @@ class GitHubContentsStore(Store):
         content=p.get('content'); encoding=p.get('encoding','base64')
         if not isinstance(content,str) or not content: raise ValidationError(f'{field} payload omitted content')
         try:
-            if encoding=='base64': raw=base64.b64decode(content,validate=True).decode()
+            if encoding=='base64':
+                compact=''.join(content.split())
+                raw=base64.b64decode(compact,validate=True).decode()
             elif encoding in {'utf-8','utf8'}: raw=content
             else: raise ValidationError(f'{field} payload unsupported encoding')
             return _dict(json.loads(raw),field)
