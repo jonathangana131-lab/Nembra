@@ -5,13 +5,11 @@ on:
     branches:
       - validation/v14-signed-origin-codesign-capability-freeze-gpt56-sol-20260812
     paths:
-      - scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py
-      - scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py
+      - scripts/ci/tests/test_capture_signed_app_field_uid_primary_gid_codesign_freeze.py
       - .github/workflows/capture-signed-origin-codesign-capability-freeze.yml
   pull_request:
     paths:
-      - scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py
-      - scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py
+      - scripts/ci/tests/test_capture_signed_app_field_uid_primary_gid_codesign_freeze.py
       - .github/workflows/capture-signed-origin-codesign-capability-freeze.yml
   workflow_dispatch:
 
@@ -24,13 +22,13 @@ concurrency:
 
 jobs:
   codesign-capability-freeze:
-    name: Prove direct codesign can cross one-run capability then freeze
+    name: Prove field UID + primary GID direct codesign then APFS freeze
     runs-on: xcode-27
     timeout-minutes: 20
     env:
       EXACT_PARENT: 98fdc404048812f6d3af6791710c57ece21dafd3
       PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONPYCACHEPREFIX: /tmp/nembra-codesign-capability-pycache
+      PYTHONPYCACHEPREFIX: /tmp/nembra-field-uid-codesign-pycache
     steps:
       - uses: actions/checkout@v6
         with:
@@ -38,7 +36,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind accepted dedicated-UID parent and three-path validation delta
+      - name: Bind accepted parent and exact two-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -52,61 +50,58 @@ jobs:
           git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual-paths"
           printf '%s\n' \
             .github/workflows/capture-signed-origin-codesign-capability-freeze.yml \
-            scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py \
-            scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py \
+            scripts/ci/tests/test_capture_signed_app_field_uid_primary_gid_codesign_freeze.py \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
           diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           /usr/bin/xcodebuild -version
 
-      - name: Compile and source-review signing bridge oracle
+      - name: Compile and source-review direct signing oracle
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -m py_compile \
             scripts/ci/tests/test_capture_signed_app_unmount_freeze_probe.py \
-            scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py \
-            scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py
-          oracle=scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py
-          adapter=scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py
-          grep -Fq '"/usr/bin/codesign"' "$oracle"
-          grep -Fq 'signer_gid = capability_gid' "$oracle"
-          grep -Fq 'signer_groups: list[int] = []' "$oracle"
+            scripts/ci/tests/test_capture_signed_app_field_uid_primary_gid_codesign_freeze.py
+          oracle=scripts/ci/tests/test_capture_signed_app_field_uid_primary_gid_codesign_freeze.py
+          grep -Fq 'workspace, 0, capability_gid' "$oracle"
+          grep -Fq 'os.chmod(workspace, 0o710)' "$oracle"
           grep -Fq 'structured_credentials(field_uid, field_gid, field_active_groups)' "$oracle"
-          grep -Fq 'structured_credentials(field_uid, signer_gid, signer_groups)' "$oracle"
-          grep -Fq 'PATH_PROBE_MARKER' "$oracle"
-          grep -Fq 'install_field_baseline_adapter' "$adapter"
-          grep -Fq 'rawEffectiveSupplementaryGroups' "$adapter"
-          grep -Fq 'capturedFieldBaselineGroups' "$adapter"
-          grep -Fq 'unexpectedSupplementaryGroupsBeyondFieldBaseline' "$adapter"
-          grep -Fq 'fieldBaselinePreservedExact' "$adapter"
-          grep -Fq 'parent.__file__ = str(Path(__file__).resolve())' "$adapter"
+          grep -Fq 'structured_credentials(field_uid, capability_gid, [])' "$oracle"
+          grep -Fq 'rawSupplementaryGroups' "$oracle"
+          grep -Fq 'fieldBaselinePreservedExact' "$oracle"
+          grep -Fq 'unexpectedGroupsBeyondFieldBaseline' "$oracle"
+          grep -Fq 'ordinary field identity mutated the signing subject' "$oracle"
+          grep -Fq '"/usr/bin/codesign"' "$oracle"
           grep -Fq 'detach = helper.hdiutil_detach(device)' "$oracle"
           grep -Fq 'readonly=True' "$oracle"
+          grep -Fq 'root mutated the read-only signed subject' "$oracle"
+          grep -Fq 'former signer mutated the read-only signed subject' "$oracle"
           grep -Fq '"appleIdentityExercised": False' "$oracle"
           grep -Fq '"provisioningExercised": False' "$oracle"
+          grep -Fq '"privateTuyaInputExercised": False' "$oracle"
           grep -Fq '"productionAcceptanceClaimed": False' "$oracle"
           grep -Fq '"physicalAuthorityCreated": False' "$oracle"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Run direct-codesign capability freeze oracle
+      - name: Run field-UID direct-codesign freeze oracle
         id: probe
         continue-on-error: true
         shell: bash
         run: |
           set -uo pipefail
-          output="$RUNNER_TEMP/nembra-codesign-capability-output.txt"
+          output="$RUNNER_TEMP/nembra-field-uid-codesign-output.txt"
           set +e
           /usr/bin/python3 -B -I \
-            scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py \
+            scripts/ci/tests/test_capture_signed_app_field_uid_primary_gid_codesign_freeze.py \
             >"$output" 2>&1
           rc=$?
           set -e
-          printf '%s\n' "$rc" > "$RUNNER_TEMP/nembra-codesign-capability-rc.txt"
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/nembra-field-uid-codesign-rc.txt"
           cat "$output"
           if [[ "$rc" != 0 ]]; then
-            diagnostic="$(tail -n 180 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
-            printf '::error title=Codesign capability freeze oracle red::%s\n' "$diagnostic"
+            diagnostic="$(tail -n 220 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=Field UID direct-codesign freeze oracle red::%s\n' "$diagnostic"
           fi
           exit "$rc"
 
@@ -115,10 +110,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/NembraCodesignCapabilityFreezeEvidence"
+          evidence="$RUNNER_TEMP/NembraFieldUIDCodesignFreezeEvidence"
           mkdir -p "$evidence"
-          output="$RUNNER_TEMP/nembra-codesign-capability-output.txt"
-          rc_file="$RUNNER_TEMP/nembra-codesign-capability-rc.txt"
+          output="$RUNNER_TEMP/nembra-field-uid-codesign-output.txt"
+          rc_file="$RUNNER_TEMP/nembra-field-uid-codesign-rc.txt"
           [[ -f "$output" ]] && cp "$output" "$evidence/probe-output.txt" || printf '%s\n' 'probe output unavailable' > "$evidence/probe-output.txt"
           [[ -f "$rc_file" ]] && cp "$rc_file" "$evidence/probe-return-code.txt" || printf '%s\n' 'missing' > "$evidence/probe-return-code.txt"
           /usr/bin/python3 - "$evidence/manifest.json" "$evidence/probe-output.txt" "$evidence/probe-return-code.txt" "$(git rev-parse HEAD)" "$EXACT_PARENT" <<'PY'
@@ -132,19 +127,19 @@ jobs:
           except ValueError:
               rc = None
           record = {
-              "schemaVersion": 3,
-              "authority": "capture-signed-output-codesign-capability-validation-only",
+              "schemaVersion": 1,
+              "authority": "capture-field-uid-primary-gid-codesign-freeze-validation-only",
               "exactValidationHead": head.lower(),
               "exactAcceptedParent": parent.lower(),
               "probeReturnCode": rc,
-              "successEvidencePresent": "NEMBRA_CODESIGN_CAPABILITY_FREEZE_JSON=" in output,
-              "redEvidencePresent": "NEMBRA_CODESIGN_CAPABILITY_FREEZE_ERROR=" in output,
-              "fieldUIDBaselineGroupAttestation": True,
-              "probeOutputSHA256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
+              "successEvidencePresent": "NEMBRA_FIELD_UID_PRIMARY_GID_CODESIGN_FREEZE_JSON=" in output,
+              "redEvidencePresent": "NEMBRA_FIELD_UID_PRIMARY_GID_CODESIGN_FREEZE_ERROR=" in output,
               "appleIdentityExercised": False,
               "provisioningExercised": False,
+              "privateTuyaInputExercised": False,
               "productionAcceptanceClaimed": False,
               "physicalAuthorityCreated": False,
+              "probeOutputSHA256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
           }
           Path(manifest).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
@@ -154,8 +149,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nembra-codesign-capability-freeze-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/NembraCodesignCapabilityFreezeEvidence
+          name: nembra-field-uid-codesign-freeze-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraFieldUIDCodesignFreezeEvidence
           if-no-files-found: error
           retention-days: 14
 
@@ -167,11 +162,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$PROBE_OUTCOME" = success
-          test "$(cat "$RUNNER_TEMP/nembra-codesign-capability-rc.txt")" = 0
-          grep -q '^NEMBRA_CODESIGN_CAPABILITY_FREEZE_JSON=' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
-          grep -q '"rawEffectiveSupplementaryGroups": \[' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
-          grep -q '"fieldBaselinePreservedExact": true' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
-          grep -q '"unexpectedSupplementaryGroupsBeyondFieldBaseline": \[\]' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
-          grep -q '"missingFieldBaselineGroups": \[\]' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
+          test "$(cat "$RUNNER_TEMP/nembra-field-uid-codesign-rc.txt")" = 0
+          output="$RUNNER_TEMP/nembra-field-uid-codesign-output.txt"
+          grep -q '^NEMBRA_FIELD_UID_PRIMARY_GID_CODESIGN_FREEZE_JSON=' "$output"
+          grep -q '"fieldBaselinePreservedExact": true' "$output"
+          grep -q '"unexpectedGroupsBeyondFieldBaseline": \[\]' "$output"
+          grep -q '"missingFieldBaselineGroups": \[\]' "$output"
+          grep -q '"codesignReturnCode": 0' "$output"
+          grep -q '"nonForcedDetachReturnCode": 0' "$output"
+          grep -q '"physicalAuthorityCreated": false' "$output"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
