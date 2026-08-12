@@ -1,0 +1,198 @@
+name: Capture Final GO Retirement Dispatch Darwin Kqueue
+
+on:
+  push:
+    branches:
+      - test/v14-final-go-retirement-darwin-current-sol-20260812
+    paths:
+      - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
+  pull_request:
+    paths:
+      - .github/workflows/capture-final-go-retirement-dispatch-darwin.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  darwin-retirement-authority:
+    name: Prove repaired Final-GO on real Darwin kqueue
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      EXACT_PRODUCTION_PARENT: 01217c20215c31c7380405dc1e2bd1330136894e
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-retirement-darwin-pycache
+    steps:
+      - name: Checkout immutable exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact repaired production parent and one-path validation delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PRODUCTION_PARENT" HEAD)" = "$EXACT_PRODUCTION_PARENT"
+          git diff --name-only "$EXACT_PRODUCTION_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' .github/workflows/capture-final-go-retirement-dispatch-darwin.yml > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'NEMBRA_DARWIN_VALIDATION_HEAD=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Compile exact Final-GO authority surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
+            scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Prove production selects real Darwin kqueue backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          import sys
+
+          path = Path("scripts/ci/es80_authenticated_stationary_private_review_final_go.py").resolve()
+          spec = importlib.util.spec_from_file_location("nembra_final_go_darwin_retirement_subject", path)
+          if spec is None or spec.loader is None:
+              raise SystemExit("could not load Final-GO subject")
+          module = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = module
+          spec.loader.exec_module(module)
+          backend = module._previous._default_backend()
+          try:
+              name = type(backend).__name__
+              if name != "_KqueueMutationBackend":
+                  raise SystemExit(f"expected _KqueueMutationBackend on Darwin, got {name}")
+          finally:
+              backend.close()
+          PY
+
+      - name: Replay whole-tree races through real kqueue custody
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/NembraFinalGoDarwinEvidence"
+          log="$RUNNER_TEMP/NembraFinalGoDarwinEvidence/whole-tree.log"
+          set +e
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py >"$log" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$RUNNER_TEMP/NembraFinalGoDarwinEvidence/whole-tree.exit-status.txt"
+          cat "$log"
+          if [ "$status" -ne 0 ]; then
+            python3 - "$log" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8", errors="replace")
+          if len(text) > 12000:
+              text = "[truncated to final 12000 characters]\n" + text[-12000:]
+          text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Darwin whole-tree custody regression::{text}")
+          PY
+            exit "$status"
+          fi
+
+      - name: Prove sealed retirement dispatch on Darwin
+        shell: bash
+        run: |
+          set -uo pipefail
+          evidence="$RUNNER_TEMP/NembraFinalGoDarwinEvidence"
+          mkdir -p "$evidence"
+          overall=0
+
+          run_case() {
+            name="$1"
+            script="$2"
+            log="$evidence/${name}.log"
+            set +e
+            python3 "$script" >"$log" 2>&1
+            status=$?
+            set -e
+            printf '%s\n' "$status" > "$evidence/${name}.exit-status.txt"
+            printf '\n===== %s (exit %s) =====\n' "$name" "$status"
+            cat "$log"
+            if [ "$status" -ne 0 ]; then
+              overall=1
+              python3 - "$name" "$log" <<'PY'
+          from pathlib import Path
+          import sys
+
+          name = sys.argv[1]
+          text = Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
+          if len(text) > 12000:
+              text = "[truncated to final 12000 characters]\n" + text[-12000:]
+          text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Darwin {name} regression::{text}")
+          PY
+            fi
+          }
+
+          run_case sealed-candidate-handoff scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+          run_case retirement-dispatch scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+          run_case committed-parent scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+          exit "$overall"
+
+      - name: Seal exact Darwin evidence manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/NembraFinalGoDarwinEvidence"
+          mkdir -p "$evidence"
+          python3 - "$evidence" "$EXACT_PRODUCTION_PARENT" "${NEMBRA_DARWIN_VALIDATION_HEAD:-unknown}" <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+          parent = sys.argv[2]
+          head = sys.argv[3]
+          files = {}
+          for path in sorted(root.glob("*")):
+              if path.is_file():
+                  files[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+          manifest = {
+              "schemaVersion": 1,
+              "authority": "capture-final-go-real-darwin-software-only",
+              "productionParentSHA": parent,
+              "validationHeadSHA": head,
+              "backendRequired": "_KqueueMutationBackend",
+              "physicalAuthorityCreated": False,
+              "files": files,
+          }
+          (root / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+          PY
+
+      - name: Upload real-Darwin Final-GO evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-final-go-darwin-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraFinalGoDarwinEvidence
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Diff and worktree hygiene
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PRODUCTION_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
