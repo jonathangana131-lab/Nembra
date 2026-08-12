@@ -9,15 +9,15 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:17:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:21:00Z",
   "leaseSeconds": 2700,
   "branch": "validation/v14-selected-xcode-cow-freeze-sol-0059ac-20260812",
   "pr": 3146,
   "sourceSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020",
-  "currentHeadSHA": "3643c0dcac926838750f0a8743e656bd446b37de",
+  "currentHeadSHA": "b435e272cdf026257bdffe839337f2a18326ec29",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-build-primary-1607ax-20260811-2357",
-  "takeoverReason": "Generation-6 implementation was explicitly released while diagnostic evidence was pending. Exact #3093/#3135 retained evidence has now classified the selected-Xcode source-tree blocker, so primary continues into the smallest security-preserving real-macOS architecture validation.",
+  "takeoverReason": "Generation-6 implementation was explicitly released while diagnostic evidence was pending. Exact #3093/#3135 retained evidence classified the source-tree blocker, so primary continues through the smallest security-preserving real-macOS remediation validation.",
   "intent": "Prove or reject a root-custodied COW-cloned, Apple-signature-verified selected-Xcode execution subject on the real xcode-27 host without weakening #3072 production custody or creating physical authority.",
-  "checkpoint": "#3135 exact 449a4da1 corrected all three exploit/control witnesses; only real Xcode failed because /Applications is root:admin 0775 and Xcode_27_beta_4.app/Contents/Developer is runner:staff. Validation child #3146 exact 3643c0dc now probes same-filesystem cp -c COW freeze into /Library, recursive root/no-write hardening, Apple anchor + com.apple.dt.Xcode strict/deep verification, frozen tool resolution, and field mutation/replacement negatives. PHYSICAL NO-GO."
+  "checkpoint": "#3146 first exact head 3643c0dc ran 31577554084 and failed inside the main freeze witness after exact scope passed; raw logs remained unavailable. Head b435e272 makes the same authority contract stage-retaining via GitHub annotations and replaces only a brittle Xcode-27 regex with an explicit case predicate. No custody/signature/negative requirement was weakened. PHYSICAL NO-GO."
 }
