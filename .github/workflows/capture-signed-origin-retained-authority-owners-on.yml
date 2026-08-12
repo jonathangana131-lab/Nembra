@@ -1,0 +1,179 @@
+name: Capture Dedicated UID Retained Authority Owners-On Replay
+
+on:
+  push:
+    branches:
+      - validation/v14-retained-authority-owners-on-sol-20260812
+    paths:
+      - .github/workflows/capture-signed-origin-retained-authority-owners-on.yml
+      - scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority_owners_on.py
+  pull_request:
+    paths:
+      - .github/workflows/capture-signed-origin-retained-authority-owners-on.yml
+      - scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority_owners_on.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-retained-authority-owners-on-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retained-authority-owners-on:
+    name: Replay dirfd and mmap with ownership enforced
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact #3143 parent and two-path owners-on replay
+        shell: bash
+        env:
+          EXACT_PARENT: 13004842cfe1bde9d8099821c8e251dda8b86e06
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          cat > "$RUNNER_TEMP/expected" <<'EOF'
+          .github/workflows/capture-signed-origin-retained-authority-owners-on.yml
+          scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority_owners_on.py
+          EOF
+          LC_ALL=C sort -o "$RUNNER_TEMP/expected" "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and source-audit owners-on wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-retained-owners-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py \
+            scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority_owners_on.py
+          probe='scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority_owners_on.py'
+          grep -Fq '"-owners", "on"' "$probe"
+          grep -Fq 'helper.hdiutil_attach = owners_on_attach' "$probe"
+          grep -Fq 'parent.root_probe(authority, field_uid, field_gid, active_groups)' "$probe"
+          grep -Fq 'fieldPathAttackReturnCode' "$probe"
+          grep -Fq 'formerBuildPathAttackReturnCode' "$probe"
+          grep -Fq 'retainedAuthorityArmed' "$probe"
+          grep -Fq 'physicalAuthorityCreated' "$probe"
+          if grep -Fq 'preexec_fn=' "$probe"; then
+            printf 'Owners-on replay must not add opaque credential demotion.\n' >&2
+            exit 21
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Replay directory-FD authority with ownership enforced
+        id: dirfd
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-retained-owners-dirfd.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority_owners_on.py --authority dirfd 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Replay shared-mmap authority with ownership enforced
+        id: mmap
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-retained-owners-mmap.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority_owners_on.py --authority mmap 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Seal retained classification
+        if: always()
+        shell: bash
+        env:
+          DIRFD_STATUS: ${{ steps.dirfd.outputs.status }}
+          MMAP_STATUS: ${{ steps.mmap.outputs.status }}
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/nembra-retained-authority-owners-on.json"
+          /usr/bin/python3 - "$RUNNER_TEMP/nembra-retained-owners-dirfd.log" "$RUNNER_TEMP/nembra-retained-owners-mmap.log" "$out" "${DIRFD_STATUS:-missing}" "${MMAP_STATUS:-missing}" "$EXACT_HEAD" <<'PY'
+          import hashlib, json, pathlib, sys
+          dirfd = pathlib.Path(sys.argv[1])
+          mmap = pathlib.Path(sys.argv[2])
+          out = pathlib.Path(sys.argv[3])
+          dstatus, mstatus, head = sys.argv[4], sys.argv[5], sys.argv[6].lower()
+          def read(path): return path.read_text(encoding='utf-8', errors='replace') if path.exists() else ''
+          dtext, mtext = read(dirfd), read(mmap)
+          payload = {
+              'schemaVersion': 1,
+              'exactValidationHead': head,
+              'exactParent': '13004842cfe1bde9d8099821c8e251dda8b86e06',
+              'attachOwners': 'on',
+              'dirfdStatus': dstatus,
+              'mmapStatus': mstatus,
+              'dirfdParentEvidence': [line for line in dtext.splitlines() if line.startswith('NEMBRA_DEDICATED_UID_RETAINED_AUTHORITY_JSON=')],
+              'mmapParentEvidence': [line for line in mtext.splitlines() if line.startswith('NEMBRA_DEDICATED_UID_RETAINED_AUTHORITY_JSON=')],
+              'dirfdWrapperEvidence': [line for line in dtext.splitlines() if line.startswith('NEMBRA_RETAINED_AUTHORITY_OWNERS_ON_JSON=')],
+              'mmapWrapperEvidence': [line for line in mtext.splitlines() if line.startswith('NEMBRA_RETAINED_AUTHORITY_OWNERS_ON_JSON=')],
+              'dirfdErrors': [line for line in dtext.splitlines() if 'RETAINED_AUTHORITY' in line and '_ERROR=' in line],
+              'mmapErrors': [line for line in mtext.splitlines() if 'RETAINED_AUTHORITY' in line and '_ERROR=' in line],
+              'dirfdLogSHA256': hashlib.sha256(dtext.encode()).hexdigest(),
+              'mmapLogSHA256': hashlib.sha256(mtext.encode()).hexdigest(),
+              'physicalAuthorityCreated': False,
+          }
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
+      - name: Retain owners-on authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-retained-authority-owners-on-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-retained-owners-dirfd.log
+            ${{ runner.temp }}/nembra-retained-owners-mmap.log
+            ${{ runner.temp }}/nembra-retained-authority-owners-on.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Require both original authority oracles to pass
+        shell: bash
+        env:
+          DIRFD_STATUS: ${{ steps.dirfd.outputs.status }}
+          MMAP_STATUS: ${{ steps.mmap.outputs.status }}
+        run: |
+          set -euo pipefail
+          test "${DIRFD_STATUS:-missing}" = 0
+          test "${MMAP_STATUS:-missing}" = 0
+          for authority in dirfd mmap; do
+            log="$RUNNER_TEMP/nembra-retained-owners-${authority}.log"
+            grep -q '^NEMBRA_DEDICATED_UID_RETAINED_AUTHORITY_JSON=' "$log"
+            grep -q '^NEMBRA_RETAINED_AUTHORITY_OWNERS_ON_JSON=' "$log"
+            grep -q '"fieldPathAttackReturnCode":' "$log"
+            grep -q '"formerBuildPathAttackReturnCode":' "$log"
+            grep -q '"retainedAuthorityArmed": true' "$log"
+            grep -q '"physicalAuthorityCreated": false' "$log"
+          done
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          EXACT_PARENT: 13004842cfe1bde9d8099821c8e251dda8b86e06
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
