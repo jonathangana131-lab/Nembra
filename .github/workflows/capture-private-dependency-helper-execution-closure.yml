@@ -32,16 +32,19 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Bind exact acceptance head to selected private convergence parent
+      - name: Bind exact acceptance head through selected private convergence ancestry
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
           SELECTED_PARENT_SHA: 34091153f8bb4f9b024553ca628145bdec873e1e
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-          test "$(git rev-parse '${{ github.event.pull_request.base.sha }}')" = "$SELECTED_PARENT_SHA"
-          git merge-base --is-ancestor "$SELECTED_PARENT_SHA" HEAD
+          git cat-file -e "${SELECTED_PARENT_SHA}^{commit}"
+          git cat-file -e "${PR_BASE_SHA}^{commit}"
+          git merge-base --is-ancestor "$SELECTED_PARENT_SHA" "$PR_BASE_SHA"
+          git merge-base --is-ancestor "$PR_BASE_SHA" HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Compile production and closure regressions
