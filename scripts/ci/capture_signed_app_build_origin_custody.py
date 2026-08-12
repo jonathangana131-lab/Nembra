@@ -92,77 +92,63 @@ def _structured_credentials(
     return {"user": uid, "group": gid, "extra_groups": normalized}
 
 
-def _attest_build_identity_groups(
+def _credential_attesting_exec_command(
+    command: Sequence[str],
+    *,
     name: str,
     uid: int,
     gid: int,
     field_groups: Sequence[int],
-    environment: dict[str, str],
-    cwd: Path,
-) -> tuple[int, ...]:
+) -> list[str]:
+    argv = [str(value) for value in command]
+    if not argv or not os.path.isabs(argv[0]):
+        raise BuildOriginCustodyError("guarded compiler command must begin with one absolute executable")
     baseline = tuple(sorted(set(os.getgrouplist(name, gid))))
     if gid not in baseline or any(value <= 0 for value in baseline):
         raise BuildOriginCustodyError("fresh build Directory Services group baseline is invalid")
-    if uid <= 0 or gid <= 0 or uid == os.getuid():
-        raise BuildOriginCustodyError("fresh build identity is not isolated from root authority")
-
+    effective_baseline = sorted(value for value in baseline if value != gid)
+    field_only = sorted(set(int(value) for value in field_groups).difference(baseline))
+    contract = {
+        "name": name,
+        "uid": uid,
+        "gid": gid,
+        "effectiveGroups": effective_baseline,
+        "fieldOnlyGroups": field_only,
+    }
     child_source = (
-        "import json,os,pwd;"
-        "print('NEMBRA_BUILD_IDENTITY_GROUPS='+json.dumps({"
-        "'uid':os.getuid(),'euid':os.geteuid(),'gid':os.getgid(),'egid':os.getegid(),"
-        "'groups':sorted(set(os.getgroups())),'user':pwd.getpwuid(os.getuid()).pw_name},sort_keys=True))"
+        "import json,os,pwd,sys\n"
+        "contract=json.loads(sys.argv[1])\n"
+        "command=sys.argv[2:]\n"
+        "uid=os.getuid();euid=os.geteuid();gid=os.getgid();egid=os.getegid()\n"
+        "raw_groups=sorted(set(os.getgroups()))\n"
+        "effective=sorted(value for value in raw_groups if value != contract['gid'])\n"
+        "try:\n"
+        "    user=pwd.getpwuid(uid).pw_name\n"
+        "except KeyError:\n"
+        "    user=''\n"
+        "identity_exact=(uid==contract['uid'] and euid==contract['uid'] and "
+        "gid==contract['gid'] and egid==contract['gid'] and user==contract['name'])\n"
+        "groups_exact=(effective==contract['effectiveGroups'])\n"
+        "field_only_leak=sorted(set(effective).intersection(contract['fieldOnlyGroups']))\n"
+        "record={'uid':uid,'euid':euid,'gid':gid,'egid':egid,'user':user,"
+        "'rawGroups':raw_groups,'effectiveGroups':effective,"
+        "'expectedEffectiveGroups':contract['effectiveGroups'],"
+        "'fieldOnlyLeak':field_only_leak,'identityExact':identity_exact,"
+        "'groupsExact':groups_exact,'effectiveZeroSupplementaryGroupsClaim':False}\n"
+        "print('NEMBRA_BUILD_IDENTITY_GROUPS='+json.dumps(record,sort_keys=True),file=sys.stderr,flush=True)\n"
+        "if not identity_exact or not groups_exact or field_only_leak:\n"
+        "    raise SystemExit(126)\n"
+        "os.execve(command[0], command, os.environ)\n"
     )
-    completed = subprocess.run(
-        ["/usr/bin/python3", "-B", "-I", "-c", child_source],
-        cwd=cwd,
-        env=environment,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-        **_structured_credentials(uid, gid, ()),
-    )
-    records = [
-        line[len(GROUP_ATTESTOR_MARKER):]
-        for line in (completed.stdout or "").splitlines()
-        if line.startswith(GROUP_ATTESTOR_MARKER)
+    return [
+        "/usr/bin/python3",
+        "-B",
+        "-I",
+        "-c",
+        child_source,
+        json.dumps(contract, separators=(",", ":"), sort_keys=True),
+        *argv,
     ]
-    if completed.returncode != 0 or len(records) != 1:
-        detail = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
-        raise BuildOriginCustodyError(
-            "could not attest effective dedicated-build credentials"
-            + (f": {detail[-1200:]}" if detail else "")
-        )
-    try:
-        payload = json.loads(records[0])
-    except json.JSONDecodeError as error:
-        raise BuildOriginCustodyError("dedicated-build credential attestor emitted malformed JSON") from error
-    if not isinstance(payload, dict):
-        raise BuildOriginCustodyError("dedicated-build credential attestor emitted no object")
-
-    identity_exact = (
-        payload.get("uid") == uid
-        and payload.get("euid") == uid
-        and payload.get("gid") == gid
-        and payload.get("egid") == gid
-        and payload.get("user") == name
-    )
-    raw_groups = payload.get("groups")
-    if not isinstance(raw_groups, list) or any(not isinstance(value, int) for value in raw_groups):
-        raise BuildOriginCustodyError("dedicated-build credential attestor emitted an invalid group vector")
-    effective = {value for value in raw_groups if value != gid}
-    expected = {value for value in baseline if value != gid}
-    field_only = set(int(value) for value in field_groups).difference(baseline)
-    if not identity_exact:
-        raise BuildOriginCustodyError("dedicated-build child did not retain its exact UID/GID identity")
-    if effective != expected:
-        raise BuildOriginCustodyError(
-            "dedicated-build child effective groups diverged from its Directory Services baseline"
-        )
-    if effective.intersection(field_only):
-        raise BuildOriginCustodyError("field-only group authority leaked into the dedicated-build child")
-    return baseline
 
 
 def _group_names(groups: Sequence[int]) -> tuple[str, ...]:
@@ -653,15 +639,6 @@ def run_custodied_build(
         build_env = _build_environment(build_name, home)
         os.chown(home / "tmp", build_uid, build_gid)
         os.chmod(home / "tmp", 0o700)
-        _attest_build_identity_groups(
-            build_name,
-            build_uid,
-            build_gid,
-            field_groups,
-            build_env,
-            home,
-        )
-
         _create_apfs_image(image)
         writable_device = _attach_apfs(image, mountpoint, readonly=False)
         os.chown(mountpoint, build_uid, build_gid)
@@ -669,8 +646,15 @@ def run_custodied_build(
 
         derived_root = mountpoint / "DerivedData"
         guarded_command = _replace_derived_placeholder(command, derived_root)
-        build = subprocess.run(
+        attested_command = _credential_attesting_exec_command(
             guarded_command,
+            name=build_name,
+            uid=build_uid,
+            gid=build_gid,
+            field_groups=field_groups,
+        )
+        build = subprocess.run(
+            attested_command,
             cwd=os.getcwd(),
             env=build_env,
             stdin=None,

@@ -219,8 +219,15 @@ def root_probe(
             "COMPILER_INDEX_STORE_ENABLE=NO",
             "build",
         ]
-        build = subprocess.run(
+        attested_command = helper._credential_attesting_exec_command(
             command,
+            name=build_name,
+            uid=build_uid,
+            gid=build_gid,
+            field_groups=field_groups,
+        )
+        build = subprocess.run(
+            attested_command,
             cwd=source_root,
             env=build_environment,
             stdin=subprocess.DEVNULL,
@@ -230,6 +237,28 @@ def root_probe(
             check=False,
             **structured_credentials(build_uid, build_gid, []),
         )
+        credential_records = [
+            line[len(helper.GROUP_ATTESTOR_MARKER):]
+            for line in (build.stdout or "").splitlines()
+            if line.startswith(helper.GROUP_ATTESTOR_MARKER)
+        ]
+        if len(credential_records) != 1:
+            emit_error("identity", "missing or ambiguous same-process build credential attestation", build_output=build.stdout)
+            return 72
+        try:
+            credential_attestation = json.loads(credential_records[0])
+        except json.JSONDecodeError:
+            emit_error("identity", "same-process build credential attestation is malformed", build_output=build.stdout)
+            return 72
+        if not (
+            credential_attestation.get("identityExact") is True
+            and credential_attestation.get("groupsExact") is True
+            and credential_attestation.get("fieldOnlyLeak") == []
+            and credential_attestation.get("effectiveZeroSupplementaryGroupsClaim") is False
+        ):
+            emit_error("identity", "same-process build credential attestation rejected effective authority", build_output=build.stdout)
+            return 72
+
         if build.returncode != 0:
             emit_error(
                 "xcodebuild",
@@ -322,6 +351,9 @@ def root_probe(
             "buildUID": build_uid,
             "buildPrimaryGID": build_gid,
             "buildIdentityDistinctFromField": build_uid != field_uid,
+            "buildCredentialAttestation": credential_attestation,
+            "buildCredentialAttestationSameExecTransition": True,
+            "effectiveZeroSupplementaryGroupsClaim": False,
             "fieldGroupsContainBuildGID": build_gid in field_groups,
             "fieldActiveGroupsContainBuildGID": build_gid in field_active_groups,
             "xcodebuildReturnCode": build.returncode,
@@ -344,7 +376,7 @@ def root_probe(
         if writable_device is not None:
             helper._detach_apfs(writable_device, force=True)
         if identity_created:
-            helper._remove_local_build_identity(build_name, build_uid)
+            helper._remove_local_build_identity(build_name, build_uid, require_absent=True)
         shutil.rmtree(workspace, ignore_errors=True)
 
 
@@ -421,6 +453,11 @@ def parent_probe() -> int:
             and evidence.get("fieldGroupsContainBuildGID") is False
             and evidence.get("fieldActiveGroupsContainBuildGID") is False
             and evidence.get("buildIdentityDistinctFromField") is True
+            and evidence.get("buildCredentialAttestationSameExecTransition") is True
+            and evidence.get("effectiveZeroSupplementaryGroupsClaim") is False
+            and evidence.get("buildCredentialAttestation", {}).get("identityExact") is True
+            and evidence.get("buildCredentialAttestation", {}).get("groupsExact") is True
+            and evidence.get("buildCredentialAttestation", {}).get("fieldOnlyLeak") == []
             and evidence.get("xcodebuildReturnCode") == 0
             and evidence.get("fieldAttackReturnCode") != 0
             and evidence.get("nonForcedDetachReturnCode") == 0

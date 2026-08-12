@@ -123,6 +123,11 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertIn("build_gid = build_uid", source)
         self.assertIn("if build_uid == field_uid or build_gid in field_groups:", source)
         self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)
+        self.assertIn("attested_command = _credential_attesting_exec_command(", source)
+        self.assertIn("build = subprocess.run(\n            attested_command,", source)
+        self.assertIn("os.execve(command[0], command, os.environ)", source)
+        self.assertIn("effectiveZeroSupplementaryGroupsClaim':False", source)
+        self.assertNotIn("def _attest_build_identity_groups(", source)
         self.assertIn('"-owners",\n        "on",', source)
         self.assertEqual(source.count('"-owners"'), 1)
         self.assertIn("if detach.returncode != 0:", source)
@@ -177,6 +182,36 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             helper._structured_credentials(501, 0, ())
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._structured_credentials(0, 20, ())
+
+    def test_credential_attesting_exec_command_binds_fresh_ds_baseline_to_same_process_exec(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_attest_exec")
+        with mock.patch.object(helper.os, "getgrouplist", return_value=[12, 61, 100, 701, 55001]):
+            wrapped = helper._credential_attesting_exec_command(
+                ["/usr/bin/true", "accepted-compiler-argument"],
+                name="nembrabuildtest",
+                uid=55001,
+                gid=55001,
+                field_groups=(20, 33, 61, 80, 701),
+            )
+        self.assertEqual(wrapped[:4], ["/usr/bin/python3", "-B", "-I", "-c"])
+        child_source = wrapped[4]
+        contract = helper.json.loads(wrapped[5])
+        self.assertEqual(contract["effectiveGroups"], [12, 61, 100, 701])
+        self.assertEqual(contract["fieldOnlyGroups"], [20, 33, 80])
+        self.assertEqual(wrapped[6:], ["/usr/bin/true", "accepted-compiler-argument"])
+        self.assertIn("os.getgroups()", child_source)
+        self.assertIn("raise SystemExit(126)", child_source)
+        self.assertIn("os.execve(command[0], command, os.environ)", child_source)
+        self.assertIn("effectiveZeroSupplementaryGroupsClaim", child_source)
+
+        with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._credential_attesting_exec_command(
+                ["xcodebuild"],
+                name="nembrabuildtest",
+                uid=55001,
+                gid=55001,
+                field_groups=(),
+            )
 
     def test_verified_identity_retirement_requires_name_and_numeric_absence(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_retirement")
