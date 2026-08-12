@@ -9,14 +9,14 @@
   "generation": 8,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T07:59:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:12:30Z",
+  "lastHeartbeatAt": "2026-08-12T08:27:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-signed-origin-apfs-signing-sol-0058jx",
   "pr": 3138,
   "sourceSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
-  "currentHeadSHA": "2b2de6d56a099f69ced470c9a5c724235f56f4b6",
+  "currentHeadSHA": "03bda94b1e73cdf675972836f10209a3f4515964",
   "takeoverFromWorkerId": "sol-20260811-1607k9",
   "takeoverFromLeaseId": "capture-signed-install-primary-1607k9-20260811-2341",
   "takeoverReason": "Generation 7 expired after its 2026-08-11T23:54:00Z heartbeat. Live GitHub advanced #3056 to b8653985 via merged test repair #3132. Generation 8 preserves that accepted lineage and continues the same P0 signed-install custody objective without overwriting predecessor work.",
-  "checkpoint": "Exact production parent #3056@b8653985 has Field Build Provenance 31548257895 SUCCESS and Main Selective Graft 31548257805 SUCCESS; Signed App Install Custody 31548257832 is terminal red in obsolete supplementary-GID output assumptions. Validation PR #3138 exact 2b2de6d56a099f69ced470c9a5c724235f56f4b6 now tests a signing-compatible authority boundary: real field UID/GID/active groups retain private Tuya + Apple signing identity, writable APFS is hidden beneath root-only pathname custody, and its directory capability is carried as standard input fd 0 through an intermediate ordinary Python Popen into real xcodebuild at /dev/fd/0/DerivedData. This corrects an earlier direct-pass_fds probe that source review showed would not survive the real Tuya build guard's nested Popen. Acceptance requires same-UID no-FD denial, normal non-forced detach, byte-identical read-only remount, root + explicitly delegated field readonly mutation denial, and physicalAuthorityCreated=false. No production helper changed yet. PHYSICAL NO-GO."
+  "checkpoint": "Exact production parent #3056@b8653985 retains Field Build Provenance and Main Selective Graft green while old Signed App Install Custody is red. Validation artifact from #3138 run 31577278936 exact 2b2de6d5 classified the fd0 shortcut red: probe rc 73, Python fatal init_sys_streams because stdin was a directory. That red is preserved, not promoted. Current #3138 exact 03bda94b1e73cdf675972836f10209a3f4515964 instead keeps stdin ordinary and explicitly delegates a nonstandard root-hidden APFS directory FD to a field-UID guard process, which validates and propagates only that FD to real Xcode with pass_fds. Acceptance still requires same-UID no-FD denial, normal non-forced detach, byte-identical read-only remount, root + explicitly delegated field readonly mutation denial, and physicalAuthorityCreated=false. Exact-head runs 31578319818 (PR) / 31578315187 (push) are queued/pending. No production helper changed yet. PHYSICAL NO-GO."
 }
