@@ -123,6 +123,8 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertIn("build_gid = build_uid", source)
         self.assertIn("if build_uid == field_uid or build_gid in field_groups:", source)
         self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)
+        self.assertIn('"-owners",\n        "on",', source)
+        self.assertEqual(source.count('"-owners"'), 1)
         self.assertIn("if detach.returncode != 0:", source)
         self.assertIn("normal non-forced quiescence", source)
         self.assertIn('["/usr/bin/ditto", "--noacl"', source)
