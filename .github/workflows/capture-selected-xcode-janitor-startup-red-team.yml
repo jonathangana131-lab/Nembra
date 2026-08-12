@@ -1,0 +1,76 @@
+name: Capture Selected Xcode Janitor Startup Red Team
+
+on:
+  push:
+    branches:
+      - validation/v14-selected-xcode-janitor-startup-sol-20260812
+    paths:
+      - scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py
+      - .github/workflows/capture-selected-xcode-janitor-startup-red-team.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py
+      - .github/workflows/capture-selected-xcode-janitor-startup-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    name: Prove janitor READY and inherited-FD authority gap
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact validation-only scope
+        shell: bash
+        env:
+          EXACT_PARENT: 6c085b65532c82afa953e2da14e1dbf674031ad2
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-selected-xcode-janitor-startup-red-team.yml \
+            scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          /usr/bin/python3 -I -c 'from pathlib import Path; compile(Path("scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py").read_text(), "<janitor-red-team>", "exec", dont_inherit=True)'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact validation-only scope bound at %s\n' "$source_sha"
+
+      - name: Confirm current production is expected red
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/nembra-janitor-startup-red-team.log"
+          set +e
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py -v >"$log" 2>&1
+          rc=$?
+          set -e
+          cat "$log"
+          if [[ "$rc" -eq 0 ]]; then
+            echo 'ERROR: production unexpectedly satisfied the expected-red janitor authority contract; reclassify this validation before promotion.' >&2
+            exit 21
+          fi
+          grep -Fq 'test_fork_inherits_nonstdio_descriptor_without_explicit_close' "$log"
+          grep -Fq 'FAIL: test_production_requires_child_ready_handshake_before_parent_return' "$log"
+          grep -Fq 'FAIL: test_production_closes_inherited_nonstdio_descriptors_before_monitor_loop' "$log"
+          grep -Fq 'Ran 3 tests' "$log"
+          printf 'EXPECTED_RED_CONFIRMED: forked uid-0 janitor lacks parent-visible READY and explicit inherited-fd closure.\n'
+
+      - name: Preserve truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 6c085b65532c82afa953e2da14e1dbf674031ad2 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'VALIDATION ONLY. NO PRODUCTION HELPER EDIT. NO DEVICE / BLUETOOTH / TUYA / PHYSICAL AUTHORITY.\n'
