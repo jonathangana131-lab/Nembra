@@ -9,15 +9,15 @@
   "generation": 9,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T11:11:00Z",
-  "lastHeartbeatAt": "2026-08-12T11:15:00Z",
+  "lastHeartbeatAt": "2026-08-12T11:33:30Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-selected-xcode-janitor-startup-sol-20260812",
   "pr": 3188,
-  "sourceSHA": "8087bac82cc33888df22d15a34da8cf96e72269f",
-  "currentHeadSHA": "878b84fbcc0ebc8f1538334fc2ff9afa51d6d227",
+  "sourceSHA": "6c085b65532c82afa953e2da14e1dbf674031ad2",
+  "currentHeadSHA": "615c5d5ebe55276983f298d55c452988bc247719",
   "takeoverFromWorkerId": "sol-20260812-0059q4",
   "takeoverFromLeaseId": "6f9b2a37d84e4c53a1f0be926d4778c1",
-  "takeoverReason": "Generation 8 expired and pointed at closed validation #3093. Generation 9 recovered tests on live #3178 and was re-anchored when production advanced e2ad9fa7 -> 8087bac8 without changing the janitor helper.",
+  "takeoverReason": "Generation 8 expired and pointed at closed validation #3093. Generation 9 recovered tests and has been re-anchored whenever #3178 advanced without changing the attacked janitor helper.",
   "intent": "Validation-only expected-red proof that selected-Xcode root janitor promotion requires child READY and explicit inherited fd>=3 closure. No production edit or physical authority.",
-  "checkpoint": "#3188 exact 878b84fb is ahead-only from #3178@8087bac8 by exactly two additive diagnostic paths. Capture Selected Xcode Janitor Startup Red Team run 31590960775 terminal SUCCESS as expected-red classifier: real fork inherited non-stdio fd, production has no parent-visible READY before return, and no explicit inherited fd>=3 closure. Durable production comment 5265944411 links the evidence. Main diagnostic remains queued and Xcode exact-head is skipped/not counted. Await/review production repair; PHYSICAL NO-GO."
+  "checkpoint": "#3188 exact 615c5d5e is ahead-only from current #3178@6c085b65 by exactly two additive diagnostic paths. Capture Selected Xcode Janitor Startup Red Team run 31592182010 terminal SUCCESS as expected-red classifier on this exact parent: real fork inherited non-stdio fd, production has no parent-visible READY before return, and no explicit inherited fd>=3 closure. Durable #3178 comment 5266206349 records current-exact evidence. The additive process-liveness guard on 6c085 does not modify janitor construction. Await production READY/fd-closure repair and reclassify witness on repaired head; PHYSICAL NO-GO."
 }
