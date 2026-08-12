@@ -3,12 +3,15 @@ name: Capture Apple Signing Preflight Redaction
 on:
   push:
     branches:
+      - validation/v14-field-uid-apple-development-codesign-gpt56-sol-20260812
       - repair/v14-apple-signing-preflight-redaction-sol-20260812
     paths:
+      - scripts/ci/capture_apple_signing_preflight_receipt_seal.py
       - scripts/field/run_apple_signing_context_preflight.command
       - .github/workflows/capture-apple-signing-preflight-redaction.yml
   pull_request:
     paths:
+      - scripts/ci/capture_apple_signing_preflight_receipt_seal.py
       - scripts/field/run_apple_signing_context_preflight.command
       - .github/workflows/capture-apple-signing-preflight-redaction.yml
   workflow_dispatch:
@@ -22,16 +25,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Bind exact repair scope
+      - name: Bind exact five-path validation scope
         shell: bash
         env:
-          EXACT_PARENT: e4bd9ecf1795ecae667ab64ad450d82657b68e2a
+          EXACT_PARENT: 2e3754518163e12c3cfcb47267e604aaae3d7556
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
@@ -40,6 +43,9 @@ jobs:
           git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
           printf '%s\n' \
             .github/workflows/capture-apple-signing-preflight-redaction.yml \
+            .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml \
+            scripts/ci/capture_apple_signing_preflight_receipt_seal.py \
+            scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py \
             scripts/field/run_apple_signing_context_preflight.command \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected"
           diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
@@ -50,41 +56,40 @@ jobs:
         run: |
           set -euo pipefail
           preflight=scripts/field/run_apple_signing_context_preflight.command
+          sealer=scripts/ci/capture_apple_signing_preflight_receipt_seal.py
           /bin/bash -n "$preflight"
-          fixed='Apple Development:[[:space:]]*[^<[:space:]]'
-          old='Apple Development:[^<[:space:]]'
-          grep -Fq "$fixed" "$preflight"
-          if grep -Fq "$old" "$preflight"; then
-            echo 'ERROR: whitespace-blind Apple identity redaction grammar survived.' >&2
-            exit 21
-          fi
+          /usr/bin/python3 -m py_compile "$sealer"
+          /usr/bin/python3 -B -I - "$sealer" <<'PY'
+          import importlib.util
+          import sys
+          from pathlib import Path
 
-          raw='  1) ABCDEF1234567890 "Apple Development: Example Person (ABCDE12345)"'
-          raw_tabs=$'Apple Development:\tExample Person (ABCDE12345)'
-          placeholder='Apple Development: <redacted>'
-          placeholder_tight='Apple Development:<redacted>'
-          descriptive='Apple Development identity count: 1'
+          path = Path(sys.argv[1])
+          spec = importlib.util.spec_from_file_location("nembra_receipt_seal_redaction", path)
+          if spec is None or spec.loader is None:
+              raise SystemExit("could not load receipt sealer")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          raw = '  1) ABCDEF1234567890 "Apple Development: Example Person (ABCDE12345)"'
+          raw_tabs = 'Apple Development:\tExample Person (ABCDE12345)'
+          placeholder = 'Apple Development: <redacted>'
+          placeholder_tight = 'Apple Development:<redacted>'
+          descriptive = 'Apple Development identity count: 1'
+          if not module.raw_identity_present(raw):
+              raise SystemExit("spaced raw Apple identity escaped suppression grammar")
+          if not module.raw_identity_present(raw_tabs):
+              raise SystemExit("tabbed raw Apple identity escaped suppression grammar")
+          for safe in (placeholder, placeholder_tight, descriptive):
+              if module.raw_identity_present(safe):
+                  raise SystemExit(f"redaction grammar misclassified safe text: {safe!r}")
+          PY
 
-          printf '%s\n' "$raw" | grep -Eq "$fixed"
-          printf '%s\n' "$raw_tabs" | grep -Eq "$fixed"
-          if printf '%s\n' "$placeholder" | grep -Eq "$fixed"; then
-            echo 'ERROR: explicit redacted placeholder was misclassified as raw identity.' >&2
-            exit 22
-          fi
-          if printf '%s\n' "$placeholder_tight" | grep -Eq "$fixed"; then
-            echo 'ERROR: tight redacted placeholder was misclassified as raw identity.' >&2
-            exit 23
-          fi
-          if printf '%s\n' "$descriptive" | grep -Eq "$fixed"; then
-            echo 'ERROR: non-label descriptive text was misclassified as raw identity.' >&2
-            exit 24
-          fi
-
-      - name: Preserve field-preflight truth boundary
+      - name: Preserve field-preflight truth and sealed-receipt boundary
         shell: bash
         run: |
           set -euo pipefail
           preflight=scripts/field/run_apple_signing_context_preflight.command
+          sealer=scripts/ci/capture_apple_signing_preflight_receipt_seal.py
           ! grep -Fq '/usr/bin/xcodebuild' "$preflight"
           ! grep -Fq 'xcrun ' "$preflight"
           ! grep -Fq -- '-allowProvisioningUpdates' "$preflight"
@@ -92,6 +97,13 @@ jobs:
           ! grep -Fq 'bootstrap_capture_tuya_sdk.sh' "$preflight"
           ! grep -Fq 'LocalSecrets' "$preflight"
           ! grep -Fq 'install_one_time_capture.command' "$preflight"
-          grep -Fq '"bluetoothExercised": False' "$preflight"
-          grep -Fq '"physicalAuthorityCreated": False' "$preflight"
+          grep -Fq '/usr/bin/env -i' "$preflight"
+          grep -Fq 'SEALER_BLOB=' "$preflight"
+          grep -Fq 'os.O_NOFOLLOW' "$preflight"
+          grep -Fq 'RAW_IDENTITY_PATTERN' "$sealer"
+          grep -Fq '"canonicalReceiptSealed": True' "$sealer"
+          grep -Fq '"fieldAppendMutationDenied"' "$sealer"
+          grep -Fq '"fieldNamespaceReplacementDenied"' "$sealer"
+          grep -Fq '"bluetoothExercised": False' "$sealer"
+          grep -Fq '"physicalAuthorityCreated": False' "$sealer"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
