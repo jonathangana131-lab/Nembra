@@ -120,6 +120,12 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertLess(indexes["source_hash"], indexes["stage"])
         self.assertLess(indexes["stage_hash"], indexes["detach_ro"])
 
+        owners = source.find('"-owners",')
+        mountpoint = source.find('"-mountpoint",')
+        self.assertGreaterEqual(owners, 0)
+        self.assertGreaterEqual(mountpoint, 0)
+        self.assertLess(owners, mountpoint)
+        self.assertEqual(source.count('"-owners",'), 1)
         self.assertIn("build_gid = build_uid", source)
         self.assertIn("if build_uid == field_uid or build_gid in field_groups:", source)
         self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)
