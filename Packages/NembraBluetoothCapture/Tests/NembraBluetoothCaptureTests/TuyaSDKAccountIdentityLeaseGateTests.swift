@@ -37,6 +37,12 @@ struct TuyaSDKAccountIdentityLeaseGateTests {
         #expect(verdict(isLoggedIn: true, currentUID: "account-a", membershipUID: "account-a", membershipDeviceID: "different-device") == .blocked(reason: "Account-bound membership belongs to a different Tuya device."))
     }
 
+    @Test("missing or blank membership device identity fails closed")
+    func missingMembershipDeviceIdentityFailsClosed() {
+        #expect(verdict(isLoggedIn: true, currentUID: "account-a", membershipUID: "account-a", membershipDeviceID: nil) == .blocked(reason: "The account-bound membership proof has no scooter device ID."))
+        #expect(verdict(isLoggedIn: true, currentUID: "account-a", membershipUID: "account-a", membershipDeviceID: "   ") == .blocked(reason: "The account-bound membership proof has no scooter device ID."))
+    }
+
     @Test("blank expected device or account is never authority")
     func blankInputsFailClosed() {
         #expect(verdict(isLoggedIn: true, currentUID: "   ", membershipUID: "account-a", membershipDeviceID: expectedDeviceID) == .blocked(reason: "Current Tuya SDK account identity is unavailable."))
@@ -54,7 +60,7 @@ struct TuyaSDKAccountIdentityLeaseGateTests {
         isLoggedIn: Bool,
         currentUID: String?,
         membershipUID: String?,
-        membershipDeviceID: String
+        membershipDeviceID: String?
     ) -> TuyaSDKAccountIdentityLeaseGate.Verdict {
         TuyaSDKAccountIdentityLeaseGate.verdict(for: .init(
             isLoggedIn: isLoggedIn,
