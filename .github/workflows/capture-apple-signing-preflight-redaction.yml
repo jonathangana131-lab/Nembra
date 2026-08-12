@@ -1,0 +1,97 @@
+name: Capture Apple Signing Preflight Redaction
+
+on:
+  push:
+    branches:
+      - repair/v14-apple-signing-preflight-redaction-sol-20260812
+    paths:
+      - scripts/field/run_apple_signing_context_preflight.command
+      - .github/workflows/capture-apple-signing-preflight-redaction.yml
+  pull_request:
+    paths:
+      - scripts/field/run_apple_signing_context_preflight.command
+      - .github/workflows/capture-apple-signing-preflight-redaction.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  redaction-regression:
+    name: Reject raw Apple Development labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact repair scope
+        shell: bash
+        env:
+          EXACT_PARENT: e4bd9ecf1795ecae667ab64ad450d82657b68e2a
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-apple-signing-preflight-redaction.yml \
+            scripts/field/run_apple_signing_context_preflight.command \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Prove raw identity suppression grammar
+        shell: bash
+        run: |
+          set -euo pipefail
+          preflight=scripts/field/run_apple_signing_context_preflight.command
+          /bin/bash -n "$preflight"
+          fixed='Apple Development:[[:space:]]*[^<[:space:]]'
+          old='Apple Development:[^<[:space:]]'
+          grep -Fq "$fixed" "$preflight"
+          if grep -Fq "$old" "$preflight"; then
+            echo 'ERROR: whitespace-blind Apple identity redaction grammar survived.' >&2
+            exit 21
+          fi
+
+          raw='  1) ABCDEF1234567890 "Apple Development: Example Person (ABCDE12345)"'
+          raw_tabs=$'Apple Development:\tExample Person (ABCDE12345)'
+          placeholder='Apple Development: <redacted>'
+          placeholder_tight='Apple Development:<redacted>'
+          descriptive='Apple Development identity count: 1'
+
+          printf '%s\n' "$raw" | grep -Eq "$fixed"
+          printf '%s\n' "$raw_tabs" | grep -Eq "$fixed"
+          if printf '%s\n' "$placeholder" | grep -Eq "$fixed"; then
+            echo 'ERROR: explicit redacted placeholder was misclassified as raw identity.' >&2
+            exit 22
+          fi
+          if printf '%s\n' "$placeholder_tight" | grep -Eq "$fixed"; then
+            echo 'ERROR: tight redacted placeholder was misclassified as raw identity.' >&2
+            exit 23
+          fi
+          if printf '%s\n' "$descriptive" | grep -Eq "$fixed"; then
+            echo 'ERROR: non-label descriptive text was misclassified as raw identity.' >&2
+            exit 24
+          fi
+
+      - name: Preserve field-preflight truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          preflight=scripts/field/run_apple_signing_context_preflight.command
+          ! grep -Fq '/usr/bin/xcodebuild' "$preflight"
+          ! grep -Fq 'xcrun ' "$preflight"
+          ! grep -Fq -- '-allowProvisioningUpdates' "$preflight"
+          ! grep -Fq 'devicectl' "$preflight"
+          ! grep -Fq 'bootstrap_capture_tuya_sdk.sh' "$preflight"
+          ! grep -Fq 'LocalSecrets' "$preflight"
+          ! grep -Fq 'install_one_time_capture.command' "$preflight"
+          grep -Fq '"bluetoothExercised": False' "$preflight"
+          grep -Fq '"physicalAuthorityCreated": False' "$preflight"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
