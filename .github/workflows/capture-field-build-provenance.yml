@@ -232,7 +232,12 @@ jobs:
           grep -Fq 'build_uid = _choose_ephemeral_id()' "$build_origin_custody"
           grep -Fq 'build_gid = build_uid' "$build_origin_custody"
           grep -Fq '_create_local_build_identity(build_name, build_uid, build_gid, home)' "$build_origin_custody"
+          grep -Fq 'GROUP_ATTESTOR_MARKER = "NEMBRA_BUILD_IDENTITY_GROUPS="' "$build_origin_custody"
+          grep -Fq '_attest_build_identity_groups(' "$build_origin_custody"
+          grep -Fq 'if effective != expected:' "$build_origin_custody"
+          grep -Fq 'if effective.intersection(field_only):' "$build_origin_custody"
           grep -Fq 'writable_device = _attach_apfs(image, mountpoint, readonly=False)' "$build_origin_custody"
+          grep -Fq '"-owners",' "$build_origin_custody"
           grep -Fq '**_structured_credentials(build_uid, build_gid, ())' "$build_origin_custody"
           grep -Fq 'detach = _detach_apfs(writable_device)' "$build_origin_custody"
           grep -Fq 'normal non-forced quiescence' "$build_origin_custody"
@@ -241,7 +246,9 @@ jobs:
           grep -Fq 'if error.errno != errno.EROFS:' "$build_origin_custody"
           grep -Fq 'stage_root, stage_app = _copy_to_stage(source_app, private_tmp)' "$build_origin_custody"
           grep -Fq 'if staged_fingerprint != source_fingerprint:' "$build_origin_custody"
-          grep -Fq '_remove_local_build_identity(build_name, build_uid)' "$build_origin_custody"
+          grep -Fq '_remove_local_build_identity(build_name, build_uid, require_absent=True)' "$build_origin_custody"
+          grep -Fq 'def _assert_local_build_identity_retired(' "$build_origin_custody"
+          grep -Fq 'if retirement_error is not None:' "$build_origin_custody"
           if grep -Fq '_choose_capability_gid' "$build_origin_custody"; then
             echo 'ERROR: retired supplementary-group compiler-output authority reappeared.' >&2
             exit 1
