@@ -9,15 +9,15 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:38:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:42:00Z",
   "leaseSeconds": 2700,
   "branch": "validation/v14-selected-xcode-cow-freeze-sol-0059ac-20260812",
   "pr": 3146,
   "sourceSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020",
-  "currentHeadSHA": "500e5ef0565794069aac5a5358498a931be6a3a9",
+  "currentHeadSHA": "a1a5298503c1237e3f6ed706d1bbeeff347449ca",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-build-primary-1607ax-20260811-2357",
   "takeoverReason": "Generation-6 implementation was explicitly released while diagnostic evidence was pending. Exact #3093/#3135 retained evidence classified the source-tree blocker, so primary continues through the smallest security-preserving real-macOS remediation validation.",
   "intent": "Prove or reject a root-custodied COW-cloned, Apple-signature-verified selected-Xcode execution subject on the real xcode-27 host without weakening #3072 production custody or creating physical authority.",
-  "checkpoint": "#3146 exact 6eeb2dd3 run 31578887995 again reached same-device COW clone success in 61s then exited before the first hardening marker. Root cause is the root-owned mktemp namespace defaulting 0700: the field shell cannot traverse to the cloned app for the immediate test -d, so hardening never executed. Head 500e5ef0 explicitly strips namespace ACL and sets root-owned 0755 before cloning, preserving no field mutation authority while permitting read/execute traversal; all downstream hardening/signature/frozen-tool/negative gates remain unchanged. PHYSICAL NO-GO."
+  "checkpoint": "#3146 exact 500e5ef0 run 31579179400 reached the real hardening path: root namespace 0755 passed, 3438064 KiB COW clone completed in 62s, recursive root chown passed, then bulk chmod -RN failed on Xcode framework symlink topology ('Frameworks: No such file or directory'). Head a1a52985 removes bulk ACL/mode rewriting and instead fail-closes on any copied extended ACL via BSD find -acl plus the existing full recursive root/no-group-world-write oracle; Apple signature, frozen xcodebuild/xctrace/devicectl confinement and mutation/replacement negatives remain required. PHYSICAL NO-GO."
 }
