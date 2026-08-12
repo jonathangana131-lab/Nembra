@@ -23,14 +23,13 @@ jobs:
       - name: Bind exact parent
         shell: bash
         env:
-          EXPECTED_PARENT: 83ed9001385518e979a7b37265877054938ae5c0
+          EXPECTED_PARENT: bfa7514d49e7ea2d046f177c0ac8931a55022d19
           PRODUCT_PARENT: b9164701da15d7a773698599bf24ed3cb923f8ac
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
-          changed="$(git diff --name-only "$PRODUCT_PARENT"...HEAD)"
-          test "$changed" = "$MATERIALIZER"
+          test "$(git diff --name-only "$PRODUCT_PARENT"...HEAD)" = "$MATERIALIZER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Apply narrow permanent-test transforms
@@ -120,19 +119,17 @@ jobs:
           )
           PY
 
-      - name: Compile transformed tests
+      - name: Compile pre-stage regression
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile \
-            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
-            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+        run: python3 -m py_compile scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+
+      - name: Compile real-Xcode regression
+        shell: bash
+        run: python3 -m py_compile scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
 
       - name: Run focused pre-stage regressions
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 -B scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+        run: python3 -B scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
 
       - name: Assert semantic witness source
         shell: bash
@@ -151,15 +148,10 @@ jobs:
         run: |
           set -euo pipefail
           git rm "$MATERIALIZER"
-          git add \
-            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
-            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          git add scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           git diff --cached --check
           actual="$(git diff --cached --name-only | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            "$MATERIALIZER" \
-            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
-            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$MATERIALIZER" scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
           test "$actual" = "$expected"
           git config user.name 'nembra-swarm-materializer'
           git config user.email 'nembra-swarm@users.noreply.github.com'
