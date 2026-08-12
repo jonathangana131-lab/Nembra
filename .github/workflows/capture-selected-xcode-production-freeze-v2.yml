@@ -1,0 +1,204 @@
+name: Capture Selected Xcode Production Freeze V2
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_freeze.py
+      - scripts/ci/capture_selected_xcode_freeze_launcher.py
+      - scripts/ci/capture_selected_xcode_process_liveness_guard.py
+      - .github/workflows/capture-selected-xcode-production-freeze-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-selected-xcode-production-freeze-v2-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  production-freeze-v2:
+    name: Prove fail-closed exact-process freeze lifecycle
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind additive hardening scope and liveness semantics
+        shell: bash
+        env:
+          EXACT_PARENT: 8087bac82cc33888df22d15a34da8cf96e72269f
+        run: |
+          set -euo pipefail
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-selected-xcode-production-freeze-v2.yml \
+            scripts/ci/capture_selected_xcode_process_liveness_guard.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          /usr/bin/python3 -I scripts/ci/capture_selected_xcode_process_liveness_guard.py | \
+            /usr/bin/grep -F 'CAPTURE_SELECTED_XCODE_LIVENESS_GUARD_SELF_TEST_ACCEPTED physicalAuthorityCreated=false'
+          /usr/bin/python3 -I - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/ci/capture_selected_xcode_process_liveness_guard.py').read_text()
+          for fragment in (
+              'except ProcessLookupError:',
+              'except (PermissionError, OSError):',
+              'return True',
+              'install_into_launcher',
+              '_same_field_process',
+              '_field_process_is_same',
+              '_load_freeze_helper',
+          ):
+              if fragment not in source:
+                  raise SystemExit(f'missing fail-closed liveness invariant: {fragment}')
+          for forbidden in ('CoreBluetooth', 'CBCentralManager', 'NEMBRA_TUYA_', 'device install app', 'device process launch'):
+              if forbidden.lower() in source.lower():
+                  raise SystemExit(f'liveness guard crossed physical/product boundary: {forbidden}')
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run real freeze with exact Git-object liveness composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          helper_path='scripts/ci/capture_selected_xcode_freeze.py'
+          launcher_path='scripts/ci/capture_selected_xcode_freeze_launcher.py'
+          guard_path='scripts/ci/capture_selected_xcode_process_liveness_guard.py'
+          git_env=(/usr/bin/env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null)
+          git_cmd=(/usr/bin/git -c core.hooksPath=/dev/null)
+
+          exact_blob() { "${git_env[@]}" "${git_cmd[@]}" rev-parse "$source_sha:$1"; }
+          exact_b64() { "${git_env[@]}" "${git_cmd[@]}" cat-file blob "$1" | /usr/bin/base64 | /usr/bin/tr -d '\r\n'; }
+          helper_blob="$(exact_blob "$helper_path")"
+          launcher_blob="$(exact_blob "$launcher_path")"
+          guard_blob="$(exact_blob "$guard_path")"
+          [[ "$helper_blob" =~ ^[0-9a-f]{40}$ && "$launcher_blob" =~ ^[0-9a-f]{40}$ && "$guard_blob" =~ ^[0-9a-f]{40}$ ]]
+          helper_b64="$(exact_b64 "$helper_blob")"
+          launcher_b64="$(exact_b64 "$launcher_blob")"
+          guard_b64="$(exact_b64 "$guard_blob")"
+
+          marker='/tmp/nembra-freeze-v2-worktree-attacker-executed'
+          /bin/rm -f -- "$marker"
+          for path in "$helper_path" "$launcher_path" "$guard_path"; do
+            cat > "$path" <<'PY_ATTACK'
+          from pathlib import Path
+          Path('/tmp/nembra-freeze-v2-worktree-attacker-executed').write_text('attacker executed\n')
+          raise SystemExit(97)
+          PY_ATTACK
+          done
+          restore() {
+            printf '%s' "$helper_b64" | /usr/bin/base64 -D > "$helper_path"
+            printf '%s' "$launcher_b64" | /usr/bin/base64 -D > "$launcher_path"
+            printf '%s' "$guard_b64" | /usr/bin/base64 -D > "$guard_path"
+          }
+          trap restore EXIT INT TERM
+
+          root_program="$(/bin/cat <<'PY_ROOT'
+          import base64, hashlib, re, sys
+
+          def verified(encoded, expected, label):
+              if re.fullmatch(r'[0-9a-f]{40}', expected) is None:
+                  raise SystemExit(f'{label} blob identity malformed')
+              raw = base64.b64decode(encoded, validate=True)
+              actual = hashlib.sha1(b'blob ' + str(len(raw)).encode('ascii') + b'\0' + raw).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f'{label} failed root Git-blob identity')
+              return raw
+
+          launcher_b64, launcher_blob, guard_b64, guard_blob, helper_b64, helper_blob, field_pid, source_sha = sys.argv[1:]
+          launcher_raw = verified(launcher_b64, launcher_blob, 'launcher')
+          guard_raw = verified(guard_b64, guard_blob, 'liveness guard')
+          verified(helper_b64, helper_blob, 'helper')
+          if re.fullmatch(r'[0-9a-f]{40}', source_sha) is None:
+              raise SystemExit('source SHA malformed')
+
+          launcher = {'__name__': 'nembra_freeze_launcher', '__file__': '<accepted-freeze-launcher>'}
+          exec(compile(launcher_raw, '<accepted-freeze-launcher>', 'exec', dont_inherit=True), launcher)
+          guard = {'__name__': 'nembra_freeze_liveness_guard', '__file__': '<accepted-liveness-guard>'}
+          exec(compile(guard_raw, '<accepted-liveness-guard>', 'exec', dont_inherit=True), guard)
+          install = guard.get('install_into_launcher')
+          main = launcher.get('main')
+          if not callable(install) or not callable(main):
+              raise SystemExit('accepted launcher/guard callable contract missing')
+          install(launcher)
+          if launcher.get('_same_field_process') is None:
+              raise SystemExit('launcher stale-recovery liveness was not patched')
+          rc = main([
+              '--field-pid', field_pid,
+              '--source-sha', source_sha,
+              '--helper-base64', helper_b64,
+              '--helper-blob', helper_blob,
+          ])
+          raise SystemExit(int(rc))
+          PY_ROOT
+          )"
+
+          set +e
+          result="$(/usr/bin/sudo -n /usr/bin/python3 -B -I -c "$root_program" \
+            "$launcher_b64" "$launcher_blob" "$guard_b64" "$guard_blob" \
+            "$helper_b64" "$helper_blob" "$$" "$source_sha")"
+          rc=$?
+          set -e
+          restore
+          trap - EXIT INT TERM
+          unset root_program
+          test "$rc" = 0
+          test ! -e "$marker"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          if /usr/bin/sudo -n /usr/bin/true >/dev/null 2>&1; then
+            printf 'ERROR: reusable field sudo survived freeze V2 publication\n' >&2
+            exit 61
+          fi
+
+          receipt="$RUNNER_TEMP/nembra-selected-xcode-production-freeze-v2.tsv"
+          printf '%s\n' "$result" > "$receipt"
+          chmod 600 "$receipt"
+          IFS=$'\t' read -r freeze_root developer xcodebuild xctrace devicectl janitor_pid < "$receipt"
+          case "$freeze_root" in /Library/NembraSelectedXcodeFreeze.*) ;; *) exit 62 ;; esac
+          case "$developer" in "$freeze_root"/Xcode.app/Contents/Developer) ;; *) exit 63 ;; esac
+          for tool in "$xcodebuild" "$xctrace" "$devicectl"; do
+            test -x "$tool"
+            case "$tool" in "$developer"/*) ;; *) exit 64 ;; esac
+          done
+          test "$janitor_pid" -gt 1
+          DEVELOPER_DIR="$developer" "$xcodebuild" -version | /usr/bin/grep -E '^Xcode 27([.]|$)'
+          DEVELOPER_DIR="$developer" "$xctrace" version >/dev/null
+          DEVELOPER_DIR="$developer" "$devicectl" help >/dev/null
+          printf 'FROZEN_XCODE_V2_RUNTIME_ACCEPTED livenessAmbiguity=failClosed physicalAuthorityCreated=false\n'
+
+      - name: Require janitor cleanup after exact field shell exit
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/nembra-selected-xcode-production-freeze-v2.tsv"
+          IFS=$'\t' read -r freeze_root _ _ _ _ _ < "$receipt"
+          case "$freeze_root" in /Library/NembraSelectedXcodeFreeze.*) ;; *) exit 71 ;; esac
+          for _ in $(seq 1 120); do
+            if [[ ! -e "$freeze_root" ]]; then
+              printf 'FROZEN_XCODE_V2_JANITOR_ACCEPTED physicalAuthorityCreated=false\n'
+              exit 0
+            fi
+            sleep 1
+          done
+          printf 'ERROR: V2 janitor did not retire the exact freeze namespace\n' >&2
+          exit 72
+
+      - name: Preserve physical truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 8087bac82cc33888df22d15a34da8cf96e72269f HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test ! -e /tmp/nembra-freeze-v2-worktree-attacker-executed
+          printf 'VALIDATION/PRODUCTION INGREDIENT ONLY. NO DEVICE DISCOVERY / INSTALL / BLUETOOTH / TUYA / PHYSICAL GO.\n'
