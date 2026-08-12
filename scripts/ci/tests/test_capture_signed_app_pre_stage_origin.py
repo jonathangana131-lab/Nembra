@@ -92,10 +92,10 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             "sudo_revoke": "_invalidate_invoker_sudo(field_user, field_uid, field_gid, field_groups, field_env)",
             "identity_id": "build_uid = _choose_ephemeral_id()",
             "identity_create": "_create_local_build_identity(build_name, build_uid, build_gid, home)",
-            "group_attestation": "_attest_build_identity_groups(\n            build_name,",
+            "group_attestation": "build_groups = _attest_build_identity_groups(\n            build_name,",
             "image": "_create_apfs_image(image)",
             "attach_rw": "writable_device = _attach_apfs(image, mountpoint, readonly=False)",
-            "spawn": "build = subprocess.run(",
+            "spawn": "build = _run_exec_bound_build(",
             "lock_owner": "os.chown(mountpoint, 0, 0)",
             "lock_mode": "os.chmod(mountpoint, 0o700)",
             "detach_rw": "detach = _detach_apfs(writable_device)",
@@ -116,6 +116,8 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             search_from = index + 1
 
         self.assertLess(indexes["group_attestation"], indexes["image"])
+        self.assertLess(indexes["attach_rw"], indexes["spawn"])
+        self.assertLess(indexes["spawn"], indexes["lock_owner"])
         self.assertLess(indexes["detach_rw"], indexes["status"])
         self.assertLess(indexes["status"], indexes["attach_ro"])
         self.assertLess(indexes["readonly_probe"], indexes["source_hash"])
@@ -129,6 +131,11 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertEqual(source.count('"-owners"'), 1)
         self.assertIn("if effective != expected:", source)
         self.assertIn("if effective.intersection(field_only):", source)
+        self.assertIn("def _run_exec_bound_build(", source)
+        self.assertIn('"NEMBRA_EXEC_ATTEST_EXPECTED_GROUPS_JSON"', source)
+        self.assertIn("os.execve(command[0], command, os.environ)", source)
+        self.assertIn("baseline_groups=build_groups", source)
+        self.assertNotIn("build = subprocess.run(\n            guarded_command,", source)
         self.assertIn("def _process_state_for_uid(", source)
         self.assertIn("if not _numeric_principal_in_use(candidate):", source)
         self.assertIn("if not latest_live and not latest_lookups:", source)
@@ -214,6 +221,63 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             helper._structured_credentials(501, 0, ())
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._structured_credentials(0, 20, ())
+
+    def test_exec_bound_build_attests_then_execs_exact_absolute_command(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_exec_bound")
+        completed = mock.Mock(returncode=0)
+        command = ["/usr/bin/python3", "-B", "/private/tmp/guard.py", "arg"]
+        environment = {"PATH": "/usr/bin:/bin", "HOME": "/private/tmp/home"}
+        with mock.patch.object(helper.subprocess, "run", return_value=completed) as run:
+            result = helper._run_exec_bound_build(
+                command,
+                name="nembrabuildtest",
+                uid=55001,
+                gid=55001,
+                baseline_groups=(12, 61, 100, 701, 55001),
+                environment=environment,
+                cwd=Path("/private/tmp"),
+            )
+        self.assertIs(result, completed)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[:4], ["/usr/bin/python3", "-B", "-I", "-c"])
+        self.assertIn("os.execve(command[0], command, os.environ)", argv[4])
+        separator = argv.index("--")
+        self.assertEqual(argv[separator + 1 :], command)
+        self.assertEqual(run.call_args.kwargs["user"], 55001)
+        self.assertEqual(run.call_args.kwargs["group"], 55001)
+        self.assertEqual(run.call_args.kwargs["extra_groups"], [])
+        exec_env = run.call_args.kwargs["env"]
+        self.assertEqual(exec_env["NEMBRA_EXEC_ATTEST_EXPECTED_UID"], "55001")
+        self.assertEqual(exec_env["NEMBRA_EXEC_ATTEST_EXPECTED_GID"], "55001")
+        self.assertEqual(exec_env["NEMBRA_EXEC_ATTEST_EXPECTED_USER"], "nembrabuildtest")
+        self.assertEqual(
+            __import__("json").loads(exec_env["NEMBRA_EXEC_ATTEST_EXPECTED_GROUPS_JSON"]),
+            [12, 61, 100, 701],
+        )
+        self.assertEqual(environment, {"PATH": "/usr/bin:/bin", "HOME": "/private/tmp/home"})
+
+    def test_exec_bound_build_rejects_relative_or_invalid_group_authority(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_exec_rejection")
+        with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._run_exec_bound_build(
+                ["python3", "guard.py"],
+                name="nembrabuildtest",
+                uid=55001,
+                gid=55001,
+                baseline_groups=(55001,),
+                environment={},
+                cwd=Path("/private/tmp"),
+            )
+        with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._run_exec_bound_build(
+                ["/usr/bin/python3", "guard.py"],
+                name="nembrabuildtest",
+                uid=55001,
+                gid=55001,
+                baseline_groups=(0, 55001),
+                environment={},
+                cwd=Path("/private/tmp"),
+            )
 
     def test_effective_build_groups_must_match_fresh_directory_service_baseline(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_groups")
