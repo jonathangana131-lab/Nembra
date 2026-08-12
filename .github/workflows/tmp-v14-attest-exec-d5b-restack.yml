@@ -1,0 +1,45 @@
+name: Temporary V14 attest-exec d5b restack
+on:
+  push:
+    branches: [repair/v14-attest-exec-d5b-restack-staging-sol-20260812-go2]
+permissions:
+  contents: write
+jobs:
+  restack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Compose exact moved owner head
+        shell: bash
+        env:
+          OWNER_HEAD: d5b106b1068276b029b6bbd6040437f46724f295
+          PRODUCT_COMMIT: a576c4286ddaba79e76b57e3765a5c56ee285773
+          PR_BRANCH: repair/v14-signed-origin-attest-exec-c499-clean-sol-20260812-go2
+          EXPECTED_OLD_PR_HEAD: a576c4286ddaba79e76b57e3765a5c56ee285773
+        run: |
+          set -euo pipefail
+          git config user.name nembra-swarm
+          git config user.email nembra-swarm@users.noreply.github.com
+          git reset --hard "$OWNER_HEAD"
+          git cherry-pick "$PRODUCT_COMMIT"
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          python3 scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py -v
+          grep -Fq 'def _credential_attesting_exec_command(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq 'os.execve(command[0], command, os.environ)' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq 'def _process_state_for_uid(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq '_numeric_principal_in_use(candidate)' scripts/ci/capture_signed_app_build_origin_custody.py
+          ! grep -Fq 'def _attest_build_identity_groups(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq 'buildCredentialAttestationSameExecTransition' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          git diff "$OWNER_HEAD"..HEAD --check
+          actual="$(git diff --name-only "$OWNER_HEAD"..HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' scripts/ci/capture_signed_app_build_origin_custody.py scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git push --force-with-lease="refs/heads/$PR_BRANCH:$EXPECTED_OLD_PR_HEAD" origin "HEAD:refs/heads/$PR_BRANCH"
