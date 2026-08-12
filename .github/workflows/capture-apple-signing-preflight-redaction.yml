@@ -60,28 +60,50 @@ jobs:
           /bin/bash -n "$preflight"
           /usr/bin/python3 -m py_compile "$sealer"
           /usr/bin/python3 -B -I - "$sealer" <<'PY'
-          import importlib.util
+          import ast
+          import re
           import sys
           from pathlib import Path
 
           path = Path(sys.argv[1])
-          spec = importlib.util.spec_from_file_location("nembra_receipt_seal_redaction", path)
-          if spec is None or spec.loader is None:
-              raise SystemExit("could not load receipt sealer")
-          module = importlib.util.module_from_spec(spec)
-          spec.loader.exec_module(module)
+          source = path.read_text(encoding="utf-8")
+          tree = ast.parse(source, filename=str(path))
+          pattern = None
+          for node in tree.body:
+              if not isinstance(node, ast.Assign):
+                  continue
+              if not any(isinstance(target, ast.Name) and target.id == "RAW_IDENTITY_PATTERN" for target in node.targets):
+                  continue
+              value = node.value
+              if not (
+                  isinstance(value, ast.Call)
+                  and isinstance(value.func, ast.Attribute)
+                  and isinstance(value.func.value, ast.Name)
+                  and value.func.value.id == "re"
+                  and value.func.attr == "compile"
+                  and len(value.args) >= 1
+                  and isinstance(value.args[0], ast.Constant)
+                  and isinstance(value.args[0].value, str)
+              ):
+                  raise SystemExit("RAW_IDENTITY_PATTERN is no longer one auditable re.compile string literal")
+              pattern = value.args[0].value
+              break
+          if pattern is None:
+              raise SystemExit("receipt sealer has no RAW_IDENTITY_PATTERN assignment")
+          guard = re.compile(pattern)
           raw = '  1) ABCDEF1234567890 "Apple Development: Example Person (ABCDE12345)"'
           raw_tabs = 'Apple Development:\tExample Person (ABCDE12345)'
           placeholder = 'Apple Development: <redacted>'
           placeholder_tight = 'Apple Development:<redacted>'
           descriptive = 'Apple Development identity count: 1'
-          if not module.raw_identity_present(raw):
+          if guard.search(raw) is None:
               raise SystemExit("spaced raw Apple identity escaped suppression grammar")
-          if not module.raw_identity_present(raw_tabs):
+          if guard.search(raw_tabs) is None:
               raise SystemExit("tabbed raw Apple identity escaped suppression grammar")
           for safe in (placeholder, placeholder_tight, descriptive):
-              if module.raw_identity_present(safe):
+              if guard.search(safe) is not None:
                   raise SystemExit(f"redaction grammar misclassified safe text: {safe!r}")
+          print("REDACTION_GRAMMAR_ACCEPTED: tested exact source regex without executing the sealer CLI.")
           PY
 
       - name: Preserve field-preflight truth and sealed-receipt boundary
