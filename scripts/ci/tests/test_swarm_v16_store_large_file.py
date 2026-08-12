@@ -13,7 +13,8 @@ import swarm_control as sc
 
 
 def encoded(value):
-    return base64.b64encode((json.dumps(value)+'\n').encode()).decode()
+    raw=base64.b64encode((json.dumps(value)+'\n').encode()).decode()
+    return '\n'.join(raw[i:i+60] for i in range(0,len(raw),60))+'\n'
 
 
 class FakeContentsStore(sc.GitHubContentsStore):
@@ -31,7 +32,7 @@ class FakeContentsStore(sc.GitHubContentsStore):
 
 
 class LargeStateReadTests(unittest.TestCase):
-    def test_inline_base64_contents_still_reads(self):
+    def test_inline_line_wrapped_base64_contents_reads(self):
         value={'schemaVersion':16,'kind':'test-state','x':1}
         store=FakeContentsStore([('/contents/.swarm/runtime/v16/mission-graph.json',{'type':'file','sha':'abc','encoding':'base64','content':encoded(value)})])
         stored=store.get('.swarm/runtime/v16/mission-graph.json')
@@ -61,6 +62,10 @@ class LargeStateReadTests(unittest.TestCase):
             ('/contents/state.json',{'type':'file','sha':'wanted','encoding':'none'}),
             ('/git/blobs/wanted',{'sha':'different','encoding':'base64','content':encoded({'x':1})}),
         ])
+        with self.assertRaises(sc.ValidationError): store.get('state.json')
+
+    def test_invalid_non_whitespace_base64_still_fails_closed(self):
+        store=FakeContentsStore([('/contents/state.json',{'type':'file','sha':'bad','encoding':'base64','content':'eyJ4IjogMX0=***'})])
         with self.assertRaises(sc.ValidationError): store.get('state.json')
 
     def test_blob_without_supported_content_fails_closed(self):
