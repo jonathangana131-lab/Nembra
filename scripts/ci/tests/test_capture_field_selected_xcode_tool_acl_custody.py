@@ -30,7 +30,12 @@ class CaptureFieldSelectedXcodeToolACLCustodyTests(unittest.TestCase):
         self.source = INSTALLER.read_text(encoding="utf-8")
         self.user = subprocess.check_output(["/usr/bin/id", "-un"], text=True).strip()
         self.assertTrue(self.user)
-        self.fixture_dir = Path(f"/Applications/NembraToolACLRepair-{os.getpid()}-{id(self)}")
+        # /Applications is commonly group-writable by the admin group on macOS.
+        # A positive control placed there can be legitimately rejected because an
+        # ancestor may retain replacement authority. /Library provides a stable,
+        # root-custodied system ancestor for the clean fixture while the dedicated
+        # parent-ACL test adds exactly the authority it intends to exercise.
+        self.fixture_dir = Path(f"/Library/NembraToolACLRepair-{os.getpid()}-{id(self)}")
         self.fixture = self.fixture_dir / "xcodebuild-fixture"
 
     def tearDown(self) -> None:
@@ -76,6 +81,25 @@ class CaptureFieldSelectedXcodeToolACLCustodyTests(unittest.TestCase):
             )
         finally:
             validator_path.unlink(missing_ok=True)
+
+    def _metadata_report(self, path: Path) -> str:
+        """Return bounded non-secret ancestry metadata for a failed custody assertion."""
+        report: list[str] = []
+        current = Path(path.anchor)
+        for component in path.parts[1:]:
+            current = current / component
+            try:
+                metadata = os.lstat(current)
+            except OSError as error:
+                report.append(f"{current}: lstat={type(error).__name__}")
+                break
+            acl = self._run(["/bin/ls", "-lde", str(current)], check=False)
+            first_line = acl.stdout.splitlines()[0] if acl.stdout.splitlines() else "<no ls metadata>"
+            report.append(
+                f"{current}: uid={metadata.st_uid} gid={metadata.st_gid} "
+                f"mode={stat.S_IMODE(metadata.st_mode):04o} acl={first_line}"
+            )
+        return "\n".join(report)
 
     def _make_root_owned_fixture(self) -> None:
         self._run(["/usr/bin/sudo", "-n", "/bin/mkdir", "-p", str(self.fixture_dir)])
@@ -125,7 +149,11 @@ class CaptureFieldSelectedXcodeToolACLCustodyTests(unittest.TestCase):
     def test_clean_root_owned_fixture_is_admitted(self) -> None:
         self._make_root_owned_fixture()
         admitted = self._validate(self.fixture, "file")
-        self.assertEqual(admitted.returncode, 0, admitted.stderr)
+        self.assertEqual(
+            admitted.returncode,
+            0,
+            f"{admitted.stderr}\n{self._metadata_report(self.fixture)}",
+        )
 
     def test_named_user_leaf_write_acl_is_rejected(self) -> None:
         self._make_root_owned_fixture()
@@ -148,8 +176,19 @@ class CaptureFieldSelectedXcodeToolACLCustodyTests(unittest.TestCase):
         self.assertRegex(acl, re.compile(r"(?i)allow\s+write"))
 
         before = self.fixture.read_bytes()
+        # Darwin ACL write/write_data does not imply append_data. Exercise the
+        # exact granted write authority instead of accidentally testing append.
         mutation = self._run(
-            ["/bin/sh", "-c", f"printf '# acl-leaf-write\\n' >> {shlex.quote(str(self.fixture))}"],
+            [
+                "/usr/bin/python3",
+                "-c",
+                (
+                    "import sys; "
+                    "f=open(sys.argv[1], 'r+b', buffering=0); "
+                    "f.seek(0); f.write(b'# acl-leaf-write\\n'); f.close()"
+                ),
+                str(self.fixture),
+            ],
             check=False,
         )
         self.assertEqual(mutation.returncode, 0, mutation.stderr)
@@ -209,7 +248,11 @@ class CaptureFieldSelectedXcodeToolACLCustodyTests(unittest.TestCase):
         selected_environment["DEVELOPER_DIR"] = str(developer_dir)
 
         admitted_tree = self._validate(developer_dir, "directory")
-        self.assertEqual(admitted_tree.returncode, 0, admitted_tree.stderr)
+        self.assertEqual(
+            admitted_tree.returncode,
+            0,
+            f"{admitted_tree.stderr}\n{self._metadata_report(developer_dir)}",
+        )
 
         version = self._run([str(developer_dir / "usr/bin/xcodebuild"), "-version"], check=False)
         self.assertEqual(version.returncode, 0, version.stderr)
@@ -221,7 +264,11 @@ class CaptureFieldSelectedXcodeToolACLCustodyTests(unittest.TestCase):
             )
             self.assertTrue(str(selected).startswith(str(developer_dir) + "/"))
             admitted = self._validate(selected, "file")
-            self.assertEqual(admitted.returncode, 0, f"real selected {tool} rejected: {admitted.stderr}")
+            self.assertEqual(
+                admitted.returncode,
+                0,
+                f"real selected {tool} rejected: {admitted.stderr}\n{self._metadata_report(selected)}",
+            )
 
 
 if __name__ == "__main__":
