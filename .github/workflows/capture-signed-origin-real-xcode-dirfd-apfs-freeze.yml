@@ -6,10 +6,12 @@ on:
       - repair/v14-signed-origin-apfs-signing-sol-0058jx
     paths:
       - scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
       - .github/workflows/capture-signed-origin-real-xcode-dirfd-apfs-freeze.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
+      - scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
       - .github/workflows/capture-signed-origin-real-xcode-dirfd-apfs-freeze.yml
   workflow_dispatch:
 
@@ -22,7 +24,7 @@ concurrency:
 
 jobs:
   real-xcode-dirfd-apfs-freeze:
-    name: Prove field-UID Xcode can use a delegated FD then reach APFS quiescence
+    name: Prove guard-shaped field-UID Xcode can reach APFS quiescence
     runs-on: xcode-27
     timeout-minutes: 25
     env:
@@ -36,7 +38,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact production parent and two-path validation delta
+      - name: Bind exact production parent and three-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -51,48 +53,57 @@ jobs:
           printf '%s\n' \
             .github/workflows/capture-signed-origin-real-xcode-dirfd-apfs-freeze.yml \
             scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
           diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           /usr/bin/xcodebuild -version
 
-      - name: Compile and source-review directory-FD authority oracle
+      - name: Compile and source-review signing-compatible authority oracle
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          grep -Fq 'os.chmod(workspace, 0o700)' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          grep -Fq 'pass_fds=(mount_fd,)' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          grep -Fq 'derived_via_fd = f"{fd_root}/DerivedData"' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          grep -Fq 'terminate_process_group(process.pid)' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          grep -Fq 'detach = hdiutil_detach(device)' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          grep -Fq 'readonly=True' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          grep -Fq 'pass_fds=(readonly_fd,)' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          grep -Fq '"physicalAuthorityCreated": False' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py
-          if grep -Fq 'preexec_fn=' scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py; then
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq 'os.chmod(workspace, 0o700)' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq 'stdin=mount_fd' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq '"-derivedDataPath", "/dev/fd/0/DerivedData"' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq 'process = subprocess.Popen(' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq 'stdin=None' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq 'helper.terminate_process_group(process.pid)' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq 'detach = helper.hdiutil_detach(device)' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq 'readonly=True' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq 'stdin=readonly_fd' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          grep -Fq '"physicalAuthorityCreated": False' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py
+          if grep -Fq 'preexec_fn=' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py; then
             echo 'custom preexec credential shims are forbidden' >&2
+            exit 1
+          fi
+          if grep -Fq 'pass_fds=' scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py; then
+            echo 'production-shaped stdio oracle must not rely on non-standard FD preservation' >&2
             exit 1
           fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Run real-Xcode field-UID directory-FD APFS freeze oracle
+      - name: Run guard-shaped real-Xcode stdio directory-FD APFS freeze oracle
         id: probe
         continue-on-error: true
         shell: bash
         run: |
           set -uo pipefail
-          output="$RUNNER_TEMP/nembra-real-xcode-dirfd-apfs-output.txt"
+          output="$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-output.txt"
           set +e
           /usr/bin/python3 -B -I \
-            scripts/ci/tests/test_capture_signed_app_real_xcode_dirfd_apfs_freeze.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_stdio_dirfd_apfs_freeze.py \
             >"$output" 2>&1
           rc=$?
           set -e
-          printf '%s\n' "$rc" > "$RUNNER_TEMP/nembra-real-xcode-dirfd-apfs-rc.txt"
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-rc.txt"
           cat "$output"
           if [[ "$rc" != 0 ]]; then
             diagnostic="$(tail -n 180 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
-            printf '::error title=Field UID directory-FD APFS oracle red::%s\n' "$diagnostic"
+            printf '::error title=Guard-shaped field UID stdio directory-FD APFS oracle red::%s\n' "$diagnostic"
           fi
           exit "$rc"
 
@@ -101,10 +112,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/NembraRealXcodeDirFDAPFSFreezeEvidence"
+          evidence="$RUNNER_TEMP/NembraRealXcodeStdioDirFDAPFSFreezeEvidence"
           mkdir -p "$evidence"
-          output="$RUNNER_TEMP/nembra-real-xcode-dirfd-apfs-output.txt"
-          rc_file="$RUNNER_TEMP/nembra-real-xcode-dirfd-apfs-rc.txt"
+          output="$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-output.txt"
+          rc_file="$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-rc.txt"
           [[ -f "$output" ]] && cp "$output" "$evidence/probe-output.txt" || printf '%s\n' 'probe output unavailable' > "$evidence/probe-output.txt"
           [[ -f "$rc_file" ]] && cp "$rc_file" "$evidence/probe-return-code.txt" || printf '%s\n' 'missing' > "$evidence/probe-return-code.txt"
           /usr/bin/python3 - "$evidence/manifest.json" "$evidence/probe-output.txt" "$evidence/probe-return-code.txt" "$(git rev-parse HEAD)" "$EXACT_PARENT" <<'PY'
@@ -119,12 +130,12 @@ jobs:
               rc = None
           record = {
               "schemaVersion": 1,
-              "authority": "capture-signed-output-field-uid-dirfd-apfs-validation-only",
+              "authority": "capture-signed-output-field-uid-stdio-dirfd-apfs-validation-only",
               "exactValidationHead": head.lower(),
               "exactProductionParent": parent.lower(),
               "probeReturnCode": rc,
-              "successEvidencePresent": "NEMBRA_REAL_XCODE_DIRFD_APFS_JSON=" in output,
-              "redEvidencePresent": "NEMBRA_REAL_XCODE_DIRFD_APFS_ERROR=" in output,
+              "successEvidencePresent": "NEMBRA_REAL_XCODE_STDIO_DIRFD_APFS_JSON=" in output,
+              "redEvidencePresent": "NEMBRA_REAL_XCODE_STDIO_DIRFD_APFS_ERROR=" in output,
               "probeOutputSHA256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
               "productionAcceptanceClaimed": False,
               "physicalAuthorityCreated": False,
@@ -137,8 +148,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nembra-real-xcode-dirfd-apfs-freeze-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/NembraRealXcodeDirFDAPFSFreezeEvidence
+          name: nembra-real-xcode-stdio-dirfd-apfs-freeze-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraRealXcodeStdioDirFDAPFSFreezeEvidence
           if-no-files-found: error
           retention-days: 14
 
@@ -150,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$PROBE_OUTCOME" = success
-          test "$(cat "$RUNNER_TEMP/nembra-real-xcode-dirfd-apfs-rc.txt")" = 0
-          grep -q '^NEMBRA_REAL_XCODE_DIRFD_APFS_JSON=' "$RUNNER_TEMP/nembra-real-xcode-dirfd-apfs-output.txt"
+          test "$(cat "$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-rc.txt")" = 0
+          grep -q '^NEMBRA_REAL_XCODE_STDIO_DIRFD_APFS_JSON=' "$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-output.txt"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
