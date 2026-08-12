@@ -540,6 +540,7 @@ struct DashboardView: View {
                 .font(.caption2.weight(.bold))
                 .tracking(1.2)
                 .foregroundStyle(warning ? Color.red : Color.secondary)
+
             Text(value)
                 .font(.title3.weight(.semibold).monospacedDigit())
                 .foregroundStyle(warning ? Color.red : (retained ? Color.secondary : Color.white))
