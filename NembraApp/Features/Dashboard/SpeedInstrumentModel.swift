@@ -629,7 +629,7 @@ struct DashboardSpeedInstrumentView: View {
             Group {
                 switch speedAvailability {
                 case .retained:
-                    Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
+                    Text("LAST KNOWN")
                 case let .live(sample):
                     Text(sample.kilometersPerHour >= 0.5 ? "RIDING" : "READY")
                 case .unavailable:
