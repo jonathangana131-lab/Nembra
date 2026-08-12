@@ -2,11 +2,12 @@
 """Bind the physical install subject to exact compiler output through an APFS freeze.
 
 The field user never receives writable compiler-output pathname authority. Root creates
-one ephemeral local build identity, mounts a private APFS sparse image writable only by
-that identity, runs the guarded build there, removes fresh pathname authority when the
-build returns, and requires a normal non-forced detach before compiler-output bytes can
-become authoritative. The app is fingerprinted only from a read-only remount, then copied
-into the canonical root-owned install stage.
+one ephemeral local build identity, mounts a private APFS sparse image with ownership
+enforcement enabled, attests the build identity's effective kernel groups against its
+fresh Directory Services baseline, runs the guarded build there, removes fresh pathname
+authority when the build returns, and requires a normal non-forced detach before
+compiler-output bytes can become authoritative. The app is fingerprinted only from a
+read-only remount, then copied into the canonical root-owned install stage.
 
 This helper is executed from exact accepted Git bytes by the field installer. It creates
 no device, Bluetooth, Tuya, telemetry, command, or physical authority by itself.
@@ -18,6 +19,7 @@ import argparse
 import base64
 import errno
 import grp
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -361,6 +363,77 @@ def _create_local_build_identity(name: str, uid: int, gid: int, home: Path) -> N
         raise
 
 
+def _attest_build_kernel_groups(
+    user: str,
+    uid: int,
+    gid: int,
+    field_groups: Sequence[int],
+    environment: dict[str, str],
+) -> tuple[int, ...]:
+    """Fail closed unless the fresh build process gets exactly its own DS group baseline."""
+
+    expected_groups = sorted(set(os.getgrouplist(user, gid)))
+    if gid not in expected_groups or any(group <= 0 for group in expected_groups):
+        raise BuildOriginCustodyError("fresh build Directory Services group baseline is invalid")
+    expected_distinct = sorted({group for group in expected_groups if group != gid})
+    field_only = set(int(group) for group in field_groups).difference(expected_groups)
+
+    probe = subprocess.run(
+        [
+            "/usr/bin/python3",
+            "-B",
+            "-I",
+            "-c",
+            (
+                "import json,os,pwd;"
+                "print(json.dumps({'uid':os.getuid(),'euid':os.geteuid(),"
+                "'gid':os.getgid(),'egid':os.getegid(),'groups':sorted(set(os.getgroups())),"
+                "'user':pwd.getpwuid(os.getuid()).pw_name},sort_keys=True))"
+            ),
+        ],
+        cwd=environment["HOME"],
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+        **_structured_credentials(uid, gid, ()),
+    )
+    if probe.returncode != 0:
+        detail = (probe.stderr or "").strip()
+        raise BuildOriginCustodyError(
+            "could not attest effective dedicated-build credentials"
+            + (f": {detail}" if detail else "")
+        )
+    try:
+        payload = json.loads(probe.stdout)
+        raw_groups = payload["groups"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise BuildOriginCustodyError("dedicated-build credential attestor emitted malformed evidence") from error
+    if not isinstance(raw_groups, list) or any(type(group) is not int for group in raw_groups):
+        raise BuildOriginCustodyError("dedicated-build credential attestor emitted invalid kernel groups")
+
+    actual_distinct = sorted({group for group in raw_groups if group != gid})
+    identity_exact = (
+        payload.get("uid") == uid
+        and payload.get("euid") == uid
+        and payload.get("gid") == gid
+        and payload.get("egid") == gid
+        and payload.get("user") == user
+    )
+    if not identity_exact:
+        raise BuildOriginCustodyError("dedicated-build credential attestor observed the wrong UID/GID identity")
+    if actual_distinct != expected_distinct:
+        raise BuildOriginCustodyError(
+            "dedicated-build effective groups diverge from the fresh account Directory Services baseline"
+        )
+    leaked = sorted(set(actual_distinct).intersection(field_only))
+    if leaked:
+        raise BuildOriginCustodyError("field-only group authority leaked into the dedicated build identity")
+    return tuple(expected_distinct)
+
+
 def _create_apfs_image(image: Path) -> None:
     completed = subprocess.run(
         [
@@ -396,6 +469,8 @@ def _attach_apfs(image: Path, mountpoint: Path, *, readonly: bool) -> str:
         "attach",
         "-plist",
         "-nobrowse",
+        "-owners",
+        "on",
         "-mountpoint",
         str(mountpoint),
     ]
@@ -555,6 +630,7 @@ def run_custodied_build(
         build_env = _build_environment(build_name, home)
         os.chown(home / "tmp", build_uid, build_gid)
         os.chmod(home / "tmp", 0o700)
+        _attest_build_kernel_groups(build_name, build_uid, build_gid, field_groups, build_env)
 
         _create_apfs_image(image)
         writable_device = _attach_apfs(image, mountpoint, readonly=False)
@@ -572,6 +648,8 @@ def run_custodied_build(
             stderr=sys.stderr,
             text=True,
             check=False,
+            # Empty requested extras means no authority beyond the fresh account's
+            # attested Directory Services baseline; macOS may materialize that baseline.
             **_structured_credentials(build_uid, build_gid, ()),
         )
 
