@@ -160,8 +160,38 @@ jobs:
           PROBE_OUTCOME: ${{ steps.probe.outcome }}
         run: |
           set -euo pipefail
-          test "$PROBE_OUTCOME" = success
-          test "$(cat "$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-rc.txt")" = 0
-          grep -q '^NEMBRA_REAL_XCODE_STDIO_DIRFD_APFS_JSON=' "$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-output.txt"
-          git diff --check "$EXACT_PARENT"...HEAD
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          if [[ "$PROBE_OUTCOME" != "success" ]]; then
+            printf '::error title=APFS acceptance wrapper - probe outcome::expected success, got %s\n' "$PROBE_OUTCOME"
+            exit 1
+          fi
+          rc_file="$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-rc.txt"
+          if [[ ! -f "$rc_file" ]]; then
+            echo '::error title=APFS acceptance wrapper - missing rc::probe return-code file is absent'
+            exit 1
+          fi
+          rc="$(cat "$rc_file")"
+          if [[ "$rc" != "0" ]]; then
+            printf '::error title=APFS acceptance wrapper - return code::expected 0, got %s\n' "$rc"
+            exit 1
+          fi
+          output="$RUNNER_TEMP/nembra-real-xcode-stdio-dirfd-apfs-output.txt"
+          if [[ ! -f "$output" ]]; then
+            echo '::error title=APFS acceptance wrapper - missing evidence::probe output file is absent'
+            exit 1
+          fi
+          if ! grep -q '^NEMBRA_REAL_XCODE_STDIO_DIRFD_APFS_JSON=' "$output"; then
+            tail -n 80 "$output" || true
+            echo '::error title=APFS acceptance wrapper - semantic marker::green semantic marker is absent'
+            exit 1
+          fi
+          if ! git diff --check "$EXACT_PARENT"...HEAD; then
+            echo '::error title=APFS acceptance wrapper - diff hygiene::git diff --check rejected the exact validation delta'
+            exit 1
+          fi
+          dirty="$(git status --porcelain=v1 --untracked-files=all)"
+          if [[ -n "$dirty" ]]; then
+            printf '%s\n' "$dirty"
+            echo '::error title=APFS acceptance wrapper - repository hygiene::validation left the checkout dirty'
+            exit 1
+          fi
+          echo 'Exact-head guard-shaped stdio directory-FD APFS architecture evidence accepted.'
