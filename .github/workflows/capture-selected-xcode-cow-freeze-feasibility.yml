@@ -49,6 +49,7 @@ jobs:
           test -x /bin/cp
           test -x /usr/bin/stat
           test -x /usr/bin/python3
+          test -x /usr/bin/find
 
           annotate_file() {
             local level="$1"
@@ -59,7 +60,7 @@ jobs:
             printf '::%s title=%s::%s\n' "$level" "$title" "$body"
           }
 
-          run_root_hardening() {
+          run_root_checked() {
             local title="$1"
             shift
             local output="$RUNNER_TEMP/nembra-cow-${title// /-}.txt"
@@ -103,11 +104,6 @@ jobs:
           }
           trap cleanup EXIT INT TERM
 
-          # mktemp creates the root-owned namespace as 0700. That is secure but
-          # also prevents the ordinary field identity from traversing to the
-          # frozen execution subject after root has populated it. Convert only
-          # the namespace itself to root-owned 0755 with no ACL before cloning:
-          # traverse/read is admitted, mutation remains root-only.
           /usr/bin/sudo -n /bin/chmod -N "$freeze_root"
           /usr/bin/sudo -n /bin/chmod 0755 "$freeze_root"
           namespace_uid="$(/usr/bin/stat -f '%u' "$freeze_root")"
@@ -122,10 +118,28 @@ jobs:
           printf '::notice title=COW clone complete::elapsed=%s seconds\n' "$((finished - started))"
           test -d "$frozen_app/Contents/Developer"
 
-          run_root_hardening "COW chown" /usr/sbin/chown -Rh root:wheel "$frozen_app"
-          run_root_hardening "COW ACL strip" /bin/chmod -RN "$frozen_app"
-          run_root_hardening "COW mode strip" /bin/chmod -R go-w "$frozen_app"
-          printf '::notice title=Frozen Xcode hardening::recursive root ownership and writable ACL/mode stripping complete\n'
+          # Root ownership is the only recursive metadata mutation required here.
+          # Do not bulk chmod Xcode's symlink-rich framework topology: the real
+          # security contract is stronger and simpler when the copy must already
+          # carry no group/world write bits and no extended ACL. If either is
+          # present, fail closed instead of rewriting the signed input to green.
+          run_root_checked "COW chown" /usr/sbin/chown -Rh root:wheel "$frozen_app"
+
+          acl_probe="$RUNNER_TEMP/nembra-cow-acl-subject.txt"
+          acl_error="$RUNNER_TEMP/nembra-cow-acl-find.err"
+          set +e
+          /usr/bin/find "$frozen_app" -acl -print -quit >"$acl_probe" 2>"$acl_error"
+          acl_rc=$?
+          set -e
+          if [[ "$acl_rc" -ne 0 ]]; then
+            annotate_file error "Frozen Xcode ACL oracle unavailable" "$acl_error"
+            exit 36
+          fi
+          if [[ -s "$acl_probe" ]]; then
+            annotate_file error "Frozen Xcode extended ACL retained" "$acl_probe"
+            exit 37
+          fi
+          printf '::notice title=Frozen Xcode ACL oracle::no extended ACL subjects found\n'
 
           /usr/bin/env -i \
             PATH=/usr/bin:/bin \
@@ -157,7 +171,7 @@ jobs:
               raise SystemExit('frozen Xcode tree unexpectedly small')
           print(f'validated frozen Xcode metadata subjects={subjects}')
           PY
-          printf '::notice title=Frozen Xcode metadata::recursive authority oracle passed\n'
+          printf '::notice title=Frozen Xcode metadata::root ownership and no group/world write authority passed\n'
 
           if ! /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
             /usr/bin/codesign --verify --deep --strict --verbose=4 \
@@ -186,8 +200,9 @@ jobs:
               *) printf '::error title=Frozen selected tool escaped::%s -> %s\n' "$tool" "$selected"; exit 33 ;;
             esac
             test -x "$selected"
-            metadata="$(/usr/bin/stat -f '%u %p' "$selected")"
-            printf '::notice title=Frozen selected tool::%s metadata=%s\n' "$tool" "$metadata"
+            tool_uid="$(/usr/bin/stat -f '%u' "$selected")"
+            printf '::notice title=Frozen selected tool::%s uid=%s\n' "$tool" "$tool_uid"
+            test "$tool_uid" = 0
           done
 
           leaf_before="$(/usr/bin/shasum -a 256 "$frozen_xcodebuild" | /usr/bin/awk '{print $1}')"
