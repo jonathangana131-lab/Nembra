@@ -226,7 +226,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertTrue(
             helper._sudo_policy_exposes_passwordless_authority(
                 "Matching Defaults entries:\n    exempt_group=admin, env_reset\n",
-                ("staff",),
+                ("staff", "admin"),
             )
         )
         self.assertFalse(
