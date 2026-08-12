@@ -61,6 +61,11 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
     /// Physical acceptance is intentionally stricter than the observed ~29.93 s rejection.
     public static let minimumAuthenticatedConnectionNanoseconds: UInt64 = 45_000_000_000
 
+    /// A single post-auth callback can be an initial state replay. Require repeated application
+    /// evidence before physical mapping can unlock so transport liveness alone cannot turn one
+    /// bootstrap callback into a claim of an ongoing authenticated notify path.
+    public static let minimumAuthenticatedApplicationPayloadCount = 2
+
     public enum Verdict: Equatable, Sendable {
         case blocked(reason: String)
         case readyForStationaryMapping
@@ -88,8 +93,8 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         guard authenticationMethod == .smartLifeAppSDK else {
             return .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation.")
         }
-        guard snapshot.applicationPayloadCount > 0 else {
-            return .blocked(reason: "Authenticated session has not produced an application payload yet.")
+        guard snapshot.applicationPayloadCount >= minimumAuthenticatedApplicationPayloadCount else {
+            return .blocked(reason: "Authenticated session has not produced repeated application payload evidence yet.")
         }
         guard let connectionStarted = snapshot.connectionStartedAtUptimeNanoseconds,
               let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
