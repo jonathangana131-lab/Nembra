@@ -163,7 +163,7 @@ jobs:
                       )
                   self.assertEqual(wrapped[:4], ["/usr/bin/python3", "-B", "-I", "-c"])
                   child_source = wrapped[4]
-                  contract = json.loads(wrapped[5])
+                  contract = helper.json.loads(wrapped[5])
                   self.assertEqual(contract["effectiveGroups"], [12, 61, 100, 701])
                   self.assertEqual(contract["fieldOnlyGroups"], [20, 33, 80])
                   self.assertEqual(wrapped[6:], ["/usr/bin/true", "accepted-compiler-argument"])
@@ -292,17 +292,23 @@ jobs:
         run: |
           set -euo pipefail
           export PYTHONDONTWRITEBYTECODE=1
+          echo '::group::py_compile'
           python3 -m py_compile \
             scripts/ci/capture_signed_app_build_origin_custody.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
             scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          echo '::endgroup::'
+          echo '::group::portable-pre-stage'
           python3 scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py -v
+          echo '::endgroup::'
+          echo '::group::source-contract'
           grep -Fq 'def _credential_attesting_exec_command(' scripts/ci/capture_signed_app_build_origin_custody.py
           grep -Fq 'os.execve(command[0], command, os.environ)' scripts/ci/capture_signed_app_build_origin_custody.py
           ! grep -Fq 'def _attest_build_identity_groups(' scripts/ci/capture_signed_app_build_origin_custody.py
           grep -Fq 'buildCredentialAttestationSameExecTransition' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           grep -Fq 'def _credential_attesting_exec_command(' .github/workflows/capture-field-build-provenance.yml
           git diff --check
+          echo '::endgroup::'
           changed="$(git diff --name-only | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-field-build-provenance.yml \
