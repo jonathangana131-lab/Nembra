@@ -9,15 +9,15 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:04:20Z",
+  "lastHeartbeatAt": "2026-08-12T08:06:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-selected-xcode-acl-witness-sol-0059ac-20260812",
   "pr": 3135,
   "sourceSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
-  "currentHeadSHA": "c7c6bc83ecea2114111182d094583276bb27d92a",
+  "currentHeadSHA": "449a4da1932cf3f368059fb84dd3c3c2a5b90020",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-build-primary-1607ax-20260811-2357",
   "takeoverReason": "Generation-6 implementation was explicitly released while diagnostic evidence was pending. Exact #3093@49e51aef run 31543820090 is now terminal red with retained output, so reclaim implementation to repair the classified selected-Xcode custody boundary without colliding with the active independent review slot.",
   "intent": "Repair the selected-Xcode ACL authority gate from the exact #3072 production head using the smallest security-preserving child delta; keep PHYSICAL NO-GO until exact-head evidence and independent review accept it.",
-  "checkpoint": "Draft PR #3135 exact c7c6bc83 is one test-file commit over #3072. Production installer bytes are unchanged; awaiting exact xcode-27 evidence to distinguish corrected witnesses from any remaining real selected-Xcode ancestry defect."
+  "checkpoint": "PR #3135 moved to exact 449a4da1 after first corrected-witness run c7c6bc83 still failed but discarded stdout. The child now carries the already-proven retained-diagnostic workflow pattern plus the corrected test witnesses, still within the original three-path production scope and with installer bytes unchanged."
 }
