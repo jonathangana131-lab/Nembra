@@ -58,7 +58,7 @@ jobs:
           preflight=scripts/field/run_apple_signing_context_preflight.command
           sealer=scripts/ci/capture_apple_signing_preflight_receipt_seal.py
           /bin/bash -n "$preflight"
-          /usr/bin/python3 -m py_compile "$sealer"
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; source=Path("scripts/ci/capture_apple_signing_preflight_receipt_seal.py").read_text(encoding="utf-8"); compile(source, "<capture-apple-signing-receipt-sealer>", "exec", dont_inherit=True)'
           /usr/bin/python3 -B -I - "$sealer" <<'PY'
           import ast
           import re
