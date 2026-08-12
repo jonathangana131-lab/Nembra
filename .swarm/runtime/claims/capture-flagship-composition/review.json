@@ -9,14 +9,11 @@
   "generation": 16,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:00:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:00:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:17:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3073,
   "sourceSHA": "dd204e1e943af853e02857db145127810791b04b",
   "currentHeadSHA": "dd204e1e943af853e02857db145127810791b04b",
-  "takeoverFromWorkerId": "sol-20260811-1607ax",
-  "takeoverFromLeaseId": "capture-flagship-review-1607ax-20260811-2307",
-  "takeoverReason": "Generation-15 review was released. Fresh exact-head workflow inspection now shows Capture Runtime VoiceOver run 31542656345 completed FAILURE, so this independent review classifies the red without modifying product bytes and preserves PHYSICAL NO-GO.",
-  "checkpoint": "Claimed independent review to classify exact #3073 runtime failure. Parent first-fold hardened visual evidence is already human-accepted; runtime accessibility is the current review subject."
+  "checkpoint": "Exact retained artifact 9123516645 from runtime run 31542656345 inspected. Standard test executed once and failed deterministically because app.staticTexts[heroAuthority] exceeds XCTest's 128-character string-identifier query limit; repair witness with a label predicate without shortening product copy. AX5 test executed once and failed .all audit with Dynamic Type font sizes are partially unsupported / SwiftUI.AccessibilityNode. This is outside the narrow textClipped exception and remains product-blocking. Durable PR #3073 comment 5264068885 records the evidence. Runtime primary generation 7 is independently active on only workflow+witness paths. PHYSICAL NO-GO."
 }
