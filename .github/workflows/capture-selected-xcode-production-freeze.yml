@@ -36,7 +36,7 @@ jobs:
             .github/workflows/capture-selected-xcode-production-freeze.yml \
             scripts/ci/capture_selected_xcode_freeze.py | LC_ALL=C sort)"
           test "$changed_paths" = "$expected_paths"
-          /usr/bin/python3 -m py_compile scripts/ci/capture_selected_xcode_freeze.py
+          /usr/bin/python3 -I -c 'from pathlib import Path; compile(Path("scripts/ci/capture_selected_xcode_freeze.py").read_text(), "scripts/ci/capture_selected_xcode_freeze.py", "exec", dont_inherit=True)'
           /usr/bin/python3 -I - <<'PY'
           from pathlib import Path
           source = Path('scripts/ci/capture_selected_xcode_freeze.py').read_text()
