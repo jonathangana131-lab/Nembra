@@ -109,10 +109,21 @@ jobs:
           printf '::notice title=COW clone complete::elapsed=%s seconds\n' "$((finished - started))"
           test -d "$frozen_app/Contents/Developer"
 
-          printf '::notice title=Clone root metadata::app=%s contents=%s developer=%s\n' \
-            "$(/usr/bin/stat -f '%u:%g:%Lp' "$frozen_app")" \
-            "$(/usr/bin/stat -f '%u:%g:%Lp' "$frozen_app/Contents")" \
-            "$(/usr/bin/stat -f '%u:%g:%Lp' "$frozen_app/Contents/Developer")"
+          NEMBRA_FROZEN_APP="$frozen_app" /usr/bin/python3 -I - <<'PY_METADATA'
+          import os
+          from pathlib import Path
+          import stat
+
+          root = Path(os.environ["NEMBRA_FROZEN_APP"])
+          rows = []
+          for subject in (root, root / "Contents", root / "Contents" / "Developer"):
+              metadata = os.lstat(subject)
+              rows.append(
+                  f"{subject.name or '/'}={metadata.st_uid}:{metadata.st_gid}:"
+                  f"{stat.S_IMODE(metadata.st_mode):04o}"
+              )
+          print("::notice title=Clone root metadata::" + " ".join(rows))
+          PY_METADATA
 
           # Explicit -h ensures symlink nodes themselves become root-owned rather
           # than granting the copied source owner authority through a link inode.
