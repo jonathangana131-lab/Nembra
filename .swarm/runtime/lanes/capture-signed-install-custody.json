@@ -10,36 +10,36 @@
   "dependencies": [],
   "blockers": [
     {
-      "id": "current-production-credential-custody-not-output-freeze",
+      "id": "production-dedicated-build-uid-composition-pending",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Current production successor #3056 exact 51b8e6b35bbe065c0a1d6b0b7605201f8c02239f hardens structured credential launch, root/ambient-group rejection and sudo-policy/timestamp custody, but it explicitly does not close detached regular-file FD, directory-FD or shared-mmap writer authority after compiler return. Pathname lock/process-group retirement is not descriptor revocation. On this exact head Signed App Install Custody run 31542155759 is QUEUED, Field Build Provenance 31542155737 and Main Selective Graft 31542155743 are terminal FAILURE on inherited private-Tuya baseline debt, and Xcode 31542155751 is SKIPPED. None of that promotes compiler-output freeze authority.",
+      "reason": "Current selected production carrier #3056 exact b8653985ff35538491c6a1c6f9e3461b52a7e4e6 has re-earned Field Build run 31548257797 and Main Selective Graft run 31548257656, but Signed App Install Custody run 31548257832 is terminal FAILURE. Both Linux and real-Xcode jobs fail the compiler-output composition fixtures because the old capability/group-isolated writer path cannot create/read parts of DerivedData/SourcePackages. This is a substantive architecture failure, not queued/flaky evidence. Production must consume the accepted dedicated-build-UID/APFS freeze architecture rather than retry the old group model.",
       "pr": 3056,
-      "headSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f"
+      "headSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6"
     },
     {
-      "id": "dedicated-build-uid-real-xcode-freeze-pending",
+      "id": "dedicated-build-uid-validation-accepted-production-consumption-pending",
       "state": "ACTIVE",
       "scope": "architecture-validation",
-      "reason": "Validation-only #3089 exact ecca5b2925c336269b400f1d65de7224d36607b5 tests the current dedicated temporary build-UID architecture: real Xcode must build under that isolated identity, the field identity must lack live output authority, normal non-forced APFS detach must succeed, a byte-identical read-only remount must result, and root/former build UID mutation must fail. At last exact refresh its dedicated-UID run 31543061748, Field run 31543061639 and Main Graft 31543061821 were QUEUED; Xcode PR path-policy was skipped. Queued is not architecture evidence and even a green remains validation-only until deliberately consumed by a production successor.",
-      "pr": 3089,
-      "headSHA": "ecca5b2925c336269b400f1d65de7224d36607b5"
+      "reason": "Validation-only #3131 exact 98fdc404048812f6d3af6791710c57ece21dafd3 is the accepted current architecture witness. Real-macOS run 31547634222 is terminal SUCCESS and independently binds the dedicated build UID/GID across sudo identity replay while proving the APFS read-only freeze model. This earns architecture evidence only; it does not accept #3056 until that design is deliberately composed into production and the exact successor head re-earns its gates.",
+      "pr": 3131,
+      "headSHA": "98fdc404048812f6d3af6791710c57ece21dafd3"
     },
     {
-      "id": "retained-writer-class-matrix-still-active",
+      "id": "signed-apple-development-custody-still-unresolved",
       "state": "ACTIVE",
-      "scope": "adversarial-validation",
-      "reason": "The compiler-output freeze decision still depends on exact retained-authority evidence across regular-file FD, nested directory-FD and shared writable mmap classes. Active validation lineages include #3027/#3103 for the structured-writer READY/kernel path, #3094 for the corrected post-detach directory-FD oracle, and #3064 for shared mmap. These are architecture tests, not product branches; do not duplicate or merge them as product work. Production composition must wait for the mechanically supported boundary and then replay these authority classes on the new exact implementation.",
-      "pr": null,
-      "headSHA": null
+      "scope": "signing",
+      "reason": "The accepted #3131 witness is unsigned architecture validation. Apple Development keychain/provisioning custody and the protected signed-app handoff remain separate production requirements and must be proven on the final composed exact head before install authority can be accepted.",
+      "pr": 3056,
+      "headSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6"
     },
     {
       "id": "signed-install-final-composition-pending",
       "state": "ACTIVE",
       "scope": "flagship",
-      "reason": "After a compiler-output freeze architecture is mechanically accepted and implemented, signed-install must still converge with current build authority, private identity, Final-GO and app/runtime lineages and re-earn protected-stage, signature/profile/CoreDevice, Field/Main/Xcode and adversarial exact-head gates. No validation green alone authorizes installation or scooter interaction.",
+      "reason": "After the dedicated-UID/APFS design is composed, signed-install must converge with current build authority, authenticated private identity, Final-GO, runtime/accessibility and flagship app composition and re-earn protected-stage, signature/profile/CoreDevice, Field/Main/Xcode and adversarial exact-head gates. Validation success alone never authorizes installation or scooter interaction.",
       "pr": 3056,
-      "headSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f"
+      "headSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6"
     }
   ],
   "mode": "exclusive",
@@ -61,21 +61,22 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f",
+  "sourceSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
   "legacy": {
-    "reconciledAt": "2026-08-11T23:17:38Z",
+    "reconciledAt": "2026-08-12T08:04:00Z",
     "activeProductionPR": 3056,
-    "activeProductionHeadSHA": "51b8e6b35bbe065c0a1d6b0b7605201f8c02239f",
-    "activeProductionSignedAppRun": 31542155759,
-    "activeProductionFieldFailureRun": 31542155737,
-    "activeProductionMainFailureRun": 31542155743,
-    "activeProductionSkippedXcodeRun": 31542155751,
-    "dedicatedUIDValidationPR": 3089,
-    "dedicatedUIDValidationHeadSHA": "ecca5b2925c336269b400f1d65de7224d36607b5",
-    "dedicatedUIDRun": 31543061748,
-    "dedicatedUIDFieldRun": 31543061639,
-    "dedicatedUIDMainRun": 31543061821,
-    "knownExactHeadFinding": "Reconciled generation 10 on 2026-08-11. The old #2995 detached-FD snapshot is obsolete as a selected production head. #3056 exact 51b8e6b is current credential/sudo custody production, but it intentionally does not solve retained writer authority. #3089 exact ecca5b2 is the current real-Xcode dedicated-build-UID/APFS-freeze architecture probe and remains unaccepted while its exact Mac gates are queued. Regular-file FD, directory-FD and mmap classes remain an active validation matrix. PHYSICAL NO-GO."
+    "activeProductionHeadSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
+    "activeProductionSignedAppRun": 31548257832,
+    "activeProductionSignedAppOutcome": "FAILURE",
+    "activeProductionFieldRun": 31548257797,
+    "activeProductionFieldOutcome": "SUCCESS",
+    "activeProductionMainRun": 31548257656,
+    "activeProductionMainOutcome": "SUCCESS",
+    "acceptedDedicatedUIDValidationPR": 3131,
+    "acceptedDedicatedUIDValidationHeadSHA": "98fdc404048812f6d3af6791710c57ece21dafd3",
+    "acceptedDedicatedUIDValidationRun": 31547634222,
+    "acceptedDedicatedUIDValidationOutcome": "SUCCESS",
+    "knownExactHeadFinding": "Reconciled generation 11 on 2026-08-12. #3056@b8653985 is the selected production carrier: Field/Main are green but Signed App Install Custody is red in the compiler-output composition fixtures with DerivedData/SourcePackages permission failures. #3131@98fdc404 is accepted real-macOS validation of the dedicated build UID/GID plus APFS read-only freeze architecture and exact field-identity replay. The next production rung is deliberate composition of that accepted architecture into #3056, followed by exact-head signing/install/adversarial gates. Apple Development keychain/provisioning custody and final flagship composition remain unresolved. PHYSICAL NO-GO."
   },
   "tags": ["capture", "p0", "signed-app", "device-install", "compiler-output-origin", "open-fd", "git-authority", "legacy-import"]
 }
