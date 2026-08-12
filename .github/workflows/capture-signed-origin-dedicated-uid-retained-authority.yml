@@ -128,6 +128,50 @@ jobs:
           fi
           exit "$rc"
 
+      - name: Classify retained-authority wait stage without changing oracle
+        if: always() && (steps.dirfd.outcome != 'success' || steps.mmap.outcome != 'success')
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          witness='scripts/ci/tests/test_capture_signed_app_dedicated_uid_retained_authority.py'
+          diagnostic='scripts/ci/tests/.nembra_retained_authority_wait_diagnostic.py'
+          cp "$witness" "$diagnostic"
+          trap 'rm -f "$diagnostic"' EXIT
+          /usr/bin/python3 - "$diagnostic" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          source = source.replace(
+              'ERROR_MARKER = "NEMBRA_DEDICATED_UID_RETAINED_AUTHORITY_ERROR="\n',
+              'ERROR_MARKER = "NEMBRA_DEDICATED_UID_RETAINED_AUTHORITY_ERROR="\n_DIAGNOSTIC_EVENT_INDEX = 0\n',
+              1,
+          )
+          source = source.replace(
+              '    if process.stdout is None:\n',
+              '    global _DIAGNOSTIC_EVENT_INDEX\n    _DIAGNOSTIC_EVENT_INDEX += 1\n    if process.stdout is None:\n',
+              1,
+          )
+          source = source.replace(
+              '    raise ProbeError("timed out waiting for retained-authority writer event")\n',
+              '    raise ProbeError(f"timed out waiting for retained-authority writer event index={_DIAGNOSTIC_EVENT_INDEX} pid={process.pid} poll={process.poll()}")\n',
+              1,
+          )
+          path.write_text(source, encoding="utf-8")
+          PY
+
+          for authority in dirfd mmap; do
+            output="$RUNNER_TEMP/nembra-dedicated-uid-${authority}-wait-diagnostic.txt"
+            set +e
+            /usr/bin/python3 -B -I "$diagnostic" --authority "$authority" >"$output" 2>&1
+            rc=$?
+            set -e
+            printf 'NEMBRA_RETAINED_AUTHORITY_WAIT_DIAGNOSTIC_RC=%s authority=%s\n' "$rc" "$authority" >>"$output"
+            cat "$output"
+          done
+
       - name: Retain dedicated-UID authority evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -136,6 +180,8 @@ jobs:
           path: |
             ${{ runner.temp }}/nembra-dedicated-uid-dirfd.txt
             ${{ runner.temp }}/nembra-dedicated-uid-mmap.txt
+            ${{ runner.temp }}/nembra-dedicated-uid-dirfd-wait-diagnostic.txt
+            ${{ runner.temp }}/nembra-dedicated-uid-mmap-wait-diagnostic.txt
 
       - name: Diff hygiene
         if: always()
