@@ -1,0 +1,96 @@
+name: Materialize Private Overlay Harness Fix
+
+on:
+  push:
+    branches:
+      - validation/v14-dedicated-uid-private-input-apfs-overlay-sol-20260812
+    paths:
+      - .github/workflows/_materialize_private_overlay_harness_fix.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-private-overlay-harness-fix
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/v14-dedicated-uid-private-input-apfs-overlay-sol-20260812
+          fetch-depth: 0
+
+      - name: Bind one-shot materializer parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "a6bcd12d7397350f972ebfddd1bc96106259a92f"
+          test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/_materialize_private_overlay_harness_fix.yml"
+
+      - name: Apply exact synthetic-ancestry correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          probe = Path("scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py")
+          text = probe.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  '    build_uid = choose_ephemeral_id()\n    build_name = f"nembraov{os.getpid()}"\n',
+                  '    build_uid = choose_ephemeral_id()\n    # Match production #3142 workspace ancestry: root owns the workspace, while\n    # the fresh build primary GID gets execute-only traversal to its home.\n    os.chown(workspace, 0, build_uid)\n    os.chmod(workspace, 0o710)\n    build_name = f"nembraov{os.getpid()}"\n',
+              ),
+              (
+                  '            env=environment,\n            user=build_uid,\n',
+                  '            env=environment,\n            cwd=home,\n            user=build_uid,\n',
+              ),
+              (
+                  '    workspace = Path(tempfile.mkdtemp(prefix="nembra-private-overlay-field.", dir="/private/tmp"))\n    os.chmod(workspace, 0o700)\n',
+                  '    workspace = Path(tempfile.mkdtemp(prefix="nembra-private-overlay-field.", dir="/private/tmp"))\n    # The synthetic repository models a normal traversable checkout ancestry. Keep\n    # directory listing private while allowing the dedicated UID to reach the mounted\n    # LocalSecrets path; the LocalSecrets source itself remains field-owned 0700.\n    os.chmod(workspace, 0o711)\n',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one probe replacement, found {count}: {old!r}")
+              text = text.replace(old, new, 1)
+          probe.write_text(text, encoding="utf-8")
+
+          workflow = Path(".github/workflows/capture-dedicated-uid-private-input-apfs-overlay.yml")
+          wf = workflow.read_text(encoding="utf-8")
+          old = "          grep -Fq 'dedicatedUIDReadExact' \"$probe\"\n"
+          new = (
+              "          grep -Fq 'os.chmod(workspace, 0o710)' \"$probe\"\n"
+              "          grep -Fq 'os.chmod(workspace, 0o711)' \"$probe\"\n"
+              "          grep -Fq 'cwd=home' \"$probe\"\n"
+              + old
+          )
+          if wf.count(old) != 1:
+              raise SystemExit("expected exactly one source-audit insertion point")
+          workflow.write_text(wf.replace(old, new, 1), encoding="utf-8")
+          PY
+          rm .github/workflows/_materialize_private_overlay_harness_fix.yml
+          python3 -m py_compile scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py
+          git diff --check
+          printf '%s\n' \
+            .github/workflows/_materialize_private_overlay_harness_fix.yml \
+            .github/workflows/capture-dedicated-uid-private-input-apfs-overlay.yml \
+            scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          git diff --name-only | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+
+      - name: Commit exact correction and retire materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm-materializer@users.noreply.github.com'
+          git add -A
+          git commit -m 'Capture: fix private overlay synthetic ancestry'
+          git push origin HEAD:validation/v14-dedicated-uid-private-input-apfs-overlay-sol-20260812
