@@ -16,13 +16,14 @@ class CaptureV16TrustedStandaloneCommandTests(unittest.TestCase):
     def test_owner_command_and_same_repo_admission_are_trusted(self) -> None:
         source = self.source
         self.assertIn("issue_comment:", source)
-        self.assertIn("github.event.comment.body == '/capture-xcode27'", source)
-        for association in ("OWNER", "MEMBER", "COLLABORATOR"):
-            self.assertIn(f"github.event.comment.author_association == '{association}'", source)
+        self.assertIn("github.event.comment.body == '/capture-standalone-xcode27'", source)
+        self.assertIn("github.actor == github.repository_owner", source)
+        self.assertNotIn("github.event.comment.body == '/capture-xcode27'", source)
         self.assertIn("github.rest.pulls.get", source)
         self.assertIn("pr.state !== 'open'", source)
         self.assertIn("pr.head.repo?.full_name === repository", source)
         self.assertIn("core.setOutput('head_sha', pr.head.sha)", source)
+        self.assertIn("actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3", source)
 
     def test_live_head_is_revalidated_before_and_after_candidate_qa(self) -> None:
         source = self.source
@@ -46,11 +47,13 @@ class CaptureV16TrustedStandaloneCommandTests(unittest.TestCase):
         self.assertIn("needs.standalone-qa.result == 'success'", source[accept_job:postflight])
         self.assertIn("ref: ${{ needs.resolve.outputs.head_sha }}", source[checkout:verify])
         self.assertIn("persist-credentials: false", source[checkout:verify])
+        self.assertIn("actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803", source)
         self.assertIn('test "$actual" = "$EXPECTED_HEAD_SHA"', source[verify:])
         self.assertIn(
             "capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}",
             source,
         )
+        self.assertIn("cancel-in-progress: false", source)
 
     def test_trusted_gate_builds_standalone_product_and_preserves_truth_boundary(self) -> None:
         source = self.source
@@ -74,6 +77,8 @@ class CaptureV16TrustedStandaloneCommandTests(unittest.TestCase):
         ):
             self.assertIn(key, source)
         self.assertIn("Trusted public/unprovisioned build carried forbidden field authority", source)
+        self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", source)
+        self.assertIn("if-no-files-found: error", source)
 
 
 if __name__ == "__main__":
