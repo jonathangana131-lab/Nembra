@@ -35,6 +35,23 @@ class CaptureV16TrustedStandaloneCommandTests(unittest.TestCase):
         self.assertIn("persist-credentials: false", checkout_block)
         self.assertIn('test "$actual" = "$EXPECTED_HEAD_SHA"', source[verify:])
 
+    def test_reviewed_build_graph_is_bound_before_candidate_build_execution(self) -> None:
+        source = self.source
+        custody = source.index("- name: Verify reviewed standalone build graph custody")
+        first_graph_execution = source.index("xcodebuild -list -project NembraCapture.xcodeproj")
+        first_swift_execution = source.index("swift test --filter PassiveBluetoothCaptureTests")
+        self.assertLess(custody, first_graph_execution)
+        self.assertLess(custody, first_swift_execution)
+        for path, blob in (
+            ("NembraCapture.xcodeproj/project.pbxproj", "4aabfe313663659862a3d8e12e362db2fdca9a34"),
+            ("NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme", "0d36de1f4cf35961d32cd1d4b19a8919624ce63e"),
+            ("Packages/NembraCore/Package.swift", "9148fd1683d5bed1682bba3eb713c657de068ad8"),
+            ("Packages/NembraBluetoothCapture/Package.swift", "3bcda7fa8a350ade75bd8b7b228c3c95ca319bda"),
+        ):
+            self.assertIn(f"verify_blob '{path}' '{blob}'", source)
+        self.assertIn('actual="$(/usr/bin/git rev-parse "HEAD:$path")"', source)
+        self.assertIn('test "$actual" = "$expected"', source)
+
     def test_existing_truth_and_read_only_gates_are_not_weakened(self) -> None:
         source = self.source
         for test_name in (
