@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "worker",
+  "workerId": "sol-20260812-0058jx",
+  "model": "GPT-5.6 Sol",
+  "status": "ACTIVE",
+  "branch": "",
+  "startedAt": "2026-08-12T07:58:52Z",
+  "lastSeenAt": "2026-08-12T07:58:52Z"
+}
