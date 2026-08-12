@@ -9,15 +9,15 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T09:05:30Z",
-  "lastHeartbeatAt": "2026-08-12T09:05:30Z",
+  "lastHeartbeatAt": "2026-08-12T09:07:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v15-dashboard-ax5-control-message-witness-sol-0059g7",
-  "pr": null,
+  "pr": 3164,
   "sourceSHA": "7ff02ac1053d5312c9fc18f3c331bab88af5d0bd",
-  "currentHeadSHA": "7ff02ac1053d5312c9fc18f3c331bab88af5d0bd",
+  "currentHeadSHA": "14756416454ef9977d6ac4a3d0c9ee031a8f06ab",
   "takeoverFromWorkerId": "sol-20260812-0059g7",
   "takeoverFromLeaseId": "dashboard-tests-0059g7-20260812-0836",
   "takeoverReason": "Generation 6 was explicitly RELEASED after exact retained AX evidence closed LAST KNOWN and exposed the next right-rail product defect. Product primary #3163@7ff02ac now repairs that defect; reclaim tests on an exact descendant so validation runs in parallel instead of idling on the product Xcode queue.",
   "intent": "Add only the proven retained-currentness witness workflow to product #3163 exact head, run the existing retained-speed XCUITest under real iPhone 12/iOS 27 Accessibility XXXL, preserve xcresult/screenshot/environment evidence, and directly inspect complete Speed required plus center LAST KNOWN/Energy Rail separation. No production changes in this slot.",
-  "checkpoint": "Claimed from exact product #3163@7ff02ac. Next: create a clean test descendant containing exactly the one witness workflow used by #3150, open stacked QA PR, and require terminal exact run plus direct pixel inspection. Simulator only; no physical ES80 authority."
+  "checkpoint": "PR #3164 opened as exactly one additive QA workflow on product #3163@7ff02ac. Exact test head 14756416 contains no production delta. The workflow is byte-for-byte the retained-state instrument already proven by #3150 and will exact-bind head, real iPhone 12/iOS 27, real accessibility content size, existing retained-speed XCUITest and xcresult attachments. Next: inspect exact runs/artifact. Simulator only; no physical ES80 authority."
 }
