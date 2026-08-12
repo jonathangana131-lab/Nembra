@@ -699,7 +699,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "83ed9001385518e979a7b37265877054938ae5c0",
+        "headSHA": "384afa11dcc9939c6544c4dfdaa04c209515a868",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -974,8 +974,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 284,
+    "classifiedPRTotal": 283,
     "classifiedPRs": {
+      "2680": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2680,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.361,
+        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
+      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2278,11 +2289,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
+        "headSHA": "9b127bf1f82c9c04bb5e929ed019048cb1534b0f",
         "lane": "",
         "pr": 3179,
         "recommendedAction": "independent-review",
-        "similarity": 0.092,
+        "similarity": 0.087,
         "title": "[Swarm V16] Fail closed on oversized live PR inventory"
       },
       "3180": {
@@ -2315,19 +2326,8 @@
         "lane": "capture-build-authority",
         "pr": 3188,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.425,
+        "similarity": 0.375,
         "title": "[Capture P0][RED TEAM] Prove selected-Xcode janitor startup authority"
-      },
-      "3190": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "171005a44a30bec6b047e6e8b3d9dad99384390d",
-        "lane": "capture-standalone-build",
-        "pr": 3190,
-        "recommendedAction": "independent-review",
-        "similarity": 0.14,
-        "title": "[Capture V16][CI] Harden trusted standalone exact-head gate"
       },
       "3191": {
         "classification": "canonical-candidate",
@@ -2337,7 +2337,7 @@
         "lane": "capture-build-authority",
         "pr": 3191,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.425,
+        "similarity": 0.367,
         "title": "[Capture P0][SECURITY] Close selected-Xcode janitor startup authority"
       },
       "3192": {
@@ -2409,17 +2409,23 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [],
+    "livePRHeadUpdates": [
+      {
+        "from": "83ed9001385518e979a7b37265877054938ae5c0",
+        "to": "384afa11dcc9939c6544c4dfdaa04c209515a868",
+        "workItemId": "live-pr-3142"
+      }
+    ],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-12T11:30:07Z",
+    "liveRefreshAt": "2026-08-12T11:33:11Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
-    "liveRefreshMainSHA": "17a9c74a265159bd32c9fb8cff5e8ae5a3c8a43f",
+    "liveRefreshMainSHA": "e6fb870916ee284825148d692af80d4b116008bf",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -6169,10 +6175,10 @@
       "userValue": 7
     }
   },
-  "revision": 5,
+  "revision": 6,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-12T11:32:47Z",
+  "updatedAt": "2026-08-12T11:35:52Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6241,14 +6247,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "83ed9001385518e979a7b37265877054938ae5c0",
+        "headSHA": "384afa11dcc9939c6544c4dfdaa04c209515a868",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-12T11:30:07Z",
+      "updatedAt": "2026-08-12T11:33:11Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
