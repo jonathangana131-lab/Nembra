@@ -129,6 +129,9 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertEqual(source.count('"-owners"'), 1)
         self.assertIn("if effective != expected:", source)
         self.assertIn("if effective.intersection(field_only):", source)
+        self.assertIn("def _process_state_for_uid(", source)
+        self.assertIn("if not _numeric_principal_in_use(candidate):", source)
+        self.assertIn("if not latest_live and not latest_lookups:", source)
         self.assertIn("if detach.returncode != 0:", source)
         self.assertIn("normal non-forced quiescence", source)
         self.assertIn('["/usr/bin/ditto", "--noacl"', source)
@@ -157,13 +160,43 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
                 ["tool", helper.DERIVED_PLACEHOLDER, helper.DERIVED_PLACEHOLDER], derived
             )
 
-    def test_ephemeral_identity_selector_skips_existing_ids(self) -> None:
+    def test_ephemeral_identity_selector_skips_account_and_process_collisions(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_identity")
         with (
             mock.patch.object(helper.os, "getpid", return_value=123),
-            mock.patch.object(helper, "_id_in_use", side_effect=lambda value: value < 52125),
+            mock.patch.object(
+                helper,
+                "_numeric_principal_in_use",
+                side_effect=lambda value: value < 52125,
+            ),
         ):
             self.assertEqual(helper._choose_ephemeral_id(), 52125)
+
+        with (
+            mock.patch.object(helper, "_id_in_use", return_value=False),
+            mock.patch.object(helper, "_process_state_for_uid", return_value=((999,), ())),
+        ):
+            self.assertTrue(helper._numeric_principal_in_use(55001))
+        with (
+            mock.patch.object(helper, "_id_in_use", return_value=False),
+            mock.patch.object(helper, "_process_state_for_uid", return_value=((), (999,))),
+        ):
+            self.assertTrue(helper._numeric_principal_in_use(55001))
+        with (
+            mock.patch.object(helper, "_id_in_use", return_value=False),
+            mock.patch.object(helper, "_process_state_for_uid", return_value=((), ())),
+        ):
+            self.assertFalse(helper._numeric_principal_in_use(55001))
+
+    def test_process_state_separates_live_and_zombie_numeric_uid_subjects(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_process_state")
+        completed = mock.Mock(
+            returncode=0,
+            stdout="101 55001 S\n102 55001 Z\n103 501 R\n",
+            stderr="",
+        )
+        with mock.patch.object(helper.subprocess, "run", return_value=completed):
+            self.assertEqual(helper._process_state_for_uid(55001), ((101,), (102,)))
 
     def test_structured_credentials_preserve_explicit_authority_without_primary_duplication(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_credentials")
@@ -248,7 +281,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
                     Path("/private/tmp"),
                 )
 
-    def test_verified_identity_retirement_requires_name_and_numeric_absence(self) -> None:
+    def test_verified_identity_retirement_requires_no_live_uid_or_identity_lookup(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_retirement")
         missing = mock.Mock(side_effect=KeyError)
         with (
@@ -256,14 +289,26 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             mock.patch.object(helper.pwd, "getpwuid", missing),
             mock.patch.object(helper.grp, "getgrnam", missing),
             mock.patch.object(helper.grp, "getgrgid", missing),
+            mock.patch.object(helper, "_process_state_for_uid", return_value=((), ())),
         ):
             helper._assert_local_build_identity_retired("nembrabuildtest", 55001)
 
         with (
-            mock.patch.object(helper.pwd, "getpwnam", return_value=object()),
+            mock.patch.object(helper.pwd, "getpwnam", missing),
+            mock.patch.object(helper.pwd, "getpwuid", missing),
+            mock.patch.object(helper.grp, "getgrnam", missing),
+            mock.patch.object(helper.grp, "getgrgid", missing),
+            mock.patch.object(helper, "_process_state_for_uid", return_value=((1234,), ())),
             self.assertRaises(helper.BuildOriginCustodyError),
         ):
-            helper._assert_local_build_identity_retired("nembrabuildtest", 55001)
+            helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
+
+        with (
+            mock.patch.object(helper.pwd, "getpwnam", return_value=object()),
+            mock.patch.object(helper, "_process_state_for_uid", return_value=((), ())),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
 
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._assert_local_build_identity_retired("nembrabuildtest", 0)
@@ -278,6 +323,16 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         ):
             helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
             verify.assert_called_once_with("nembrabuildtest", 55001)
+
+    def test_strict_identity_removal_rejects_unclassifiable_pkill_failure(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_pkill_failure")
+        failed = mock.Mock(returncode=3)
+        with (
+            mock.patch.object(helper.sys, "platform", "darwin"),
+            mock.patch.object(helper.subprocess, "run", return_value=failed),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
 
     def test_sudo_policy_classifier_rejects_passwordless_authority(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_sudo_policy")
