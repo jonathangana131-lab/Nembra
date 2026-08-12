@@ -68,17 +68,19 @@ jobs:
             scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py \
             scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py
           oracle=scripts/ci/tests/test_capture_signed_app_codesign_capability_freeze.py
-          reset=scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py
+          adapter=scripts/ci/tests/test_capture_signed_app_codesign_primary_gid_group_reset.py
           grep -Fq '"/usr/bin/codesign"' "$oracle"
           grep -Fq 'signer_gid = capability_gid' "$oracle"
           grep -Fq 'signer_groups: list[int] = []' "$oracle"
           grep -Fq 'structured_credentials(field_uid, field_gid, field_active_groups)' "$oracle"
           grep -Fq 'structured_credentials(field_uid, signer_gid, signer_groups)' "$oracle"
           grep -Fq 'PATH_PROBE_MARKER' "$oracle"
-          grep -Fq '"extra_groups": [gid]' "$reset"
-          grep -Fq 'rawEffectiveSupplementaryGroups' "$reset"
-          grep -Fq 'group != signer_gid' "$reset"
-          grep -Fq 'primaryGIDResetSentinelPresent' "$reset"
+          grep -Fq 'install_field_baseline_adapter' "$adapter"
+          grep -Fq 'rawEffectiveSupplementaryGroups' "$adapter"
+          grep -Fq 'capturedFieldBaselineGroups' "$adapter"
+          grep -Fq 'unexpectedSupplementaryGroupsBeyondFieldBaseline' "$adapter"
+          grep -Fq 'fieldBaselinePreservedExact' "$adapter"
+          grep -Fq 'parent.__file__ = str(Path(__file__).resolve())' "$adapter"
           grep -Fq 'detach = helper.hdiutil_detach(device)' "$oracle"
           grep -Fq 'readonly=True' "$oracle"
           grep -Fq '"appleIdentityExercised": False' "$oracle"
@@ -130,14 +132,14 @@ jobs:
           except ValueError:
               rc = None
           record = {
-              "schemaVersion": 2,
+              "schemaVersion": 3,
               "authority": "capture-signed-output-codesign-capability-validation-only",
               "exactValidationHead": head.lower(),
               "exactAcceptedParent": parent.lower(),
               "probeReturnCode": rc,
               "successEvidencePresent": "NEMBRA_CODESIGN_CAPABILITY_FREEZE_JSON=" in output,
               "redEvidencePresent": "NEMBRA_CODESIGN_CAPABILITY_FREEZE_ERROR=" in output,
-              "primaryGIDGroupResetAdapter": True,
+              "fieldUIDBaselineGroupAttestation": True,
               "probeOutputSHA256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
               "appleIdentityExercised": False,
               "provisioningExercised": False,
@@ -168,7 +170,8 @@ jobs:
           test "$(cat "$RUNNER_TEMP/nembra-codesign-capability-rc.txt")" = 0
           grep -q '^NEMBRA_CODESIGN_CAPABILITY_FREEZE_JSON=' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
           grep -q '"rawEffectiveSupplementaryGroups": \[' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
-          grep -q '"effectiveSupplementaryGroups": \[\]' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
-          grep -q '"primaryGIDResetSentinelPresent": true' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
+          grep -q '"fieldBaselinePreservedExact": true' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
+          grep -q '"unexpectedSupplementaryGroupsBeyondFieldBaseline": \[\]' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
+          grep -q '"missingFieldBaselineGroups": \[\]' "$RUNNER_TEMP/nembra-codesign-capability-output.txt"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
