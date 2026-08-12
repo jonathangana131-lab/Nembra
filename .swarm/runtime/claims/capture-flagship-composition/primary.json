@@ -9,17 +9,17 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:18:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:18:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:20:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-capture-ax5-dynamic-type-sol-0055r9-20260812",
   "sourceSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
-  "currentHeadSHA": "6bb2e3cba5b2587626a184518dad09669817f43b",
-  "pr": null,
+  "currentHeadSHA": "48dc64f7a0f3188f0cca5dd4300f09f079d3aa80",
+  "pr": 3145,
   "ownedPaths": [
     "NembraApp/App/NembraCaptureEntrypoint.swift"
   ],
   "takeoverFromWorkerId": "gpt56-sol-20260811-firstfold-recovery",
   "takeoverFromLeaseId": "capture-flagship-primary-firstfold-recovery-20260811-2141",
-  "takeoverReason": "Generation-4 explicitly RELEASED. Exact #3073 retained runtime evidence now proves a real AX5 .all audit blocker: Dynamic Type font sizes are partially unsupported on a SwiftUI.AccessibilityNode. Take the released first-fold product lane for the smallest product-side Dynamic Type repair while the independent runtime worker owns only workflow+witness paths.",
-  "checkpoint": "Start from accepted/fully gated #2979 exact head 6bb2e3cb. Investigate explicit first-fold dynamicTypeSize cap on the Capture locked authority node; do not broaden runtime audit filters or shorten authority semantics. Any product-byte move must re-earn visual + runtime acceptance. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-4 explicitly RELEASED. Exact #3073 retained runtime evidence proved a real AX5 .all audit blocker: Dynamic Type font sizes are partially unsupported on a SwiftUI.AccessibilityNode. Take the released first-fold product lane for the smallest product-side Dynamic Type repair while the independent runtime worker owns only workflow+witness paths.",
+  "checkpoint": "Draft #3145 opened on exact #2979@6bb2e3cb. Final net diff is one product file, 0 additions / 2 deletions: remove Accessibility-1 caps from build-authority text and sighted Tuya user-code title; keep decorative icon cap and all authority copy/semantics unchanged. Head 48dc64f7. Exact product-byte move resets prior visual/runtime acceptance. Current #3145 runs: Standalone Visual queued 31577514684; Field queued 31577514808; Main queued 31577514745; Xcode path-policy skipped and is not acceptance. Require retained screenshot/human review and runtime successor re-anchor before composition. PHYSICAL NO-GO."
 }
