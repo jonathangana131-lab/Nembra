@@ -1,5 +1,5 @@
 from __future__ import annotations
-import base64, json, random, time, urllib.error, urllib.parse, urllib.request
+import base64, json, random, threading, time, urllib.error, urllib.parse, urllib.request
 from dataclasses import dataclass
 from typing import Any, Mapping
 from .model import *
@@ -13,19 +13,26 @@ class Store:
     def update(self,path,value,expected_version,message='swarm: update'): raise NotImplementedError
     def list(self,prefix): raise NotImplementedError
 class MemoryStore(Store):
-    def __init__(self): self._d={}; self._n=0
+    def __init__(self): self._d={}; self._n=0; self._lock=threading.RLock()
     def _v(self): self._n+=1; return str(self._n)
     def get(self,path):
-        if path not in self._d: raise NotFoundError(path)
-        x=self._d[path]; return StoredValue(json.loads(json.dumps(x.value)),x.version)
+        with self._lock:
+            if path not in self._d: raise NotFoundError(path)
+            x=self._d[path]; return StoredValue(json.loads(json.dumps(x.value)),x.version)
     def create(self,path,value,message='swarm: create'):
-        if path in self._d: raise ConflictError(path)
-        self._d[path]=StoredValue(json.loads(json.dumps(dict(value))),self._v()); return self.get(path)
+        with self._lock:
+            if path in self._d: raise ConflictError(path)
+            self._d[path]=StoredValue(json.loads(json.dumps(dict(value))),self._v())
+            x=self._d[path]; return StoredValue(json.loads(json.dumps(x.value)),x.version)
     def update(self,path,value,expected_version,message='swarm: update'):
-        if path not in self._d: raise NotFoundError(path)
-        if self._d[path].version!=expected_version: raise ConflictError(path)
-        self._d[path]=StoredValue(json.loads(json.dumps(dict(value))),self._v()); return self.get(path)
-    def list(self,prefix): return [(p,self.get(p)) for p in sorted(self._d) if p.startswith(prefix)]
+        with self._lock:
+            if path not in self._d: raise NotFoundError(path)
+            if self._d[path].version!=expected_version: raise ConflictError(path)
+            self._d[path]=StoredValue(json.loads(json.dumps(dict(value))),self._v())
+            x=self._d[path]; return StoredValue(json.loads(json.dumps(x.value)),x.version)
+    def list(self,prefix):
+        with self._lock:
+            return [(p,StoredValue(json.loads(json.dumps(self._d[p].value)),self._d[p].version)) for p in sorted(self._d) if p.startswith(prefix)]
 class FaultInjectingStore(MemoryStore):
     def __init__(self): super().__init__(); self.fail_next_create=False; self.fail_next_update=False
     def create(self,*a,**k):

@@ -1,300 +1,373 @@
-# Nembra Swarm Control Plane
+# Nembra Swarm V16 — Mission Graph
 
-This is the canonical operational guide for Nembra's GitHub-native multi-agent coordination layer. It supplements the product/source-of-truth rules in the existing Nembra charter; it does not replace product truth, exact-head acceptance, Xcode/Simulator evidence, or physical-scooter safety policy.
+This is the **canonical operational guide** for Nembra multi-agent development. `SWARM_GO.md` is the short worker entrypoint. Older V13/V14 lane-first documents are historical only.
 
-The design rationale is in `docs/adr/ADR-0015-github-native-swarm-control-plane.md`.
+V16 optimizes for **important product milestones completed and blockers eliminated**. PR count, branch count, commit count, validation count, and agents appearing busy are not progress metrics.
 
-## The 20-second model
+Existing Nembra product truth, authentication, exact-head CI, signing, private-input custody, accessibility, and physical-scooter safety rules remain authoritative. V16 coordinates those rules; it does not weaken them.
 
-- Product code/config/docs live on `main` and ordinary worker branches/PRs.
-- Runtime coordination lives on the separate `swarm-state` branch under `.swarm/runtime/`.
-- A lane is real work. A slot is one role inside the lane.
-- A deterministic claim file is the exclusive ownership boundary.
-- GitHub create/update SHA semantics provide atomic conflict/CAS behavior.
-- Claims expire and can be atomically taken over.
-- Events/handoffs are durable structured memory between separate GPT sessions.
-- Resources such as Xcode/Simulator/physical scooter have their own leases.
-- The dashboard is generated; never treat it as authority.
-- The scheduler may observe physical GO but can never grant it.
-- Green CI is evidence about one exact head, not proof that a `Go` worker is finished advancing the repository.
+## The model
 
-## Fresh worker: `Go`
+V16 organizes work as:
 
-A new GPT-5.6 Sol worker receiving only `Go` should:
+`MISSION → OBJECTIVES → DEPENDENCIES → BLOCKERS → WORK ITEMS → SOLUTIONS → EVIDENCE → INTEGRATION → MILESTONE`
 
-1. Create a session ID such as `sol-20260811-a81f` (date + random suffix; never a secret).
-2. Inspect live `main`, open/active PRs and branches, latest relevant commits, Actions/Xcode state, and product safety constraints. GitHub product truth still outranks stale prose.
-3. Read trusted `.swarm/config.json` from current product main.
-4. Read/validate the `swarm-state` runtime records. Unknown/newer schema or corrupted ownership state means **do not claim exclusive work**.
-5. Register/refresh the worker record.
-6. Read important recent events/handoffs for candidate lanes.
-7. Ask the scheduler for compatible ready slots.
-8. Atomically claim one exact slot. **Claim first. Branch second.** If create conflicts, immediately refresh/recommend another slot; do not duplicate implementation and do not stop merely because the first claim lost a race.
-9. Acquire any required resource leases in configured order.
-10. Re-check source/main/claim before a major shared-contract edit.
-11. Create the isolated branch and implement/review/test only the owned role/scope.
-12. Heartbeat at meaningful checkpoints (for example after a long build or before substantial push), not every few seconds.
-13. Publish a structured event only when another worker would act differently after reading it.
-14. Before substantial push/PR creation, prove the current `{workerId, leaseId, generation}` still owns the slot.
-15. Put swarm metadata in a new controlled PR.
-16. Obtain independent review when required; the accepting review worker ID must differ from the implementation/repair/reconciliation work-subject worker ID.
-17. Integration is a claimed role, not a merge race. Sync main, verify dependencies/reviews/exact-head evidence, merge, observe main, and only then close the lane.
-18. When a slice is accepted, blocked, handed off, merged, loses a claim, or reaches a green wait point, preserve the durable state and release anything that should not remain held.
-19. Then refresh current `main`, `swarm-state`, and scheduler recommendations **in the same Go turn** and claim another safe useful role when one exists. If one reconciliation slot is already owned, use another available reconciliation shard or another non-conflicting recommendation rather than equating ownership with no work.
-20. Stop only after the final stop-proof procedure below succeeds. A green check, green `main`, merged PR, completed slice, blocked slice, or one empty recommendation response is not a stop proof.
+Agents are execution resources underneath the graph, not the organizing abstraction.
 
-### Go worker stop proof
-
-An empty scheduler recommendation list is valid as a point-in-time snapshot, but it is **not** enough to end a `Go` turn. Before intentional idle/stop, perform a fresh final reconciliation against the current `main` SHA and verify all of these:
-
-- no safe unowned scheduler recommendation is claimable by this worker;
-- no meaningful open PR, branch, failed-main repair, review/integration opportunity, or reconciliation family is missing from `swarm-state`;
-- no apparently unavailable slot is merely stale/expired ownership that is legally takeable;
-- all remaining useful work is actively owned, policy-blocked, dependency-blocked, resource-blocked, or externally blocked;
-- every newly discovered blocker, missing-work record, supersession, or handoff that would change another worker's behavior has been written durably.
-
-If all conditions hold, publish a durable `EVIDENCE_RESULT` containing the current main SHA, the refreshed queue result, and why the remaining useful objectives are owned or blocked. Only then idle cleanly. Never manufacture speculative work just to stay busy.
-
-If a current lane is merely waiting for CI, review, or external evidence, keep its ownership/evidence correct and release idle scarce resources; then advance another safe non-conflicting recommendation when policy permits instead of spending the whole `Go` turn status-watching.
-
-## Worker/session identity
-
-GitHub may show multiple GPT workers as the same account. Therefore every session gets its own control-plane identity:
+Persistent V16 state lives on `swarm-state` at:
 
 ```text
-sol-YYYYMMDD-<random>
+.swarm/runtime/v16/mission-graph.json
+.swarm/runtime/v16/claims/<work-item>.json
 ```
 
-A worker record stores only coordination facts: model, status, lane/branch where relevant, timestamps, and leased resources. Do not store tokens, Apple credentials, signing secrets, Bluetooth credentials, or personal data.
+The mission graph uses GitHub Contents compare-and-swap updates. Work claims use separate deterministic files so 30 workers do not serialize their heartbeats through one graph document. V15 lane/claim state remains readable during migration.
 
-## Lanes and role slots
+## Missions and objectives
 
-A lane is an independently understandable work unit with:
+The seeded top-level missions are:
 
-- ID, epic, title, objective, priority and state;
-- dependencies and blockers;
-- `exclusive` or explicitly authorized `tournament` mode;
-- allowed + adjacent write areas;
-- role slots and resource requirements;
-- acceptance/review requirements;
-- source/exact-head constraints when needed;
-- physical requirement/state when applicable.
+- **Nembra Shipping Mission** — Dashboard, Battery/Range, Charging, Navigation, Rides, Vehicle Controls, Connection, Settings, Performance, Accessibility, Premium UI, and Real ES80 Telemetry.
+- **Capture Mission** — standalone build, Apple auth, Tuya auth, account/device verification, secure session, signed build, installation, stationary UX, authenticated read-only observation, secure export, final regression, and physical handoff.
 
-Normal lane roles can include:
+Every objective has explicit status, priority, dependencies, blocker IDs, captain, active workers, evidence, integration world, severity, user value, physical/user dependency, last meaningful progress, canonical branch, adjacent scope, forbidden areas, and concrete finish conditions.
 
-- primary implementation;
-- tests;
-- adversarial review;
-- accessibility;
-- performance;
-- Xcode evidence;
-- physical evidence;
-- integration;
-- CI sheriff;
-- recovery;
-- architecture review;
-- scheduler reconciliation.
+An objective cannot become `DONE` merely because CI is green. V16 requires all finish conditions, no unresolved P0/P1 blocker, accepted required feature-genome dimensions, and `MAIN` integration. Physical objectives also require accepted physical truth.
 
-A normal lane has at most one implementation primary. Use several complementary slots rather than several competing implementations.
+## Feature genomes
 
-### Tournament mode
-
-Duplicate implementation is allowed only when explicitly useful. A tournament lane must be explicitly authorized and exposes a bounded 2–3 candidate implementation slots followed by independent judgment/synthesis. Ordinary work must remain exclusive.
-
-## Claims and leases
-
-The exact exclusive subject is:
+Every major objective exposes separate dimensions:
 
 ```text
-.swarm/runtime/claims/<lane>/<slot>.json
+functionality
+visualQuality
+accessibility
+performance
+testing
+integration
+physicalTruth
+knownBlockers
 ```
 
-### Claim
+Each dimension is independently `NOT_STARTED`, `ACTIVE`, `BLOCKED`, `ACCEPTED`, or `NOT_APPLICABLE` and carries its own evidence IDs. There is deliberately no universal fake completion percentage.
 
-Create the deterministic path with no prior content SHA. One racing create wins. Losing workers do not “try anyway”; they refresh and take another slot.
+## Severity and priority
 
-### Heartbeat
+Severity is:
 
-A valid owner is the tuple:
+- **P0** — release blocker, unsafe behavior, or truth corruption.
+- **P1** — major feature broken.
+- **P2** — noticeable issue.
+- **P3** — polish.
+
+Scheduler priority combines severity, release blocking, safety, user-visible value, dependency fan-out, finish proximity, age/integration pressure, and active surge state. Near-finished important work receives more pressure, not less.
+
+## Feature captains
+
+Major missions may have a captain. Captains coordinate blocker ownership, workers, duplicate suppression, solution selection, integration, Definition of Done, escalation, and handoff. They do not need to write every line.
+
+Captain failure is recoverable: replace the stale captain while preserving mission/blocker/work state. Captain disappearance never invalidates accepted evidence or deadlocks workers.
+
+## Work items and mission packets
+
+Workers receive coherent outcome-based work items, not isolated test-name chores. A work item includes:
+
+- primary scope;
+- allowed adjacent scope;
+- forbidden areas;
+- canonical/experimental branch state;
+- role;
+- blocker linkage;
+- intended outcome;
+- evidence and integration state.
+
+The scheduler emits compact mission packets containing:
 
 ```text
-workerId + leaseId + generation
+MISSION
+WHY_IT_MATTERS
+CURRENT_STATE
+EXACT_CANONICAL_BRANCH
+KNOWN_FAILURES
+KNOWN_PROVEN_FACTS
+DO_NOT_REDISCOVER
+PRIMARY_SCOPE
+ALLOWED_EXPANSION
+FORBIDDEN_AREAS
+RELATED_WORKERS
+RELEVANT_EVIDENCE
+EXIT_CONDITION
 ```
 
-The worker reads the current content SHA, validates ownership/expiry, and performs a compare-and-swap update. Heartbeats are checkpoint-driven. Long roles may have longer leases than reviews; do not choose such short leases that normal Xcode builds constantly expire.
+This is the worker context budget. Workers should not reconstruct hundreds of PRs from scratch.
 
-### Takeover
+## Roles and specialization
 
-Takeover is allowed only when the previous lease is released or expired. The new record increments generation and records `takeoverFromWorkerId`, preserving the prior branch/PR/source SHA where available. If two workers race on the stale content SHA, one wins.
+Normal dynamic allocation begins near:
 
-A returning old worker must re-read the claim before pushing. If generation/lease ID changed, it no longer owns primary. Its remaining branch/commits/findings become salvage/handoff material.
+- builders — 60%;
+- reviewers/red-team — 20%;
+- integrators/debuggers — 20%.
 
-## Structured events
+The ratio shifts automatically when review or integration backlog grows or a milestone approaches closure. Agent specialization scores come from accepted/integrated outcomes and regressions in domains such as SwiftUI, MapKit, CoreBluetooth, Tuya, accessibility, performance, and integration. Deterministic exploration slots prevent specialization from becoming brittle.
 
-Publish an event when another worker would act differently because of it. Supported classes include:
+## Canonical branches
 
-- finding;
-- blocker / external blocker;
-- question / answer;
-- decision;
-- dependency discovered;
-- review request/result;
-- handoff;
-- scope change;
-- superseded;
-- evidence result;
-- integration/recovery result;
-- claim/release/takeover/resource transitions when durable audit is useful.
-
-Events are immutable collision-resistant JSON files organized by date. Do not use them as chatty thought logs.
-
-Control-plane records are **data only**. Executable-control field names (`command`, `shell`, `script`, `python`, `swift`, `exec`, etc.) are rejected. GitHub Actions execute only trusted repository-owned code.
-
-## Dependencies and blockers
-
-Dependencies are machine-readable lane IDs. Downstream work is runnable only when dependencies are present and `DONE`. Missing dependencies and cycles fail closed.
-
-Blockers can represent a lane/epic/project/resource condition. An active blocker removes affected work from the ready set instead of making 20 workers repeatedly retry an impossible task.
-
-When an upstream external condition recovers, change its durable lane/blocker state; downstream work returns automatically on the next scheduler refresh.
-
-## Scheduler and WIP
-
-The scheduler does not maximize branch count. It removes conflicting/unrunnable work first, then favors:
-
-1. real red-main repair;
-2. work that closes review/integration backlog;
-3. high-priority product value;
-4. work that unblocks many downstream lanes;
-5. epic-closing/support roles;
-6. safe implementation under WIP limits.
-
-Configured project WIP limits cap active primary implementation. When implementation outruns review/integration, new workers are directed into those closing roles.
-
-An empty recommendation set is valid as a scheduler snapshot, but for a `Go` worker it is **not an automatic completion condition**. The worker must first perform the current-main reconciliation and stop-proof checks above. Reconciliation is allowed to be sharded by objective family so many workers do not queue behind one global scanner. Do not invent speculative features to keep workers occupied.
-
-## Scarce/high-contention resources
-
-Initial explicit resources are:
+Major active objectives should have one selected canonical feature branch. Branch lifecycle states are:
 
 ```text
-PROJECT_STATE_WRITER
-HIGH_CONTENTION_FILE
-XCODE_BUILD
-IOS_SIMULATOR
-IOS_DEVICE
-SIGNING
-RELEASE_INTEGRATION
-BLUETOOTH_CAPTURE
-PHYSICAL_SCOOTER
+EXPERIMENTAL
+PROMISING
+SELECTED
+INTEGRATED
+SUPERSEDED
+ARCHIVED
 ```
 
-Acquire multiple required leases in the exact `.swarm/config.json` order. This avoids deadlock. If later acquisition fails, release already acquired resources best-effort without overwriting a newer owner.
+V16 chooses canonical branches using explicit selection authority and accepted evidence. A semantic tie is recorded for captain/reviewer judgment rather than treated as proof. Redundant selected siblings are marked superseded; archived branches remain evidence-addressable.
 
-Do not over-lock ordinary source files. Use `HIGH_CONTENTION_FILE` only for proven expensive shared contracts/configuration.
+Remote deletion/closure is **fail-closed during migration**. `branch_cleanup_plan` may identify safe archival candidates, but destructive GitHub actions remain disabled until V16 reaches the ACTIVE migration phase and unresolved evidence/blocker references are clear.
 
-## Scope ownership
+## Anti-duplication
 
-Each lane declares product write areas plus explicitly acceptable adjacent test/doc areas. In shadow mode, scope checks report violations. Later enforcement can fail unamended expansion.
+Before new work is created, V16 compares it with active work by blocker identity plus semantic similarity of objective, title, and outcome. Same-blocker work is a duplicate unless an explicit solution tournament authorizes competition.
 
-If real work requires broader scope, do one of:
+A duplicate is routed to one of:
 
-- amend the lane;
-- create/link another lane;
-- record an architecture decision.
+- join the current owner;
+- review/red-team the current solution;
+- help integrate it.
 
-Do not silently turn a narrow claim into a cross-project rewrite.
+It does not receive another accidental branch/PR.
 
-## Reviews and integration
+Completed or archived work does not suppress a genuine later regression.
 
-When `acceptance.independentReview=true`, the primary implementer's swarm worker ID cannot be the accepting review worker ID. Same GitHub account is allowed because worker identity represents the independent reasoning session.
+## Solution tournaments
 
-Review results are durable: `APPROVE`, `REQUEST_CHANGES`, `BLOCK`, or `SUPERSEDE`.
+Hard blockers may deliberately authorize 2–3 independent candidates. Tournament candidates are `EXPERIMENTAL`. Selection compares correctness, simplicity, maintainability, regression risk, test coverage, and integration cost. The winner becomes `SELECTED`; losing branches become `SUPERSEDED` and later `ARCHIVED` when evidence references permit it.
 
-Integration is a claimable role. Before merge it refreshes live main, lane claim, dependency state, exact-head CI/evidence and independent reviews. After merge it watches main; a real red-main regression creates/prioritizes one repair primary plus complementary diagnostics/review, not many repair implementations.
+Duplication is therefore intentional and bounded instead of accidental and unbounded.
 
-## PR metadata
+## Blockers, convergence, and rabbit holes
 
-New controlled PRs use exact lines:
+A blocker is a first-class object containing:
 
 ```text
-SWARM_SCHEMA: 1
-SWARM_LANE: lane-id
-SWARM_SLOT: primary
-SWARM_WORKER: sol-20260811-a81f
-SWARM_CLAIM_GENERATION: 1
+blocker ID
+mission / objective
+symptom
+evidence
+owner / backup
+severity
+first observed
+attempts
+current hypothesis
+related branches
+known duplicate attempts
+next action
+exit condition
+last meaningful progress
 ```
 
-Current rollout is **shadow**. Legacy PRs are not rejected merely because they predate this metadata. New controlled work should include it now so the repo can measure readiness for enforcement.
+Only the owner or an intentionally scheduled tournament should create competing repair work.
 
-## Physical safety
+Repeated attempts with little progress trigger **CONVERGENCE MODE**: freeze competing branch families, consolidate evidence, keep one canonical owner, add fresh review, integrate the best repair, and rerun only necessary acceptance.
 
-Physical state is explicit:
+High activity with almost no blocker removal triggers a **Rabbit Hole Review**. The review asks what is truly required, what is duplicated, which safety checks are load-bearing, which validation mechanisms can be consolidated, and what the smallest rigorous closure path is. It never weakens a real safety or truth boundary.
+
+## Complexity budget and momentum
+
+V16 can flag pathological production/test/workflow/branch/validation ratios. Large validation infrastructure relative to product code is a reason to consolidate reusable primitives.
+
+Momentum rewards blockers removed, dependencies unlocked, acceptance gained, integration gained, user-visible improvement, and meaningful code. Regressions and duplicate work are negative. High activity with low momentum changes scheduling strategy instead of earning a high score.
+
+## Nembra Test Kit
+
+Reusable acceptance primitives live in `scripts/swarmcp/v16_ops.py`:
 
 ```text
-SOURCE_READY
-SIMULATOR_READY
-DEVICE_READY
-PHYSICAL_NO_GO
-PHYSICAL_GO
-PHYSICAL_EVIDENCE_ACCEPTED
+SourceCustody
+BuildIdentity
+SignedBuildIdentity
+SimulatorIdentity
+DeviceIdentity
+PrivateInputCustody
+InstallationCustody
+AccessibilityAcceptance
+VisualEvidence
+PerformanceEvidence
+TelemetryTruth
+PhysicalTruth
+IntegrationTruth
 ```
 
-The scheduler has no operation that promotes to `PHYSICAL_GO`. A physical-evidence slot stays unrunnable unless reviewed existing Nembra physical policy/evidence already supplies GO.
+The primitive defines the maximum authority it may create; feature-specific semantics remain feature-specific. `TelemetryTruth` may record authenticated telemetry evidence but **cannot** mark physical truth accepted. Only explicit `PhysicalTruth` evidence with legitimate physical authority can do that.
 
-Never treat package-green, CI-green, Xcode-green, Simulator-green, or a generated dashboard as physical scooter proof. Never fabricate telemetry. This control plane adds **no scooter write commands or remote-control surface**.
+## Test impact and evidence reuse
 
-## Dashboard
+V16 maps changed paths to affected tests. For example a Dashboard layout edit targets Dashboard source/UI/accessibility plus compile evidence, not unrelated Capture filesystem adversarial suites. Full-system suites still run at integration/release boundaries.
 
-A dashboard may be generated from authoritative lane/claim/resource/worker/event records. It is observability only. If it is stale, deleted, or corrupted, rebuild it. Never route work from a Markdown dashboard when underlying records disagree.
+Evidence is bound to source, dependencies, environment, and affected paths. It is reusable only when all bindings still match. Relevant source/dependency movement invalidates it automatically. Unrelated movement does not force expensive proof to rerun.
 
-## Failure and recovery
+## Truth classes
 
-### Worker disappears
+Shared evidence authority is:
 
-Lease expires. A new worker atomically takes over, preserves branch/PR/source lineage, reads latest events/handoffs, and salvages before rewriting.
+```text
+SIMULATED
+ESTIMATED
+OBSERVED
+AUTHENTICATED
+PHYSICALLY_MAPPED
+COMMAND_VERIFIED
+```
 
-### Worker returns after takeover
+These are ordered concepts, not interchangeable labels. Simulator data never becomes authenticated or physical truth. Authenticated read-only ES80 data still does not authorize commands.
 
-Ownership tuple no longer matches. It must not push/publish as primary. Publish salvage/handoff only if useful.
+## Physical ES80 boundary
 
-### GitHub API/rate limit/transient failure
+V16 does not grant physical GO. Existing Nembra physical policy remains external authority.
 
-Use bounded retry/jitter. Do not hammer. If ownership cannot be proven after the operation, refresh; do not assume success.
+Capture’s target is a stationary, authenticated, **read-only** observation path:
 
-### Control-plane invalid/corrupt
+1. accepted signed Capture build;
+2. install on the intended iPhone;
+3. supported account sign-in, including Sign in with Apple where implemented;
+4. Tuya account/device verification;
+5. official authenticated Tuya session;
+6. scooter nearby and stationary;
+7. genuine non-empty structured application data observed continuously for the required window;
+8. secure accepted observation export;
+9. clear success/failure result;
+10. **no commands sent**.
 
-Fail closed for new exclusive implementation. A temporary recovery/state-writer role repairs or reconstructs authoritative records. Generated dashboard damage alone is harmless.
+Do not invent battery semantics, speed DP, power/current, mode/range mappings, commands, or acknowledgements. Do not return to an outdoor ride procedure unless later physical evidence specifically requires it.
 
-### Schema migration
+## Integration worlds and Merge Train
 
-Unknown schema fails closed. Migration takes a temporary single-writer lease, supports an intentionally bounded compatibility window when designed, converts authoritative records, rebuilds generated state, and retires old write semantics only after old active claims are gone.
+V16 tracks:
 
-## Tooling
+- **MAIN** — accepted current product;
+- **NEXT** — high-confidence work awaiting final promotion;
+- **FRONTIER** — serious substantially built work;
+- **EXPERIMENTAL** — unproven experiments.
 
-Core helper:
+The persistent Merge Train queues compatible accepted work, serializes the actual integration candidate, runs required affected suites, and either promotes it to MAIN or leaves it actionable in `INTEGRATING` for repair. An integrator is expected to resolve conflicts and compose both intents, not report “merge conflict” and stop.
+
+## Milestone Attack and Surge
+
+When an objective has only a few blockers/finish conditions left, V16 marks it for **MILESTONE ATTACK** and increases closure pressure.
+
+`SURGE` concentrates the swarm on one mission. A 30-worker surge explicitly reserves one captain and allocates the remainder among implementation, review/testing, integration, debugging/research, UI/accessibility, and reserve. Workers are redistributed as blockers close. Surge ends when the milestone closes, only external/hardware work remains, or safety prevents further autonomous work.
+
+## Red team after completion
+
+A feature claiming completion receives fresh adversarial review covering UI/accessibility, performance, and truth failure modes. Physical objectives add authority-boundary tests. If no P0/P1 remains after the required acceptance, close the feature; do not reopen forever for P3 polish.
+
+## Shared memory and failure knowledge
+
+The graph keeps a bounded high-signal event stream and structured failure knowledge. Record information that changes another worker’s action: root cause, successful fix/evidence, relevant environment behavior, false leads, selected solution, blocker closure, or integration result. Do not write chain-of-thought or noisy polling logs.
+
+Future workers must search this memory before repeating known investigations.
+
+## Go lifecycle
+
+`Go` means a complete productive cycle:
+
+1. refresh current main, PR/branch/CI truth and V16 state;
+2. reconcile missing/superseded active work;
+3. request the highest-value safe mission packet;
+4. detect duplicates before creating work;
+5. atomically claim the work item;
+6. use its canonical branch unless an experiment/tournament explicitly says otherwise;
+7. implement a coherent outcome, including allowed adjacent repairs;
+8. run impacted tests and required evidence;
+9. hand to independent review or integration as required;
+10. integrate/repair the candidate through the Merge Train;
+11. preserve blockers/evidence/memory and release idle resources;
+12. refresh again and request another safe mission.
+
+A green check, merged PR, completed first task, or lost claim is a checkpoint—not completion.
+
+A worker stops only when no safe unblocked internal work remains for its capabilities, all relevant work is externally blocked, policy requires a stop, or the execution environment ends.
+
+## Health and progress reporting
+
+Health is `GREEN`, `YELLOW`, `ORANGE`, or `RED` based on convergence signals: active work, duplicate suppression, branch explosion, merge backlog, stale blockers, rabbit holes, and finished-but-not-integrated work.
+
+Primary blocker scoreboard:
+
+```text
+started blockers - blockers closed + legitimate new blockers = remaining blockers
+```
+
+User-facing status names product areas such as Dashboard, Battery, Charging, Rides, Navigation, Bluetooth, Capture, and Controls. It reports wins, current blockers, active work, waste, and major milestones without drowning the user in internal provenance terms.
+
+## Migration from V15/V15.1
+
+Migration is in-place and additive:
+
+1. seed the V16 mission graph;
+2. import legacy lanes and their blocker truth;
+3. preserve `PHYSICAL_NO_GO` exactly;
+4. classify open PRs as canonical candidate, support/validation, duplicate, superseded/archive, integration-needed, or review-needed;
+5. use legacy explicit production-selection metadata before making a new canonical choice;
+6. dogfood duplicate suppression, scheduling, health, and Merge Train against live Nembra work;
+7. only after accepted review and activation may destructive cleanup be enabled.
+
+Legacy lane/claim CLI entrypoints remain available during the compatibility window. Unknown/corrupt V16 state fails closed for new V16 ownership rather than corrupting existing work.
+
+## Recovery
+
+- Worker crash: lease expires; takeover preserves the salvage branch.
+- Old worker returns: stale lease/generation cannot heartbeat or publish as owner.
+- Captain crash: assign a replacement; graph state remains valid.
+- GitHub transient/rate limit: existing bounded retry/jitter policy remains in `GitHubContentsStore`.
+- Main moves: invalidate affected evidence; unrelated evidence may remain reusable.
+- Integration fails: candidate returns to actionable `INTEGRATING`; integrator repairs it.
+- Corrupt/newer schema: fail closed for authority-changing work.
+
+## Operator commands
+
+Local deterministic proof:
 
 ```bash
 python3 scripts/swarm_control.py simulate --workers 30
-python3 scripts/swarm_control.py remote-validate --repo jonathangana131-lab/Nembra
-python3 scripts/swarm_control.py register --repo jonathangana131-lab/Nembra --worker sol-20260811-a81f
-python3 scripts/swarm_control.py recommend --repo jonathangana131-lab/Nembra
-python3 scripts/swarm_control.py claim --repo jonathangana131-lab/Nembra --lane <lane> --slot <slot> --worker <worker>
-python3 scripts/swarm_control.py heartbeat --repo jonathangana131-lab/Nembra --lane <lane> --slot <slot> --worker <worker> --lease-id <id> --generation <n>
-python3 scripts/swarm_control.py takeover --repo jonathangana131-lab/Nembra --lane <lane> --slot <slot> --worker <worker>
-python3 scripts/swarm_control.py event --repo jonathangana131-lab/Nembra --type FINDING --worker <worker> --lane <lane> --message "..."
-python3 scripts/swarm_control.py board --repo jonathangana131-lab/Nembra
+python3 scripts/swarm_control.py v16-simulate --workers 30
 ```
 
-`GITHUB_TOKEN` is read from the environment when a remote command needs a write/read API token. Never store the token in Git or control-state JSON.
+Remote V16 operations:
 
-## Rollout
+```bash
+python3 scripts/swarm_control.py v16-init --repo jonathangana131-lab/Nembra
+python3 scripts/swarm_control.py v16-migrate --repo jonathangana131-lab/Nembra
+python3 scripts/swarm_control.py v16-status --repo jonathangana131-lab/Nembra
+python3 scripts/swarm_control.py v16-recommend --repo jonathangana131-lab/Nembra --worker sol-YYYYMMDD-xxxx
+python3 scripts/swarm_control.py v16-claim --repo jonathangana131-lab/Nembra --work-item <id> --worker <worker>
+python3 scripts/swarm_control.py v16-go --repo jonathangana131-lab/Nembra --worker <worker> --completed <id> --evidence <evidence-id>
+python3 scripts/swarm_control.py v16-captain --repo jonathangana131-lab/Nembra --mission capture-stationary --worker <worker>
+python3 scripts/swarm_control.py v16-surge --repo jonathangana131-lab/Nembra --mission capture-stationary
+python3 scripts/swarm_control.py v16-cleanup-plan --repo jonathangana131-lab/Nembra
+```
 
-- **Foundation:** core/config/tests/docs.
-- **Shadow:** seed/import live state, observe scheduler, warn on metadata/scope, prove real GitHub CAS.
-- **Coordination:** new `Go` work must claim before branch creation; complementary roles/resources/handoffs active.
-- **Enforcement:** controlled PRs require live claim + metadata + review/scope rules.
-- **Full Go:** canonical worker boot instructions depend on a successful claim before implementation and require the explicit stop proof before an intentional idle/stop.
-- **Metrics/autotuning:** tune WIP/leases from throughput data, never lines-written gamification.
+Live read-only dogfood:
 
-The large existing Capture backlog is the reason shadow mode exists: preserve accepted work and safety while new work migrates to real atomic ownership.
+```bash
+python3 scripts/swarm_v16_dogfood.py \
+  --repo jonathangana131-lab/Nembra \
+  --self-integration-proof
+```
+
+`GITHUB_TOKEN` comes from the environment. Never store tokens, Apple credentials, Tuya credentials, signing material, Bluetooth secrets, or private user data in graph state.
+
+## Source of truth
+
+For future workers:
+
+1. current GitHub product/CI truth;
+2. `docs/SWARM_CONTROL_PLANE.md` (this document);
+3. `SWARM_GO.md` for the worker loop;
+4. V16 structured state;
+5. legacy V15 state only where migration has not yet represented it.
+
+Generated dashboards, stale PR descriptions, old V13/V14 operating documents, and activity counts are never scheduler authority.
