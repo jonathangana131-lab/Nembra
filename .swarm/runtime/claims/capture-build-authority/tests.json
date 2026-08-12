@@ -9,7 +9,7 @@
   "generation": 8,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:03:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:03:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:11:00Z",
   "leaseSeconds": 1800,
   "branch": "agent/capture-selected-xcode-acl-oracle-tests-0059q4",
   "pr": 3093,
