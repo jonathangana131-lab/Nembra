@@ -28,16 +28,29 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const response = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: context.issue.number })
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
             const sameRepo = pr.head.repo.full_name === repository
             const baseMain = pr.base.ref === context.payload.repository.default_branch
+
             core.info(`Resolved PR #${pr.number} exact head ${pr.head.sha}`)
             core.info(`PR state: ${pr.state}; same repository: ${sameRepo}; base default: ${baseMain}`)
-            if (pr.state !== 'open') core.setFailed('V16 standalone exact-head admission requires an open pull request.')
-            if (!sameRepo) core.setFailed('V16 standalone exact-head admission refuses fork-controlled source.')
-            if (!baseMain) core.setFailed('V16 standalone acceptance requires a PR targeting the repository default branch.')
+
+            if (pr.state !== 'open') {
+              core.setFailed('V16 standalone exact-head admission requires an open pull request.')
+            }
+            if (!sameRepo) {
+              core.setFailed('V16 standalone exact-head admission refuses fork-controlled source.')
+            }
+            if (!baseMain) {
+              core.setFailed('V16 standalone acceptance requires a PR targeting the repository default branch.')
+            }
+
             core.setOutput('head_sha', pr.head.sha)
             core.setOutput('pr_number', String(pr.number))
             core.setOutput('same_repo', String(sameRepo))
@@ -61,7 +74,11 @@ jobs:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         with:
           script: |
-            const response = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(process.env.PR_NUMBER) })
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
             if (pr.state !== 'open') core.setFailed('PR closed before V16 standalone acceptance started.')
@@ -156,7 +173,14 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData"
-          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath "${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData" CODE_SIGNING_ALLOWED=NO build
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
 
       - name: Verify public standalone app carries no field authority
         run: |
@@ -166,7 +190,13 @@ jobs:
           test -d "$app"
           test -f "$plist"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = 'com.jonathangana131.nembra.capturelearn'
-          for key in NembraCaptureBuildIdentifier NembraCaptureSourceCommitSHA NembraCaptureTuyaDependencyLockSHA256 NembraCaptureProcedureIdentifier; do
+
+          for key in \
+            NembraCaptureBuildIdentifier \
+            NembraCaptureSourceCommitSHA \
+            NembraCaptureTuyaDependencyLockSHA256 \
+            NembraCaptureProcedureIdentifier
+          do
             value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null || true)"
             if [[ -n "$value" ]]; then
               printf 'Public standalone build carried forbidden field authority %s=%q\n' "$key" "$value" >&2
@@ -181,7 +211,11 @@ jobs:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         with:
           script: |
-            const response = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(process.env.PR_NUMBER) })
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
             if (pr.state !== 'open') core.setFailed('PR closed during V16 standalone acceptance.')
@@ -206,7 +240,11 @@ jobs:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         with:
           script: |
-            const response = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(process.env.PR_NUMBER) })
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
             if (pr.state !== 'open') core.setFailed('PR closed before hosted V16 standalone acceptance completed.')
