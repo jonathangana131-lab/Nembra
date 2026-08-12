@@ -974,19 +974,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 282,
+    "classifiedPRTotal": 283,
     "classifiedPRs": {
-      "2679": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2679,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.22,
-        "title": "[Capture P0][RED TEAM] Pin Final-GO intended-device ancestry"
-      },
       "2680": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2383,6 +2372,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.275,
         "title": "[P0 Capture][AX RUNTIME] Classify VoiceOver Code-3 boundaries"
+      },
+      "3201": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "battery-range-app-visible",
+        "pr": 3201,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.128,
+        "title": "[Battery/Range V15][QA] Capture the real Battery & Range surface"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2415,7 +2415,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-12T17:03:51Z",
+    "liveRefreshAt": "2026-08-12T21:04:12Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
@@ -6169,10 +6169,10 @@
       "userValue": 7
     }
   },
-  "revision": 16,
+  "revision": 17,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-12T17:06:27Z",
+  "updatedAt": "2026-08-12T21:06:46Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6248,7 +6248,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-12T17:03:51Z",
+      "updatedAt": "2026-08-12T21:04:12Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
