@@ -156,16 +156,35 @@ jobs:
           )
           needle = '    raise ProbeError("timed out waiting for retained-authority writer event")\n'
           replacement = '''    diagnostic_poll = process.poll()
-              diagnostic_ps = subprocess.run(
-                  ["/bin/ps", "-o", "pid=,ppid=,state=,user=,group=,command=", "-p", str(process.pid)],
-                  stdin=subprocess.DEVNULL,
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.STDOUT,
-                  text=True,
-                  check=False,
-              ).stdout.strip()
+              diagnostic_ps = ""
+              diagnostic_lsof = ""
               diagnostic_sample = ""
+              try:
+                  diagnostic_ps = subprocess.run(
+                      ["/bin/ps", "-o", "pid=,ppid=,state=,wchan=,user=,group=,comm=", "-p", str(process.pid)],
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.STDOUT,
+                      text=True,
+                      check=False,
+                      timeout=4,
+                  ).stdout.strip()
+              except BaseException as error:
+                  diagnostic_ps = f"ps-error:{type(error).__name__}:{error}"
               if diagnostic_poll is None:
+                  try:
+                      opened = subprocess.run(
+                          ["/usr/sbin/lsof", "-n", "-P", "-p", str(process.pid)],
+                          stdin=subprocess.DEVNULL,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT,
+                          text=True,
+                          check=False,
+                          timeout=6,
+                      )
+                      diagnostic_lsof = "\\n".join(opened.stdout.splitlines()[:160])
+                  except BaseException as error:
+                      diagnostic_lsof = f"lsof-error:{type(error).__name__}:{error}"
                   try:
                       sampled = subprocess.run(
                           ["/usr/bin/sample", str(process.pid), "1", "1"],
@@ -176,13 +195,13 @@ jobs:
                           check=False,
                           timeout=6,
                       )
-                      diagnostic_sample = "\\n".join(sampled.stdout.splitlines()[-100:])
+                      diagnostic_sample = "\\n".join(sampled.stdout.splitlines()[:180])
                   except BaseException as error:
                       diagnostic_sample = f"sample-error:{type(error).__name__}:{error}"
               raise ProbeError(
                   "timed out waiting for retained-authority writer event "
                   f"index={_DIAGNOSTIC_EVENT_INDEX} pid={process.pid} poll={diagnostic_poll} "
-                  f"ps={diagnostic_ps!r} sampleTail={diagnostic_sample!r}"
+                  f"ps={diagnostic_ps!r} lsofHead={diagnostic_lsof!r} sampleHead={diagnostic_sample!r}"
               )
           '''
           if source.count(needle) != 1:
