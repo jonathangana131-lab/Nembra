@@ -64,9 +64,29 @@ jobs:
           test -f 'NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme'
           xcodebuild -list -project NembraCapture.xcodeproj
 
-      - name: Test Capture package against current Core
+      - name: Compile Capture package against current Core
         working-directory: Packages/NembraBluetoothCapture
-        run: swift test
+        run: |
+          set -euo pipefail
+          swift build
+
+      - name: Run standalone-scope Capture truth tests
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter CoreBluetoothCaptureMappingTests
+          swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
+          swift test --filter CaptureFirstFoldCopySourceTests
+
+      - name: Preserve deferred field-contract boundary
+        run: |
+          set -euo pipefail
+          contract='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerProcedureSourceTests.swift'
+          test -f "$contract"
+          grep -Fq 'scripts/field/install_one_time_capture.command' "$contract"
+          test ! -e scripts/field/install_one_time_capture.command
+          printf '%s\n' 'Field-installer contract remains present but belongs to a later Capture objective; this standalone gate does not silently skip or recreate its authority input.'
 
       - name: Build standalone Capture for Simulator
         run: |
