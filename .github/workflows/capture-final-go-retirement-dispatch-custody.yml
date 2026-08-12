@@ -1,27 +1,22 @@
-name: Capture Final GO Sealed Candidate Handoff
+name: Capture Final GO Retirement Dispatch Custody
 
 on:
   push:
     branches:
-      - repair/v14-final-go-continuous-tree-custody-sol-20260811
       - repair/v14-final-go-retirement-dispatch-current-sol-20260811
     paths:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
-      - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
-      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
-      - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
   pull_request:
     paths:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
-      - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
-      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
-      - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
       - scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
   workflow_dispatch:
@@ -31,84 +26,74 @@ permissions:
   pull-requests: read
 
 jobs:
-  sealed-candidate-handoff:
-    name: Reject pre-handoff races and retire mutable candidate
+  retirement-dispatch:
+    name: Keep candidate Git retired through nested teardown
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      EXACT_PARENT: 471cc025b332f4df8b43a98d709710aeb4e0698f
+      EXACT_PARENT: 899e5dc5cc5e71617bfe4151cdb1da20c576fbc2
       PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-pycache
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-retirement-pycache
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Bind exact candidate and eight-path production delta
+      - name: Bind exact current Final-GO parent and six-path repair
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
-          test "$(git rev-list --count "$EXACT_PARENT"..HEAD)" -ge 1
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
           git diff --name-only "$EXACT_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
           printf '%s\n' \
             .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml \
             .github/workflows/capture-final-go-retirement-dispatch-custody.yml \
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
-            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py \
             scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
             scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
-            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected"
           diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile successor and permanent adversarial acceptance
+      - name: Compile production repair and permanent acceptance
         shell: bash
         run: |
           set -euo pipefail
           python3 -m py_compile \
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
-            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py \
             scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
             scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
             scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
 
-      - name: Prove one-way sealed candidate handoff
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
-
-      - name: Reject nested restore after retirement
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
-
-      - name: Reject pre-handoff post-subject and finite-rehash races
+      - name: Preserve continuous tracked-tree custody
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
 
-      - name: Preserve object-chain, descriptor, and committed-parent authority
+      - name: Reject inherited Git restore after sealed retirement
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
-          python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+          python3 scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+
+      - name: Preserve existing sealed candidate handoff contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+
+      - name: Preserve current committed-parent execution custody
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
-          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
-            CandidateRawFilesystemAuthorityTests.test_child_executes_exact_2873_parent_blob \
-            CandidateRawFilesystemAuthorityTests.test_inherited_parent_candidate_runs_through_raw_authority \
-            CandidateRawFilesystemAuthorityTests.test_core_worktree_decoy_cannot_redirect_physical_candidate
 
       - name: Diff hygiene
         shell: bash

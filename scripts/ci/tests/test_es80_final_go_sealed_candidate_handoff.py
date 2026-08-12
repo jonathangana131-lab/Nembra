@@ -199,7 +199,7 @@ class FinalGoSealedCandidateHandoffTests(unittest.TestCase):
         }
 
         with tempfile.TemporaryDirectory(prefix="nembra-finalgo-sealed-handoff-") as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve(strict=True)
             tracked = root / "A.swift"
             tracked.write_text("accepted\n", encoding="utf-8")
 
