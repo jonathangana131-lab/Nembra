@@ -45,7 +45,15 @@ jobs:
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/nembra-capture-simulator-build.log"
+      - name: Retain failed Capture Simulator compiler log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-simulator-compiler-log-${{ github.sha }}
+          path: ${{ runner.temp }}/nembra-capture-simulator-build.log
+          if-no-files-found: error
+          retention-days: 7
       - name: Build standalone Capture for generic iPhone
         run: |
           set -euo pipefail
