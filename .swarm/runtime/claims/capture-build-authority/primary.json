@@ -9,7 +9,7 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T09:13:00Z",
+  "lastHeartbeatAt": "2026-08-12T09:18:00Z",
   "leaseSeconds": 2700,
   "branch": "validation/v14-selected-xcode-cow-freeze-sol-0059ac-20260812",
   "pr": 3146,
@@ -19,5 +19,5 @@
   "takeoverFromLeaseId": "capture-build-primary-1607ax-20260811-2357",
   "takeoverReason": "Generation-6 implementation was explicitly released while diagnostic evidence was pending. Exact #3093/#3135 retained evidence classified the source-tree blocker, so primary continues through the smallest security-preserving real-macOS remediation validation.",
   "intent": "Prove or reject a root-custodied COW-cloned, Apple-signature-verified selected-Xcode execution subject on the real xcode-27 host without weakening #3072 production custody or creating physical authority.",
-  "checkpoint": "#3146 exact 1ec9c8b2 run 31580842907 identified Apple's copied DeviceKit.framework/Frameworks as a dangling symlink after sealed namespace, COW clone, root chown and zero-ACL gates passed. Head 37730a4a does not blindly admit dangling links: every symlink must be relative, normalize non-strictly to a target inside the frozen Xcode root, and any resolvable target must strictly remain inside; only unresolved-but-contained links are counted as contained_dangling_symlinks. Root/no-write/no-ACL tree custody, Apple signature, production-equivalent selected Developer/xcodebuild/xctrace/devicectl ancestry, field mutation/replacement negatives and post-attack signature remain required. PHYSICAL NO-GO."
+  "checkpoint": "V16 became live on main at 2916144c during this GO. Its swarm config is rolloutMode=shadow; V16 mission graph was seeded at 09:06Z with capture-standalone-build READY but legacyImported=false, no blockers/evidence, and no v16 claims directory. Per V16 compatibility window this already-active legacy claim remains authoritative until imported rather than inventing a duplicate work item. #3146 exact head 37730a4a run 31581238249 is in progress. This head admits no generic dangling symlink: every link must be relative, normalize inside frozen Xcode, and any resolvable target must strictly remain inside; only unresolved-but-contained links are counted. Root/no-write/no-ACL tree custody, Apple signature, production-equivalent frozen Developer/xcodebuild/xctrace/devicectl ancestry, field mutation/replacement negatives and post-attack signature remain required. PHYSICAL NO-GO."
 }
