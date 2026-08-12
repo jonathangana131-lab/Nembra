@@ -6,12 +6,14 @@ on:
       - validation/v14-field-uid-apple-development-codesign-gpt56-sol-20260812
     paths:
       - scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py
+      - scripts/ci/capture_apple_signing_preflight_receipt_seal.py
       - scripts/field/run_apple_signing_context_preflight.command
       - .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml
       - .github/workflows/capture-apple-signing-preflight-redaction.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py
+      - scripts/ci/capture_apple_signing_preflight_receipt_seal.py
       - scripts/field/run_apple_signing_context_preflight.command
       - .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml
       - .github/workflows/capture-apple-signing-preflight-redaction.yml
@@ -40,7 +42,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind accepted signing bridge and exact four-path validation delta
+      - name: Bind accepted signing bridge and exact five-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -55,6 +57,7 @@ jobs:
           printf '%s\n' \
             .github/workflows/capture-apple-signing-preflight-redaction.yml \
             .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml \
+            scripts/ci/capture_apple_signing_preflight_receipt_seal.py \
             scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py \
             scripts/field/run_apple_signing_context_preflight.command \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
@@ -62,13 +65,14 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           /usr/bin/xcodebuild -version
 
-      - name: Compile and source-review Apple signing oracle and field transport
+      - name: Compile and source-review Apple signing oracle and sealed field transport
         shell: bash
         run: |
           set -euo pipefail
           oracle=scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py
+          sealer=scripts/ci/capture_apple_signing_preflight_receipt_seal.py
           preflight=scripts/field/run_apple_signing_context_preflight.command
-          /usr/bin/python3 -m py_compile "$oracle"
+          /usr/bin/python3 -m py_compile "$oracle" "$sealer"
           /bin/bash -n "$preflight"
 
           grep -Fq 'security", "find-identity", "-v", "-p", "codesigning"' "$oracle"
@@ -88,22 +92,28 @@ jobs:
           grep -Fq '"productionAcceptanceClaimed": False' "$oracle"
           grep -Fq '"physicalAuthorityCreated": False' "$oracle"
 
-          grep -Fq 'ORACLE_PATH="scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py"' "$preflight"
-          grep -Fq 'GIT_NO_REPLACE_OBJECTS=1' "$preflight"
+          grep -Fq 'SEALER_PATH="scripts/ci/capture_apple_signing_preflight_receipt_seal.py"' "$preflight"
+          grep -Fq '/usr/bin/env -i' "$preflight"
+          grep -Fq -- '--git-dir="$GIT_DIR_ABS"' "$preflight"
           grep -Fq 'cat-file blob "$ORACLE_BLOB"' "$preflight"
+          grep -Fq 'cat-file blob "$SEALER_BLOB"' "$preflight"
           grep -Fq 'hashlib.sha1(b"blob "' "$preflight"
-          grep -Fq '/usr/bin/python3 -B -I -c "$ROOT_MATERIALIZER"' "$preflight"
-          grep -Fq 'ORACLE_OWNER' "$preflight"
-          grep -Fq '"identityDetailsRedacted": True' "$preflight"
-          grep -Fq '"tuyaBootstrapExercised": False' "$preflight"
-          grep -Fq '"privateTuyaInputExercised": False' "$preflight"
-          grep -Fq '"xcodebuildExercised": False' "$preflight"
-          grep -Fq '"automaticProvisioningExercised": False' "$preflight"
-          grep -Fq '"deviceDiscoveryExercised": False' "$preflight"
-          grep -Fq '"coreDeviceExercised": False' "$preflight"
-          grep -Fq '"deviceInstallExercised": False' "$preflight"
-          grep -Fq '"bluetoothExercised": False' "$preflight"
-          grep -Fq '"physicalAuthorityCreated": False' "$preflight"
+          grep -Fq 'os.O_NOFOLLOW' "$preflight"
+          grep -Fq '/usr/bin/sudo -n /usr/bin/python3 -B -I "$SEALER_EXEC"' "$preflight"
+          ! grep -Fq 'mkdir -p "$OUTPUT_DIR"' "$preflight"
+
+          grep -Fq 'RAW_IDENTITY_PATTERN' "$sealer"
+          grep -Fq 'os.O_NOFOLLOW' "$sealer"
+          grep -Fq '"canonicalReceiptSealed": True' "$sealer"
+          grep -Fq '"fieldAppendMutationDenied"' "$sealer"
+          grep -Fq '"fieldNamespaceReplacementDenied"' "$sealer"
+          grep -Fq 'stat.S_ISVTX' "$sealer"
+          grep -Fq 'stderr=subprocess.STDOUT' "$sealer"
+          grep -Fq '"xcodebuildExercised": False' "$sealer"
+          grep -Fq '"deviceInstallExercised": False' "$sealer"
+          grep -Fq '"bluetoothExercised": False' "$sealer"
+          grep -Fq '"physicalAuthorityCreated": False' "$sealer"
+
           ! grep -Fq '/usr/bin/xcodebuild' "$preflight"
           ! grep -Fq 'xcrun ' "$preflight"
           ! grep -Fq -- '-allowProvisioningUpdates' "$preflight"
@@ -113,6 +123,72 @@ jobs:
           ! grep -Fq 'LocalSecrets' "$preflight"
           ! grep -Fq 'install_one_time_capture.command' "$preflight"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Exercise root-sealed private-field receipt transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="/private/var/tmp/nembra-field-apple-signing-receipt-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          replacement="${receipt}.field-replace"
+          /usr/bin/sudo -n /bin/rm -rf -- "$receipt" "$replacement"
+          cleanup_receipt() {
+            /usr/bin/sudo -n /bin/rm -rf -- "$receipt" "$replacement" >/dev/null 2>&1 || true
+          }
+          trap cleanup_receipt EXIT
+          log="$RUNNER_TEMP/nembra-field-apple-signing-transport.log"
+          set +e
+          /bin/bash scripts/field/run_apple_signing_context_preflight.command \
+            "$GITHUB_WORKSPACE" "$(git rev-parse HEAD)" "$receipt" >"$log" 2>&1
+          transport_rc=$?
+          set -e
+          cat "$log"
+          grep -Fq "NEMBRA_FIELD_APPLE_SIGNING_PREFLIGHT_RECEIPT=$receipt" "$log"
+          test "$(/usr/bin/stat -f '%u:%g:%Lp' "$receipt")" = '0:0:555'
+          for file in probe-output.txt probe-return-code.txt preflight-manifest.json SHA256SUMS.txt; do
+            test "$(/usr/bin/stat -f '%u:%g:%Lp' "$receipt/$file")" = '0:0:444'
+          done
+          (
+            cd "$receipt"
+            /usr/bin/shasum -a 256 -c SHA256SUMS.txt
+          )
+          /usr/bin/python3 -B -I - "$receipt/preflight-manifest.json" "$transport_rc" <<'PY'
+          import json, sys
+          from pathlib import Path
+          manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          rc = int(sys.argv[2])
+          required = (
+              manifest.get("schemaVersion") == 2
+              and manifest.get("probeReturnCode") == rc
+              and manifest.get("canonicalReceiptSealed") is True
+              and manifest.get("receiptOwnerUID") == 0
+              and manifest.get("receiptOwnerGID") == 0
+              and manifest.get("fieldAppendMutationDenied") is True
+              and manifest.get("fieldNamespaceReplacementDenied") is True
+              and manifest.get("identityDetailsRedacted") is True
+              and manifest.get("xcodebuildExercised") is False
+              and manifest.get("automaticProvisioningExercised") is False
+              and manifest.get("deviceInstallExercised") is False
+              and manifest.get("bluetoothExercised") is False
+              and manifest.get("physicalAuthorityCreated") is False
+          )
+          if not required:
+              raise SystemExit("sealed transport manifest lost required authority boundaries")
+          PY
+          if printf 'FIELD_POST_SEAL_MUTATION\n' >> "$receipt/probe-output.txt" 2>/dev/null; then
+            echo 'ERROR: field runner mutated root-sealed receipt bytes.' >&2
+            exit 41
+          fi
+          if /bin/mv "$receipt" "$replacement" >/dev/null 2>&1; then
+            echo 'ERROR: field runner replaced root-sealed receipt namespace.' >&2
+            exit 42
+          fi
+          test -d "$receipt"
+          test ! -e "$replacement"
+          (
+            cd "$receipt"
+            /usr/bin/shasum -a 256 -c SHA256SUMS.txt
+          )
+          printf 'SEALED_TRANSPORT_ACCEPTED: oracle verdict rc=%s; receipt authority remained root-owned and immutable to field identity.\n' "$transport_rc"
 
       - name: Run hosted Apple Development signing-context oracle
         id: probe
@@ -192,8 +268,6 @@ jobs:
           PROBE_OUTCOME: ${{ steps.probe.outcome }}
         run: |
           set -euo pipefail
-          # This remains a real runtime verdict: hosted xcode-27 currently has no Apple
-          # Development identity, so a red here is retained evidence rather than waived.
           test "$PROBE_OUTCOME" = success
           test "$(cat "$RUNNER_TEMP/nembra-field-uid-apple-signing-rc.txt")" = 0
           output="$RUNNER_TEMP/nembra-field-uid-apple-signing-output.txt"
