@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 """Bind the physical install subject to exact compiler output through an APFS freeze.
 
-This privileged helper owns the compiler-output -> protected-install-stage handoff.
 The field user never receives writable compiler-output pathname authority. Root creates
 one ephemeral local build identity, mounts a private APFS sparse image writable only by
 that identity, runs the guarded build there, removes fresh pathname authority when the
-build returns, and requires a normal non-forced detach before any compiler-output
-fingerprint can become authoritative. The exact app is then inspected only after a
-read-only remount and copied into the canonical root-owned install stage.
+build returns, and requires a normal non-forced detach before compiler-output bytes can
+become authoritative. The app is fingerprinted only from a read-only remount, then copied
+into the canonical root-owned install stage.
 
-The helper is executed from bytes resolved from the exact accepted Git tree by the field
-installer. It is not field authorization by itself; downstream provenance, signature,
-profile, selected-device, runtime, Final-GO, and physical-evidence gates remain required.
+This helper is executed from exact accepted Git bytes by the field installer. It creates
+no device, Bluetooth, Tuya, telemetry, command, or physical authority by itself.
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import grp
 import os
 from pathlib import Path
@@ -122,6 +121,21 @@ def _sudo_policy_exposes_passwordless_authority(
     return bool(exempt_groups.intersection(invoking_group_names))
 
 
+def _field_environment(user: str, home: str) -> dict[str, str]:
+    environment = {
+        "HOME": home,
+        "USER": user,
+        "LOGNAME": user,
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "TMPDIR": "/tmp",
+    }
+    for key in ("LANG", "LC_ALL", "LC_CTYPE", "TERM", "__CF_USER_TEXT_ENCODING"):
+        value = os.environ.get(key)
+        if value:
+            environment[key] = value
+    return environment
+
+
 def _inspect_invoker_sudo_policy(
     user: str,
     groups: Sequence[int],
@@ -153,21 +167,6 @@ def _inspect_invoker_sudo_policy(
         )
 
 
-def _field_environment(user: str, home: str) -> dict[str, str]:
-    environment = {
-        "HOME": home,
-        "USER": user,
-        "LOGNAME": user,
-        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-        "TMPDIR": "/tmp",
-    }
-    for key in ("LANG", "LC_ALL", "LC_CTYPE", "TERM", "__CF_USER_TEXT_ENCODING"):
-        value = os.environ.get(key)
-        if value:
-            environment[key] = value
-    return environment
-
-
 def _invalidate_invoker_sudo(
     user: str,
     uid: int,
@@ -188,7 +187,6 @@ def _invalidate_invoker_sudo(
     )
     if revoke.returncode != 0:
         raise BuildOriginCustodyError("could not invalidate invoking-user sudo timestamp before build custody")
-
     command_probe = subprocess.run(
         ["/usr/bin/sudo", "-n", "/usr/bin/true"],
         env=environment,
@@ -255,10 +253,7 @@ def _load_fingerprint_helper(encoded: str):
         "__file__": "<accepted-signed-app-install-custody>",
     }
     try:
-        exec(
-            compile(source, "<accepted-signed-app-install-custody>", "exec", dont_inherit=True),
-            namespace,
-        )
+        exec(compile(source, "<accepted-signed-app-install-custody>", "exec", dont_inherit=True), namespace)
     except Exception as error:
         raise BuildOriginCustodyError("accepted install-custody helper could not be loaded") from error
     fingerprint = namespace.get("fingerprint")
@@ -302,44 +297,6 @@ def _run_root_checked(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _create_local_build_identity(name: str, uid: int, gid: int, home: Path) -> None:
-    if sys.platform != "darwin" or os.geteuid() != 0:
-        raise BuildOriginCustodyError("ephemeral build identity creation requires root on macOS")
-    if uid <= 0 or gid <= 0 or uid != gid:
-        raise BuildOriginCustodyError("ephemeral build identity requires one positive dedicated UID/GID")
-    for kind in ("Users", "Groups"):
-        existing = subprocess.run(
-            ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if existing.returncode == 0:
-            raise BuildOriginCustodyError("ephemeral build identity name already exists")
-
-    try:
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}"])
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}", "PrimaryGroupID", str(gid)])
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}", "RealName", "Nembra Capture Build"])
-
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}"])
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UniqueID", str(uid)])
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "PrimaryGroupID", str(gid)])
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "NFSHomeDirectory", str(home)])
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UserShell", "/usr/bin/false"])
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "RealName", "Nembra Capture Build"])
-        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "IsHidden", "1"])
-        subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
-        account = pwd.getpwnam(name)
-        group = grp.getgrnam(name)
-        if account.pw_uid != uid or account.pw_gid != gid or group.gr_gid != gid:
-            raise BuildOriginCustodyError("directory services did not materialize the exact build identity")
-    except Exception:
-        _remove_local_build_identity(name, uid)
-        raise
-
-
 def _remove_local_build_identity(name: str, uid: int | None) -> None:
     if sys.platform != "darwin":
         return
@@ -366,6 +323,42 @@ def _remove_local_build_identity(name: str, uid: int | None) -> None:
         check=False,
     )
     subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
+
+
+def _create_local_build_identity(name: str, uid: int, gid: int, home: Path) -> None:
+    if sys.platform != "darwin" or os.geteuid() != 0:
+        raise BuildOriginCustodyError("ephemeral build identity creation requires root on macOS")
+    if uid <= 0 or gid <= 0 or uid != gid:
+        raise BuildOriginCustodyError("ephemeral build identity requires one positive dedicated UID/GID")
+    for kind in ("Users", "Groups"):
+        existing = subprocess.run(
+            ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if existing.returncode == 0:
+            raise BuildOriginCustodyError("ephemeral build identity name already exists")
+    try:
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}"])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}", "PrimaryGroupID", str(gid)])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}", "RealName", "Nembra Capture Build"])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}"])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UniqueID", str(uid)])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "PrimaryGroupID", str(gid)])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "NFSHomeDirectory", str(home)])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UserShell", "/usr/bin/false"])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "RealName", "Nembra Capture Build"])
+        _run_root_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "IsHidden", "1"])
+        subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
+        account = pwd.getpwnam(name)
+        group = grp.getgrnam(name)
+        if account.pw_uid != uid or account.pw_gid != gid or group.gr_gid != gid:
+            raise BuildOriginCustodyError("directory services did not materialize the exact build identity")
+    except Exception:
+        _remove_local_build_identity(name, uid)
+        raise
 
 
 def _create_apfs_image(image: Path) -> None:
@@ -503,7 +496,11 @@ def _require_readonly_mount(mountpoint: Path) -> None:
     probe = mountpoint / ".nembra-root-readonly-probe"
     try:
         descriptor = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except OSError:
+    except OSError as error:
+        if error.errno != errno.EROFS:
+            raise BuildOriginCustodyError(
+                f"read-only compiler-output probe failed ambiguously: errno={error.errno}"
+            ) from error
         return
     else:
         os.close(descriptor)
@@ -578,8 +575,8 @@ def run_custodied_build(
             **_structured_credentials(build_uid, build_gid, ()),
         )
 
-        # Remove fresh pathname authority before interpreting status. The accepted
-        # boundary is the following normal non-forced detach, not process ancestry.
+        # Revoke fresh pathname authority before interpreting status. Authority is
+        # admitted only after the following normal non-forced quiescence boundary.
         os.chown(mountpoint, 0, 0)
         os.chmod(mountpoint, 0o700)
         detach = _detach_apfs(writable_device)
@@ -597,10 +594,7 @@ def run_custodied_build(
         readonly_device = _attach_apfs(image, mountpoint, readonly=True)
         _require_readonly_mount(mountpoint)
         frozen_derived = mountpoint / "DerivedData"
-        source_app = _assert_real_ancestry(
-            frozen_derived,
-            _validate_app_relative(app_relative),
-        )
+        source_app = _assert_real_ancestry(frozen_derived, _validate_app_relative(app_relative))
         source_fingerprint = str(fingerprint(source_app))
         if len(source_fingerprint) != 64 or any(
             character not in "0123456789abcdef" for character in source_fingerprint
@@ -610,9 +604,7 @@ def run_custodied_build(
         stage_root, stage_app = _copy_to_stage(source_app, private_tmp)
         staged_fingerprint = str(fingerprint(stage_app))
         if staged_fingerprint != source_fingerprint:
-            raise BuildOriginCustodyError(
-                "protected stage differs from the read-only compiler-output app"
-            )
+            raise BuildOriginCustodyError("protected stage differs from the read-only compiler-output app")
 
         frozen_detach = _detach_apfs(readonly_device)
         frozen_detail = ((frozen_detach.stdout or "") + "\n" + (frozen_detach.stderr or "")).strip()
@@ -629,8 +621,8 @@ def run_custodied_build(
             "protected signed-app staging command failed" + (f": {detail}" if detail else "")
         ) from error
     finally:
-        # Force is cleanup-only after acceptance has already failed; it is never an
-        # authority-producing transition.
+        # Forced detach is cleanup-only after acceptance has already failed. It is
+        # never an authority-producing transition.
         if readonly_device is not None:
             _detach_apfs(readonly_device, force=True)
         if writable_device is not None:
@@ -645,7 +637,7 @@ def run_custodied_build(
 def _parse_args(argv: Sequence[str]) -> tuple[Path, str, list[str]]:
     parser = argparse.ArgumentParser(
         description=(
-            "Build the signed Capture app inside a dedicated-UID APFS output custody life "
+            "Build the signed Capture app inside dedicated-UID APFS compiler-output custody "
             "and return its protected stage."
         )
     )
