@@ -1,0 +1,522 @@
+name: Capture Runtime VoiceOver Boundary Successor
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-runtime-voiceover-boundary-successor.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-voiceover:
+    name: Exact f557 iPhone 12 VoiceOver boundary matrix
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact one-path validation head and generate witness
+        shell: bash
+        env:
+          COMPOSED_PRODUCT_SHA: f557f0aa9b9cd7afb2942a48a28a1212a464192f
+          WITNESS_SOURCE_SHA: dd204e1e943af853e02857db145127810791b04b
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          expected_sha='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$source_sha" = "$expected_sha"
+          git cat-file -e "${COMPOSED_PRODUCT_SHA}^{commit}"
+          git cat-file -e "${WITNESS_SOURCE_SHA}^{commit}"
+          git merge-base --is-ancestor "$COMPOSED_PRODUCT_SHA" HEAD
+          changed_paths="$(git diff --name-only "$COMPOSED_PRODUCT_SHA"...HEAD | LC_ALL=C sort)"
+          test "$changed_paths" = '.github/workflows/capture-runtime-voiceover-boundary-successor.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          witness_source="$RUNNER_TEMP/CaptureRuntimeVoiceOver.source.swift"
+          witness="$RUNNER_TEMP/CaptureRuntimeVoiceOver.generated.swift"
+          git show "${WITNESS_SOURCE_SHA}:scripts/ci/capture_runtime_voiceover_xcuitest.swift" > "$witness_source"
+          test -s "$witness_source"
+
+          /usr/bin/python3 - "$witness_source" "$witness" <<'PY'
+          import pathlib, sys
+          source = pathlib.Path(sys.argv[1]).read_text()
+
+          old_query = '            app.staticTexts[heroAuthority].waitForExistence(timeout: 3),'
+          new_query = '            app.staticTexts.matching(NSPredicate(format: "label == %@", heroAuthority)).firstMatch.waitForExistence(timeout: 3),'
+          old_set = '''    private let knownAX5SemanticTextClippedFalsePositives: Set<String> = [
+                  "Physical capture locked",
+                  "Tuya Smart user code"
+              ]'''
+          new_set = '''    private let knownSemanticTextClippedFalsePositive: Set<String> = [
+                  "Tuya Smart user code"
+              ]'''
+          old_standard = '            expectedFilteredTextClippedLabels: []'
+          new_standard = '            expectedFilteredTextClippedLabels: knownSemanticTextClippedFalsePositive'
+          old_ax5 = '            expectedFilteredTextClippedLabels: knownAX5SemanticTextClippedFalsePositives'
+          new_ax5 = '            expectedFilteredTextClippedLabels: knownSemanticTextClippedFalsePositive'
+          old_traversal = '''    @MainActor
+              private func assertVoiceOverTraversal(
+                  app: XCUIApplication,
+                  evidenceLabel: String,
+                  requiredSpeech: [String]
+              ) throws {
+                  let service = XCUIDevice.shared.voiceOverService
+                  if service.isEnabled {
+                      try service.disable()
+                  }
+                  try service.enable()
+                  defer {
+                      if service.isEnabled {
+                          try? service.disable()
+                      }
+                  }
+          
+                  app.activate()
+                  XCTAssertTrue(app.wait(for: .runningForeground, timeout: 3))
+          
+                  var utterances: [String] = []
+                  defer {
+                      retainTranscript(utterances, evidenceLabel: evidenceLabel)
+                  }
+          
+                  if let current = try? service.currentSpeech().utterance, !current.isEmpty {
+                      utterances.append(current)
+                  }
+          
+                  // Keep traversing after all required phrases could have appeared so a
+                  // later forbidden authority element cannot hide behind an early break.
+                  // Every moveForward error remains fail-closed until retained evidence
+                  // demonstrates a specific terminal-boundary contract worth encoding.
+                  for _ in 0..<64 {
+                      let output = try service.moveForward()
+                      if !output.utterance.isEmpty {
+                          utterances.append(output.utterance)
+                      }
+                  }
+          
+                  let transcript = utterances.enumerated()
+                      .map { "\($0.offset): \($0.element)" }
+                      .joined(separator: "\\n")
+                  let normalizedTranscript = transcript.lowercased()
+          
+                  let positions = try requiredSpeech.map { phrase -> String.Index in
+                      guard let range = normalizedTranscript.range(of: phrase.lowercased()) else {
+                          XCTFail("VoiceOver never spoke required semantic phrase '\(phrase)' in \(evidenceLabel). Transcript:\\n\(transcript)")
+                          throw RuntimeVoiceOverContractError.missingSpeech(phrase)
+                      }
+                      return range.lowerBound
+                  }
+                  for (earlier, later) in zip(positions, positions.dropFirst()) {
+                      XCTAssertLessThan(
+                          earlier,
+                          later,
+                          "VoiceOver speech ordering is not action/truth preserving in \(evidenceLabel). Transcript:\\n\(transcript)"
+                      )
+                  }
+          
+                  XCTAssertFalse(
+                      transcript.localizedCaseInsensitiveContains("Start capture"),
+                      "Public/unprovisioned VoiceOver traversal must not expose a physical Capture action."
+                  )
+                  XCTAssertFalse(
+                      transcript.localizedCaseInsensitiveContains("Scan for scooter"),
+                      "Runtime accessibility traversal must not manufacture Bluetooth/physical authority."
+                  )
+              }'''
+          new_traversal = '''    @MainActor
+              private func assertVoiceOverTraversal(
+                  app: XCUIApplication,
+                  evidenceLabel: String,
+                  requiredSpeech: [String]
+              ) throws {
+                  let service = XCUIDevice.shared.voiceOverService
+                  if service.isEnabled {
+                      try service.disable()
+                  }
+                  try service.enable()
+                  defer {
+                      if service.isEnabled {
+                          try? service.disable()
+                      }
+                  }
+          
+                  app.activate()
+                  XCTAssertTrue(app.wait(for: .runningForeground, timeout: 3))
+          
+                  var utterances: [String] = []
+                  var startupBoundaries: [String] = []
+                  var terminalBoundary: String?
+                  var successfulMoves = 0
+                  defer {
+                      retainTranscript(utterances, evidenceLabel: evidenceLabel)
+                      retainVoiceOverTransport(
+                          startupBoundaries: startupBoundaries,
+                          terminalBoundary: terminalBoundary,
+                          successfulMoves: successfulMoves,
+                          evidenceLabel: evidenceLabel
+                      )
+                  }
+          
+                  if let current = try? service.currentSpeech().utterance, !current.isEmpty {
+                      utterances.append(current)
+                  }
+          
+                  // Exact #3177 evidence showed a Code-3 transport race before Standard
+                  // acquired any speech. Retry only the two retained Code-3 shapes, with
+                  // a bounded re-enable/reactivate cycle. Zero acquired speech stays red.
+                  if utterances.isEmpty {
+                      for attempt in 0..<3 {
+                          do {
+                              let output = try service.moveForward()
+                              successfulMoves += 1
+                              if !output.utterance.isEmpty {
+                                  utterances.append(output.utterance)
+                                  break
+                              }
+                          } catch {
+                              guard let boundary = classifiedVoiceOverCode3(error) else {
+                                  throw error
+                              }
+                              startupBoundaries.append(boundary)
+                              guard attempt < 2 else { break }
+                              if service.isEnabled {
+                                  try service.disable()
+                              }
+                              try service.enable()
+                              app.activate()
+                              XCTAssertTrue(app.wait(for: .runningForeground, timeout: 3))
+                          }
+                      }
+                  }
+          
+                  guard !utterances.isEmpty else {
+                      XCTFail("VoiceOver never acquired startup speech in \(evidenceLabel). Boundaries: \(startupBoundaries)")
+                      throw RuntimeVoiceOverContractError.startupSpeechUnavailable
+                  }
+          
+                  // Continue until the natural Code-3 terminal boundary or 64 successful
+                  // moves. A boundary is acceptable only after every required semantic
+                  // phrase has already appeared; before then it remains fail-closed.
+                  for _ in 0..<64 {
+                      do {
+                          let output = try service.moveForward()
+                          successfulMoves += 1
+                          if !output.utterance.isEmpty {
+                              utterances.append(output.utterance)
+                          }
+                      } catch {
+                          guard let boundary = classifiedVoiceOverCode3(error) else {
+                              throw error
+                          }
+                          let liveTranscript = utterances.joined(separator: "\\n").lowercased()
+                          let allRequiredPresent = requiredSpeech.allSatisfy {
+                              liveTranscript.contains($0.lowercased())
+                          }
+                          guard allRequiredPresent else {
+                              throw error
+                          }
+                          terminalBoundary = boundary
+                          break
+                      }
+                  }
+          
+                  let transcript = utterances.enumerated()
+                      .map { "\($0.offset): \($0.element)" }
+                      .joined(separator: "\\n")
+                  let normalizedTranscript = transcript.lowercased()
+          
+                  let positions = try requiredSpeech.map { phrase -> String.Index in
+                      guard let range = normalizedTranscript.range(of: phrase.lowercased()) else {
+                          XCTFail("VoiceOver never spoke required semantic phrase '\(phrase)' in \(evidenceLabel). Transcript:\\n\(transcript)")
+                          throw RuntimeVoiceOverContractError.missingSpeech(phrase)
+                      }
+                      return range.lowerBound
+                  }
+                  for (earlier, later) in zip(positions, positions.dropFirst()) {
+                      XCTAssertLessThan(
+                          earlier,
+                          later,
+                          "VoiceOver speech ordering is not action/truth preserving in \(evidenceLabel). Transcript:\\n\(transcript)"
+                      )
+                  }
+          
+                  XCTAssertFalse(
+                      transcript.localizedCaseInsensitiveContains("Start capture"),
+                      "Public/unprovisioned VoiceOver traversal must not expose a physical Capture action."
+                  )
+                  XCTAssertFalse(
+                      transcript.localizedCaseInsensitiveContains("Scan for scooter"),
+                      "Runtime accessibility traversal must not manufacture Bluetooth/physical authority."
+                  )
+                  XCTAssertTrue(
+                      terminalBoundary != nil || successfulMoves >= 64,
+                      "VoiceOver traversal must either prove its terminal Code-3 boundary or exhaust the bounded successful-move horizon."
+                  )
+              }
+          
+              private func classifiedVoiceOverCode3(_ error: Error) -> String? {
+                  let nsError = error as NSError
+                  guard nsError.code == 3 else { return nil }
+                  let message = nsError.localizedDescription
+                  let accepted =
+                      (nsError.domain == "AXVoiceOverAutomationErrorDomain" && message == "Failed to send moveForward command") ||
+                      (nsError.domain == "com.apple.xctest.voiceoverservice" && message == "No speech available")
+                  guard accepted else { return nil }
+                  return "\(nsError.domain)|\(nsError.code)|\(message)"
+              }
+          
+              private func retainVoiceOverTransport(
+                  startupBoundaries: [String],
+                  terminalBoundary: String?,
+                  successfulMoves: Int,
+                  evidenceLabel: String
+              ) {
+                  let diagnostic = ([
+                      "successfulMoves=\(successfulMoves)",
+                      "startupBoundaryCount=\(startupBoundaries.count)",
+                      "terminalBoundary=\(terminalBoundary ?? \"none\")"
+                  ] + startupBoundaries.enumerated().map { "startup[\($0.offset)]=\($0.element)" })
+                      .joined(separator: "\\n")
+                  let attachment = XCTAttachment(string: diagnostic)
+                  attachment.name = "Capture VoiceOver Transport - \(evidenceLabel)"
+                  attachment.lifetime = .keepAlways
+                  add(attachment)
+                  print("NEMBRA_CAPTURE_VOICEOVER_TRANSPORT_BEGIN \(evidenceLabel)")
+                  print(diagnostic)
+                  print("NEMBRA_CAPTURE_VOICEOVER_TRANSPORT_END \(evidenceLabel)")
+              }'''
+
+          required = {
+              'long-string identifier query': (old_query, new_query),
+              'stale AX5 semantic exception declaration': (old_set, new_set),
+              'standard zero-exception call': (old_standard, new_standard),
+              'AX5 stale-pair call': (old_ax5, new_ax5),
+              'fixed-64 VoiceOver traversal': (old_traversal, new_traversal),
+          }
+          repaired = source
+          for label, (old, new) in required.items():
+              count = repaired.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one source occurrence, found {count}')
+              repaired = repaired.replace(old, new)
+
+          repaired = repaired.replace(
+              '    private enum RuntimeVoiceOverContractError: Error {\n        case missingSpeech(String)\n    }',
+              '    private enum RuntimeVoiceOverContractError: Error {\n        case missingSpeech(String)\n        case startupSpeechUnavailable\n    }'
+          )
+          if repaired.count('case startupSpeechUnavailable') != 1:
+              raise SystemExit('startup error case was not inserted exactly once')
+          if repaired.count('expectedFilteredTextClippedLabels: knownSemanticTextClippedFalsePositive') != 2:
+              raise SystemExit('semantic singleton must be consumed by both states')
+          if 'knownAX5SemanticTextClippedFalsePositives' in repaired:
+              raise SystemExit('stale AX5 exception set survived')
+          if 'app.staticTexts[heroAuthority]' in repaired:
+              raise SystemExit('legacy long-string identifier lookup survived')
+          if 'let output = try service.moveForward()\n            if !output.utterance.isEmpty' in repaired:
+              raise SystemExit('legacy unconditional move loop survived')
+          pathlib.Path(sys.argv[2]).write_text(repaired)
+          PY
+
+          grep -Fq 'performAccessibilityAudit(for: .all)' "$witness"
+          grep -Fq 'knownSemanticTextClippedFalsePositive' "$witness"
+          grep -Fq 'expectedFilteredTextClippedLabels.contains(label)' "$witness"
+          grep -Fq 'XCUIDevice.shared.voiceOverService' "$witness"
+          grep -Fq 'classifiedVoiceOverCode3' "$witness"
+          grep -Fq 'startupSpeechUnavailable' "$witness"
+          grep -Fq 'terminalBoundary != nil || successfulMoves >= 64' "$witness"
+          grep -Fq 'Start capture' "$witness"
+          grep -Fq 'Scan for scooter' "$witness"
+          grep -Fq 'matching(NSPredicate(format: "label == %@", heroAuthority)).firstMatch' "$witness"
+
+          source_witness_sha="$(shasum -a 256 "$witness_source" | awk '{print $1}')"
+          generated_witness_sha="$(shasum -a 256 "$witness" | awk '{print $1}')"
+          printf 'NEMBRA_RUNTIME_AX_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+          printf 'NEMBRA_RUNTIME_AX_COMPOSED_PRODUCT_PARENT=%s\n' "$COMPOSED_PRODUCT_SHA" >> "$GITHUB_ENV"
+          printf 'NEMBRA_RUNTIME_AX_WITNESS_SOURCE_COMMIT=%s\n' "$WITNESS_SOURCE_SHA" >> "$GITHUB_ENV"
+          printf 'NEMBRA_RUNTIME_AX_WITNESS_SOURCE_SHA256=%s\n' "$source_witness_sha" >> "$GITHUB_ENV"
+          printf 'NEMBRA_RUNTIME_AX_WITNESS_SHA256=%s\n' "$generated_witness_sha" >> "$GITHUB_ENV"
+          printf 'NEMBRA_RUNTIME_AX_WITNESS=%s\n' "$witness" >> "$GITHUB_ENV"
+
+      - name: Record exact toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            xcodebuild -version
+            sw_vers
+            xcrun simctl version || true
+          } > "$RUNNER_TEMP/CaptureRuntimeVoiceOver.toolchain.txt" 2>&1
+          test -s "$RUNNER_TEMP/CaptureRuntimeVoiceOver.toolchain.txt"
+
+      - name: Build exact public-unprovisioned standalone Capture app
+        shell: bash
+        run: |
+          set -euo pipefail
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${NEMBRA_RUNTIME_AX_SOURCE_SHA:0:12}"
+          rm -rf /tmp/NembraCaptureRuntimeAXDerived
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureRuntimeAXDerived CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_RUNTIME_AX_SOURCE_SHA" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" build
+          plist='/tmp/NembraCaptureRuntimeAXDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = 'com.jonathangana131.nembra.capturelearn'
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_RUNTIME_AX_SOURCE_SHA"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+          test -z "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
+
+      - name: Create exact iPhone 12 iOS 27 baseline and inject witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$({ xcrun simctl list runtimes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable", True) and str(r.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          if not rows: raise SystemExit(1)
+          rows.sort(key=lambda r: tuple(int(p) for p in str(r.get("version","0")).split(".") if p.isdigit()), reverse=True)
+          print(rows[0]["identifier"])
+          '; } 2>/dev/null)"
+          device_type="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
+          import json,sys
+          for row in json.load(sys.stdin)["devicetypes"]:
+              if row.get("name") == "iPhone 12": print(row["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)
+          '; } 2>/dev/null)"
+          test "$device_type" = 'com.apple.CoreSimulator.SimDeviceType.iPhone-12'
+          udid="$(xcrun simctl create "Nembra Capture VoiceOver ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$device_type" "$runtime")"
+          printf 'NEMBRA_RUNTIME_AX_UDID=%s\n' "$udid" >> "$GITHUB_ENV"
+          printf 'NEMBRA_RUNTIME_AX_RUNTIME=%s\n' "$runtime" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl ui "$udid" appearance dark
+          xcrun simctl ui "$udid" content_size large
+          xcrun simctl install "$udid" '/tmp/NembraCaptureRuntimeAXDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app'
+          test -f NembraUITests/NembraUITests.swift
+          printf '\n' >> NembraUITests/NembraUITests.swift
+          cat "$NEMBRA_RUNTIME_AX_WITNESS" >> NembraUITests/NembraUITests.swift
+          git diff --check -- NembraUITests/NembraUITests.swift
+
+      - name: Run exact Standard and Accessibility XXXL contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle='com.jonathangana131.nembra.capturelearn'
+          rm -rf /tmp/NembraRuntimeVoiceOverUITests
+          for state in standard ax5; do
+            if [[ "$state" == standard ]]; then
+              size='large'
+              test_id='testStandaloneCaptureStandardVoiceOverPreservesFirstFoldAuthority'
+            else
+              size='accessibility-extra-extra-extra-large'
+              test_id='testStandaloneCaptureAccessibilityXXXLVoiceOverRemainsActionFirst'
+            fi
+            result="$RUNNER_TEMP/CaptureRuntimeVoiceOver.${state}.xcresult"
+            rm -rf "$result"
+            xcrun simctl ui "$NEMBRA_RUNTIME_AX_UDID" content_size "$size"
+            xcrun simctl terminate "$NEMBRA_RUNTIME_AX_UDID" "$bundle" >/dev/null 2>&1 || true
+            set +e
+            xcodebuild test -project Nembra.xcodeproj -scheme Nembra -configuration Debug \
+              -destination "platform=iOS Simulator,id=$NEMBRA_RUNTIME_AX_UDID" \
+              -derivedDataPath /tmp/NembraRuntimeVoiceOverUITests \
+              -resultBundlePath "$result" CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES \
+              -only-testing:NembraUITests/CaptureRuntimeVoiceOverUITests/"$test_id"
+            status=$?
+            set -e
+            printf '%s\n' "$status" > "$RUNNER_TEMP/CaptureRuntimeVoiceOver.${state}.exit-status.txt"
+          done
+          test "$(cat "$RUNNER_TEMP/CaptureRuntimeVoiceOver.standard.exit-status.txt")" = 0
+          test "$(cat "$RUNNER_TEMP/CaptureRuntimeVoiceOver.ax5.exit-status.txt")" = 0
+
+      - name: Seal exact simulator-only evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/CaptureRuntimeVoiceOverBoundaryEvidence"
+          mkdir -p "$evidence"
+          cp "$RUNNER_TEMP/CaptureRuntimeVoiceOver.toolchain.txt" "$evidence/"
+          cp "$NEMBRA_RUNTIME_AX_WITNESS" "$evidence/generated-runtime-witness.swift"
+          for state in standard ax5; do
+            result="$RUNNER_TEMP/CaptureRuntimeVoiceOver.${state}.xcresult"
+            test -d "$result"
+            xcrun xcresulttool get test-results tests --path "$result" --compact > "$evidence/${state}.tests.json"
+            xcrun xcresulttool get object --legacy --path "$result" --format json > "$evidence/${state}.legacy-root.json"
+            cp "$RUNNER_TEMP/CaptureRuntimeVoiceOver.${state}.exit-status.txt" "$evidence/"
+            ditto -c -k --sequesterRsrc --keepParent "$result" "$evidence/${state}.xcresult.zip"
+          done
+          /usr/bin/python3 - "$evidence" "$NEMBRA_RUNTIME_AX_SOURCE_SHA" "$NEMBRA_RUNTIME_AX_COMPOSED_PRODUCT_PARENT" "$NEMBRA_RUNTIME_AX_RUNTIME" "$NEMBRA_RUNTIME_AX_WITNESS_SOURCE_COMMIT" "$NEMBRA_RUNTIME_AX_WITNESS_SOURCE_SHA256" "$NEMBRA_RUNTIME_AX_WITNESS_SHA256" <<'PY'
+          import hashlib,json,pathlib,sys
+          evidence=pathlib.Path(sys.argv[1])
+          source,parent,runtime,wsource,wsource_sha,witness_sha=sys.argv[2:]
+          ids={
+            'standard':'testStandaloneCaptureStandardVoiceOverPreservesFirstFoldAuthority',
+            'ax5':'testStandaloneCaptureAccessibilityXXXLVoiceOverRemainsActionFirst',
+          }
+          states=[]
+          for state,needle in ids.items():
+            tests=json.loads((evidence/f'{state}.tests.json').read_text())
+            legacy=json.loads((evidence/f'{state}.legacy-root.json').read_text())
+            count=int(legacy['metrics']['testsCount']['_value'])
+            if count != 1: raise SystemExit(f'{state}: expected exactly one executed test, got {count}')
+            strings=[]
+            def walk(v):
+              if isinstance(v,dict):
+                for x in v.values(): walk(x)
+              elif isinstance(v,list):
+                for x in v: walk(x)
+              elif isinstance(v,str): strings.append(v)
+            walk(tests)
+            if not any(needle in x for x in strings): raise SystemExit(f'{state}: target test identity missing')
+            status=int((evidence/f'CaptureRuntimeVoiceOver.{state}.exit-status.txt').read_text())
+            states.append({'state':state,'targetedTestIdentifier':needle,'executedTestCount':count,'xcodebuildExitStatus':status,'xcresultZipSHA256':hashlib.sha256((evidence/f'{state}.xcresult.zip').read_bytes()).hexdigest()})
+          manifest={
+            'schemaVersion':6,
+            'authority':'capture-runtime-accessibility-simulator-only',
+            'sourceCommitSHA':source,
+            'composedProductParentSHA':parent,
+            'productSourceBytesChangedFromComposedParent':False,
+            'baselineDevice':'iPhone 12','baselineOS':'iOS 27','simulatorRuntime':runtime,
+            'captureBundleIdentifier':'com.jonathangana131.nembra.capturelearn',
+            'witnessSourceCommitSHA':wsource,'witnessSourceSHA256':wsource_sha,'generatedWitnessSHA256':witness_sha,
+            'accessibilityAuditRequested':'all',
+            'auditIssueHandlerPolicy':'fail-all-except-exact-tuya-user-code-semantic-label-textClipped-false-positive',
+            'expectedFilteredTextClippedLabels':['Tuya Smart user code'],
+            'voiceOverStartupBoundaryPolicy':'retry-only-exact-retained-code3-shapes-three-attempts-zero-speech-fails',
+            'voiceOverTerminalBoundaryPolicy':'exact-retained-code3-only-after-all-required-speech-present',
+            'states':states,
+            'visualEvidenceRequiredSeparatelyForSightedGlyphGeometry':True,
+            'physicalAuthorityCreated':False,'protocolAuthorityCreated':False,
+          }
+          (evidence/'manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+          if any(x['xcodebuildExitStatus'] != 0 for x in states): raise SystemExit('runtime matrix not green')
+          PY
+
+      - name: Upload retained runtime boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-capture-runtime-voiceover-boundary-f557-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/CaptureRuntimeVoiceOverBoundaryEvidence
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Delete temporary Simulator
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${NEMBRA_RUNTIME_AX_UDID:-}" ]]; then
+            xcrun simctl shutdown "$NEMBRA_RUNTIME_AX_UDID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$NEMBRA_RUNTIME_AX_UDID" >/dev/null 2>&1 || true
+          fi
