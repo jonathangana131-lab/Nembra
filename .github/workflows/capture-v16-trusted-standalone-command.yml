@@ -1,4 +1,4 @@
-name: Capture V16 Trusted Standalone Exact-Head
+name: Capture V16 Trusted Standalone Xcode 27 QA
 
 on:
   issue_comment:
@@ -10,19 +10,20 @@ permissions:
 
 jobs:
   resolve:
-    name: Resolve trusted standalone PR head
+    name: Resolve trusted V16 standalone PR head
     if: >-
       github.event.issue.pull_request &&
-      github.event.comment.body == '/capture-standalone-xcode27' &&
+      github.event.comment.body == '/capture-v16-xcode27' &&
       github.actor == github.repository_owner
     runs-on: ubuntu-latest
     outputs:
       head_sha: ${{ steps.pr.outputs.head_sha }}
       pr_number: ${{ steps.pr.outputs.pr_number }}
       same_repo: ${{ steps.pr.outputs.same_repo }}
+      base_main: ${{ steps.pr.outputs.base_main }}
 
     steps:
-      - name: Resolve immutable current PR head
+      - name: Resolve immutable live PR head
         id: pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
@@ -34,90 +35,98 @@ jobs:
             })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
+            const sameRepo = pr.head.repo.full_name === repository
+            const baseMain = pr.base.ref === context.payload.repository.default_branch
+
+            core.info(`Resolved PR #${pr.number} exact head ${pr.head.sha}`)
+            core.info(`PR state: ${pr.state}; same repository: ${sameRepo}; base default: ${baseMain}`)
+
             if (pr.state !== 'open') {
-              core.setFailed(`PR #${pr.number} is not open`)
-              return
+              core.setFailed('V16 standalone exact-head admission requires an open pull request.')
             }
-            const sameRepo = pr.head.repo?.full_name === repository
             if (!sameRepo) {
-              core.setFailed(`PR #${pr.number} is not a same-repository candidate`)
-              return
+              core.setFailed('V16 standalone exact-head admission refuses fork-controlled source.')
             }
+            if (!baseMain) {
+              core.setFailed('V16 standalone acceptance requires a PR targeting the repository default branch.')
+            }
+
             core.setOutput('head_sha', pr.head.sha)
             core.setOutput('pr_number', String(pr.number))
-            core.setOutput('same_repo', 'true')
+            core.setOutput('same_repo', String(sameRepo))
+            core.setOutput('base_main', String(baseMain))
 
-  standalone-qa:
-    name: Build and test trusted standalone Capture head
+  standalone:
+    name: Build and verify trusted exact V16 standalone Capture
     needs: resolve
-    if: needs.resolve.outputs.same_repo == 'true'
-    concurrency:
-      group: capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
-      cancel-in-progress: false
+    if: needs.resolve.outputs.same_repo == 'true' && needs.resolve.outputs.base_main == 'true'
     runs-on: xcode-27
-    timeout-minutes: 40
+    timeout-minutes: 30
+    concurrency:
+      group: nembra-capture-v16-standalone-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
+      cancel-in-progress: false
 
     steps:
-      - name: Revalidate live PR before executing candidate bytes
+      - name: Reject stale or detached Capture head before scarce Mac work
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
-          EXPECTED_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         with:
           script: |
             const response = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: Number(process.env.EXPECTED_PR_NUMBER),
+              pull_number: Number(process.env.PR_NUMBER),
             })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
-            if (pr.state !== 'open') {
-              core.setFailed(`PR #${pr.number} stopped being open before candidate execution`)
-              return
-            }
-            if (pr.head.repo?.full_name !== repository) {
-              core.setFailed(`PR #${pr.number} stopped being a same-repository candidate`)
-              return
-            }
-            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
-              core.setFailed(`PR #${pr.number} moved from ${process.env.EXPECTED_HEAD_SHA} to ${pr.head.sha}`)
-            }
+            if (pr.state !== 'open') core.setFailed('PR closed before V16 standalone acceptance started.')
+            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed before acceptance.')
+            if (pr.base.ref !== context.payload.repository.default_branch) core.setFailed('PR base changed before acceptance.')
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved before acceptance; stale run is non-evidence.')
 
-      - name: Checkout immutable PR head
+      - name: Checkout immutable exact Capture head
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ needs.resolve.outputs.head_sha }}
+          fetch-depth: 1
           persist-credentials: false
 
-      - name: Verify immutable PR head
+      - name: Verify immutable checkout and toolchain
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
           set -euo pipefail
-          actual="$(git rev-parse --verify HEAD^{commit})"
-          printf 'Expected exact Capture head: %s\nActual checkout: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          actual="$(/usr/bin/git rev-parse --verify HEAD^{commit})"
+          printf 'Trusted resolver head: %s\nActual checkout: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
           test "$actual" = "$EXPECTED_HEAD_SHA"
-
-      - name: Record toolchain
-        run: |
-          set -euo pipefail
           xcodebuild -version
           swift --version
 
-      - name: Validate standalone project inputs
+      - name: Validate standalone project and evidence-model closure
         run: |
           set -euo pipefail
-          test -f NembraCapture.xcodeproj/project.pbxproj
-          test -f NembraCapture-Info.plist
-          test -f NembraCapture.entitlements
-          test -f 'NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme'
           plutil -lint NembraCapture.xcodeproj/project.pbxproj
           plutil -lint NembraCapture-Info.plist
           plutil -lint NembraCapture.entitlements
+          test -f 'NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme'
+          test -f Packages/NembraCore/Sources/NembraCore/PassiveBluetoothCapture.swift
+          test -f Packages/NembraCore/Sources/NembraCore/PassiveBluetoothObservationWindowDurationAssessment.swift
+          test -f Packages/NembraCore/Tests/NembraCoreTests/PassiveBluetoothCaptureTests.swift
+          test -f Packages/NembraCore/Tests/NembraCoreTests/PassiveBluetoothCaptureObservationBoundaryTests.swift
+          test -f Packages/NembraCore/Tests/NembraCoreTests/PassiveBluetoothObservationWindowDurationAssessmentTests.swift
           xcodebuild -list -project NembraCapture.xcodeproj
 
-      - name: Compile Capture package against candidate Core
+      - name: Validate restored passive Core truth contracts
+        working-directory: Packages/NembraCore
+        run: |
+          set -euo pipefail
+          swift test --filter PassiveBluetoothCaptureTests
+          swift test --filter PassiveBluetoothCaptureObservationBoundaryTests
+          swift test --filter PassiveBluetoothObservationWindowDurationAssessmentTests
+
+      - name: Compile Capture package against exact Core
         working-directory: Packages/NembraBluetoothCapture
         run: |
           set -euo pipefail
@@ -132,20 +141,23 @@ jobs:
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
 
-      - name: Preserve deferred field-contract boundary
+      - name: Preserve read-only and deferred field boundaries
         run: |
           set -euo pipefail
+          if grep -R -n --include='*.swift' '\.writeValue(' Packages/NembraBluetoothCapture/Sources NembraApp; then
+            printf '%s\n' 'Standalone Capture source contains an application characteristic write path.' >&2
+            exit 1
+          fi
           contract='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerProcedureSourceTests.swift'
           test -f "$contract"
           grep -Fq 'scripts/field/install_one_time_capture.command' "$contract"
           test ! -e scripts/field/install_one_time_capture.command
+          printf '%s\n' 'Field-installer authority remains deferred to its later V16 objective.'
 
       - name: Build standalone Capture for Simulator
         run: |
           set -euo pipefail
-          mkdir -p Artifacts/CaptureV16TrustedStandalone
           rm -rf "${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData"
-          set -o pipefail
           xcodebuild \
             -project NembraCapture.xcodeproj \
             -scheme 'Nembra Capture' \
@@ -153,18 +165,16 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData" \
             CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee Artifacts/CaptureV16TrustedStandalone/xcodebuild.log
+            build
 
-      - name: Verify software-only standalone product
+      - name: Verify public standalone app carries no field authority
         run: |
           set -euo pipefail
           app="${RUNNER_TEMP}/NembraCaptureV16TrustedDerivedData/Build/Products/Debug-iphonesimulator/Nembra Capture.app"
           plist="$app/Info.plist"
           test -d "$app"
           test -f "$plist"
-
-          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
-          test "$bundle_id" = 'com.jonathangana131.nembra.capturelearn'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = 'com.jonathangana131.nembra.capturelearn'
 
           for key in \
             NembraCaptureBuildIdentifier \
@@ -174,54 +184,55 @@ jobs:
           do
             value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null || true)"
             if [[ -n "$value" ]]; then
-              printf 'Trusted public/unprovisioned build carried forbidden field authority %s=%q\n' "$key" "$value" >&2
+              printf 'Public standalone build carried forbidden field authority %s=%q\n' "$key" "$value" >&2
               exit 1
             fi
           done
 
-          cp "$plist" Artifacts/CaptureV16TrustedStandalone/Info.plist
-          printf '%s\n' "$EXPECTED_HEAD_SHA" > Artifacts/CaptureV16TrustedStandalone/exact-head.txt
-        env:
-          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
-
-      - name: Upload trusted standalone evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
-          path: Artifacts/CaptureV16TrustedStandalone
-          if-no-files-found: error
-          retention-days: 30
-
-  accept-current-head:
-    name: Confirm trusted standalone head remains current
-    needs: [resolve, standalone-qa]
-    if: needs.resolve.outputs.same_repo == 'true' && needs.standalone-qa.result == 'success'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Revalidate exact PR head after standalone QA
+      - name: Reject head movement after trusted acceptance
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
-          EXPECTED_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         with:
           script: |
             const response = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: Number(process.env.EXPECTED_PR_NUMBER),
+              pull_number: Number(process.env.PR_NUMBER),
             })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
-            if (pr.state !== 'open') {
-              core.setFailed(`PR #${pr.number} stopped being open before exact-head acceptance completed`)
-              return
-            }
-            if (pr.head.repo?.full_name !== repository) {
-              core.setFailed(`PR #${pr.number} stopped being a same-repository candidate`)
-              return
-            }
-            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
-              core.setFailed(`PR #${pr.number} moved during QA from ${process.env.EXPECTED_HEAD_SHA} to ${pr.head.sha}`)
-            }
+            if (pr.state !== 'open') core.setFailed('PR closed during V16 standalone acceptance.')
+            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed during acceptance.')
+            if (pr.base.ref !== context.payload.repository.default_branch) core.setFailed('PR base changed during acceptance.')
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved during acceptance; run is non-evidence.')
+
+  accept-current-head:
+    name: Confirm trusted standalone head remains current on hosted runner
+    needs: [resolve, standalone]
+    if: >-
+      needs.resolve.outputs.same_repo == 'true' &&
+      needs.resolve.outputs.base_main == 'true' &&
+      needs.standalone.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Revalidate exact PR head after trusted standalone QA
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            if (pr.state !== 'open') core.setFailed('PR closed before hosted V16 standalone acceptance completed.')
+            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed before hosted acceptance completed.')
+            if (pr.base.ref !== context.payload.repository.default_branch) core.setFailed('PR base changed before hosted acceptance completed.')
+            if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved during trusted standalone QA; hosted acceptance is non-evidence.')
