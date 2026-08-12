@@ -1,0 +1,291 @@
+name: Capture Runtime VoiceOver
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraApp/Resources/Localizable.strings
+      - NembraCapture.xcodeproj/project.pbxproj
+      - scripts/ci/capture_runtime_voiceover_xcuitest.swift
+      - .github/workflows/capture-runtime-voiceover.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-voiceover:
+    name: Exact iPhone 12 first-fold VoiceOver matrix
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact runtime head to repaired AX5 product lineage
+        shell: bash
+        env:
+          COMPOSED_PRODUCT_SHA: f557f0aa9b9cd7afb2942a48a28a1212a464192f
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          git cat-file -e "${COMPOSED_PRODUCT_SHA}^{commit}"
+          changed_paths="$(git diff --name-only "$COMPOSED_PRODUCT_SHA"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            '.github/workflows/capture-runtime-voiceover.yml' \
+            'scripts/ci/capture_runtime_voiceover_xcuitest.swift')"
+          if [[ "$changed_paths" != "$expected_paths" ]]; then
+            printf 'Runtime AX successor must be validation-only from the exact repaired AX5 product lineage. Changed paths:\n' >&2
+            printf '%s\n' "$changed_paths" | /usr/bin/sed 's/^/  /' >&2
+            exit 20
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          grep -Fq 'testStandaloneCaptureStandardVoiceOverPreservesFirstFoldAuthority' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'testStandaloneCaptureAccessibilityXXXLVoiceOverRemainsActionFirst' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'knownAX5SemanticTextClippedFalsePositives' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'issue.auditType == .textClipped' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'expectedFilteredTextClippedLabels.contains(label)' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'Bluetooth and physical evidence stay locked' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'reviewed field build and fresh scooter authority' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'XCUIDevice.shared.voiceOverService' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'performAccessibilityAudit(for: .all)' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          grep -Fq 'matching(NSPredicate(format: "label == %@", heroAuthority))' scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          if grep -Fq 'app.staticTexts[heroAuthority]' scripts/ci/capture_runtime_voiceover_xcuitest.swift; then
+            printf 'The >128-character hero authority must be queried by label predicate, not XCTest identifier subscript.\n' >&2
+            exit 21
+          fi
+          printf 'NEMBRA_RUNTIME_AX_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+          printf 'NEMBRA_RUNTIME_AX_COMPOSED_PRODUCT_PARENT=%s\n' "$COMPOSED_PRODUCT_SHA" >> "$GITHUB_ENV"
+
+      - name: Record exact toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$RUNNER_TEMP/CaptureRuntimeVoiceOver.toolchain.txt"
+          {
+            printf '%s\n' '## xcodebuild -version'
+            xcodebuild -version
+            printf '\n%s\n' '## sw_vers'
+            sw_vers
+            printf '\n%s\n' '## simctl path'
+            xcrun --find simctl
+            printf '\n%s\n' '## simctl version'
+            xcrun simctl version || true
+            printf '\n%s\n' '## simctl help ui'
+            xcrun simctl help ui || true
+          } 2>&1 | tee "$toolchain"
+          test -s "$toolchain"
+
+      - name: Build exact public-unprovisioned standalone Capture app
+        shell: bash
+        run: |
+          set -euo pipefail
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${NEMBRA_RUNTIME_AX_SOURCE_SHA:0:12}"
+          rm -rf /tmp/NembraCaptureRuntimeAXDerived
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureRuntimeAXDerived CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_RUNTIME_AX_SOURCE_SHA" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" build
+          plist='/tmp/NembraCaptureRuntimeAXDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = 'com.jonathangana131.nembra.capturelearn'
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_RUNTIME_AX_SOURCE_SHA"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+          test -z "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
+
+      - name: Create exact iPhone 12 / iOS 27 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$({ xcrun simctl list runtimes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=json.load(sys.stdin)["runtimes"]
+          rows=[r for r in rows if r.get("isAvailable", True) and str(r.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          if not rows: raise SystemExit(1)
+          rows.sort(key=lambda r: tuple(int(p) for p in str(r.get("version","0")).split(".") if p.isdigit()), reverse=True)
+          print(rows[0]["identifier"])
+          '; } 2>/dev/null)"
+          device_type="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
+          import json,sys
+          for row in json.load(sys.stdin)["devicetypes"]:
+              if row.get("name") == "iPhone 12":
+                  print(row["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)
+          '; } 2>/dev/null)"
+          test "$device_type" = 'com.apple.CoreSimulator.SimDeviceType.iPhone-12'
+          udid="$(xcrun simctl create "Nembra Capture VoiceOver ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$device_type" "$runtime")"
+          printf 'NEMBRA_RUNTIME_AX_UDID=%s\n' "$udid" >> "$GITHUB_ENV"
+          printf 'NEMBRA_RUNTIME_AX_RUNTIME=%s\n' "$runtime" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl ui "$udid" appearance dark
+          xcrun simctl ui "$udid" content_size large
+          xcrun simctl install "$udid" '/tmp/NembraCaptureRuntimeAXDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app'
+
+      - name: Inject committed runtime witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f NembraUITests/NembraUITests.swift
+          test -f scripts/ci/capture_runtime_voiceover_xcuitest.swift
+          printf '\n' >> NembraUITests/NembraUITests.swift
+          cat scripts/ci/capture_runtime_voiceover_xcuitest.swift >> NembraUITests/NembraUITests.swift
+          grep -Fq 'final class CaptureRuntimeVoiceOverUITests: XCTestCase' NembraUITests/NembraUITests.swift
+          git diff --check -- NembraUITests/NembraUITests.swift
+
+      - name: Run standard and Accessibility XXXL VoiceOver contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_id='com.jonathangana131.nembra.capturelearn'
+          standard_result="$RUNNER_TEMP/CaptureRuntimeVoiceOver.standard.xcresult"
+          ax5_result="$RUNNER_TEMP/CaptureRuntimeVoiceOver.ax5.xcresult"
+          rm -rf /tmp/NembraRuntimeVoiceOverUITests "$standard_result" "$ax5_result"
+
+          xcrun simctl ui "$NEMBRA_RUNTIME_AX_UDID" content_size large
+          xcrun simctl terminate "$NEMBRA_RUNTIME_AX_UDID" "$bundle_id" >/dev/null 2>&1 || true
+          set +e
+          xcodebuild test -project Nembra.xcodeproj -scheme Nembra -configuration Debug \
+            -destination "platform=iOS Simulator,id=$NEMBRA_RUNTIME_AX_UDID" \
+            -derivedDataPath /tmp/NembraRuntimeVoiceOverUITests \
+            -resultBundlePath "$standard_result" \
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES \
+            -only-testing:NembraUITests/CaptureRuntimeVoiceOverUITests/testStandaloneCaptureStandardVoiceOverPreservesFirstFoldAuthority
+          standard_status=$?
+          set -e
+          printf '%s\n' "$standard_status" > "$RUNNER_TEMP/CaptureRuntimeVoiceOver.standard.exit-status.txt"
+
+          xcrun simctl ui "$NEMBRA_RUNTIME_AX_UDID" content_size accessibility-extra-extra-extra-large
+          xcrun simctl terminate "$NEMBRA_RUNTIME_AX_UDID" "$bundle_id" >/dev/null 2>&1 || true
+          set +e
+          xcodebuild test -project Nembra.xcodeproj -scheme Nembra -configuration Debug \
+            -destination "platform=iOS Simulator,id=$NEMBRA_RUNTIME_AX_UDID" \
+            -derivedDataPath /tmp/NembraRuntimeVoiceOverUITests \
+            -resultBundlePath "$ax5_result" \
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES \
+            -only-testing:NembraUITests/CaptureRuntimeVoiceOverUITests/testStandaloneCaptureAccessibilityXXXLVoiceOverRemainsActionFirst
+          ax5_status=$?
+          set -e
+          printf '%s\n' "$ax5_status" > "$RUNNER_TEMP/CaptureRuntimeVoiceOver.ax5.exit-status.txt"
+
+          if [[ "$standard_status" -ne 0 || "$ax5_status" -ne 0 ]]; then
+            printf 'Runtime VoiceOver matrix failed: standard=%s ax5=%s\n' "$standard_status" "$ax5_status" >&2
+            exit 1
+          fi
+
+      - name: Prove both exact tests and seal evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/CaptureRuntimeVoiceOverEvidence"
+          mkdir -p "$evidence"
+          cp "$RUNNER_TEMP/CaptureRuntimeVoiceOver.toolchain.txt" "$evidence/"
+          snippet_sha="$(shasum -a 256 scripts/ci/capture_runtime_voiceover_xcuitest.swift | awk '{print $1}')"
+          toolchain_sha="$(shasum -a 256 "$evidence/CaptureRuntimeVoiceOver.toolchain.txt" | awk '{print $1}')"
+
+          for state in standard ax5; do
+            result="$RUNNER_TEMP/CaptureRuntimeVoiceOver.${state}.xcresult"
+            test -d "$result"
+            xcrun xcresulttool get test-results tests --path "$result" --compact > "$evidence/${state}.tests.json"
+            xcrun xcresulttool get object --legacy --path "$result" --format json > "$evidence/${state}.legacy-root.json"
+            cp "$RUNNER_TEMP/CaptureRuntimeVoiceOver.${state}.exit-status.txt" "$evidence/"
+            ditto -c -k --sequesterRsrc --keepParent "$result" "$evidence/${state}.xcresult.zip"
+          done
+
+          /usr/bin/python3 - "$evidence" "$NEMBRA_RUNTIME_AX_SOURCE_SHA" "$NEMBRA_RUNTIME_AX_COMPOSED_PRODUCT_PARENT" "$NEMBRA_RUNTIME_AX_RUNTIME" "$snippet_sha" "$toolchain_sha" <<'PY'
+          import hashlib, json, pathlib, sys
+          evidence=pathlib.Path(sys.argv[1])
+          source,parent,runtime,snippet_sha,toolchain_sha=sys.argv[2:]
+          expected={
+              'standard':'testStandaloneCaptureStandardVoiceOverPreservesFirstFoldAuthority',
+              'ax5':'testStandaloneCaptureAccessibilityXXXLVoiceOverRemainsActionFirst',
+          }
+          states=[]
+          for state,needle in expected.items():
+              tests=json.loads((evidence/f'{state}.tests.json').read_text())
+              legacy=json.loads((evidence/f'{state}.legacy-root.json').read_text())
+              try:
+                  count=int(legacy['metrics']['testsCount']['_value'])
+              except (KeyError,TypeError,ValueError) as exc:
+                  raise SystemExit(f'{state}: invalid testsCount: {exc}')
+              if count <= 0:
+                  raise SystemExit(f'{state}: testsCount must be > 0, got {count}')
+              strings=[]
+              def walk(v):
+                  if isinstance(v,dict):
+                      for child in v.values(): walk(child)
+                  elif isinstance(v,list):
+                      for child in v: walk(child)
+                  elif isinstance(v,str): strings.append(v)
+              walk(tests)
+              if not any(needle in value for value in strings):
+                  raise SystemExit(f'{state}: targeted test identity missing: {needle}')
+              status=int((evidence/f'CaptureRuntimeVoiceOver.{state}.exit-status.txt').read_text().strip())
+              archive=evidence/f'{state}.xcresult.zip'
+              states.append({
+                  'state': state,
+                  'contentSize': 'large' if state == 'standard' else 'accessibility-extra-extra-extra-large',
+                  'targetedTestIdentifier': needle,
+                  'xcodebuildExitStatus': status,
+                  'executedTestCount': count,
+                  'xcresultZipSHA256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+                  'structuredTestResultsSHA256': hashlib.sha256((evidence/f'{state}.tests.json').read_bytes()).hexdigest(),
+              })
+          manifest={
+              'schemaVersion': 4,
+              'authority': 'capture-runtime-accessibility-simulator-only',
+              'sourceCommitSHA': source,
+              'composedProductParentSHA': parent,
+              'productSourceBytesChangedFromComposedParent': False,
+              'baselineDevice': 'iPhone 12',
+              'baselineOS': 'iOS 27',
+              'simulatorRuntime': runtime,
+              'captureBundleIdentifier': 'com.jonathangana131.nembra.capturelearn',
+              'runtimeWitnessSHA256': snippet_sha,
+              'toolchainEvidenceSHA256': toolchain_sha,
+              'voiceOverService': 'XCUIDevice.shared.voiceOverService',
+              'accessibilityAuditRequested': 'all',
+              'auditIssueHandlerPolicy': 'fail-all-except-exact-known-ax5-semantic-label-textClipped-false-positive-candidates',
+              'standardExpectedFilteredTextClippedLabels': [],
+              'accessibilityXXXLExpectedFilteredTextClippedLabels': ['Physical capture locked','Tuya Smart user code'],
+              'standardHeroLookup': 'label-predicate-not-identifier-subscript',
+              'standardFirstFoldHeroAuthorityRequired': True,
+              'accessibilityXXXLActionFirstRequired': True,
+              'states': states,
+              'visualEvidenceRequiredSeparatelyForSightedGlyphGeometry': True,
+              'physicalAuthorityCreated': False,
+              'protocolAuthorityCreated': False,
+          }
+          (evidence/'manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload runtime accessibility evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-capture-runtime-voiceover-firstfold-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/CaptureRuntimeVoiceOverEvidence
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Delete temporary Simulator
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${NEMBRA_RUNTIME_AX_UDID:-}" ]]; then
+            xcrun simctl shutdown "$NEMBRA_RUNTIME_AX_UDID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$NEMBRA_RUNTIME_AX_UDID" >/dev/null 2>&1 || true
+          fi
