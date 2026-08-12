@@ -2190,11 +2190,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "d1479f0dc3b350d0065318b39efd0eb6aa13e44d",
+        "headSHA": "",
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.32,
+        "similarity": 0.305,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3145": {
@@ -2315,7 +2315,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3184,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.234,
+        "similarity": 0.229,
         "title": "[Capture P0][VALIDATION] Reap direct child before final principal retirement"
       },
       "3188": {
@@ -2415,7 +2415,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-12T11:46:19Z",
+    "liveRefreshAt": "2026-08-12T11:49:14Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
@@ -6169,10 +6169,10 @@
       "userValue": 7
     }
   },
-  "revision": 10,
+  "revision": 11,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-12T11:48:53Z",
+  "updatedAt": "2026-08-12T11:51:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6248,7 +6248,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-12T11:46:19Z",
+      "updatedAt": "2026-08-12T11:49:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
