@@ -1,0 +1,44 @@
+name: Temporary V14 private Tuya read-lease restack
+on:
+  push:
+    branches: [validation/v14-private-tuya-read-lease-restack-staging-sol-20260812-go2]
+permissions:
+  contents: write
+jobs:
+  restack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Rebuild exact additive validation child
+        shell: bash
+        env:
+          OWNER_HEAD: 83ed9001385518e979a7b37265877054938ae5c0
+          PROVEN_HEAD: 27e1f7cdb81001ac3e4022828b9a98629657c50f
+          TARGET_BRANCH: validation/v14-private-tuya-build-uid-read-lease-sol-20260812-go2
+          EXPECTED_OLD_HEAD: 27e1f7cdb81001ac3e4022828b9a98629657c50f
+          OWNER_BRANCH: repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812
+        run: |
+          set -euo pipefail
+          git config user.name nembra-swarm
+          git config user.email nembra-swarm@users.noreply.github.com
+          git reset --hard "$OWNER_HEAD"
+          git checkout "$PROVEN_HEAD" -- \
+            .github/workflows/capture-private-tuya-build-uid-read-lease-validation.yml \
+            scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' .github/workflows/capture-private-tuya-build-uid-read-lease-validation.yml scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          for path in $expected; do
+            test "$(git rev-parse "$PROVEN_HEAD:$path")" = "$(git hash-object "$path")"
+          done
+          git commit -m 'Capture P0: validate private Tuya build-UID read lease'
+          git fetch origin "$OWNER_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$OWNER_HEAD"
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$EXPECTED_OLD_HEAD" origin "HEAD:refs/heads/$TARGET_BRANCH"
