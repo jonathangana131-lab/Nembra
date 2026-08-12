@@ -1,0 +1,152 @@
+name: Capture Signed Origin APFS Owners-On Revocation
+
+on:
+  push:
+    branches:
+      - validation/v14-apfs-owners-on-revocation-sol-20260812
+    paths:
+      - .github/workflows/capture-signed-origin-apfs-owners-on-revocation.yml
+      - scripts/ci/tests/test_capture_signed_app_apfs_owners_on_revocation.py
+  pull_request:
+    paths:
+      - .github/workflows/capture-signed-origin-apfs-owners-on-revocation.yml
+      - scripts/ci/tests/test_capture_signed_app_apfs_owners_on_revocation.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-apfs-owners-on-revocation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owners-on-revocation:
+    name: Prove ownership-enforced pathname revocation
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact accepted dedicated-UID parent and two-path probe
+        shell: bash
+        env:
+          EXACT_PARENT: 98fdc404048812f6d3af6791710c57ece21dafd3
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          cat > "$RUNNER_TEMP/expected" <<'EOF'
+          .github/workflows/capture-signed-origin-apfs-owners-on-revocation.yml
+          scripts/ci/tests/test_capture_signed_app_apfs_owners_on_revocation.py
+          EOF
+          LC_ALL=C sort -o "$RUNNER_TEMP/expected" "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and source-audit probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-apfs-owners-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_dedicated_uid_freeze.py \
+            scripts/ci/tests/test_capture_signed_app_apfs_owners_on_revocation.py
+          probe='scripts/ci/tests/test_capture_signed_app_apfs_owners_on_revocation.py'
+          grep -Fq '"-owners",' "$probe"
+          grep -Fq '"on",' "$probe"
+          grep -Fq 'former build identity retained fresh pathname creation' "$probe"
+          grep -Fq 'former build identity retained existing-path mutation' "$probe"
+          grep -Fq 'normalDetachReturnCode' "$probe"
+          grep -Fq 'physicalAuthorityCreated' "$probe"
+          if grep -Fq 'preexec_fn=' "$probe"; then
+            printf 'Owners-on probe must reuse structured credentials, not preexec demotion.\n' >&2
+            exit 21
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run ownership-enforced APFS revocation probe
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-apfs-owners-on-revocation.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_apfs_owners_on_revocation.py 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'probe_status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Seal retained classification
+        if: always()
+        shell: bash
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/nembra-apfs-owners-on-revocation.log"
+          out="$RUNNER_TEMP/nembra-apfs-owners-on-revocation.json"
+          /usr/bin/python3 - "$log" "$out" "${PROBE_STATUS:-missing}" "$EXACT_HEAD" <<'PY'
+          import hashlib, json, pathlib, sys
+          log = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          status = sys.argv[3]
+          head = sys.argv[4].lower()
+          text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+          payload = {
+              "schemaVersion": 1,
+              "exactValidationHead": head,
+              "exactAcceptedParent": "98fdc404048812f6d3af6791710c57ece21dafd3",
+              "probeStatus": status,
+              "successEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_APFS_OWNERS_ON_REVOCATION_JSON=")],
+              "redEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_APFS_OWNERS_ON_REVOCATION_ERROR=")],
+              "probeLogSHA256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+              "physicalAuthorityCreated": False,
+          }
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: Retain owners-on revocation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-apfs-owners-on-revocation-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-apfs-owners-on-revocation.log
+            ${{ runner.temp }}/nembra-apfs-owners-on-revocation.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Require owners-on pathname revocation
+        shell: bash
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+        run: |
+          set -euo pipefail
+          test "${PROBE_STATUS:-missing}" = 0
+          log="$RUNNER_TEMP/nembra-apfs-owners-on-revocation.log"
+          grep -q '^NEMBRA_APFS_OWNERS_ON_REVOCATION_JSON=' "$log"
+          grep -q '"accepted": true' "$log"
+          grep -q '"attachOwners": "on"' "$log"
+          grep -q '"forbiddenFreshPathExists": false' "$log"
+          grep -q '"normalDetachReturnCode": 0' "$log"
+          grep -q '"physicalAuthorityCreated": false' "$log"
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          EXACT_PARENT: 98fdc404048812f6d3af6791710c57ece21dafd3
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
