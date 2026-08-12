@@ -7,9 +7,10 @@
   "workerId": "sol-20260812-0058jx",
   "leaseId": "capture-final-go-tests-0058jx-20260812-0843",
   "generation": 10,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T08:43:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:45:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:46:30Z",
+  "releasedAt": "2026-08-12T08:46:30Z",
   "leaseSeconds": 1800,
   "branch": "test/v14-final-go-retirement-darwin-diagnostic-sol-0058jx",
   "pr": 3151,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "7be03224c0f290bba4d2f1c624204c8c04047563",
   "takeoverFromWorkerId": "sol-20260812-0054j7",
   "takeoverFromLeaseId": "capture-final-go-tests-recovery-0054j7-20260812-0821",
-  "takeoverReason": "Generation 9 explicitly released after selecting #3120 as the sole current-parent Darwin witness. Exact #3120 run 31546285366 is terminal red only in the combined three-command sealed-retirement step, and connector-visible old-run logs are empty. Generation 10 is diagnostic-only, not a competing product validator.",
-  "checkpoint": "Draft diagnostic PR #3151 exact 7be03224c0f290bba4d2f1c624204c8c04047563 is a one-workflow successor of selected #3120@5b9dab6d. It preserves exact #3082 parent bind, current Final-GO compile, real _KqueueMutationBackend requirement, and full continuous tracked-tree replay. The old three-command step is replaced only with independent execution/retention for sealed-candidate-handoff, retirement-dispatch-custody, and committed-parent-execution; each raw log + return code is artifacted on all outcomes, SHA-sealed, and final verdict remains fail-closed. No production/permanent-test bytes changed. Initial exact-head generic Xcode is correctly SKIPPED for this workflow-only diagnostic; dedicated Darwin workflow has not yet appeared in connector run listing immediately after PR creation. PHYSICAL NO-GO."
+  "takeoverReason": "Generation 9 explicitly released after selecting #3120 as the sole current-parent Darwin witness. Generation 10 existed only to mechanically classify #3120's combined step-7 red without modifying product authority.",
+  "outcome": "EXACT_DARWIN_RED_CLASSIFIED_SEALED_HANDOFF_FIXTURE_CANONICAL_PATH",
+  "checkpoint": "#3151 exact 7be03224c0f290bba4d2f1c624204c8c04047563 run 31579701134 retained artifact 9134632893 digest sha256:c8552fccddb5e5448461a3b8dbe3c7197b89a1b88b7f862a596296311b67e9cc. Exact parent bind, compile, real _KqueueMutationBackend selection and whole-tree races all passed. Independent step-7 results: sealed-candidate-handoff rc1; retirement-dispatch-custody rc0; committed-parent-execution rc0. Sole failure is test_build_retires_before_candidate_context_release_and_post_handoff_mutation_is_not_input at test line 208: fixture compares lexical tempfile root /var/folders/... against production-canonical candidate_repo /private/var/folders/.... This is Darwin temp-root fixture spelling, not retirement authority defeat. Exact finding posted to #3120 comment 5264461162. Smallest repair: resolve the fixture root physically before passing/asserting candidate authority; do not weaken production canonicalization. Tests slot released for active primary or next worker. #3151 remains diagnostic-only/do-not-merge. PHYSICAL NO-GO."
 }
