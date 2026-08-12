@@ -1,6 +1,9 @@
 name: Temporary Retained Authority Python Resolution
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/tmp-retained-authority-python-resolution.yml
   push:
     branches:
       - validation/v14-dedicated-uid-retained-authority-matrix-sol-0054q9
@@ -17,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Resolve field and root Python executables
         shell: bash
@@ -28,21 +31,19 @@ jobs:
           echo '=== field /usr/bin/python3 ==='
           /usr/bin/python3 - <<'PY'
           import json, os, pathlib, subprocess, sys
-          def probe(label):
-              x = subprocess.run(['/usr/bin/xcrun','--find','python3'], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
-              p = pathlib.Path(sys.executable)
-              print('NEMBRA_PYTHON_RESOLUTION=' + json.dumps({
-                  'label': label,
-                  'uid': os.getuid(),
-                  'euid': os.geteuid(),
-                  'sysExecutable': sys.executable,
-                  'sysExecutableResolved': str(p.resolve(strict=True)),
-                  'xcrunReturnCode': x.returncode,
-                  'xcrunPython': x.stdout.strip(),
-                  'usrBinPythonRealpath': str(pathlib.Path('/usr/bin/python3').resolve(strict=True)),
-                  'samefileSysUsr': os.path.samefile(p.resolve(strict=True), '/usr/bin/python3'),
-              }, sort_keys=True))
-          probe('field')
+          x = subprocess.run(['/usr/bin/xcrun','--find','python3'], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+          p = pathlib.Path(sys.executable)
+          print('NEMBRA_PYTHON_RESOLUTION=' + json.dumps({
+              'label': 'field',
+              'uid': os.getuid(),
+              'euid': os.geteuid(),
+              'sysExecutable': sys.executable,
+              'sysExecutableResolved': str(p.resolve(strict=True)),
+              'xcrunReturnCode': x.returncode,
+              'xcrunPython': x.stdout.strip(),
+              'usrBinPythonRealpath': str(pathlib.Path('/usr/bin/python3').resolve(strict=True)),
+              'samefileSysUsr': os.path.samefile(p.resolve(strict=True), '/usr/bin/python3'),
+          }, sort_keys=True))
           PY
           echo '=== root /usr/bin/python3 ==='
           /usr/bin/sudo -n /usr/bin/python3 - <<'PY'
