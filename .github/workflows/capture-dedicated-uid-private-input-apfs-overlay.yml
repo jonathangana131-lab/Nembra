@@ -1,0 +1,176 @@
+name: Capture Dedicated UID Private Input APFS Overlay
+
+on:
+  push:
+    branches:
+      - validation/v14-dedicated-uid-private-input-apfs-overlay-sol-20260812
+    paths:
+      - .github/workflows/capture-dedicated-uid-private-input-apfs-overlay.yml
+      - scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-dedicated-uid-private-input-apfs-overlay-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  overlay-witness:
+    name: Prove same-path read-only private input overlay
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact two-path validation delta
+        shell: bash
+        env:
+          EXACT_PARENT: d1479f0dc3b350d0065318b39efd0eb6aa13e44d
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual_paths="$RUNNER_TEMP/nembra-private-overlay-actual.txt"
+          expected_paths="$RUNNER_TEMP/nembra-private-overlay-expected.txt"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$actual_paths"
+          cat > "$expected_paths" <<'EOF'
+          .github/workflows/capture-dedicated-uid-private-input-apfs-overlay.yml
+          scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py
+          EOF
+          LC_ALL=C sort -o "$expected_paths" "$expected_paths"
+          diff -u "$expected_paths" "$actual_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and source-audit overlay witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-overlay-pycache"
+          probe='scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py'
+          /usr/bin/python3 -m py_compile "$probe"
+          grep -Fq '"-owners",' "$probe"
+          grep -Fq '"on",' "$probe"
+          grep -Fq 'command.append("-readonly")' "$probe"
+          grep -Fq '"/usr/bin/ditto", "--noacl"' "$probe"
+          grep -Fq 'mode = 0o550' "$probe"
+          grep -Fq 'mode = 0o440' "$probe"
+          grep -Fq 'root_erofs_probe' "$probe"
+          grep -Fq 'overlayMountedOverNonEmptyDirectory' "$probe"
+          grep -Fq 'preopenedHiddenOriginalMutationIsolatedFromBuildView' "$probe"
+          grep -Fq 'fieldUIDVisibleWriteDenied' "$probe"
+          grep -Fq 'dedicatedUIDReadExact' "$probe"
+          grep -Fq 'normalReadOnlyDetachRequired' "$probe"
+          grep -Fq 'realPrivateTuyaBytesExercised' "$probe"
+          grep -Fq '"xcodebuildExercised": False' "$probe"
+          grep -Fq '"signingExercised": False' "$probe"
+          grep -Fq '"automaticProvisioningExercised": False' "$probe"
+          grep -Fq '"deviceExercised": False' "$probe"
+          grep -Fq '"bluetoothExercised": False' "$probe"
+          grep -Fq '"physicalAuthorityCreated": False' "$probe"
+          if grep -Fq '/usr/bin/xcodebuild' "$probe" || \
+             grep -Fq 'devicectl' "$probe" || \
+             grep -Fq 'ThingSmartHomeKit' "$probe"; then
+            printf 'Private-input overlay witness crossed its validation scope.\n' >&2
+            exit 21
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run real macOS APFS overlay witness
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/nembra-private-input-apfs-overlay.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_dedicated_uid_private_input_apfs_overlay.py 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'probe_status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Seal overlay evidence
+        if: always()
+        shell: bash
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+          EXACT_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/nembra-private-input-apfs-overlay.log"
+          out="$RUNNER_TEMP/nembra-private-input-apfs-overlay.json"
+          /usr/bin/python3 - "$log" "$out" "${PROBE_STATUS:-missing}" "$EXACT_HEAD" <<'PY'
+          import hashlib, json, pathlib, sys
+          log = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          status = sys.argv[3]
+          head = sys.argv[4].lower()
+          text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+          payload = {
+              "schemaVersion": 1,
+              "exactValidationHead": head,
+              "exactProductionParent": "d1479f0dc3b350d0065318b39efd0eb6aa13e44d",
+              "probeStatus": status,
+              "successEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_PRIVATE_INPUT_APFS_OVERLAY_JSON=")],
+              "redEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_PRIVATE_INPUT_APFS_OVERLAY_ERROR=")],
+              "probeLogSHA256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+              "realPrivateTuyaBytesExercised": False,
+              "productionBytesChanged": False,
+              "productionAcceptanceClaimed": False,
+              "physicalAuthorityCreated": False,
+          }
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: Retain exact overlay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-private-input-apfs-overlay-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nembra-private-input-apfs-overlay.log
+            ${{ runner.temp }}/nembra-private-input-apfs-overlay.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require immutable same-path overlay predicates
+        shell: bash
+        env:
+          PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
+        run: |
+          set -euo pipefail
+          test "${PROBE_STATUS:-missing}" = 0
+          log="$RUNNER_TEMP/nembra-private-input-apfs-overlay.log"
+          grep -q '^NEMBRA_PRIVATE_INPUT_APFS_OVERLAY_JSON=' "$log"
+          grep -q '"logicalLocalSecretsPathPreserved": true' "$log"
+          grep -q '"overlayMountedOverNonEmptyDirectory": true' "$log"
+          grep -q '"readOnlyOverlayRootEROFS": true' "$log"
+          grep -q '"snapshotMatchesAdmittedGeneration": true' "$log"
+          grep -q '"dedicatedUIDReadExact": true' "$log"
+          grep -q '"dedicatedUIDWriteDenied": true' "$log"
+          grep -q '"fieldUIDVisibleWriteDenied": true' "$log"
+          grep -q '"preopenedHiddenOriginalMutationOccurred": true' "$log"
+          grep -q '"preopenedHiddenOriginalMutationIsolatedFromBuildView": true' "$log"
+          grep -q '"realPrivateTuyaBytesExercised": false' "$log"
+          grep -q '"productionAcceptanceClaimed": false' "$log"
+          grep -q '"physicalAuthorityCreated": false' "$log"
+
+      - name: Diff hygiene
+        if: always()
+        shell: bash
+        env:
+          EXACT_PARENT: d1479f0dc3b350d0065318b39efd0eb6aa13e44d
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
