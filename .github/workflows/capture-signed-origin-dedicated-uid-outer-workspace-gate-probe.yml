@@ -1,6 +1,9 @@
 name: Capture Dedicated UID Outer Workspace Gate Probe
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-signed-origin-dedicated-uid-outer-workspace-gate-probe.yml
   push:
     branches:
       - validation/v14-dedicated-uid-outer-workspace-gate-sol-0054q9
@@ -14,12 +17,13 @@ permissions:
 jobs:
   outer-workspace-gate:
     name: Re-run retained authority behind root-owned outer gate
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -27,7 +31,7 @@ jobs:
         shell: bash
         env:
           EXACT_RED_PARENT: 13004842cfe1bde9d8099821c8e251dda8b86e06
-          EXPECTED_HEAD: ${{ github.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
@@ -91,7 +95,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: nembra-dedicated-uid-outer-workspace-gate-${{ github.run_id }}
+          name: nembra-dedicated-uid-outer-workspace-gate-${{ github.event.pull_request.number || github.run_id }}
           path: |
             ${{ runner.temp }}/nembra-outer-gate-dirfd.txt
             ${{ runner.temp }}/nembra-outer-gate-mmap.txt
