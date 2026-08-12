@@ -7,9 +7,10 @@
   "workerId": "sol-20260812-0054j7",
   "leaseId": "capture-final-go-review-0054j7-20260812-0804",
   "generation": 17,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T08:04:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:04:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:08:00Z",
+  "releasedAt": "2026-08-12T08:08:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3120,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "5b9dab6d9ab5fb456222e955fd20a144c230d2d6",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-final-go-review-1607ax-20260811-2321",
-  "takeoverReason": "Generation-16 was explicitly RELEASED while the current Darwin exact-descendant was queued. Generation-17 independently classifies the now-terminal #3120 exact-head Darwin and Xcode failures against selected #3082@4a2c2002.",
-  "checkpoint": "Claim acquired for exact-head Final-GO adversarial review. #3120@5b9dab6d now has terminal Darwin and Xcode failures. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-16 was explicitly RELEASED while the current Darwin exact-descendant was queued. Generation-17 independently classified the now-terminal #3120 exact-head Darwin and Xcode failures against selected #3082@4a2c2002.",
+  "outcome": "EXISTING_EXACT_REVIEW_CONFIRMED_STATE_RECONCILED",
+  "checkpoint": "#3120@5b9dab6d run 31546285366 is terminal FAILURE. Parent bind, compile, real Darwin _KqueueMutationBackend selection, and whole-tree real-kqueue race replay all passed; failure is later at 'Prove sealed retirement dispatch on Darwin'. Existing exact review 4914278154 already records the correct unclassified-log boundary. GitHub connector logs endpoint returned no content, so no inner command/assertion is guessed. Reconciled capture-final-go-authority lane at swarm-state commit 74c3bc90b10b866800200c6f1e80380ceae622fa to current #3082@4a2c2002/#3120@5b9dab6d and terminal red state. PHYSICAL NO-GO."
 }
