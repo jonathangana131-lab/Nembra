@@ -136,6 +136,39 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertNotIn("_terminate_remaining_process_group", source)
         self.assertNotIn("preexec_fn=", source)
 
+    def test_apfs_attach_enforces_ownership_for_writable_and_readonly_mounts(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_owners_on")
+        image = Path("/private/tmp/nembra-origin.sparseimage")
+        mountpoint = Path("/private/tmp/nembra-origin-mount")
+        payload = helper.plistlib.dumps(
+            {
+                "system-entities": [
+                    {
+                        "mount-point": str(mountpoint),
+                        "dev-entry": "/dev/disk99s1",
+                    }
+                ]
+            }
+        )
+        commands: list[list[str]] = []
+
+        def completed(command, **_kwargs):
+            commands.append(list(command))
+            return helper.subprocess.CompletedProcess(command, 0, stdout=payload, stderr=b"")
+
+        with mock.patch.object(helper.subprocess, "run", side_effect=completed):
+            self.assertEqual(helper._attach_apfs(image, mountpoint, readonly=False), "/dev/disk99s1")
+            self.assertEqual(helper._attach_apfs(image, mountpoint, readonly=True), "/dev/disk99s1")
+
+        self.assertEqual(len(commands), 2)
+        for command in commands:
+            owners_index = command.index("-owners")
+            self.assertEqual(command[owners_index + 1], "on")
+            self.assertLess(owners_index, command.index("-mountpoint"))
+            self.assertEqual(command.count("-owners"), 1)
+        self.assertNotIn("-readonly", commands[0])
+        self.assertIn("-readonly", commands[1])
+
     def test_placeholder_is_exactly_single_use(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody")
         derived = Path("/private/tmp/example")
