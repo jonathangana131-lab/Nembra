@@ -9,7 +9,7 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T07:54:45Z",
-  "lastHeartbeatAt": "2026-08-12T08:32:30Z",
+  "lastHeartbeatAt": "2026-08-12T08:36:22Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-dedicated-uid-retained-authority-matrix-sol-0054q9",
   "pr": 3143,
