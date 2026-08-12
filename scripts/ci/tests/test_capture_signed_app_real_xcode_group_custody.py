@@ -273,6 +273,23 @@ def root_probe(
 
         os.chown(mountpoint, 0, 0)
         os.chmod(mountpoint, 0o700)
+        former_build_writable_attack = subprocess.run(
+            ["/bin/sh", "-c", 'printf X >> "$1"', "sh", str(product)],
+            env=build_environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            **structured_credentials(build_uid, build_gid, []),
+        )
+        if former_build_writable_attack.returncode == 0 or sha256(product) != before:
+            emit_error(
+                "path-revocation",
+                "former build identity retained fresh writable pathname authority after root revocation",
+            )
+            return 75
+
         detach = helper._detach_apfs(writable_device)
         detach_text = (detach.stdout or "") + "\n" + (detach.stderr or "")
         if detach.returncode != 0:
@@ -344,7 +361,7 @@ def root_probe(
         identity_created = False
 
         evidence = {
-            "schemaVersion": 4,
+            "schemaVersion": 5,
             "fieldUID": field_uid,
             "fieldPrimaryGID": field_gid,
             "fieldActiveSupplementaryGroups": field_active_groups,
@@ -359,6 +376,7 @@ def root_probe(
             "fieldActiveGroupsContainBuildGID": build_gid in field_active_groups,
             "xcodebuildReturnCode": build.returncode,
             "fieldAttackReturnCode": attack.returncode,
+            "formerBuildWritablePathAttackReturnCode": former_build_writable_attack.returncode,
             "nonForcedDetachReturnCode": detach.returncode,
             "rootReadonlyAttackReturnCode": root_attack.returncode,
             "formerBuildReadonlyAttackReturnCode": former_build_attack.returncode,
@@ -450,7 +468,7 @@ def parent_probe() -> int:
         evidence = json.loads(records[0])
         build_directory_groups = evidence.get("buildDirectoryServiceGroups")
         required = (
-            evidence.get("schemaVersion") == 4
+            evidence.get("schemaVersion") == 5
             and evidence.get("fieldUID") == field_uid
             and evidence.get("fieldPrimaryGID") == field_gid
             and evidence.get("fieldActiveSupplementaryGroups") == field_active_groups
@@ -464,6 +482,7 @@ def parent_probe() -> int:
             and evidence.get("buildIdentityDistinctFromField") is True
             and evidence.get("xcodebuildReturnCode") == 0
             and evidence.get("fieldAttackReturnCode") != 0
+            and evidence.get("formerBuildWritablePathAttackReturnCode") != 0
             and evidence.get("nonForcedDetachReturnCode") == 0
             and evidence.get("rootReadonlyAttackReturnCode") != 0
             and evidence.get("formerBuildReadonlyAttackReturnCode") != 0
