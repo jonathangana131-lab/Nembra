@@ -40,6 +40,7 @@ APFS_VOLUME_NAME = "NembraCaptureOrigin"
 DEFAULT_APP_RELATIVE = Path("Build/Products/Debug-iphoneos/Nembra Capture.app")
 DERIVED_PLACEHOLDER = "__NEMBRA_PROTECTED_DERIVED__"
 GROUP_ATTESTOR_MARKER = "NEMBRA_BUILD_IDENTITY_GROUPS="
+EXEC_ATTEST_EXIT = 86
 
 
 class BuildOriginCustodyError(RuntimeError):
@@ -164,6 +165,86 @@ def _attest_build_identity_groups(
     if effective.intersection(field_only):
         raise BuildOriginCustodyError("field-only group authority leaked into the dedicated-build child")
     return baseline
+
+
+def _run_exec_bound_build(
+    command: Sequence[str],
+    *,
+    name: str,
+    uid: int,
+    gid: int,
+    baseline_groups: Sequence[int],
+    environment: dict[str, str],
+    cwd: Path,
+) -> subprocess.CompletedProcess[str]:
+    if not command or not os.path.isabs(command[0]):
+        raise BuildOriginCustodyError("guarded build command must start with one absolute executable path")
+    normalized_baseline = sorted({int(value) for value in baseline_groups if int(value) != gid})
+    if any(value <= 0 for value in normalized_baseline):
+        raise BuildOriginCustodyError("exec-bound build baseline contains invalid group authority")
+
+    exec_environment = dict(environment)
+    exec_environment.update(
+        {
+            "NEMBRA_EXEC_ATTEST_EXPECTED_UID": str(uid),
+            "NEMBRA_EXEC_ATTEST_EXPECTED_GID": str(gid),
+            "NEMBRA_EXEC_ATTEST_EXPECTED_USER": name,
+            "NEMBRA_EXEC_ATTEST_EXPECTED_GROUPS_JSON": json.dumps(normalized_baseline),
+        }
+    )
+    launcher = r'''
+import json
+import os
+import pwd
+import sys
+
+keys = (
+    "NEMBRA_EXEC_ATTEST_EXPECTED_UID",
+    "NEMBRA_EXEC_ATTEST_EXPECTED_GID",
+    "NEMBRA_EXEC_ATTEST_EXPECTED_USER",
+    "NEMBRA_EXEC_ATTEST_EXPECTED_GROUPS_JSON",
+)
+uid = int(os.environ[keys[0]])
+gid = int(os.environ[keys[1]])
+user = os.environ[keys[2]]
+expected = sorted(set(json.loads(os.environ[keys[3]])))
+real_uid = os.getuid()
+real_gid = os.getgid()
+try:
+    resolved = pwd.getpwuid(real_uid).pw_name
+except KeyError:
+    resolved = "<unresolved>"
+distinct = sorted(group for group in set(os.getgroups()) if group != gid)
+identity_exact = (
+    real_uid == uid
+    and os.geteuid() == uid
+    and real_gid == gid
+    and os.getegid() == gid
+    and resolved == user
+)
+if not identity_exact or distinct != expected:
+    print("ERROR: exec-bound dedicated-build credential attestation failed", file=sys.stderr, flush=True)
+    raise SystemExit(86)
+for key in keys:
+    os.environ.pop(key, None)
+command = sys.argv[2:] if len(sys.argv) > 1 and sys.argv[1] == "--" else sys.argv[1:]
+if not command or not os.path.isabs(command[0]):
+    print("ERROR: exec-bound guarded command is not absolute", file=sys.stderr, flush=True)
+    raise SystemExit(86)
+os.execve(command[0], command, os.environ)
+raise SystemExit(86)
+'''
+    return subprocess.run(
+        ["/usr/bin/python3", "-B", "-I", "-c", launcher, "--", *command],
+        cwd=cwd,
+        env=exec_environment,
+        stdin=None,
+        stdout=sys.stderr,
+        stderr=sys.stderr,
+        text=True,
+        check=False,
+        **_structured_credentials(uid, gid, ()),
+    )
 
 
 def _group_names(groups: Sequence[int]) -> tuple[str, ...]:
@@ -731,7 +812,7 @@ def run_custodied_build(
         build_env = _build_environment(build_name, home)
         os.chown(home / "tmp", build_uid, build_gid)
         os.chmod(home / "tmp", 0o700)
-        _attest_build_identity_groups(
+        build_groups = _attest_build_identity_groups(
             build_name,
             build_uid,
             build_gid,
@@ -747,16 +828,14 @@ def run_custodied_build(
 
         derived_root = mountpoint / "DerivedData"
         guarded_command = _replace_derived_placeholder(command, derived_root)
-        build = subprocess.run(
+        build = _run_exec_bound_build(
             guarded_command,
-            cwd=os.getcwd(),
-            env=build_env,
-            stdin=None,
-            stdout=sys.stderr,
-            stderr=sys.stderr,
-            text=True,
-            check=False,
-            **_structured_credentials(build_uid, build_gid, ()),
+            name=build_name,
+            uid=build_uid,
+            gid=build_gid,
+            baseline_groups=build_groups,
+            environment=build_env,
+            cwd=Path(os.getcwd()),
         )
 
         # Revoke fresh pathname authority before interpreting status. Authority is
@@ -772,6 +851,8 @@ def run_custodied_build(
             )
         writable_device = None
 
+        if build.returncode == EXEC_ATTEST_EXIT:
+            raise BuildOriginCustodyError("exec-bound dedicated-build credential attestation failed")
         if build.returncode != 0:
             raise BuildOriginCustodyError(f"guarded field build failed with exit status {build.returncode}")
 
