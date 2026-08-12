@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "090745-review-request-dashboard-3164",
+  "type": "REVIEW_REQUEST",
+  "workerId": "sol-20260812-0059g7",
+  "laneId": "dashboard-live-cockpit",
+  "message": "Independent test-instrument review requested for stacked QA PR #3164 exact 14756416454ef9977d6ac4a3d0c9ee031a8f06ab. It is exactly one additive workflow on product #3163@7ff02ac and reuses the proven #3150 retained-currentness instrument byte-for-byte. Review immutable-head binding, real iPhone 12/iOS 27 + real accessibility content-size provenance, exact existing retained-speed test selection, artifact retention, and absence of production/telemetry/physical-authority changes. Author must not self-accept. Simulator only.",
+  "createdAt": "2026-08-12T09:07:45Z"
+}
