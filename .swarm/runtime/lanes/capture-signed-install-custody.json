@@ -10,36 +10,44 @@
   "dependencies": [],
   "blockers": [
     {
-      "id": "production-dedicated-build-uid-composition-pending",
+      "id": "dedicated-build-uid-apfs-production-successor-needs-retirement-fix",
       "state": "ACTIVE",
       "scope": "lane",
-      "reason": "Current selected production carrier #3056 exact b8653985ff35538491c6a1c6f9e3461b52a7e4e6 has re-earned Field Build run 31548257797 and Main Selective Graft run 31548257656, but Signed App Install Custody run 31548257832 is terminal FAILURE. Both Linux and real-Xcode jobs fail the compiler-output composition fixtures because the old capability/group-isolated writer path cannot create/read parts of DerivedData/SourcePackages. This is a substantive architecture failure, not queued/flaky evidence. Production must consume the accepted dedicated-build-UID/APFS freeze architecture rather than retry the old group model.",
-      "pr": 3056,
-      "headSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6"
+      "reason": "Current production successor is #3142 exact f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f on defeated #3056@b8653985. It correctly replaces the old supplementary-capability-GID/process-group DerivedData topology with a dedicated UID/GID + zero supplementary groups + writable APFS output, normal non-forced quiescence before result interpretation, read-only remount/explicit EROFS proof, frozen-source fingerprint, root-owned no-ACL stage, and exact staged fingerprint equality. Ancestor da41 exact Signed App Install Custody 31577350783 and Main 31577350692 were SUCCESS; Field 31577350832 was RED only because its source contract still required retired os.chmod(derived, 0o770). f486 fixes that Field oracle with the new APFS invariants, but all moved-head gates reset and are not yet accepted. Independent reviews 4914432389 and 4914440707 found one remaining blocking lifecycle defect: _remove_local_build_identity uses unchecked pkill/dscl cleanup and no user/group-absence postcondition, so a nominally successful build can return an accepted stage without mechanically proving the hidden build principal retired. Make successful promotion fail closed on verified principal retirement and add a failure-path regression before accepting this successor. PHYSICAL NO-GO.",
+      "pr": 3142,
+      "headSHA": "f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f"
     },
     {
-      "id": "dedicated-build-uid-validation-accepted-production-consumption-pending",
-      "state": "ACTIVE",
+      "id": "dedicated-build-uid-validation-accepted",
+      "state": "RESOLVED",
       "scope": "architecture-validation",
-      "reason": "Validation-only #3131 exact 98fdc404048812f6d3af6791710c57ece21dafd3 is the accepted current architecture witness. Real-macOS run 31547634222 is terminal SUCCESS and independently binds the dedicated build UID/GID across sudo identity replay while proving the APFS read-only freeze model. This earns architecture evidence only; it does not accept #3056 until that design is deliberately composed into production and the exact successor head re-earns its gates.",
+      "reason": "Validation-only #3131 exact 98fdc404048812f6d3af6791710c57ece21dafd3 is accepted architecture evidence. Real-macOS run 31547634222 is terminal SUCCESS and independently binds the dedicated build UID/GID across sudo identity replay while proving normal non-forced APFS detach, byte-identical read-only remount, and field/root/former-build mutation denial with physicalAuthorityCreated=false. #3142 deliberately consumes this architecture; validation green never substitutes for #3142 production acceptance.",
       "pr": 3131,
       "headSHA": "98fdc404048812f6d3af6791710c57ece21dafd3"
     },
     {
-      "id": "signed-apple-development-custody-still-unresolved",
+      "id": "field-provenance-apfs-oracle-moved-head-pending",
+      "state": "ACTIVE",
+      "scope": "acceptance",
+      "reason": "Ancestor #3142@da41 Field run 31577350832 failed exactly at a stale source assertion requiring os.chmod(derived, 0o770), while private Tuya provenance and signed Apple application-identity source checks passed. Current f486 changes only capture-field-build-provenance.yml to require the new dedicated UID/APFS/quiescence/read-only-remount contract and reject the retired capability/process-group design. Source review accepts that oracle change, but exact f486 Field run 31577777848 is queued at this checkpoint and cannot be promoted before terminal success. Ancestor green/red is supporting evidence only after the head move.",
+      "pr": 3142,
+      "headSHA": "f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f"
+    },
+    {
+      "id": "signed-apple-development-private-input-feasibility-unresolved",
       "state": "ACTIVE",
       "scope": "signing",
-      "reason": "The accepted #3131 witness is unsigned architecture validation. Apple Development keychain/provisioning custody and the protected signed-app handoff remain separate production requirements and must be proven on the final composed exact head before install authority can be accepted.",
-      "pr": 3056,
-      "headSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6"
+      "reason": "#3142 still executes the real private Tuya build-window guard plus Automatic Apple signing/provisioning inside the dedicated build identity. The canonical Signed Install real-Xcode oracle proves compiler-output/APFS custody but deliberately does not prove access to the field user's mode-restricted Tuya inputs, Apple Development keychain identity, provisioning updates/device registration, or final signed iOS workspace. If real signed field feasibility is red, introduce a narrower custodied input/signing handoff; do not restore field-user writable compiler-output authority merely to obtain green.",
+      "pr": 3142,
+      "headSHA": "f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f"
     },
     {
       "id": "signed-install-final-composition-pending",
       "state": "ACTIVE",
       "scope": "flagship",
-      "reason": "After the dedicated-UID/APFS design is composed, signed-install must converge with current build authority, authenticated private identity, Final-GO, runtime/accessibility and flagship app composition and re-earn protected-stage, signature/profile/CoreDevice, Field/Main/Xcode and adversarial exact-head gates. Validation success alone never authorizes installation or scooter interaction.",
-      "pr": 3056,
-      "headSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6"
+      "reason": "After #3142 earns exact production acceptance and real signed/private feasibility, signed-install still must converge with current selected-Xcode/build authority, accepted private identity plus its source-root consumer seam, Final-GO Darwin authority, runtime accessibility and the accepted app-visible Capture product on one unchanged exact composition. Re-run protected-stage, signature/profile/CoreDevice, Field/Main/Xcode, adversarial and final procedure gates there. No validation or package-only result authorizes installation or scooter interaction.",
+      "pr": 3142,
+      "headSHA": "f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f"
     }
   ],
   "mode": "exclusive",
@@ -61,22 +69,35 @@
   ],
   "acceptance": {"independentReview": true},
   "physical": {"required": true, "state": "PHYSICAL_NO_GO"},
-  "sourceSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
+  "sourceSHA": "f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f",
   "legacy": {
-    "reconciledAt": "2026-08-12T08:04:00Z",
-    "activeProductionPR": 3056,
-    "activeProductionHeadSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
-    "activeProductionSignedAppRun": 31548257832,
-    "activeProductionSignedAppOutcome": "FAILURE",
-    "activeProductionFieldRun": 31548257797,
-    "activeProductionFieldOutcome": "SUCCESS",
-    "activeProductionMainRun": 31548257656,
-    "activeProductionMainOutcome": "SUCCESS",
+    "reconciledAt": "2026-08-12T08:27:00Z",
+    "defeatedProductionPR": 3056,
+    "defeatedProductionHeadSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
+    "currentProductionSuccessorPR": 3142,
+    "currentProductionSuccessorHeadSHA": "f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f",
+    "ancestorSuccessorHeadSHA": "da41ece59fc2ad9b72fb4054d37c35d70679092c",
+    "ancestorSignedInstallRun": 31577350783,
+    "ancestorSignedInstallOutcome": "SUCCESS",
+    "ancestorMainRun": 31577350692,
+    "ancestorMainOutcome": "SUCCESS",
+    "ancestorFieldRun": 31577350832,
+    "ancestorFieldOutcome": "FAILURE_STALE_SOURCE_ORACLE",
+    "currentSignedInstallRun": 31577777765,
+    "currentSignedInstallState": "QUEUED",
+    "currentFieldRun": 31577777848,
+    "currentFieldState": "QUEUED",
+    "currentMainRun": 31577777828,
+    "currentMainState": "QUEUED",
+    "currentXcodeRun": 31577778204,
+    "currentXcodeState": "SKIPPED_NOT_ACCEPTANCE",
     "acceptedDedicatedUIDValidationPR": 3131,
     "acceptedDedicatedUIDValidationHeadSHA": "98fdc404048812f6d3af6791710c57ece21dafd3",
     "acceptedDedicatedUIDValidationRun": 31547634222,
     "acceptedDedicatedUIDValidationOutcome": "SUCCESS",
-    "knownExactHeadFinding": "Reconciled generation 11 on 2026-08-12. #3056@b8653985 is the selected production carrier: Field/Main are green but Signed App Install Custody is red in the compiler-output composition fixtures with DerivedData/SourcePackages permission failures. #3131@98fdc404 is accepted real-macOS validation of the dedicated build UID/GID plus APFS read-only freeze architecture and exact field-identity replay. The next production rung is deliberate composition of that accepted architecture into #3056, followed by exact-head signing/install/adversarial gates. Apple Development keychain/provisioning custody and final flagship composition remain unresolved. PHYSICAL NO-GO."
+    "reviewIds": [4914432389,4914440707],
+    "blockingReviewFinding": "ephemeral build user/group retirement is unchecked best-effort and has no mechanical absence postcondition; successful promotion must fail closed if principal retirement fails",
+    "knownExactHeadFinding": "Reconciled generation 14 on 2026-08-12. #3142@f4863bde is the current dedicated-UID/APFS production successor. Its immediate parent da41 proved Signed Install + Main green; da41 Field red was only a stale old-topology source oracle and f486 fixes that oracle source-correctly. The moved head resets all gates. Independent exact review still blocks production acceptance because ephemeral build-principal retirement is best-effort/unverified, and real private Tuya + Apple Development/keychain/provisioning feasibility remains unproven. PHYSICAL NO-GO."
   },
-  "tags": ["capture", "p0", "signed-app", "device-install", "compiler-output-origin", "open-fd", "git-authority", "legacy-import"]
+  "tags": ["capture", "p0", "signed-app", "device-install", "compiler-output-origin", "apfs-freeze", "dedicated-build-uid", "git-authority", "legacy-import"]
 }
