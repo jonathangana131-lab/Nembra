@@ -91,6 +91,22 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection chronology is unavailable or invalid."))
     }
 
+    @Test("initial authenticated callbacks do not prove notify survival past rejection window")
+    func payloadMustSurviveHistoricalRejectionWindow() {
+        let authenticatedAt: UInt64 = 10
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds - 1,
+            connectionGeneration: 1
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated application payloads have not survived beyond the historical rejection window yet."))
+    }
+
     @Test("authenticated payloads still require full physical stability window")
     func durationRequired() {
         let authenticatedAt: UInt64 = 10
@@ -101,13 +117,13 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds - 1,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
             connectionGeneration: 1
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection has not survived the physical stability window yet."))
     }
 
-    @Test("repeated authenticated SDK payloads and 45 second survival unlock stationary mapping")
+    @Test("repeated authenticated SDK payloads past rejection window and 45 second survival unlock stationary mapping")
     func acceptedSDKPhysicalGate() {
         let authenticatedAt: UInt64 = 10
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
@@ -117,7 +133,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
             connectionGeneration: 2
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
@@ -133,7 +149,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
             connectionGeneration: 3
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation."))
