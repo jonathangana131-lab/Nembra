@@ -12,6 +12,11 @@ DEFAULT_RESOURCE_LEASE_SECONDS=1800
 MAX_EVENT_MESSAGE=4000
 MAX_TEXT_FIELD=8000
 MAX_LIST_ITEMS=256
+MAX_DATA_OBJECT_KEYS=128
+MAX_V16_REGISTRY_KEYS=4096
+V16_REGISTRY_PATHS={
+    '$.missions','$.objectives','$.blockers','$.workItems','$.solutions','$.evidence','$.branches','$.agents','$.migration.classifiedPRs'
+}
 ID_RE=re.compile(r'^[a-z0-9][a-z0-9._-]{0,63}$')
 WORKER_RE=re.compile(r'^sol-[0-9]{8}-[a-z0-9]{4,16}$')
 SHA40_RE=re.compile(r'^[0-9a-f]{40}$')
@@ -84,16 +89,19 @@ def _schema(r):
     if v not in SUPPORTED_SCHEMA_VERSIONS: raise ValidationError(f'unsupported schemaVersion {v!r}')
     return v
 
-def validate_data_only(v,path='$'):
+def validate_data_only(v,path='$',_v16_graph=False):
+    if path=='$' and isinstance(v,dict):
+        _v16_graph=v.get('schemaVersion')==16 and v.get('kind')=='mission-graph'
     if isinstance(v,dict):
-        if len(v)>128: raise ValidationError(f'{path} too many keys')
+        max_keys=MAX_V16_REGISTRY_KEYS if _v16_graph and path in V16_REGISTRY_PATHS else MAX_DATA_OBJECT_KEYS
+        if len(v)>max_keys: raise ValidationError(f'{path} too many keys')
         for k,x in v.items():
             if not isinstance(k,str) or len(k)>128: raise ValidationError(f'{path} invalid key')
             if k.lower().replace('_','').replace('-','') in FORBIDDEN_KEYS: raise ValidationError(f'{path}.{k} executable control field forbidden')
-            validate_data_only(x,f'{path}.{k}')
+            validate_data_only(x,f'{path}.{k}',_v16_graph)
     elif isinstance(v,list):
         if len(v)>MAX_LIST_ITEMS: raise ValidationError(f'{path} too many items')
-        for i,x in enumerate(v): validate_data_only(x,f'{path}[{i}]')
+        for i,x in enumerate(v): validate_data_only(x,f'{path}[{i}]',_v16_graph)
     elif isinstance(v,str):
         if len(v)>MAX_TEXT_FIELD or '\x00' in v: raise ValidationError(f'{path} invalid text')
     elif v is None or isinstance(v,(bool,int,float)): pass
