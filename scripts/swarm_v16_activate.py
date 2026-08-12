@@ -15,6 +15,38 @@ import swarm_control as sc
 from swarm_v16_dogfood import ingest_live, self_integration_proof
 
 
+# validate_data_only intentionally limits ordinary maps to 128 keys. Live PR
+# classification is migration evidence, not the scheduling source of truth, so
+# persist a bounded deterministic witness set instead of weakening that global
+# defensive limit as repository PR count grows.
+MAX_PERSISTED_PR_CLASSIFICATIONS=128
+
+
+def compact_pr_classifications(candidate: dict, summary: dict) -> None:
+    migration=candidate.setdefault('migration',{})
+    classified=migration.get('classifiedPRs',{})
+    if not isinstance(classified,dict):
+        raise sc.ValidationError('migration.classifiedPRs must be an object')
+    total=len(classified)
+    migration['classifiedPRTotal']=total
+    migration['classifiedPRsTruncated']=total>MAX_PERSISTED_PR_CLASSIFICATIONS
+    if total<=MAX_PERSISTED_PR_CLASSIFICATIONS:
+        return
+
+    # Canonical selections and duplicate-suppression witnesses are the
+    # classifications that activation must never discard. Fill the remainder
+    # with newest PR numbers so recovery gets the freshest bounded snapshot.
+    required=[]
+    for field in ('selectedCanonicalPRs','duplicatesSuppressed'):
+        for number in summary.get(field,[]):
+            key=str(number)
+            if key in classified and key not in required:
+                required.append(key)
+    newest=sorted(classified,key=lambda key:int(key),reverse=True)
+    retained=(required+[key for key in newest if key not in required])[:MAX_PERSISTED_PR_CLASSIFICATIONS]
+    migration['classifiedPRs']={key:classified[key] for key in retained}
+
+
 def activate(repo: str, token: str, state_branch: str, *, main_sha: str = '') -> dict:
     state_store=sc.GitHubContentsStore(repo,token,state_branch)
     service=sc.v16_graph_service(state_store)
@@ -24,6 +56,7 @@ def activate(repo: str, token: str, state_branch: str, *, main_sha: str = '') ->
 
     candidate,summary=ingest_live(repo,token,state_branch)
     summary['selfIntegrationProof']=self_integration_proof(candidate)
+    compact_pr_classifications(candidate,summary)
     sc.migration_phase(candidate,'READY_TO_ACTIVATE')
     candidate['migration']['activationMainSHA']=main_sha
     candidate['migration']['destructiveActionsAllowed']=False
