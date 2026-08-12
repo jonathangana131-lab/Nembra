@@ -66,8 +66,11 @@ jobs:
           probe='scripts/ci/tests/test_capture_signed_app_dedicated_uid_effective_groups.py'
           grep -Fq 'parent.structured_credentials(build_uid, build_gid, [])' "$probe"
           grep -Fq 'rawKernelSupplementaryGroups' "$probe"
-          grep -Fq 'productionShapedDistinctSupplementaryGroups' "$probe"
-          grep -Fq 'productionShapedInheritedFieldGroups' "$probe"
+          grep -Fq 'buildDirectoryServiceDistinctSupplementaryGroups' "$probe"
+          grep -Fq 'productionShapedUnexpectedGroupsBeyondDirectoryService' "$probe"
+          grep -Fq 'productionShapedMissingDirectoryServiceGroups' "$probe"
+          grep -Fq 'productionShapedFieldOnlyGroupsLeaked' "$probe"
+          grep -Fq 'effectiveZeroSupplementaryGroupsClaim' "$probe"
           grep -Fq 'sudoIdentityBoundDiagnostic' "$probe"
           grep -Fq 'physicalAuthorityCreated' "$probe"
           if grep -Fq 'preexec_fn=' "$probe"; then
@@ -107,7 +110,7 @@ jobs:
           head = sys.argv[4].lower()
           text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
           payload = {
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "exactValidationHead": head,
               "exactAcceptedParent": "98fdc404048812f6d3af6791710c57ece21dafd3",
               "probeStatus": status,
@@ -131,7 +134,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Require production-shaped effective credential acceptance
+      - name: Require exact fresh-account effective credential baseline
         shell: bash
         env:
           PROBE_STATUS: ${{ steps.probe.outputs.probe_status }}
@@ -141,8 +144,11 @@ jobs:
           log="$RUNNER_TEMP/nembra-dedicated-uid-effective-groups.log"
           grep -q '^NEMBRA_DEDICATED_UID_EFFECTIVE_GROUPS_JSON=' "$log"
           grep -q '"productionShapedKernelGroupsAccepted": true' "$log"
-          grep -q '"productionShapedDistinctSupplementaryGroups": \[\]' "$log"
-          grep -q '"productionShapedInheritedFieldGroups": \[\]' "$log"
+          grep -q '"productionShapedDirectoryServiceBaselinePreservedExact": true' "$log"
+          grep -q '"productionShapedUnexpectedGroupsBeyondDirectoryService": \[\]' "$log"
+          grep -q '"productionShapedMissingDirectoryServiceGroups": \[\]' "$log"
+          grep -q '"productionShapedFieldOnlyGroupsLeaked": \[\]' "$log"
+          grep -q '"effectiveZeroSupplementaryGroupsClaim": false' "$log"
           grep -q '"physicalAuthorityCreated": false' "$log"
 
       - name: Diff hygiene
