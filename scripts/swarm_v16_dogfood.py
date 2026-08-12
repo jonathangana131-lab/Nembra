@@ -40,6 +40,7 @@ def ingest_live(repo: str, token: str, state_branch: str, *, now=None) -> tuple[
     lanes=[stored.value for _,stored in state.list('.swarm/runtime/lanes')]
     prs=fetch_open_prs(repo,token)
     graph=sc.seed_nembra_graph(now)
+    sc.migration_phase(graph,'IMPORTING',now=now)
     for lane in lanes: sc.migrate_legacy_lane(graph,lane,now=now)
     classifications=sc.classify_prs(prs)
     graph['migration']['classifiedPRs']={str(item['pr']):item for item in classifications}
@@ -54,16 +55,17 @@ def ingest_live(repo: str, token: str, state_branch: str, *, now=None) -> tuple[
         blocker_ids=[bid for bid in graph['objectives'][oid]['blockerIds'] if graph['blockers'][bid]['state']!='RESOLVED']
         blocker_id=blocker_ids[0] if blocker_ids else ''
         wid=f'live-pr-{number}'
-        _,decision=sc.add_work_item(graph,work_item_id=wid,mission_id=graph['objectives'][oid]['missionId'],objective_id=oid,blocker_id=blocker_id,title=pr.get('title') or wid,outcome=lane.get('objective') or 'close selected canonical work',primary_scope=list(lane.get('allowedWriteAreas',[])),allowed_adjacent_scope=list(lane.get('adjacentWriteAreas',[])),forbidden_areas=(['physical action without explicit external PHYSICAL_GO'] if (lane.get('physical') or {}).get('required') else []),branch=branch,source={'pr':number,'headSHA':(pr.get('head') or {}).get('sha',''),'classification':'canonical-candidate'},now=now)
+        _,decision=sc.add_work_item(graph,work_item_id=wid,mission_id=graph['objectives'][oid]['missionId'],objective_id=oid,blocker_id=blocker_id,title=pr.get('title') or wid,outcome=lane.get('objective') or 'close selected canonical work',primary_scope=list(lane.get('allowedWriteAreas',[])),allowed_adjacent_scope=list(lane.get('adjacentWriteAreas',[])),forbidden_areas=(['physical action without explicit external PHYSICAL_GO'] if (lane.get('physical') or {}).get('required') else []),branch=branch,source={'pr':number,'headSHA':(pr.get('head') or {}).get('sha',''),'classification':'canonical-candidate','selectionAuthority':'legacy-selected-production'},now=now)
         if not decision.duplicate: selected.append(number)
         # Prove that validation descendants are assistance/evidence, not accidental branches.
         peer=next((item for item in classifications if item['lane']==lane['laneId'] and item['classification'] in {'validation','duplicate'}),None)
         if peer and blocker_id:
-            _,dupe=sc.add_work_item(graph,work_item_id=f'dogfood-duplicate-{peer["pr"]}',mission_id=graph['objectives'][oid]['missionId'],objective_id=oid,blocker_id=blocker_id,title=peer['title'],outcome=lane.get('objective') or 'close selected canonical work',source={'pr':peer['pr']},now=now)
+            _,dupe=sc.add_work_item(graph,work_item_id=f'dogfood-duplicate-{peer["pr"]}',mission_id=graph['objectives'][oid]['missionId'],objective_id=oid,blocker_id=blocker_id,title=peer['title'],outcome=lane.get('objective') or 'close selected canonical work',source={'pr':peer['pr'],'selectionAuthority':'validation-only'},now=now)
             if dupe.duplicate: suppressed.append(peer['pr'])
-    sc.reconcile_branches(graph,now=now)
+    reconciliation=sc.reconcile_canonical_branches(graph,now=now)
     sc.update_milestone_attack(graph,now=now)
-    summary={'lanesIngested':len(lanes),'openPRsIngested':len(prs),'selectedCanonicalPRs':selected,'duplicatesSuppressed':suppressed,'migration':sc.migration_summary(graph),'health':sc.health_report(graph,workers=30,now=now),'status':sc.user_status(graph,workers=30,now=now)}
+    sc.migration_phase(graph,'DOGFOOD',now=now)
+    summary={'lanesIngested':len(lanes),'openPRsIngested':len(prs),'selectedCanonicalPRs':selected,'duplicatesSuppressed':suppressed,'branchReconciliation':reconciliation,'migration':sc.migration_summary(graph),'health':sc.health_report(graph,workers=30,now=now),'status':sc.user_status(graph,workers=30,now=now)}
     return graph,summary
 
 
@@ -73,7 +75,7 @@ def self_integration_proof(graph: dict, *, now=None) -> dict:
     if oid not in graph['objectives']:
         graph['objectives'][oid]=sc.make_objective(oid,'nembra-shipping','Swarm V16 control plane',severity='P1',priority=0,user_value=9,release_blocking=False,canonical_branch='mission/swarm-v16-mission-graph',finish_conditions=('V16 unit suite accepted','30-worker adversarial simulation accepted','independent exact-head CI accepted','merged to main'),allowed_adjacent_scope=['scripts/swarmcp','scripts/ci/tests','.swarm','docs'],forbidden_areas=['weaken physical truth','weaken authentication or CI to obtain green'],now=now)
         graph['missions']['nembra-shipping']['objectiveIds'].append(oid)
-    graph,_=sc.add_work_item(graph,work_item_id='swarm-v16-integration',mission_id='nembra-shipping',objective_id=oid,title='Integrate Swarm V16 Mission Graph',outcome='ship exact-head V16 control plane after tests and review',role='integrator',primary_scope=['scripts/swarmcp','scripts/ci/tests'],allowed_adjacent_scope=['.swarm','docs','.github/workflows'],forbidden_areas=['physical truth relaxation','auth relaxation'],branch='mission/swarm-v16-mission-graph',source={'dogfood':True},allow_duplicate=True,now=now)
+    graph,_=sc.add_work_item(graph,work_item_id='swarm-v16-integration',mission_id='nembra-shipping',objective_id=oid,title='Integrate Swarm V16 Mission Graph',outcome='ship exact-head V16 control plane after tests and review',role='integrator',primary_scope=['scripts/swarmcp','scripts/ci/tests'],allowed_adjacent_scope=['.swarm','docs','.github/workflows'],forbidden_areas=['physical truth relaxation','auth relaxation'],branch='mission/swarm-v16-mission-graph',source={'dogfood':True,'selectionAuthority':'merge-train-selected'},allow_duplicate=True,now=now)
     graph['workItems']['swarm-v16-integration']['status']='REVIEW'
     sc.enqueue_merge(graph,work_item_ids=['swarm-v16-integration'],candidate_id='v16-self-dogfood',required_suites=['swarm-control-plane','swarm-adversarial-30'],now=now)
     sc.start_merge_candidate(graph,'v16-self-dogfood',now=now)
