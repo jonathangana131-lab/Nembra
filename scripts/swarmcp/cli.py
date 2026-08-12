@@ -4,6 +4,7 @@ from .model import *
 from .model import _dict
 from .store import *
 from .engine import *
+from .mission_graph import *
 from .resources import release_resource
 from .enforcement import (
     acquire_resources_for_claim,
@@ -27,10 +28,12 @@ def snapshot(s):
     return vals('.swarm/runtime/lanes'),vals('.swarm/runtime/claims'),vals('.swarm/runtime/workers'),vals('.swarm/runtime/events'),vals('.swarm/runtime/resources')
 def remote(p):
     p.add_argument('--repo',required=True);p.add_argument('--state-branch');p.add_argument('--config-ref',default='main');p.add_argument('--token')
+
 def parser():
     p=argparse.ArgumentParser(description='Nembra Swarm Control Plane');sub=p.add_subparsers(dest='cmd',required=True)
     q=sub.add_parser('simulate');q.add_argument('--workers',type=int,default=30)
-    names=('remote-validate','register','claim','takeover','heartbeat','release','event','recommend','board','resource-acquire','resource-heartbeat','resource-release')
+    q=sub.add_parser('v16-simulate');q.add_argument('--workers',type=int,default=30)
+    names=('remote-validate','register','claim','takeover','heartbeat','release','event','recommend','board','resource-acquire','resource-heartbeat','resource-release','v16-init','v16-status','v16-recommend','v16-go','v16-surge','v16-migrate')
     for name in names:
         q=sub.add_parser(name);remote(q)
         if name=='register':q.add_argument('--worker',required=True);q.add_argument('--branch',default='')
@@ -41,15 +44,45 @@ def parser():
         if name=='board':q.add_argument('--red-main',action='store_true')
         if name=='resource-acquire':q.add_argument('--resource',action='append',choices=sorted(RESOURCE_CLASSES),required=True);q.add_argument('--worker',required=True);q.add_argument('--lane',required=True)
         if name in {'resource-heartbeat','resource-release'}:q.add_argument('--resource',choices=sorted(RESOURCE_CLASSES),required=True);q.add_argument('--worker',required=True);q.add_argument('--lease-id',required=True);q.add_argument('--generation',type=int,required=True)
+        if name=='v16-recommend':q.add_argument('--worker',action='append',default=[]);q.add_argument('--limit',type=int,default=30)
+        if name=='v16-go':q.add_argument('--worker',required=True);q.add_argument('--completed');q.add_argument('--evidence',action='append',default=[])
+        if name=='v16-surge':q.add_argument('--mission');q.add_argument('--stop-reason')
     return p
+
+def _v16_service(s): return MissionGraphStore(s)
+def _v16_load(s): return _v16_service(s).ensure(seed_nembra_graph(utc_now()))[0]
+
 def main(argv=None):
     try:
         a=parser().parse_args(argv)
         if a.cmd=='simulate':r=run_adversarial_simulation(a.workers);print(pretty_json(r),end='');return 0 if r['passed'] else 1
-        config=trusted_config(a)
-        s=store(a,config)
+        if a.cmd=='v16-simulate':r=run_v16_adversarial_simulation(a.workers,utc_now());print(pretty_json(r),end='');return 0 if r['passed'] else 1
+        config=trusted_config(a);s=store(a,config)
         if a.cmd=='remote-validate':
             l,c,w,e,r=snapshot(s);errs=validate_state_snapshot(l,c,w,e,r,utc_now());print('\n'.join('ERROR: '+x for x in errs) if errs else f'validated lanes={len(l)} claims={len(c)} workers={len(w)} events={len(e)} resources={len(r)}');return 1 if errs else 0
+        if a.cmd=='v16-init':
+            graph,_=_v16_service(s).ensure(seed_nembra_graph(utc_now()));print(pretty_json({'graphId':graph['graphId'],'revision':graph['revision'],'missions':list(graph['missions']),'objectives':len(graph['objectives']),'physicalAutoPromotion':False}),end='');return 0
+        if a.cmd=='v16-status':
+            print(user_status(_v16_load(s),workers=30,now=utc_now()),end='\n');return 0
+        if a.cmd=='v16-recommend':
+            graph=_v16_load(s);print(pretty_json([asdict(x) for x in recommend_mission_packets(graph,worker_ids=a.worker,limit=a.limit,now=utc_now())]),end='');return 0
+        if a.cmd=='v16-go':
+            service=_v16_service(s)
+            def mutate(graph): return go_cycle(graph,a.worker,completed_work_item_id=a.completed or '',evidence_ids=a.evidence,now=utc_now())
+            _,result=service.mutate(mutate,message=f'swarm v16: go handoff {a.worker}');print(pretty_json(result),end='');return 0
+        if a.cmd=='v16-surge':
+            if not a.mission and not a.stop_reason: raise ValidationError('v16-surge requires --mission or --stop-reason')
+            service=_v16_service(s)
+            def mutate(graph):
+                if a.stop_reason:return stop_surge(graph,reason=a.stop_reason,now=utc_now())
+                return enter_surge(graph,a.mission,now=utc_now())
+            graph,_=service.mutate(mutate,message='swarm v16: change surge mode');print(pretty_json({'surgeMissionId':graph['modes']['surgeMissionId'],'allocation':role_allocation(graph,30)}),end='');return 0
+        if a.cmd=='v16-migrate':
+            lanes,_,_,_,_=snapshot(s);service=_v16_service(s)
+            def migrate(graph):
+                for lane in lanes:migrate_legacy_lane(graph,lane,now=utc_now())
+                return migration_summary(graph)
+            graph,result=service.mutate(migrate,message='swarm v16: migrate legacy lanes');print(pretty_json({'migration':result,'health':health_report(graph,workers=30,now=utc_now())}),end='');return 0
         if a.cmd=='register':x=register_worker(s,a.worker,utc_now(),branch=a.branch)
         elif a.cmd=='claim':x=claim_slot(s,validate_lane(s.get(lane_path(a.lane)).value),a.slot,a.worker,utc_now(),a.branch,a.pr,a.source_sha,config=config)
         elif a.cmd=='takeover':x=takeover_claim(s,validate_lane(s.get(lane_path(a.lane)).value),a.slot,a.worker,utc_now(),a.branch,a.pr,a.source_sha,config=config)
