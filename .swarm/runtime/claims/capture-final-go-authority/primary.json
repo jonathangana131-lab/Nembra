@@ -7,9 +7,10 @@
   "workerId": "sol-20260812-0058jx",
   "leaseId": "capture-final-go-primary-0058jx-20260812-0847",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T08:47:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:55:00Z",
+  "lastHeartbeatAt": "2026-08-12T09:00:00Z",
+  "releasedAt": "2026-08-12T09:00:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-final-go-retirement-dispatch-current-sol-20260811",
   "pr": 3082,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "01217c20215c31c7380405dc1e2bd1330136894e",
   "takeoverFromWorkerId": "sol-20260812-93a1",
   "takeoverFromLeaseId": "capture-final-go-primary-93a1-20260812-0801",
-  "takeoverReason": "Generation 5 expired after its sole 2026-08-12T08:01:00Z heartbeat. Generation 10 tests mechanically classified the exact #3120 Darwin red and generation 6 consumed that evidence on the selected production lineage.",
-  "checkpoint": "#3154 exact 0f1463ea was patch-verified as workflow-scope-only and squash-merged into selected #3082. New exact production head is 01217c20215c31c7380405dc1e2bd1330136894e. Retirement workflow now recognizes the accepted sealed-candidate-handoff fixture as the sixth exact path; EXACT_PARENT and all runtime authority assertions remain unchanged. Previous exact-head greens are stale for promotion. Require fresh Sealed Candidate Handoff, Retirement Dispatch Custody, and Authenticated Stationary Private Review Final GO on 01217c20; only after all are terminal green may a new one-workflow real-Darwin witness be based on this exact head. PHYSICAL NO-GO."
+  "takeoverReason": "Generation 5 expired after its sole 2026-08-12T08:01:00Z heartbeat. Generation 6 recovered the exact Darwin blocker, consumed retained diagnostic evidence, repaired only the noncanonical macOS test fixture and its exact-scope workflow, and re-earned the current software authority surface.",
+  "outcome": "FINAL_GO_SOFTWARE_AND_REAL_DARWIN_AUTHORITY_ACCEPTED_EXACT_01217C20_BLOCKED_ON_BUILD_SIGN_INSTALL_COMPOSITION",
+  "checkpoint": "Selected #3082 exact 01217c20215c31c7380405dc1e2bd1330136894e has terminal exact-head SUCCESS: Sealed Candidate Handoff run 31580523652; Retirement Dispatch Custody 31580523627; Authenticated Stationary Private Review Final GO 31580523539. Validation-only #3158 exact 6ef10a73735bf214c2f8269831addfe894449712 is exactly one workflow path over that parent. Real macos-15 run 31580636019/job 94062627226 is terminal SUCCESS: exact parent/one-path bind, compile, real _KqueueMutationBackend, continuous tracked-tree races, sealed handoff, retirement dispatch, committed-parent execution, sealed artifact and fail-closed hygiene all passed. Artifact 9135029684 digest sha256:921ae814a1aa71e1ab026091b1d91015f0c1526686b81e05973ba6c5b82dfc07 records darwinSoftwareAuthorityAccepted=true, all four return codes 0, productionAcceptanceClaimed=false, physicalAuthorityCreated=false. This closes Final-GO software/Darwin authority only for exact parent 01217c20. Full Final-GO/physical GO remains blocked on accepted selected build/sign/install authority and final exact composition; any move of #3082 invalidates this witness for the descendant. PHYSICAL NO-GO."
 }
