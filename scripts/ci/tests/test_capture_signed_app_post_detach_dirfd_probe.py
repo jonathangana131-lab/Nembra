@@ -106,7 +106,7 @@ def root_probe(field_uid_claim: int, field_gid_claim: int, field_active_groups: 
     capability_gid = helper.choose_capability_gid(normal_groups)
     if capability_gid in field_active_groups:
         emit_error("identity", "fresh capability gid overlaps active field authority"); return 71
-    capability_groups = sorted(set(field_active_groups) | {capability_gid})
+    capability_groups = [capability_gid]
     workspace = Path(tempfile.mkdtemp(prefix="nembra-post-detach-dirfd.", dir="/private/tmp"))
     image, mountpoint = workspace / "origin.sparseimage", workspace / "mount"; mountpoint.mkdir()
     os.chown(workspace, 0, capability_gid); os.chmod(workspace, 0o710)
