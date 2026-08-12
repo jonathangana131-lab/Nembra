@@ -23,15 +23,17 @@ jobs:
       - name: Bind exact parent
         shell: bash
         env:
-          EXPECTED_PARENT: b9164701da15d7a773698599bf24ed3cb923f8ac
+          EXPECTED_PARENT: 83ed9001385518e979a7b37265877054938ae5c0
+          PRODUCT_PARENT: b9164701da15d7a773698599bf24ed3cb923f8ac
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
-          test "$(git diff --name-only HEAD^..HEAD)" = "$MATERIALIZER"
+          changed="$(git diff --name-only "$PRODUCT_PARENT"...HEAD)"
+          test "$changed" = "$MATERIALIZER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize permanent authority regressions
+      - name: Apply narrow permanent-test transforms
         shell: bash
         run: |
           set -euo pipefail
@@ -43,12 +45,11 @@ jobs:
               text = file.read_text(encoding="utf-8")
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f"{path}: expected exactly one transform subject, found {count}")
+                  raise SystemExit(f"{path}: expected one anchor {old!r}, found {count}")
               file.write_text(text.replace(old, new, 1), encoding="utf-8")
 
           pre_stage = "scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py"
-          anchor = '''    def test_placeholder_is_exactly_single_use(self) -> None:
-          '''
+          anchor = "    def test_placeholder_is_exactly_single_use(self) -> None:\n"
           addition = '''    def test_build_environment_rejects_ambient_xcode_selector_authority(self) -> None:
               helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_environment")
               poison = {
@@ -85,60 +86,58 @@ jobs:
           replace_once(pre_stage, anchor, addition + anchor)
 
           real_xcode = "scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py"
-          replace_once(
-              real_xcode,
-              '''        os.chown(mountpoint, 0, 0)
-                  os.chmod(mountpoint, 0o700)
-                  detach = helper._detach_apfs(writable_device)
-          ''',
-              '''        os.chown(mountpoint, 0, 0)
-                  os.chmod(mountpoint, 0o700)
-                  former_build_writable_attack = subprocess.run(
-                      ["/bin/sh", "-c", 'printf "BUILD_UID_AFTER_PATH_REVOKE\\n" >> "$1"', "sh", str(product)],
-                      env=build_environment,
-                      stdin=subprocess.DEVNULL,
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.PIPE,
-                      text=True,
-                      check=False,
-                      **structured_credentials(build_uid, build_gid, []),
-                  )
-                  if former_build_writable_attack.returncode == 0 or sha256(product) != before:
-                      emit_error(
-                          "path-revocation",
-                          "former build identity retained fresh writable pathname authority after root revocation",
-                      )
-                      return 75
+          detach_anchor = "        detach = helper._detach_apfs(writable_device)\n"
+          attack = '''        former_build_writable_attack = subprocess.run(
+              ["/bin/sh", "-c", 'printf "BUILD_UID_AFTER_PATH_REVOKE\\n" >> "$1"', "sh", str(product)],
+              env=build_environment,
+              stdin=subprocess.DEVNULL,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+              check=False,
+              **structured_credentials(build_uid, build_gid, []),
+          )
+          if former_build_writable_attack.returncode == 0 or sha256(product) != before:
+              emit_error(
+                  "path-revocation",
+                  "former build identity retained fresh writable pathname authority after root revocation",
+              )
+              return 75
 
-                  detach = helper._detach_apfs(writable_device)
-          ''',
+          '''
+          replace_once(real_xcode, detach_anchor, attack + detach_anchor)
+          replace_once(
+              real_xcode,
+              '            "fieldAttackReturnCode": attack.returncode,\n',
+              '            "fieldAttackReturnCode": attack.returncode,\n'
+              '            "formerBuildWritablePathAttackReturnCode": former_build_writable_attack.returncode,\n',
           )
           replace_once(
               real_xcode,
-              '''            "fieldAttackReturnCode": attack.returncode,
-                      "nonForcedDetachReturnCode": detach.returncode,
-          ''',
-              '''            "fieldAttackReturnCode": attack.returncode,
-                      "formerBuildWritablePathAttackReturnCode": former_build_writable_attack.returncode,
-                      "nonForcedDetachReturnCode": detach.returncode,
-          ''',
-          )
-          replace_once(
-              real_xcode,
-              '''            and evidence.get("fieldAttackReturnCode") != 0
-                      and evidence.get("nonForcedDetachReturnCode") == 0
-          ''',
-              '''            and evidence.get("fieldAttackReturnCode") != 0
-                      and evidence.get("formerBuildWritablePathAttackReturnCode") != 0
-                      and evidence.get("nonForcedDetachReturnCode") == 0
-          ''',
+              '            and evidence.get("fieldAttackReturnCode") != 0\n',
+              '            and evidence.get("fieldAttackReturnCode") != 0\n'
+              '            and evidence.get("formerBuildWritablePathAttackReturnCode") != 0\n',
           )
           PY
 
+      - name: Compile transformed tests
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 -m py_compile \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
             scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+
+      - name: Run focused pre-stage regressions
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 -B scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+
+      - name: Assert semantic witness source
+        shell: bash
+        run: |
+          set -euo pipefail
           grep -Fq 'def test_build_environment_rejects_ambient_xcode_selector_authority' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           grep -Fq 'BUILD_UID_AFTER_PATH_REVOKE' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
           grep -Fq 'formerBuildWritablePathAttackReturnCode' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
