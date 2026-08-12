@@ -9,15 +9,15 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:03:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:03:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v14-selected-xcode-acl-witness-sol-0059ac-20260812",
   "pr": 3072,
   "sourceSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
-  "currentHeadSHA": "3e41ecd07b020523ccfedc365c201db9799c3e7e",
+  "currentHeadSHA": "c7c6bc83ecea2114111182d094583276bb27d92a",
   "takeoverFromWorkerId": "sol-20260811-1607ax",
   "takeoverFromLeaseId": "capture-build-primary-1607ax-20260811-2357",
   "takeoverReason": "Generation-6 implementation was explicitly released while diagnostic evidence was pending. Exact #3093@49e51aef run 31543820090 is now terminal red with retained output, so reclaim implementation to repair the classified selected-Xcode custody boundary without colliding with the active independent review slot.",
   "intent": "Repair the selected-Xcode ACL authority gate from the exact #3072 production head using the smallest security-preserving child delta; keep PHYSICAL NO-GO until exact-head evidence and independent review accept it.",
-  "checkpoint": "Created isolated child branch from exact #3072@3e41ecd0. Retained diagnostic separates at least two defects: the leaf witness grants write but exercises append, and both clean fixture/real Xcode are rejected by inherited ancestry metadata before ACL-specific assertions."
+  "checkpoint": "Child head c7c6bc83 is exactly one test-file commit over #3072. It moves the positive fixture from /Applications to /Library, exercises write_data rather than append_data for the named-user ACL witness, and adds bounded ancestry metadata to custody assertion failures; production installer bytes remain unchanged."
 }
