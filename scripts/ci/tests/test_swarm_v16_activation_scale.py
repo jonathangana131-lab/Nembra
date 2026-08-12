@@ -175,5 +175,33 @@ class ActivationScaleTests(unittest.TestCase):
         ])
         sc.validate_graph(current)
 
+    def test_active_refresh_defers_new_work_when_scheduling_parents_are_unknown(self):
+        current=sc.seed_nembra_graph()
+        current['migration']['phase']='ACTIVE'
+        current['migration']['legacyImported']=True
+
+        candidate=sc.seed_nembra_graph()
+        candidate['migration']['legacyImported']=True
+        add_live_work(candidate,number=3999,head='e'*40,branch='repair/new-legacy-lane')
+        candidate['workItems']['live-pr-3999']['objectiveId']='legacy-new-objective'
+        candidate['workItems']['live-pr-3999']['blockerId']='legacy-new-blocker'
+        compact_pr_classifications(candidate,{'selectedCanonicalPRs':[3999],'duplicatesSuppressed':[]})
+
+        result=refresh_active_topology(
+            current,
+            candidate,
+            {'selectedCanonicalPRs':[3999],'duplicatesSuppressed':[]},
+        )
+
+        self.assertNotIn('live-pr-3999',current['workItems'])
+        self.assertEqual(result['deferredWorkItems'],[
+            {
+                'workItemId':'live-pr-3999',
+                'missingParents':['objective:legacy-new-objective','blocker:legacy-new-blocker'],
+            }
+        ])
+        self.assertEqual(current['migration']['livePRWorkItemsDeferred'],result['deferredWorkItems'])
+        sc.validate_graph(current)
+
 
 if __name__=='__main__': unittest.main()
