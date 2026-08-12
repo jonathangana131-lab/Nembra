@@ -8,10 +8,10 @@ real field build currently relies on the invoking user's Apple signing context.
 
 This witness isolates one narrower prerequisite without using an Apple identity or provisioning
 profile: can /usr/bin/codesign itself run as the real field UID while carrying one fresh numeric
-supplementary GID that alone grants write access to a signing volume, while the same field UID with
-its actual pre-sudo active groups remains excluded? After ad-hoc signing completes, the witness
-requires a normal non-forced APFS detach, read-only remount, exact tree-fingerprint preservation,
-valid code-signature verification, and failed root/former-signer mutation attempts.
+primary GID that alone grants write access to a signing volume, while the same field UID with its
+actual pre-sudo primary/supplementary groups remains excluded? After ad-hoc signing completes, the
+witness requires a normal non-forced APFS detach, read-only remount, exact tree-fingerprint
+preservation, valid code-signature verification, and failed root/former-signer mutation attempts.
 
 A green result is architecture evidence only. It does not prove Apple Development keychain access,
 automatic provisioning, embedded.mobileprovision selection, device admission, install, Bluetooth,
@@ -171,7 +171,7 @@ def probe_signer_path_authority(
     *,
     environment: dict[str, str],
     field_uid: int,
-    field_gid: int,
+    signer_gid: int,
     signer_groups: list[int],
 ) -> dict[str, object]:
     code = r'''
@@ -215,7 +215,7 @@ print("NEMBRA_CODESIGN_CAPABILITY_PATH_PROBE=" + json.dumps(record, sort_keys=Tr
         stderr=subprocess.PIPE,
         text=True,
         check=False,
-        **structured_credentials(field_uid, field_gid, signer_groups),
+        **structured_credentials(field_uid, signer_gid, signer_groups),
     )
     records = [
         line[len(PATH_PROBE_MARKER):]
@@ -275,8 +275,8 @@ def root_probe(field_active_groups: list[int]) -> int:
         return 71
 
     capability_gid = choose_capability_gid(directory_groups)
-    if capability_gid in field_active_groups:
-        emit_error("identity", "fresh signing capability overlaps active field authority")
+    if capability_gid in field_active_groups or capability_gid == field_gid:
+        emit_error("identity", "fresh signing capability overlaps ordinary field authority")
         return 71
 
     helper = load_freeze_helper()
@@ -328,24 +328,25 @@ def root_probe(field_active_groups: list[int]) -> int:
             emit_error("field-isolation", "ordinary field identity mutated signing volume without capability")
             return 72
 
-        # Keep the signer credential vector bounded. The ordinary negative control above faithfully
-        # replays the field process's actual active groups; the signer receives only the fresh
-        # filesystem capability, avoiding a synthetic union that can exceed macOS setgroups limits.
-        signer_groups = [capability_gid]
+        # The previous exact head proved that an arbitrary fresh supplementary GID does not grant
+        # APFS pathname authority on this runner. Reuse the separately accepted primary-GID shape:
+        # keep the real field UID, make the fresh capability the primary GID, and carry no
+        # supplementary groups. The ordinary negative above still replays the real field identity.
+        signer_gid = capability_gid
+        signer_groups: list[int] = []
         path_probe = probe_signer_path_authority(
             app,
             environment=field_environment,
             field_uid=field_uid,
-            field_gid=field_gid,
+            signer_gid=signer_gid,
             signer_groups=signer_groups,
         )
-        expected_signer_groups = sorted(signer_groups)
         if not (
             path_probe.get("effectiveUID") == field_uid
             and path_probe.get("realUID") == field_uid
-            and path_probe.get("effectivePrimaryGID") == field_gid
-            and path_probe.get("realPrimaryGID") == field_gid
-            and path_probe.get("effectiveSupplementaryGroups") == expected_signer_groups
+            and path_probe.get("effectivePrimaryGID") == signer_gid
+            and path_probe.get("realPrimaryGID") == signer_gid
+            and path_probe.get("effectiveSupplementaryGroups") == signer_groups
             and path_probe.get("appUID") == 0
             and path_probe.get("appGID") == capability_gid
             and path_probe.get("contentsUID") == 0
@@ -355,7 +356,7 @@ def root_probe(field_active_groups: list[int]) -> int:
         ):
             emit_error(
                 "signer-path-authority",
-                "fresh signing capability did not establish the intended direct filesystem authority",
+                "fresh primary-GID signing capability did not establish intended filesystem authority",
                 pathProbe=path_probe,
             )
             return 73
@@ -379,12 +380,12 @@ def root_probe(field_active_groups: list[int]) -> int:
             stderr=subprocess.PIPE,
             text=True,
             check=False,
-            **structured_credentials(field_uid, field_gid, signer_groups),
+            **structured_credentials(field_uid, signer_gid, signer_groups),
         )
         if signing.returncode != 0:
             emit_error(
                 "codesign",
-                f"direct codesign failed after signer path authority was proven: {signing.returncode}",
+                f"direct codesign failed after primary-GID path authority was proven: {signing.returncode}",
                 signerPathProbe=path_probe,
                 signingOutput=(signing.stdout + "\n" + signing.stderr)[-6000:],
             )
@@ -481,19 +482,20 @@ def root_probe(field_active_groups: list[int]) -> int:
             stderr=subprocess.PIPE,
             text=True,
             check=False,
-            **structured_credentials(field_uid, field_gid, signer_groups),
+            **structured_credentials(field_uid, signer_gid, signer_groups),
         )
         if former_signer.returncode == 0 or tree_fingerprint(frozen_app) != frozen:
             emit_error("readonly-remount", "former signing capability mutated the read-only bundle")
             return 79
 
         evidence = {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "fieldUID": field_uid,
             "fieldPrimaryGID": field_gid,
             "fieldActiveSupplementaryGroups": field_active_groups,
             "fieldActiveGroupsSubsetOfDirectoryService": set(field_active_groups).issubset(directory_groups),
             "signingCapabilityGID": capability_gid,
+            "signerPrimaryGID": signer_gid,
             "signerSupplementaryGroups": signer_groups,
             "signerPathProbe": path_probe,
             "fieldGroupsContainSigningCapability": capability_gid in directory_groups,
@@ -591,21 +593,23 @@ def parent_probe() -> int:
         return 82
     evidence = json.loads(records[0])
     path_probe = evidence.get("signerPathProbe")
+    capability_gid = evidence.get("signingCapabilityGID")
     required = (
-        evidence.get("schemaVersion") == 2
+        evidence.get("schemaVersion") == 3
         and evidence.get("fieldUID") == field_uid
         and evidence.get("fieldPrimaryGID") == field_gid
         and evidence.get("fieldActiveSupplementaryGroups") == field_active_groups
         and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
         and evidence.get("fieldGroupsContainSigningCapability") is False
         and evidence.get("fieldActiveGroupsContainSigningCapability") is False
-        and evidence.get("signerSupplementaryGroups") == [evidence.get("signingCapabilityGID")]
+        and evidence.get("signerPrimaryGID") == capability_gid
+        and evidence.get("signerSupplementaryGroups") == []
         and isinstance(path_probe, dict)
         and path_probe.get("effectiveUID") == field_uid
         and path_probe.get("realUID") == field_uid
-        and path_probe.get("effectivePrimaryGID") == field_gid
-        and path_probe.get("realPrimaryGID") == field_gid
-        and path_probe.get("effectiveSupplementaryGroups") == evidence.get("signerSupplementaryGroups")
+        and path_probe.get("effectivePrimaryGID") == capability_gid
+        and path_probe.get("realPrimaryGID") == capability_gid
+        and path_probe.get("effectiveSupplementaryGroups") == []
         and path_probe.get("writeSucceeded") is True
         and path_probe.get("cleanupSucceeded") is True
         and evidence.get("ordinaryFieldAttackReturnCode") != 0
