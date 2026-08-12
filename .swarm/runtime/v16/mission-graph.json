@@ -1,0 +1,2204 @@
+{
+  "agents": {},
+  "blockers": {},
+  "branches": {
+    "mission/capture-stationary": {
+      "branch": "mission/capture-stationary",
+      "integratedAt": "",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-standalone-build",
+      "pr": null,
+      "selectedAt": "2026-08-12T09:06:34Z",
+      "source": "V16 canonical seed",
+      "state": "SELECTED",
+      "world": "FRONTIER"
+    }
+  },
+  "createdAt": "2026-08-12T09:06:34Z",
+  "evidence": {},
+  "failureKnowledge": [],
+  "graphId": "nembra-v16",
+  "kind": "mission-graph",
+  "memory": [],
+  "mergeTrain": {
+    "activeCandidate": null,
+    "history": [],
+    "queue": []
+  },
+  "metrics": {
+    "closedBlockers": 0,
+    "duplicateTasksPrevented": 0,
+    "meaningfulProgressEvents": 0,
+    "newLegitimateBlockers": 0,
+    "startBlockers": 0,
+    "supersededBranches": 0
+  },
+  "migration": {
+    "classifiedPRs": {},
+    "destructiveActionsAllowed": false,
+    "legacyImported": false,
+    "legacyLaneIds": []
+  },
+  "missions": {
+    "capture-stationary": {
+      "captain": "",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveIds": [
+        "capture-standalone-build",
+        "capture-apple-auth",
+        "capture-tuya-auth",
+        "capture-account-device",
+        "capture-secure-session",
+        "capture-signed-build",
+        "capture-installation",
+        "capture-stationary-ux",
+        "capture-auth-observation",
+        "capture-export",
+        "capture-final-regression",
+        "capture-physical-handoff"
+      ],
+      "priority": 0,
+      "remainingFinishConditions": [
+        "accepted signed installable Capture build",
+        "authenticated Tuya session and non-empty structured read-only observation",
+        "secure export and final regression",
+        "no commands sent"
+      ],
+      "startedAt": "2026-08-12T09:06:34Z",
+      "status": "ACTIVE",
+      "title": "Capture Mission",
+      "why": "Reach a rigorous, practical authenticated stationary read-only ES80 observation handoff."
+    },
+    "nembra-shipping": {
+      "captain": "",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveIds": [
+        "dashboard",
+        "battery-range",
+        "charging",
+        "navigation",
+        "rides",
+        "vehicle-controls",
+        "connection",
+        "settings",
+        "performance",
+        "accessibility",
+        "premium-ui",
+        "real-es80-telemetry"
+      ],
+      "priority": 2,
+      "remainingFinishConditions": [
+        "ship major product objectives",
+        "close release blockers"
+      ],
+      "startedAt": "2026-08-12T09:06:34Z",
+      "status": "ACTIVE",
+      "title": "Nembra Shipping Mission",
+      "why": "Ship coherent user-visible Nembra milestones rather than maximize PR activity."
+    }
+  },
+  "modes": {
+    "convergenceFamilies": [],
+    "frozenBranchFamilies": [],
+    "milestoneAttackObjectives": [],
+    "surgeMissionId": ""
+  },
+  "objectives": {
+    "accessibility": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Accessibility"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/accessibility",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "accessibility",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P2",
+      "status": "READY",
+      "title": "Accessibility",
+      "userValue": 7
+    },
+    "battery-range": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Battery / Range"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/battery-range",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "battery-range",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P1",
+      "status": "READY",
+      "title": "Battery / Range",
+      "userValue": 7
+    },
+    "capture-account-device": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-apple-auth",
+        "capture-tuya-auth"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "no unresolved software blocker"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-account-device",
+      "physicalOrUserDependency": false,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": false,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Account / device verification",
+      "userValue": 10
+    },
+    "capture-apple-auth": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-standalone-build"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "no unresolved software blocker"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-apple-auth",
+      "physicalOrUserDependency": false,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": false,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Apple authentication",
+      "userValue": 10
+    },
+    "capture-auth-observation": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-secure-session",
+        "capture-installation",
+        "capture-stationary-ux"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "physical/user dependency explicitly satisfied"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-auth-observation",
+      "physicalOrUserDependency": true,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": true,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Authenticated read-only observation",
+      "userValue": 10
+    },
+    "capture-export": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-auth-observation"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "physical/user dependency explicitly satisfied"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-export",
+      "physicalOrUserDependency": true,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": true,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Secure observation export",
+      "userValue": 10
+    },
+    "capture-final-regression": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-export"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "physical/user dependency explicitly satisfied"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-final-regression",
+      "physicalOrUserDependency": true,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": true,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Final regression",
+      "userValue": 10
+    },
+    "capture-installation": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-signed-build"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "physical/user dependency explicitly satisfied"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-installation",
+      "physicalOrUserDependency": true,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": true,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Installation",
+      "userValue": 10
+    },
+    "capture-physical-handoff": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-final-regression"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "physical/user dependency explicitly satisfied"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-physical-handoff",
+      "physicalOrUserDependency": true,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": true,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Physical handoff",
+      "userValue": 10
+    },
+    "capture-secure-session": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-account-device"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "no unresolved software blocker"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-secure-session",
+      "physicalOrUserDependency": false,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": false,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Secure authenticated session",
+      "userValue": 10
+    },
+    "capture-signed-build": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-standalone-build"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "no unresolved software blocker"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-signed-build",
+      "physicalOrUserDependency": false,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": false,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Signed build",
+      "userValue": 10
+    },
+    "capture-standalone-build": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "no unresolved software blocker"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-standalone-build",
+      "physicalOrUserDependency": false,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": false,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Standalone build",
+      "userValue": 10
+    },
+    "capture-stationary-ux": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-standalone-build"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "no unresolved software blocker"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-stationary-ux",
+      "physicalOrUserDependency": false,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": false,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Stationary UX",
+      "userValue": 10
+    },
+    "capture-tuya-auth": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Capture",
+        "directly related tests",
+        "directly related CI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/capture-stationary",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [
+        "capture-standalone-build"
+      ],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "implementation complete",
+        "affected software acceptance green",
+        "independent review accepted",
+        "integrated into selected Capture candidate",
+        "no unresolved software blocker"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands",
+        "invented telemetry semantics",
+        "outdoor ride procedure"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "capture-stationary",
+      "objectiveId": "capture-tuya-auth",
+      "physicalOrUserDependency": false,
+      "priority": 0,
+      "releaseBlocking": true,
+      "safetyCritical": false,
+      "severity": "P0",
+      "status": "READY",
+      "title": "Tuya authentication",
+      "userValue": 10
+    },
+    "charging": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Charging"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/charging",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "charging",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P2",
+      "status": "READY",
+      "title": "Charging",
+      "userValue": 7
+    },
+    "connection": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Connection"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/connection",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "connection",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P1",
+      "status": "READY",
+      "title": "Connection",
+      "userValue": 7
+    },
+    "dashboard": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Dashboard"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/dashboard",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "dashboard",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P1",
+      "status": "READY",
+      "title": "Dashboard",
+      "userValue": 10
+    },
+    "navigation": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Navigation"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/navigation",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "navigation",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P2",
+      "status": "READY",
+      "title": "Navigation",
+      "userValue": 7
+    },
+    "performance": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Performance"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/performance",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "performance",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P2",
+      "status": "READY",
+      "title": "Performance",
+      "userValue": 7
+    },
+    "premium-ui": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Premium UI"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/premium-ui",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "premium-ui",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P2",
+      "status": "READY",
+      "title": "Premium UI",
+      "userValue": 7
+    },
+    "real-es80-telemetry": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Real ES80 telemetry"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/real-es80-telemetry",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "scooter commands before command truth"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "real-es80-telemetry",
+      "physicalOrUserDependency": true,
+      "priority": 1,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P1",
+      "status": "READY",
+      "title": "Real ES80 telemetry",
+      "userValue": 10
+    },
+    "rides": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Rides"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/rides",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "rides",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P2",
+      "status": "READY",
+      "title": "Rides",
+      "userValue": 7
+    },
+    "settings": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Settings"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/settings",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "settings",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P2",
+      "status": "READY",
+      "title": "Settings",
+      "userValue": 7
+    },
+    "vehicle-controls": {
+      "activeWorkers": [],
+      "allowedAdjacentScope": [
+        "Vehicle Controls"
+      ],
+      "blockerIds": [],
+      "canonicalBranch": "mission/vehicle-controls",
+      "captain": "",
+      "createdAt": "2026-08-12T09:06:34Z",
+      "dependencies": [],
+      "evidenceIds": [],
+      "featureGenome": {
+        "accessibility": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "functionality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "integration": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "knownBlockers": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "performance": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "physicalTruth": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_APPLICABLE"
+        },
+        "testing": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        },
+        "visualQuality": {
+          "evidenceIds": [],
+          "notes": "",
+          "state": "NOT_STARTED"
+        }
+      },
+      "finishConditions": [
+        "shipping functionality complete",
+        "normal, disconnected, retained and active states accepted",
+        "accessibility accepted",
+        "performance accepted",
+        "integration accepted",
+        "no unresolved P0/P1 defects"
+      ],
+      "finishSatisfied": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "forbiddenAreas": [
+        "Capture authentication/truth boundary"
+      ],
+      "integrationState": "FRONTIER",
+      "lastMeaningfulProgress": "2026-08-12T09:06:34Z",
+      "missionId": "nembra-shipping",
+      "objectiveId": "vehicle-controls",
+      "physicalOrUserDependency": false,
+      "priority": 4,
+      "releaseBlocking": false,
+      "safetyCritical": false,
+      "severity": "P2",
+      "status": "READY",
+      "title": "Vehicle Controls",
+      "userValue": 7
+    }
+  },
+  "revision": 0,
+  "schemaVersion": 16,
+  "solutions": {},
+  "updatedAt": "2026-08-12T09:06:34Z",
+  "workItems": {}
+}
