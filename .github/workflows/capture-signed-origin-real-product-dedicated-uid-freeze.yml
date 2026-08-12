@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Bind exact head and narrow validation scope
         shell: bash
@@ -31,7 +31,6 @@ jobs:
           actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
           expected="$(printf '%s' "$GITHUB_SHA" | tr '[:upper:]' '[:lower:]')"
           test "$actual" = "$expected"
-          git fetch --no-tags --depth=1 origin "$PARENT_SHA"
           test "$(git merge-base HEAD "$PARENT_SHA")" = "$PARENT_SHA"
           mapfile -t changed < <(git diff --name-only "$PARENT_SHA"...HEAD | LC_ALL=C sort)
           expected_paths=("$WORKFLOW" "$PROBE")
