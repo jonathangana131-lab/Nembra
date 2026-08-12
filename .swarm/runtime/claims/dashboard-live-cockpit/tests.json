@@ -9,15 +9,15 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:36:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:36:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:42:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v15-dashboard-ax5-retained-witness-sol-0059g7",
-  "pr": null,
+  "pr": 3150,
   "sourceSHA": "ae527b7c6b3057c1f8ff71520840c26ac9eb5b6b",
-  "currentHeadSHA": "ae527b7c6b3057c1f8ff71520840c26ac9eb5b6b",
+  "currentHeadSHA": "7a41abd85899585a29d96d55e8a69f1bf4fa4d53",
   "takeoverFromWorkerId": "sol-20260811-hl6k",
   "takeoverFromLeaseId": "dashboard-tests-hl6k-20260811-1245",
   "takeoverReason": "Generation 5 was explicitly RELEASED. Exact product PR #3141@ae527b7c is Xcode-green and captured AX riding/stopped states are healthy, but its real Accessibility XXXL rerun does not execute the retained-speed/currentness state affected by the repair. Claim the free tests slot for a harness-only stacked witness rather than changing already-green product bytes.",
-  "intent": "Add testLandscapeDashboardRetainedSpeedTruthIsVisibleAndCapturable to the real system Accessibility XXXL rerun only. Re-run exact Xcode 27/iPhone 12 and inspect the retained AX attachment for complete LAST KNOWN wording, center-instrument fit, and Energy Rail separation. Preserve all production telemetry/currentness/physical-authority behavior.",
-  "checkpoint": "Starting from product exact ae527b7c. One CI harness path only is intended. Simulator evidence only; no physical ES80 telemetry authority."
+  "intent": "Run the existing testLandscapeDashboardRetainedSpeedTruthIsVisibleAndCapturable under a real system Accessibility XXXL category on iPhone 12/iOS 27, preserving exact xcresult/screenshot/environment evidence. Inspect full LAST KNOWN wording and center/Energy Rail fit. Preserve all production telemetry/currentness/physical-authority behavior.",
+  "checkpoint": "PR #3150 opened as exactly one additive workflow path on product parent #3141@ae527b7c. Current exact test head 7a41abd8 has Dashboard AX Retained Currentness Witness run 31579467611 queued; queued is not acceptance. The workflow exact-binds PR head, uses real iPhone 12/iOS 27 CoreSimulator + real accessibility content size, runs only the existing retained-speed XCUITest, and preserves xcresult attachments. Simulator evidence only; no physical ES80 telemetry authority."
 }
