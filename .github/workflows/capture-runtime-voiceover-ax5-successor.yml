@@ -1,9 +1,9 @@
 name: Capture Runtime VoiceOver AX5 Successor
 
 on:
-  push:
-    branches:
-      - test/v14-capture-runtime-ax5-f557-sol-0054j7-20260812
+  pull_request:
+    paths:
+      - .github/workflows/capture-runtime-voiceover-ax5-successor.yml
   workflow_dispatch:
 
 permissions:
@@ -12,12 +12,13 @@ permissions:
 jobs:
   runtime-voiceover:
     name: Exact f557 iPhone 12 first-fold VoiceOver matrix
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -29,7 +30,10 @@ jobs:
         run: |
           set -euo pipefail
           source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
-          test "$source_sha" = "$(printf '%s' "$GITHUB_SHA" | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
           git cat-file -e "${COMPOSED_PRODUCT_SHA}^{commit}"
           git cat-file -e "${WITNESS_SOURCE_SHA}^{commit}"
           git merge-base --is-ancestor "$COMPOSED_PRODUCT_SHA" HEAD
@@ -297,7 +301,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: nembra-capture-runtime-voiceover-f557-${{ github.run_id }}-${{ github.run_attempt }}
+          name: nembra-capture-runtime-voiceover-f557-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/CaptureRuntimeVoiceOverEvidence
           if-no-files-found: error
           retention-days: 14
