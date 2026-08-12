@@ -297,7 +297,24 @@ def _run_root_checked(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _remove_local_build_identity(name: str, uid: int | None) -> None:
+def _assert_local_build_identity_retired(name: str, uid: int) -> None:
+    if uid <= 0:
+        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+    checks = (
+        (pwd.getpwnam, name, "build user name"),
+        (pwd.getpwuid, uid, "build user UID"),
+        (grp.getgrnam, name, "build group name"),
+        (grp.getgrgid, uid, "build group GID"),
+    )
+    for lookup, key, label in checks:
+        try:
+            lookup(key)
+        except KeyError:
+            continue
+        raise BuildOriginCustodyError(f"ephemeral {label} survived retirement")
+
+
+def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:
     if sys.platform != "darwin":
         return
     if uid is not None and uid > 0:
@@ -323,6 +340,10 @@ def _remove_local_build_identity(name: str, uid: int | None) -> None:
         check=False,
     )
     subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
+    if require_absent:
+        if uid is None:
+            raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+        _assert_local_build_identity_retired(name, uid)
 
 
 def _create_local_build_identity(name: str, uid: int, gid: int, home: Path) -> None:
@@ -623,6 +644,8 @@ def run_custodied_build(
             "protected signed-app staging command failed" + (f": {detail}" if detail else "")
         ) from error
     finally:
+        failed_before_cleanup = sys.exc_info()[0] is not None
+        retirement_error: BuildOriginCustodyError | None = None
         # Forced detach is cleanup-only after acceptance has already failed. It is
         # never an authority-producing transition.
         if readonly_device is not None:
@@ -630,10 +653,15 @@ def run_custodied_build(
         if writable_device is not None:
             _detach_apfs(writable_device, force=True)
         if identity_created:
-            _remove_local_build_identity(build_name, build_uid)
+            try:
+                _remove_local_build_identity(build_name, build_uid, require_absent=True)
+            except BuildOriginCustodyError as error:
+                retirement_error = error
         shutil.rmtree(workspace, ignore_errors=True)
-        if sys.exc_info()[0] is not None and stage_root is not None:
+        if (failed_before_cleanup or retirement_error is not None) and stage_root is not None:
             shutil.rmtree(stage_root, ignore_errors=True)
+        if retirement_error is not None:
+            raise retirement_error
 
 
 def _parse_args(argv: Sequence[str]) -> tuple[Path, str, list[str]]:
