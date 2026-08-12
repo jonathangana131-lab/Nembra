@@ -6,6 +6,7 @@ from .store import *
 from .engine import *
 from .mission_graph import *
 from .v16_ops import *
+from .migration_v16 import *
 from .resources import release_resource
 from .enforcement import (
     acquire_resources_for_claim,
