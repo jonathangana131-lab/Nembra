@@ -32,13 +32,9 @@ jobs:
           expected="$(printf '%s' "$GITHUB_SHA" | tr '[:upper:]' '[:lower:]')"
           test "$actual" = "$expected"
           test "$(git merge-base HEAD "$PARENT_SHA")" = "$PARENT_SHA"
-          mapfile -t changed < <(git diff --name-only "$PARENT_SHA"...HEAD | LC_ALL=C sort)
-          expected_paths=("$WORKFLOW" "$PROBE")
-          mapfile -t expected_sorted < <(printf '%s\n' "${expected_paths[@]}" | LC_ALL=C sort)
-          test "${#changed[@]}" -eq "${#expected_sorted[@]}"
-          for index in "${!expected_sorted[@]}"; do
-            test "${changed[$index]}" = "${expected_sorted[$index]}"
-          done
+          changed="$(git diff --name-only "$PARENT_SHA"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' "$WORKFLOW" "$PROBE" | LC_ALL=C sort)"
+          test "$changed" = "$expected_paths"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'Exact validation head: %s\n' "$actual"
           /usr/bin/xcodebuild -version
