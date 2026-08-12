@@ -9,7 +9,7 @@
   "generation": 18,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T07:55:00Z",
-  "lastHeartbeatAt": "2026-08-12T07:55:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:08:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3072,
@@ -19,5 +19,5 @@
   "takeoverFromLeaseId": "capture-build-review-1606br-20260811-2306",
   "takeoverReason": "Prior review lease expired after its last heartbeat at 2026-08-11T23:20:20Z. Fresh GO reconciliation shows Capture remains P0 and selected-Xcode ACL authority is still a critical physical-GO dependency; take over the independent read-only review slot to classify current exact evidence and drive the next non-conflicting closure action.",
   "intent": "Independently review current selected-Xcode ACL production and diagnostic evidence; preserve PHYSICAL NO-GO and do not modify active implementation paths without a separate claim.",
-  "checkpoint": "Claim takeover established from live swarm-state. Next: refresh #3072/#3093 exact heads and current workflow evidence, classify the ACL red, and publish a durable finding/review outcome."
+  "checkpoint": "Exact diagnostic child #3093 head 49e51aef23b843f8790d36508b4f6d33025c2df4 reviewed. Its one-workflow delta remains fail-closed and source-safe. Runtime run 31543820090 is terminal FAILURE in Bootstrap Xcode (workspace contract); raw job-log retrieval via connector returned 404 twice, so no invented line-level cause. Parent #3072 preserved structured ACL evidence still shows approved roots lock correctly while sibling/outside-approved paths remain appendable by the runner actor. Posted durable review 4914278868 on #3093: diagnostic evidence is not promotable authority; remediation must change runner execution/ownership/ACL substrate, not weaken the oracle. PHYSICAL NO-GO remains. Next: refresh live claims/heads and inspect the highest-value unoccupied Capture closure rung."
 }
