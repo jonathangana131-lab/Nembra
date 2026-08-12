@@ -9,14 +9,14 @@
   "generation": 6,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:47:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:47:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:51:00Z",
   "leaseSeconds": 2700,
-  "branch": "repair/v14-final-go-darwin-sealed-root-sol-0058jx",
+  "branch": "repair/v14-final-go-retirement-dispatch-current-sol-20260811",
   "pr": 3082,
   "sourceSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1",
-  "currentHeadSHA": "4a2c2002e872b294a86c4a2feecbff43b80505a1",
+  "currentHeadSHA": "3bc0418687bb4709df664ac74eb7d31019fa9ddf",
   "takeoverFromWorkerId": "sol-20260812-93a1",
   "takeoverFromLeaseId": "capture-final-go-primary-93a1-20260812-0801",
-  "takeoverReason": "Generation 5 expired after its sole 2026-08-12T08:01:00Z heartbeat without a durable branch/PR checkpoint beyond selected #3082. Generation 10 tests have now mechanically classified the exact #3120 Darwin red: only sealed-candidate-handoff fails, and only because its tempfile fixture compares /var/folders lexical spelling to the production-canonical /private/var/folders physical path. Recover primary on a fresh successor branch; do not overwrite the predecessor branch.",
-  "checkpoint": "Current production remains #3082@4a2c2002 with canonical/sealed/retirement software gates green but no accepted current Darwin replay. Diagnostic #3151 exact 7be03224 run 31579701134 artifact 9134632893 proves real kqueue + whole-tree races pass; retirement-dispatch-custody rc0; committed-parent-execution rc0; sealed-candidate-handoff rc1 at test line 208 because fixture root is /var/folders/... while MODULE.build canonicalizes candidate_repo to /private/var/folders/.... Exact finding is durable in #3120 comment 5264461162. Smallest repair is permanent fixture-only physical root resolution, preserving production canonicalization and retirement semantics, followed by focused software gates + real Darwin replay on exact descendant. PHYSICAL NO-GO."
+  "takeoverReason": "Generation 5 expired after its sole 2026-08-12T08:01:00Z heartbeat. Generation 10 tests mechanically classified the exact #3120 Darwin red and generation 6 consumed that evidence on the selected production lineage.",
+  "checkpoint": "Permanent repair PR #3153 exact 1c8d699a was verified as exactly one diff line and squash-merged into selected #3082. New exact production head is 3bc0418687bb4709df664ac74eb7d31019fa9ddf. Only scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py changed relative prior selected 4a2c2002: fixture root now uses Path(temporary).resolve(strict=True). Production Final-GO Python/canonicalization/retirement/seal logic is unchanged. The move stales prior exact-head software greens for promotion; require fresh canonical Sealed Candidate Handoff / Retirement Dispatch / Private Review gates on 3bc04186, then a new real-Darwin one-workflow descendant exact-bound to 3bc04186. PHYSICAL NO-GO."
 }
