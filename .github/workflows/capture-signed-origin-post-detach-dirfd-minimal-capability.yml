@@ -65,12 +65,13 @@ jobs:
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_probe.py \
             scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_minimal_capability_replay.py
           replay='scripts/ci/tests/test_capture_signed_app_post_detach_dirfd_minimal_capability_replay.py'
-          grep -Fq 'effective = capability' "$replay"
-          grep -Fq 'field_calls[0].get("effective") == field_active_groups' "$replay"
+          grep -Fq 'role = "capability-primary"' "$replay"
+          grep -Fq 'result = original(uid, capability_gid, [])' "$replay"
+          grep -Fq 'field_calls[0].get("effectiveSupplementaryGroups") == field_active_groups' "$replay"
           grep -Fq 'len(capability_calls) == 2' "$replay"
           grep -Fq 'completed = subprocess.run(' "$replay"
           if grep -Fq 'preexec_fn=' "$replay"; then
-            printf 'Minimal-capability replay must not use opaque preexec credential demotion.\n' >&2
+            printf 'Primary-capability replay must not use opaque preexec credential demotion.\n' >&2
             exit 21
           fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -104,7 +105,7 @@ jobs:
           status = sys.argv[3]
           text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
           payload = {
-              "schemaVersion": 1,
+              "schemaVersion": 2,
               "probeStatus": status,
               "parentEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_JSON=")],
               "replayEvidence": [line for line in text.splitlines() if line.startswith("NEMBRA_POST_DETACH_DIRFD_MINIMAL_GROUPS_JSON=")],
