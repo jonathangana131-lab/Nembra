@@ -20,9 +20,15 @@ env:
   GITHUB_TOKEN: ${{ github.token }}
   GITHUB_REPOSITORY: ${{ github.repository }}
 
+# One global writer keeps expensive whole-repository topology ingestion and the
+# swarm-state CAS write serialized. Never cancel the running writer: under
+# sustained PR churn, cancel-in-progress would let new events repeatedly kill
+# refreshes before they can commit any fresh state. New events may wait/coalesce
+# behind the current writer, whose ingestion already observes repository-wide
+# live topology rather than only the triggering PR.
 concurrency:
   group: swarm-v16-live-topology-refresh
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   refresh-live-topology:
