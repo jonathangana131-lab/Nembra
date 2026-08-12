@@ -8,6 +8,7 @@ on:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
       - scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
   pull_request:
@@ -15,6 +16,7 @@ on:
       - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
       - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
       - scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
   workflow_dispatch:
@@ -38,7 +40,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Bind exact current Final-GO parent and five-path repair
+      - name: Bind exact current Final-GO parent and six-path repair
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -53,6 +55,7 @@ jobs:
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
             scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected"
           diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
