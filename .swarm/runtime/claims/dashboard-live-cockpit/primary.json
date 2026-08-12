@@ -9,7 +9,7 @@
   "generation": 5,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:03:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:13:15Z",
+  "lastHeartbeatAt": "2026-08-12T08:26:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v15-dashboard-ax5-closure-sol-0059g7",
   "pr": 3141,
@@ -18,5 +18,5 @@
   "takeoverFromWorkerId": "sol-20260811-1611dn",
   "takeoverFromLeaseId": "dashboard-primary-1611dn-20260811-2320",
   "takeoverReason": "Generation 4 was explicitly RELEASED while exact AX5 runtime was pending. Live #3117 has since advanced to 0d71ca7408db4a80e67d74fcdcd8f86b4a431fb8 and fresh exact-head Xcode run 31562104926 is terminal SUCCESS. Recover the same Dashboard product objective on a clean successor lineage, inspect the retained AX5 evidence, and repair only any remaining app-visible defect without weakening Dynamic Type or telemetry truth.",
-  "checkpoint": "Draft #3141 opened on exact ae527b7c, stacked directly on #3117@0d71ca74. The one-file +6/-2 repair is limited to Dynamic Type presentation: full font size preserved, decorative tracking retired only at accessibility sizes, semantic currentness cue takes ideal width. Exact Xcode 27 / iPhone 12 AX5 rerun and retained-pixel inspection remain required before visual acceptance. Simulator evidence only; no physical telemetry authority."
+  "checkpoint": "PR #3141 exact ae527b7c remains under non-skipped Xcode 27 run 31577382652; resolver, checkout, immutable-head verification, project structure, and core package gates are green, while the combined build/test/Simulator-state step is still in progress. Independent review event 081530-review-request-dashboard-3141 is durable. Same-feature performance reconciliation was corrected: #3118's test/metric harvest succeeded but strict acceptance failed because XCTHitchMetric emitted no Hitch Time Ratio row while CPU/memory were finite. Do not weaken that verifier. Simulator evidence only; no physical telemetry authority."
 }
