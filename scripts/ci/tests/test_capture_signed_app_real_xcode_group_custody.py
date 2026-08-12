@@ -6,10 +6,11 @@ The old supplementary-group topology is intentionally gone: real Xcode 27 demons
 that build-service/log-store processes do not preserve that synthetic group authority.
 This probe binds the actual pre-sudo field identity to the root fixture, builds with a
 fresh local UID/GID whose effective groups must match its exact Directory Services
-baseline, requires the field identity to be unable to mutate compiler output, requires
-normal non-forced detach, then accepts bytes only from a read-only remount. Successful
-evidence also requires a normal frozen-volume detach and verified retirement of the
-fresh build user/group.
+baseline, and uses the production same-process credential-check -> exec transition for
+Xcode itself. It requires the field identity to be unable to mutate compiler output,
+requires normal non-forced detach, then accepts bytes only from a read-only remount.
+Successful evidence also requires a normal frozen-volume detach and verified retirement
+of the fresh build user/group.
 
 Validation only: no signing identity, device operation, Bluetooth, Tuya traffic,
 installation, launch, scooter command, or physical evidence occurs here.
@@ -234,28 +235,25 @@ def root_probe(
             "COMPILER_INDEX_STORE_ENABLE=NO",
             "build",
         ]
-        build = subprocess.run(
+        build = helper._run_exec_bound_build(
             command,
+            name=build_name,
+            uid=build_uid,
+            gid=build_gid,
+            baseline_groups=build_directory_groups,
+            environment=build_environment,
             cwd=source_root,
-            env=build_environment,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-            **structured_credentials(build_uid, build_gid, []),
         )
         if build.returncode != 0:
             emit_error(
                 "xcodebuild",
-                f"real Xcode could not build as dedicated UID inside isolated APFS output: {build.returncode}",
-                build_output=build.stdout,
+                f"real Xcode could not build through exec-bound dedicated-UID custody: {build.returncode}",
             )
             return 72
 
         product = derived / "Build/Products/Debug/OriginDedicatedUIDProof"
         if not product.is_file() or product.is_symlink():
-            emit_error("product", f"dedicated-UID Xcode product missing: {product}", build_output=build.stdout)
+            emit_error("product", f"dedicated-UID Xcode product missing: {product}")
             return 73
         before = sha256(product)
 
@@ -281,7 +279,6 @@ def root_probe(
             emit_error(
                 "quiescence",
                 "real Xcode returned but compiler output could not reach normal non-forced detach",
-                build_output=build.stdout,
                 detach_output=detach_text,
             )
             return 75
@@ -347,7 +344,7 @@ def root_probe(
         identity_created = False
 
         evidence = {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "fieldUID": field_uid,
             "fieldPrimaryGID": field_gid,
             "fieldActiveSupplementaryGroups": field_active_groups,
@@ -356,6 +353,7 @@ def root_probe(
             "buildPrimaryGID": build_gid,
             "buildDirectoryServiceGroups": list(build_directory_groups),
             "buildEffectiveGroupAuthorityAttested": True,
+            "execBoundCredentialAttestationUsed": True,
             "buildIdentityDistinctFromField": build_uid != field_uid,
             "fieldGroupsContainBuildGID": build_gid in field_groups,
             "fieldActiveGroupsContainBuildGID": build_gid in field_active_groups,
@@ -452,13 +450,15 @@ def parent_probe() -> int:
         evidence = json.loads(records[0])
         build_directory_groups = evidence.get("buildDirectoryServiceGroups")
         required = (
-            evidence.get("fieldUID") == field_uid
+            evidence.get("schemaVersion") == 4
+            and evidence.get("fieldUID") == field_uid
             and evidence.get("fieldPrimaryGID") == field_gid
             and evidence.get("fieldActiveSupplementaryGroups") == field_active_groups
             and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
             and isinstance(build_directory_groups, list)
             and evidence.get("buildPrimaryGID") in build_directory_groups
             and evidence.get("buildEffectiveGroupAuthorityAttested") is True
+            and evidence.get("execBoundCredentialAttestationUsed") is True
             and evidence.get("fieldGroupsContainBuildGID") is False
             and evidence.get("fieldActiveGroupsContainBuildGID") is False
             and evidence.get("buildIdentityDistinctFromField") is True
