@@ -136,6 +136,37 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertNotIn("_terminate_remaining_process_group", source)
         self.assertNotIn("preexec_fn=", source)
 
+    def test_apfs_attach_enforces_ownership_for_writable_and_readonly_mounts(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_owners_on")
+        mountpoint = Path("/private/tmp/nembra-owners-on-test")
+        image = Path("/private/tmp/nembra-owners-on-test.sparseimage")
+        payload = helper.plistlib.dumps(
+            {
+                "system-entities": [
+                    {
+                        "mount-point": str(mountpoint),
+                        "dev-entry": "/dev/disk99s1",
+                    }
+                ]
+            }
+        )
+        completed = mock.Mock(returncode=0, stdout=payload, stderr=b"")
+        with mock.patch.object(helper.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(helper._attach_apfs(image, mountpoint, readonly=False), "/dev/disk99s1")
+            writable = run.call_args.args[0]
+            run.reset_mock()
+            self.assertEqual(helper._attach_apfs(image, mountpoint, readonly=True), "/dev/disk99s1")
+            readonly = run.call_args.args[0]
+
+        required_prefix = ["/usr/bin/hdiutil", "attach", "-plist", "-nobrowse", "-owners", "on"]
+        self.assertEqual(writable[: len(required_prefix)], required_prefix)
+        self.assertEqual(readonly[: len(required_prefix)], required_prefix)
+        self.assertNotIn("-readonly", writable)
+        self.assertIn("-readonly", readonly)
+        self.assertLess(readonly.index("-readonly"), len(readonly) - 1)
+        self.assertEqual(writable[-1], str(image))
+        self.assertEqual(readonly[-1], str(image))
+
     def test_placeholder_is_exactly_single_use(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody")
         derived = Path("/private/tmp/example")
