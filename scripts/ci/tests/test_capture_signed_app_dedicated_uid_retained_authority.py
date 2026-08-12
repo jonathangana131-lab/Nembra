@@ -80,6 +80,22 @@ def structured_credentials(uid: int, gid: int, groups: Iterable[int]) -> dict[st
     }
 
 
+def resolve_direct_writer_python() -> str:
+    """Return the already-selected real interpreter, never the /usr/bin xcrun shim."""
+    try:
+        resolved = Path(sys.executable).resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise ProbeError(f"could not resolve selected Python executable: {error}") from error
+    if not resolved.is_absolute() or not resolved.is_file() or not os.access(resolved, os.X_OK):
+        raise ProbeError(f"selected Python executable is not an absolute executable file: {resolved}")
+    try:
+        if os.path.samefile(resolved, "/usr/bin/python3"):
+            raise ProbeError("selected Python executable resolved back to the /usr/bin xcrun shim")
+    except OSError as error:
+        raise ProbeError(f"could not compare selected Python executable with /usr/bin/python3: {error}") from error
+    return str(resolved)
+
+
 def mapped_writer_code() -> str:
     return r'''
 import mmap
@@ -331,6 +347,7 @@ def root_probe(authority: str, field_uid: int, field_gid: int, active_groups: li
     temp_name = f"nembraretain{os.getpid()}"
     try:
         account, full_groups = validate_field_identity(field_uid, field_gid, active_groups)
+        writer_python = resolve_direct_writer_python()
         build_uid = dedicated.choose_ephemeral_id()
         build_gid = build_uid
         if build_uid == field_uid or build_gid in full_groups or build_gid in active_groups:
@@ -361,13 +378,13 @@ def root_probe(authority: str, field_uid: int, field_gid: int, active_groups: li
             target.write_bytes(INITIAL_BYTES)
             os.chown(target, build_uid, build_gid)
             os.chmod(target, 0o600)
-            writer_argv = ["/usr/bin/python3", "-I", "-c", mapped_writer_code(), str(target)]
+            writer_argv = [writer_python, "-I", "-c", mapped_writer_code(), str(target)]
             path_attack_argv = ["/bin/sh", "-c", 'printf "FIELD_ATTACK" >> "$1"', "sh", str(target)]
         else:
             bundle.mkdir()
             os.chown(bundle, build_uid, build_gid)
             os.chmod(bundle, 0o700)
-            writer_argv = ["/usr/bin/python3", "-I", "-c", dirfd_writer_code(), str(bundle)]
+            writer_argv = [writer_python, "-I", "-c", dirfd_writer_code(), str(bundle)]
             path_attack_argv = ["/bin/sh", "-c", 'printf FIELD > "$1/field-attack.bin"', "sh", str(bundle)]
 
         writer = subprocess.Popen(
@@ -534,6 +551,7 @@ def root_probe(authority: str, field_uid: int, field_gid: int, active_groups: li
             "buildIdentityDistinctFromField": build_uid != field_uid,
             "fieldGroupsContainBuildGID": build_gid in full_groups,
             "fieldActiveGroupsContainBuildGID": build_gid in active_groups,
+            "writerPythonExecutable": writer_python,
             "fieldPathAttackReturnCode": field_attack.returncode,
             "formerBuildPathAttackReturnCode": former_build_path_attack.returncode,
             "retainedAuthorityArmed": True,
@@ -635,6 +653,7 @@ def parent_probe(authority: str) -> int:
         emit_error("evidence", "missing or ambiguous retained-authority evidence", authority=authority)
         return 81
     evidence = json.loads(records[0])
+    writer_python = evidence.get("writerPythonExecutable")
     required = (
         evidence.get("schemaVersion") == 1
         and evidence.get("authorityClass") == authority
@@ -645,6 +664,9 @@ def parent_probe(authority: str) -> int:
         and evidence.get("buildIdentityDistinctFromField") is True
         and evidence.get("fieldGroupsContainBuildGID") is False
         and evidence.get("fieldActiveGroupsContainBuildGID") is False
+        and isinstance(writer_python, str)
+        and Path(writer_python).is_absolute()
+        and writer_python != "/usr/bin/python3"
         and evidence.get("fieldPathAttackReturnCode") != 0
         and evidence.get("formerBuildPathAttackReturnCode") != 0
         and evidence.get("retainedAuthorityArmed") is True
