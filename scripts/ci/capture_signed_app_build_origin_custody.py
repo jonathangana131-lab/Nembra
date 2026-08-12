@@ -40,7 +40,6 @@ APFS_VOLUME_NAME = "NembraCaptureOrigin"
 DEFAULT_APP_RELATIVE = Path("Build/Products/Debug-iphoneos/Nembra Capture.app")
 DERIVED_PLACEHOLDER = "__NEMBRA_PROTECTED_DERIVED__"
 GROUP_ATTESTOR_MARKER = "NEMBRA_BUILD_IDENTITY_GROUPS="
-EXEC_ATTEST_EXIT = 86
 
 
 class BuildOriginCustodyError(RuntimeError):
@@ -451,15 +450,20 @@ def _process_state_for_uid(uid: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
         )
     live: list[int] = []
     zombies: list[int] = []
-    for line in completed.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 3:
+    for raw_line in completed.stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
             continue
+        parts = line.split()
+        if len(parts) != 3:
+            raise BuildOriginCustodyError("process authority inventory was malformed")
         try:
             pid = int(parts[0])
             owner = int(parts[1])
-        except ValueError:
-            continue
+        except ValueError as error:
+            raise BuildOriginCustodyError("process authority inventory contained non-numeric identity") from error
+        if pid <= 0 or owner < 0 or not parts[2]:
+            raise BuildOriginCustodyError("process authority inventory contained invalid identity/state")
         if owner != uid:
             continue
         if parts[2].upper().startswith("Z"):
@@ -515,17 +519,33 @@ def _identity_lookup_survivors(name: str, uid: int) -> tuple[str, ...]:
     return tuple(survivors)
 
 
-def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:
+def _wait_for_no_live_uid(uid: int, *, timeout: float = 6.0) -> tuple[int, ...]:
     if uid <= 0:
-        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+        raise BuildOriginCustodyError("cannot verify process retirement for a missing build UID")
     deadline = time.monotonic() + timeout
     latest_live: tuple[int, ...] = ()
     latest_zombies: tuple[int, ...] = ()
-    latest_lookups: tuple[str, ...] = ()
     while True:
         latest_live, latest_zombies = _process_state_for_uid(uid)
+        if not latest_live:
+            return latest_zombies
+        if time.monotonic() >= deadline:
+            raise BuildOriginCustodyError(
+                "live build-principal processes survived retirement: "
+                f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)}"
+            )
+        time.sleep(0.05)
+
+
+def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:
+    if uid <= 0:
+        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+    zombies = _wait_for_no_live_uid(uid, timeout=timeout)
+    deadline = time.monotonic() + timeout
+    latest_lookups: tuple[str, ...] = ()
+    while True:
         latest_lookups = _identity_lookup_survivors(name, uid)
-        if not latest_live and not latest_lookups:
+        if not latest_lookups:
             return
         if time.monotonic() >= deadline:
             break
@@ -538,9 +558,8 @@ def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float 
         )
         time.sleep(0.05)
     raise BuildOriginCustodyError(
-        "ephemeral build principal survived retirement: "
-        f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)} "
-        f"identity_lookups={list(latest_lookups)}"
+        "ephemeral build identity survived retirement: "
+        f"zombie_pids={list(zombies)} identity_lookups={list(latest_lookups)}"
     )
 
 
@@ -557,8 +576,10 @@ def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: 
         )
         if require_absent and killed.returncode not in (0, 1):
             raise BuildOriginCustodyError(
-                f"could not retire live build-principal processes: pkill exit {killed.returncode}"
+                f"could not request build-principal process retirement: pkill exit {killed.returncode}"
             )
+        if require_absent:
+            _wait_for_no_live_uid(uid)
     subprocess.run(
         ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],
         stdin=subprocess.DEVNULL,
@@ -697,22 +718,22 @@ def _detach_apfs(device: str, *, force: bool = False) -> subprocess.CompletedPro
 
 
 def _build_environment(user: str, home: Path) -> dict[str, str]:
+    """Return the complete caller-independent environment admitted to the build guard.
+
+    Toolchain selection belongs to the separately accepted command/selected-Xcode
+    boundary. Ambient root or field selectors must not regain compiler authority.
+    """
     temp = home / "tmp"
     temp.mkdir(parents=True, exist_ok=True)
-    environment = {
+    return {
         "HOME": str(home),
         "USER": user,
         "LOGNAME": user,
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
         "TMPDIR": str(temp),
-        "LANG": os.environ.get("LANG", "C"),
-        "LC_ALL": os.environ.get("LC_ALL", "C"),
+        "LANG": "en_US.UTF-8",
+        "LC_ALL": "en_US.UTF-8",
     }
-    for key in ("DEVELOPER_DIR", "SDKROOT", "TOOLCHAINS", "__CF_USER_TEXT_ENCODING"):
-        value = os.environ.get(key)
-        if value:
-            environment[key] = value
-    return environment
 
 
 def _copy_to_stage(source_app: Path, private_tmp: Path) -> tuple[Path, Path]:
@@ -851,10 +872,10 @@ def run_custodied_build(
             )
         writable_device = None
 
-        if build.returncode == EXEC_ATTEST_EXIT:
-            raise BuildOriginCustodyError("exec-bound dedicated-build credential attestation failed")
         if build.returncode != 0:
-            raise BuildOriginCustodyError(f"guarded field build failed with exit status {build.returncode}")
+            raise BuildOriginCustodyError(
+                f"exec-bound guarded field build failed with exit status {build.returncode}"
+            )
 
         readonly_device = _attach_apfs(image, mountpoint, readonly=True)
         _require_readonly_mount(mountpoint)
