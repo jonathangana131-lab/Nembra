@@ -91,6 +91,31 @@ def flush_directory_cache() -> None:
     )
 
 
+def cleanup_best_effort(name: str, uid: int) -> None:
+    subprocess.run(
+        ["/usr/bin/pkill", "-9", "-u", str(uid)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    subprocess.run(
+        ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    subprocess.run(
+        ["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    flush_directory_cache()
+
+
 def create_identity(name: str, uid: int, gid: int) -> None:
     if uid <= 0 or gid <= 0 or uid != gid:
         raise ProbeError("dedicated principal requires one positive equal UID/GID")
@@ -105,30 +130,34 @@ def create_identity(name: str, uid: int, gid: int) -> None:
         if existing.returncode == 0:
             raise ProbeError(f"dedicated principal {kind.lower()} name already exists")
 
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}"])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}", "PrimaryGroupID", str(gid)])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}", "RealName", "Nembra Capture Retirement Probe"])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}"])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UniqueID", str(uid)])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "PrimaryGroupID", str(gid)])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "NFSHomeDirectory", "/var/empty"])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UserShell", "/usr/bin/false"])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "RealName", "Nembra Capture Retirement Probe"])
-    run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "IsHidden", "1"])
-    flush_directory_cache()
+    try:
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}"])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}", "PrimaryGroupID", str(gid)])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Groups/{name}", "RealName", "Nembra Capture Retirement Probe"])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}"])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UniqueID", str(uid)])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "PrimaryGroupID", str(gid)])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "NFSHomeDirectory", "/var/empty"])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UserShell", "/usr/bin/false"])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "RealName", "Nembra Capture Retirement Probe"])
+        run_checked(["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "IsHidden", "1"])
+        flush_directory_cache()
 
-    deadline = time.monotonic() + 3.0
-    while time.monotonic() < deadline:
-        try:
-            account = pwd.getpwnam(name)
-            group = grp.getgrnam(name)
-        except KeyError:
-            time.sleep(0.05)
-            continue
-        if account.pw_uid == uid and account.pw_gid == gid and group.gr_gid == gid:
-            return
-        raise ProbeError("Directory Services materialized the dedicated principal with the wrong numeric identity")
-    raise ProbeError("Directory Services did not materialize the dedicated principal")
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            try:
+                account = pwd.getpwnam(name)
+                group = grp.getgrnam(name)
+            except KeyError:
+                time.sleep(0.05)
+                continue
+            if account.pw_uid == uid and account.pw_gid == gid and group.gr_gid == gid:
+                return
+            raise ProbeError("Directory Services materialized the dedicated principal with the wrong numeric identity")
+        raise ProbeError("Directory Services did not materialize the dedicated principal")
+    except Exception:
+        cleanup_best_effort(name, uid)
+        raise
 
 
 def lookup_state(name: str, uid: int, gid: int) -> dict[str, object]:
@@ -208,9 +237,6 @@ def retire_identity(name: str, uid: int, gid: int) -> dict[str, object]:
         text=True,
         check=False,
     )
-    # pkill 0 means at least one process was killed; 1 means none existed. Any
-    # other status is an operational failure. Final process absence is still
-    # independently required below.
     if pkill.returncode not in (0, 1):
         raise ProbeError(f"build-UID process retirement failed: rc={pkill.returncode} {pkill.stderr[-1000:]!r}")
 
@@ -246,13 +272,6 @@ def retire_identity(name: str, uid: int, gid: int) -> dict[str, object]:
         "groupDeleteReturnCode": group_delete.returncode,
         "finalState": final_state,
     }
-
-
-def cleanup_best_effort(name: str, uid: int) -> None:
-    subprocess.run(["/usr/bin/pkill", "-9", "-u", str(uid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    subprocess.run(["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    subprocess.run(["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    flush_directory_cache()
 
 
 def root_probe(field_uid: int, field_gid: int) -> int:
@@ -317,8 +336,6 @@ def root_probe(field_uid: int, field_gid: int) -> int:
         except subprocess.TimeoutExpired as error:
             raise ProbeError("retired build-UID sentinel process remained alive") from error
 
-        # Deliberately reproduce the production review's partial-cleanup risk:
-        # remove the user but leave the group. The exact postcondition must stay red.
         user_only = subprocess.run(
             ["/usr/bin/dscl", ".", "-delete", f"/Users/{partial_name}"],
             stdin=subprocess.DEVNULL,
