@@ -1,70 +1,128 @@
-# Nembra Swarm — `Go` Entrypoint
+# Nembra Swarm V16 — `Go`
 
-This is the short bootstrap for a fresh GPT-5.6 Sol worker when the user says **Go**, **continue**, **keep going**, or otherwise asks Nembra development to advance without assigning a specific lane.
+This is the short bootstrap for a fresh GPT-5.6 Sol worker when the user says **Go**, **continue**, **keep going**, or otherwise asks Nembra development to advance without assigning a task.
 
-## Do not ask the user to coordinate the swarm
+The canonical architecture and recovery guide is `docs/SWARM_CONTROL_PLANE.md`.
 
-The worker must recover live truth itself. The user should not need to know PR numbers, lane IDs, branch names, claim generations, or which specialist is needed next.
+## What Go means
 
-## Green is evidence, not completion
+A `Go` worker is an autonomous engineering worker, not a status reporter.
 
-A `Go` worker is an **advance-the-repository worker**, not a status reporter. Seeing green CI, a green exact-head run, a clean `main`, an already-merged PR, a completed review, or one finished slice is never by itself a reason to stop.
+**Go means:** refresh truth → select the highest-value safe Mission Graph work → claim it → execute a coherent outcome → test/evidence → review/integrate or hand off → refresh again → request another safe mission.
 
-An inspection-only `Go` turn is invalid unless the stop gate below is actually satisfied. After every green check, merge, review, handoff, blocker, lost claim, or completed slice, refresh live truth and continue to the next useful claim.
+A green check, merged PR, completed first task, lost claim, or externally blocked first task is a checkpoint. None of those is a normal endpoint.
 
-If a lane is waiting on CI/review/external evidence and another safe scheduler recommendation is available, do not spend the whole turn merely watching the wait. Preserve the first lane's ownership/evidence correctly, release any idle scarce resources, and advance another non-conflicting recommendation or reconciliation shard when policy permits.
+## Boot
 
-## Fresh-worker boot sequence
+1. Inspect current `main`, meaningful open PRs/branches, recent commits, and relevant CI/Xcode state. Live GitHub product truth outranks stale prose.
+2. Read trusted `.swarm/config.json`.
+3. Read/validate the V16 Mission Graph on `swarm-state` plus relevant V16 claims.
+4. During migration, inspect legacy lane/claim state for useful truth not yet represented in V16; import/reconcile rather than creating parallel copies.
+5. Read the compact recent memory/failure knowledge for the chosen objective so known facts are not rediscovered.
+6. Register/use a unique `sol-YYYYMMDD-<unique>` worker identity.
+7. Request V16 recommendations and take the highest-value safe mission packet matching current truth and the worker’s capabilities.
 
-1. Inspect current GitHub `main`, current open PRs/branches, recent commits, and current CI/Xcode results. Product GitHub truth outranks stale prose.
-2. Read `.swarm/config.json` from trusted product source and validate its supported schema.
-3. Inspect the long-lived `swarm-state` branch: lanes, claims, workers, resources, important events, and newest handoffs.
-4. Reconcile live GitHub work against `swarm-state` before trusting the ready queue. If meaningful open PRs/branches/failed-main work are missing, stale, duplicated, or superseded in state, perform or claim a bounded scheduler-reconciliation shard first: group work by real objective/exact lineage, preserve salvageable heads, record superseded lineages, and create/update only the minimum durable lane records needed. Never bulk-import every duplicate PR as independent work, and never silently treat an already-owned reconciliation slot as proof that no work exists—claim another available reconciliation shard or another recommendation.
-5. Read `docs/SWARM_CONTROL_PLANE.md` when control-plane behavior or recovery details are needed.
-6. Register a unique worker ID matching `sol-YYYYMMDD-<unique>`; GitHub account identity is not worker identity.
-7. Ask the scheduler for the current recommendations. An empty result is a prompt to re-check reconciliation/ownership/blockers, not an automatic success condition.
-8. Choose the highest-value safe recommendation that matches current product truth. Do not duplicate already-owned work.
-9. **Claim first. Branch second.** A recommendation is advisory; only a successful atomic claim grants ownership.
-10. If the claim fails because another worker won, refresh state and choose again. Do not create a duplicate branch/PR and do not stop merely because the first claim lost a race.
-11. Acquire required scarce resources in configured order before using them. Do not hold Xcode/Simulator/device/physical resources while idle.
-12. Work only inside the lane's declared write scope unless a durable scope-change record is created.
-13. Heartbeat at meaningful checkpoints, not by aggressive polling. Publish durable events for blockers, findings, decisions, review results, handoffs, takeovers, and evidence.
-14. Respect dependencies, project/epic blockers, project/per-epic WIP limits, review backpressure, integration backpressure, and RED-main repair priority.
-15. Review roles must be independent when the lane requires it. The implementation/repair/reconciliation worker cannot accept its own work.
-16. Simulator success, source review, and CI success never create physical scooter authority. Physical NO-GO remains NO-GO until legitimate physical evidence changes it.
-17. Validate the exact candidate head before acceptance. Existing Nembra Xcode/Simulator/exact-head gates remain authoritative for product changes.
-18. When a slice is accepted, publish a handoff, release claims/resources, update durable lane state, then **loop back to steps 1, 3, and 7 in the same Go turn** and take the next useful recommendation.
-19. When a slice is blocked, record the blocker/handoff, release anything that should not remain held, then **loop back and look for another safe recommendation** instead of ending the turn at the blocker.
-20. Continue this work loop until the stop gate below is satisfied.
+Unknown/corrupt/newer authority state means fail closed for new exclusive work. Do not guess ownership.
 
-## Stop gate — all conditions required
+## Before creating work or a branch
 
-A `Go` worker may stop only after a fresh final reconciliation pass against the **current** `main` SHA shows all of the following:
+Search the active mission graph, blockers, work items, selected branches, PR classifications, and recent memory.
 
-- there is no safe unowned scheduler recommendation it can claim;
-- no meaningful open PR, branch, failed-main repair, review/integration opportunity, or reconciliation family is missing from `swarm-state`;
-- no apparently unavailable slot is merely stale/expired ownership that is legally takeable;
-- all remaining useful work is actively owned, policy-blocked, dependency-blocked, resource-blocked, or externally blocked;
-- any newly discovered blocker, missing work, supersession, or handoff has been written durably before exit.
+If substantially equivalent work already exists:
 
-If those conditions are true, publish a durable `EVIDENCE_RESULT` describing the current main SHA, refreshed queue result, and why every remaining useful objective is owned or blocked, then idle cleanly. **“CI is green,” “main is green,” “the PR is merged,” “my slice passed,” or “the first recommendation was unavailable” are never valid stop proofs.**
+- join/assist the current owner;
+- review/red-team it;
+- integrate/debug it;
+- or participate only if an explicit bounded solution tournament was authorized.
 
-## Normal user interaction
+Do **not** create another near-identical PR.
 
-For ordinary continuation, the user should be able to say simply:
+Use the objective’s canonical selected branch whenever practical. Temporary branches are for experiments, bounded tournaments, diagnostics, and adversarial testing; they must carry a lifecycle state and be superseded/archived after selection.
 
-> **Go**
+## Claim and execute
 
-The worker should then perform the boot sequence and work loop above, advancing the repository without asking the user to manually assign agents or summarize previous work.
+1. Atomically claim the exact V16 work item. Claim first, branch second.
+2. If another worker wins, refresh and choose another mission. A lost claim is not a reason to stop.
+3. Acquire scarce resources in configured order and release them when idle.
+4. Follow the mission packet’s `PRIMARY_SCOPE`, `ALLOWED_EXPANSION`, and `FORBIDDEN_AREAS`.
+5. Solve the coherent outcome, including small directly related adjacent defects when allowed. Do not default to one-defect-one-PR.
+6. Heartbeat at meaningful checkpoints.
+7. Record only high-signal shared memory: blockers, root causes, accepted evidence, selected solutions, integration results, and facts another worker should not rediscover.
+8. Run dependency-aware impacted tests immediately; run broader integration/release suites at the required boundaries.
+9. Reuse strong evidence only when its source/dependency/environment bindings still match.
+10. Never claim a blocker is closed or a feature is done without required evidence.
 
-If the user gives a specific goal instead, use the same control plane but prefer work that advances that goal without violating current ownership, dependencies, safety, or exact-head truth.
+## Review and integration
 
-## Authority boundaries
+Fresh reviewers attack claimed-complete work for correctness, accessibility, performance, races, stale states, truth authority, and regressions.
 
-- Trusted product/control code and `.swarm/config.json` live with product source.
-- High-churn coordination state lives on `swarm-state`.
-- Lane/claim/resource/event/handoff records plus live GitHub product state are authoritative.
-- Generated dashboards and human-readable routing summaries are caches, never scheduler authority.
-- GitHub Contents API compare-and-swap semantics are the atomic boundary for claims and short scheduler-mutation guards.
+Integrators must act. If accepted changes conflict, understand both intents, compose the safe result, run affected acceptance, repair failures, and escalate only a true semantic conflict.
 
-Never bypass these rules just because a stale document or old issue points somewhere else.
+Accepted compatible work enters the Merge Train. A failed integration remains actionable `INTEGRATING`; do not post “merge conflict” and stop.
+
+After selected work integrates, reconcile superseded branches and preserve evidence references. Destructive remote cleanup remains fail-closed until migration/activation policy allows it.
+
+## Captains and blockers
+
+Major missions have captains. Captains coordinate workers, blockers, solution selection, Definitions of Done, integration, and handoff. A stale captain can be replaced without restarting the mission.
+
+Meaningful blockers are first-class objects with owner/backup, evidence, attempts, current hypothesis, next action, and exit condition. Random workers do not independently create competing repairs for an owned blocker unless the scheduler explicitly launches a tournament.
+
+Repeated successor/validation churn triggers convergence mode. High activity with little blocker removal triggers a Rabbit Hole Review.
+
+## Surge and milestone attack
+
+When only a few blockers remain, concentrate workers and finish the milestone instead of starting shiny unrelated tasks.
+
+`SURGE CAPTURE` means temporarily focus the swarm on the Capture mission with one captain plus implementation, review/testing, integration, debugging/research, UI/accessibility, and reserve capacity. Reassign workers as blockers close.
+
+Surge ends only when the milestone closes, remaining work is genuinely external/hardware-bound, or safety prevents further autonomous work.
+
+## Truth and physical boundary
+
+Truth classes are distinct:
+
+`SIMULATED → ESTIMATED → OBSERVED → AUTHENTICATED → PHYSICALLY_MAPPED → COMMAND_VERIFIED`
+
+Do not promote authority merely because a test passed.
+
+For ES80 Capture:
+
+- physical NO-GO remains NO-GO until legitimate external physical authority changes it;
+- simulator values are not physical values;
+- authenticated read-only observations are not command authority;
+- do not invent battery/speed/power/current/mode/range semantics;
+- do not invent commands or acknowledgements;
+- do not send commands during the stationary Capture mission;
+- do not return to an outdoor ride procedure unless later physical evidence specifically requires it.
+
+## After each task
+
+When the current work becomes accepted, blocked, handed off, integrated, superseded, or loses ownership:
+
+1. preserve durable graph/evidence/blocker state;
+2. release claims/resources that should not remain held;
+3. refresh current GitHub + V16 truth;
+4. request another safe mission in the **same Go execution window**;
+5. continue.
+
+Green CI is evidence, not completion. A merged PR is evidence, not completion.
+
+## Stop gate
+
+A Go worker may intentionally idle only when a fresh final refresh proves one of these:
+
+- no safe unblocked internal work remains for its capabilities;
+- all remaining relevant work is genuinely external/user/hardware blocked;
+- control policy explicitly requires a stop;
+- the execution environment itself ends.
+
+Before stopping, preserve newly discovered blockers, evidence, supersession, and handoff state. Do not invent speculative work merely to remain busy.
+
+## Compatibility window
+
+V15 lane commands remain available while migration finishes. They are compatibility surfaces, not the new organizing model.
+
+New work should consume V16 objective/work packets. Old workers should either receive V16-compatible work or fail safely with a clear migration state. Existing accepted V15 evidence remains useful when its relevant source/dependency/environment contract is unchanged.
+
+The user should not need to coordinate agents, name PRs, or repeatedly say what to do next. `Go` is sufficient.
