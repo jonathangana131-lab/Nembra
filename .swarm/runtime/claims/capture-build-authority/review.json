@@ -9,15 +9,15 @@
   "generation": 20,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T11:01:00Z",
-  "lastHeartbeatAt": "2026-08-12T11:01:00Z",
+  "lastHeartbeatAt": "2026-08-12T11:06:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3178,
-  "sourceSHA": "627a77a368e8f992abbf48a24d2145cd1b56d1f3",
-  "currentHeadSHA": "3ca901db9a06768388d64b0325f8f50115e8a3e0",
+  "sourceSHA": "c4996ea91cc3482ca8a8d661fd1436a2eee745df",
+  "currentHeadSHA": "e2ad9fa70a181e437b65f2897ed4f29affd5582c",
   "takeoverFromWorkerId": "sol-20260812-0058jx",
   "takeoverFromLeaseId": "capture-build-review-0058jx-20260812-0903",
-  "takeoverReason": "Generation 19 expired long ago and still targets now-closed validation #3146. Live GitHub shows #3178 is the production handoff consuming #3146 accepted COW-freeze evidence, so recover review onto its exact current head without touching implementation paths.",
-  "intent": "Adversarially review #3178 exact 3ca901db for root-freeze construction, claimed field-shell PID/start binding, janitor commandlessness/lifecycle, stdio closure, frozen tool confinement and deletion semantics. No device execution. PHYSICAL NO-GO.",
-  "checkpoint": "Review claimed after live reconciliation. #3178 is additive two-path production handoff on #3142@627a77a3 and is intentionally not wired into install_one_time_capture.command yet. Validation green would remain ingredient-only; private source-root consumer seam, signed-install production, Apple Development/private Tuya feasibility, final composition and physical truth remain separate."
+  "takeoverReason": "Generation 19 expired and targeted closed validation #3146. Live production handoff #3178 is now correctly re-anchored to #3142@c4996ea9; generation 20 reviews its exact moving head without modifying implementation paths.",
+  "intent": "Adversarially review #3178 selected-Xcode root-freeze/janitor production handoff. No device execution. PHYSICAL NO-GO.",
+  "checkpoint": "Exact head advanced 3ca901db -> 253cac5c -> e2ad9fa7 only through workflow source-gate/tool-probe fixes; helper blob remained unchanged. Review 4915767216 records two distinct remaining janitor blockers: parent promotes the freeze without a child READY handshake, and forked uid-0 janitor closes only fd0/1/2 so inherited fd>=3 channels remain live. Also noted arbitrary same-UID ancestor can extend owner lifetime. Other reviewers independently block privileged helper execution-byte custody, cached-sudo handoff, and janitor-loss recovery. Current e2ad exact production-freeze/Main runs must re-earn terminal evidence; queued != green. PHYSICAL NO-GO."
 }
