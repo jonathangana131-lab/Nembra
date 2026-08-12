@@ -8,11 +8,13 @@ on:
       - scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py
       - scripts/field/run_apple_signing_context_preflight.command
       - .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml
+      - .github/workflows/capture-apple-signing-preflight-redaction.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py
       - scripts/field/run_apple_signing_context_preflight.command
       - .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml
+      - .github/workflows/capture-apple-signing-preflight-redaction.yml
   workflow_dispatch:
 
 permissions:
@@ -38,7 +40,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind accepted signing bridge and exact three-path validation delta
+      - name: Bind accepted signing bridge and exact four-path validation delta
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -51,6 +53,7 @@ jobs:
           test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
           git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual-paths"
           printf '%s\n' \
+            .github/workflows/capture-apple-signing-preflight-redaction.yml \
             .github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml \
             scripts/ci/tests/test_capture_signed_app_field_uid_apple_development_signing.py \
             scripts/field/run_apple_signing_context_preflight.command \
