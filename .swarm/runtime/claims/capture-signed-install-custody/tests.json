@@ -9,15 +9,18 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T07:54:45Z",
-  "lastHeartbeatAt": "2026-08-12T08:48:30Z",
+  "lastHeartbeatAt": "2026-08-12T09:00:30Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-dedicated-uid-retained-authority-matrix-sol-0054q9",
   "pr": 3143,
   "sourceSHA": "98fdc404048812f6d3af6791710c57ece21dafd3",
   "currentHeadSHA": "13004842cfe1bde9d8099821c8e251dda8b86e06",
-  "relatedValidationPRs": [3116, 3130, 3131, 3132, 3136, 3140, 3143],
+  "activeDiagnosticBranch": "validation/v14-dedicated-uid-outer-workspace-gate-sol-0054q9",
+  "activeDiagnosticPR": 3159,
+  "activeDiagnosticHeadSHA": "cdcb8122735d3273a4c2bf3c67b30dca57959c42",
+  "relatedValidationPRs": [3116, 3130, 3131, 3132, 3136, 3140, 3143, 3159],
   "takeoverFromWorkerId": "sol-20260811-1607k9",
   "takeoverFromLeaseId": "capture-signed-install-tests-1607k9-20260811-2313",
   "takeoverReason": "Generation-6 lease expired. Recover the retained-writer validation matrix, classify fresh exact-head Mac evidence, and close only test/acceptance defects without changing product authority.",
-  "checkpoint": "Resolver run 31579456689 on exact 1433aa99 mechanically proved field+root sys.executable resolve to /Applications/Xcode_16.4.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9, distinct from /usr/bin/python3 xcrun shim. #3143 now exact 13004842 with canonical witness resolving Path(sys.executable).resolve(strict=True), rejecting /usr/bin/python3 samefile, and launching both retained holders by that direct executable; 8s timeout, credentials, APFS permissions, detach/persistence oracles unchanged. Temporary resolver workflow removed; exact diff is back to two validation paths. Run 31580191473 queued. PHYSICAL NO-GO."
+  "checkpoint": "#3143 exact 13004842 run 31580191473 is terminal RED; artifact 9134890774 digest sha256:af51d6c2f261aaa0bcb8d09f6f09f1e2661c3417b28f84f502e4f2fc042d6ba8. Direct developer Python repair gets both holders past READY, then both fail because former dedicated build identity still has fresh pathname mutation authority after mountpoint-only root:root 0700. #3131 never tested that pre-detach former-build negative. Durable production blocker posted to #3142 as comment 5264557281. Hypothesis: actual path capability is outer workspace root:<build gid> 0710; mountpoint-only chmod does not retire former-build traversal. #3159 exact cdcb8122 adds one diagnostic workflow only and runtime-transforms the witness to also set outer workspace root:root 0700 before the same field/former path negatives, retained WROTE, normal detach, persistence and read-only gates. Run 31580824293 in progress. PHYSICAL NO-GO."
 }
