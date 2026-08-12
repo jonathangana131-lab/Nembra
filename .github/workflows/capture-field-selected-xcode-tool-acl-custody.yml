@@ -49,14 +49,62 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'NEMBRA_ACL_REPAIR_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
 
-      - name: Compile and exercise ACL authority regression
+      - name: Compile ACL authority regression
         shell: bash
         run: |
           set -euo pipefail
           bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py
-          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Exercise ACL authority regression with retained diagnostics
+        id: acl_regression
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          output="$RUNNER_TEMP/nembra-selected-xcode-acl-regression.txt"
+          set +e
+          /usr/bin/python3 scripts/ci/tests/test_capture_field_selected_xcode_tool_acl_custody.py >"$output" 2>&1
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/nembra-selected-xcode-acl-regression.rc"
+          cat "$output"
+          if [[ "$rc" != 0 ]]; then
+            diagnostic="$(tail -n 220 "$output" | /usr/bin/python3 -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')"
+            printf '::error title=Selected Xcode ACL regression red::%s\n' "$diagnostic"
+          fi
+          exit "$rc"
+
+      - name: Preserve exact red-or-green ACL evidence
+        if: always()
+        shell: bash
+        env:
+          ACL_REGRESSION_OUTCOME: ${{ steps.acl_regression.outcome }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/nembra-selected-xcode-acl-regression.txt"
+          rc_file="$RUNNER_TEMP/nembra-selected-xcode-acl-regression.rc"
+          printf 'ACL regression outcome: %s\n' "$ACL_REGRESSION_OUTCOME"
+          if [[ -f "$output" ]]; then
+            printf '%s\n' '--- retained ACL regression output ---'
+            cat "$output"
+          fi
+          if [[ -f "$rc_file" ]]; then
+            printf 'ACL regression return code: %s\n' "$(cat "$rc_file")"
+          fi
           git diff --check 0807fc75a7edb51597d9e926c747cd5e6c400771 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Enforce ACL authority verdict
+        if: always()
+        shell: bash
+        env:
+          ACL_REGRESSION_OUTCOME: ${{ steps.acl_regression.outcome }}
+        run: |
+          set -euo pipefail
+          test "$ACL_REGRESSION_OUTCOME" = success
+          test "$(cat "$RUNNER_TEMP/nembra-selected-xcode-acl-regression.rc")" = 0
 
       - name: Preserve physical truth boundary
         if: always()
