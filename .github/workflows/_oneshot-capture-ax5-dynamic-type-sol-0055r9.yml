@@ -1,0 +1,66 @@
+name: One-shot Capture AX5 Dynamic Type Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-ax5-dynamic-type-sol-0055r9-20260812
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - name: Remove textual Dynamic Type caps only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          text = path.read_text()
+          replacements = [
+              (
+                  '''                .font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)\n                .dynamicTypeSize(...DynamicTypeSize.accessibility1)\n                .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)''',
+                  '''                .font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)\n                .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)'''
+              ),
+              (
+                  '''                        Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")\n                            .font(.subheadline.weight(.semibold))\n                            .dynamicTypeSize(...DynamicTypeSize.accessibility1)\n                            .accessibilityHidden(true)''',
+                  '''                        Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")\n                            .font(.subheadline.weight(.semibold))\n                            .accessibilityHidden(true)'''
+              ),
+          ]
+          changed = False
+          for old, new in replacements:
+              count = text.count(old)
+              if count == 1:
+                  text = text.replace(old, new, 1)
+                  changed = True
+              elif count == 0 and new in text:
+                  pass
+              else:
+                  raise SystemExit(f'expected exactly one old snippet or an already-repaired new snippet; old_count={count}')
+          path.write_text(text)
+          if not changed:
+              print('already repaired; no commit required')
+          PY
+          git diff --check
+          changed="$(git diff --name-only)"
+          if [[ -z "$changed" ]]; then
+            exit 0
+          fi
+          test "$changed" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          grep -Fq '.font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")' NembraApp/App/NembraCaptureEntrypoint.swift
+          # Keep the decorative shield icon cap; only sighted text caps are removed.
+          test "$(grep -Fc '.dynamicTypeSize(...DynamicTypeSize.accessibility1)' NembraApp/App/NembraCaptureEntrypoint.swift)" -eq 1
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m 'Let Capture first-fold text scale through AX5'
+          git push origin HEAD
