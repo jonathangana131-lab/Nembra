@@ -699,7 +699,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "75ff17ff55b6789bed0b0f711a781c75976a6c36",
+        "headSHA": "e72099137463d93bda486e987a6ea8726c540140",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -2411,8 +2411,8 @@
     "livePRBranchMismatches": [],
     "livePRHeadUpdates": [
       {
-        "from": "384afa11dcc9939c6544c4dfdaa04c209515a868",
-        "to": "75ff17ff55b6789bed0b0f711a781c75976a6c36",
+        "from": "75ff17ff55b6789bed0b0f711a781c75976a6c36",
+        "to": "e72099137463d93bda486e987a6ea8726c540140",
         "workItemId": "live-pr-3142"
       }
     ],
@@ -2421,7 +2421,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-12T11:36:08Z",
+    "liveRefreshAt": "2026-08-12T11:39:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
@@ -6175,10 +6175,10 @@
       "userValue": 7
     }
   },
-  "revision": 7,
+  "revision": 8,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-12T11:38:47Z",
+  "updatedAt": "2026-08-12T11:41:02Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6247,14 +6247,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "75ff17ff55b6789bed0b0f711a781c75976a6c36",
+        "headSHA": "e72099137463d93bda486e987a6ea8726c540140",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-12T11:36:08Z",
+      "updatedAt": "2026-08-12T11:39:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
