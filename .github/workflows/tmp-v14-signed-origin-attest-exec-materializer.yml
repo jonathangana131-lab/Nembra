@@ -1,0 +1,330 @@
+name: Temporary V14 signed-origin attest-exec materializer
+
+on:
+  push:
+    branches:
+      - repair/v14-signed-origin-attest-exec-sol-20260812-go2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tmp-v14-signed-origin-attest-exec-materializer
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact stacked parent
+        shell: bash
+        env:
+          EXACT_PARENT: 920598f27c200ac663faec44e8ed8fcce770758e
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = ".github/workflows/tmp-v14-signed-origin-attest-exec-materializer.yml"
+
+      - name: Materialize same-process credential attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path("scripts/ci/capture_signed_app_build_origin_custody.py")
+          text = helper.read_text(encoding="utf-8")
+          start = text.index("def _attest_build_identity_groups(")
+          end = text.index("\n\ndef _group_names", start)
+          replacement = r'''def _credential_attesting_exec_command(
+              command: Sequence[str],
+              *,
+              name: str,
+              uid: int,
+              gid: int,
+              field_groups: Sequence[int],
+          ) -> list[str]:
+              argv = [str(value) for value in command]
+              if not argv or not os.path.isabs(argv[0]):
+                  raise BuildOriginCustodyError("guarded compiler command must begin with one absolute executable")
+              baseline = tuple(sorted(set(os.getgrouplist(name, gid))))
+              if gid not in baseline or any(value <= 0 for value in baseline):
+                  raise BuildOriginCustodyError("fresh build Directory Services group baseline is invalid")
+              effective_baseline = sorted(value for value in baseline if value != gid)
+              field_only = sorted(set(int(value) for value in field_groups).difference(baseline))
+              contract = {
+                  "name": name,
+                  "uid": uid,
+                  "gid": gid,
+                  "effectiveGroups": effective_baseline,
+                  "fieldOnlyGroups": field_only,
+              }
+              child_source = (
+                  "import json,os,pwd,sys\n"
+                  "contract=json.loads(sys.argv[1])\n"
+                  "command=sys.argv[2:]\n"
+                  "uid=os.getuid();euid=os.geteuid();gid=os.getgid();egid=os.getegid()\n"
+                  "raw_groups=sorted(set(os.getgroups()))\n"
+                  "effective=sorted(value for value in raw_groups if value != contract['gid'])\n"
+                  "try:\n"
+                  "    user=pwd.getpwuid(uid).pw_name\n"
+                  "except KeyError:\n"
+                  "    user=''\n"
+                  "identity_exact=(uid==contract['uid'] and euid==contract['uid'] and "
+                  "gid==contract['gid'] and egid==contract['gid'] and user==contract['name'])\n"
+                  "groups_exact=(effective==contract['effectiveGroups'])\n"
+                  "field_only_leak=sorted(set(effective).intersection(contract['fieldOnlyGroups']))\n"
+                  "record={'uid':uid,'euid':euid,'gid':gid,'egid':egid,'user':user,"
+                  "'rawGroups':raw_groups,'effectiveGroups':effective,"
+                  "'expectedEffectiveGroups':contract['effectiveGroups'],"
+                  "'fieldOnlyLeak':field_only_leak,'identityExact':identity_exact,"
+                  "'groupsExact':groups_exact,'effectiveZeroSupplementaryGroupsClaim':False}\n"
+                  "print('NEMBRA_BUILD_IDENTITY_GROUPS='+json.dumps(record,sort_keys=True),file=sys.stderr,flush=True)\n"
+                  "if not identity_exact or not groups_exact or field_only_leak:\n"
+                  "    raise SystemExit(126)\n"
+                  "os.execve(command[0], command, os.environ)\n"
+              )
+              return [
+                  "/usr/bin/python3",
+                  "-B",
+                  "-I",
+                  "-c",
+                  child_source,
+                  json.dumps(contract, separators=(",", ":"), sort_keys=True),
+                  *argv,
+              ]
+          '''
+          text = text[:start] + replacement + text[end:]
+
+          preflight = '''        _attest_build_identity_groups(
+                      build_name,
+                      build_uid,
+                      build_gid,
+                      field_groups,
+                      build_env,
+                      home,
+                  )
+          
+          '''
+          if text.count(preflight) != 1:
+              raise SystemExit("expected exactly one independent credential preflight")
+          text = text.replace(preflight, "", 1)
+
+          old_build = '''        guarded_command = _replace_derived_placeholder(command, derived_root)
+                  build = subprocess.run(
+                      guarded_command,
+          '''
+          new_build = '''        guarded_command = _replace_derived_placeholder(command, derived_root)
+                  attested_command = _credential_attesting_exec_command(
+                      guarded_command,
+                      name=build_name,
+                      uid=build_uid,
+                      gid=build_gid,
+                      field_groups=field_groups,
+                  )
+                  build = subprocess.run(
+                      attested_command,
+          '''
+          if text.count(old_build) != 1:
+              raise SystemExit("expected exactly one production guarded build launch")
+          text = text.replace(old_build, new_build, 1)
+          helper.write_text(text, encoding="utf-8")
+
+          pre_stage = Path("scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py")
+          source = pre_stage.read_text(encoding="utf-8")
+          marker = '        self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)\n'
+          source_assertions = '''        self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)
+                  self.assertIn("attested_command = _credential_attesting_exec_command(", source)
+                  self.assertIn("build = subprocess.run(\\n            attested_command,", source)
+                  self.assertIn("os.execve(command[0], command, os.environ)", source)
+                  self.assertIn("effectiveZeroSupplementaryGroupsClaim':False", source)
+                  self.assertNotIn("def _attest_build_identity_groups(", source)
+          '''
+          if source.count(marker) != 1:
+              raise SystemExit("expected one structured-credential source assertion")
+          source = source.replace(marker, source_assertions, 1)
+
+          insertion_marker = '    def test_verified_identity_retirement_requires_name_and_numeric_absence(self) -> None:\n'
+          new_test = r'''    def test_credential_attesting_exec_command_binds_fresh_ds_baseline_to_same_process_exec(self) -> None:
+                  helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_attest_exec")
+                  with mock.patch.object(helper.os, "getgrouplist", return_value=[12, 61, 100, 701, 55001]):
+                      wrapped = helper._credential_attesting_exec_command(
+                          ["/usr/bin/true", "accepted-compiler-argument"],
+                          name="nembrabuildtest",
+                          uid=55001,
+                          gid=55001,
+                          field_groups=(20, 33, 61, 80, 701),
+                      )
+                  self.assertEqual(wrapped[:4], ["/usr/bin/python3", "-B", "-I", "-c"])
+                  child_source = wrapped[4]
+                  contract = json.loads(wrapped[5])
+                  self.assertEqual(contract["effectiveGroups"], [12, 61, 100, 701])
+                  self.assertEqual(contract["fieldOnlyGroups"], [20, 33, 80])
+                  self.assertEqual(wrapped[6:], ["/usr/bin/true", "accepted-compiler-argument"])
+                  self.assertIn("os.getgroups()", child_source)
+                  self.assertIn("raise SystemExit(126)", child_source)
+                  self.assertIn("os.execve(command[0], command, os.environ)", child_source)
+                  self.assertIn("effectiveZeroSupplementaryGroupsClaim", child_source)
+
+                  with self.assertRaises(helper.BuildOriginCustodyError):
+                      helper._credential_attesting_exec_command(
+                          ["xcodebuild"],
+                          name="nembrabuildtest",
+                          uid=55001,
+                          gid=55001,
+                          field_groups=(),
+                      )
+
+          '''
+          if source.count(insertion_marker) != 1:
+              raise SystemExit("expected identity-retirement unit-test insertion point")
+          source = source.replace(insertion_marker, new_test + insertion_marker, 1)
+          pre_stage.write_text(source, encoding="utf-8")
+
+          real = Path("scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py")
+          witness = real.read_text(encoding="utf-8")
+          old_real_build = '''        build = subprocess.run(
+                      command,
+                      cwd=source_root,
+          '''
+          new_real_build = '''        attested_command = helper._credential_attesting_exec_command(
+                      command,
+                      name=build_name,
+                      uid=build_uid,
+                      gid=build_gid,
+                      field_groups=field_groups,
+                  )
+                  build = subprocess.run(
+                      attested_command,
+                      cwd=source_root,
+          '''
+          if witness.count(old_real_build) != 1:
+              raise SystemExit("expected one real-Xcode build launch")
+          witness = witness.replace(old_real_build, new_real_build, 1)
+
+          status_marker = '''        if build.returncode != 0:
+                      emit_error(
+          '''
+          attestation_check = '''        credential_records = [
+                      line[len(helper.GROUP_ATTESTOR_MARKER):]
+                      for line in (build.stdout or "").splitlines()
+                      if line.startswith(helper.GROUP_ATTESTOR_MARKER)
+                  ]
+                  if len(credential_records) != 1:
+                      emit_error("identity", "missing or ambiguous same-process build credential attestation", build_output=build.stdout)
+                      return 72
+                  try:
+                      credential_attestation = json.loads(credential_records[0])
+                  except json.JSONDecodeError:
+                      emit_error("identity", "same-process build credential attestation is malformed", build_output=build.stdout)
+                      return 72
+                  if not (
+                      credential_attestation.get("identityExact") is True
+                      and credential_attestation.get("groupsExact") is True
+                      and credential_attestation.get("fieldOnlyLeak") == []
+                      and credential_attestation.get("effectiveZeroSupplementaryGroupsClaim") is False
+                  ):
+                      emit_error("identity", "same-process build credential attestation rejected effective authority", build_output=build.stdout)
+                      return 72
+
+          '''
+          if witness.count(status_marker) != 1:
+              raise SystemExit("expected one real-Xcode build status gate")
+          witness = witness.replace(status_marker, attestation_check + status_marker, 1)
+
+          evidence_marker = '            "buildIdentityDistinctFromField": build_uid != field_uid,\n'
+          evidence_add = '''            "buildIdentityDistinctFromField": build_uid != field_uid,
+                      "buildCredentialAttestation": credential_attestation,
+                      "buildCredentialAttestationSameExecTransition": True,
+                      "effectiveZeroSupplementaryGroupsClaim": False,
+          '''
+          if witness.count(evidence_marker) != 1:
+              raise SystemExit("expected one real-Xcode evidence insertion point")
+          witness = witness.replace(evidence_marker, evidence_add, 1)
+
+          required_marker = '            and evidence.get("buildIdentityDistinctFromField") is True\n'
+          required_add = '''            and evidence.get("buildIdentityDistinctFromField") is True
+                      and evidence.get("buildCredentialAttestationSameExecTransition") is True
+                      and evidence.get("effectiveZeroSupplementaryGroupsClaim") is False
+                      and evidence.get("buildCredentialAttestation", {}).get("identityExact") is True
+                      and evidence.get("buildCredentialAttestation", {}).get("groupsExact") is True
+                      and evidence.get("buildCredentialAttestation", {}).get("fieldOnlyLeak") == []
+          '''
+          if witness.count(required_marker) != 1:
+              raise SystemExit("expected one real-Xcode parent evidence gate")
+          witness = witness.replace(required_marker, required_add, 1)
+          witness = witness.replace(
+              "helper._remove_local_build_identity(build_name, build_uid)\n",
+              "helper._remove_local_build_identity(build_name, build_uid, require_absent=True)\n",
+          )
+          real.write_text(witness, encoding="utf-8")
+
+          field = Path(".github/workflows/capture-field-build-provenance.yml")
+          workflow = field.read_text(encoding="utf-8")
+          old_oracle = '''          grep -Fq '**_structured_credentials(build_uid, build_gid, ())' "$build_origin_custody"
+          '''
+          new_oracle = '''          grep -Fq '**_structured_credentials(build_uid, build_gid, ())' "$build_origin_custody"
+                    grep -Fq 'def _credential_attesting_exec_command(' "$build_origin_custody"
+                    grep -Fq 'attested_command = _credential_attesting_exec_command(' "$build_origin_custody"
+                    grep -Fq 'os.execve(command[0], command, os.environ)' "$build_origin_custody"
+                    grep -Fq 'effectiveZeroSupplementaryGroupsClaim' "$build_origin_custody"
+                    if grep -Fq 'def _attest_build_identity_groups(' "$build_origin_custody"; then
+                      echo 'ERROR: independent credential preflight is not compiler-process credential authority.' >&2
+                      exit 1
+                    fi
+          '''
+          if workflow.count(old_oracle) != 1:
+              raise SystemExit("expected one Field structured-credential oracle")
+          workflow = workflow.replace(old_oracle, new_oracle, 1)
+          field.write_text(workflow, encoding="utf-8")
+          PY
+
+          rm .github/workflows/tmp-v14-signed-origin-attest-exec-materializer.yml
+
+      - name: Validate focused production and witness contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          python3 scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py -v
+          grep -Fq 'def _credential_attesting_exec_command(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq 'os.execve(command[0], command, os.environ)' scripts/ci/capture_signed_app_build_origin_custody.py
+          ! grep -Fq 'def _attest_build_identity_groups(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq 'buildCredentialAttestationSameExecTransition' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          grep -Fq 'def _credential_attesting_exec_command(' .github/workflows/capture-field-build-provenance.yml
+          git diff --check
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-field-build-provenance.yml \
+            .github/workflows/tmp-v14-signed-origin-attest-exec-materializer.yml \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Publish clean stacked delta
+        shell: bash
+        env:
+          BRANCH: repair/v14-signed-origin-attest-exec-sol-20260812-go2
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-swarm"
+          git config user.email "nembra-swarm@users.noreply.github.com"
+          git add -A -- \
+            .github/workflows/capture-field-build-provenance.yml \
+            .github/workflows/tmp-v14-signed-origin-attest-exec-materializer.yml \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          git commit -m "Capture P0: bind credential attestation to compiler exec"
+          git push origin "HEAD:$BRANCH"
