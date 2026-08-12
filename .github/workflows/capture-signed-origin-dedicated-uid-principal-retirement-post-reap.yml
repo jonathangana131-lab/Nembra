@@ -1,0 +1,219 @@
+name: Capture Signed Origin Dedicated UID Principal Retirement Post-Reap
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-signed-origin-dedicated-uid-principal-retirement-post-reap.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  post-reap-ordering:
+    name: Prove retirement after explicit direct-child reap
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact red parent and one-path diagnostic scope
+        shell: bash
+        env:
+          EXACT_RED_PARENT: 05ada65e4f5b41caa3600e5f8cfb1f2cb3cf0d18
+        run: |
+          set -euo pipefail
+          test "$(git merge-base "$EXACT_RED_PARENT" HEAD)" = "$EXACT_RED_PARENT"
+          git diff --name-only "$EXACT_RED_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' .github/workflows/capture-signed-origin-dedicated-uid-principal-retirement-post-reap.yml > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_RED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize exact post-reap ordering repair in runner temp
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('scripts/ci/tests/test_capture_signed_app_dedicated_uid_principal_retirement.py')
+          source = source_path.read_text(encoding='utf-8')
+
+          old_retire = '''def retire_identity(name: str, uid: int) -> tuple[dict[str, int], dict[str, object]]:
+              pkill = run(["/usr/bin/pkill", "-9", "-u", str(uid)])
+              if pkill.returncode not in (0, 1):
+                  raise ProbeError(f"build-UID pkill failed: rc={pkill.returncode} {pkill.stderr[-1000:]!r}")
+              user_delete = run(["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"])
+              group_delete = run(["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"])
+              commands = {
+                  "pkillReturnCode": pkill.returncode,
+                  "userDeleteReturnCode": user_delete.returncode,
+                  "groupDeleteReturnCode": group_delete.returncode,
+              }
+              if user_delete.returncode != 0 or group_delete.returncode != 0:
+                  raise ProbeError(f"dedicated principal delete command failed: {commands}")
+              flush_directory_cache()
+              final_state = wait_for_retirement(name, uid)
+              if not final_state["retirementAccepted"]:
+                  raise ProbeError(f"dedicated principal survived checked retirement: commands={commands} state={final_state}")
+              return commands, final_state
+          '''.replace('          ', '')
+
+          new_retire = '''def wait_for_destructive_retirement(name: str, uid: int, timeout: float = 6.0) -> dict[str, object]:
+              deadline = time.monotonic() + timeout
+              latest: dict[str, object] = {}
+              while time.monotonic() < deadline:
+                  latest = lookup_state(name, uid)
+                  if (
+                      not latest["liveUIDProcesses"]
+                      and not latest["userDirectoryServiceRecordResolved"]
+                      and not latest["groupDirectoryServiceRecordResolved"]
+                  ):
+                      return latest
+                  flush_directory_cache()
+                  time.sleep(0.05)
+              return lookup_state(name, uid)
+
+
+          def retire_identity(name: str, uid: int) -> tuple[dict[str, int], dict[str, object]]:
+              pkill = run(["/usr/bin/pkill", "-9", "-u", str(uid)])
+              if pkill.returncode not in (0, 1):
+                  raise ProbeError(f"build-UID pkill failed: rc={pkill.returncode} {pkill.stderr[-1000:]!r}")
+              user_delete = run(["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"])
+              group_delete = run(["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"])
+              commands = {
+                  "pkillReturnCode": pkill.returncode,
+                  "userDeleteReturnCode": user_delete.returncode,
+                  "groupDeleteReturnCode": group_delete.returncode,
+              }
+              if user_delete.returncode != 0 or group_delete.returncode != 0:
+                  raise ProbeError(f"dedicated principal delete command failed: {commands}")
+              flush_directory_cache()
+              destructive_state = wait_for_destructive_retirement(name, uid)
+              if (
+                  destructive_state["liveUIDProcesses"]
+                  or destructive_state["userDirectoryServiceRecordResolved"]
+                  or destructive_state["groupDirectoryServiceRecordResolved"]
+              ):
+                  raise ProbeError(
+                      f"dedicated principal retained executable/Directory Services authority after cleanup: "
+                      f"commands={commands} state={destructive_state}"
+                  )
+              return commands, destructive_state
+          '''.replace('          ', '')
+
+          old_call = '''        commands, retirement_state = retire_identity(positive_name, positive_uid)
+                  positive_created = False
+                  sleeper.wait(timeout=2.0)
+                  post_reap_state = lookup_state(positive_name, positive_uid)
+                  if not post_reap_state["retirementAccepted"] or post_reap_state["liveUIDProcesses"] or post_reap_state["zombieUIDProcesses"]:
+                      raise ProbeError(f"reaped positive principal did not remain retired: {post_reap_state}")
+          '''.replace('          ', '')
+
+          new_call = '''        commands, retirement_state = retire_identity(positive_name, positive_uid)
+                  if retirement_state["liveUIDProcesses"]:
+                      raise ProbeError(f"positive principal retained non-zombie process authority before reap: {retirement_state}")
+                  unexpected_zombies = [pid for pid in retirement_state["zombieUIDProcesses"] if pid != sleeper.pid]
+                  if unexpected_zombies or sleeper.pid not in retirement_state["zombieUIDProcesses"]:
+                      raise ProbeError(f"direct-child zombie classification was not exact: {retirement_state}")
+                  sleeper.wait(timeout=2.0)
+                  post_reap_state = wait_for_retirement(positive_name, positive_uid)
+                  if not post_reap_state["retirementAccepted"] or post_reap_state["liveUIDProcesses"] or post_reap_state["zombieUIDProcesses"]:
+                      raise ProbeError(f"reaped positive principal did not fully converge to retirement: {post_reap_state}")
+                  positive_created = False
+          '''.replace('          ', '')
+
+          if source.count(old_retire) != 1:
+              raise SystemExit(f'expected one exact retire_identity ordering block, found {source.count(old_retire)}')
+          if source.count(old_call) != 1:
+              raise SystemExit(f'expected one exact positive retirement call block, found {source.count(old_call)}')
+          repaired = source.replace(old_retire, new_retire).replace(old_call, new_call)
+          if repaired == source:
+              raise SystemExit('post-reap repair made no change')
+          if 'final_state = wait_for_retirement(name, uid)' in repaired:
+              raise SystemExit('pre-reap cached-lookup acceptance survived repair')
+          if 'post_reap_state = wait_for_retirement(positive_name, positive_uid)' not in repaired:
+              raise SystemExit('post-reap bounded convergence is absent')
+          output = Path('${{ runner.temp }}') / 'principal-retirement-post-reap.py'
+          output.write_text(repaired, encoding='utf-8')
+          compile(repaired, str(output), 'exec', dont_inherit=True)
+          PY
+
+      - name: Execute corrected real-macOS retirement witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          witness="$RUNNER_TEMP/principal-retirement-post-reap.py"
+          log="$RUNNER_TEMP/principal-retirement-post-reap.log"
+          set +e
+          /usr/bin/python3 -B -I "$witness" >"$log" 2>&1
+          status=$?
+          set -e
+          cat "$log"
+          printf '%s\n' "$status" > "$RUNNER_TEMP/principal-retirement-post-reap.status"
+          test "$status" -eq 0
+          grep -Fq 'NEMBRA_DEDICATED_UID_PRINCIPAL_RETIREMENT_JSON=' "$log"
+
+      - name: Require exact post-reap authority evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - "$RUNNER_TEMP/principal-retirement-post-reap.log" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          marker = 'NEMBRA_DEDICATED_UID_PRINCIPAL_RETIREMENT_JSON='
+          lines = [line for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines() if line.startswith(marker)]
+          if len(lines) != 1:
+              raise SystemExit(f'expected one success marker, found {len(lines)}')
+          evidence = json.loads(lines[0][len(marker):])
+          if evidence.get('principalRetirementAccepted') is not True:
+              raise SystemExit('principal retirement was not accepted')
+          if evidence.get('zombieClassifiedNonAuthoritative') is not True:
+              raise SystemExit('direct-child zombie was not classified separately')
+          before = evidence.get('checkedRetirementStateBeforeDirectChildReap') or {}
+          after = evidence.get('checkedRetirementStateAfterDirectChildReap') or {}
+          if before.get('liveUIDProcesses') != []:
+              raise SystemExit(f'non-zombie process authority survived destructive cleanup: {before}')
+          if before.get('userDirectoryServiceRecordResolved') is not False or before.get('groupDirectoryServiceRecordResolved') is not False:
+              raise SystemExit(f'Directory Services identity survived destructive cleanup: {before}')
+          if not before.get('zombieUIDProcesses'):
+              raise SystemExit(f'expected the direct child to be retained as an explicit pre-reap zombie witness: {before}')
+          if after.get('retirementAccepted') is not True or after.get('liveUIDProcesses') != [] or after.get('zombieUIDProcesses') != []:
+              raise SystemExit(f'post-reap retirement did not converge: {after}')
+          if evidence.get('partialGroupSurvivalRejected') is not True:
+              raise SystemExit('partial user-only deletion negative did not remain fail-closed')
+          if evidence.get('productionBytesChanged') is not False or evidence.get('productionAcceptanceClaimed') is not False:
+              raise SystemExit('validation crossed production acceptance boundary')
+          if evidence.get('physicalAuthorityCreated') is not False:
+              raise SystemExit('validation created physical authority')
+          print('POST_REAP_RETIREMENT_ORDERING_ACCEPTED physicalAuthorityCreated=false')
+          PY
+
+      - name: Preserve validation-only scope
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 05ada65e4f5b41caa3600e5f8cfb1f2cb3cf0d18 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' 'VALIDATION ONLY. Production bytes unchanged. PHYSICAL NO-GO.'
+
+      - name: Retain diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-principal-retirement-post-reap-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/principal-retirement-post-reap.py
+            ${{ runner.temp }}/principal-retirement-post-reap.log
+            ${{ runner.temp }}/principal-retirement-post-reap.status
+          if-no-files-found: error
+          retention-days: 30
