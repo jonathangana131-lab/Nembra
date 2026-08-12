@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import errno
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
@@ -92,6 +93,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             "sudo_revoke": "_invalidate_invoker_sudo(field_user, field_uid, field_gid, field_groups, field_env)",
             "identity_id": "build_uid = _choose_ephemeral_id()",
             "identity_create": "_create_local_build_identity(build_name, build_uid, build_gid, home)",
+            "credential_attest": "_attest_build_kernel_groups(build_name, build_uid, build_gid, field_groups, build_env)",
             "image": "_create_apfs_image(image)",
             "attach_rw": "writable_device = _attach_apfs(image, mountpoint, readonly=False)",
             "spawn": "build = subprocess.run(",
@@ -114,6 +116,8 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             indexes[name] = index
             search_from = index + 1
 
+        self.assertLess(indexes["identity_create"], indexes["credential_attest"])
+        self.assertLess(indexes["credential_attest"], indexes["image"])
         self.assertLess(indexes["detach_rw"], indexes["status"])
         self.assertLess(indexes["status"], indexes["attach_ro"])
         self.assertLess(indexes["readonly_probe"], indexes["source_hash"])
@@ -123,6 +127,9 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertIn("build_gid = build_uid", source)
         self.assertIn("if build_uid == field_uid or build_gid in field_groups:", source)
         self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)
+        self.assertIn('"-owners",\n        "on",', source)
+        self.assertIn("fresh account Directory Services baseline", source)
+        self.assertIn("field-only group authority leaked", source)
         self.assertIn("if detach.returncode != 0:", source)
         self.assertIn("normal non-forced quiescence", source)
         self.assertIn('["/usr/bin/ditto", "--noacl"', source)
@@ -135,6 +142,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertNotIn("_prepare_derived", source)
         self.assertNotIn("_terminate_remaining_process_group", source)
         self.assertNotIn("preexec_fn=", source)
+        self.assertNotIn("effective supplementary groups are empty", source)
 
     def test_placeholder_is_exactly_single_use(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody")
@@ -174,6 +182,55 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             helper._structured_credentials(501, 0, ())
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._structured_credentials(0, 20, ())
+
+    def test_build_kernel_groups_must_match_fresh_directory_services_baseline(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_group_attest")
+        environment = {"HOME": "/private/tmp/nembra-build-home", "PATH": "/usr/bin:/bin"}
+        accepted = {
+            "uid": 52000,
+            "euid": 52000,
+            "gid": 52000,
+            "egid": 52000,
+            "groups": [12, 61, 100, 701, 52000],
+            "user": "nembrabuild",
+        }
+        completed = subprocess_completed = helper.subprocess.CompletedProcess(
+            args=["/usr/bin/python3"],
+            returncode=0,
+            stdout=json.dumps(accepted),
+            stderr="",
+        )
+        with (
+            mock.patch.object(helper.os, "getgrouplist", return_value=[52000, 12, 61, 100, 701]),
+            mock.patch.object(helper.subprocess, "run", return_value=completed) as run,
+        ):
+            self.assertEqual(
+                helper._attest_build_kernel_groups(
+                    "nembrabuild", 52000, 52000, (20, 80, 701), environment
+                ),
+                (12, 61, 100, 701),
+            )
+            self.assertEqual(run.call_args.kwargs["user"], 52000)
+            self.assertEqual(run.call_args.kwargs["group"], 52000)
+            self.assertEqual(run.call_args.kwargs["extra_groups"], [])
+        del subprocess_completed
+
+        rejected = dict(accepted)
+        rejected["groups"] = [12, 61, 80, 100, 701, 52000]
+        rejected_completed = helper.subprocess.CompletedProcess(
+            args=["/usr/bin/python3"],
+            returncode=0,
+            stdout=json.dumps(rejected),
+            stderr="",
+        )
+        with (
+            mock.patch.object(helper.os, "getgrouplist", return_value=[52000, 12, 61, 100, 701]),
+            mock.patch.object(helper.subprocess, "run", return_value=rejected_completed),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._attest_build_kernel_groups(
+                "nembrabuild", 52000, 52000, (20, 80, 701), environment
+            )
 
     def test_sudo_policy_classifier_rejects_passwordless_authority(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_sudo_policy")
