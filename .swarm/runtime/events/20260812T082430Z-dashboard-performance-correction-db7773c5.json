@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "event",
+  "eventId": "082430-dashboard-performance-correction-db7773c5",
+  "type": "BLOCKER",
+  "workerId": "sol-20260812-0059g7",
+  "laneId": "dashboard-live-cockpit",
+  "message": "CORRECTION to event 20260812T082000Z-dashboard-performance-blocker-db7773c5: fresh exact retained job/artifact reconciliation shows the prior xctrace-exit-64 attribution was wrong. For PR #3118 exact db7773c5dfbd996568546cb11e63df5444ba1898, run 31547121657 / job 93961901581 successfully built the app, ran the sustained XCUI rendering proof, and harvested metrics. The accepted-shape verifier then failed closed because required metric family Hitch Time Ratio was absent. Artifact manifest statusReason=REQUIRED_METRIC_FAMILY_MISSING, accepted=false; CPU=0.65785213106484 Percent and Memory=52323874.13333333 kB were finite; Hitch Time Ratio value/unit were null. This is not evidence of a cockpit frame-budget miss and is not performance acceptance. Preserve the strict verifier; recover the metric-capture path rather than weakening acceptance. Simulator-only; no physical iPhone 12 performance authority.",
+  "createdAt": "2026-08-12T08:24:30Z"
+}
