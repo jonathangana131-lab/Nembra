@@ -138,7 +138,9 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertNotIn("build = subprocess.run(\n            guarded_command,", source)
         self.assertIn("def _process_state_for_uid(", source)
         self.assertIn("if not _numeric_principal_in_use(candidate):", source)
-        self.assertIn("if not latest_live and not latest_lookups:", source)
+        self.assertIn("def _wait_for_no_live_uid(", source)
+        self.assertIn("if not latest_live:", source)
+        self.assertIn("_wait_for_no_live_uid(uid)", source)
         self.assertIn("if detach.returncode != 0:", source)
         self.assertIn("normal non-forced quiescence", source)
         self.assertIn('["/usr/bin/ditto", "--noacl"', source)
@@ -204,6 +206,62 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         )
         with mock.patch.object(helper.subprocess, "run", return_value=completed):
             self.assertEqual(helper._process_state_for_uid(55001), ((101,), (102,)))
+
+    def test_process_state_fails_closed_on_malformed_inventory(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_bad_process_state")
+        malformed_outputs = (
+            "101 55001\n",
+            "not-a-pid 55001 S\n",
+            "101 not-a-uid S\n",
+            "0 55001 S\n",
+        )
+        for output in malformed_outputs:
+            completed = mock.Mock(returncode=0, stdout=output, stderr="")
+            with (
+                self.subTest(output=output),
+                mock.patch.object(helper.subprocess, "run", return_value=completed),
+                self.assertRaises(helper.BuildOriginCustodyError),
+            ):
+                helper._process_state_for_uid(55001)
+
+        failed = mock.Mock(returncode=1, stdout="", stderr="ps failed")
+        with (
+            mock.patch.object(helper.subprocess, "run", return_value=failed),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._process_state_for_uid(55001)
+
+    def test_build_environment_rejects_ambient_xcode_selector_authority(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_environment")
+        poison = {
+            "DEVELOPER_DIR": "/tmp/poison-developer",
+            "SDKROOT": "/tmp/poison-sdk",
+            "TOOLCHAINS": "poison-toolchain",
+            "__CF_USER_TEXT_ENCODING": "poison-encoding",
+            "CC": "/tmp/poison-cc",
+            "CXX": "/tmp/poison-cxx",
+            "SWIFT_EXEC": "/tmp/poison-swift",
+            "DYLD_INSERT_LIBRARIES": "/tmp/poison.dylib",
+            "LANG": "poison_LANG",
+            "LC_ALL": "poison_LC_ALL",
+        }
+        with tempfile.TemporaryDirectory(prefix="nembra-build-env-") as temporary:
+            home = Path(temporary)
+            with mock.patch.dict(helper.os.environ, poison, clear=True):
+                environment = helper._build_environment("nembrabuildtest", home)
+        self.assertEqual(
+            environment,
+            {
+                "HOME": str(home),
+                "USER": "nembrabuildtest",
+                "LOGNAME": "nembrabuildtest",
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "TMPDIR": str(home / "tmp"),
+                "LANG": "en_US.UTF-8",
+                "LC_ALL": "en_US.UTF-8",
+            },
+        )
+        self.assertTrue(set(poison).isdisjoint(environment))
 
     def test_structured_credentials_preserve_explicit_authority_without_primary_duplication(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_credentials")
@@ -369,6 +427,9 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
 
         with (
             mock.patch.object(helper.pwd, "getpwnam", return_value=object()),
+            mock.patch.object(helper.pwd, "getpwuid", missing),
+            mock.patch.object(helper.grp, "getgrnam", missing),
+            mock.patch.object(helper.grp, "getgrgid", missing),
             mock.patch.object(helper, "_process_state_for_uid", return_value=((), ())),
             self.assertRaises(helper.BuildOriginCustodyError),
         ):
@@ -377,16 +438,43 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._assert_local_build_identity_retired("nembrabuildtest", 0)
 
-    def test_strict_identity_removal_invokes_retirement_postcondition(self) -> None:
+    def test_strict_identity_removal_proves_zero_live_uid_before_directory_service_deletion(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_strict_retirement")
-        completed = mock.Mock(returncode=0)
+        events: list[str] = []
+
+        def run_side_effect(argv, **_kwargs):
+            if argv[:3] == ["/usr/bin/pkill", "-9", "-u"]:
+                events.append("pkill")
+            elif argv[:3] == ["/usr/bin/dscl", ".", "-delete"]:
+                if argv[3].startswith("/Users/"):
+                    events.append("delete-user")
+                elif argv[3].startswith("/Groups/"):
+                    events.append("delete-group")
+            return mock.Mock(returncode=0)
+
+        def wait_side_effect(_uid, **_kwargs):
+            events.append("zero-live")
+            return ()
+
+        def verify_side_effect(_name, _uid):
+            events.append("verify-lookups")
+
         with (
             mock.patch.object(helper.sys, "platform", "darwin"),
-            mock.patch.object(helper.subprocess, "run", return_value=completed),
-            mock.patch.object(helper, "_assert_local_build_identity_retired") as verify,
+            mock.patch.object(helper.subprocess, "run", side_effect=run_side_effect),
+            mock.patch.object(helper, "_wait_for_no_live_uid", side_effect=wait_side_effect),
+            mock.patch.object(
+                helper,
+                "_assert_local_build_identity_retired",
+                side_effect=verify_side_effect,
+            ),
         ):
             helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
-            verify.assert_called_once_with("nembrabuildtest", 55001)
+
+        self.assertLess(events.index("pkill"), events.index("zero-live"))
+        self.assertLess(events.index("zero-live"), events.index("delete-user"))
+        self.assertLess(events.index("delete-user"), events.index("delete-group"))
+        self.assertLess(events.index("delete-group"), events.index("verify-lookups"))
 
     def test_strict_identity_removal_rejects_unclassifiable_pkill_failure(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_pkill_failure")
