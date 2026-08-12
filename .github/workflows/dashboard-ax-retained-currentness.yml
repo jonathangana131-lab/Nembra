@@ -1,0 +1,145 @@
+name: Dashboard AX Retained Currentness Witness
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/dashboard-ax-retained-currentness.yml'
+      - 'NembraApp/Features/Dashboard/**'
+      - 'NembraUITests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  retained-currentness:
+    name: Exact iPhone 12 Simulator AX retained currentness
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable PR head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual"
+          test "$actual" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Capture real Accessibility XXXL retained-speed witness
+        id: witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACTS="$RUNNER_TEMP/dashboard-ax-retained"
+          DERIVED="$RUNNER_TEMP/dashboard-ax-retained-derived"
+          RESULT="$ARTIFACTS/NembraDashboardAXRetained.xcresult"
+          ATTACHMENTS="$ARTIFACTS/attachments"
+          mkdir -p "$ARTIFACTS" "$ATTACHMENTS"
+
+          runtime="$({ xcrun simctl list runtimes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=json.load(sys.stdin)["runtimes"]
+          candidates=[r for r in rows if r.get("isAvailable", True) and str(r.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          if not candidates: raise SystemExit(1)
+          candidates.sort(key=lambda r: tuple(int(p) for p in str(r.get("version", "0")).split(".") if p.isdigit()), reverse=True)
+          print(candidates[0]["identifier"])
+          '; } 2>/dev/null)" || { echo 'No iOS 27 runtime' >&2; exit 2; }
+
+          device_type="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=json.load(sys.stdin)["devicetypes"]
+          for row in rows:
+              if row.get("name") == "iPhone 12":
+                  print(row["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)
+          '; } 2>/dev/null)" || { echo 'No iPhone 12 Simulator device type' >&2; exit 3; }
+
+          udid="$(xcrun simctl create "Nembra AX Retained ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$device_type" "$runtime")"
+          cleanup() {
+            xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+            xcrun simctl delete "$udid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT INT TERM
+
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+
+          content_size=''
+          for candidate in \
+            accessibility-extra-extra-extra-large \
+            accessibility-extra-extra-large \
+            accessibility-extra-large \
+            accessibility-large \
+            accessibility-medium
+          do
+            if xcrun simctl ui "$udid" content_size "$candidate" >/dev/null 2>&1; then
+              content_size="$candidate"
+              break
+            fi
+          done
+          test -n "$content_size" || { echo 'No accessibility content-size setting was accepted' >&2; exit 4; }
+
+          {
+            printf 'source_sha=%s\n' "$(git rev-parse HEAD)"
+            printf 'runtime=%s\n' "$runtime"
+            printf 'device_type=%s\n' "$device_type"
+            printf 'simulator_udid=%s\n' "$udid"
+            printf 'accessibility_content_size=%s\n' "$content_size"
+            xcodebuild -version
+          } > "$ARTIFACTS/environment.txt"
+
+          set +e
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$udid" \
+            -derivedDataPath "$DERIVED" \
+            -resultBundlePath "$RESULT" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 120 \
+            -collect-test-diagnostics never \
+            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardRetainedSpeedTruthIsVisibleAndCapturable \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            test | tee "$ARTIFACTS/xcodebuild.log"
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [[ -d "$RESULT" ]]; then
+            xcrun xcresulttool export attachments \
+              --path "$RESULT" \
+              --output-path "$ATTACHMENTS" \
+              > "$ARTIFACTS/xcresult-attachments.log" 2>&1 || true
+            find "$ATTACHMENTS" -type f -maxdepth 2 -print | sort > "$ARTIFACTS/attachments.txt" || true
+          fi
+
+          if [[ "$status" -ne 0 ]]; then
+            echo "AX retained-speed witness failed with status $status" >&2
+            exit "$status"
+          fi
+
+          test -s "$ARTIFACTS/attachments.txt"
+          printf 'artifact_dir=%s\n' "$ARTIFACTS" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact retained-currentness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-dashboard-ax-retained-${{ github.event.pull_request.number }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dashboard-ax-retained
+          if-no-files-found: error
+          retention-days: 30
