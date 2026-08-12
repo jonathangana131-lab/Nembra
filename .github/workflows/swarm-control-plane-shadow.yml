@@ -5,26 +5,36 @@ on:
     paths:
       - '.swarm/**'
       - 'SWARM_GO.md'
+      - 'SWARM_COORDINATION.md'
       - 'scripts/swarm_control.py'
       - 'scripts/swarm_v16_dogfood.py'
+      - 'scripts/swarm_v16_activate.py'
+      - 'scripts/swarm_v16_review.py'
       - 'scripts/swarmcp/**'
       - 'scripts/ci/tests/test_swarm_*.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
+      - 'docs/SWARM_OPERATING_SYSTEM.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
       - '.github/workflows/swarm-control-plane-shadow.yml'
+      - '.github/workflows/swarm-v16-activate.yml'
   push:
     branches:
       - main
     paths:
       - '.swarm/**'
       - 'SWARM_GO.md'
+      - 'SWARM_COORDINATION.md'
       - 'scripts/swarm_control.py'
       - 'scripts/swarm_v16_dogfood.py'
+      - 'scripts/swarm_v16_activate.py'
+      - 'scripts/swarm_v16_review.py'
       - 'scripts/swarmcp/**'
       - 'scripts/ci/tests/test_swarm_*.py'
       - 'docs/SWARM_CONTROL_PLANE.md'
+      - 'docs/SWARM_OPERATING_SYSTEM.md'
       - 'docs/adr/ADR-0015-github-native-swarm-control-plane.md'
       - '.github/workflows/swarm-control-plane-shadow.yml'
+      - '.github/workflows/swarm-v16-activate.yml'
   workflow_dispatch:
 
 permissions:
@@ -52,6 +62,8 @@ jobs:
           python3 -m py_compile \
             scripts/swarm_control.py \
             scripts/swarm_v16_dogfood.py \
+            scripts/swarm_v16_activate.py \
+            scripts/swarm_v16_review.py \
             scripts/swarmcp/*.py \
             scripts/ci/tests/test_swarm_*.py
       - name: Validate trusted static config
@@ -73,9 +85,20 @@ jobs:
       - name: Prove V16 Mission Graph 30-worker convergence simulation
         run: python3 scripts/swarm_control.py v16-simulate --workers 30
 
+  independent-v16-review:
+    needs: deterministic-control-plane
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Run independent safety and architecture invariant review
+        run: python3 scripts/swarm_v16_review.py
+
   live-v16-dogfood:
     if: github.event_name == 'pull_request'
-    needs: deterministic-control-plane
+    needs: [deterministic-control-plane, independent-v16-review]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
