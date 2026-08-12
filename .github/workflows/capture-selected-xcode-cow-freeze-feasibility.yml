@@ -104,31 +104,32 @@ jobs:
           }
           trap cleanup EXIT INT TERM
 
+          # Keep the clone completely hidden from the field identity while root
+          # constructs and admits it. Only after the full metadata + signature
+          # gate passes is the namespace opened read/execute-only to the field
+          # identity. This removes any pre-admission traversal/mutation window.
           /usr/bin/sudo -n /bin/chmod -N "$freeze_root"
-          /usr/bin/sudo -n /bin/chmod 0755 "$freeze_root"
           namespace_uid="$(/usr/bin/stat -f '%u' "$freeze_root")"
           namespace_mode="$(/usr/bin/stat -f '%Lp' "$freeze_root")"
           test "$namespace_uid" = 0
-          test "$namespace_mode" = 755
-          printf '::notice title=Frozen namespace authority::uid=%s mode=%s\n' "$namespace_uid" "$namespace_mode"
+          test "$namespace_mode" = 700
+          printf '::notice title=Frozen namespace sealed::uid=%s mode=%s\n' "$namespace_uid" "$namespace_mode"
 
           started="$(/bin/date +%s)"
           /usr/bin/sudo -n /bin/cp -cR "$source_app" "$frozen_app"
           finished="$(/bin/date +%s)"
           printf '::notice title=COW clone complete::elapsed=%s seconds\n' "$((finished - started))"
-          test -d "$frozen_app/Contents/Developer"
+          /usr/bin/sudo -n /usr/bin/test -d "$frozen_app/Contents/Developer"
 
-          # Root ownership is the only recursive metadata mutation required here.
-          # Do not bulk chmod Xcode's symlink-rich framework topology: the real
-          # security contract is stronger and simpler when the copy must already
-          # carry no group/world write bits and no extended ACL. If either is
-          # present, fail closed instead of rewriting the signed input to green.
+          # Root ownership is the only recursive metadata mutation. ACLs and
+          # group/world write bits must already be absent in the copied input;
+          # fail closed rather than rewriting unexpected authority to green.
           run_root_checked "COW chown" /usr/sbin/chown -Rh root:wheel "$frozen_app"
 
           acl_probe="$RUNNER_TEMP/nembra-cow-acl-subject.txt"
           acl_error="$RUNNER_TEMP/nembra-cow-acl-find.err"
           set +e
-          /usr/bin/find "$frozen_app" -acl -print -quit >"$acl_probe" 2>"$acl_error"
+          /usr/bin/sudo -n /usr/bin/find "$frozen_app" -acl -print -quit >"$acl_probe" 2>"$acl_error"
           acl_rc=$?
           set -e
           if [[ "$acl_rc" -ne 0 ]]; then
@@ -141,21 +142,34 @@ jobs:
           fi
           printf '::notice title=Frozen Xcode ACL oracle::no extended ACL subjects found\n'
 
-          /usr/bin/env -i \
+          /usr/bin/sudo -n /usr/bin/env -i \
             PATH=/usr/bin:/bin \
             HOME=/tmp \
             LANG=C \
             LC_ALL=C \
+            NEMBRA_FROZEN_NAMESPACE="$freeze_root" \
             NEMBRA_FROZEN_XCODE="$frozen_app" \
-            /usr/bin/python3 -I - <<'PY'
+            /usr/bin/python3 -I - <<'PY_TREE'
           import os
           from pathlib import Path
           import stat
 
+          namespace = Path(os.environ['NEMBRA_FROZEN_NAMESPACE'])
           root = Path(os.environ['NEMBRA_FROZEN_XCODE'])
-          if not root.is_absolute() or root.is_symlink():
-              raise SystemExit('frozen Xcode root must be one real absolute directory')
-          subjects = 0
+          if not namespace.is_absolute() or namespace.is_symlink():
+              raise SystemExit('frozen namespace must be one real absolute directory')
+          if not root.is_absolute() or root.is_symlink() or root.parent != namespace:
+              raise SystemExit('frozen Xcode root must be one real direct child of the namespace')
+
+          for subject in (namespace, root):
+              metadata = os.lstat(subject)
+              if not stat.S_ISDIR(metadata.st_mode):
+                  raise SystemExit(f'frozen authority subject is not a directory: {subject}')
+              if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+                  raise SystemExit(f'frozen authority subject is not root-custodied: {subject}')
+
+          subjects = 1
+          symlinks = 0
           for current, directories, files in os.walk(root, followlinks=False):
               for name in [*directories, *files]:
                   path = Path(current) / name
@@ -164,28 +178,115 @@ jobs:
                   if metadata.st_uid != 0:
                       raise SystemExit(f'frozen Xcode subject is not root-owned: {path}')
                   if stat.S_ISLNK(metadata.st_mode):
+                      symlinks += 1
+                      try:
+                          resolved = path.resolve(strict=True)
+                      except OSError as error:
+                          raise SystemExit(f'frozen Xcode contains dangling symlink: {path}') from error
+                      if resolved != root and root not in resolved.parents:
+                          raise SystemExit(f'frozen Xcode symlink escapes the admitted clone: {path} -> {resolved}')
                       continue
                   if metadata.st_mode & 0o022:
                       raise SystemExit(f'frozen Xcode subject retains group/world write authority: {path}')
           if subjects < 1000:
               raise SystemExit('frozen Xcode tree unexpectedly small')
-          print(f'validated frozen Xcode metadata subjects={subjects}')
-          PY
-          printf '::notice title=Frozen Xcode metadata::root ownership and no group/world write authority passed\n'
+          print(f'validated frozen Xcode metadata subjects={subjects} contained_symlinks={symlinks}')
+          PY_TREE
+          printf '::notice title=Frozen Xcode metadata::root/no-write custody and symlink containment passed\n'
 
-          if ! /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
+          if ! /usr/bin/sudo -n /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
             /usr/bin/codesign --verify --deep --strict --verbose=4 \
             -R '=anchor apple generic and identifier "com.apple.dt.Xcode"' \
             "$frozen_app"; then
             printf '::error title=Frozen Xcode signature::Apple-anchored strict/deep verification failed\n'
             exit 31
           fi
-          printf '::notice title=Frozen Xcode signature::Apple-anchored strict/deep verification passed\n'
+          printf '::notice title=Frozen Xcode signature::Apple-anchored strict/deep verification passed while namespace remained root-only\n'
+
+          # Admission is now complete. Expose only traversal/read execution; the
+          # namespace itself remains root-owned and non-group/world-writable.
+          /usr/bin/sudo -n /bin/chmod 0755 "$freeze_root"
+          namespace_uid="$(/usr/bin/stat -f '%u' "$freeze_root")"
+          namespace_mode="$(/usr/bin/stat -f '%Lp' "$freeze_root")"
+          test "$namespace_uid" = 0
+          test "$namespace_mode" = 755
+          printf '::notice title=Frozen namespace admitted::uid=%s mode=%s\n' "$namespace_uid" "$namespace_mode"
 
           frozen_developer="$frozen_app/Contents/Developer"
-          frozen_xcodebuild="$frozen_developer/usr/bin/xcodebuild"
-          test -x "$frozen_xcodebuild"
-          version="$(DEVELOPER_DIR="$frozen_developer" "$frozen_xcodebuild" -version)"
+          selected_xcodebuild="$(DEVELOPER_DIR="$frozen_developer" /usr/bin/xcrun --find xcodebuild)"
+          selected_xctrace="$(DEVELOPER_DIR="$frozen_developer" /usr/bin/xcrun --find xctrace)"
+          selected_devicectl="$(DEVELOPER_DIR="$frozen_developer" /usr/bin/xcrun --find devicectl)"
+          for tool_path in "$selected_xcodebuild" "$selected_xctrace" "$selected_devicectl"; do
+            case "$tool_path" in
+              "$frozen_developer"/*) ;;
+              *) printf '::error title=Frozen selected tool escaped::%s\n' "$tool_path"; exit 33 ;;
+            esac
+          done
+
+          /usr/bin/env -i \
+            PATH=/usr/bin:/bin \
+            HOME=/tmp \
+            LANG=C \
+            LC_ALL=C \
+            NEMBRA_FROZEN_DEVELOPER="$frozen_developer" \
+            NEMBRA_FROZEN_XCODEBUILD="$selected_xcodebuild" \
+            NEMBRA_FROZEN_XCTRACE="$selected_xctrace" \
+            NEMBRA_FROZEN_DEVICECTL="$selected_devicectl" \
+            /usr/bin/python3 -I - <<'PY_PATHS'
+          import os
+          from pathlib import Path
+          import stat
+          import subprocess
+
+          subjects = [
+              (Path(os.environ['NEMBRA_FROZEN_DEVELOPER']), 'directory', 'developer'),
+              (Path(os.environ['NEMBRA_FROZEN_XCODEBUILD']), 'file', 'xcodebuild'),
+              (Path(os.environ['NEMBRA_FROZEN_XCTRACE']), 'file', 'xctrace'),
+              (Path(os.environ['NEMBRA_FROZEN_DEVICECTL']), 'file', 'devicectl'),
+          ]
+          for path, kind, label in subjects:
+              try:
+                  resolved = path.resolve(strict=True)
+              except OSError as error:
+                  raise SystemExit(f'frozen selected {label} is unavailable') from error
+              if resolved != path:
+                  raise SystemExit(f'frozen selected {label} contains symlink/alias ancestry: {path} -> {resolved}')
+              current = Path(path.anchor)
+              for component in path.parts[1:]:
+                  current = current / component
+                  metadata = os.lstat(current)
+                  leaf = current == path
+                  if stat.S_ISLNK(metadata.st_mode):
+                      raise SystemExit(f'frozen selected {label} contains symlink ancestry: {current}')
+                  if leaf and kind == 'file':
+                      if not stat.S_ISREG(metadata.st_mode):
+                          raise SystemExit(f'frozen selected {label} is not one regular file')
+                  elif not stat.S_ISDIR(metadata.st_mode):
+                      raise SystemExit(f'frozen selected {label} ancestry is not a directory: {current}')
+                  if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+                      raise SystemExit(f'frozen selected {label} ancestry is not root/no-write custodied: {current}')
+                  acl = subprocess.run(
+                      ['/bin/ls', '-lde', str(current)],
+                      env={'PATH':'/usr/bin:/bin','HOME':'/tmp','LANG':'C','LC_ALL':'C'},
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      check=False,
+                  )
+                  if acl.returncode != 0:
+                      raise SystemExit(f'frozen selected {label} ACL inspection failed: {current}')
+                  lines = acl.stdout.splitlines()
+                  if not lines:
+                      raise SystemExit(f'frozen selected {label} ACL inspection was empty: {current}')
+                  mode_field = lines[0].split(None, 1)[0]
+                  if mode_field.endswith('+') or len(lines) != 1:
+                      raise SystemExit(f'frozen selected {label} retains extended ACL authority: {current}')
+          print('validated frozen Developer/xcodebuild/xctrace/devicectl with production-equivalent ancestry custody')
+          PY_PATHS
+          printf '::notice title=Frozen selected tool custody::production-equivalent ancestry oracle passed\n'
+
+          version="$(DEVELOPER_DIR="$frozen_developer" "$selected_xcodebuild" -version)"
           first_line="${version%%$'\n'*}"
           printf '::notice title=Frozen Xcode version::%s\n' "$first_line"
           case "$first_line" in
@@ -193,21 +294,9 @@ jobs:
             *) printf '::error title=Frozen Xcode version rejected::%s\n' "$first_line"; exit 32 ;;
           esac
 
-          for tool in xcodebuild xctrace devicectl; do
-            selected="$(DEVELOPER_DIR="$frozen_developer" /usr/bin/xcrun --find "$tool")"
-            case "$selected" in
-              "$frozen_developer"/*) ;;
-              *) printf '::error title=Frozen selected tool escaped::%s -> %s\n' "$tool" "$selected"; exit 33 ;;
-            esac
-            test -x "$selected"
-            tool_uid="$(/usr/bin/stat -f '%u' "$selected")"
-            printf '::notice title=Frozen selected tool::%s uid=%s\n' "$tool" "$tool_uid"
-            test "$tool_uid" = 0
-          done
-
-          leaf_before="$(/usr/bin/shasum -a 256 "$frozen_xcodebuild" | /usr/bin/awk '{print $1}')"
+          leaf_before="$(/usr/bin/shasum -a 256 "$selected_xcodebuild" | /usr/bin/awk '{print $1}')"
           set +e
-          /bin/sh -c "printf attack >> \"$frozen_xcodebuild\"" >/tmp/nembra-cow-leaf.out 2>/tmp/nembra-cow-leaf.err
+          /bin/sh -c "printf attack >> \"$selected_xcodebuild\"" >/tmp/nembra-cow-leaf.out 2>/tmp/nembra-cow-leaf.err
           leaf_rc=$?
           /usr/bin/touch "$frozen_developer/usr/bin/nembra-field-replacement-probe" >/tmp/nembra-cow-parent.out 2>/tmp/nembra-cow-parent.err
           parent_rc=$?
@@ -217,7 +306,7 @@ jobs:
             exit 34
           fi
           test ! -e "$frozen_developer/usr/bin/nembra-field-replacement-probe"
-          leaf_after="$(/usr/bin/shasum -a 256 "$frozen_xcodebuild" | /usr/bin/awk '{print $1}')"
+          leaf_after="$(/usr/bin/shasum -a 256 "$selected_xcodebuild" | /usr/bin/awk '{print $1}')"
           test "$leaf_before" = "$leaf_after"
           printf '::notice title=Frozen Xcode field negatives::leaf and parent mutation both denied with unchanged bytes\n'
 
