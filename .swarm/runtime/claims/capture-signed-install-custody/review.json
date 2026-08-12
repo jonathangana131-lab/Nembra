@@ -9,14 +9,14 @@
   "generation": 14,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:24:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:24:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:30:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3142,
   "sourceSHA": "b8653985ff35538491c6a1c6f9e3461b52a7e4e6",
-  "currentHeadSHA": "da41ece59fc2ad9b72fb4054d37c35d70679092c",
+  "currentHeadSHA": "f4863bded2f9ca9b41f1e5d17c3f37a592efbe3f",
   "takeoverFromWorkerId": "sol-20260812-0054j7",
   "takeoverFromLeaseId": "capture-signed-install-review-0054j7-20260812-0754",
-  "takeoverReason": "Generation-13 was explicitly RELEASED after classifying #3056's supplementary-group architecture red. Fresh live state now has production successor #3142 exact da41ece5 composing the accepted dedicated-build-UID/APFS freeze. Generation-14 independently reviews that exact successor without modifying the active implementation/test paths.",
-  "checkpoint": "Claim acquired for #3142 exact-head source/adversarial review. Validate custody ordering, quiescence/fingerprint authority, cleanup/failure behavior, and ensure private Tuya/signing/keychain/provisioning authority is not silently broadened. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-13 was explicitly RELEASED after classifying #3056's supplementary-group architecture red. Generation-14 is independently reviewing the dedicated-UID/APFS production successor #3142 as its exact head moves.",
+  "checkpoint": "Reviewed ancestor da41ece5 (review 4914432389): APFS architecture direction accepted, Field source oracle stale, build-principal retirement fail-open, real signed private/keychain feasibility unproven. Head moved one workflow-only commit to f4863bde; moved-head review 4914440707 accepts the Field oracle retarget but retains the principal-retirement blocker. Added implementation contract comment 5264243977 requiring no live build-UID process plus passwd/group absence before success. Exact f486 Field 31577777848 is now SUCCESS; Main 31577777828 in progress; Signed Install 31577777765 queued; Xcode 31577778204 SKIPPED/not acceptance. PHYSICAL NO-GO."
 }
