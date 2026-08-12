@@ -2,30 +2,33 @@
 """Attest effective kernel groups for the dedicated Capture build identity.
 
 The accepted dedicated-UID/APFS Xcode proof and production successor request
-``extra_groups=[]`` when launching the fresh build account. A separate field-UID
-signing probe later proved that, on the current macOS runner, an empty Python
-``subprocess`` extra-group vector does not by itself establish that the child
-kernel group vector is empty.
+``extra_groups=[]`` when launching the fresh build account. Real macOS evidence
+from the first exact run of this witness showed why source-level wording is not
+enough: a freshly created local account still materializes macOS system-wide
+Directory Services memberships in ``os.getgroups()`` even when the requested
+extra-group vector is empty.
 
-This validation-only witness answers the narrower missing question for the actual
-fresh dedicated identity class. It creates the same ephemeral local UID/GID shape
-as the accepted #3131 oracle, launches a tiny child with the exact production
-``user/group/extra_groups=[]`` constructor, and records the child's raw
-``os.getgroups()`` result. Acceptance permits the dedicated primary GID to appear
-as a duplicate in the raw supplementary vector because that adds no distinct
-authority, but no other GID is accepted.
+That first run also distinguished this from field-account authority leakage. The
+production-shaped child and an independent ``sudo -u/-g`` launch both exposed the
+same vector returned by ``os.getgrouplist(fresh_user, fresh_gid)``. Field-only
+memberships did not cross into the fresh build identity.
 
-For diagnosis only, the root supervisor also attempts the same attestor through
-``sudo -u <fresh-user> -g <fresh-group>``. That result never rescues a red current
-constructor; it merely tells the next production repair whether a standard exec
-boundary is worth pursuing.
+The threat-relevant contract is therefore exact and mechanical:
+- real/effective UID and primary GID equal the fresh dedicated identity;
+- raw kernel supplementary authority, after removing a duplicate primary GID,
+  equals the fresh account's own Directory Services baseline exactly;
+- no field-only GID appears;
+- no unexpected GID beyond that fresh-account baseline appears.
 
+This does not pretend effective supplementary groups are empty. It records both
+requested and effective authority so production can use truthful terminology.
 No Xcode build, signing, private Tuya input, install, device, Bluetooth, telemetry,
 or physical authority is created.
 """
 from __future__ import annotations
 
 import argparse
+import grp
 import importlib.util
 import json
 import os
@@ -105,6 +108,16 @@ def parse_child(completed: subprocess.CompletedProcess[str], *, label: str) -> d
     return payload
 
 
+def group_names(groups: list[int]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for group in groups:
+        try:
+            result[str(group)] = grp.getgrgid(group).gr_name
+        except KeyError:
+            result[str(group)] = "<unresolved>"
+    return result
+
+
 def root_probe(field_uid: int, field_gid: int, field_active_groups: list[int]) -> int:
     if sys.platform != "darwin" or os.geteuid() != 0:
         emit_error("environment", "dedicated-UID group attestation requires sudo on real macOS")
@@ -159,9 +172,15 @@ def root_probe(field_uid: int, field_gid: int, field_active_groups: list[int]) -
             return 71
 
         directory_groups = sorted(set(os.getgrouplist(build_name, build_gid)))
-        if build_gid not in directory_groups:
-            emit_error("identity", "fresh build primary GID is absent from Directory Services group resolution")
+        if build_gid not in directory_groups or any(group <= 0 for group in directory_groups):
+            emit_error("identity", "fresh build Directory Services group baseline is invalid")
             return 71
+        if field_gid in directory_groups:
+            emit_error("identity", "fresh build account unexpectedly includes the field primary GID")
+            return 71
+        directory_distinct = sorted({group for group in directory_groups if group != build_gid})
+        field_baseline = {field_gid, *field_active_groups}
+        field_only_groups = sorted(field_baseline.difference(directory_groups))
 
         environment = {
             "HOME": str(home),
@@ -188,8 +207,10 @@ def root_probe(field_uid: int, field_gid: int, field_active_groups: list[int]) -
         if not isinstance(raw, list) or any(not isinstance(group, int) for group in raw):
             emit_error("evidence", "production-shaped child did not expose an integer kernel group vector")
             return 72
-        distinct = sorted({group for group in raw if group != build_gid})
-        inherited_field = sorted(set(distinct).intersection({field_gid, *field_active_groups}))
+        raw_distinct = sorted({group for group in raw if group != build_gid})
+        unexpected = sorted(set(raw_distinct).difference(directory_distinct))
+        missing = sorted(set(directory_distinct).difference(raw_distinct))
+        field_only_leaked = sorted(set(raw_distinct).intersection(field_only_groups))
 
         sudo_candidate: dict[str, object]
         sudo_run = subprocess.run(
@@ -218,9 +239,11 @@ def root_probe(field_uid: int, field_gid: int, field_active_groups: list[int]) -
             sudo_candidate = parse_child(sudo_run, label="sudo identity-bound diagnostic")
             sudo_candidate["returnCode"] = sudo_run.returncode
             sudo_raw = sudo_candidate.get("rawKernelSupplementaryGroups", [])
-            sudo_candidate["distinctSupplementaryGroups"] = sorted(
+            sudo_distinct = sorted(
                 {group for group in sudo_raw if isinstance(group, int) and group != build_gid}
             )
+            sudo_candidate["distinctSupplementaryGroups"] = sudo_distinct
+            sudo_candidate["directoryServiceBaselinePreservedExact"] = sudo_distinct == directory_distinct
         except ProbeError as error:
             sudo_candidate = {
                 "returnCode": sudo_run.returncode,
@@ -236,22 +259,31 @@ def root_probe(field_uid: int, field_gid: int, field_active_groups: list[int]) -
             and current_evidence.get("effectivePrimaryGID") == build_gid
             and current_evidence.get("resolvedUser") == build_name
         )
-        accepted = identity_exact and distinct == []
+        baseline_exact = raw_distinct == directory_distinct and not unexpected and not missing
+        accepted = identity_exact and baseline_exact and not field_only_leaked
         evidence = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "fieldUID": field_uid,
             "fieldPrimaryGID": field_gid,
             "fieldActiveSupplementaryGroups": field_active_groups,
+            "fieldGroupNames": group_names(sorted(field_baseline)),
             "buildUser": build_name,
             "buildUID": build_uid,
             "buildPrimaryGID": build_gid,
             "buildDirectoryServiceGroups": directory_groups,
+            "buildDirectoryServiceDistinctSupplementaryGroups": directory_distinct,
+            "buildDirectoryServiceGroupNames": group_names(directory_groups),
+            "fieldOnlyGroups": field_only_groups,
             "requestedExtraGroups": [],
             "productionShapedChild": current_evidence,
-            "productionShapedDistinctSupplementaryGroups": distinct,
-            "productionShapedInheritedFieldGroups": inherited_field,
+            "productionShapedDistinctSupplementaryGroups": raw_distinct,
+            "productionShapedUnexpectedGroupsBeyondDirectoryService": unexpected,
+            "productionShapedMissingDirectoryServiceGroups": missing,
+            "productionShapedFieldOnlyGroupsLeaked": field_only_leaked,
             "productionShapedIdentityExact": identity_exact,
+            "productionShapedDirectoryServiceBaselinePreservedExact": baseline_exact,
             "productionShapedKernelGroupsAccepted": accepted,
+            "effectiveZeroSupplementaryGroupsClaim": raw_distinct == [],
             "sudoIdentityBoundDiagnostic": sudo_candidate,
             "physicalAuthorityCreated": False,
         }
@@ -259,7 +291,7 @@ def root_probe(field_uid: int, field_gid: int, field_active_groups: list[int]) -
         if not accepted:
             emit_error(
                 "effective-credentials",
-                "fresh dedicated build UID retained unexpected effective supplementary authority",
+                "fresh dedicated build UID diverged from its exact Directory Services authority baseline",
                 evidence=evidence,
             )
             return 72
