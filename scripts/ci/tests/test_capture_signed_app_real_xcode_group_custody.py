@@ -5,9 +5,11 @@ The filename is retained so the permanent Signed App workflow keeps one canonica
 The old supplementary-group topology is intentionally gone: real Xcode 27 demonstrated
 that build-service/log-store processes do not preserve that synthetic group authority.
 This probe binds the actual pre-sudo field identity to the root fixture, builds with a
-fresh local UID/GID on a private APFS volume, requires the field identity to be unable
-to mutate compiler output, requires normal non-forced detach, then accepts bytes only
-from a read-only remount.
+fresh local UID/GID whose effective groups must match its exact Directory Services
+baseline, requires the field identity to be unable to mutate compiler output, requires
+normal non-forced detach, then accepts bytes only from a read-only remount. Successful
+evidence also requires a normal frozen-volume detach and verified retirement of the
+fresh build user/group.
 
 Validation only: no signing identity, device operation, Bluetooth, Tuya traffic,
 installation, launch, scooter command, or physical evidence occurs here.
@@ -170,6 +172,7 @@ def root_probe(
     build_name = f"nembrabuildprobe{os.getpid()}"
     build_uid: int | None = None
     build_gid: int | None = None
+    build_directory_groups: tuple[int, ...] = ()
     writable_device: str | None = None
     readonly_device: str | None = None
     identity_created = False
@@ -197,6 +200,18 @@ def root_probe(
         build_environment = helper._build_environment(build_name, home)
         os.chown(home / "tmp", build_uid, build_gid)
         os.chmod(home / "tmp", 0o700)
+        try:
+            build_directory_groups = helper._attest_build_identity_groups(
+                build_name,
+                build_uid,
+                build_gid,
+                field_groups,
+                build_environment,
+                home,
+            )
+        except Exception as error:
+            emit_error("effective-credentials", f"production build-group attestation failed: {error}")
+            return 71
 
         helper._create_apfs_image(image)
         writable_device = helper._attach_apfs(image, mountpoint, readonly=False)
@@ -313,14 +328,34 @@ def root_probe(
             emit_error("readonly-remount", "former build identity mutated output after read-only freeze")
             return 78
 
+        frozen_detach = helper._detach_apfs(readonly_device)
+        frozen_detach_text = (frozen_detach.stdout or "") + "\n" + (frozen_detach.stderr or "")
+        if frozen_detach.returncode != 0:
+            emit_error(
+                "quiescence",
+                "read-only compiler output could not reach normal non-forced detach before principal retirement",
+                detach_output=frozen_detach_text,
+            )
+            return 78
+        readonly_device = None
+
+        try:
+            helper._remove_local_build_identity(build_name, build_uid, require_absent=True)
+        except Exception as error:
+            emit_error("identity-retirement", f"ephemeral build principal did not retire cleanly: {error}")
+            return 78
+        identity_created = False
+
         evidence = {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "fieldUID": field_uid,
             "fieldPrimaryGID": field_gid,
             "fieldActiveSupplementaryGroups": field_active_groups,
             "fieldActiveGroupsSubsetOfDirectoryService": set(field_active_groups).issubset(field_groups),
             "buildUID": build_uid,
             "buildPrimaryGID": build_gid,
+            "buildDirectoryServiceGroups": list(build_directory_groups),
+            "buildEffectiveGroupAuthorityAttested": True,
             "buildIdentityDistinctFromField": build_uid != field_uid,
             "fieldGroupsContainBuildGID": build_gid in field_groups,
             "fieldActiveGroupsContainBuildGID": build_gid in field_active_groups,
@@ -329,6 +364,8 @@ def root_probe(
             "nonForcedDetachReturnCode": detach.returncode,
             "rootReadonlyAttackReturnCode": root_attack.returncode,
             "formerBuildReadonlyAttackReturnCode": former_build_attack.returncode,
+            "readonlyNonForcedDetachReturnCode": frozen_detach.returncode,
+            "buildPrincipalRetired": True,
             "compilerProductSHA256": before,
             "readonlyRemountSHA256": frozen_sha,
             "physicalAuthorityCreated": False,
@@ -413,11 +450,15 @@ def parent_probe() -> int:
             emit_error("evidence", "missing or ambiguous dedicated-UID Xcode custody evidence")
             return 81
         evidence = json.loads(records[0])
+        build_directory_groups = evidence.get("buildDirectoryServiceGroups")
         required = (
             evidence.get("fieldUID") == field_uid
             and evidence.get("fieldPrimaryGID") == field_gid
             and evidence.get("fieldActiveSupplementaryGroups") == field_active_groups
             and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
+            and isinstance(build_directory_groups, list)
+            and evidence.get("buildPrimaryGID") in build_directory_groups
+            and evidence.get("buildEffectiveGroupAuthorityAttested") is True
             and evidence.get("fieldGroupsContainBuildGID") is False
             and evidence.get("fieldActiveGroupsContainBuildGID") is False
             and evidence.get("buildIdentityDistinctFromField") is True
@@ -426,6 +467,8 @@ def parent_probe() -> int:
             and evidence.get("nonForcedDetachReturnCode") == 0
             and evidence.get("rootReadonlyAttackReturnCode") != 0
             and evidence.get("formerBuildReadonlyAttackReturnCode") != 0
+            and evidence.get("readonlyNonForcedDetachReturnCode") == 0
+            and evidence.get("buildPrincipalRetired") is True
             and evidence.get("compilerProductSHA256") == evidence.get("readonlyRemountSHA256")
             and evidence.get("physicalAuthorityCreated") is False
         )
