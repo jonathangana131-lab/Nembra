@@ -54,7 +54,7 @@ jobs:
           test -n "$source_developer"
           case "$source_developer" in
             /Applications/*.app/Contents/Developer) ;;
-            *) printf 'Unexpected selected Xcode developer path: %s\n' "$source_developer" >&2; exit 21 ;;
+            *) printf '::error title=Unexpected selected Xcode path::%s\n' "$source_developer"; exit 21 ;;
           esac
           source_app="${source_developer%/Contents/Developer}"
           test -d "$source_app"
@@ -62,11 +62,11 @@ jobs:
 
           source_device="$(/usr/bin/stat -f '%d' "$source_app")"
           library_device="$(/usr/bin/stat -f '%d' /Library)"
-          printf 'source device=%s library device=%s\n' "$source_device" "$library_device"
+          printf '::notice title=COW substrate::source-device=%s library-device=%s\n' "$source_device" "$library_device"
           test "$source_device" = "$library_device"
 
           source_kib="$(/usr/bin/du -sk "$source_app" | /usr/bin/awk '{print $1}')"
-          printf 'selected Xcode logical size KiB=%s\n' "$source_kib"
+          printf '::notice title=Selected Xcode logical size::%s KiB\n' "$source_kib"
 
           freeze_root="$(/usr/bin/sudo -n /usr/bin/mktemp -d /Library/NembraSelectedXcodeFreeze.XXXXXX)"
           test -n "$freeze_root"
@@ -79,16 +79,14 @@ jobs:
           started="$(/bin/date +%s)"
           /usr/bin/sudo -n /bin/cp -cR "$source_app" "$frozen_app"
           finished="$(/bin/date +%s)"
-          printf 'COW clone elapsed seconds=%s\n' "$((finished - started))"
+          printf '::notice title=COW clone complete::elapsed=%s seconds\n' "$((finished - started))"
           test -d "$frozen_app/Contents/Developer"
 
-          # The mutable field account must not retain bundle mutation or replacement
-          # authority in the frozen execution subject. Metadata-only hardening does
-          # not alter signed file bytes.
           /usr/bin/sudo -n /usr/sbin/chown -R root:wheel "$frozen_app"
           /usr/bin/sudo -n /bin/chmod -RN "$frozen_app"
           /usr/bin/sudo -n /bin/chmod -R go-w "$frozen_app"
           /usr/bin/sudo -n /bin/chmod 0755 "$freeze_root"
+          printf '::notice title=Frozen Xcode hardening::recursive root ownership and writable ACL/mode stripping complete\n'
 
           /usr/bin/env -i \
             PATH=/usr/bin:/bin \
@@ -120,36 +118,39 @@ jobs:
               raise SystemExit('frozen Xcode tree unexpectedly small')
           print(f'validated frozen Xcode metadata subjects={subjects}')
           PY
+          printf '::notice title=Frozen Xcode metadata::recursive authority oracle passed\n'
 
-          # Verify the frozen bytes, not the mutable source, against Apple's signing
-          # anchor and Xcode bundle identifier. --deep verifies nested signed code;
-          # --strict also validates sealed resource structure.
-          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
+          if ! /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
             /usr/bin/codesign --verify --deep --strict --verbose=4 \
             -R '=anchor apple generic and identifier "com.apple.dt.Xcode"' \
-            "$frozen_app"
+            "$frozen_app"; then
+            printf '::error title=Frozen Xcode signature::Apple-anchored strict/deep verification failed\n'
+            exit 31
+          fi
+          printf '::notice title=Frozen Xcode signature::Apple-anchored strict/deep verification passed\n'
 
           frozen_developer="$frozen_app/Contents/Developer"
           frozen_xcodebuild="$frozen_developer/usr/bin/xcodebuild"
           test -x "$frozen_xcodebuild"
           version="$(DEVELOPER_DIR="$frozen_developer" "$frozen_xcodebuild" -version)"
-          printf '%s\n' "$version"
           first_line="${version%%$'\n'*}"
-          [[ "$first_line" =~ ^Xcode[[:space:]]27([.]|$) ]]
+          printf '::notice title=Frozen Xcode version::%s\n' "$first_line"
+          case "$first_line" in
+            'Xcode 27'|'Xcode 27.'*) ;;
+            *) printf '::error title=Frozen Xcode version rejected::%s\n' "$first_line"; exit 32 ;;
+          esac
 
           for tool in xcodebuild xctrace devicectl; do
             selected="$(DEVELOPER_DIR="$frozen_developer" /usr/bin/xcrun --find "$tool")"
             case "$selected" in
               "$frozen_developer"/*) ;;
-              *) printf 'Frozen selected %s escaped clone: %s\n' "$tool" "$selected" >&2; exit 22 ;;
+              *) printf '::error title=Frozen selected tool escaped::%s -> %s\n' "$tool" "$selected"; exit 33 ;;
             esac
             test -x "$selected"
             metadata="$(/usr/bin/stat -f '%u %p' "$selected")"
-            printf 'frozen selected %s %s metadata=%s\n' "$tool" "$selected" "$metadata"
+            printf '::notice title=Frozen selected tool::%s metadata=%s\n' "$tool" "$metadata"
           done
 
-          # The ordinary field identity must fail both direct file mutation and
-          # parent replacement inside the root-custodied clone.
           leaf_before="$(/usr/bin/shasum -a 256 "$frozen_xcodebuild" | /usr/bin/awk '{print $1}')"
           set +e
           /bin/sh -c "printf attack >> \"$frozen_xcodebuild\"" >/tmp/nembra-cow-leaf.out 2>/tmp/nembra-cow-leaf.err
@@ -157,21 +158,24 @@ jobs:
           /usr/bin/touch "$frozen_developer/usr/bin/nembra-field-replacement-probe" >/tmp/nembra-cow-parent.out 2>/tmp/nembra-cow-parent.err
           parent_rc=$?
           set -e
-          test "$leaf_rc" -ne 0
-          test "$parent_rc" -ne 0
+          if [[ "$leaf_rc" -eq 0 || "$parent_rc" -eq 0 ]]; then
+            printf '::error title=Frozen Xcode field authority::leaf_rc=%s parent_rc=%s\n' "$leaf_rc" "$parent_rc"
+            exit 34
+          fi
           test ! -e "$frozen_developer/usr/bin/nembra-field-replacement-probe"
           leaf_after="$(/usr/bin/shasum -a 256 "$frozen_xcodebuild" | /usr/bin/awk '{print $1}')"
           test "$leaf_before" = "$leaf_after"
+          printf '::notice title=Frozen Xcode field negatives::leaf and parent mutation both denied with unchanged bytes\n'
 
-          # Prove copied bundle still verifies after negative attacks and that the
-          # field path remains a read-only execution subject for this validation.
-          /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
+          if ! /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp LANG=C LC_ALL=C \
             /usr/bin/codesign --verify --deep --strict \
             -R '=anchor apple generic and identifier "com.apple.dt.Xcode"' \
-            "$frozen_app"
+            "$frozen_app"; then
+            printf '::error title=Frozen Xcode post-attack signature::verification failed\n'
+            exit 35
+          fi
 
-          printf 'NEMBRA_COW_FREEZE_RESULT=SUCCESS\n'
-          printf 'physicalAuthorityCreated=false\n'
+          printf '::notice title=NEMBRA COW FREEZE::SUCCESS physicalAuthorityCreated=false\n'
           printf 'No device discovery, install, launch, Bluetooth, Tuya, telemetry, or physical action occurred.\n'
 
       - name: Preserve physical truth boundary
