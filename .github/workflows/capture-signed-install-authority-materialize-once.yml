@@ -23,7 +23,7 @@ jobs:
       - name: Bind exact parent
         shell: bash
         env:
-          EXPECTED_PARENT: 6dbf1b1d1d7e6bf58f0da1976ac11deb54e73502
+          EXPECTED_PARENT: 384afa11dcc9939c6544c4dfdaa04c209515a868
           MATERIALIZER: .github/workflows/capture-signed-install-authority-materialize-once.yml
         run: |
           set -euo pipefail
@@ -67,6 +67,7 @@ jobs:
               return 75
 
           '''
+          attack = "\n".join(line[2:] if line.startswith("          ") else line for line in attack.split("\n"))
           replace_once(detach, attack + detach)
           replace_once(
               '            "fieldAttackReturnCode": attack.returncode,\n',
