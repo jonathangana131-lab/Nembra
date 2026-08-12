@@ -85,6 +85,24 @@ jobs:
         run: |
           set -euo pipefail
           app="${RUNNER_TEMP}/NembraCaptureV16DerivedData/Build/Products/Debug-iphonesimulator/Nembra Capture.app"
+          plist="$app/Info.plist"
           test -d "$app"
-          test -f "$app/Info.plist"
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist"
+          test -f "$plist"
+
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
+          test "$bundle_id" = 'com.jonathangana131.nembra.capturelearn'
+
+          for key in \
+            NembraCaptureBuildIdentifier \
+            NembraCaptureSourceCommitSHA \
+            NembraCaptureTuyaDependencyLockSHA256 \
+            NembraCaptureProcedureIdentifier
+          do
+            value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null || true)"
+            if [[ -n "$value" ]]; then
+              printf 'Public/unprovisioned standalone build carried forbidden field authority %s=%q\n' "$key" "$value" >&2
+              exit 1
+            fi
+          done
+
+          printf 'Verified software-only standalone product: %s; no field-authority provenance is populated.\n' "$bundle_id"
