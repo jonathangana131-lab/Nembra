@@ -974,19 +974,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 283,
+    "classifiedPRTotal": 284,
     "classifiedPRs": {
-      "2680": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2680,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.361,
-        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
-      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2383,6 +2372,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.32,
         "title": "[Capture P0][VALIDATION] Prove live numeric UID allocation rejection"
+      },
+      "3198": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3198,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.302,
+        "title": "[Capture P0][VALIDATION] Prove reversible private-Tuya build-UID read lease"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2409,21 +2409,15 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [
-      {
-        "from": "b9164701da15d7a773698599bf24ed3cb923f8ac",
-        "to": "83ed9001385518e979a7b37265877054938ae5c0",
-        "workItemId": "live-pr-3142"
-      }
-    ],
+    "livePRHeadUpdates": [],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-12T11:29:20Z",
+    "liveRefreshAt": "2026-08-12T11:30:07Z",
     "liveRefreshDuplicatesSuppressed": [
-      3197
+      3198
     ],
     "liveRefreshMainSHA": "17a9c74a265159bd32c9fb8cff5e8ae5a3c8a43f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6175,10 +6169,10 @@
       "userValue": 7
     }
   },
-  "revision": 4,
+  "revision": 5,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-12T11:31:19Z",
+  "updatedAt": "2026-08-12T11:32:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6254,7 +6248,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-12T11:29:20Z",
+      "updatedAt": "2026-08-12T11:30:07Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
