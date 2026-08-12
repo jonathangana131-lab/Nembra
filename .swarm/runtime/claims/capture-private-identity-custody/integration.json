@@ -7,9 +7,10 @@
   "workerId": "sol-20260812-0054j7",
   "leaseId": "capture-private-identity-integration-0054j7-20260812-0817",
   "generation": 5,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T08:17:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:17:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:19:00Z",
+  "releasedAt": "2026-08-12T08:19:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3086,
@@ -17,6 +18,7 @@
   "currentHeadSHA": "e454b1e9c32b3ff35a5b277a55fdb52736bd3cdb",
   "takeoverFromWorkerId": "sol-20260811-1607r4",
   "takeoverFromLeaseId": "capture-private-identity-integration-1607r4-20260811-2339",
-  "takeoverReason": "Generation-4 was explicitly RELEASED while exact Xcode was queued. Xcode 31546075785 has since completed SUCCESS, so generation-5 reconciles the now-terminal exact private acceptance state and keeps the still-open private-to-selected-Xcode source-root consumer seam explicit.",
-  "intent": "Promote only the exact private software acceptance actually earned on e454b1e9; do not claim final product/physical authority and do not edit the actively owned selected-Xcode installer."
+  "takeoverReason": "Generation-4 was explicitly RELEASED while exact Xcode was queued. Xcode 31546075785 has since completed SUCCESS, so generation-5 reconciled terminal private acceptance while preserving the open private-to-selected-Xcode source-root consumer seam.",
+  "outcome": "PRIVATE_SOFTWARE_INGREDIENT_ACCEPTED_INTEGRATION_PENDING",
+  "checkpoint": "Updated capture-private-identity-custody at swarm-state commit c1f750c74cce943436b1cda88e70cfc4c51afa66. #3086@e454b1e9 has terminal SUCCESS for Current Convergence 31546075745, Publication Races 31546075814, Dependency Helper 31546075874, Main 31546075878, Field 31546075937 and Xcode 31546075785 plus independent source acceptance. The private software ingredient is accepted. Selected-Xcode verified-stdin launcher still does not consume NEMBRA_ACCEPTED_SOURCE_ROOT; future exact composition must pass the admitted physical checkout root and rerun all affected gates. PHYSICAL NO-GO."
 }
