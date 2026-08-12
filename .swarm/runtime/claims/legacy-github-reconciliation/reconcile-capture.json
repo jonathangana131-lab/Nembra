@@ -9,7 +9,7 @@
   "generation": 11,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T07:58:00Z",
-  "lastHeartbeatAt": "2026-08-12T07:58:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:10:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": null,
@@ -17,5 +17,5 @@
   "takeoverFromWorkerId": "sol-20260811-k7m4",
   "takeoverFromLeaseId": "reconcapture-k7m4-20260811-2305",
   "takeoverReason": "Generation-10 lease expired after its last heartbeat at 2026-08-11T23:12:49Z. Continue Capture-only live GitHub reconciliation without modifying actively owned product paths; update stale P0 lane/evidence records and preserve PHYSICAL NO-GO.",
-  "checkpoint": "Claimed Capture reconciliation shard. Next: refresh exact heads/evidence for signed-install, build ACL, Final-GO, runtime accessibility and flagship composition, then durably update stale lane records only where live state is unambiguous."
+  "checkpoint": "Signed-install lane reconciled to #3056@b8653985: Field/Main green, Signed App gate red on compiler-output permission fixtures; #3131@98fdc404 accepted architecture-only dedicated-build-UID/APFS witness. Now reconciling current build-authority and Final-GO exact-head evidence; PHYSICAL NO-GO."
 }
