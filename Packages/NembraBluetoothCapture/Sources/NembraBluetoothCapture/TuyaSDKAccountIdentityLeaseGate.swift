@@ -17,14 +17,14 @@ public enum TuyaSDKAccountIdentityLeaseGate {
         public let currentAccountUID: String?
         public let membershipAccountUID: String?
         public let expectedDeviceID: String
-        public let membershipDeviceID: String
+        public let membershipDeviceID: String?
 
         public init(
             isLoggedIn: Bool,
             currentAccountUID: String?,
             membershipAccountUID: String?,
             expectedDeviceID: String,
-            membershipDeviceID: String
+            membershipDeviceID: String?
         ) {
             self.isLoggedIn = isLoggedIn
             self.currentAccountUID = currentAccountUID
@@ -55,12 +55,11 @@ public enum TuyaSDKAccountIdentityLeaseGate {
         }
 
         let expectedDeviceID = snapshot.expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let membershipDeviceID = snapshot.membershipDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let membershipDeviceID = normalized(snapshot.membershipDeviceID) else {
+            return .blocked(reason: "The account-bound membership proof has no scooter device ID.")
+        }
         guard !expectedDeviceID.isEmpty else {
             return .blocked(reason: "Expected Tuya scooter device ID is unavailable.")
-        }
-        guard !membershipDeviceID.isEmpty else {
-            return .blocked(reason: "The account-bound membership proof has no scooter device ID.")
         }
         guard expectedDeviceID == membershipDeviceID else {
             return .blocked(reason: "Account-bound membership belongs to a different Tuya device.")
