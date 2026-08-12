@@ -107,11 +107,11 @@ jobs:
           first_line="${version%%$'\n'*}"
           case "$first_line" in 'Xcode 27'|'Xcode 27.'*) ;; *) exit 44 ;; esac
 
-          # Do not call any device verb. Prove only that the admitted tool leaves
-          # are executable after the privileged freeze helper has returned.
+          # Do not call any device verb. Each admitted tool must execute successfully
+          # after the privileged freeze helper has returned to the ordinary field shell.
           DEVELOPER_DIR="$frozen_developer" "$selected_xcodebuild" -version >/dev/null
-          "$selected_xctrace" version >/dev/null 2>&1 || true
-          "$selected_devicectl" help >/dev/null 2>&1 || true
+          DEVELOPER_DIR="$frozen_developer" "$selected_xctrace" version >/dev/null
+          DEVELOPER_DIR="$frozen_developer" "$selected_devicectl" help >/dev/null
           test -d "$freeze_root"
           printf 'FROZEN_XCODE_RUNTIME_ACCEPTED physicalAuthorityCreated=false\n'
 
