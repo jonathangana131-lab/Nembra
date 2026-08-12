@@ -28,6 +28,12 @@ struct TuyaLiveNotifyEvidenceSourceTests {
         // notification and must never satisfy the physical application-evidence gate.
         #expect(!accountBridge.contains("recordApplicationUpdate(isNonEmpty:"))
 
+        // Tuya documents publishDps as its DP command/query transport. The P0 field app is strictly
+        // passive after authenticated session establishment: neither controls nor DP queries are
+        // allowed to enter either live authority source while physical semantics remain unknown.
+        #expect(!entrypoint.contains("publishDps("))
+        #expect(!accountBridge.contains("publishDps("))
+
         // Keep the evidence claim intentionally narrow: structured SDK application updates are
         // accepted as live notify evidence, but they are not represented as raw FD50 bytes.
         #expect(entrypoint.contains("ThingSmartDeviceDelegate dpsUpdate values projected with String(describing:)"))
