@@ -4,10 +4,11 @@
 The filename is retained so the permanent Signed App workflow keeps one canonical path.
 The old supplementary-group topology is intentionally gone: real Xcode 27 demonstrated
 that build-service/log-store processes do not preserve that synthetic group authority.
-This probe binds the actual pre-sudo field identity to the root fixture, builds with a
-fresh local UID/GID on a private APFS volume, requires the field identity to be unable
-to mutate compiler output, requires normal non-forced detach, then accepts bytes only
-from a read-only remount.
+This probe binds the actual pre-sudo field identity to the root fixture, creates a fresh
+local UID/GID, requires production to attest that identity's effective kernel groups to
+its exact Directory Services baseline, builds on ownership-enforced private APFS output,
+requires the field identity to be unable to mutate compiler output, requires normal
+non-forced detach, then accepts bytes only from a read-only ownership-enforced remount.
 
 Validation only: no signing identity, device operation, Bluetooth, Tuya traffic,
 installation, launch, scooter command, or physical evidence occurs here.
@@ -197,6 +198,13 @@ def root_probe(
         build_environment = helper._build_environment(build_name, home)
         os.chown(home / "tmp", build_uid, build_gid)
         os.chmod(home / "tmp", 0o700)
+        build_groups = helper._attest_build_kernel_groups(
+            build_name,
+            build_uid,
+            build_gid,
+            field_groups,
+            build_environment,
+        )
 
         helper._create_apfs_image(image)
         writable_device = helper._attach_apfs(image, mountpoint, readonly=False)
@@ -228,7 +236,7 @@ def root_probe(
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
-            **structured_credentials(build_uid, build_gid, []),
+            **helper._structured_credentials(build_uid, build_gid, ()),
         )
         if build.returncode != 0:
             emit_error(
@@ -307,23 +315,25 @@ def root_probe(
             stderr=subprocess.PIPE,
             text=True,
             check=False,
-            **structured_credentials(build_uid, build_gid, []),
+            **helper._structured_credentials(build_uid, build_gid, ()),
         )
         if former_build_attack.returncode == 0 or sha256(frozen) != frozen_sha:
             emit_error("readonly-remount", "former build identity mutated output after read-only freeze")
             return 78
 
         evidence = {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "fieldUID": field_uid,
             "fieldPrimaryGID": field_gid,
             "fieldActiveSupplementaryGroups": field_active_groups,
             "fieldActiveGroupsSubsetOfDirectoryService": set(field_active_groups).issubset(field_groups),
             "buildUID": build_uid,
             "buildPrimaryGID": build_gid,
+            "buildDirectoryServiceDistinctSupplementaryGroups": list(build_groups),
             "buildIdentityDistinctFromField": build_uid != field_uid,
             "fieldGroupsContainBuildGID": build_gid in field_groups,
             "fieldActiveGroupsContainBuildGID": build_gid in field_active_groups,
+            "apfsOwnershipEnforcedByProductionHelper": True,
             "xcodebuildReturnCode": build.returncode,
             "fieldAttackReturnCode": attack.returncode,
             "nonForcedDetachReturnCode": detach.returncode,
@@ -414,13 +424,16 @@ def parent_probe() -> int:
             return 81
         evidence = json.loads(records[0])
         required = (
-            evidence.get("fieldUID") == field_uid
+            evidence.get("schemaVersion") == 3
+            and evidence.get("fieldUID") == field_uid
             and evidence.get("fieldPrimaryGID") == field_gid
             and evidence.get("fieldActiveSupplementaryGroups") == field_active_groups
             and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
             and evidence.get("fieldGroupsContainBuildGID") is False
             and evidence.get("fieldActiveGroupsContainBuildGID") is False
             and evidence.get("buildIdentityDistinctFromField") is True
+            and isinstance(evidence.get("buildDirectoryServiceDistinctSupplementaryGroups"), list)
+            and evidence.get("apfsOwnershipEnforcedByProductionHelper") is True
             and evidence.get("xcodebuildReturnCode") == 0
             and evidence.get("fieldAttackReturnCode") != 0
             and evidence.get("nonForcedDetachReturnCode") == 0
