@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# This entrypoint is intentionally idempotent: once the workflow is registered
+# on main, any accepted V16-path push may safely re-run activation/recovery.
 import argparse
 import json
 import os
