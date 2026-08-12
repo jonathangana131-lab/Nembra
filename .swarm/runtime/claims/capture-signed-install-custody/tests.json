@@ -9,15 +9,15 @@
   "generation": 7,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T07:54:45Z",
-  "lastHeartbeatAt": "2026-08-12T08:18:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:25:23Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-dedicated-uid-retained-authority-matrix-sol-0054q9",
   "pr": 3143,
   "sourceSHA": "98fdc404048812f6d3af6791710c57ece21dafd3",
-  "currentHeadSHA": "4dca742cf15e0a5ce49879129bdd1ba47538b2c5",
+  "currentHeadSHA": "08c108d6c12bb0aee1cd6661cc16055a828c44f5",
   "relatedValidationPRs": [3116, 3130, 3131, 3132, 3136, 3140, 3143],
   "takeoverFromWorkerId": "sol-20260811-1607k9",
   "takeoverFromLeaseId": "capture-signed-install-tests-1607k9-20260811-2313",
   "takeoverReason": "Generation-6 lease expired. Recover the retained-writer validation matrix, classify fresh exact-head Mac evidence, and close only test/acceptance defects without changing product authority.",
-  "checkpoint": "#3140 closed superseded after #3136 exact 9c9aeb58 earned directory-FD architecture green. #3143 exact c71898dc run 31577350620 retained both dedicated-UID dirfd+mmap as RED: each timed out waiting for a writer event; final matrix correctly failed. Moved #3143 to 4dca742c with diagnostic-only wait ordinal/PID/poll replay in workflow; authoritative witness/8s timeout/credentials/APFS/detach/acceptance unchanged. Next: classify fresh exact-head Mac artifact and fix only the proven IPC/lifecycle defect. PHYSICAL NO-GO."
+  "checkpoint": "#3136 exact 9c9aeb58 independently earned directory-FD/APFS architecture green. #3143 exact 4dca742c run 31577778634 remained terminal RED; artifact 9133983073 proves both dedicated-UID dirfd+mmap holders timed out at event index 1 with poll=None, so each child is alive before first READY and APFS detach is still unexercised. Moved #3143 to 08c108d6 with diagnostic-copy-only ps/sample capture of the live pre-READY holder; committed witness/credentials/8s timeout/APFS/detach/acceptance unchanged. Next: classify exact live wait site, then repair only proven fixture/lifecycle defect. PHYSICAL NO-GO."
 }
