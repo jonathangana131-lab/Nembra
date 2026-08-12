@@ -26,6 +26,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import plistlib
 import pwd
 import secrets
 import shutil
@@ -124,24 +125,24 @@ def make_unsigned_app(app: Path, capability_gid: int) -> None:
     macos = contents / "MacOS"
     macos.mkdir(parents=True)
     plist = contents / "Info.plist"
-    plist.write_text(
-        """<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-        "<plist version=\"1.0\"><dict>\n"
-        "<key>CFBundleExecutable</key><string>SignerProof</string>\n"
-        "<key>CFBundleIdentifier</key><string>com.nembra.validation.signerproof</string>\n"
-        "<key>CFBundleName</key><string>SignerProof</string>\n"
-        "<key>CFBundlePackageType</key><string>APPL</string>\n"
-        "<key>CFBundleVersion</key><string>1</string>\n"
-        "<key>CFBundleShortVersionString</key><string>1.0</string>\n"
-        "</dict></plist>\n""",
-        encoding="utf-8",
+    plist.write_bytes(
+        plistlib.dumps(
+            {
+                "CFBundleExecutable": "SignerProof",
+                "CFBundleIdentifier": "com.nembra.validation.signerproof",
+                "CFBundleName": "SignerProof",
+                "CFBundlePackageType": "APPL",
+                "CFBundleVersion": "1",
+                "CFBundleShortVersionString": "1.0",
+            },
+            fmt=plistlib.FMT_XML,
+            sort_keys=True,
+        )
     )
     executable = macos / "SignerProof"
     compiled = subprocess.run(
         ["/usr/bin/xcrun", "clang", "-x", "c", "-o", str(executable), "-"],
         input="int main(void) { return 0; }\n",
-        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -237,7 +238,13 @@ def root_probe(field_active_groups: list[int]) -> int:
         }
 
         ordinary_attack = subprocess.run(
-            ["/bin/sh", "-c", 'printf "FIELD_ATTACK\\n" >> "$1"', "sh", str(app / "Contents/Info.plist")],
+            [
+                "/bin/sh",
+                "-c",
+                'printf "FIELD_ATTACK\\n" >> "$1"',
+                "sh",
+                str(app / "Contents/Info.plist"),
+            ],
             env=field_environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -250,7 +257,10 @@ def root_probe(field_active_groups: list[int]) -> int:
             emit_error("field-isolation", "ordinary field identity mutated signing volume without capability")
             return 72
 
-        signer_groups = [*field_active_groups, capability_gid]
+        # Keep the signer credential vector bounded. The ordinary negative control above faithfully
+        # replays the field process's actual active groups; the signer receives only the fresh
+        # filesystem capability, avoiding a synthetic union that can exceed macOS setgroups limits.
+        signer_groups = [capability_gid]
         signing = subprocess.run(
             [
                 "/usr/bin/codesign",
@@ -285,7 +295,11 @@ def root_probe(field_active_groups: list[int]) -> int:
             check=False,
         )
         if verify_live.returncode != 0:
-            emit_error("codesign", "ad-hoc signature did not verify before freeze", verifyOutput=verify_live.stderr[-6000:])
+            emit_error(
+                "codesign",
+                "ad-hoc signature did not verify before freeze",
+                verifyOutput=verify_live.stderr[-6000:],
+            )
             return 74
         signed = tree_fingerprint(app)
         if signed == unsigned:
@@ -307,7 +321,12 @@ def root_probe(field_active_groups: list[int]) -> int:
         frozen_app = mountpoint / "SignerProof.app"
         frozen = tree_fingerprint(frozen_app)
         if frozen != signed:
-            emit_error("readonly-remount", "signed bundle changed across APFS freeze", signed=signed, frozen=frozen)
+            emit_error(
+                "readonly-remount",
+                "signed bundle changed across APFS freeze",
+                signed=signed,
+                frozen=frozen,
+            )
             return 76
 
         verify_frozen = subprocess.run(
@@ -319,11 +338,21 @@ def root_probe(field_active_groups: list[int]) -> int:
             check=False,
         )
         if verify_frozen.returncode != 0:
-            emit_error("readonly-remount", "signature failed verification after read-only remount", verifyOutput=verify_frozen.stderr[-6000:])
+            emit_error(
+                "readonly-remount",
+                "signature failed verification after read-only remount",
+                verifyOutput=verify_frozen.stderr[-6000:],
+            )
             return 76
 
         root_attack = subprocess.run(
-            ["/bin/sh", "-c", 'printf "ROOT_AFTER_FREEZE\\n" > "$1/root-attack.txt"', "sh", str(frozen_app)],
+            [
+                "/bin/sh",
+                "-c",
+                'printf "ROOT_AFTER_FREEZE\\n" > "$1/root-attack.txt"',
+                "sh",
+                str(frozen_app),
+            ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -335,7 +364,13 @@ def root_probe(field_active_groups: list[int]) -> int:
             return 77
 
         former_signer = subprocess.run(
-            ["/bin/sh", "-c", 'printf "SIGNER_AFTER_FREEZE\\n" > "$1/signer-attack.txt"', "sh", str(frozen_app)],
+            [
+                "/bin/sh",
+                "-c",
+                'printf "SIGNER_AFTER_FREEZE\\n" > "$1/signer-attack.txt"',
+                "sh",
+                str(frozen_app),
+            ],
             env=field_environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -355,6 +390,7 @@ def root_probe(field_active_groups: list[int]) -> int:
             "fieldActiveSupplementaryGroups": field_active_groups,
             "fieldActiveGroupsSubsetOfDirectoryService": set(field_active_groups).issubset(directory_groups),
             "signingCapabilityGID": capability_gid,
+            "signerSupplementaryGroups": signer_groups,
             "fieldGroupsContainSigningCapability": capability_gid in directory_groups,
             "fieldActiveGroupsContainSigningCapability": capability_gid in field_active_groups,
             "ordinaryFieldAttackReturnCode": ordinary_attack.returncode,
@@ -411,7 +447,11 @@ def parent_probe() -> int:
         emit_error("environment", "runner does not expose noninteractive sudo for validation")
         return 80
 
-    active_args = [item for group in field_active_groups for item in ("--field-active-group", str(group))]
+    active_args = [
+        item
+        for group in field_active_groups
+        for item in ("--field-active-group", str(group))
+    ]
     completed = subprocess.run(
         [
             "/usr/bin/sudo",
@@ -436,7 +476,11 @@ def parent_probe() -> int:
     if completed.returncode != 0:
         return completed.returncode
 
-    records = [line[len(MARKER):] for line in completed.stdout.splitlines() if line.startswith(MARKER)]
+    records = [
+        line[len(MARKER):]
+        for line in completed.stdout.splitlines()
+        if line.startswith(MARKER)
+    ]
     if len(records) != 1:
         emit_error("evidence", "missing or ambiguous codesign capability freeze evidence")
         return 81
@@ -448,6 +492,7 @@ def parent_probe() -> int:
         and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
         and evidence.get("fieldGroupsContainSigningCapability") is False
         and evidence.get("fieldActiveGroupsContainSigningCapability") is False
+        and evidence.get("signerSupplementaryGroups") == [evidence.get("signingCapabilityGID")]
         and evidence.get("ordinaryFieldAttackReturnCode") != 0
         and evidence.get("codesignReturnCode") == 0
         and evidence.get("liveCodesignVerifyReturnCode") == 0
@@ -475,7 +520,10 @@ def main() -> int:
     parser.add_argument("--field-active-group-count", type=int)
     args = parser.parse_args()
     if args.root_probe:
-        if args.field_active_group_count is None or args.field_active_group_count != len(args.field_active_group):
+        if (
+            args.field_active_group_count is None
+            or args.field_active_group_count != len(args.field_active_group)
+        ):
             emit_error("arguments", "root probe requires one explicit captured active-group vector")
             return 83
         return root_probe(args.field_active_group)
