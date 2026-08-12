@@ -113,6 +113,7 @@ jobs:
           test -f Packages/NembraCore/Sources/NembraCore/PassiveBluetoothCapture.swift
           test -f Packages/NembraCore/Sources/NembraCore/PassiveBluetoothObservationWindowDurationAssessment.swift
           test -f Packages/NembraCore/Tests/NembraCoreTests/PassiveBluetoothCaptureTests.swift
+          test -f Packages/NembraCore/Tests/NembraCoreTests/PassiveBluetoothCaptureObservationBoundaryTests.swift
           test -f Packages/NembraCore/Tests/NembraCoreTests/PassiveBluetoothObservationWindowDurationAssessmentTests.swift
           xcodebuild -list -project NembraCapture.xcodeproj
 
@@ -121,6 +122,7 @@ jobs:
         run: |
           set -euo pipefail
           swift test --filter PassiveBluetoothCaptureTests
+          swift test --filter PassiveBluetoothCaptureObservationBoundaryTests
           swift test --filter PassiveBluetoothObservationWindowDurationAssessmentTests
 
       - name: Compile Capture package against exact Core
