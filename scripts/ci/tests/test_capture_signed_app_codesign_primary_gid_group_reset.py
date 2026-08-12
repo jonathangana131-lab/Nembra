@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
-"""Exact successor for #3137's ambient supplementary-group leak.
+"""Exact successor for #3137's field-UID supplementary-group semantics.
 
-The base codesign/APFS oracle intentionally records a logical zero-distinct-extra-groups
-signer. Real xcode-27 evidence on 9bcb882f showed that Python 3.9/macOS can preserve the
-parent's ambient supplementary vector when subprocess is asked for `extra_groups=[]`.
-That is not acceptable authority isolation.
+Real xcode-27 evidence falsified two stronger assumptions while preserving the useful
+path-authority result:
+- `extra_groups=[]` did not make the field UID group-empty;
+- even a duplicate-primary non-empty reset sentinel did not replace the field UID's
+  macOS group vector.
 
-This validation-only adapter changes only credential launch mechanics:
-- ordinary field negatives retain their exact pre-sudo supplementary vector;
-- a launch that requests zero distinct supplementary authority supplies the already-
-  primary GID once in the raw `extra_groups` vector, forcing a real setgroups transition;
-- the child path-attestation retains the raw kernel `os.getgroups()` vector and separately
-  normalizes it by removing only the already-primary GID;
-- acceptance still requires zero *distinct* supplementary GIDs before codesign;
-- the imported parent's self-path is rebound to this wrapper, so its sudo transition
-  executes this same adapter rather than silently falling back to the predecessor oracle.
+That is the wrong property to chase for a signing bridge whose purpose is to preserve the
+real field UID. This validation-only adapter now requires the threat-relevant invariant:
+- ordinary field negatives retain the exact pre-sudo field UID/primary/supplementary set;
+- the signer keeps that same field UID and receives only the fresh capability as primary GID;
+- the signer child's actual kernel `os.getgroups()` must normalize exactly to the captured
+  pre-sudo field baseline (field primary GID + active supplementary GIDs), with no extra or
+  missing baseline group;
+- the fresh capability must remain absent from the field account's ordinary authority;
+- raw child groups are retained in evidence instead of being inferred from constructor args.
 
-The duplicate-primary sentinel adds no GID authority beyond the primary credential. It is
-only acceptable if the real child reports no other supplementary GID. This does not create
-Apple identity, provisioning, install, device, Bluetooth, Tuya, telemetry, or physical
-authority.
+The imported parent's self-path is rebound to this wrapper so its sudo transition executes
+the same adapter. A green result remains architecture evidence only: it does not prove an
+Apple Development identity, provisioning, install, device, Bluetooth, Tuya, telemetry, or
+physical authority.
 """
 from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import pwd
 from typing import Iterable
 
 HERE = Path(__file__).resolve().parent
@@ -33,7 +35,7 @@ PARENT_PATH = HERE / "test_capture_signed_app_codesign_capability_freeze.py"
 
 def load_parent():
     spec = importlib.util.spec_from_file_location(
-        "nembra_codesign_capability_primary_gid_reset_parent",
+        "nembra_codesign_capability_field_baseline_parent",
         PARENT_PATH,
     )
     if spec is None or spec.loader is None:
@@ -43,20 +45,19 @@ def load_parent():
     return module
 
 
-def install_group_reset_adapter(parent) -> None:
+def install_field_baseline_adapter(parent) -> None:
     original_credentials = parent.structured_credentials
     original_path_probe = parent.probe_signer_path_authority
+    original_root_probe = parent.root_probe
+    captured: dict[str, list[int]] = {}
 
-    def reset_credentials(uid: int, gid: int, groups: Iterable[int]) -> dict[str, object]:
+    def baseline_credentials(uid: int, gid: int, groups: Iterable[int]) -> dict[str, object]:
         requested = sorted({int(group) for group in groups if int(group) != gid})
-        if requested:
-            return original_credentials(uid, gid, requested)
-        if uid <= 0 or gid <= 0:
-            raise parent.ProbeError("group-reset credentials require non-root UID/GID")
-        # Python/macOS kept ambient groups for an empty raw vector on the exact predecessor.
-        # A non-empty vector forces the setgroups path; repeating the primary GID does not add
-        # a distinct GID authority and is checked against the child's real os.getgroups().
-        return {"user": uid, "group": gid, "extra_groups": [gid]}
+        return original_credentials(uid, gid, requested)
+
+    def root_probe_with_baseline(field_active_groups: list[int]) -> int:
+        captured["fieldActiveSupplementaryGroups"] = list(field_active_groups)
+        return original_root_probe(field_active_groups)
 
     def attested_path_probe(
         app: Path,
@@ -76,15 +77,35 @@ def install_group_reset_adapter(parent) -> None:
         raw = evidence.get("effectiveSupplementaryGroups")
         if not isinstance(raw, list) or any(not isinstance(group, int) for group in raw):
             raise parent.ProbeError("signer path probe did not expose one integer kernel group vector")
+        active = captured.get("fieldActiveSupplementaryGroups")
+        if active is None:
+            raise parent.ProbeError("signer path probe ran without captured pre-sudo field groups")
+        field_primary_gid = pwd.getpwuid(field_uid).pw_gid
+        if field_primary_gid <= 0:
+            raise parent.ProbeError("field account exposes invalid primary GID during signer attestation")
+        baseline = sorted(set([field_primary_gid, *active]))
+        # A duplicate of the already-primary fresh signer GID would add no distinct authority.
+        normalized = sorted({group for group in raw if group != signer_gid})
+        unexpected = sorted(set(normalized).difference(baseline))
+        missing = sorted(set(baseline).difference(normalized))
+        if unexpected or missing:
+            raise parent.ProbeError(
+                "signer kernel groups diverged from exact pre-sudo field baseline: "
+                f"unexpected={unexpected} missing={missing} raw={raw} baseline={baseline}"
+            )
         evidence = dict(evidence)
         evidence["rawEffectiveSupplementaryGroups"] = list(raw)
-        evidence["effectiveSupplementaryGroups"] = sorted(
-            {group for group in raw if group != signer_gid}
-        )
-        evidence["primaryGIDResetSentinelPresent"] = signer_gid in raw
+        evidence["capturedFieldBaselineGroups"] = baseline
+        evidence["unexpectedSupplementaryGroupsBeyondFieldBaseline"] = unexpected
+        evidence["missingFieldBaselineGroups"] = missing
+        evidence["fieldBaselinePreservedExact"] = True
+        # Parent semantic acceptance models signer_groups as *new distinct supplementary
+        # authority*. Raw groups remain above; zero here means nothing beyond field baseline.
+        evidence["effectiveSupplementaryGroups"] = []
         return evidence
 
-    parent.structured_credentials = reset_credentials
+    parent.structured_credentials = baseline_credentials
+    parent.root_probe = root_probe_with_baseline
     parent.probe_signer_path_authority = attested_path_probe
 
 
@@ -93,7 +114,7 @@ def main() -> int:
     # Parent parent_probe re-enters itself through sudo using Path(__file__). Rebind that
     # module-global path before invoking it so the privileged phase also loads this wrapper.
     parent.__file__ = str(Path(__file__).resolve())
-    install_group_reset_adapter(parent)
+    install_field_baseline_adapter(parent)
     return parent.main()
 
 
