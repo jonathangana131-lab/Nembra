@@ -119,7 +119,7 @@ jobs:
           /usr/bin/sudo -n /bin/cp -cR "$source_app" "$frozen_app"
           finished="$(/bin/date +%s)"
           printf '::notice title=COW clone complete::elapsed=%s seconds\n' "$((finished - started))"
-          /usr/bin/sudo -n /usr/bin/test -d "$frozen_app/Contents/Developer"
+          /usr/bin/sudo -n /bin/test -d "$frozen_app/Contents/Developer"
 
           # Root ownership is the only recursive metadata mutation. ACLs and
           # group/world write bits must already be absent in the copied input;
