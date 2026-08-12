@@ -9,9 +9,9 @@
   "generation": 2,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T08:03:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:03:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:19:30Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-signed-origin-apfs-signing-sol-0058jx",
-  "pr": 3056,
+  "pr": 3138,
   "resource": "XCODE_BUILD"
 }
