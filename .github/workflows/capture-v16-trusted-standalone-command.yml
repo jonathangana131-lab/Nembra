@@ -90,6 +90,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.head_sha }}
+          persist-credentials: false
 
       - name: Verify immutable PR head
         env:
@@ -185,6 +186,22 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
 
+      - name: Upload trusted standalone evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: Artifacts/CaptureV16TrustedStandalone
+          if-no-files-found: warn
+          retention-days: 30
+
+  accept-current-head:
+    name: Confirm trusted standalone head remains current
+    needs: [resolve, standalone-qa]
+    if: needs.resolve.outputs.same_repo == 'true' && needs.standalone-qa.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Revalidate exact PR head after standalone QA
         uses: actions/github-script@v9
         env:
@@ -210,12 +227,3 @@ jobs:
             if (pr.head.sha !== process.env.EXPECTED_HEAD_SHA) {
               core.setFailed(`PR #${pr.number} moved during QA from ${process.env.EXPECTED_HEAD_SHA} to ${pr.head.sha}`)
             }
-
-      - name: Upload trusted standalone evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: capture-v16-trusted-standalone-${{ needs.resolve.outputs.pr_number }}-${{ github.run_number }}-${{ github.run_attempt }}
-          path: Artifacts/CaptureV16TrustedStandalone
-          if-no-files-found: warn
-          retention-days: 30
