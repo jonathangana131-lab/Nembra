@@ -62,10 +62,29 @@ class GitHubContentsStore(Store):
                 if attempt<self.max_retries: time.sleep(.4*(2**attempt)+random.uniform(0,.2)); continue
                 raise SwarmError(f'GitHub transport failure: {e}') from e
     def _path(self,path): return f"/repos/{self.owner}/{self.repo}/contents/{urllib.parse.quote(safe_relpath(path),safe='/')}"
+    def _decode_payload(self,p,field='state'):
+        if not isinstance(p,dict): raise ValidationError(f'{field} payload not object')
+        content=p.get('content'); encoding=p.get('encoding','base64')
+        if not isinstance(content,str) or not content: raise ValidationError(f'{field} payload omitted content')
+        try:
+            if encoding=='base64': raw=base64.b64decode(content,validate=True).decode()
+            elif encoding in {'utf-8','utf8'}: raw=content
+            else: raise ValidationError(f'{field} payload unsupported encoding')
+            return _dict(json.loads(raw),field)
+        except ValidationError: raise
+        except Exception as e: raise ValidationError(f'{field} file invalid JSON') from e
+    def _blob(self,sha):
+        if not isinstance(sha,str) or not sha: raise ValidationError('state file missing blob SHA')
+        blob=self._request('GET',f"/repos/{self.owner}/{self.repo}/git/blobs/{urllib.parse.quote(sha,safe='')}")
+        if not isinstance(blob,dict): raise ValidationError('state blob response invalid')
+        returned=blob.get('sha')
+        if returned is not None and returned!=sha: raise ValidationError('state blob SHA mismatch')
+        return self._decode_payload(blob,'state')
     def _decode(self,p):
-        if p.get('type')!='file' or not isinstance(p.get('content'),str): raise ValidationError('state subject not file')
-        try: return _dict(json.loads(base64.b64decode(p['content']).decode()),'state')
-        except Exception as e: raise ValidationError('state file invalid JSON') from e
+        if not isinstance(p,dict) or p.get('type')!='file': raise ValidationError('state subject not file')
+        if isinstance(p.get('content'),str) and p.get('content'):
+            return self._decode_payload(p,'state')
+        return self._blob(p.get('sha'))
     def get(self,path):
         try: p=self._request('GET',self._path(path)+'?'+urllib.parse.urlencode({'ref':self.branch}))
         except GitHubAPIError as e:
