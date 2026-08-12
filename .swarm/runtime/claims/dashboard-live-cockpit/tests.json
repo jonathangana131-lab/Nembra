@@ -7,9 +7,10 @@
   "workerId": "sol-20260812-0059g7",
   "leaseId": "dashboard-tests-0059g7-20260812-0836",
   "generation": 6,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-12T08:36:00Z",
-  "lastHeartbeatAt": "2026-08-12T08:47:30Z",
+  "lastHeartbeatAt": "2026-08-12T08:52:00Z",
+  "releasedAt": "2026-08-12T08:52:00Z",
   "leaseSeconds": 1800,
   "branch": "test/v15-dashboard-ax5-retained-witness-sol-0059g7",
   "pr": 3150,
@@ -18,6 +19,6 @@
   "takeoverFromWorkerId": "sol-20260811-hl6k",
   "takeoverFromLeaseId": "dashboard-tests-hl6k-20260811-1245",
   "takeoverReason": "Generation 5 was explicitly RELEASED. Exact product PR #3141@ae527b7c is Xcode-green and captured AX riding/stopped states are healthy, but its real Accessibility XXXL rerun does not execute the retained-speed/currentness state affected by the repair. Claim the free tests slot for a harness-only stacked witness rather than changing already-green product bytes.",
-  "intent": "Run the existing testLandscapeDashboardRetainedSpeedTruthIsVisibleAndCapturable under a real system Accessibility XXXL category on iPhone 12/iOS 27, preserving exact xcresult/screenshot/environment evidence. Inspect full LAST KNOWN wording and center/Energy Rail fit. Preserve all production telemetry/currentness/physical-authority behavior.",
-  "checkpoint": "PR #3150 exact 7a41abd8 now has two real exact-head gates in progress: dedicated AX retained-currentness run 31579467611 and trusted Xcode 27 PR exact-head run 31579467554. Both have already passed immutable checkout/head verification; the dedicated witness is inside its real retained-speed XCUITest build/capture, while trusted Xcode has passed project/core-package checks and is inside full Simulator build/test/capture. Running is not acceptance. PR #3141 durable prose was corrected so it no longer falsely claims the standard retained screenshot clipped LAST KNOWN; the actual unresolved state is AX retained-currentness. Simulator only; no physical ES80 authority."
+  "outcome": "EXACT_AX_RETAINED_WITNESS_GREEN_NEW_RIGHT_RAIL_VISUAL_DEFECT_FOUND",
+  "checkpoint": "PR #3150 exact 7a41abd85899585a29d96d55e8a69f1bf4fa4d53 dedicated run 31579467611 is terminal SUCCESS. Artifact 9134782946 / sha256:16098cb3ee074f9dfea575d820509b904a97bc0099ed00853b7157760c2e92f1 is exact iPhone 12 / iOS 27 / accessibility-extra-extra-extra-large evidence. Direct pixel inspection proves center LAST KNOWN fully visible and cleanly separated from 0 W / LIVE POWER / Energy Rail. The same exact pixel exposes the next product defect: right-rail stopped-control blocker copy wraps/clips awkwardly as Live speed re-quire… at AX XXXL. Trusted full Xcode exact-head run 31579467554 remains in progress and is not counted as acceptance. Independent review request for #3150 remains outstanding. Release tests slot because the focused evidence objective is complete and move to a clean product primary successor for the newly exposed visual defect. Simulator only; no physical ES80 authority."
 }
