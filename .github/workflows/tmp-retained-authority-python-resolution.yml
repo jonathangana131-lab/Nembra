@@ -1,0 +1,68 @@
+name: Temporary Retained Authority Python Resolution
+
+on:
+  push:
+    branches:
+      - validation/v14-dedicated-uid-retained-authority-matrix-sol-0054q9
+    paths:
+      - .github/workflows/tmp-retained-authority-python-resolution.yml
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Resolve field and root Python executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== xcode-select ==='
+          /usr/bin/xcode-select -p
+          echo '=== field /usr/bin/python3 ==='
+          /usr/bin/python3 - <<'PY'
+          import json, os, pathlib, subprocess, sys
+          def probe(label):
+              x = subprocess.run(['/usr/bin/xcrun','--find','python3'], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+              p = pathlib.Path(sys.executable)
+              print('NEMBRA_PYTHON_RESOLUTION=' + json.dumps({
+                  'label': label,
+                  'uid': os.getuid(),
+                  'euid': os.geteuid(),
+                  'sysExecutable': sys.executable,
+                  'sysExecutableResolved': str(p.resolve(strict=True)),
+                  'xcrunReturnCode': x.returncode,
+                  'xcrunPython': x.stdout.strip(),
+                  'usrBinPythonRealpath': str(pathlib.Path('/usr/bin/python3').resolve(strict=True)),
+                  'samefileSysUsr': os.path.samefile(p.resolve(strict=True), '/usr/bin/python3'),
+              }, sort_keys=True))
+          probe('field')
+          PY
+          echo '=== root /usr/bin/python3 ==='
+          /usr/bin/sudo -n /usr/bin/python3 - <<'PY'
+          import json, os, pathlib, subprocess, sys
+          x = subprocess.run(['/usr/bin/xcrun','--find','python3'], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+          p = pathlib.Path(sys.executable)
+          print('NEMBRA_PYTHON_RESOLUTION=' + json.dumps({
+              'label': 'root',
+              'uid': os.getuid(),
+              'euid': os.geteuid(),
+              'sysExecutable': sys.executable,
+              'sysExecutableResolved': str(p.resolve(strict=True)),
+              'xcrunReturnCode': x.returncode,
+              'xcrunPython': x.stdout.strip(),
+              'usrBinPythonRealpath': str(pathlib.Path('/usr/bin/python3').resolve(strict=True)),
+              'samefileSysUsr': os.path.samefile(p.resolve(strict=True), '/usr/bin/python3'),
+          }, sort_keys=True))
+          PY
+          echo '=== candidate metadata ==='
+          field_exec="$(/usr/bin/python3 -c 'import pathlib,sys; print(pathlib.Path(sys.executable).resolve(strict=True))')"
+          xcrun_exec="$(/usr/bin/xcrun --find python3)"
+          /bin/ls -l "$field_exec" "$xcrun_exec" /usr/bin/python3 || true
+          /usr/bin/file "$field_exec" "$xcrun_exec" /usr/bin/python3 || true
