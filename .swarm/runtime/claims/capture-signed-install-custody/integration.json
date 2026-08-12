@@ -9,12 +9,12 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-12T11:37:00Z",
-  "lastHeartbeatAt": "2026-08-12T11:39:00Z",
+  "lastHeartbeatAt": "2026-08-12T11:48:30Z",
   "leaseSeconds": 1800,
   "branch": "validation/v14-field-uid-apple-development-codesign-gpt56-sol-20260812",
   "pr": 3152,
   "sourceSHA": "09cbc817c018580967ff16460459a59fc62c6359",
-  "currentHeadSHA": "9cab80878f1ff614ae652cf81b6af1fd315de621",
-  "intent": "Classify the #3152 hosted gate after consuming the already-reviewed four-path exact-scope repair. Do not touch signing oracle, private receipt semantics, production signed-build helper, device, provisioning or physical actions.",
-  "checkpoint": "Fast-forwarded #3152 exactly 09cbc817 -> 9cab8087 using the dormant reviewed one-file repair branch. Compare was ahead-only one commit, exactly `.github/workflows/capture-signed-origin-field-uid-apple-development-signing.yml` +4/-1. Durable PR comment 5266260015 records scope-only integration. The old 31589324958 failure is scope-oracle red and not signing evidence. New head scheduling had not appeared at first refresh. Separate caller-constructible receipt-authority blocker remains unresolved. PHYSICAL NO-GO."
+  "currentHeadSHA": "dd19880ae78b9e70ebb8e87bb949a51268dedd49",
+  "intent": "Close #3152 validation transport authority: exact moved-lineage scope plus non-caller-constructible private field-Mac receipt sealing. Classify only field-account signing-context evidence. Do not claim dedicated-UID production signing, private Tuya, provisioning/device or physical authority.",
+  "checkpoint": "Consumed one-file four-path scope repair 9cab8087, then continued the same integration rung to close review 4915779866. Current #3152@dd19880a is ahead-only from #3137@2e375451 by exactly five paths: two workflows, oracle, field command, and new root receipt sealer. Field wrapper now fences ambient Git, root-materializes exact oracle+sealer blobs, and root sealer captures the field-credential oracle directly. Canonical receipt publication uses a root-owned replacement-safe parent, O_NOFOLLOW|O_EXCL files, root 0444 files + 0555 namespace, and both in-sealer and workflow field mutation/rename negatives. Durable PR comment 5266389200 records the boundary. Current signing workflow run 31593341161 pending and redaction run 31593341160 in progress at last refresh; queued/in-progress != accepted. PHYSICAL NO-GO."
 }
