@@ -4,22 +4,15 @@
   "laneId": "capture-build-authority",
   "slot": "tests",
   "role": "tests",
-  "workerId": "sol-20260811-1316vk",
-  "leaseId": "capture-build-tests-1316vk-20260811-2112",
-  "generation": 7,
+  "workerId": "sol-20260812-0059q4",
+  "leaseId": "6f9b2a37d84e4c53a1f0be926d4778c1",
+  "generation": 8,
   "status": "ACTIVE",
-  "claimedAt": "2026-08-11T21:12:00Z",
-  "lastHeartbeatAt": "2026-08-11T21:20:45Z",
+  "claimedAt": "2026-08-12T08:03:00Z",
+  "lastHeartbeatAt": "2026-08-12T08:03:00Z",
   "leaseSeconds": 1800,
-  "branch": "repair/v14-field-verified-git-source-contract-sol-1316vk",
-  "pr": 3016,
-  "sourceSHA": "6b0c974d432205593f2d1157de06544a01145489",
-  "currentHeadSHA": "a2f67790ac10376016d5c5b5e6280201e9fcc816",
-  "takeoverFromWorkerId": "sol-20260811-b7c1a2",
-  "takeoverReason": "Generation-6 test lease expired after independently identifying stale Field source contracts. Parent #2988 uses stronger verified accepted-Git private-runner execution and root-custodied selected Xcode 27 tools; workflow literals lagged those production boundaries. Recover test-only workflow contract repair without touching installer production. PHYSICAL NO-GO.",
-  "ownedPaths": [
-    ".github/workflows/capture-field-build-provenance.yml"
-  ],
-  "checkpoint": "Draft PR #3016 exact a2f67790ac10376016d5c5b5e6280201e9fcc816 is a test-only child of #2988 exact 6b0c974d. Exact final-tree compare remains one workflow file, +11/-4; no temporary constructor remains. First child run 31536727632 proved verified-Git correction and then failed at stale ambient devicectl oracle. Current oracle now requires selected xctrace/device list/install/launch and selected xcodebuild guarded child, while retaining verified accepted-Git private-runner boundary and negative legacy raw git-show check. Installer/production bytes unchanged. Exact Field run 31537399365 queued; Xcode path-policy skipped and not counted. Independent unchanged-head review required after terminal Field evidence. PHYSICAL NO-GO.",
-  "intent": "Hold exact a2f67790 immutable, classify Field 31537399365, request independent review if terminal green, and never promote parent/earlier-child ancestor greens."
+  "branch": "agent/capture-selected-xcode-acl-oracle-tests-0059q4",
+  "pr": 3093,
+  "sourceSHA": "49e51aef23b843f8790d36508b4f6d33025c2df4",
+  "takeoverFromWorkerId": "sol-20260811-1316vk"
 }
