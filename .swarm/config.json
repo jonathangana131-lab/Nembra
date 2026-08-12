@@ -25,5 +25,27 @@
     "simulatorEvidenceIsPhysicalEvidence": false,
     "unknownTelemetryMayBeFabricated": false
   },
-  "legacyPRCompatibility": "shadow-warn"
+  "legacyPRCompatibility": "shadow-warn",
+  "v16": {
+    "enabled": true,
+    "graphPath": ".swarm/runtime/v16/mission-graph.json",
+    "defaultWorkers": 30,
+    "roleTargets": {
+      "builder": 0.6,
+      "reviewer": 0.2,
+      "integrator": 0.2
+    },
+    "semanticDuplicateThreshold": 0.58,
+    "solutionTournamentMaxCandidates": 3,
+    "missionPacketMemoryLimit": 12,
+    "integrationWorlds": ["MAIN", "NEXT", "FRONTIER", "EXPERIMENTAL"],
+    "truthClasses": ["SIMULATED", "ESTIMATED", "OBSERVED", "AUTHENTICATED", "PHYSICALLY_MAPPED", "COMMAND_VERIFIED"],
+    "destructiveMigrationActionsAllowed": false,
+    "physicalSafety": {
+      "schedulerMayPromotePhysicalGo": false,
+      "authenticatedEvidenceIsPhysicalEvidence": false,
+      "simulatorEvidenceIsPhysicalEvidence": false,
+      "commandsRequirePhysicalMapping": true
+    }
+  }
 }
