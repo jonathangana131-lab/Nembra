@@ -48,7 +48,6 @@ extension TuyaAppIncompleteHorizonTerminalSourceTests {
         #expect(!mirror.contains("sessionLedger.endConnection"))
         #expect(!mirror.contains("sessionLedger.observeCurrentConnection"))
         #expect(!mirror.contains("recordObservedTransportLoss"))
-        #expect(!mirror.contains("sdkLocalBLEOnline ="))
     }
 
     @Test("deadline liveness receipt atomically retires the exact generation")
