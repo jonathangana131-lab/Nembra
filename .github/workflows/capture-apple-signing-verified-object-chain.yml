@@ -1,0 +1,81 @@
+name: Capture Apple Signing Verified Object Chain
+
+on:
+  push:
+    branches:
+      - validation/v14-apple-signing-object-chain-rejection-sol-20260812-go
+    paths:
+      - scripts/ci/tests/test_capture_apple_signing_verified_object_chain.py
+      - .github/workflows/capture-apple-signing-verified-object-chain.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_apple_signing_verified_object_chain.py
+      - .github/workflows/capture-apple-signing-verified-object-chain.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-apple-signing-object-chain-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rejection:
+    name: Reject movable Git trust alias on repaired transport
+    runs-on: macos-15
+    timeout-minutes: 5
+    env:
+      EXACT_PARENT: d6a975e147ab902232132d34a22048ed04f67798
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-apple-signing-object-chain-pycache
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation-only delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual-paths"
+          printf '%s\n' \
+            .github/workflows/capture-apple-signing-verified-object-chain.yml \
+            scripts/ci/tests/test_capture_apple_signing_verified_object_chain.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
+          diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile classifier and parse repaired field transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_apple_signing_verified_object_chain.py
+          /bin/bash -n scripts/field/run_apple_signing_context_preflight.command
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Prove accepted chain resolves and corrupt alias is rejected
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_apple_signing_verified_object_chain.py
+          printf '%s\n' 'OBJECT_CHAIN_REPAIR_ACCEPTED: normal chain resolved exact blobs and corrupt accepted-commit alias was rejected before helper identity admission.'
+          printf '%s\n' 'PHYSICAL_AUTHORITY_CREATED=false'
+
+      - name: Enforce validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e LocalSecrets
+          ! grep -Eq '(^|[[:space:]])xcodebuild([[:space:]]|$)' scripts/ci/tests/test_capture_apple_signing_verified_object_chain.py
+          ! grep -Eq 'devicectl|CoreBluetooth|bootstrap_capture_tuya_sdk|LocalSecrets' scripts/ci/tests/test_capture_apple_signing_verified_object_chain.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
