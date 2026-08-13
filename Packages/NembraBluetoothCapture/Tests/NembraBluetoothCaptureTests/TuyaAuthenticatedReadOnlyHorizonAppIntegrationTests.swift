@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Authenticated observation app presentation")
 struct TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration {
-    @Test("observation checklist uses the canonical repeated-evidence requirement")
-    func observationChecklistUsesCanonicalRepeatedEvidenceRequirement() throws {
+    @Test("observation checklist uses the full canonical application-evidence requirement")
+    func observationChecklistUsesFullCanonicalApplicationEvidenceRequirement() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let panel = String(try section(
             in: source,
@@ -17,13 +17,34 @@ struct TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration {
             "test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount"
         ))
         #expect(!panel.contains("test.applicationUpdateCount > 0"))
+
+        // Two callbacks can both arrive before the historical ~30 s rejection boundary. The
+        // visible observation requirements must therefore remain incomplete until application
+        // evidence itself survives that boundary, or until the panel derives readiness directly
+        // from the canonical package verdict.
+        let exposesApplicationSurvival =
+            panel.contains("TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds")
+            && panel.contains("latestApplicationPayloadUptimeNanoseconds")
+            && panel.contains("authenticatedAtUptimeNanoseconds")
+        let derivesCanonicalVerdict = panel.contains("TuyaAuthenticatedReadOnlyPreflight.verdict")
+        #expect(exposesApplicationSurvival || derivesCanonicalVerdict)
     }
 
-    @Test("observation copy asks for repeated application evidence")
-    func observationCopyDoesNotPromiseReadinessFromOneUpdate() throws {
+    @Test("authentication-success copy asks for repeated evidence and the stability horizon")
+    func observationCopyMatchesCanonicalEvidenceShape() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        #expect(!source.contains("Waiting for a genuine application update and the canonical 45-second horizon"))
-        #expect(source.contains("repeated"))
+        let authenticatedFlow = String(try section(
+            in: source,
+            from: "private func authenticated(token: TuyaReadOnlyConnectionToken) async",
+            to: "private func authenticationFailed(token: TuyaReadOnlyConnectionToken) async"
+        ))
+
+        #expect(!authenticatedFlow.contains(
+            "Waiting for a genuine application update and the canonical 45-second horizon"
+        ))
+        #expect(authenticatedFlow.contains("repeated"))
+        #expect(authenticatedFlow.contains("application"))
+        #expect(authenticatedFlow.contains("45-second"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
