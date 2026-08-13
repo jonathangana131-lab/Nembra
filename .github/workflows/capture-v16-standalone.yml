@@ -75,8 +75,10 @@ jobs:
         run: |
           set -euo pipefail
           swift test --filter CoreBluetoothCaptureMappingTests
-          swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
-          swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
+          # Keep the complete authenticated-session family inside the exact-head gate. A new
+          # TuyaAuthenticated* lifecycle/horizon regression must not be silently omitted merely
+          # because the workflow predates the test suite that exposes it.
+          swift test --filter TuyaAuthenticated
           swift test --filter CaptureFirstFoldCopySourceTests
 
       - name: Preserve deferred field-contract boundary
