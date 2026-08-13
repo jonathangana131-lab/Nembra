@@ -1,0 +1,84 @@
+name: Nembra GO Field Oracle Refresh
+
+on:
+  push:
+    branches:
+      - repair/v16-capture-field-oracle-refresh-sol-20260812
+    paths:
+      - .github/workflows/nembra-go-field-oracle-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind repair input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^1)" = "8c6a124154d678b1bc839d9c23ff452f4be48086"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Refresh exact source-contract oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/capture-field-build-provenance.yml")
+          source = workflow.read_text(encoding="utf-8")
+          old = "          grep -Fq '**_structured_credentials(build_uid, build_gid, ())' \"$build_origin_custody\"\n"
+          new = (
+              "          grep -Fq 'build_groups = _attest_build_identity_groups(' \"$build_origin_custody\"\n"
+              "          grep -Fq '_run_exec_bound_build(' \"$build_origin_custody\"\n"
+              "          grep -Fq 'baseline_groups=build_groups' \"$build_origin_custody\"\n"
+          )
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one stale credential oracle, found {source.count(old)}")
+          source = source.replace(old, new)
+          workflow.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Validate refreshed oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-go-field-oracle-pycache"
+          python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          grep -Fq 'build_groups = _attest_build_identity_groups(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq '_run_exec_bound_build(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq 'baseline_groups=build_groups' scripts/ci/capture_signed_app_build_origin_custody.py
+          if grep -Fq '**_structured_credentials(build_uid, build_gid, ())' .github/workflows/capture-field-build-provenance.yml; then
+            echo 'stale direct-credential workflow oracle remains' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Commit repaired carrier and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/nembra-go-field-oracle-refresh.yml
+          git diff --check
+          git config user.name "nembra-go-worker"
+          git config user.email "nembra-go-worker@users.noreply.github.com"
+          git add \
+            .github/workflows/capture-field-build-provenance.yml \
+            .github/workflows/nembra-go-field-oracle-refresh.yml
+          git diff --cached --check
+          git commit -m "Capture: refresh field credential source oracle"
+          git push origin "HEAD:repair/v16-capture-field-oracle-refresh-sol-20260812"
