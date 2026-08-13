@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 288,
+    "classifiedPRTotal": 287,
     "classifiedPRs": {
+      "2719": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2719,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.26,
+        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
+      },
       "2733": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2441,17 +2452,6 @@
         "similarity": 0.283,
         "title": "[Capture P0][VALIDATION] Prove restricted Apple-signing bootstrap boundary"
       },
-      "3255": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "swarm-control-plane-v16-1-rollout",
-        "pr": 3255,
-        "recommendedAction": "independent-review",
-        "similarity": 0.062,
-        "title": "[Swarm V16.1][P0] Prevent premature worker idle under burst"
-      },
       "3260": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2505,11 +2505,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T23:04:09Z",
+    "liveRefreshAt": "2026-08-13T23:06:51Z",
     "liveRefreshDuplicatesSuppressed": [
       3253
     ],
-    "liveRefreshMainSHA": "5817fcc5159e5101d1b13056ef6a8852c59dc908",
+    "liveRefreshMainSHA": "de37ee4769022d32765bf63340f8420ee7c0e04b",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 107,
+  "revision": 108,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T23:07:07Z",
+  "updatedAt": "2026-08-13T23:08:30Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T23:04:09Z",
+      "updatedAt": "2026-08-13T23:06:51Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
