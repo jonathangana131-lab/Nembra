@@ -6,6 +6,7 @@ on:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraApp/Features/Research/TuyaAccountBridge.swift
+      - NembraApp/Resources/Localizable.strings
       - NembraCapture.xcodeproj/project.pbxproj
       - scripts/ci/capture_standalone_visual_evidence.py
       - scripts/ci/capture_visual_png_content_guard.py
