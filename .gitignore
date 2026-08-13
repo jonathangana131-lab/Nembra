@@ -1,23 +1,8 @@
-# Xcode
-.DS_Store
-build/
-DerivedData/
-*.xcuserstate
-xcuserdata/
-*.xccheckout
-*.xcscmblueprint
-
-# SwiftPM
-.build/
-.swiftpm/
-Package.resolved
-
-# Local artifacts
-artifacts/
-*.log
-
-# Private/generated Capture field-build inputs
+# Nembra Capture private/generated signed-build inputs
 LocalSecrets/
 Pods/
 Podfile.lock
 NembraCapture.xcworkspace/
+
+# Local signed-build candidate output
+artifacts/
