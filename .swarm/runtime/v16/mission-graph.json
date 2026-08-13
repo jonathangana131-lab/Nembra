@@ -2391,7 +2391,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3216,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.282,
+        "similarity": 0.298,
         "title": "[Capture P0][VALIDATION] Converge current-head source/private retirement authority"
       },
       "3217": {
@@ -2413,7 +2413,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3218,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.336,
+        "similarity": 0.359,
         "title": "[Capture P0][VALIDATION] Prove post-DS build-principal retirement on real Xcode"
       },
       "3219": {
@@ -2435,7 +2435,7 @@
         "lane": "",
         "pr": 3220,
         "recommendedAction": "independent-review",
-        "similarity": 0.148,
+        "similarity": 0.154,
         "title": "[Capture P0][V16] Add build-only signed Capture candidate handoff"
       },
       "3221": {
@@ -2460,16 +2460,16 @@
         "similarity": 0.379,
         "title": "[Capture P0][VALIDATION] Add selected-Xcode private field preflight"
       },
-      "3223": {
+      "3224": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "212c80b8ac801f32d87ce3bfa29bee794102e154",
+        "headSHA": "",
         "lane": "capture-signed-install-custody",
-        "pr": 3223,
+        "pr": 3224,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.366,
-        "title": "[Capture P0][VALIDATION] Prove Apple-signing Git alias rejection"
+        "similarity": 0.341,
+        "title": "[Capture P0][VALIDATION] Converge build-UID launch-domain and stale-cache retirement"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2502,9 +2502,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:25:51Z",
+    "liveRefreshAt": "2026-08-13T03:29:00Z",
     "liveRefreshDuplicatesSuppressed": [
-      3223
+      3224
     ],
     "liveRefreshMainSHA": "3c413fbc6585427bc80adece9e083185ce05fffc",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6276,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 53,
+  "revision": 54,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:28:36Z",
+  "updatedAt": "2026-08-13T03:31:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6355,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:25:51Z",
+      "updatedAt": "2026-08-13T03:29:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
