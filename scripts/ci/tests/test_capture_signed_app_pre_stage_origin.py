@@ -126,7 +126,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
 
         self.assertIn("build_gid = build_uid", source)
         self.assertIn("if build_uid == field_uid or build_gid in field_groups:", source)
-        self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)
+        self.assertIn("**_structured_credentials(uid, gid, ())", source)
         self.assertIn('"-owners",\n        "on",', source)
         self.assertEqual(source.count('"-owners"'), 1)
         self.assertIn("if effective != expected:", source)
@@ -261,7 +261,10 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
                 "LC_ALL": "en_US.UTF-8",
             },
         )
-        self.assertTrue(set(poison).isdisjoint(environment))
+        for key in set(poison).difference({"LANG", "LC_ALL"}):
+            self.assertNotIn(key, environment)
+        self.assertNotEqual(environment["LANG"], poison["LANG"])
+        self.assertNotEqual(environment["LC_ALL"], poison["LC_ALL"])
 
     def test_structured_credentials_preserve_explicit_authority_without_primary_duplication(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_credentials")
