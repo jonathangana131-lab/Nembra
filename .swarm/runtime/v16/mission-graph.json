@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 283,
+    "classifiedPRTotal": 284,
     "classifiedPRs": {
-      "2680": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2680,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.361,
-        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
-      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2163,7 +2152,7 @@
         "lane": "home-accessibility-product",
         "pr": 3053,
         "recommendedAction": "independent-review",
-        "similarity": 0.148,
+        "similarity": 0.173,
         "title": "[Home V15] Preserve recovery progress state titles"
       },
       "3058": {
@@ -2473,6 +2462,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.301,
         "title": "[Capture P0][VALIDATION] Prove lingering build-UID launchd service registry is inert"
+      },
+      "3232": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3232,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.178,
+        "title": "[Home V15][QA] Prove real surface and Accessibility XXXL"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T18:02:19Z",
+    "liveRefreshAt": "2026-08-13T18:04:45Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 86,
+  "revision": 87,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T18:04:17Z",
+  "updatedAt": "2026-08-13T18:06:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T18:02:19Z",
+      "updatedAt": "2026-08-13T18:04:45Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
