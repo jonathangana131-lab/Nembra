@@ -25,6 +25,7 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
             from: 3_000,
             untilBefore: horizon
         )
+        let acceptedPrefix = await ledger.currentPreflightSnapshot()
 
         clock.advance(to: horizon)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
@@ -33,6 +34,7 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
 
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.applicationPayloadCount == 1)
+        #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
     }
 
@@ -57,6 +59,7 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
             from: 3_000,
             untilBefore: horizon
         )
+        let acceptedPrefix = await ledger.currentPreflightSnapshot()
 
         clock.advance(to: horizon)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
@@ -65,8 +68,8 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
 
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.applicationPayloadCount == 1)
-        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 3_000)
-        #expect(snapshot.latestObservedUptimeNanoseconds == horizon)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == acceptedPrefix.latestApplicationPayloadUptimeNanoseconds)
+        #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
     }
 
@@ -91,6 +94,7 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
             from: 3_000,
             untilBefore: horizon
         )
+        let acceptedPrefix = await ledger.currentPreflightSnapshot()
 
         clock.advance(to: horizon)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
@@ -100,6 +104,7 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.authenticationMethod == .documentedDeviceSharing)
         #expect(snapshot.applicationPayloadCount == 1)
+        #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)
         #expect(
             TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot)
                 == .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation.")
