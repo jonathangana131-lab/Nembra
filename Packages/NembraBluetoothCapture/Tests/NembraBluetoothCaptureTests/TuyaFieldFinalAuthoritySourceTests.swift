@@ -79,7 +79,9 @@ struct TuyaFieldFinalAuthoritySourceTests {
     func terminalAPIsAreConsumedByTheFieldController() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         #expect(source.contains("sessionLedger.markObservationContinuityInvalidated(for: token)"))
-        #expect(source.contains("sessionLedger.markApplicationObservationTimedOut(for: token)"))
+        #expect(source.contains("MutationError.incompleteObservationHorizonReached"))
+        #expect(source.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
+        #expect(!source.contains("sessionLedger.markApplicationObservationTimedOut(for: token)"))
         #expect(source.contains("sessionLedger.sealAcceptedObservation(for: token)"))
         #expect(source.contains("sessionLedger.endConnection(for: token)"))
         #expect(source.contains("recordObservedTransportLoss(token: token)"))
