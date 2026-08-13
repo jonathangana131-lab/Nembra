@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 288,
+    "classifiedPRTotal": 287,
     "classifiedPRs": {
+      "2719": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2719,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.26,
+        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
+      },
       "2733": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2207,7 +2218,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3152,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.257,
+        "similarity": 0.313,
         "title": "[Capture P0][VALIDATION] Prove Apple Development signing under field UID capability"
       },
       "3169": {
@@ -2408,17 +2419,6 @@
         "similarity": 0.15,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
-      "3243": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3243,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.227,
-        "title": "[Capture P0][VALIDATION] Execute deadline adversary in standalone gate"
-      },
       "3246": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2438,19 +2438,8 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3249,
         "recommendedAction": "independent-review",
-        "similarity": 0.295,
+        "similarity": 0.273,
         "title": "Preserve accepted observation prefix at timeout boundary"
-      },
-      "3250": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3250,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.38,
-        "title": "[Capture P0][VALIDATION] Preserve application-receipt horizon reason"
       },
       "3251": {
         "classification": "validation",
@@ -2460,7 +2449,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3251,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.391,
+        "similarity": 0.341,
         "title": "[Capture P0][RED TEAM] Preserve semantic incomplete-horizon terminal"
       },
       "3252": {
@@ -2471,8 +2460,19 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3252,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.38,
+        "similarity": 0.341,
         "title": "[Capture P0][VALIDATION] Cover application-update incomplete horizon terminal"
+      },
+      "3253": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3253,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.283,
+        "title": "[Capture P0][VALIDATION] Prove restricted Apple-signing bootstrap boundary"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,9 +2505,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T22:50:45Z",
+    "liveRefreshAt": "2026-08-13T22:52:45Z",
     "liveRefreshDuplicatesSuppressed": [
-      3228
+      3253
     ],
     "liveRefreshMainSHA": "5817fcc5159e5101d1b13056ef6a8852c59dc908",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 102,
+  "revision": 103,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T22:52:28Z",
+  "updatedAt": "2026-08-13T22:55:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T22:50:45Z",
+      "updatedAt": "2026-08-13T22:52:45Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
