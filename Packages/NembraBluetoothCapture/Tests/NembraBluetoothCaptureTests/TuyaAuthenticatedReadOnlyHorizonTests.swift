@@ -70,6 +70,42 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
     }
 
+    @Test("Device Sharing provenance cannot keep an authenticated generation alive indefinitely")
+    func deviceSharingProvenanceRetiresAtIncompleteHorizon() async throws {
+        let clock = HorizonTestUptimeClock(1_000)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await ledger.beginConnection()
+
+        clock.advance(to: 1_500)
+        try await ledger.markAuthenticationStarted(for: token)
+        clock.advance(to: 2_000)
+        try await ledger.markAuthenticated(for: token, method: .documentedDeviceSharing)
+        clock.advance(to: 3_000)
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
+        let horizon = 2_000 + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds
+        try await advanceHorizonLiveness(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: 3_000,
+            untilBefore: horizon
+        )
+
+        clock.advance(to: horizon)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
+            try await ledger.observeCurrentConnection(for: token)
+        }
+
+        let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.authenticationMethod == .documentedDeviceSharing)
+        #expect(snapshot.applicationPayloadCount == 1)
+        #expect(
+            TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot)
+                == .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation.")
+        )
+    }
+
     @Test("canonically ready generation survives the incomplete horizon")
     func readyGenerationIsNotRetiredAtHorizon() async throws {
         let clock = HorizonTestUptimeClock(1_000)
