@@ -1,0 +1,77 @@
+name: Capture Selected Xcode Janitor Repair Reclassification
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py
+      - .github/workflows/capture-selected-xcode-janitor-repair-reclassification.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repaired-contract:
+    name: Reclassify janitor READY and inherited-FD authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind validation to exact repaired product head
+        shell: bash
+        env:
+          EXACT_PRODUCT: 6f6b0ce342be2d9c4f18ebce2cb452d1df514007
+          EXACT_HELPER_BLOB: 75625c8a3b6bcab35d9fc7424b9e892de9ddfd01
+          EXACT_TEST_BLOB: 935d8b2d1761f90bbc7400e14f37ba8920378d7e
+        run: |
+          set -euo pipefail
+          git cat-file -e "${EXACT_PRODUCT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PRODUCT")" = "$EXACT_PRODUCT"
+          changed_paths="$(git diff --name-only "$EXACT_PRODUCT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-selected-xcode-janitor-repair-reclassification.yml \
+            scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          test "$(git rev-parse "$EXACT_PRODUCT:scripts/ci/capture_selected_xcode_freeze.py")" = "$EXACT_HELPER_BLOB"
+          test "$(git rev-parse 'HEAD:scripts/ci/capture_selected_xcode_freeze.py')" = "$EXACT_HELPER_BLOB"
+          test "$(git rev-parse 'HEAD:scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py')" = "$EXACT_TEST_BLOB"
+          /usr/bin/python3 -I - <<'PY'
+          from pathlib import Path
+          for path in (
+              'scripts/ci/capture_selected_xcode_freeze.py',
+              'scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py',
+          ):
+              compile(Path(path).read_text(), path, 'exec', dont_inherit=True)
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact repaired product/test blobs bound before reclassification.\n'
+
+      - name: Require former expected-red authority assertions to pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/nembra-janitor-repair-reclassification.log"
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py -v >"$log" 2>&1
+          cat "$log"
+          grep -Fq 'test_fork_inherits_nonstdio_descriptor_without_explicit_close' "$log"
+          grep -Fq 'test_production_requires_child_ready_handshake_before_parent_return' "$log"
+          grep -Fq 'test_production_closes_inherited_nonstdio_descriptors_before_monitor_loop' "$log"
+          grep -Fq 'Ran 3 tests' "$log"
+          grep -Fq 'OK' "$log"
+          printf 'JANITOR_REPAIR_RECLASSIFIED: repaired exact helper now satisfies READY plus inherited-fd closure contract.\n'
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        env:
+          EXACT_PRODUCT: 6f6b0ce342be2d9c4f18ebce2cb452d1df514007
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PRODUCT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'VALIDATION ONLY. NO PRODUCT/DEVICE/BLUETOOTH/TUYA/PHYSICAL AUTHORITY.\n'
