@@ -1,0 +1,118 @@
+name: Swarm V16 Objective Integration Command
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  integrate-nonphysical-objective:
+    if: github.actor == github.repository_owner && startsWith(github.event.comment.body, '/v16-objective-integrate ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted current default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Parse bounded operator command
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, shlex
+          parts = shlex.split(os.environ['COMMENT_BODY'])
+          if len(parts) != 8 or parts[0] != '/v16-objective-integrate':
+              raise SystemExit('usage: /v16-objective-integrate OBJECTIVE PR SOURCE_HEAD MERGE_SHA RUNS_CSV REVIEWS_CSV PATHS_CSV')
+          _, objective, pr, source_head, merge_sha, runs_csv, reviews_csv, paths_csv = parts
+          if not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,95}', objective):
+              raise SystemExit('invalid objective')
+          if not re.fullmatch(r'[1-9][0-9]{0,8}', pr):
+              raise SystemExit('invalid PR')
+          for label, value in [('source head', source_head), ('merge sha', merge_sha)]:
+              if not re.fullmatch(r'[0-9a-f]{40}', value):
+                  raise SystemExit(f'invalid {label}')
+          runs = [x for x in runs_csv.split(',') if x]
+          reviews = [x for x in reviews_csv.split(',') if x]
+          paths = [x for x in paths_csv.split(',') if x]
+          if not runs or any(not re.fullmatch(r'[0-9]{1,20}', x) for x in runs):
+              raise SystemExit('invalid acceptance runs')
+          if not reviews or any(not re.fullmatch(r'[A-Za-z0-9._:-]{1,80}', x) for x in reviews):
+              raise SystemExit('invalid review refs')
+          path_re = re.compile(r'[A-Za-z0-9._@+/-]{1,240}')
+          if not paths or any(not path_re.fullmatch(x) or '..' in x.split('/') for x in paths):
+              raise SystemExit('invalid affected paths')
+          env_file = os.environ['GITHUB_ENV']
+          with open(env_file, 'a', encoding='utf-8') as f:
+              for key, value in [('OBJECTIVE', objective), ('PR_NUMBER', pr), ('SOURCE_HEAD', source_head), ('MERGE_SHA', merge_sha)]:
+                  f.write(f'{key}={value}\n')
+          temp = os.environ['RUNNER_TEMP']
+          open(f'{temp}/v16-runs.txt', 'w', encoding='utf-8').write('\n'.join(runs) + '\n')
+          open(f'{temp}/v16-reviews.txt', 'w', encoding='utf-8').write('\n'.join(reviews) + '\n')
+          open(f'{temp}/v16-paths.txt', 'w', encoding='utf-8').write('\n'.join(paths) + '\n')
+          PY
+
+      - name: Verify exact merged PR authority
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          SOURCE_HEAD: ${{ env.SOURCE_HEAD }}
+          MERGE_SHA: ${{ env.MERGE_SHA }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            if (!pr.merged_at) core.setFailed('objective integration requires an already merged PR')
+            if (pr.base.ref !== context.payload.repository.default_branch) core.setFailed('PR must target current default branch')
+            if (pr.head.sha !== process.env.SOURCE_HEAD) core.setFailed('source head does not match merged PR')
+            if (pr.merge_commit_sha !== process.env.MERGE_SHA) core.setFailed('merge SHA does not match merged PR')
+
+      - name: Reuse integration evidence only while affected paths are unchanged
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git merge-base --is-ancestor "$MERGE_SHA" HEAD || {
+            echo "Accepted integration commit is not an ancestor of current trusted main" >&2
+            exit 1
+          }
+          while IFS= read -r path; do
+            [[ -n "$path" ]] || continue
+            if git diff --name-only "$MERGE_SHA..HEAD" -- "$path" | grep -q .; then
+              echo "Evidence-bound path changed after integration: $path" >&2
+              exit 1
+            fi
+          done < "$RUNNER_TEMP/v16-paths.txt"
+
+      - name: Record accepted integration atomically in Mission Graph
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN_ARGS=()
+          while IFS= read -r value; do [[ -n "$value" ]] && RUN_ARGS+=(--acceptance-run "$value"); done < "$RUNNER_TEMP/v16-runs.txt"
+          REVIEW_ARGS=()
+          while IFS= read -r value; do [[ -n "$value" ]] && REVIEW_ARGS+=(--review-ref "$value"); done < "$RUNNER_TEMP/v16-reviews.txt"
+          PATH_ARGS=()
+          while IFS= read -r value; do [[ -n "$value" ]] && PATH_ARGS+=(--affected-path "$value"); done < "$RUNNER_TEMP/v16-paths.txt"
+          python3 scripts/swarm_v16_record_objective.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --state-branch swarm-state \
+            --objective "$OBJECTIVE" \
+            --pr "$PR_NUMBER" \
+            --source-head "$SOURCE_HEAD" \
+            --merge-sha "$MERGE_SHA" \
+            "${RUN_ARGS[@]}" \
+            "${REVIEW_ARGS[@]}" \
+            "${PATH_ARGS[@]}"
