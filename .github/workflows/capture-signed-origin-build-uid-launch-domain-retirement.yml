@@ -1,0 +1,139 @@
+name: Capture Signed Origin Build UID Launch Domain Retirement
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-signed-origin-build-uid-launch-domain-retirement.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launch-domain-retirement:
+    name: Prove launch-domain retirement against real Xcode
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact red carrier and validation-only scope
+        shell: bash
+        env:
+          EXACT_RED_PARENT: e72099137463d93bda486e987a6ea8726c540140
+        run: |
+          set -euo pipefail
+          test "$(git merge-base "$EXACT_RED_PARENT" HEAD)" = "$EXACT_RED_PARENT"
+          git diff --name-only "$EXACT_RED_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' .github/workflows/capture-signed-origin-build-uid-launch-domain-retirement.yml > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_RED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize principal-scoped launch-domain teardown in runner workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=scripts/ci/capture_signed_app_build_origin_custody.py
+          cp "$helper" "$RUNNER_TEMP/capture_signed_app_build_origin_custody.py.original"
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/capture_signed_app_build_origin_custody.py')
+          source = path.read_text(encoding='utf-8')
+          anchor = '''def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:\n'''
+          if source.count(anchor) != 1:
+              raise SystemExit('exact production identity-retirement anchor was not found once')
+
+          helper = '''def _retire_local_build_launch_domain(uid: int) -> bool:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot retire launch domain for root or invalid UID")\n    target = f"user/{uid}"\n    before = subprocess.run(\n        ["/bin/launchctl", "print", target],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.DEVNULL,\n        stderr=subprocess.DEVNULL,\n        check=False,\n    )\n    if before.returncode != 0:\n        return False\n    bootout = subprocess.run(\n        ["/bin/launchctl", "bootout", target],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.PIPE,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    if bootout.returncode != 0:\n        detail = (bootout.stderr or "").strip()\n        raise BuildOriginCustodyError(\n            f"could not retire dedicated build launch domain: exit {bootout.returncode}"\n            + (f": {detail[-1000:]}" if detail else "")\n        )\n    after = subprocess.run(\n        ["/bin/launchctl", "print", target],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.DEVNULL,\n        stderr=subprocess.DEVNULL,\n        check=False,\n    )\n    if after.returncode == 0:\n        raise BuildOriginCustodyError("dedicated build launch domain survived bootout")\n    return True\n\n\n'''
+          source = source.replace(anchor, helper + anchor)
+
+          old = '''    if uid is not None and uid > 0:\n        killed = subprocess.run(\n'''
+          new = '''    if uid is not None and uid > 0:\n        if require_absent:\n            _retire_local_build_launch_domain(uid)\n        killed = subprocess.run(\n'''
+          if source.count(old) != 1:
+              raise SystemExit('exact production pre-pkill retirement block was not found once')
+          source = source.replace(old, new)
+          compile(source, str(path), 'exec', dont_inherit=True)
+          path.write_text(source, encoding='utf-8')
+          PY
+          grep -Fq 'target = f"user/{uid}"' "$helper"
+          grep -Fq '["/bin/launchctl", "bootout", target]' "$helper"
+          grep -Fq '_wait_for_no_live_uid(uid)' "$helper"
+          grep -Fq '_assert_local_build_identity_retired(name, uid)' "$helper"
+
+      - name: Execute exact real-Xcode custody fixture with launch-domain retirement candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          log="$RUNNER_TEMP/launch-domain-retirement-real-xcode.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py >"$log" 2>&1
+          status=$?
+          set -e
+          cat "$log"
+          printf '%s\n' "$status" > "$RUNNER_TEMP/launch-domain-retirement-real-xcode.status"
+          test "$status" -eq 0
+          grep -Fq 'NEMBRA_REAL_XCODE_ORIGIN_JSON=' "$log"
+          if grep -Fq 'NEMBRA_REAL_XCODE_ORIGIN_ERROR=' "$log"; then
+            echo 'ERROR: real-Xcode fixture emitted an authority failure.' >&2
+            exit 1
+          fi
+
+      - name: Require frozen-output and principal-retirement evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - "$RUNNER_TEMP/launch-domain-retirement-real-xcode.log" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          marker = 'NEMBRA_REAL_XCODE_ORIGIN_JSON='
+          lines = [line for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines() if line.startswith(marker)]
+          if len(lines) != 1:
+              raise SystemExit(f'expected one real-Xcode evidence marker, found {len(lines)}')
+          evidence = json.loads(lines[0][len(marker):])
+          required = (
+              evidence.get('schemaVersion') == 5
+              and evidence.get('buildEffectiveGroupAuthorityAttested') is True
+              and evidence.get('execBoundCredentialAttestationUsed') is True
+              and evidence.get('buildIdentityDistinctFromField') is True
+              and evidence.get('xcodebuildReturnCode') == 0
+              and evidence.get('nonForcedDetachReturnCode') == 0
+              and evidence.get('readonlyNonForcedDetachReturnCode') == 0
+              and evidence.get('buildPrincipalRetired') is True
+              and evidence.get('compilerProductSHA256') == evidence.get('readonlyRemountSHA256')
+              and evidence.get('physicalAuthorityCreated') is False
+          )
+          if not required:
+              raise SystemExit(f'launch-domain candidate failed semantic acceptance: {evidence}')
+          print('BUILD_UID_LAUNCH_DOMAIN_RETIREMENT_ACCEPTED physicalAuthorityCreated=false')
+          PY
+
+      - name: Restore exact production bytes and preserve validation-only scope
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=scripts/ci/capture_signed_app_build_origin_custody.py
+          test -f "$RUNNER_TEMP/capture_signed_app_build_origin_custody.py.original"
+          cp "$RUNNER_TEMP/capture_signed_app_build_origin_custody.py.original" "$helper"
+          git diff --check e72099137463d93bda486e987a6ea8726c540140 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' 'VALIDATION ONLY. Production bytes unchanged. PHYSICAL NO-GO.'
+
+      - name: Retain real-Xcode diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-build-uid-launch-domain-retirement-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/launch-domain-retirement-real-xcode.log
+            ${{ runner.temp }}/launch-domain-retirement-real-xcode.status
+          if-no-files-found: warn
+          retention-days: 30
