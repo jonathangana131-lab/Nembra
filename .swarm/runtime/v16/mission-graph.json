@@ -974,8 +974,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 282,
+    "classifiedPRTotal": 281,
     "classifiedPRs": {
+      "2638": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2638,
+        "recommendedAction": "independent-review",
+        "similarity": 0.224,
+        "title": "[Capture P0][PHYSICAL GO] Add authenticated stationary Final GO issuer"
+      },
       "2679": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1239,17 +1250,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.091,
         "title": "[Swarm V15.1] Reject orphan live-claim ownership"
-      },
-      "2823": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "swarm-v16-max-enforcement",
-        "pr": 2823,
-        "recommendedAction": "independent-review",
-        "similarity": 0.093,
-        "title": "Swarm V16: enforce trusted-base coordination and live-state fencing"
       },
       "2825": {
         "classification": "canonical-candidate",
@@ -2415,7 +2415,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T00:21:18Z",
+    "liveRefreshAt": "2026-08-13T00:24:02Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
@@ -6169,10 +6169,10 @@
       "userValue": 7
     }
   },
-  "revision": 28,
+  "revision": 29,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T00:23:53Z",
+  "updatedAt": "2026-08-13T00:26:32Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6248,7 +6248,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T00:21:18Z",
+      "updatedAt": "2026-08-13T00:24:02Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
