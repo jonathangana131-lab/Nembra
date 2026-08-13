@@ -61,6 +61,30 @@ ACCEPTED_TUYA_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA
 [[ "$TUYA_LOCK_SHA256" == "$ACCEPTED_TUYA_LOCK_SHA256" ]] || die "Resolved Tuya dependency lock no longer matches the reviewed digest."
 unset ACCEPTED_TUYA_LOCK_SHA256
 
+TUYA_PROVENANCE_HELPER="$ROOT/Scripts/capture_tuya_private_input_provenance.py"
+TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
+TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
+TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
+[[ -f "$TUYA_PROVENANCE_HELPER" ]] || die "Private-input provenance verifier is missing from accepted source."
+[[ -f "$TUYA_DEPENDENCY_PROVENANCE" ]] || die "Bootstrap did not create a private-input fingerprint record."
+verify_private_tuya_inputs() {
+    /usr/bin/python3 -I "$TUYA_PROVENANCE_HELPER" verify \
+        --lockfile "$ROOT/Podfile.lock" \
+        --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+        --security-build "$TUYA_PRIVATE_SDK/Build" \
+        --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+        --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+        --record "$TUYA_DEPENDENCY_PROVENANCE" >/dev/null || \
+        die "Private Tuya SDK/app-identity inputs no longer match the bootstrap fingerprint record. Restart from reviewed inputs."
+}
+
+# Runtime environment secrets are not build authority. The authenticated workspace
+# consumes only the ignored local private-config pod admitted above.
+unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
+verify_private_tuya_inputs
+PRIVATE_INPUT_PROVENANCE_SHA256="$(/usr/bin/shasum -a 256 "$TUYA_DEPENDENCY_PROVENANCE" | /usr/bin/awk '{print $1}' | /usr/bin/tr '[:upper:]' '[:lower:]')"
+[[ "$PRIVATE_INPUT_PROVENANCE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Could not fingerprint the private-input provenance record."
+
 BUILD_INSTANCE_ID="$(/usr/bin/python3 -I -c 'import uuid; print(uuid.uuid4())')"
 [[ "$BUILD_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || die "Could not create a canonical candidate instance ID."
 WORK_ROOT="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/NembraV16SignedCapture.XXXXXX")"
@@ -90,6 +114,10 @@ else
     /usr/bin/xcodebuild "${XCODE_ARGS[@]}"
 fi
 
+verify_private_tuya_inputs
+PRIVATE_INPUT_PROVENANCE_SHA256_AFTER="$(/usr/bin/shasum -a 256 "$TUYA_DEPENDENCY_PROVENANCE" | /usr/bin/awk '{print $1}' | /usr/bin/tr '[:upper:]' '[:lower:]')"
+[[ "$PRIVATE_INPUT_PROVENANCE_SHA256_AFTER" == "$PRIVATE_INPUT_PROVENANCE_SHA256" ]] || die "Private-input provenance record changed across the signed build."
+unset PRIVATE_INPUT_PROVENANCE_SHA256_AFTER
 [[ "$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse --verify HEAD^{commit})" == "$SOURCE_SHA" ]] || die "Repository HEAD moved while signed candidate was compiling."
 [[ -z "$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git status --porcelain=v1 --untracked-files=all)" ]] || die "Tracked or unignored source changed while signed candidate was compiling."
 
@@ -122,17 +150,22 @@ STAGING_DIR="${FINAL_ARTIFACTS_DIR}.staging-$BUILD_INSTANCE_ID"
 [[ ! -e "$STAGING_DIR" && ! -L "$STAGING_DIR" ]] || die "Candidate staging destination already exists."
 /bin/mkdir -m 700 "$STAGING_DIR"
 /usr/bin/ditto "$ARCHIVE_PATH" "$STAGING_DIR/NembraCapture.xcarchive"
+/usr/bin/ditto "$ROOT/Podfile.lock" "$STAGING_DIR/Podfile.lock"
+/usr/bin/ditto "$TUYA_DEPENDENCY_PROVENANCE" "$STAGING_DIR/private-input-provenance.txt"
+/bin/chmod 600 "$STAGING_DIR/private-input-provenance.txt"
+[[ "$(/usr/bin/shasum -a 256 "$STAGING_DIR/Podfile.lock" | /usr/bin/awk '{print $1}' | /usr/bin/tr '[:upper:]' '[:lower:]')" == "$TUYA_LOCK_SHA256" ]] || die "Staged dependency lock does not match the build subject."
+[[ "$(/usr/bin/shasum -a 256 "$STAGING_DIR/private-input-provenance.txt" | /usr/bin/awk '{print $1}' | /usr/bin/tr '[:upper:]' '[:lower:]')" == "$PRIVATE_INPUT_PROVENANCE_SHA256" ]] || die "Staged private-input provenance record does not match the build subject."
 
 /usr/bin/python3 -I - \
     "$STAGING_DIR/candidate-manifest.json" \
-    "$SOURCE_SHA" "$BUILD_LABEL" "$BUILD_INSTANCE_ID" "$TUYA_LOCK_SHA256" \
+    "$SOURCE_SHA" "$BUILD_LABEL" "$BUILD_INSTANCE_ID" "$TUYA_LOCK_SHA256" "$PRIVATE_INPUT_PROVENANCE_SHA256" \
     "$PROCEDURE_ID" "$BUNDLE_ID" "$TEAM_IDENTIFIER" "$EXECUTABLE_SHA256" "$INFO_PLIST_SHA256" <<'PY'
 import datetime as dt
 import json
 import os
 import sys
 
-(path, source, build, instance, lock, procedure, bundle, team, executable_sha, plist_sha) = sys.argv[1:]
+(path, source, build, instance, lock, private_inputs, procedure, bundle, team, executable_sha, plist_sha) = sys.argv[1:]
 record = {
     "schema": "nembra-v16-signed-build-candidate-v1",
     "createdAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -141,6 +174,7 @@ record = {
     "buildIdentifier": build,
     "buildInstanceID": instance,
     "tuyaDependencyLockSHA256": lock,
+    "privateInputProvenanceSHA256": private_inputs,
     "procedureIdentifier": procedure,
     "bundleIdentifier": bundle,
     "teamIdentifier": team,

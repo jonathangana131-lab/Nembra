@@ -28,24 +28,42 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         #expect(helper.contains("private Tuya build inputs changed after bootstrap"))
     }
 
-    @Test("installer re-verifies ignored inputs immediately around the signed build")
-    func installerCannotBuildAcrossPrivateInputDrift() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        let calls = installer.split(separator: "\n").filter {
+    @Test("V16 signed-build producer re-verifies ignored inputs around archive compilation")
+    func signedBuildProducerCannotBuildAcrossPrivateInputDrift() throws {
+        let producer = try readRepositoryFile("scripts/field/build_signed_capture_candidate.command")
+        let calls = producer.split(separator: "\n").filter {
             $0.trimmingCharacters(in: .whitespaces) == "verify_private_tuya_inputs"
         }
         #expect(calls.count == 2)
 
-        let firstCall = try requiredIndex(of: "say \"Field procedure: $PROCEDURE_ID\"\nverify_private_tuya_inputs", in: installer)
-        let build = try requiredIndex(of: "xcodebuild \\", in: installer)
-        let secondCall = try requiredIndex(of: "\nverify_private_tuya_inputs\n[[ \"$(git rev-parse HEAD", in: installer)
-        let appReadback = try requiredIndex(of: "APP_INFO_PLIST=\"$APP/Info.plist\"", in: installer)
+        let firstCall = try requiredIndex(
+            of: "unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true\nverify_private_tuya_inputs",
+            in: producer
+        )
+        let build = try requiredIndex(of: "say \"Building signed standalone Nembra Capture archive\"", in: producer)
+        let secondCall = try requiredIndex(of: "\nverify_private_tuya_inputs\nPRIVATE_INPUT_PROVENANCE_SHA256_AFTER", in: producer)
+        let appReadback = try requiredIndex(of: "APP=\"$ARCHIVE_PATH/Products/Applications/Nembra Capture.app\"", in: producer)
 
         #expect(firstCall < build)
         #expect(build < secondCall)
         #expect(secondCall < appReadback)
-        #expect(installer.contains("--record \"$TUYA_DEPENDENCY_PROVENANCE\""))
-        #expect(installer.contains("Private Tuya SDK/app-identity inputs no longer match the bootstrap fingerprint record"))
+        #expect(producer.contains("--record \"$TUYA_DEPENDENCY_PROVENANCE\""))
+        #expect(producer.contains("Private Tuya SDK/app-identity inputs no longer match the bootstrap fingerprint record"))
+    }
+
+    @Test("signed-build candidate preserves the non-secret fingerprint subject")
+    func candidatePreservesPrivateInputFingerprintWithoutSecrets() throws {
+        let producer = try readRepositoryFile("scripts/field/build_signed_capture_candidate.command")
+        let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
+
+        #expect(producer.contains("private-input-provenance.txt"))
+        #expect(producer.contains("privateInputProvenanceSHA256"))
+        #expect(producer.contains("Podfile.lock"))
+        #expect(producer.contains("physicalAuthorityCreated\": False"))
+        #expect(helper.contains("cryptographic fingerprints"))
+        #expect(helper.contains("It never serializes AppKey/AppSecret"))
+        #expect(!producer.contains("app_secret_sha256"))
+        #expect(!producer.contains("app_key_sha256"))
     }
 
     @Test("private provenance stays local and does not serialize secret values")

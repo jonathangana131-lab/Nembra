@@ -113,6 +113,7 @@ jobs:
           swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
+          swift test --filter TuyaPrivateFieldInputProvenanceSourceTests
 
       - name: Build public standalone Capture without field authority
         run: |
