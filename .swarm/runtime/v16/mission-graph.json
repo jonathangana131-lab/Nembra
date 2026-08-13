@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 284,
+    "classifiedPRTotal": 283,
     "classifiedPRs": {
+      "2680": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2680,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.361,
+        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
+      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2262,19 +2273,8 @@
         "lane": "dashboard-live-cockpit",
         "pr": 3163,
         "recommendedAction": "independent-review",
-        "similarity": 0.312,
+        "similarity": 0.274,
         "title": "[Dashboard V15][AX5] Keep stopped-control blocker readable"
-      },
-      "3164": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 3164,
-        "recommendedAction": "independent-review",
-        "similarity": 0.288,
-        "title": "[Dashboard V15][AX5 QA] Re-prove stopped-control blocker at large type"
       },
       "3169": {
         "classification": "validation",
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T17:01:11Z",
+    "liveRefreshAt": "2026-08-13T18:02:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 85,
+  "revision": 86,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T17:03:53Z",
+  "updatedAt": "2026-08-13T18:04:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T17:01:11Z",
+      "updatedAt": "2026-08-13T18:02:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
