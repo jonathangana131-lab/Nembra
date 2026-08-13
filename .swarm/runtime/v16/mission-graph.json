@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 290,
+    "classifiedPRTotal": 289,
     "classifiedPRs": {
+      "2734": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2734,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.365,
+        "title": "[Capture P0][RED TEAM] Break private identity publication custody"
+      },
       "2741": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2462,17 +2473,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.147,
         "title": "[Battery/Range V15] Clear evidence rows around Navigation launcher"
-      },
-      "3230": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "swarm-control-plane-foundation",
-        "pr": 3230,
-        "recommendedAction": "independent-review",
-        "similarity": 0.084,
-        "title": "[Swarm V16.1] Enforce convergence before successor PRs"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,11 +2505,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T09:55:01Z",
+    "liveRefreshAt": "2026-08-13T12:00:58Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
-    "liveRefreshMainSHA": "3c413fbc6585427bc80adece9e083185ce05fffc",
+    "liveRefreshMainSHA": "05ee9d35a7a4816546f2c58b1562e34d6aeeef4a",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 74,
+  "revision": 75,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T12:00:53Z",
+  "updatedAt": "2026-08-13T12:03:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T09:55:01Z",
+      "updatedAt": "2026-08-13T12:00:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
