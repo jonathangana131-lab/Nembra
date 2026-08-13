@@ -974,8 +974,30 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 284,
+    "classifiedPRTotal": 282,
     "classifiedPRs": {
+      "2679": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2679,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.22,
+        "title": "[Capture P0][RED TEAM] Pin Final-GO intended-device ancestry"
+      },
+      "2680": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2680,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.361,
+        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
+      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1215,7 +1237,7 @@
         "lane": "swarm-orphan-claim-worker-integrity",
         "pr": 2822,
         "recommendedAction": "independent-review",
-        "similarity": 0.093,
+        "similarity": 0.091,
         "title": "[Swarm V15.1] Reject orphan live-claim ownership"
       },
       "2823": {
@@ -2263,17 +2285,6 @@
         "similarity": 0.216,
         "title": "[Capture P0][BUILD] Materialize selected-Xcode freeze custodian"
       },
-      "3179": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "917824b230810b75b83e0a39f5662dada501e446",
-        "lane": "",
-        "pr": 3179,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.141,
-        "title": "[Swarm V16] Converge live topology authority hardening"
-      },
       "3180": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2328,17 +2339,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.35,
         "title": "[Capture P0][VALIDATION] Classify Apple signing under dedicated build UID"
-      },
-      "3193": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3193,
-        "recommendedAction": "independent-review",
-        "similarity": 0.14,
-        "title": "[Swarm V16] Preserve scheduled authority on live branch mismatch"
       },
       "3198": {
         "classification": "validation",
@@ -2415,11 +2415,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T00:15:55Z",
+    "liveRefreshAt": "2026-08-13T00:18:52Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
-    "liveRefreshMainSHA": "e6fb870916ee284825148d692af80d4b116008bf",
+    "liveRefreshMainSHA": "aa0f80ac4c02c1e34cef56f7ce8c179b3e164e11",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -6169,10 +6169,10 @@
       "userValue": 7
     }
   },
-  "revision": 25,
+  "revision": 26,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T00:18:35Z",
+  "updatedAt": "2026-08-13T00:21:31Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6248,7 +6248,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T00:15:55Z",
+      "updatedAt": "2026-08-13T00:18:52Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
