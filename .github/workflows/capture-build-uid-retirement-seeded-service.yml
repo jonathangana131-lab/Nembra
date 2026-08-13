@@ -1,0 +1,140 @@
+name: Capture Build UID Retirement Seeded Service
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-build-uid-retirement-seeded-service.yml
+      - scripts/ci/tests/test_capture_build_uid_retirement_seeded_service.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-build-uid-retirement-seeded-service-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  seeded-service:
+    name: Prove retired launchd service registry is inert
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact #3224 parent and two-path adversarial scope
+        shell: bash
+        env:
+          VALIDATION_PARENT: 9ea7e0cc01c9a287a48e56e63edf5af7c6cdd592
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git cat-file -e "${VALIDATION_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$VALIDATION_PARENT")" = "$VALIDATION_PARENT"
+          changed="$(git diff --name-only "$VALIDATION_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-build-uid-retirement-seeded-service.yml \
+            scripts/ci/tests/test_capture_build_uid_retirement_seeded_service.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check "$VALIDATION_PARENT"...HEAD
+
+      - name: Compile and pin seeded-service truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile scripts/ci/tests/test_capture_build_uid_retirement_seeded_service.py
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          source=Path('scripts/ci/tests/test_capture_build_uid_retirement_seeded_service.py').read_text(encoding='utf-8')
+          required=(
+              '["/bin/launchctl", "bootstrap", user_target, str(plist)]',
+              '["/bin/launchctl", "print", service_target]',
+              '["/bin/launchctl", "kickstart", service_target]',
+              'seeded service registry survived whole-domain retirement',
+              'retired seeded service remained kickstartable or failed ambiguously',
+              'ordinary field identity retained launchctl asuser authority for retired UID',
+              'numericReuseBlockedIfDomainLingering',
+              'zeroLiveUIDProcessesAfterRetirement',
+              'seededServiceAbsentAfterRetirement',
+              'seededServiceKickstartDeniedAfterRetirement',
+              'physicalAuthorityCreated": False',
+          )
+          missing=[fragment for fragment in required if fragment not in source]
+          if missing:
+              raise SystemExit('missing seeded-service authority invariant(s): '+repr(missing))
+          forbidden=(
+              'NEMBRA_TUYA_APP_KEY',
+              'NEMBRA_TUYA_APP_SECRET',
+              'CBCentralManager',
+              'CoreBluetooth',
+              'devicectl',
+              'xcodebuild',
+              'allowProvisioningUpdates',
+              'allowProvisioningDeviceRegistration',
+          )
+          for fragment in forbidden:
+              if fragment in source:
+                  raise SystemExit('seeded-service witness crossed forbidden product/physical boundary: '+fragment)
+          PY
+
+      - name: Execute exact seeded launchd service adversary
+        shell: bash
+        env:
+          PRODUCTION_PARENT: 3568250ee02556185610dd895e3f6d1c8f28dd33
+          VALIDATION_PARENT: 9ea7e0cc01c9a287a48e56e63edf5af7c6cdd592
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          OUT="$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.log"
+          set +e
+          /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_build_uid_retirement_seeded_service.py \
+            --expected-production-parent "$PRODUCTION_PARENT" \
+            --expected-validation-parent "$VALIDATION_PARENT" \
+            --output "$OUT" \
+            >"$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.stdout.log" \
+            2>"$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.stderr.log"
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.status"
+          cat "$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.stdout.log"
+          cat "$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.stderr.log" >&2
+          if test -f "$OUT"; then cat "$OUT"; fi
+          test "$status" -eq 0
+          grep -Fq 'BUILD_UID_SEEDED_SERVICE_RETIREMENT_ACCEPTED physicalAuthorityCreated=false' \
+            "$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.stdout.log"
+          grep -Fq 'NEMBRA_BUILD_UID_SEEDED_SERVICE_JSON=' "$OUT"
+          shasum -a 256 "$OUT" \
+            "$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.stdout.log" \
+            "$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.stderr.log" \
+            | tee "$RUNNER_TEMP/capture-build-uid-retirement-seeded-service.sha256"
+
+      - name: Restore exact workspace production bytes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git restore --source=HEAD --worktree -- scripts/ci/capture_signed_app_build_origin_custody.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' 'SEEDED-SERVICE VALIDATION ONLY. Production workspace restored. PHYSICAL NO-GO.'
+
+      - name: Retain sanitized seeded-service evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-build-uid-retirement-seeded-service-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/capture-build-uid-retirement-seeded-service.log
+            ${{ runner.temp }}/capture-build-uid-retirement-seeded-service.stdout.log
+            ${{ runner.temp }}/capture-build-uid-retirement-seeded-service.stderr.log
+            ${{ runner.temp }}/capture-build-uid-retirement-seeded-service.status
+            ${{ runner.temp }}/capture-build-uid-retirement-seeded-service.sha256
+          if-no-files-found: warn
+          retention-days: 30
