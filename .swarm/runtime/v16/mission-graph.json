@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 284,
+    "classifiedPRTotal": 283,
     "classifiedPRs": {
+      "2680": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2680,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.361,
+        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
+      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2462,17 +2473,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.099,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
-      },
-      "3234": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "swarm-control-plane-v16-1-rollout",
-        "pr": 3234,
-        "recommendedAction": "independent-review",
-        "similarity": 0.093,
-        "title": "[Swarm V16.1][P0] Close post-rollout PR metadata bypass"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,11 +2505,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T22:02:39Z",
+    "liveRefreshAt": "2026-08-13T22:05:35Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
-    "liveRefreshMainSHA": "05ee9d35a7a4816546f2c58b1562e34d6aeeef4a",
+    "liveRefreshMainSHA": "5817fcc5159e5101d1b13056ef6a8852c59dc908",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 94,
+  "revision": 95,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T22:05:11Z",
+  "updatedAt": "2026-08-13T22:07:49Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T22:02:39Z",
+      "updatedAt": "2026-08-13T22:05:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
