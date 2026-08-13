@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^1)" = "8c6a124154d678b1bc839d9c23ff452f4be48086"
+          test "$(git rev-parse HEAD^1)" = "b31b6d00da6fd0d274b9d6cf8fe7113aa746b58c"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Repair only the stale source oracle
@@ -65,3 +65,5 @@ jobs:
           git diff --cached --check
           git commit -m "Capture: align provenance oracle with credential helper"
           git push origin "HEAD:${TARGET_BRANCH}"
+
+# Triggered after workflow registration; removed by the repair job.
