@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 289,
+    "classifiedPRTotal": 288,
     "classifiedPRs": {
+      "2733": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2733,
+        "recommendedAction": "independent-review",
+        "similarity": 0.278,
+        "title": "[Capture P0][REVIEW] Lock root admission before private writer capture"
+      },
       "2734": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2163,7 +2174,7 @@
         "lane": "dashboard-live-cockpit",
         "pr": 3117,
         "recommendedAction": "independent-review",
-        "similarity": 0.314,
+        "similarity": 0.266,
         "title": "[Dashboard V15][AX5] Preserve full connection wording"
       },
       "3118": {
@@ -2176,17 +2187,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.343,
         "title": "[Dashboard V15][PERF] Refresh retarget witness and finite metric evidence"
-      },
-      "3141": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "ae527b7c6b3057c1f8ff71520840c26ac9eb5b6b",
-        "lane": "dashboard-live-cockpit",
-        "pr": 3141,
-        "recommendedAction": "independent-review",
-        "similarity": 0.333,
-        "title": "[Dashboard V15][AX5] Keep retained currentness untruncated"
       },
       "3142": {
         "classification": "canonical-candidate",
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T12:03:43Z",
+    "liveRefreshAt": "2026-08-13T13:00:43Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 76,
+  "revision": 77,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T12:06:20Z",
+  "updatedAt": "2026-08-13T13:03:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T12:03:43Z",
+      "updatedAt": "2026-08-13T13:00:43Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
