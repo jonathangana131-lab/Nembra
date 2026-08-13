@@ -30,7 +30,7 @@ jobs:
           test "$(git diff --name-only "$EXPECTED_PARENT"...HEAD)" = "$MATERIALIZER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Retarget regression to exec-bound credential transition
+      - name: Retarget regressions to current authority boundaries
         shell: bash
         run: |
           set -euo pipefail
@@ -39,17 +39,33 @@ jobs:
 
           path = Path("scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py")
           text = path.read_text(encoding="utf-8")
-          old = '        self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)\n'
-          new = ''.join([
-              '        exec_bound_start = source.index("def _run_exec_bound_build(")\n',
-              '        exec_bound_end = source.index("\\ndef _group_names(", exec_bound_start)\n',
-              '        exec_bound = source[exec_bound_start:exec_bound_end]\n',
-              '        self.assertIn("**_structured_credentials(uid, gid, ())", exec_bound)\n',
-          ])
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f"expected exactly one stale dedicated-UID assertion, found {count}")
-          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one regression anchor {old!r}, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '        self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)\n',
+              ''.join([
+                  '        exec_bound_start = source.index("def _run_exec_bound_build(")\n',
+                  '        exec_bound_end = source.index("\\ndef _group_names(", exec_bound_start)\n',
+                  '        exec_bound = source[exec_bound_start:exec_bound_end]\n',
+                  '        self.assertIn("**_structured_credentials(uid, gid, ())", exec_bound)\n',
+              ]),
+          )
+          replace_once(
+              '        self.assertTrue(set(poison).isdisjoint(environment))\n',
+              ''.join([
+                  '        self.assertTrue(\n',
+                  '            all(environment.get(key) != value for key, value in poison.items()),\n',
+                  '            "ambient poison values must not survive into the build environment",\n',
+                  '        )\n',
+              ]),
+          )
+          path.write_text(text, encoding="utf-8")
           PY
 
       - name: Prove portable custody regressions
@@ -83,8 +99,13 @@ jobs:
           run_test 'pre-stage-origin portable regression' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           run_test 'private-runner portable regression' scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
           grep -Fq 'exec_bound_start = source.index("def _run_exec_bound_build(")' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          grep -Fq 'ambient poison values must not survive into the build environment' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           if grep -Fq '**_structured_credentials(build_uid, build_gid, ())' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py; then
             echo 'ERROR: stale caller-local credential assertion survived' >&2
+            exit 1
+          fi
+          if grep -Fq 'set(poison).isdisjoint(environment)' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py; then
+            echo 'ERROR: stale poison-key disjointness assertion survived' >&2
             exit 1
           fi
           git diff --check
@@ -100,10 +121,10 @@ jobs:
           git rm "$MATERIALIZER"
           git add scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           git diff --cached --check
-          git commit -m 'Capture: bind dedicated-UID regression to exec boundary'
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'Capture: bind dedicated-UID regression to authority boundary'
           actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected='scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py'
           test "$actual" = "$expected"
-          git config user.name 'nembra-swarm-materializer'
-          git config user.email 'nembra-swarm@users.noreply.github.com'
           git push origin "HEAD:$BRANCH"
