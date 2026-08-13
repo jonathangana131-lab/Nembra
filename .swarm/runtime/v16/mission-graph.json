@@ -1064,30 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 283,
+    "classifiedPRTotal": 285,
     "classifiedPRs": {
-      "2680": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2680,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.361,
-        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
-      },
-      "2688": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2688,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.357,
-        "title": "[Capture P0][RED TEAM] Pin signed app install subject"
-      },
       "2709": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2471,8 +2449,30 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.099,
+        "similarity": 0.176,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
+      },
+      "3235": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3235,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.349,
+        "title": "[Capture P0][RED TEAM] Reject payload-at-horizon readiness bypass"
+      },
+      "3237": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3237,
+        "recommendedAction": "independent-review",
+        "similarity": 0.36,
+        "title": "[Capture P0][TEST] Run affected Tuya chronology suites"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T22:36:31Z",
+    "liveRefreshAt": "2026-08-13T22:39:29Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 97,
+  "revision": 98,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T22:39:09Z",
+  "updatedAt": "2026-08-13T22:41:26Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T22:36:31Z",
+      "updatedAt": "2026-08-13T22:39:29Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
