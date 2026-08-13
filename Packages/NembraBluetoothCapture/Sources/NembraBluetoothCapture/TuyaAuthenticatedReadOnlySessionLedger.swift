@@ -50,6 +50,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         "Tuya SDK source authority was invalidated."
     private static let internalLifecycleFailureReason =
         "Session authority was retired after an internal lifecycle or chronology failure."
+    private static let incompleteObservationFailureReason =
+        "Authenticated session reached the incomplete-observation horizon before canonical readiness."
 
     private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -255,8 +257,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Once a real current liveness receipt reaches the package-owned 60-second incomplete-session
     /// horizon, the same canonical preflight decides whether this generation must terminate. The
     /// deadline is evaluated against the already-accepted prefix before the receipt can advance
-    /// chronology; the exact token stays current on throw so the app's existing fail-closed
-    /// lifecycle terminal can retire it without inventing a BLE disconnect or a second clock sample.
+    /// chronology. Crossing the horizon atomically retires package callback authority without
+    /// inventing a BLE disconnect or sampling a second timestamp; the app only mirrors that terminal.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
@@ -383,6 +385,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot()) != .readyForStationaryMapping else {
             return
         }
+        authenticationState = .failed(reason: Self.incompleteObservationFailureReason)
+        currentToken = nil
         throw MutationError.incompleteObservationHorizonReached
     }
 

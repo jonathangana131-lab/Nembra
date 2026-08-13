@@ -33,9 +33,16 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
         }
 
         let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState == .failed(reason: "Authenticated session reached the incomplete-observation horizon before canonical readiness."))
         #expect(snapshot.applicationPayloadCount == 1)
         #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await ledger.observeCurrentConnection(for: token)
+        }
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await ledger.markInternalLifecycleFailure(for: token)
+        }
     }
 
     @Test("application callback cannot rescue an expired incomplete generation")
@@ -67,10 +74,17 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
         }
 
         let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState == .failed(reason: "Authenticated session reached the incomplete-observation horizon before canonical readiness."))
         #expect(snapshot.applicationPayloadCount == 1)
         #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == acceptedPrefix.latestApplicationPayloadUptimeNanoseconds)
         #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+        }
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await ledger.markInternalLifecycleFailure(for: token)
+        }
     }
 
     @Test("Device Sharing provenance cannot enter authenticated BLE chronology")
