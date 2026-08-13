@@ -703,7 +703,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "e72099137463d93bda486e987a6ea8726c540140",
+        "headSHA": "8c6a124154d678b1bc839d9c23ff452f4be48086",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -2325,7 +2325,7 @@
         "lane": "capture-build-authority",
         "pr": 3188,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.328,
+        "similarity": 0.346,
         "title": "[Capture P0][RED TEAM] Prove selected-Xcode janitor startup authority"
       },
       "3192": {
@@ -2420,12 +2420,12 @@
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "a75391dce1c25aa16c691af8a765973f8e6e0d95",
+        "headSHA": "e2395b48201fcac3b13a50a17560db246475a0b3",
         "lane": "capture-signed-install-custody",
         "pr": 3208,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.277,
-        "title": "[Capture P0][VALIDATION] Repair Apple-signing exact-object source guard"
+        "similarity": 0.287,
+        "title": "[Capture P0][VALIDATION] Repair Apple-signing exact-object guard + hosted classification"
       },
       "3209": {
         "classification": "requires-review",
@@ -2435,30 +2435,19 @@
         "lane": "capture-build-authority",
         "pr": 3209,
         "recommendedAction": "independent-review",
-        "similarity": 0.318,
+        "similarity": 0.367,
         "title": "[Capture P0][RECOVERY] Re-anchor selected-Xcode janitor startup authority"
       },
       "3210": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "3b856cc7dffe479b4f003c7debef12acf1fa192e",
+        "headSHA": "a352f3fa6e0837afe7ebb3a3ccd9a97e683983e6",
         "lane": "capture-flagship-composition",
         "pr": 3210,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.457,
+        "similarity": 0.419,
         "title": "[P0 Capture][AX RUNTIME] Prove full hero semantics across VoiceOver prefix transport"
-      },
-      "3211": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "f36787b430e0c9605f636b9808b089c354eb0847",
-        "lane": "capture-signed-install-custody",
-        "pr": 3211,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.3,
-        "title": "[Capture P0][QA] Bind dedicated-UID regressions to current authority boundary"
       },
       "3212": {
         "classification": "validation",
@@ -2470,6 +2459,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.362,
         "title": "[Capture P0][VALIDATION] Prove root-custodied accepted source snapshot"
+      },
+      "3213": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3213,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.375,
+        "title": "[Capture P0][VALIDATION] Reclassify selected-Xcode janitor repair"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2496,13 +2496,19 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [],
+    "livePRHeadUpdates": [
+      {
+        "from": "e72099137463d93bda486e987a6ea8726c540140",
+        "to": "8c6a124154d678b1bc839d9c23ff452f4be48086",
+        "workItemId": "live-pr-3142"
+      }
+    ],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T02:59:29Z",
+    "liveRefreshAt": "2026-08-13T03:02:54Z",
     "liveRefreshDuplicatesSuppressed": [
       3212
     ],
@@ -6276,10 +6282,10 @@
       "userValue": 7
     }
   },
-  "revision": 44,
+  "revision": 45,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:02:29Z",
+  "updatedAt": "2026-08-13T03:05:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6348,14 +6354,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "e72099137463d93bda486e987a6ea8726c540140",
+        "headSHA": "8c6a124154d678b1bc839d9c23ff452f4be48086",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T02:59:29Z",
+      "updatedAt": "2026-08-13T03:02:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
