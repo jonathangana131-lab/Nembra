@@ -59,7 +59,9 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.confirmCorrelatedTarget()"))
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
-        #expect(body.contains("test.applicationUpdateCount > 0"))
+        #expect(body.contains("test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount"))
+        #expect(body.contains("test.applicationEvidenceSurvivedHistoricalWindow"))
+        #expect(!body.contains("test.applicationUpdateCount > 0"))
         #expect(body.contains("Text(test.message)"))
         #expect(app.contains("Correlation is current-session evidence, not permanent scooter identity."))
         #expect(app.contains("Do not guess from name, RSSI, FD50, or Tuya hints; restart from OFF1 after reducing nearby-device ambiguity."))
@@ -73,7 +75,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         let body = String(surface)
 
         #expect(body.contains("dynamicTypeSize.isAccessibilitySize"))
-        #expect(body.contains("Step \\(currentStageIndex + 1) of 4"))
+        #expect(body.contains("Step \(currentStageIndex + 1) of 4"))
         #expect(body.contains("accessibilityHint"))
         #expect(body.contains("accessibilityLabel"))
     }
@@ -81,7 +83,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let startRange = source.range(of: start),
               let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-            Issue.record("Expected source section missing: \\(start) ... \\(end)")
+            Issue.record("Expected source section missing: \(start) ... \(end)")
             throw SourceContractError.sectionMissing
         }
         return source[startRange.lowerBound..<endRange.lowerBound]
