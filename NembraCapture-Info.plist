@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NembraCaptureBuildIdentifier</key>
+	<string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>
+	<key>NembraCaptureSourceCommitSHA</key>
+	<string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>
+	<key>NembraCaptureTuyaDependencyLockSHA256</key>
+	<string>$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)</string>
+	<key>NembraCaptureProcedureIdentifier</key>
+	<string>$(INFOPLIST_KEY_NembraCaptureProcedureIdentifier)</string>
+</dict>
+</plist>
