@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 288,
     "classifiedPRs": {
-      "2719": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2719,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.26,
-        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
-      },
       "2733": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2416,7 +2405,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.167,
+        "similarity": 0.15,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3243": {
@@ -2427,7 +2416,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3243,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.216,
+        "similarity": 0.227,
         "title": "[Capture P0][VALIDATION] Execute deadline adversary in standalone gate"
       },
       "3246": {
@@ -2438,19 +2427,8 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3246,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.312,
+        "similarity": 0.337,
         "title": "[Capture P0][RED TEAM] Keep stricter preflight truthful in app UI"
-      },
-      "3248": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3248,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.37,
-        "title": "[Capture P0][RED TEAM] Gate horizon before liveness mutation"
       },
       "3249": {
         "classification": "requires-review",
@@ -2460,7 +2438,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3249,
         "recommendedAction": "independent-review",
-        "similarity": 0.369,
+        "similarity": 0.295,
         "title": "Preserve accepted observation prefix at timeout boundary"
       },
       "3250": {
@@ -2471,8 +2449,30 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3250,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.301,
+        "similarity": 0.38,
         "title": "[Capture P0][VALIDATION] Preserve application-receipt horizon reason"
+      },
+      "3251": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3251,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.391,
+        "title": "[Capture P0][RED TEAM] Preserve semantic incomplete-horizon terminal"
+      },
+      "3252": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3252,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.38,
+        "title": "[Capture P0][VALIDATION] Cover application-update incomplete horizon terminal"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T22:47:52Z",
+    "liveRefreshAt": "2026-08-13T22:50:45Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 101,
+  "revision": 102,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T22:50:26Z",
+  "updatedAt": "2026-08-13T22:52:28Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T22:47:52Z",
+      "updatedAt": "2026-08-13T22:50:45Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
