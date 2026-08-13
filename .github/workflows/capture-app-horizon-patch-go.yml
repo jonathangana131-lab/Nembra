@@ -1,4 +1,4 @@
-name: Capture app horizon one-shot patch
+name: Capture app truth one-shot repair
 
 on:
   push:
@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  patch:
-    if: github.event.head_commit.message == 'GO patch app incomplete-horizon terminal'
+  repair:
+    if: github.event.head_commit.message == 'GO apply canonical Capture app truth repairs'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -18,88 +18,99 @@ jobs:
           ref: capture/current-main-tuya-readonly-convergence-gpt56
           fetch-depth: 0
 
-      - name: Fast-forward to current canonical branch
+      - name: Repair Capture app truth
+        shell: bash
         run: |
           set -euo pipefail
           git fetch origin capture/current-main-tuya-readonly-convergence-gpt56
           git merge --ff-only origin/capture/current-main-tuya-readonly-convergence-gpt56
-
-      - name: Insert exact incomplete-horizon terminal catches
-        run: |
           python3 - <<'PY'
           from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
 
-          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
-          source = path.read_text()
-          error = 'TuyaAuthenticatedReadOnlySessionLedger.MutationError'
+          def one(old, new, label):
+              global s
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f'{label}: expected one match, found {n}')
+              s = s.replace(old, new, 1)
 
-          def insert_before_stale(source, function_start, function_end, catch_body):
-              start = source.find(function_start)
-              end = source.find(function_end, start + len(function_start))
-              if start < 0 or end < 0:
-                  raise SystemExit(f'fail closed: missing function bounds for {function_start}')
-              section = source[start:end]
-              continuity = f'}} catch {error}.observationContinuityInvalidated {{'
-              stale = f'}} catch {error}.staleConnection {{'
-              if section.count(continuity) != 1 or section.count(stale) != 1:
-                  raise SystemExit(
-                      f'fail closed: ambiguous terminal anchors in {function_start}: '
-                      f'continuity={section.count(continuity)} stale={section.count(stale)}'
-                  )
-              if f'catch {error}.incompleteObservationHorizonReached' in section:
-                  raise SystemExit(f'fail closed: incomplete-horizon catch already exists in {function_start}')
-              insertion = section.find(stale)
-              section = section[:insertion] + catch_body + section[insertion:]
-              return source[:start] + section + source[end:]
-
-          application_catch = '''} catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
-            await invalidateInternalLifecycle(
-                token: token,
-                message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required application/provenance evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim.",
-                kind: "application_authenticated_incomplete_readiness_horizon_reached"
-            )
-        '''
-          source = insert_before_stale(
-              source,
-              '    private func receivedApplicationUpdate(',
-              '    private func redactedApplicationEventDetails(',
-              application_catch,
+          one(
+              'Waiting for a genuine application update and the canonical 45-second horizon…',
+              'Waiting for repeated same-generation application evidence and the canonical 45-second observation horizon…',
+              'auth copy'
+          )
+          one(
+              'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)',
+              'requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)',
+              'observation checklist'
           )
 
-          watchdog_catch = '''} catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
+          receipt_anchor = '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])'''
+          receipt_catch = '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
+            await invalidateInternalLifecycle(
+                token: token,
+                message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
+                kind: "application_authenticated_incomplete_readiness_horizon_reached"
+            )
+'''
+          one(receipt_anchor, receipt_catch + receipt_anchor, 'application horizon catch')
+
+          watchdog_anchor = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])'''
+          watchdog_catch = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
                     await self.invalidateInternalLifecycle(
                         token: token,
-                        message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required application/provenance evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim.",
+                        message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
                         kind: "session_authenticated_incomplete_readiness_horizon_reached"
                     )
                     return
-                '''
-          source = insert_before_stale(
-              source,
-              '    private func startWatchdog(',
-              '    private func recordObservedTransportLoss(',
-              watchdog_catch,
-          )
-
-          path.write_text(source)
+'''
+          one(watchdog_anchor, watchdog_catch + watchdog_anchor, 'watchdog horizon catch')
+          p.write_text(s)
           PY
-          git diff --check
-          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
 
-      - name: Run focused source contract before publishing
+          git fetch origin refs/pull/3249/head:refs/remotes/origin/capture-prefix-3249
+          git checkout refs/remotes/origin/capture-prefix-3249 -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonTests.swift
+          git fetch origin refs/pull/3246/head:refs/remotes/origin/capture-ui-3246
+          git checkout refs/remotes/origin/capture-ui-3246 -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift
+          git fetch origin refs/pull/3250/head:refs/remotes/origin/capture-receipt-3250
+          git checkout refs/remotes/origin/capture-receipt-3250 -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAppIncompleteHorizonApplicationReceiptSourceTests.swift
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/capture-v16-standalone.yml')
+          s = p.read_text()
+          needle = '          swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests\n'
+          if s.count(needle) != 1:
+              raise SystemExit(f'standalone oracle anchor count: {s.count(needle)}')
+          s = s.replace(needle, needle + '          swift test --filter TuyaAppIncompleteHorizonApplicationReceiptSourceTests\n', 1)
+          p.write_text(s)
+          PY
+
+          rm .github/workflows/capture-app-horizon-patch-go.yml
+          git diff --check
+
+      - name: Run focused truth contracts
+        shell: bash
         working-directory: Packages/NembraBluetoothCapture
         run: |
           set -euo pipefail
+          swift test --filter TuyaAuthenticatedReadOnlyHorizonTests
+          swift test --filter TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration
           swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
+          swift test --filter TuyaAppIncompleteHorizonApplicationReceiptSourceTests
+          swift test --filter TuyaDeviceSharingAuthenticationAuthorityTests
 
-      - name: Commit exact app delta
+      - name: Publish coherent canonical repair
+        shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'nembra-go-worker'
-          git config user.email 'actions@users.noreply.github.com'
-          git add NembraApp/App/NembraCaptureEntrypoint.swift
-          test "$(git diff --cached --name-only)" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
-          git commit -m 'Capture V16.1: classify incomplete horizon in app'
+          git config user.name nembra-go-worker
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'Capture V16.1: close incomplete-readiness app truth'
           git push origin HEAD:capture/current-main-tuya-readonly-convergence-gpt56
-
-# one-shot trigger; delete this temporary workflow after the app patch lands.
