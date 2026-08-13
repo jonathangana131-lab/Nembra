@@ -176,6 +176,9 @@ print("\t".join(resolved))
 PY
 )"
 
+SCRIPT_BLOB=""
+ORACLE_BLOB=""
+SEALER_BLOB=""
 RESOLVED_BLOBS="$(/usr/bin/python3 -B -I -c "$OBJECT_RESOLVER" "$GIT_DIR_ABS" "$SOURCE_SHA" "$SCRIPT_PATH" "$ORACLE_PATH" "$SEALER_PATH")" || fail "Accepted commit/tree object chain failed independent verification."
 unset OBJECT_RESOLVER
 IFS=$'\t' read -r SCRIPT_BLOB ORACLE_BLOB SEALER_BLOB <<< "$RESOLVED_BLOBS"
