@@ -28,7 +28,7 @@ races = replace_count(
     races,
     "writer._secure_replace_beneath",
     "writer._secure_replace_into_held_parent",
-    6,
+    9,
     "publication hook symbol",
 )
 races = replace_count(
