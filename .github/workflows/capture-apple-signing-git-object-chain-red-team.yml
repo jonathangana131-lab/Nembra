@@ -64,17 +64,43 @@ jobs:
           git diff --check "$EXACT_PARENT"...HEAD
 
       - name: Reproduce corrupt accepted-commit alias against current transport contract
+        id: exploit
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          log="$RUNNER_TEMP/apple-signing-git-object-chain-red-team.log"
+          set +e
           /usr/bin/python3 -B -m unittest -v \
-            scripts.ci.tests.test_capture_apple_signing_git_object_chain_red_team
-          printf '%s\n' 'EXPLOIT_POSITIVE: caller-owned Git object graph can retarget root-materialized Apple-signing helpers while accepted HEAD name, clean status, and wrapper blob checks remain satisfied.'
-          printf '%s\n' 'CLASSIFICATION: VALIDATION RED / private field preflight is blocked until helper identities are rooted in independently verified accepted commit/tree bytes.'
-          printf '%s\n' 'PHYSICAL_AUTHORITY_CREATED=false'
+            scripts.ci.tests.test_capture_apple_signing_git_object_chain_red_team \
+            >"$log" 2>&1
+          rc=$?
+          set -e
+          cat "$log"
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/apple-signing-git-object-chain-red-team.rc"
+          if [[ "$rc" == 0 ]]; then
+            printf '%s\n' 'EXPLOIT_POSITIVE: caller-owned Git object graph can retarget root-materialized Apple-signing helpers while accepted HEAD name, clean status, and wrapper blob checks remain satisfied.'
+            printf '%s\n' 'CLASSIFICATION: VALIDATION RED / private field preflight is blocked until helper identities are rooted in independently verified accepted commit/tree bytes.'
+            printf '%s\n' 'PHYSICAL_AUTHORITY_CREATED=false'
+          fi
+          exit "$rc"
 
-      - name: Enforce validation-only truth boundary
+      - name: Upload exploit transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-signing-git-object-chain-red-team-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/apple-signing-git-object-chain-red-team.log
+            ${{ runner.temp }}/apple-signing-git-object-chain-red-team.rc
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce validation-only truth boundary and exploit classification
+        if: always()
         shell: bash
+        env:
+          EXPLOIT_OUTCOME: ${{ steps.exploit.outcome }}
         run: |
           set -euo pipefail
           test ! -e LocalSecrets
@@ -82,3 +108,5 @@ jobs:
           ! grep -Eq '(^|[[:space:]])xcodebuild([[:space:]]|$)' scripts/ci/tests/test_capture_apple_signing_git_object_chain_red_team.py
           ! grep -Eq 'devicectl|CoreBluetooth|bootstrap_capture_tuya_sdk|LocalSecrets' scripts/ci/tests/test_capture_apple_signing_git_object_chain_red_team.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test "$EXPLOIT_OUTCOME" = success
+          test "$(cat "$RUNNER_TEMP/apple-signing-git-object-chain-red-team.rc")" = 0
