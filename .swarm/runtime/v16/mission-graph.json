@@ -2174,7 +2174,7 @@
         "lane": "dashboard-live-cockpit",
         "pr": 3117,
         "recommendedAction": "independent-review",
-        "similarity": 0.266,
+        "similarity": 0.258,
         "title": "[Dashboard V15][AX5] Preserve full connection wording"
       },
       "3118": {
@@ -2199,17 +2199,6 @@
         "similarity": 0.305,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
-      "3150": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 3150,
-        "recommendedAction": "independent-review",
-        "similarity": 0.375,
-        "title": "[Dashboard V15][AX5 QA] Capture retained currentness at large type"
-      },
       "3152": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2229,7 +2218,7 @@
         "lane": "dashboard-live-cockpit",
         "pr": 3163,
         "recommendedAction": "independent-review",
-        "similarity": 0.378,
+        "similarity": 0.312,
         "title": "[Dashboard V15][AX5] Keep stopped-control blocker readable"
       },
       "3164": {
@@ -2240,7 +2229,7 @@
         "lane": "dashboard-live-cockpit",
         "pr": 3164,
         "recommendedAction": "independent-review",
-        "similarity": 0.293,
+        "similarity": 0.288,
         "title": "[Dashboard V15][AX5 QA] Re-prove stopped-control blocker at large type"
       },
       "3169": {
@@ -2471,8 +2460,19 @@
         "lane": "",
         "pr": 3229,
         "recommendedAction": "independent-review",
-        "similarity": 0.147,
+        "similarity": 0.35,
         "title": "[Battery/Range V15] Clear evidence rows around Navigation launcher"
+      },
+      "3231": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3231,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.372,
+        "title": "[Battery/Range V15][QA] Re-prove evidence clearance on real surface"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T13:00:43Z",
+    "liveRefreshAt": "2026-08-13T13:03:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 77,
+  "revision": 78,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T13:03:27Z",
+  "updatedAt": "2026-08-13T13:05:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T13:00:43Z",
+      "updatedAt": "2026-08-13T13:03:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
