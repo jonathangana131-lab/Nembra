@@ -1061,19 +1061,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 286,
+    "classifiedPRTotal": 287,
     "classifiedPRs": {
-      "2711": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2711,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.221,
-        "title": "[Capture P0][RED TEAM] Bind checkout root before trusting private writer path"
-      },
       "2719": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -2470,6 +2459,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.336,
         "title": "[Capture P0][VALIDATION] Prove post-DS build-principal retirement on real Xcode"
+      },
+      "3219": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3219,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.339,
+        "title": "[Capture P0][VALIDATION] Classify selected-Xcode runner sudo authority"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2502,7 +2502,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:17:14Z",
+    "liveRefreshAt": "2026-08-13T03:20:05Z",
     "liveRefreshDuplicatesSuppressed": [
       3218
     ],
@@ -6276,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 50,
+  "revision": 51,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:19:49Z",
+  "updatedAt": "2026-08-13T03:22:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6355,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:17:14Z",
+      "updatedAt": "2026-08-13T03:20:05Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
