@@ -1,0 +1,41 @@
+name: Capture test fixture repair
+
+on:
+  push:
+    branches:
+      - repair/v16-tuya-horizon-terminal-owner-sol-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'GO repair Capture clock fixture'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v16-tuya-horizon-terminal-owner-sol-recovery
+      - name: Repair clock-only fixture
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift')
+          source = path.read_text()
+          start = source.index('    @Test("clock regression cannot rewrite accepted chronology")')
+          end = source.index('    @Test("disconnect remains a distinct transport-loss terminal")', start)
+          block = source[start:end]
+          old = 'try await ledger.markAuthenticated(for: token, method: .documentedDeviceSharing)'
+          if block.count(old) != 1:
+              raise SystemExit('clock fixture authentication anchor mismatch')
+          block = block.replace(old, 'try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)', 1)
+          path.write_text(source[:start] + block + source[end:])
+          PY
+          git diff --check
+      - name: Commit repair
+        run: |
+          git config user.name 'nembra-go-recovery'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift
+          git commit -m 'Capture V16.1: repair clock regression fixture'
+          git push origin HEAD:repair/v16-tuya-horizon-terminal-owner-sol-recovery
