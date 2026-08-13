@@ -181,8 +181,12 @@ def root_main(output: Path) -> int:
     root_dir = Path(tempfile.mkdtemp(prefix="nembra-trusted-bootstrap.", dir=str(ROOT_PREFIX)))
     os.chown(root_dir, 0, 0)
     os.chmod(root_dir, 0o755)
+    caller_dir = root_dir / "caller"
+    caller_dir.mkdir(mode=0o700)
+    os.chown(caller_dir, numeric_id, numeric_id)
+    os.chmod(caller_dir, 0o700)
     rule_path = SUDOERS_DIR / f"nembra-trusted-bootstrap-{numeric_id}"
-    attacker = root_dir / "caller-owned-wrapper.sh"
+    attacker = caller_dir / "caller-owned-wrapper.sh"
     evidence: dict[str, object] = {
         "schema": 1,
         "validationOnly": True,
@@ -212,11 +216,15 @@ def root_main(output: Path) -> int:
         require("NEMBRA_TRUSTED_BOOTSTRAP_ROOT_UID=0" in trusted.stdout, "trusted launcher did not execute as uid 0")
         evidence["digestPinnedLauncherAdmitted"] = True
 
+        generic_out_path = caller_dir / "generic.out"
+        generic_err_path = caller_dir / "generic.err"
+        trusted_out_path = caller_dir / "trusted.out"
+        trusted_err_path = caller_dir / "trusted.err"
         attack_body = f"""#!/bin/sh
 set +e
-/usr/bin/sudo -n /usr/bin/python3 -B -I -c 'import os; print(os.geteuid())' >{quoted(root_dir / 'generic.out')} 2>{quoted(root_dir / 'generic.err')}
+/usr/bin/sudo -n /usr/bin/python3 -B -I -c 'import os; print(os.geteuid())' >{quoted(generic_out_path)} 2>{quoted(generic_err_path)}
 generic_rc=$?
-/usr/bin/sudo -n {quoted(launcher)} >{quoted(root_dir / 'trusted.out')} 2>{quoted(root_dir / 'trusted.err')}
+/usr/bin/sudo -n {quoted(launcher)} >{quoted(trusted_out_path)} 2>{quoted(trusted_err_path)}
 trusted_rc=$?
 printf 'GENERIC_RC=%s TRUSTED_RC=%s\n' "$generic_rc" "$trusted_rc"
 test "$generic_rc" -ne 0
@@ -232,8 +240,8 @@ test "$trusted_rc" -eq 0
         os.chmod(attacker, 0o700)
         attacked = as_user(user, quoted(attacker))
         require(attacked.returncode == 0, f"caller-owned bootstrap adversary did not reach its assertions: {attacked.stderr[-800:]!r}")
-        generic_out = (root_dir / "generic.out").read_text(encoding="utf-8", errors="replace") if (root_dir / "generic.out").exists() else ""
-        trusted_out = (root_dir / "trusted.out").read_text(encoding="utf-8", errors="replace") if (root_dir / "trusted.out").exists() else ""
+        generic_out = generic_out_path.read_text(encoding="utf-8", errors="replace") if generic_out_path.exists() else ""
+        trusted_out = trusted_out_path.read_text(encoding="utf-8", errors="replace") if trusted_out_path.exists() else ""
         require(generic_out.strip() != "0", "caller-owned wrapper obtained arbitrary root before any self-check")
         require("NEMBRA_TRUSTED_BOOTSTRAP_ROOT_UID=0" in trusted_out, "caller-owned wrapper could not invoke the fixed narrow launcher")
         evidence["mutableWrapperArbitraryRootDenied"] = True
