@@ -1,0 +1,51 @@
+name: Capture Private Identity Descendant Rebind Red Team
+
+on:
+  push:
+    branches:
+      - adversarial/v14-private-identity-descendant-rebind-sol-20260812
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+      - .github/workflows/capture-private-identity-descendant-rebind-redteam.yml
+  pull_request:
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+      - .github/workflows/capture-private-identity-descendant-rebind-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  descendant-rebind:
+    name: Reject replacement descendant credential publication
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind diagnostic to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile diagnostic and production writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+
+      - name: Prove replacement descendants cannot retain credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
