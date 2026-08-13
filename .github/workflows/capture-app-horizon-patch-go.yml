@@ -1,21 +1,21 @@
-name: Capture app horizon one-shot patch
+name: Capture app presentation truth one-shot patch
 
 on:
   push:
     branches:
-      - capture/current-main-tuya-readonly-convergence-gpt56
+      - repair/v161-capture-auth-app-truth-gpt56sol
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'GO patch app incomplete-horizon terminal'
+    if: github.event.head_commit.message == 'GO patch Capture app presentation truth'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: capture/current-main-tuya-readonly-convergence-gpt56
+          ref: repair/v161-capture-auth-app-truth-gpt56sol
           fetch-depth: 0
 
       - name: Fast-forward to current canonical branch
@@ -24,40 +24,47 @@ jobs:
           git fetch origin capture/current-main-tuya-readonly-convergence-gpt56
           git merge --ff-only origin/capture/current-main-tuya-readonly-convergence-gpt56
 
-      - name: Insert exact incomplete-horizon terminal catch
+      - name: Keep observation UI aligned with canonical preflight truth
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text()
-          old = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
-                    await self.mirrorAlreadyTerminalObservationContinuity(
-                        token: token,
-                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
-                        kind: "session_liveness_continuity_invalidated"
-                    )
-                    return
-                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {'''
-          new = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
-                    await self.mirrorAlreadyTerminalObservationContinuity(
-                        token: token,
-                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
-                        kind: "session_liveness_continuity_invalidated"
-                    )
-                    return
-                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
-                    await self.invalidateInternalLifecycle(
-                        token: token,
-                        message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required application/provenance evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim.",
-                        kind: "session_authenticated_incomplete_readiness_horizon_reached"
-                    )
-                    return
-                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {'''
-          count = source.count(old)
-          if count != 1:
-              raise SystemExit(f'fail closed: expected exactly one watchdog terminal insertion point, found {count}')
-          path.write_text(source.replace(old, new, 1))
+
+          verdict_marker = '''    var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {
+              TuyaAuthenticatedReadOnlyPreflight.verdict(for: ledgerSnapshot)
+          }
+'''
+          helper = '''    var hasCanonicalRepeatedApplicationEvidence: Bool {
+        guard ledgerSnapshot.applicationPayloadCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount,
+              let authenticatedAt = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+              let latestApplicationPayload = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,
+              latestApplicationPayload >= authenticatedAt else {
+            return false
+        }
+        return latestApplicationPayload - authenticatedAt >= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+    }
+
+'''
+          if source.count(verdict_marker) != 1:
+              raise SystemExit('fail closed: preflight verdict insertion marker was not unique')
+          source = source.replace(verdict_marker, helper + verdict_marker, 1)
+
+          old_message = '''                    message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"'''
+          new_message = '''                    message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for repeated scooter data across the observation window and the 45-second stability horizon…"'''
+          if source.count(old_message) != 1:
+              raise SystemExit('fail closed: stale singular observation copy was not unique')
+          source = source.replace(old_message, new_message, 1)
+
+          old_row = '''                        requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)'''
+          new_rows = '''                        requirementRow("Repeated scooter data", ready: test.hasCanonicalRepeatedApplicationEvidence)
+                        requirementRow("Observation ready", ready: test.preflightVerdict == .readyForStationaryMapping)'''
+          if source.count(old_row) != 1:
+              raise SystemExit('fail closed: stale one-callback readiness row was not unique')
+          source = source.replace(old_row, new_rows, 1)
+
+          path.write_text(source)
           PY
           git diff --check
           git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
@@ -69,5 +76,5 @@ jobs:
           git config user.email 'actions@users.noreply.github.com'
           git add NembraApp/App/NembraCaptureEntrypoint.swift
           test "$(git diff --cached --name-only)" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
-          git commit -m 'Capture V16.1: classify incomplete horizon in app'
-          git push origin HEAD:capture/current-main-tuya-readonly-convergence-gpt56
+          git commit -m 'Capture V16.1: align observation UI with canonical truth'
+          git push origin HEAD:repair/v161-capture-auth-app-truth-gpt56sol
