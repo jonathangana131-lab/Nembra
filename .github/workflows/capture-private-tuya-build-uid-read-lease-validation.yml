@@ -148,6 +148,34 @@ jobs:
           PY
           shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/private-tuya-build-uid-read-lease.sha256"
 
+      - name: Classify surviving build-UID process after a red witness
+        if: failure()
+        shell: bash
+        run: |
+          set -uo pipefail
+          DIAGNOSTIC="$RUNNER_TEMP/private-tuya-build-uid-read-lease.stderr.log"
+          PROCESS_LOG="$RUNNER_TEMP/private-tuya-build-uid-read-lease.processes.log"
+          : > "$PROCESS_LOG"
+          pids="$(/usr/bin/python3 - "$DIAGNOSTIC" <<'PY'
+          import re,sys
+          from pathlib import Path
+          text=Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace') if Path(sys.argv[1]).exists() else ''
+          matches=re.findall(r'live_pids=\[([^\]]*)\]', text)
+          if matches:
+              values=[]
+              for raw in matches[-1].split(','):
+                  raw=raw.strip()
+                  if raw.isdigit() and int(raw)>0:
+                      values.append(raw)
+              print(' '.join(values))
+          PY
+          )"
+          printf 'surviving_pids=%s\n' "$pids" | tee -a "$PROCESS_LOG"
+          for pid in $pids; do
+            printf '%s\n' "--- pid=$pid" | tee -a "$PROCESS_LOG"
+            /bin/ps -p "$pid" -o pid=,ppid=,uid=,gid=,state=,comm=,args= 2>&1 | tee -a "$PROCESS_LOG" || true
+          done
+
       - name: Upload synthetic authority evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -157,5 +185,6 @@ jobs:
             ${{ runner.temp }}/private-tuya-build-uid-read-lease.json
             ${{ runner.temp }}/private-tuya-build-uid-read-lease.sha256
             ${{ runner.temp }}/private-tuya-build-uid-read-lease.stderr.log
+            ${{ runner.temp }}/private-tuya-build-uid-read-lease.processes.log
           if-no-files-found: warn
           retention-days: 7
