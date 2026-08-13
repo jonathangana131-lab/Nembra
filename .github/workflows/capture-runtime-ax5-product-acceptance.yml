@@ -1,0 +1,95 @@
+name: Capture App Truth + AX5 Repair Bootstrap
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - .github/workflows/capture-runtime-ax5-product-acceptance.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-app-truth-ax5-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  materialize-repair:
+    name: Materialize canonical app-truth + AX5 repair once
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact red parent and apply bounded product repair
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          parent=5be09e720194108c7e08bc6232eae7915df43997
+          source=NembraApp/App/NembraCaptureEntrypoint.swift
+          original_blob=5d1bc8aa617063730c234c596bb82db199c8b0c4
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+
+          if grep -Fq '.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)' "$source"; then
+            test "$(grep -Fc '.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)' "$source")" = 1
+            grep -Fq 'test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount' "$source"
+            ! grep -Fq 'Waiting for a genuine application update and the canonical 45-second horizon' "$source"
+            exit 0
+          fi
+
+          test "$(git rev-parse "HEAD:$source")" = "$original_blob"
+          test "$(git diff --name-only "$parent"...HEAD)" = '.github/workflows/capture-runtime-ax5-product-acceptance.yml'
+
+          /usr/bin/python3 -B -I - "$source" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding='utf-8')
+
+          edits = [
+              (
+                  '''        .accessibilityElement(children: .combine)\n        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")''',
+                  '''        .accessibilityElement(children: .combine)\n        .accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)\n        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")''',
+                  'AX5 lock sort priority',
+              ),
+              (
+                  'Waiting for a genuine application update and the canonical 45-second horizon…',
+                  'Waiting for repeated accepted application updates and the canonical 45-second horizon…',
+                  'repeated observation copy',
+              ),
+              (
+                  'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)',
+                  'requirementRow("Scooter data received", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)',
+                  'canonical repeated-evidence checklist',
+              ),
+          ]
+
+          for old, new, label in edits:
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected one exact repair seam, found {text.count(old)}')
+              text = text.replace(old, new)
+
+          if text.count('.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)') != 1:
+              raise SystemExit('AX5 sort priority did not materialize exactly once')
+          if 'test.applicationUpdateCount > 0' in text:
+              raise SystemExit('stale one-payload readiness predicate remains')
+          if 'Waiting for a genuine application update and the canonical 45-second horizon' in text:
+              raise SystemExit('stale one-update readiness copy remains')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git diff --check -- "$source"
+          test "$(git diff --name-only)" = "$source"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$source"
+          test "$(git diff --cached --name-only)" = "$source"
+          git commit -m 'capture: align observation truth and AX5 VoiceOver authority'
+          git push origin "HEAD:$HEAD_BRANCH"
