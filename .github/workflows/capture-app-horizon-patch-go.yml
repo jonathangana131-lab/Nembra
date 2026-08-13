@@ -122,11 +122,23 @@ jobs:
               ''
           ])
           one(helper_anchor, helper + helper_anchor, 'incomplete-horizon mirror helper')
+
+          # Package-owned horizon retirement now makes the old zero-payload watchdog timeout branch
+          # unreachable at the canonical deadline. Keep one terminal owner and one semantic reason.
+          legacy_start = '\n                if self.applicationUpdateAdmissionsInFlight == 0,\n'
+          legacy_end = '\n                try? await Task.sleep(for: .seconds(1))'
+          if s.count(legacy_start) != 1:
+              raise SystemExit(f'legacy timeout start count: {s.count(legacy_start)}')
+          start = s.index(legacy_start)
+          end = s.index(legacy_end, start)
+          s = s[:start] + s[end:]
           p.write_text(s)
           PY
 
           git fetch origin refs/pull/3246/head:refs/remotes/origin/capture-ui-3246
           git checkout refs/remotes/origin/capture-ui-3246 -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift
+          git fetch origin refs/pull/3251/head:refs/remotes/origin/capture-semantic-3251
+          git checkout refs/remotes/origin/capture-semantic-3251 -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationSemanticTerminalTests.swift
 
           python3 - <<'PY'
           from pathlib import Path
@@ -154,17 +166,19 @@ jobs:
               raise SystemExit(f'app-survival oracle anchor count: {s.count(old)}')
           p.write_text(s.replace(old, new, 1))
 
-          old_reason = 'Authenticated session produced no application update before the observation deadline.'
-          new_reason = 'Authenticated session ended because required repeated application evidence did not become sufficient before the observation deadline.'
-          for path in [
-              Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift'),
-              Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift'),
-          ]:
-              text = path.read_text()
-              count = text.count(old_reason)
-              if count != 2:
-                  raise SystemExit(f'{path.name}: expected two stale timeout reason assertions, found {count}')
-              path.write_text(text.replace(old_reason, new_reason))
+          # The permanent exact-head gate must exercise the app-visible and continuity source
+          # contracts on the final product SHA, not only inside this temporary constructor.
+          gate = Path('.github/workflows/capture-v16-standalone.yml')
+          g = gate.read_text()
+          anchor = '          swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests\n'
+          if g.count(anchor) != 1:
+              raise SystemExit(f'standalone app-terminal filter anchor count: {g.count(anchor)}')
+          addition = (
+              anchor
+              + '          swift test --filter TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration\n'
+              + '          swift test --filter TuyaAlreadyTerminalObservationContinuitySourceTests\n'
+          )
+          gate.write_text(g.replace(anchor, addition, 1))
           PY
 
           rm .github/workflows/capture-app-horizon-patch-go.yml
@@ -180,6 +194,7 @@ jobs:
           swift test --filter TuyaAuthenticatedReadOnlyHorizonTests
           swift test --filter TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration
           swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
+          swift test --filter TuyaAlreadyTerminalObservationContinuitySourceTests
           swift test --filter TuyaDeviceSharingAuthenticationAuthorityTests
 
       - name: Publish coherent canonical repair
