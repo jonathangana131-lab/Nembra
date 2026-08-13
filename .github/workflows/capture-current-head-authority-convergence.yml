@@ -1,0 +1,263 @@
+name: Capture Current Head Authority Convergence
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-head-authority-convergence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-current-head-authority-convergence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-scope:
+    name: Bind exact production parent
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require one-path validation delta
+        shell: bash
+        env:
+          EXACT_PARENT: 0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-current-head-authority-convergence.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check
+
+      - name: Pin immutable witness lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('.github/workflows/capture-current-head-authority-convergence.yml').read_text(encoding='utf-8')
+          required=(
+              '0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f',
+              '79a3a7768776e28e2668d680fe0670f397eb34b5',
+              'b4d2a932058fb20b43b5e81fe755b91dbc15d4e0',
+              'f82f4f30bee65c8639c1da913bc8c63bfa1f5fe1',
+              'e80f464bc13f17582983346bbf86287b60d9d50a',
+              'capture_signed_app_build_origin_custody.py',
+              'physicalAuthorityCreated',
+          )
+          missing=[item for item in required if item not in source]
+          if missing:
+              raise SystemExit('missing current-head convergence marker(s): '+repr(missing))
+          PY
+
+  real-macos-authority:
+    name: Re-run immutable authority witnesses on current helper
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind parent and materialize exact historical witness blobs
+        shell: bash
+        env:
+          EXACT_PARENT: 0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f
+          LEASE_HEAD: 79a3a7768776e28e2668d680fe0670f397eb34b5
+          SOURCE_HEAD: b4d2a932058fb20b43b5e81fe755b91dbc15d4e0
+          CACHE_HEAD: f82f4f30bee65c8639c1da913bc8c63bfa1f5fe1
+          ATTRIB_HEAD: e80f464bc13f17582983346bbf86287b60d9d50a
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-current-head-authority-convergence.yml'
+
+          git fetch --no-tags origin \
+            '+refs/pull/3207/head:refs/remotes/origin/nembra-validation-3207' \
+            '+refs/pull/3212/head:refs/remotes/origin/nembra-validation-3212' \
+            '+refs/pull/3214/head:refs/remotes/origin/nembra-validation-3214' \
+            '+refs/pull/2867/head:refs/remotes/origin/nembra-accepted-vnode-2867'
+          test "$(git rev-parse refs/remotes/origin/nembra-validation-3207)" = "$LEASE_HEAD"
+          test "$(git rev-parse refs/remotes/origin/nembra-validation-3212)" = "$SOURCE_HEAD"
+          test "$(git rev-parse refs/remotes/origin/nembra-validation-3214)" = "$CACHE_HEAD"
+          test "$(git rev-parse refs/remotes/origin/nembra-accepted-vnode-2867)" = "$ATTRIB_HEAD"
+
+          materialize() {
+            local head="$1" path="$2" output="$3"
+            local blob
+            blob="$(git rev-parse "$head:$path")"
+            git cat-file blob "$blob" > "$output"
+            test "$(git hash-object "$output")" = "$blob"
+          }
+
+          LEASE_WITNESS="$RUNNER_TEMP/test_capture_private_tuya_build_uid_read_lease.py"
+          SOURCE_WITNESS="$RUNNER_TEMP/test_capture_build_source_root_snapshot.py"
+          CACHE_WITNESS="$RUNNER_TEMP/test_capture_retired_principal_stale_cache_authority.py"
+          materialize "$LEASE_HEAD" scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py "$LEASE_WITNESS"
+          materialize "$SOURCE_HEAD" scripts/ci/tests/test_capture_build_source_root_snapshot.py "$SOURCE_WITNESS"
+          materialize "$CACHE_HEAD" scripts/ci/tests/test_capture_retired_principal_stale_cache_authority.py "$CACHE_WITNESS"
+          /usr/bin/python3 -B -m py_compile "$LEASE_WITNESS" "$SOURCE_WITNESS" "$CACHE_WITNESS"
+
+          ACCEPTED_DIR="$RUNNER_TEMP/nembra-accepted-vnode"
+          mkdir -m 700 "$ACCEPTED_DIR"
+          materialize "$ATTRIB_HEAD" Scripts/capture_tuya_private_input_build_guard.py "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          materialize "$ATTRIB_HEAD" Scripts/capture_tuya_private_input_provenance.py "$ACCEPTED_DIR/capture_tuya_private_input_provenance.py"
+          grep -Fq '"KQ_NOTE_ATTRIB"' "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          grep -Fq 'select.KQ_NOTE_ATTRIB' "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+
+          printf 'LEASE_WITNESS=%s\nSOURCE_WITNESS=%s\nCACHE_WITNESS=%s\nACCEPTED_VNODE_DIR=%s\n' \
+            "$LEASE_WITNESS" "$SOURCE_WITNESS" "$CACHE_WITNESS" "$ACCEPTED_DIR" >> "$GITHUB_ENV"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute all three current-helper authority oracles
+        shell: bash
+        env:
+          EXACT_PARENT: 0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f
+          ATTRIB_HEAD: e80f464bc13f17582983346bbf86287b60d9d50a
+        run: |
+          set -euo pipefail
+          FIELD_USER="$(/usr/bin/id -un)"
+          HELPER="$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py"
+
+          PRIVATE_JSON="$RUNNER_TEMP/current-private-tuya-read-lease.json"
+          PRIVATE_LOG="$RUNNER_TEMP/current-private-tuya-read-lease.stderr.log"
+          SOURCE_JSON="$RUNNER_TEMP/current-build-source-root-snapshot.json"
+          SOURCE_LOG="$RUNNER_TEMP/current-build-source-root-snapshot.stderr.log"
+          CACHE_JSON="$RUNNER_TEMP/current-retired-principal-stale-cache-authority.json"
+          CACHE_LOG="$RUNNER_TEMP/current-retired-principal-stale-cache-authority.stderr.log"
+
+          set +e
+          /usr/bin/sudo /usr/bin/python3 -B -I "$LEASE_WITNESS" \
+            --field-user "$FIELD_USER" \
+            --production-helper "$HELPER" \
+            --accepted-attrib-guard "$ACCEPTED_VNODE_DIR/capture_tuya_private_input_build_guard.py" \
+            --accepted-vnode-head "$ATTRIB_HEAD" \
+            >"$PRIVATE_JSON" 2>"$PRIVATE_LOG"
+          private_rc=$?
+
+          /usr/bin/sudo /usr/bin/python3 -B -I "$SOURCE_WITNESS" \
+            --field-user "$FIELD_USER" \
+            --production-helper "$HELPER" \
+            --production-parent "$EXACT_PARENT" \
+            >"$SOURCE_JSON" 2>"$SOURCE_LOG"
+          source_rc=$?
+
+          /usr/bin/sudo /usr/bin/python3 -B -I "$CACHE_WITNESS" \
+            --field-user "$FIELD_USER" \
+            --production-helper "$HELPER" \
+            --production-parent "$EXACT_PARENT" \
+            >"$CACHE_JSON" 2>"$CACHE_LOG"
+          cache_rc=$?
+          set -e
+
+          /usr/bin/python3 - "$private_rc" "$source_rc" "$cache_rc" \
+            "$PRIVATE_JSON" "$SOURCE_JSON" "$CACHE_JSON" "$RUNNER_TEMP/current-authority-convergence-status.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          private_rc,source_rc,cache_rc=map(int,sys.argv[1:4])
+          private_path,source_path,cache_path,status_path=map(Path,sys.argv[4:8])
+
+          def load_if_green(rc,path):
+              if rc != 0:
+                  return None
+              return json.loads(path.read_text(encoding='utf-8'))
+
+          private=load_if_green(private_rc,private_path)
+          source=load_if_green(source_rc,source_path)
+          cache=load_if_green(cache_rc,cache_path)
+
+          if private is not None:
+              assert private['schema'] == 1
+              assert private['preLeaseReadDenied'] is True
+              assert private['leaseReadSucceeded'] is True
+              assert private['internalSymlinkReadSucceeded'] is True
+              assert private['deniedMutations'] == ['append','create','unlink','rename','chmod']
+              assert private['attribMutationObserved'] is True
+              assert private['postRevokeReadDenied'] is True
+              assert private['exactAclListingRestored'] is True
+              assert private['physicalTuyaSecretsUsed'] is False
+              assert private['xcodeUsed'] is False
+              assert private['deviceUsed'] is False
+
+          if source is not None:
+              assert source['schema'] == 1
+              assert source['acceptedSourceTreeSHA256'] == source['snapshotTreeSHA256']
+              assert source['liveSourceAfterAttackSHA256'] != source['acceptedSourceTreeSHA256']
+              assert source['fieldSourceReplacementSucceeded'] is True
+              assert source['fieldSnapshotAppendDenied'] is True
+              assert source['fieldSnapshotRenameDenied'] is True
+              assert source['dedicatedConsumerReadAcceptedSnapshot'] is True
+              assert source['dedicatedConsumerReadInternalSymlink'] is True
+              assert source['dedicatedSnapshotWriteDenied'] is True
+              assert source['snapshotRootOwnedReadOnly'] is True
+              assert source['physicalAuthorityCreated'] is False
+
+          if cache is not None:
+              assert cache['schema'] == 1
+              assert cache['directStateAfterDelete']['userDirectoryServiceRecordResolved'] is False
+              assert cache['directStateAfterDelete']['groupDirectoryServiceRecordResolved'] is False
+              assert cache['stalePwdGrpCacheObserved'] is True
+              assert cache['zeroRetiredUIDProcesses'] is True
+              assert cache['productionNumericReuseBlockedWhileCacheStale'] is True
+              assert cache['ordinaryFieldSetgroupsDenied'] is True
+              assert cache['ordinaryFieldSetgidDenied'] is True
+              assert cache['ordinaryFieldSetuidDenied'] is True
+              assert cache['ordinaryFieldRetiredOwnedReadDenied'] is True
+              assert cache['ordinaryFieldRetiredOwnedWriteDenied'] is True
+              assert cache['modeledFieldAuthorityDeniedDespiteStaleLookup'] is True
+              assert cache['physicalAuthorityCreated'] is False
+
+          status={
+              'schema':1,
+              'productionParent':'0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f',
+              'privateReadLeaseReturnCode':private_rc,
+              'sourceSnapshotReturnCode':source_rc,
+              'staleCacheAuthorityReturnCode':cache_rc,
+              'allAuthorityOraclesGreen':private_rc == source_rc == cache_rc == 0,
+              'productionBytesChanged':False,
+              'physicalAuthorityCreated':False,
+          }
+          status_path.write_text(json.dumps(status,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
+          PY
+
+          for evidence in "$PRIVATE_JSON" "$SOURCE_JSON" "$CACHE_JSON" "$RUNNER_TEMP/current-authority-convergence-status.json"; do
+            if test -s "$evidence"; then shasum -a 256 "$evidence"; fi
+          done | tee "$RUNNER_TEMP/current-authority-convergence.sha256"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          if test "$private_rc" -ne 0 || test "$source_rc" -ne 0 || test "$cache_rc" -ne 0; then
+            printf 'Authority convergence remains RED: private=%s source=%s cache=%s\n' \
+              "$private_rc" "$source_rc" "$cache_rc" >&2
+            exit 1
+          fi
+
+      - name: Retain sanitized authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-current-head-authority-convergence-evidence
+          path: |
+            ${{ runner.temp }}/current-private-tuya-read-lease.json
+            ${{ runner.temp }}/current-private-tuya-read-lease.stderr.log
+            ${{ runner.temp }}/current-build-source-root-snapshot.json
+            ${{ runner.temp }}/current-build-source-root-snapshot.stderr.log
+            ${{ runner.temp }}/current-retired-principal-stale-cache-authority.json
+            ${{ runner.temp }}/current-retired-principal-stale-cache-authority.stderr.log
+            ${{ runner.temp }}/current-authority-convergence-status.json
+            ${{ runner.temp }}/current-authority-convergence.sha256
+          if-no-files-found: warn
+          retention-days: 7
