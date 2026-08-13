@@ -1,0 +1,190 @@
+name: Capture Private Tuya Build UID Read Lease Validation
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py
+      - .github/workflows/capture-private-tuya-build-uid-read-lease-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-contract:
+    name: Private read-lease source contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and pin validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py').read_text(encoding='utf-8')
+          required = (
+              'DIRECTORY_RIGHTS = "list,search,readattr,readextattr,readsecurity"',
+              'FILE_RIGHTS = "read,readattr,readextattr,readsecurity"',
+              '_require_denied(denied_before, "pre-lease private read")',
+              'internal symlink target',
+              '("append", secret)',
+              '("create", runtime_sources)',
+              '("unlink", secret)',
+              '("rename", secret)',
+              '("chmod", secret)',
+              'KQ_NOTE_ATTRIB',
+              '_require_denied(denied_after, "post-revoke private read")',
+              '_remove_local_build_identity(build_name, build_uid, require_absent=True)',
+              'physicalTuyaSecretsUsed": False',
+              'xcodeUsed": False',
+              'deviceUsed": False',
+          )
+          missing = [marker for marker in required if marker not in source]
+          if missing:
+              raise SystemExit('missing read-lease validation markers: ' + repr(missing))
+          # The witness synthesizes these names below its own /private/tmp root;
+          # it must not consume credentials.
+          assert 'NEMBRA_TUYA_APP_KEY' not in source
+          assert 'NEMBRA_TUYA_APP_SECRET' not in source
+          PY
+          git diff --check
+
+  macos-real-acl:
+    name: Real macOS private read-only ACL lease
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact validation head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Recover exact accepted vnode-attribute primitive
+        shell: bash
+        env:
+          ATTRIB_HEAD: e80f464bc13f17582983346bbf86287b60d9d50a
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/pull/2867/head:refs/remotes/origin/nembra-accepted-vnode-2867'
+          test "$(git rev-parse refs/remotes/origin/nembra-accepted-vnode-2867)" = "$ATTRIB_HEAD"
+          ACCEPTED_DIR="$RUNNER_TEMP/nembra-accepted-vnode"
+          rm -rf "$ACCEPTED_DIR"
+          mkdir -m 700 "$ACCEPTED_DIR"
+          for relative in \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            Scripts/capture_tuya_private_input_provenance.py; do
+            blob="$(git rev-parse "$ATTRIB_HEAD:$relative")"
+            output="$ACCEPTED_DIR/$(basename "$relative")"
+            git cat-file blob "$blob" > "$output"
+            test "$(git hash-object "$output")" = "$blob"
+          done
+          grep -Fq '"KQ_NOTE_ATTRIB"' "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          grep -Fq 'select.KQ_NOTE_ATTRIB' "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          printf 'ACCEPTED_VNODE_DIR=%s\n' "$ACCEPTED_DIR" >> "$GITHUB_ENV"
+
+      - name: Prove reversible build-UID read lease
+        shell: bash
+        env:
+          ATTRIB_HEAD: e80f464bc13f17582983346bbf86287b60d9d50a
+        run: |
+          set -euo pipefail
+          FIELD_USER="$(/usr/bin/id -un)"
+          EVIDENCE="$RUNNER_TEMP/private-tuya-build-uid-read-lease.json"
+          DIAGNOSTIC="$RUNNER_TEMP/private-tuya-build-uid-read-lease.stderr.log"
+          : > "$DIAGNOSTIC"
+          /usr/bin/sudo /usr/bin/python3 -I \
+            scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py \
+            --field-user "$FIELD_USER" \
+            --production-helper "$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py" \
+            --accepted-attrib-guard "$ACCEPTED_VNODE_DIR/capture_tuya_private_input_build_guard.py" \
+            --accepted-vnode-head "$ATTRIB_HEAD" \
+            2> >(/usr/bin/tee "$DIAGNOSTIC" >&2) \
+            | /usr/bin/tee "$EVIDENCE"
+          /usr/bin/python3 - "$EVIDENCE" "$ATTRIB_HEAD" <<'PY'
+          import json,sys
+          from pathlib import Path
+          payload=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          expected=sys.argv[2]
+          assert payload['schema'] == 1
+          assert payload['acceptedVnodeHead'] == expected
+          assert payload['preLeaseReadDenied'] is True
+          assert payload['leaseReadSucceeded'] is True
+          assert payload['internalSymlinkReadSucceeded'] is True
+          assert payload['deniedMutations'] == ['append','create','unlink','rename','chmod']
+          assert payload['attribMutationObserved'] is True
+          assert payload['postRevokeReadDenied'] is True
+          assert payload['exactAclListingRestored'] is True
+          assert payload['physicalTuyaSecretsUsed'] is False
+          assert payload['xcodeUsed'] is False
+          assert payload['deviceUsed'] is False
+          PY
+          shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/private-tuya-build-uid-read-lease.sha256"
+
+      - name: Classify surviving build-UID process after a red witness
+        if: failure()
+        shell: bash
+        run: |
+          set -uo pipefail
+          DIAGNOSTIC="$RUNNER_TEMP/private-tuya-build-uid-read-lease.stderr.log"
+          PROCESS_LOG="$RUNNER_TEMP/private-tuya-build-uid-read-lease.processes.log"
+          : > "$PROCESS_LOG"
+          pids="$(/usr/bin/python3 - "$DIAGNOSTIC" <<'PY'
+          import re,sys
+          from pathlib import Path
+          text=Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace') if Path(sys.argv[1]).exists() else ''
+          matches=re.findall(r'live_pids=\[([^\]]*)\]', text)
+          if matches:
+              values=[]
+              for raw in matches[-1].split(','):
+                  raw=raw.strip()
+                  if raw.isdigit() and int(raw)>0:
+                      values.append(raw)
+              print(' '.join(values))
+          PY
+          )"
+          printf 'surviving_pids=%s\n' "$pids" | tee -a "$PROCESS_LOG"
+          for pid in $pids; do
+            printf '%s\n' "--- pid=$pid" | tee -a "$PROCESS_LOG"
+            /bin/ps -p "$pid" -o pid=,ppid=,uid=,gid=,state=,comm=,args= 2>&1 | tee -a "$PROCESS_LOG" || true
+          done
+
+      - name: Upload synthetic authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-private-tuya-build-uid-read-lease-evidence
+          path: |
+            ${{ runner.temp }}/private-tuya-build-uid-read-lease.json
+            ${{ runner.temp }}/private-tuya-build-uid-read-lease.sha256
+            ${{ runner.temp }}/private-tuya-build-uid-read-lease.stderr.log
+            ${{ runner.temp }}/private-tuya-build-uid-read-lease.processes.log
+          if-no-files-found: warn
+          retention-days: 7
