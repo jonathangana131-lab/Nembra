@@ -25,6 +25,7 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
             from: 3_000,
             untilBefore: horizon
         )
+        let acceptedPrefix = await ledger.currentPreflightSnapshot()
 
         clock.advance(to: horizon)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
@@ -32,8 +33,14 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
         }
 
         let snapshot = await ledger.currentPreflightSnapshot()
-        #expect(snapshot.applicationPayloadCount == 1)
+        #expect(snapshot.authenticationState == .failed(reason: "Authenticated session did not satisfy sufficient application evidence before the observation deadline."))
+        #expect(snapshot.applicationPayloadCount == acceptedPrefix.applicationPayloadCount)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == acceptedPrefix.latestApplicationPayloadUptimeNanoseconds)
+        #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await ledger.observeCurrentConnection(for: token)
+        }
     }
 
     @Test("application callback cannot rescue an expired incomplete generation")
@@ -57,6 +64,7 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
             from: 3_000,
             untilBefore: horizon
         )
+        let acceptedPrefix = await ledger.currentPreflightSnapshot()
 
         clock.advance(to: horizon)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
@@ -64,10 +72,14 @@ struct TuyaAuthenticatedReadOnlyHorizonTests {
         }
 
         let snapshot = await ledger.currentPreflightSnapshot()
-        #expect(snapshot.applicationPayloadCount == 1)
-        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 3_000)
-        #expect(snapshot.latestObservedUptimeNanoseconds == horizon)
+        #expect(snapshot.authenticationState == .failed(reason: "Authenticated session did not satisfy sufficient application evidence before the observation deadline."))
+        #expect(snapshot.applicationPayloadCount == acceptedPrefix.applicationPayloadCount)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == acceptedPrefix.latestApplicationPayloadUptimeNanoseconds)
+        #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+        }
     }
 
     @Test("Device Sharing provenance cannot enter authenticated BLE chronology")

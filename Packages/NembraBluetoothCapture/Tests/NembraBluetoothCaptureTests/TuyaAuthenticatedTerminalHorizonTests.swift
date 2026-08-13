@@ -85,11 +85,11 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         try await ledger.markApplicationObservationTimedOut(for: token)
         let terminal = await ledger.currentPreflightSnapshot()
 
-        #expect(terminal.authenticationState == .failed(reason: "Authenticated session produced no application update before the observation deadline."))
+        #expect(terminal.authenticationState == .failed(reason: "Authenticated session did not satisfy sufficient application evidence before the observation deadline."))
         #expect(terminal.authenticationMethod == .smartLifeAppSDK)
         #expect(terminal.authenticatedAtUptimeNanoseconds == 2_000)
         #expect(terminal.applicationPayloadCount == 0)
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: terminal) == .blocked(reason: "Authenticated session produced no application update before the observation deadline."))
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: terminal) == .blocked(reason: "Authenticated session did not satisfy sufficient application evidence before the observation deadline."))
 
         clock.advance(to: 61_000_002_000)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {

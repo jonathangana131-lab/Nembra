@@ -50,6 +50,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         "Tuya SDK source authority was invalidated."
     private static let internalLifecycleFailureReason =
         "Session authority was retired after an internal lifecycle or chronology failure."
+    private static let incompleteObservationFailureReason =
+        "Authenticated session did not satisfy sufficient application evidence before the observation deadline."
 
     private let ledgerID: UUID
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -255,8 +257,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Once a real current liveness receipt reaches the package-owned 60-second incomplete-session
     /// horizon, the same canonical preflight decides whether this generation must terminate. The
     /// deadline is evaluated against the already-accepted prefix before the receipt can advance
-    /// chronology; the exact token stays current on throw so the app's existing fail-closed
-    /// lifecycle terminal can retire it without inventing a BLE disconnect or a second clock sample.
+    /// chronology. On an incomplete horizon the package freezes that prefix, records one semantic
+    /// failure, and retires the exact token before throwing; the app only mirrors the terminal fact.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
@@ -296,8 +298,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.authenticationRequired
         }
 
-        _ = try nextMonotonicObservation()
-        authenticationState = .failed(reason: "Authenticated session produced no application update before the observation deadline.")
+        authenticationState = .failed(reason: Self.incompleteObservationFailureReason)
         currentToken = nil
     }
 
@@ -383,6 +384,12 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot()) != .readyForStationaryMapping else {
             return
         }
+
+        // The package owns this bounded terminal so two independently resumed app callbacks cannot
+        // race through a second cleanup mutation. No additional clock sample is taken: the accepted
+        // pre-deadline chronology remains frozen and the failure does not imply a BLE disconnect.
+        authenticationState = .failed(reason: Self.incompleteObservationFailureReason)
+        currentToken = nil
         throw MutationError.incompleteObservationHorizonReached
     }
 
