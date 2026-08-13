@@ -1,0 +1,105 @@
+name: GO incomplete horizon terminal materializer
+
+on:
+  push:
+    branches:
+      - integration/v161-capture-incomplete-horizon-terminal-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.event.head_commit.message == 'GO materialize incomplete horizon terminal'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/v161-capture-incomplete-horizon-terminal-gpt56
+          fetch-depth: 0
+
+      - name: Apply fail-closed package terminal
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ledger = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift')
+          source = ledger.read_text()
+
+          replacements = [
+              (
+                  '''    private static let internalLifecycleFailureReason =\n        "Session authority was retired after an internal lifecycle or chronology failure."\n''',
+                  '''    private static let internalLifecycleFailureReason =\n        "Session authority was retired after an internal lifecycle or chronology failure."\n    private static let incompleteObservationFailureReason =\n        "Authenticated session did not satisfy sufficient application evidence before the observation deadline."\n'''
+              ),
+              (
+                  '''    /// horizon, the same canonical preflight decides whether this generation must terminate. The\n    /// deadline is evaluated against the already-accepted prefix before the receipt can advance\n    /// chronology; the exact token stays current on throw so the app's existing fail-closed\n    /// lifecycle terminal can retire it without inventing a BLE disconnect or a second clock sample.\n''',
+                  '''    /// horizon, the same canonical preflight decides whether this generation must terminate. The\n    /// deadline is evaluated against the already-accepted prefix before the receipt can advance\n    /// chronology. On an incomplete horizon the package freezes that prefix, records one semantic\n    /// failure, and retires the exact token before throwing; the app only mirrors the terminal fact.\n'''
+              ),
+              (
+                  '''        _ = try nextMonotonicObservation()\n        authenticationState = .failed(reason: "Authenticated session produced no application update before the observation deadline.")\n        currentToken = nil\n''',
+                  '''        authenticationState = .failed(reason: Self.incompleteObservationFailureReason)\n        currentToken = nil\n'''
+              ),
+              (
+                  '''        guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot()) != .readyForStationaryMapping else {\n            return\n        }\n        throw MutationError.incompleteObservationHorizonReached\n''',
+                  '''        guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot()) != .readyForStationaryMapping else {\n            return\n        }\n\n        // The package owns this bounded terminal so two independently resumed app callbacks cannot\n        // race through a second cleanup mutation. No additional clock sample is taken: the accepted\n        // pre-deadline chronology remains frozen and the failure does not imply a BLE disconnect.\n        authenticationState = .failed(reason: Self.incompleteObservationFailureReason)\n        currentToken = nil\n        throw MutationError.incompleteObservationHorizonReached\n'''
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'ledger anchor count {count}; fail closed')
+              source = source.replace(old, new, 1)
+          ledger.write_text(source)
+
+          horizon = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonTests.swift')
+          tests = horizon.read_text()
+          replacements = [
+              (
+                  '''        try await advanceHorizonLiveness(\n            clock: clock,\n            ledger: ledger,\n            token: token,\n            from: 3_000,\n            untilBefore: horizon\n        )\n\n        clock.advance(to: horizon)\n        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {\n            try await ledger.observeCurrentConnection(for: token)\n        }\n\n        let snapshot = await ledger.currentPreflightSnapshot()\n        #expect(snapshot.applicationPayloadCount == 1)\n        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)\n''',
+                  '''        try await advanceHorizonLiveness(\n            clock: clock,\n            ledger: ledger,\n            token: token,\n            from: 3_000,\n            untilBefore: horizon\n        )\n        let acceptedPrefix = await ledger.currentPreflightSnapshot()\n\n        clock.advance(to: horizon)\n        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {\n            try await ledger.observeCurrentConnection(for: token)\n        }\n\n        let snapshot = await ledger.currentPreflightSnapshot()\n        #expect(snapshot.authenticationState == .failed(reason: "Authenticated session did not satisfy sufficient application evidence before the observation deadline."))\n        #expect(snapshot.applicationPayloadCount == acceptedPrefix.applicationPayloadCount)\n        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == acceptedPrefix.latestApplicationPayloadUptimeNanoseconds)\n        #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)\n        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)\n        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {\n            try await ledger.observeCurrentConnection(for: token)\n        }\n'''
+              ),
+              (
+                  '''        try await advanceHorizonLiveness(\n            clock: clock,\n            ledger: ledger,\n            token: token,\n            from: 3_000,\n            untilBefore: horizon\n        )\n\n        clock.advance(to: horizon)\n        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {\n            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)\n        }\n\n        let snapshot = await ledger.currentPreflightSnapshot()\n        #expect(snapshot.applicationPayloadCount == 1)\n        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 3_000)\n        #expect(snapshot.latestObservedUptimeNanoseconds == horizon)\n        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)\n''',
+                  '''        try await advanceHorizonLiveness(\n            clock: clock,\n            ledger: ledger,\n            token: token,\n            from: 3_000,\n            untilBefore: horizon\n        )\n        let acceptedPrefix = await ledger.currentPreflightSnapshot()\n\n        clock.advance(to: horizon)\n        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {\n            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)\n        }\n\n        let snapshot = await ledger.currentPreflightSnapshot()\n        #expect(snapshot.authenticationState == .failed(reason: "Authenticated session did not satisfy sufficient application evidence before the observation deadline."))\n        #expect(snapshot.applicationPayloadCount == acceptedPrefix.applicationPayloadCount)\n        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == acceptedPrefix.latestApplicationPayloadUptimeNanoseconds)\n        #expect(snapshot.latestObservedUptimeNanoseconds == acceptedPrefix.latestObservedUptimeNanoseconds)\n        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)\n        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {\n            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)\n        }\n'''
+              ),
+          ]
+          for old, new in replacements:
+              count = tests.count(old)
+              if count != 1:
+                  raise SystemExit(f'horizon-test anchor count {count}; fail closed')
+              tests = tests.replace(old, new, 1)
+          horizon.write_text(tests)
+
+          terminal = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift')
+          terminal_tests = terminal.read_text()
+          old = 'Authenticated session produced no application update before the observation deadline.'
+          new = 'Authenticated session did not satisfy sufficient application evidence before the observation deadline.'
+          count = terminal_tests.count(old)
+          if count != 2:
+              raise SystemExit(f'terminal-test reason anchor count {count}; fail closed')
+          terminal.write_text(terminal_tests.replace(old, new))
+          PY
+          git diff --check
+
+      - name: Run focused package suites
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaAuthenticatedReadOnlyHorizonTests
+          swift test --filter TuyaAuthenticatedTerminalHorizonTests
+
+      - name: Commit clean production delta and remove materializer
+        run: |
+          set -euo pipefail
+          rm .github/workflows/go-incomplete-horizon-terminal-materialize.yml
+          git diff --check
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonTests.swift \
+                  Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift \
+                  .github/workflows/go-incomplete-horizon-terminal-materialize.yml
+          git commit -m 'Capture V16.1: own incomplete horizon terminal in package'
+          git push origin HEAD:integration/v161-capture-incomplete-horizon-terminal-gpt56
