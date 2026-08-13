@@ -1064,30 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 288,
     "classifiedPRs": {
-      "2719": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2719,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.26,
-        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
-      },
-      "2733": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2733,
-        "recommendedAction": "independent-review",
-        "similarity": 0.278,
-        "title": "[Capture P0][REVIEW] Lock root admission before private writer capture"
-      },
       "2734": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2430,17 +2408,6 @@
         "similarity": 0.337,
         "title": "[Capture P0][RED TEAM] Keep stricter preflight truthful in app UI"
       },
-      "3249": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3249,
-        "recommendedAction": "independent-review",
-        "similarity": 0.273,
-        "title": "Preserve accepted observation prefix at timeout boundary"
-      },
       "3251": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2449,7 +2416,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3251,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.341,
+        "similarity": 0.347,
         "title": "[Capture P0][RED TEAM] Preserve semantic incomplete-horizon terminal"
       },
       "3252": {
@@ -2473,6 +2440,39 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.283,
         "title": "[Capture P0][VALIDATION] Prove restricted Apple-signing bootstrap boundary"
+      },
+      "3255": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "swarm-control-plane-v16-1-rollout",
+        "pr": 3255,
+        "recommendedAction": "independent-review",
+        "similarity": 0.062,
+        "title": "[Swarm V16.1][P0] Prevent premature worker idle under burst"
+      },
+      "3256": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3256,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.329,
+        "title": "[Capture P0][REPAIR] Align clock-regression fixture with SmartLife provenance"
+      },
+      "3257": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3257,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.347,
+        "title": "[Capture P0][RED TEAM] Mirror package-owned horizon terminal in app"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T22:55:39Z",
+    "liveRefreshAt": "2026-08-13T22:58:48Z",
     "liveRefreshDuplicatesSuppressed": [
       3253
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 104,
+  "revision": 105,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T22:58:24Z",
+  "updatedAt": "2026-08-13T23:01:09Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T22:55:39Z",
+      "updatedAt": "2026-08-13T22:58:48Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
