@@ -95,8 +95,9 @@ jobs:
           grep -Fq 'SEALER_PATH="scripts/ci/capture_apple_signing_preflight_receipt_seal.py"' "$preflight"
           grep -Fq '/usr/bin/env -i' "$preflight"
           grep -Fq -- '--git-dir="$GIT_DIR_ABS"' "$preflight"
-          grep -Fq 'cat-file blob "$ORACLE_BLOB"' "$preflight"
-          grep -Fq 'cat-file blob "$SEALER_BLOB"' "$preflight"
+          grep -Fq 'cat-file blob "$blob"' "$preflight"
+          grep -Fq 'materialize_blob "$ORACLE_BLOB" "$ORACLE_EXEC"' "$preflight"
+          grep -Fq 'materialize_blob "$SEALER_BLOB" "$SEALER_EXEC"' "$preflight"
           grep -Fq 'hashlib.sha1(b"blob "' "$preflight"
           grep -Fq 'os.O_NOFOLLOW' "$preflight"
           grep -Fq '/usr/bin/sudo -n /usr/bin/python3 -B -I "$SEALER_EXEC"' "$preflight"
@@ -263,24 +264,87 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Enforce hosted Apple signing verdict and hygiene
+      - name: Enforce hosted Apple signing evidence and hygiene
         if: always()
         shell: bash
         env:
           PROBE_OUTCOME: ${{ steps.probe.outcome }}
         run: |
           set -euo pipefail
-          test "$PROBE_OUTCOME" = success
-          test "$(cat "$RUNNER_TEMP/nembra-field-uid-apple-signing-rc.txt")" = 0
           output="$RUNNER_TEMP/nembra-field-uid-apple-signing-output.txt"
-          grep -q '^NEMBRA_FIELD_UID_APPLE_SIGNING_JSON=' "$output"
-          grep -q '"fieldBaselinePreservedExact": true' "$output"
-          grep -q '"unexpectedGroupsBeyondFieldBaseline": \[\]' "$output"
-          grep -q '"missingFieldBaselineGroups": \[\]' "$output"
-          grep -q '"appleDevelopmentAuthorityPresent": true' "$output"
-          grep -q '"adHocSignaturePresent": false' "$output"
-          grep -q '"codesignReturnCode": 0' "$output"
-          grep -q '"strictVerifyReturnCode": 0' "$output"
-          grep -q '"physicalAuthorityCreated": false' "$output"
+          rc="$(cat "$RUNNER_TEMP/nembra-field-uid-apple-signing-rc.txt")"
+          /usr/bin/python3 -B -I - "$output" "$PROBE_OUTCOME" "$rc" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          success_marker = "NEMBRA_FIELD_UID_APPLE_SIGNING_JSON="
+          error_marker = "NEMBRA_FIELD_UID_APPLE_SIGNING_ERROR="
+          output_path, outcome, raw_rc = sys.argv[1:]
+          text = Path(output_path).read_text(encoding="utf-8", errors="replace")
+          try:
+              rc = int(raw_rc)
+          except ValueError as error:
+              raise SystemExit("hosted Apple signing oracle return code is malformed") from error
+
+          def records(marker: str) -> list[dict[str, object]]:
+              found = []
+              for line in text.splitlines():
+                  if not line.startswith(marker):
+                      continue
+                  try:
+                      value = json.loads(line[len(marker):])
+                  except json.JSONDecodeError as error:
+                      raise SystemExit(f"hosted Apple signing evidence after {marker} is malformed") from error
+                  if not isinstance(value, dict):
+                      raise SystemExit(f"hosted Apple signing evidence after {marker} is not an object")
+                  found.append(value)
+              return found
+
+          green = records(success_marker)
+          red = records(error_marker)
+          if rc == 0:
+              if outcome != "success" or len(green) != 1 or red:
+                  raise SystemExit("successful hosted signing probe has an invalid outcome/evidence shape")
+              record = green[0]
+              required = (
+                  record.get("fieldBaselinePreservedExact") is True
+                  and record.get("unexpectedGroupsBeyondFieldBaseline") == []
+                  and record.get("missingFieldBaselineGroups") == []
+                  and record.get("appleDevelopmentAuthorityPresent") is True
+                  and record.get("adHocSignaturePresent") is False
+                  and record.get("codesignReturnCode") == 0
+                  and record.get("strictVerifyReturnCode") == 0
+                  and record.get("physicalAuthorityCreated") is False
+              )
+              if not required:
+                  raise SystemExit("successful hosted Apple signing evidence lost required truth properties")
+              print("HOSTED_APPLE_SIGNING_CONTEXT_GREEN physicalAuthorityCreated=false")
+          elif rc == 73:
+              if outcome != "failure" or green or len(red) != 1:
+                  raise SystemExit("hosted Apple identity-unavailable evidence has an invalid outcome/evidence shape")
+              record = red[0]
+              signer = record.get("signer")
+              if not isinstance(signer, dict):
+                  raise SystemExit("hosted Apple identity-unavailable evidence has no signer attestation")
+              required = (
+                  record.get("kind") == "apple-identity-unavailable"
+                  and record.get("physicalAuthorityCreated") is False
+                  and signer.get("appleDevelopmentIdentityCount") == 0
+                  and signer.get("securityFindIdentityReturnCode") == 0
+                  and signer.get("identityDiscoveryErrorPresent") is False
+                  and signer.get("fieldBaselinePreservedExact") is True
+                  and signer.get("unexpectedGroupsBeyondFieldBaseline") == []
+                  and signer.get("missingFieldBaselineGroups") == []
+                  and signer.get("pathWriteSucceeded") is True
+                  and signer.get("pathCleanupSucceeded") is True
+                  and signer.get("codesignReturnCode") is None
+              )
+              if not required:
+                  raise SystemExit("hosted Apple identity-unavailable classification lost required truth properties")
+              print("HOSTED_APPLE_SIGNING_ENVIRONMENT_RED_ACCEPTED appleDevelopmentIdentityCount=0 physicalAuthorityCreated=false")
+          else:
+              raise SystemExit(f"unexpected hosted Apple signing oracle return code: {rc}")
+          PY
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
