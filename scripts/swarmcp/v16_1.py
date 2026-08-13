@@ -382,6 +382,10 @@ def run_v16_1_adversarial_simulation(workers=30, now=None) -> dict[str, Any]:
     if workers < 20:
         raise _v16.ValidationError('V16.1 swarm simulation requires at least 20 workers')
     graph = seed_nembra_graph(now)
+    # The simulation is testing convergence after the prerequisite standalone
+    # objective has been accepted. Keep dependency truth intact instead of
+    # asking the scheduler to emit downstream auth work from a blocked graph.
+    graph['objectives']['capture-standalone-build']['status'] = 'DONE'
     stamp = now
     add_blocker(
         graph,
