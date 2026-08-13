@@ -44,7 +44,7 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           git diff --check
 
-      - name: Require exact-object, revoked-sudo, post-exit receipt semantics
+      - name: Require exact-object, revoked-sudo, exact-janitor receipt semantics
         shell: bash
         run: |
           set -euo pipefail
@@ -70,17 +70,28 @@ jobs:
               "install = guard.get('install_into_launcher')",
               "run = launcher.get('run')",
               "namespace, developer, tools, janitor_pid = run(field_pid, source_sha, helper_b64, helper_blob)",
+              'same_exact_process_fail_closed',
+              "janitor_uid_raw = ps_value(int(janitor_pid), 'uid')",
+              "janitor_start = ps_value(int(janitor_pid), 'lstart')",
+              "selected-Xcode janitor is not one live root process at arm time",
               "field_tool([xcodebuild, '-version'])",
               "field_tool([xctrace, 'version'])",
               "field_tool([devicectl, 'help'])",
               "receipt_dir = Path(tempfile.mkdtemp(prefix='nembra-selected-xcode-field-preflight.', dir='/private/tmp'))",
-              "fieldProcessRetired':True",
+              "'janitorPID':int(janitor_pid)",
+              "'janitorUID':0",
+              "'janitorStartIdentity':janitor_start",
+              "'janitorAliveAtArm':True",
+              "'fieldProcessRetired':True",
               "'janitorCleanupObserved':cleanup_observed",
-              "'accepted':cleanup_observed",
+              "'janitorProcessRetired':janitor_retired",
+              'accepted = cleanup_observed and janitor_retired',
+              "'accepted':accepted",
               'os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW',
               'os.chmod(receipt_path, 0o444)',
               'while same_field(field_pid, field_uid, field_start):',
               'deadline = time.monotonic() + 180.0',
+              'janitor_deadline = time.monotonic() + 30.0',
               'Reusable sudo authority survived selected-Xcode preflight publication.',
               'Noninteractive sudo policy remains available after selected-Xcode preflight publication.',
               'CAPTURE_SELECTED_XCODE_FIELD_PREFLIGHT_ARMED',
@@ -143,8 +154,6 @@ jobs:
               if fragment.lower() in lowered:
                   raise SystemExit('private-field preflight crossed forbidden product/physical boundary: ' + fragment)
 
-          # The script may mention the nouns "device"/"Bluetooth" only in explicit
-          # false evidence or comments; executable devicectl authority is help-only.
           if script.count("field_tool([devicectl, 'help'])") != 1:
               raise SystemExit('devicectl field execution is not exactly one help-only probe')
           if script.count("field_tool([xcodebuild, '-version'])") != 1:
