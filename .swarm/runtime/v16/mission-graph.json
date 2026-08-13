@@ -2377,11 +2377,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "5cd80ad16b0cae150da67c633924ba359ec3b0d4",
+        "headSHA": "acff8db6a490236b35432c5d998ef0ba28fe41bc",
         "lane": "",
         "pr": 3203,
         "recommendedAction": "independent-review",
-        "similarity": 0.099,
+        "similarity": 0.11,
         "title": "[Swarm V16] Record accepted objective integration atomically"
       }
     },
@@ -2415,7 +2415,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T00:37:03Z",
+    "liveRefreshAt": "2026-08-13T00:40:05Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
@@ -6169,10 +6169,10 @@
       "userValue": 7
     }
   },
-  "revision": 33,
+  "revision": 34,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T00:39:42Z",
+  "updatedAt": "2026-08-13T00:42:34Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6248,7 +6248,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T00:37:03Z",
+      "updatedAt": "2026-08-13T00:40:05Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
