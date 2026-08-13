@@ -126,7 +126,10 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
 
         self.assertIn("build_gid = build_uid", source)
         self.assertIn("if build_uid == field_uid or build_gid in field_groups:", source)
-        self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)
+        exec_bound_start = source.index("def _run_exec_bound_build(")
+        exec_bound_end = source.index("\ndef _group_names(", exec_bound_start)
+        exec_bound = source[exec_bound_start:exec_bound_end]
+        self.assertIn("**_structured_credentials(uid, gid, ())", exec_bound)
         self.assertIn('"-owners",\n        "on",', source)
         self.assertEqual(source.count('"-owners"'), 1)
         self.assertIn("if effective != expected:", source)
@@ -261,7 +264,10 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
                 "LC_ALL": "en_US.UTF-8",
             },
         )
-        self.assertTrue(set(poison).isdisjoint(environment))
+        self.assertTrue(
+            all(environment.get(key) != value for key, value in poison.items()),
+            "ambient poison values must not survive into the build environment",
+        )
 
     def test_structured_credentials_preserve_explicit_authority_without_primary_duplication(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_credentials")
