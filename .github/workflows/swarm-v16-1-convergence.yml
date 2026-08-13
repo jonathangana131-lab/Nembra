@@ -28,8 +28,11 @@ on:
 permissions:
   contents: read
 
+env:
+  V16_1_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 concurrency:
-  group: swarm-v16-1-readiness-${{ github.ref }}
+  group: swarm-v16-1-readiness-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,17 +40,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # On pull_request, GitHub's default checkout is a synthetic merge commit.
+      # V16.1 acceptance is candidate-head authority, so checkout the immutable
+      # PR head explicitly. Push runs use github.sha.
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.V16_1_CANDIDATE_SHA }}
           persist-credentials: false
           fetch-depth: 2
 
-      - name: Bind exact head
+      - name: Bind literal candidate head
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${GITHUB_SHA}"
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          [[ "$V16_1_CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$V16_1_CANDIDATE_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Compile V16.1 control plane
@@ -116,7 +123,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --unified=0 HEAD^ HEAD -- . ':!docs/**' ':!SWARM_GO.md' | grep -E '^\+.*(PHYSICALLY_MAPPED|COMMAND_VERIFIED|schedulerMayPromotePhysicalGo)' || true
           python3 - <<'PY'
           import json
           cfg=json.load(open('.swarm/config.json'))
