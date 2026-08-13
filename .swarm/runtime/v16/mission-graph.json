@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 283,
+    "classifiedPRTotal": 284,
     "classifiedPRs": {
-      "2680": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2680,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.361,
-        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
-      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2473,6 +2462,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.178,
         "title": "[Home V15][QA] Prove real surface and Accessibility XXXL"
+      },
+      "3233": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3233,
+        "recommendedAction": "independent-review",
+        "similarity": 0.112,
+        "title": "Converge strict Tuya read-only physical preflight onto V16"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T19:02:17Z",
+    "liveRefreshAt": "2026-08-13T20:02:28Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 89,
+  "revision": 90,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T19:04:54Z",
+  "updatedAt": "2026-08-13T20:05:08Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T19:02:17Z",
+      "updatedAt": "2026-08-13T20:02:28Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
