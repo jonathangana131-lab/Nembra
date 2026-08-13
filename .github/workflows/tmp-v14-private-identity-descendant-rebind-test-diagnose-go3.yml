@@ -1,0 +1,61 @@
+name: Temporary Private Identity Descendant Rebind Test Diagnose
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+    paths:
+      - .github/workflows/tmp-v14-private-identity-descendant-rebind-test-diagnose-go3.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Classify each construction gate
+        shell: bash
+        run: |
+          set -u
+          trigger="$(git rev-parse HEAD)"
+          report="scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.test-failure.txt"
+          : > "$report"
+          python3 scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.py >> "$report" 2>&1
+          transformer=$?
+          printf '\ntransformer_status=%s\n' "$transformer" >> "$report"
+          if [ "$transformer" -eq 0 ]; then
+            run_probe() {
+              label="$1"; shift
+              log="/tmp/${label}.log"
+              set +e
+              "$@" > "$log" 2>&1
+              status=$?
+              set -e
+              printf '\n=== %s status=%s ===\n' "$label" "$status" >> "$report"
+              tail -n 120 "$log" >> "$report"
+            }
+            run_probe pycompile_writer python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+            run_probe pycompile_redteam python3 -m py_compile scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+            run_probe writer_self_test python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+            run_probe descendant_redteam python3 -I scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+            run_probe publication_races python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+            run_probe shell_syntax /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+            run_probe swift_package swift test --package-path Packages/NembraBluetoothCapture
+            run_probe diff_check git diff --check
+          fi
+          git restore -- Scripts/provision_capture_tuya_identity_writer.py Scripts/provision_capture_tuya_identity.sh Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$report"
+          git commit -m 'chore(capture): classify descendant-rebind validation failure'
+          git fetch origin repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger"
+          git push origin HEAD:repair/v14-private-identity-descendant-rebind-sol-20260812-go3
