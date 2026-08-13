@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Expected-red regression for private identity descendant-name rebinding.
+"""Expected-red regressions for private identity descendant/name rebinding.
 
-This diagnostic targets the exact #2755 publication model: the writer holds
+These diagnostics target the exact #2755 publication model: the writer holds
 admitted descendant directory descriptors, but the final root-relative rename
-and reopen re-resolve the canonical descendant names. A same-UID replacement
-hierarchy can therefore receive the sealed credential-bearing staging inode
-before the later held-chain reproof rejects the overall provision.
+and reopen re-resolve canonical names. A same-UID replacement hierarchy can
+receive the sealed credential-bearing staging inode before the later held-chain
+reproof rejects the overall provision. Separately, after the accepted final FD
+is opened, the canonical destination name can be replaced while the writer
+continues to validate only the held inode.
 
-The invariant is fail-closed: a rejected provision must not leave credential
-identity bytes in a replacement descendant tree.
+Fail-closed invariants:
+- rejection must not leave credential identity bytes in a replacement tree;
+- success must not leave attacker bytes at the canonical identity path.
 """
 
 from __future__ import annotations
@@ -100,9 +103,6 @@ class PrivateIdentityDescendantRebindTests(unittest.TestCase):
                 "rejected provision left credential-bearing identity bytes in the replacement descendant tree",
             )
 
-            # The attack is intentionally about publication to the replacement
-            # hierarchy, not pre-existing credential bytes in the displaced
-            # admitted tree.
             displaced_identity = (
                 displaced_runtime
                 / "Sources"
@@ -112,6 +112,77 @@ class PrivateIdentityDescendantRebindTests(unittest.TestCase):
             self.assertFalse(
                 displaced_identity.exists(),
                 "credential identity unexpectedly existed in admitted descendants before the attack seam",
+            )
+
+    def test_post_open_destination_replacement_cannot_be_accepted(self) -> None:
+        writer = load_writer()
+        key_b64 = "bmVtYnJhLWR1bW15LWFwcC1rZXk="
+        secret_b64 = "bmVtYnJhLWR1bW15LWFwcC1zZWNyZXQ="
+        attacker_payload = b"// attacker replacement at canonical identity path\n"
+
+        with tempfile.TemporaryDirectory(prefix="nembra-private-final-name-rebind-") as temporary:
+            checkout = Path(temporary) / "repo"
+            checkout.mkdir(mode=0o700)
+            checkout_fd = os.open(checkout, writer._directory_flags())
+
+            original_open = writer._open_relative_regular_file
+            attacked = False
+            displaced_identity: Path | None = None
+
+            def adversarial_open(root_fd: int, relative_path: str) -> int:
+                nonlocal attacked, displaced_identity
+                descriptor = original_open(root_fd, relative_path)
+                if not attacked and relative_path.endswith("NembraTuyaPrivateIdentity.swift"):
+                    canonical = checkout / relative_path
+                    displaced_identity = canonical.with_name(
+                        canonical.name + ".sealed-displaced"
+                    )
+                    canonical.rename(displaced_identity)
+                    canonical.write_bytes(attacker_payload)
+                    canonical.chmod(0o600)
+                    attacked = True
+                return descriptor
+
+            writer._open_relative_regular_file = adversarial_open
+            rejected = False
+            try:
+                try:
+                    writer.provision(checkout_fd, checkout, key_b64, secret_b64)
+                except (writer.ProvisionError, OSError):
+                    rejected = True
+            finally:
+                writer._open_relative_regular_file = original_open
+                os.close(checkout_fd)
+
+            canonical_identity = (
+                checkout
+                / "LocalSecrets"
+                / "TuyaRuntime"
+                / "Sources"
+                / "NembraTuyaPrivateConfig"
+                / "NembraTuyaPrivateIdentity.swift"
+            )
+            canonical_bytes = canonical_identity.read_bytes() if canonical_identity.exists() else None
+
+            self.assertTrue(attacked, "diagnostic never reached accepted-final-descriptor open")
+            self.assertNotEqual(
+                canonical_bytes,
+                attacker_payload,
+                "writer returned/rejected without removing attacker bytes from the canonical identity path",
+            )
+            if not rejected:
+                self.assertIsNotNone(canonical_bytes)
+                assert canonical_bytes is not None
+                self.assertIn(
+                    key_b64.encode("ascii"),
+                    canonical_bytes,
+                    "successful provision no longer names the accepted credential identity bytes",
+                )
+                self.assertIn(secret_b64.encode("ascii"), canonical_bytes)
+
+            self.assertIsNotNone(
+                displaced_identity,
+                "diagnostic did not retain the held sealed inode under a displaced test name",
             )
 
 
