@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import pwd
 import re
+import select
 import shutil
 import signal
 import stat
@@ -343,9 +344,32 @@ def _field_process_is_same(pid: int, uid: int, start_identity: str) -> bool:
 
 
 def _start_cleanup_janitor(namespace: Path, *, field_pid: int, field_uid: int, start_identity: str) -> int:
+    ready_read, ready_write = os.pipe()
     child = os.fork()
     if child != 0:
-        return child
+        os.close(ready_write)
+        try:
+            readable, _, _ = select.select([ready_read], [], [], 5.0)
+            if not readable:
+                raise SelectedXcodeFreezeError("root janitor did not become ready before the bounded handoff deadline")
+            token = os.read(ready_read, 4096)
+            if token != b"NEMBRA_JANITOR_READY\n":
+                raise SelectedXcodeFreezeError("root janitor failed before its authority handoff became ready")
+            return child
+        except BaseException:
+            try:
+                os.kill(child, signal.SIGKILL)
+            except OSError:
+                pass
+            try:
+                os.waitpid(child, 0)
+            except OSError:
+                pass
+            raise
+        finally:
+            os.close(ready_read)
+
+    os.close(ready_read)
     try:
         os.setsid()
         signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -354,15 +378,48 @@ def _start_cleanup_janitor(namespace: Path, *, field_pid: int, field_uid: int, s
             for descriptor in (0, 1, 2):
                 os.dup2(devnull, descriptor)
         finally:
-            if devnull > 2:
+            if devnull > 2 and devnull != ready_write:
                 os.close(devnull)
-        # The namespace is already root-owned and field-nonwritable. The janitor
-        # has no command channel and can only wait for the exact field process
-        # identity to disappear before deleting this exact admitted namespace.
+
+        # fork() inherits every open root descriptor. The long-lived janitor is
+        # commandless only after all inherited fd>=3 authority except this one-shot
+        # child->parent readiness channel has been mechanically closed.
+        for raw_descriptor in os.listdir("/dev/fd"):
+            try:
+                descriptor = int(raw_descriptor)
+            except ValueError:
+                continue
+            if descriptor <= 2 or descriptor == ready_write:
+                continue
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+        # READY means initialization has completed and the exact bound field process
+        # still exists. Until this token is consumed, the parent retains local cleanup
+        # ownership and freeze_selected_xcode() cannot promote the janitor.
+        if not _field_process_is_same(field_pid, field_uid, start_identity):
+            raise SelectedXcodeFreezeError("bound field process disappeared before root janitor readiness")
+        os.write(ready_write, b"NEMBRA_JANITOR_READY\n")
+        os.close(ready_write)
+        ready_write = -1
+
         while _field_process_is_same(field_pid, field_uid, start_identity):
             time.sleep(0.5)
         _safe_cleanup(namespace)
+    except BaseException:
+        if ready_write >= 0:
+            try:
+                os.write(ready_write, b"NEMBRA_JANITOR_ERROR\n")
+            except OSError:
+                pass
     finally:
+        if ready_write >= 0:
+            try:
+                os.close(ready_write)
+            except OSError:
+                pass
         os._exit(0)
 
 
