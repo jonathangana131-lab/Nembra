@@ -120,15 +120,20 @@ class BuilderConvergenceTests(unittest.TestCase):
 
 
 class MissionPacketTests(unittest.TestCase):
-    def test_packet_makes_successor_pr_forbidden(self):
+    def test_packet_makes_successor_pr_forbidden_without_bypassing_dependencies(self):
         graph = sc.seed_nembra_graph(NOW)
-        sc.add_blocker(graph, blocker_id='x', mission_id='capture-stationary', objective_id='capture-signed-build', symptom='x blocker', severity='P0', exit_condition='x resolved', legitimate_new=False, now=NOW)
-        sc.add_work_item(graph, work_item_id='x-work', mission_id='capture-stationary', objective_id='capture-signed-build', blocker_id='x', title='Resolve x', outcome='x resolved', branch='mission/x', now=NOW)
+        sc.add_blocker(graph, blocker_id='x', mission_id='capture-stationary', objective_id='capture-standalone-build', symptom='x blocker', severity='P0', exit_condition='x resolved', legitimate_new=False, now=NOW)
+        sc.add_work_item(graph, work_item_id='x-work', mission_id='capture-stationary', objective_id='capture-standalone-build', blocker_id='x', title='Resolve x', outcome='x resolved', branch='mission/x', now=NOW)
         packet = sc.recommend_mission_packets(graph, worker_ids=['sol-20260813-one'], limit=1, now=NOW)[0].packet
         self.assertEqual(packet['CONVERGENCE_POLICY'], '16.1')
         self.assertFalse(packet['MAY_CREATE_SUCCESSOR_PR'])
         self.assertEqual(packet['JOIN_BRANCH'], 'mission/x')
         self.assertIn('do not invent a successor branch', packet['LOST_CLAIM_ACTION'])
+
+    def test_dependency_gate_still_blocks_downstream_v16_1_packet(self):
+        graph = sc.seed_nembra_graph(NOW)
+        sc.add_work_item(graph, work_item_id='blocked-auth', mission_id='capture-stationary', objective_id='capture-tuya-auth', title='Auth work', outcome='auth accepted', now=NOW)
+        self.assertEqual(sc.recommend_mission_packets(graph, limit=5, now=NOW), [])
 
 
 class PRAdmissionTests(unittest.TestCase):
