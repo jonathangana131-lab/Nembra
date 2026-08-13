@@ -77,6 +77,6 @@ jobs:
         run: |
           set -euo pipefail
           test ! -e LocalSecrets
-          test -z "$(git diff --name-only "$EXACT_PARENT"...HEAD | grep -Ev '^(\.github/workflows/capture-apple-signing-wrapper-bootstrap-red-team\.yml|scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap-red-team\.py)$' || true)" || true
+          test -z "$(git diff --name-only "$EXACT_PARENT"...HEAD | grep -Ev '^(\.github/workflows/capture-apple-signing-wrapper-bootstrap-red-team\.yml|scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap_red_team\.py)$' || true)"
           ! grep -Eq 'devicectl|CoreBluetooth|bootstrap_capture_tuya_sdk|LocalSecrets' scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap_red_team.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
