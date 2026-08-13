@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 288,
     "classifiedPRs": {
-      "2719": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2719,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.26,
-        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
-      },
       "2733": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1998,7 +1987,7 @@
         "lane": "",
         "pr": 2979,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.157,
+        "similarity": 0.201,
         "title": "[P0 Capture][visual] Tighten first fold; fail closed blank evidence"
       },
       "2980": {
@@ -2463,16 +2452,27 @@
         "similarity": 0.062,
         "title": "[Swarm V16.1][P0] Prevent premature worker idle under burst"
       },
-      "3259": {
+      "3260": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3260,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.19,
+        "title": "[Capture P0][VISUAL VALIDATION] Restore fail-closed standalone iPhone 12 evidence"
+      },
+      "3261": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 3259,
+        "pr": 3261,
         "recommendedAction": "independent-review",
-        "similarity": 0.176,
-        "title": "[Capture P0][SYNC] Re-anchor visual validation onto current #3233"
+        "similarity": 0.092,
+        "title": "Retire incomplete Tuya horizon authority atomically"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T23:01:27Z",
+    "liveRefreshAt": "2026-08-13T23:04:09Z",
     "liveRefreshDuplicatesSuppressed": [
       3253
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 106,
+  "revision": 107,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T23:03:46Z",
+  "updatedAt": "2026-08-13T23:07:07Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T23:01:27Z",
+      "updatedAt": "2026-08-13T23:04:09Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
