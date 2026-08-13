@@ -1,0 +1,43 @@
+name: Temporary Private Identity Descendant Rebind Diagnose
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+    paths:
+      - .github/workflows/tmp-v14-private-identity-descendant-rebind-diagnose-go3.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Capture materializer result
+        shell: bash
+        run: |
+          set -u
+          trigger="$(git rev-parse HEAD)"
+          set +e
+          python3 scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.py > /tmp/materializer.log 2>&1
+          status=$?
+          set -e
+          {
+            printf 'status=%s\n' "$status"
+            /bin/cat /tmp/materializer.log
+          } > scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.failure.txt
+          git restore -- Scripts/provision_capture_tuya_identity_writer.py Scripts/provision_capture_tuya_identity.sh Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.failure.txt
+          git commit -m 'chore(capture): record descendant-rebind construction failure'
+          git fetch origin repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger"
+          git push origin HEAD:repair/v14-private-identity-descendant-rebind-sol-20260812-go3
