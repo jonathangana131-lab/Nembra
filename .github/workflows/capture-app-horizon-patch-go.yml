@@ -1,4 +1,5 @@
 name: Capture app truth one-shot repair
+# One-shot execution marker; this workflow deletes itself before publishing the coherent repair.
 
 on:
   push:
@@ -123,7 +124,6 @@ jobs:
           ])
           one(helper_anchor, helper + helper_anchor, 'incomplete-horizon mirror helper')
 
-          # Package-owned horizon retirement makes the older app-owned zero-payload terminal unreachable.
           legacy_start = '\n                if self.applicationUpdateAdmissionsInFlight == 0,\n'
           legacy_end = '\n                try? await Task.sleep(for: .seconds(1))'
           if s.count(legacy_start) != 1:
@@ -175,7 +175,6 @@ jobs:
           t = t.replace('@Test("no-application deadline is terminal without inventing disconnect")', '@Test("incomplete-evidence deadline is terminal without inventing disconnect")')
           terminal.write_text(t)
 
-          # The permanent exact-head gate must exercise the app-visible and continuity source contracts.
           gate = Path('.github/workflows/capture-v16-standalone.yml')
           g = gate.read_text()
           anchor = '          swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests\n'
@@ -186,7 +185,8 @@ jobs:
               + '          swift test --filter TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration\n'
               + '          swift test --filter TuyaAlreadyTerminalObservationContinuitySourceTests\n'
           )
-          gate.write_text(g.replace(anchor, addition, 1))
+          if 'swift test --filter TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration' not in g:
+              gate.write_text(g.replace(anchor, addition, 1))
           PY
 
           rm .github/workflows/capture-app-horizon-patch-go.yml
