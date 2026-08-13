@@ -1,0 +1,206 @@
+name: Capture Selected Xcode Janitor Repair Real Xcode Replay
+
+on:
+  push:
+    branches:
+      - validation/v16-selected-xcode-janitor-repair-reclassification-sol-20260812
+    paths:
+      - .github/workflows/capture-selected-xcode-janitor-repair-real-xcode.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-xcode-replay:
+    name: Replay repaired helper with exact V2 liveness composition
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind validation head to exact repaired product subjects
+        shell: bash
+        env:
+          EXACT_PRODUCT: 6f6b0ce342be2d9c4f18ebce2cb452d1df514007
+          EXACT_HELPER_BLOB: 75625c8a3b6bcab35d9fc7424b9e892de9ddfd01
+          EXACT_LAUNCHER_BLOB: 79638985faa7441e36ab05991be52bd29b0f0cda
+          EXACT_GUARD_BLOB: 45593d9c3817e5c1c95e2ada22bf899f512c0189
+        run: |
+          set -euo pipefail
+          git cat-file -e "${EXACT_PRODUCT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PRODUCT")" = "$EXACT_PRODUCT"
+          changed_paths="$(git diff --name-only "$EXACT_PRODUCT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-selected-xcode-janitor-repair-real-xcode.yml \
+            .github/workflows/capture-selected-xcode-janitor-repair-reclassification.yml \
+            scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          test "$(git rev-parse "$EXACT_PRODUCT:scripts/ci/capture_selected_xcode_freeze.py")" = "$EXACT_HELPER_BLOB"
+          test "$(git rev-parse "$EXACT_PRODUCT:scripts/ci/capture_selected_xcode_freeze_launcher.py")" = "$EXACT_LAUNCHER_BLOB"
+          test "$(git rev-parse "$EXACT_PRODUCT:scripts/ci/capture_selected_xcode_process_liveness_guard.py")" = "$EXACT_GUARD_BLOB"
+          test "$(git rev-parse 'HEAD:scripts/ci/capture_selected_xcode_freeze.py')" = "$EXACT_HELPER_BLOB"
+          test "$(git rev-parse 'HEAD:scripts/ci/capture_selected_xcode_freeze_launcher.py')" = "$EXACT_LAUNCHER_BLOB"
+          test "$(git rev-parse 'HEAD:scripts/ci/capture_selected_xcode_process_liveness_guard.py')" = "$EXACT_GUARD_BLOB"
+          /usr/bin/python3 -I - <<'PY'
+          from pathlib import Path
+          for path in (
+              'scripts/ci/capture_selected_xcode_freeze.py',
+              'scripts/ci/capture_selected_xcode_freeze_launcher.py',
+              'scripts/ci/capture_selected_xcode_process_liveness_guard.py',
+          ):
+              compile(Path(path).read_text(), path, 'exec', dont_inherit=True)
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Real-Xcode replay bound to exact repaired product subjects.\n'
+
+      - name: Run exact repaired helper through V2 liveness composition
+        shell: bash
+        env:
+          EXACT_PRODUCT: 6f6b0ce342be2d9c4f18ebce2cb452d1df514007
+          EXACT_HELPER_BLOB: 75625c8a3b6bcab35d9fc7424b9e892de9ddfd01
+          EXACT_LAUNCHER_BLOB: 79638985faa7441e36ab05991be52bd29b0f0cda
+          EXACT_GUARD_BLOB: 45593d9c3817e5c1c95e2ada22bf899f512c0189
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          helper_path='scripts/ci/capture_selected_xcode_freeze.py'
+          launcher_path='scripts/ci/capture_selected_xcode_freeze_launcher.py'
+          guard_path='scripts/ci/capture_selected_xcode_process_liveness_guard.py'
+          git_env=(/usr/bin/env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null)
+          git_cmd=(/usr/bin/git -c core.hooksPath=/dev/null)
+
+          exact_blob() { "${git_env[@]}" "${git_cmd[@]}" rev-parse "$EXACT_PRODUCT:$1"; }
+          exact_b64() { "${git_env[@]}" "${git_cmd[@]}" cat-file blob "$1" | /usr/bin/base64 | /usr/bin/tr -d '\r\n'; }
+          helper_blob="$(exact_blob "$helper_path")"
+          launcher_blob="$(exact_blob "$launcher_path")"
+          guard_blob="$(exact_blob "$guard_path")"
+          test "$helper_blob" = "$EXACT_HELPER_BLOB"
+          test "$launcher_blob" = "$EXACT_LAUNCHER_BLOB"
+          test "$guard_blob" = "$EXACT_GUARD_BLOB"
+          helper_b64="$(exact_b64 "$helper_blob")"
+          launcher_b64="$(exact_b64 "$launcher_blob")"
+          guard_b64="$(exact_b64 "$guard_blob")"
+
+          root_program="$(/bin/cat <<'PY_ROOT'
+          import base64, hashlib, re, sys
+
+          def verified(encoded, expected, label):
+              if re.fullmatch(r'[0-9a-f]{40}', expected) is None:
+                  raise SystemExit(f'{label} blob identity malformed')
+              raw = base64.b64decode(encoded, validate=True)
+              actual = hashlib.sha1(b'blob ' + str(len(raw)).encode('ascii') + b'\0' + raw).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f'{label} failed root Git-blob identity')
+              return raw
+
+          launcher_b64, launcher_blob, guard_b64, guard_blob, helper_b64, helper_blob, field_pid, source_sha = sys.argv[1:]
+          launcher_raw = verified(launcher_b64, launcher_blob, 'launcher')
+          guard_raw = verified(guard_b64, guard_blob, 'liveness guard')
+          verified(helper_b64, helper_blob, 'helper')
+          if re.fullmatch(r'[0-9a-f]{40}', source_sha) is None:
+              raise SystemExit('source SHA malformed')
+
+          launcher = {'__name__': 'nembra_freeze_launcher', '__file__': '<accepted-freeze-launcher>'}
+          exec(compile(launcher_raw, '<accepted-freeze-launcher>', 'exec', dont_inherit=True), launcher)
+          guard = {'__name__': 'nembra_freeze_liveness_guard', '__file__': '<accepted-liveness-guard>'}
+          exec(compile(guard_raw, '<accepted-liveness-guard>', 'exec', dont_inherit=True), guard)
+          install = guard.get('install_into_launcher')
+          main = launcher.get('main')
+          if not callable(install) or not callable(main):
+              raise SystemExit('accepted launcher/guard callable contract missing')
+          install(launcher)
+          if launcher.get('_same_field_process') is None:
+              raise SystemExit('launcher stale-recovery liveness was not patched')
+          rc = main([
+              '--field-pid', field_pid,
+              '--source-sha', source_sha,
+              '--helper-base64', helper_b64,
+              '--helper-blob', helper_blob,
+          ])
+          raise SystemExit(int(rc))
+          PY_ROOT
+          )"
+
+          stderr_log="$RUNNER_TEMP/nembra-janitor-repair-real-xcode.stderr.log"
+          status_file="$RUNNER_TEMP/nembra-janitor-repair-real-xcode.status.txt"
+          receipt="$RUNNER_TEMP/nembra-janitor-repair-real-xcode.tsv"
+          : > "$stderr_log"
+          set +e
+          result="$(/usr/bin/sudo -n /usr/bin/python3 -B -I -c "$root_program" \
+            "$launcher_b64" "$launcher_blob" "$guard_b64" "$guard_blob" \
+            "$helper_b64" "$helper_blob" "$$" "$EXACT_PRODUCT" 2>"$stderr_log")"
+          rc=$?
+          set -e
+          printf 'root_rc=%s\nproduct=%s\nhelper_blob=%s\nlauncher_blob=%s\nguard_blob=%s\n' \
+            "$rc" "$EXACT_PRODUCT" "$helper_blob" "$launcher_blob" "$guard_blob" > "$status_file"
+          cat "$stderr_log" >&2 || true
+          if [[ "$rc" -ne 0 ]]; then
+            printf 'ERROR: exact repaired V2 composition failed before accepted receipt; see preserved stderr artifact.\n' >&2
+            exit 81
+          fi
+          unset root_program
+
+          if /usr/bin/sudo -n /usr/bin/true >/dev/null 2>&1; then
+            printf 'ERROR: reusable field sudo survived repaired freeze publication.\n' >&2
+            exit 82
+          fi
+
+          printf '%s\n' "$result" > "$receipt"
+          chmod 600 "$receipt"
+          IFS=$'\t' read -r freeze_root developer xcodebuild xctrace devicectl janitor_pid < "$receipt"
+          case "$freeze_root" in /Library/NembraSelectedXcodeFreeze.*) ;; *) exit 83 ;; esac
+          case "$developer" in "$freeze_root"/Xcode.app/Contents/Developer) ;; *) exit 84 ;; esac
+          for tool in "$xcodebuild" "$xctrace" "$devicectl"; do
+            test -x "$tool"
+            case "$tool" in "$developer"/*) ;; *) exit 85 ;; esac
+          done
+          test "$janitor_pid" -gt 1
+          DEVELOPER_DIR="$developer" "$xcodebuild" -version | /usr/bin/grep -E '^Xcode 27([.]|$)'
+          DEVELOPER_DIR="$developer" "$xctrace" version >/dev/null
+          DEVELOPER_DIR="$developer" "$devicectl" help >/dev/null
+          printf 'REPAIRED_FROZEN_XCODE_RUNTIME_ACCEPTED physicalAuthorityCreated=false\n'
+
+      - name: Require repaired janitor cleanup after field shell exits
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/nembra-janitor-repair-real-xcode.tsv"
+          IFS=$'\t' read -r freeze_root _ _ _ _ _ < "$receipt"
+          case "$freeze_root" in /Library/NembraSelectedXcodeFreeze.*) ;; *) exit 91 ;; esac
+          for _ in $(seq 1 120); do
+            if [[ ! -e "$freeze_root" ]]; then
+              printf 'REPAIRED_FROZEN_XCODE_JANITOR_ACCEPTED physicalAuthorityCreated=false\n'
+              exit 0
+            fi
+            sleep 1
+          done
+          printf 'ERROR: repaired janitor did not retire the exact freeze namespace.\n' >&2
+          exit 92
+
+      - name: Upload exact replay diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-selected-xcode-janitor-repair-real-xcode
+          path: |
+            ${{ runner.temp }}/nembra-janitor-repair-real-xcode.stderr.log
+            ${{ runner.temp }}/nembra-janitor-repair-real-xcode.status.txt
+            ${{ runner.temp }}/nembra-janitor-repair-real-xcode.tsv
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Preserve validation-only physical boundary
+        if: always()
+        shell: bash
+        env:
+          EXACT_PRODUCT: 6f6b0ce342be2d9c4f18ebce2cb452d1df514007
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PRODUCT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'VALIDATION ONLY. NO DEVICE DISCOVERY / INSTALL / BLUETOOTH / TUYA / PHYSICAL GO.\n'
