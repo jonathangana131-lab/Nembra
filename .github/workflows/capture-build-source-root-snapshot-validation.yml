@@ -1,0 +1,166 @@
+name: Capture Build Source Root Snapshot Validation
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_build_source_root_snapshot.py
+      - .github/workflows/capture-build-source-root-snapshot-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-build-source-root-snapshot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-contract:
+    name: Source snapshot portable contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact parent and validation scope
+        shell: bash
+        env:
+          EXACT_PARENT: e72099137463d93bda486e987a6ea8726c540140
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-build-source-root-snapshot-validation.yml \
+            scripts/ci/tests/test_capture_build_source_root_snapshot.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and pin truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/ci/tests/test_capture_build_source_root_snapshot.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/ci/tests/test_capture_build_source_root_snapshot.py').read_text(encoding='utf-8')
+          required = (
+              'ACCEPTED_TEXT = "accepted-source-v1\\n"',
+              'MUTATED_TEXT = "field-replaced-source-v2\\n"',
+              '["/usr/bin/ditto", "--noacl", str(source), str(snapshot)]',
+              'os.chmod(path, 0o444)',
+              'os.chmod(path, 0o555)',
+              '_field_replace_source(',
+              'field append against root-custodied source snapshot',
+              'field rename against root-custodied source snapshot',
+              '_attest_build_identity_groups(',
+              '_run_exec_bound_build(',
+              'dedicated build identity retained write authority over accepted source snapshot',
+              '"physicalAuthorityCreated": False',
+              '"privateTuyaInputsUsed": False',
+              '"appleSigningIdentityUsed": False',
+              '"xcodeBuildUsed": False',
+              '"deviceUsed": False',
+              '"bluetoothUsed": False',
+          )
+          missing = [marker for marker in required if marker not in source]
+          if missing:
+              raise SystemExit('missing source-snapshot validation markers: ' + repr(missing))
+          forbidden = ('NEMBRA_TUYA_APP_KEY', 'NEMBRA_TUYA_APP_SECRET', 'CoreBluetooth', 'CBCentralManager')
+          for marker in forbidden:
+              if marker in source:
+                  raise SystemExit('source-snapshot witness crossed forbidden product/private boundary: ' + marker)
+          PY
+          git diff --check
+
+  real-macos-custody:
+    name: Real macOS root-custodied source snapshot
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact parent and validation scope
+        shell: bash
+        env:
+          EXACT_PARENT: e72099137463d93bda486e987a6ea8726c540140
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-build-source-root-snapshot-validation.yml \
+            scripts/ci/tests/test_capture_build_source_root_snapshot.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove accepted source survives field replacement under current build identity
+        shell: bash
+        env:
+          EXACT_PARENT: e72099137463d93bda486e987a6ea8726c540140
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          FIELD_USER="$(/usr/bin/id -un)"
+          EVIDENCE="$RUNNER_TEMP/capture-build-source-root-snapshot.json"
+          DIAGNOSTIC="$RUNNER_TEMP/capture-build-source-root-snapshot.stderr.log"
+          : > "$DIAGNOSTIC"
+          /usr/bin/sudo /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_build_source_root_snapshot.py \
+            --field-user "$FIELD_USER" \
+            --production-helper "$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py" \
+            --production-parent "$EXACT_PARENT" \
+            2> >(/usr/bin/tee "$DIAGNOSTIC" >&2) \
+            | /usr/bin/tee "$EVIDENCE"
+
+          /usr/bin/python3 - "$EVIDENCE" "$EXACT_PARENT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          payload=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert payload['schema'] == 1
+          assert payload['productionParent'] == sys.argv[2]
+          assert payload['acceptedSourceTreeSHA256'] == payload['snapshotTreeSHA256']
+          assert payload['liveSourceAfterAttackSHA256'] != payload['acceptedSourceTreeSHA256']
+          assert payload['fieldSourceReplacementSucceeded'] is True
+          assert payload['fieldSnapshotAppendDenied'] is True
+          assert payload['fieldSnapshotRenameDenied'] is True
+          assert payload['dedicatedConsumerReadAcceptedSnapshot'] is True
+          assert payload['dedicatedConsumerReadInternalSymlink'] is True
+          assert payload['dedicatedSnapshotWriteDenied'] is True
+          assert payload['snapshotRootOwnedReadOnly'] is True
+          assert payload['publicSyntheticSourceOnly'] is True
+          assert payload['privateTuyaInputsUsed'] is False
+          assert payload['appleSigningIdentityUsed'] is False
+          assert payload['xcodeBuildUsed'] is False
+          assert payload['deviceUsed'] is False
+          assert payload['bluetoothUsed'] is False
+          assert payload['physicalAuthorityCreated'] is False
+          PY
+          shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/capture-build-source-root-snapshot.sha256"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Upload sanitized source-custody evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-build-source-root-snapshot-evidence
+          path: |
+            ${{ runner.temp }}/capture-build-source-root-snapshot.json
+            ${{ runner.temp }}/capture-build-source-root-snapshot.sha256
+            ${{ runner.temp }}/capture-build-source-root-snapshot.stderr.log
+          if-no-files-found: warn
+          retention-days: 7
