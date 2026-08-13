@@ -1061,19 +1061,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 289,
+    "classifiedPRTotal": 290,
     "classifiedPRs": {
-      "2734": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2734,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.365,
-        "title": "[Capture P0][RED TEAM] Break private identity publication custody"
-      },
       "2741": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2470,6 +2459,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.48,
         "title": "[Capture P0][VALIDATION] Prove lingering build-UID launchd service registry is inert"
+      },
+      "3229": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3229,
+        "recommendedAction": "independent-review",
+        "similarity": 0.227,
+        "title": "[Battery/Range V15][RED] Pin evidence clearance from Navigation launcher"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2502,7 +2502,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T05:05:25Z",
+    "liveRefreshAt": "2026-08-13T06:07:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6276,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 65,
+  "revision": 66,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T05:07:28Z",
+  "updatedAt": "2026-08-13T06:09:07Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6355,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T05:05:25Z",
+      "updatedAt": "2026-08-13T06:07:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
