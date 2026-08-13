@@ -24,43 +24,73 @@ jobs:
           git fetch origin capture/current-main-tuya-readonly-convergence-gpt56
           git merge --ff-only origin/capture/current-main-tuya-readonly-convergence-gpt56
 
-      - name: Insert exact incomplete-horizon terminal catch
+      - name: Insert exact incomplete-horizon terminal catches
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           source = path.read_text()
-          old = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
-                    await self.mirrorAlreadyTerminalObservationContinuity(
-                        token: token,
-                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
-                        kind: "session_liveness_continuity_invalidated"
-                    )
-                    return
-                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {'''
-          new = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
-                    await self.mirrorAlreadyTerminalObservationContinuity(
-                        token: token,
-                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
-                        kind: "session_liveness_continuity_invalidated"
-                    )
-                    return
-                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
+          error = 'TuyaAuthenticatedReadOnlySessionLedger.MutationError'
+
+          def insert_before_stale(source, function_start, function_end, catch_body):
+              start = source.find(function_start)
+              end = source.find(function_end, start + len(function_start))
+              if start < 0 or end < 0:
+                  raise SystemExit(f'fail closed: missing function bounds for {function_start}')
+              section = source[start:end]
+              continuity = f'}} catch {error}.observationContinuityInvalidated {{'
+              stale = f'}} catch {error}.staleConnection {{'
+              if section.count(continuity) != 1 or section.count(stale) != 1:
+                  raise SystemExit(
+                      f'fail closed: ambiguous terminal anchors in {function_start}: '
+                      f'continuity={section.count(continuity)} stale={section.count(stale)}'
+                  )
+              if f'catch {error}.incompleteObservationHorizonReached' in section:
+                  raise SystemExit(f'fail closed: incomplete-horizon catch already exists in {function_start}')
+              insertion = section.find(stale)
+              section = section[:insertion] + catch_body + section[insertion:]
+              return source[:start] + section + source[end:]
+
+          application_catch = '''} catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
+            await invalidateInternalLifecycle(
+                token: token,
+                message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required application/provenance evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim.",
+                kind: "application_authenticated_incomplete_readiness_horizon_reached"
+            )
+        '''
+          source = insert_before_stale(
+              source,
+              '    private func receivedApplicationUpdate(',
+              '    private func redactedApplicationEventDetails(',
+              application_catch,
+          )
+
+          watchdog_catch = '''} catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
                     await self.invalidateInternalLifecycle(
                         token: token,
                         message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required application/provenance evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim.",
                         kind: "session_authenticated_incomplete_readiness_horizon_reached"
                     )
                     return
-                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {'''
-          count = source.count(old)
-          if count != 1:
-              raise SystemExit(f'fail closed: expected exactly one watchdog terminal insertion point, found {count}')
-          path.write_text(source.replace(old, new, 1))
+                '''
+          source = insert_before_stale(
+              source,
+              '    private func startWatchdog(',
+              '    private func recordObservedTransportLoss(',
+              watchdog_catch,
+          )
+
+          path.write_text(source)
           PY
           git diff --check
           git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Run focused source contract before publishing
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
 
       - name: Commit exact app delta
         run: |
@@ -72,4 +102,4 @@ jobs:
           git commit -m 'Capture V16.1: classify incomplete horizon in app'
           git push origin HEAD:capture/current-main-tuya-readonly-convergence-gpt56
 
-# one-shot trigger
+# one-shot trigger; delete this temporary workflow after the app patch lands.
