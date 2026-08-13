@@ -211,9 +211,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// structured `dpsUpdate` dictionary, not byte-exact FD50 transport. Callers must not invent
     /// serialized bytes merely to satisfy this chronology gate.
     ///
-    /// Continuity is checked before the update may advance `latestObserved...`. This closes the
-    /// resume-order race where a queued SDK update could otherwise erase a long suspension gap
-    /// before the app watchdog observes it.
+    /// Continuity and the incomplete-session deadline are checked before the update may advance
+    /// accepted chronology. This closes both the resume-order race and the boundary-order race
+    /// where a deadline-crossing callback could otherwise mint readiness before retirement.
     public func recordApplicationUpdate(
         isNonEmpty: Bool,
         for token: TuyaReadOnlyConnectionToken
@@ -228,6 +228,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
 
         let now = try nextMonotonicObservation()
         try requireContinuousAuthenticatedObservation(at: now)
+        try requireIncompleteObservationHorizonOpen(at: now)
         guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
               now >= authenticatedAt else {
             throw MutationError.monotonicClockRegressed
@@ -246,7 +247,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     ///
     /// Once a real current liveness receipt reaches the package-owned 60-second incomplete-session
     /// horizon, the same canonical preflight decides whether this generation must terminate. The
-    /// ledger leaves the exact token current when throwing so the app's existing fail-closed
+    /// deadline is evaluated against the already-accepted prefix before the receipt can advance
+    /// chronology; the exact token stays current on throw so the app's existing fail-closed
     /// lifecycle terminal can retire it without inventing a BLE disconnect or a second clock sample.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
@@ -255,11 +257,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
         let now = try nextMonotonicObservation()
         try requireContinuousAuthenticatedObservation(at: now)
+        try requireIncompleteObservationHorizonOpen(at: now)
         latestObservedUptimeNanoseconds = now
-
-        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(makeSnapshot()) {
-            throw MutationError.incompleteObservationHorizonReached
-        }
     }
 
     /// Seals a failed observation horizon while authenticated transport may still exist.
@@ -358,6 +357,27 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.monotonicClockRegressed
         }
         return now
+    }
+
+    /// Evaluates the bounded incomplete-session deadline against the already-accepted evidence
+    /// prefix and the incoming observation time. A deadline-crossing callback is not allowed to
+    /// become the evidence that makes the same generation ready. Generations that had already
+    /// earned the canonical ready verdict before the deadline remain valid.
+    private func requireIncompleteObservationHorizonOpen(at now: UInt64) throws {
+        guard authenticationMethod == .smartLifeAppSDK,
+              let authenticatedAt = authenticatedAtUptimeNanoseconds else {
+            return
+        }
+        guard now >= authenticatedAt else {
+            throw MutationError.monotonicClockRegressed
+        }
+        guard now - authenticatedAt >= TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds else {
+            return
+        }
+        guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot()) != .readyForStationaryMapping else {
+            return
+        }
+        throw MutationError.incompleteObservationHorizonReached
     }
 
     /// Must run before any authenticated mutation can move the accepted observation horizon.
