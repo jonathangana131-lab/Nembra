@@ -1,0 +1,162 @@
+name: Capture Selected Xcode Private Field Preflight Source
+
+on:
+  pull_request:
+    paths:
+      - scripts/field/run_selected_xcode_freeze_preflight.command
+      - .github/workflows/capture-selected-xcode-private-field-preflight-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-selected-xcode-private-field-preflight-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    name: Bind private-field selected-Xcode preflight contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact selected-Xcode ingredient and two-path scope
+        shell: bash
+        env:
+          EXACT_PARENT: 6c085b65532c82afa953e2da14e1dbf674031ad2
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-selected-xcode-private-field-preflight-source.yml \
+            scripts/field/run_selected_xcode_freeze_preflight.command | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check
+
+      - name: Require exact-object, revoked-sudo, post-exit receipt semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/bash -n scripts/field/run_selected_xcode_freeze_preflight.command
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script = Path('scripts/field/run_selected_xcode_freeze_preflight.command').read_text(encoding='utf-8')
+          launcher = Path('scripts/ci/capture_selected_xcode_freeze_launcher.py').read_text(encoding='utf-8')
+          helper = Path('scripts/ci/capture_selected_xcode_freeze.py').read_text(encoding='utf-8')
+          guard = Path('scripts/ci/capture_selected_xcode_process_liveness_guard.py').read_text(encoding='utf-8')
+
+          required_script = (
+              'GIT_NO_REPLACE_OBJECTS=1',
+              'GIT_CONFIG_NOSYSTEM=1',
+              'GIT_CONFIG_GLOBAL=/dev/null',
+              'CURRENT_SCRIPT_BLOB',
+              'Executing field-preflight bytes do not match the accepted Git object.',
+              '/usr/bin/sudo -n /usr/bin/true',
+              'Do not configure passwordless sudo.',
+              "launcher = {'__name__':'nembra_selected_xcode_field_preflight_launcher'",
+              "guard = {'__name__':'nembra_selected_xcode_field_preflight_guard'",
+              "install = guard.get('install_into_launcher')",
+              "run = launcher.get('run')",
+              "namespace, developer, tools, janitor_pid = run(field_pid, source_sha, helper_b64, helper_blob)",
+              "field_tool([xcodebuild, '-version'])",
+              "field_tool([xctrace, 'version'])",
+              "field_tool([devicectl, 'help'])",
+              "receipt_dir = Path(tempfile.mkdtemp(prefix='nembra-selected-xcode-field-preflight.', dir='/private/tmp'))",
+              "fieldProcessRetired':True",
+              "'janitorCleanupObserved':cleanup_observed",
+              "'accepted':cleanup_observed",
+              'os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW',
+              'os.chmod(receipt_path, 0o444)',
+              'while same_field(field_pid, field_uid, field_start):',
+              'deadline = time.monotonic() + 180.0',
+              'Reusable sudo authority survived selected-Xcode preflight publication.',
+              'Noninteractive sudo policy remains available after selected-Xcode preflight publication.',
+              'CAPTURE_SELECTED_XCODE_FIELD_PREFLIGHT_ARMED',
+              "'deviceDiscoveryPerformed':False",
+              "'deviceInstallPerformed':False",
+              "'appLaunchPerformed':False",
+              "'bluetoothUsed':False",
+              "'privateTuyaInputsUsed':False",
+              "'physicalAuthorityCreated':False",
+          )
+          missing = [fragment for fragment in required_script if fragment not in script]
+          if missing:
+              raise SystemExit('missing private-field preflight invariant(s): ' + repr(missing))
+
+          required_existing = {
+              'launcher': (
+                  '_sudo_policy_exposes_passwordless_authority',
+                  '_invalidate_invoker_sudo',
+                  '_recover_stale_freezes',
+                  '_field_start_identity',
+                  '_write_lifecycle',
+                  '_load_freeze_helper',
+              ),
+              'helper': (
+                  '/bin/cp", "-cR',
+                  'anchor apple generic and identifier',
+                  '_prove_field_cannot_mutate',
+                  '_start_cleanup_janitor',
+                  '_require_field_shell_ancestor',
+              ),
+              'guard': (
+                  'same_exact_process_fail_closed',
+                  'except ProcessLookupError:',
+                  'except (PermissionError, OSError):',
+                  'install_into_launcher',
+                  '_field_process_is_same',
+              ),
+          }
+          sources = {'launcher': launcher, 'helper': helper, 'guard': guard}
+          for label, fragments in required_existing.items():
+              missing_existing = [fragment for fragment in fragments if fragment not in sources[label]]
+              if missing_existing:
+                  raise SystemExit(f'parent {label} lost required accepted primitive(s): {missing_existing!r}')
+
+          forbidden = (
+              'CoreBluetooth',
+              'CBCentralManager',
+              'NEMBRA_TUYA_APP_KEY',
+              'NEMBRA_TUYA_APP_SECRET',
+              'device install app',
+              'device process launch',
+              'list devices',
+              'allowProvisioningUpdates',
+              'allowProvisioningDeviceRegistration',
+              'xcodebuild build',
+              'xcodebuild archive',
+          )
+          lowered = script.lower()
+          for fragment in forbidden:
+              if fragment.lower() in lowered:
+                  raise SystemExit('private-field preflight crossed forbidden product/physical boundary: ' + fragment)
+
+          # The script may mention the nouns "device"/"Bluetooth" only in explicit
+          # false evidence or comments; executable devicectl authority is help-only.
+          if script.count("field_tool([devicectl, 'help'])") != 1:
+              raise SystemExit('devicectl field execution is not exactly one help-only probe')
+          if script.count("field_tool([xcodebuild, '-version'])") != 1:
+              raise SystemExit('xcodebuild field execution is not exactly one version-only probe')
+          if script.count("field_tool([xctrace, 'version'])") != 1:
+              raise SystemExit('xctrace field execution is not exactly one version-only probe')
+          PY
+          printf '%s\n' 'SELECTED_XCODE_PRIVATE_FIELD_PREFLIGHT_SOURCE_ACCEPTED physicalAuthorityCreated=false'
+
+      - name: Preserve validation-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' 'SOURCE ACCEPTANCE ONLY. PRIVATE FIELD EXECUTION STILL REQUIRED. PHYSICAL NO-GO.'
