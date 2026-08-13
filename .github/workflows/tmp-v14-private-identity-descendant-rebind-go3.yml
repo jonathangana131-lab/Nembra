@@ -6,6 +6,7 @@ on:
       - repair/v14-private-identity-descendant-rebind-sol-20260812-go3
     paths:
       - scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.py
+      - scripts/ci/tmp_v14_private_identity_descendant_rebind_compat_go3.py
       - .github/workflows/tmp-v14-private-identity-descendant-rebind-go3.yml
 
 permissions:
@@ -14,7 +15,7 @@ permissions:
 jobs:
   materialize:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,8 +30,10 @@ jobs:
           trigger="$(git rev-parse HEAD)"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           python3 scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.py
+          python3 scripts/ci/tmp_v14_private_identity_descendant_rebind_compat_go3.py
           python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
           python3 -m py_compile scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_publication_races.py
           python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
           python3 -I scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
           python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
@@ -39,7 +42,12 @@ jobs:
           git diff --check
 
           rm -f scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.py
+          rm -f scripts/ci/tmp_v14_private_identity_descendant_rebind_compat_go3.py
+          rm -f scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.failure.txt
+          rm -f scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.test-failure.txt
           rm -f .github/workflows/tmp-v14-private-identity-descendant-rebind-go3.yml
+          rm -f .github/workflows/tmp-v14-private-identity-descendant-rebind-diagnose-go3.yml
+          rm -f .github/workflows/tmp-v14-private-identity-descendant-rebind-test-diagnose-go3.yml
           find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
           git config user.name 'github-actions[bot]'
