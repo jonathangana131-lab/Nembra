@@ -177,7 +177,6 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-
         let secondPayload = 2_000
             + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
             + 1
@@ -347,7 +346,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         clock.advance(to: 5_500)
         try await ledger.markAuthenticationStarted(for: token)
         clock.advance(to: 6_000)
-        try await ledger.markAuthenticated(for: token, method: .documentedDeviceSharing)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         let before = await ledger.currentPreflightSnapshot()
 
         clock.advance(to: 5_999)
