@@ -76,6 +76,7 @@ jobs:
           set -euo pipefail
           swift test --filter CoreBluetoothCaptureMappingTests
           swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test --filter TuyaAuthenticatedReadOnlyDeadlineBypassTests
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
 
