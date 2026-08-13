@@ -24,8 +24,8 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             connectionStartedAtUptimeNanoseconds: 1,
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
-            applicationPayloadCount: 1,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 1,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
             connectionGeneration: 1
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated state has no accepted Tuya authentication provenance."))
@@ -42,7 +42,23 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             applicationPayloadCount: 0,
             connectionGeneration: 1
         )
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated session has not produced an application payload yet."))
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated session has not produced repeated application payload evidence yet."))
+    }
+
+    @Test("one bootstrap application callback remains blocked")
+    func repeatedPayloadEvidenceRequired() {
+        let authenticatedAt: UInt64 = 10
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
+            applicationPayloadCount: 1,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1,
+            connectionGeneration: 1
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated session has not produced repeated application payload evidence yet."))
     }
 
     @Test("stale payload from before current authentication fails closed")
@@ -53,7 +69,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             connectionStartedAtUptimeNanoseconds: 10_000,
             authenticatedAtUptimeNanoseconds: 20_000,
             latestObservedUptimeNanoseconds: 45_000_020_000,
-            applicationPayloadCount: 1,
+            applicationPayloadCount: 2,
             latestApplicationPayloadUptimeNanoseconds: 19_999,
             connectionGeneration: 2
         )
@@ -68,14 +84,30 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             connectionStartedAtUptimeNanoseconds: 20_000,
             authenticatedAtUptimeNanoseconds: 19_999,
             latestObservedUptimeNanoseconds: 45_000_020_000,
-            applicationPayloadCount: 1,
+            applicationPayloadCount: 2,
             latestApplicationPayloadUptimeNanoseconds: 20_001,
             connectionGeneration: 2
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection chronology is unavailable or invalid."))
     }
 
-    @Test("authenticated payload still requires full physical stability window")
+    @Test("repeated authenticated payloads inside historical rejection window remain blocked")
+    func postAuthenticationPayloadSurvivalRequired() {
+        let authenticatedAt: UInt64 = 10
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds - 1,
+            connectionGeneration: 1
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated application payloads have not survived beyond the historical rejection window yet."))
+    }
+
+    @Test("authenticated payloads beyond rejection window still require full physical stability window")
     func durationRequired() {
         let authenticatedAt: UInt64 = 10
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
@@ -84,14 +116,14 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             connectionStartedAtUptimeNanoseconds: 1,
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds - 1,
-            applicationPayloadCount: 1,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 1,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
             connectionGeneration: 1
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection has not survived the physical stability window yet."))
     }
 
-    @Test("authenticated SDK payload and 45 second survival unlock stationary mapping")
+    @Test("repeated SDK payloads beyond rejection window plus 45 second survival unlock stationary mapping")
     func acceptedSDKPhysicalGate() {
         let authenticatedAt: UInt64 = 10
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
@@ -100,15 +132,15 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             connectionStartedAtUptimeNanoseconds: 1,
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
-            applicationPayloadCount: 1,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 1,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
             connectionGeneration: 2
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
     }
 
-    @Test("documented device-sharing provenance can unlock the same read-only gate")
-    func acceptedDeviceSharingPhysicalGate() {
+    @Test("documented device-sharing provenance cannot unlock BLE mapping")
+    func deviceSharingDoesNotUnlockPhysicalGate() {
         let authenticatedAt: UInt64 = 20
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
@@ -117,9 +149,9 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
             connectionGeneration: 3
         )
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation."))
     }
 }
