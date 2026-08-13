@@ -1,0 +1,85 @@
+name: Capture AX5 Product Materializer
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-ax5-product-materializer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-ax5-product-materializer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    name: Materialize validated AX5 product byte
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 3225
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact validated lineage and current main source
+        shell: bash
+        run: |
+          set -euo pipefail
+          validated=00d47132dc62426cae7c4dafc2306ad326601280
+          current_main=5817fcc5159e5101d1b13056ef6a8852c59dc908
+          source=NembraApp/App/NembraCaptureEntrypoint.swift
+          source_blob=5d1bc8aa617063730c234c596bb82db199c8b0c4
+          git cat-file -e "${validated}^{commit}"
+          git cat-file -e "${current_main}^{commit}"
+          test "$(git merge-base "$validated" HEAD)" = "$validated"
+          test "$(git diff --name-only "$validated"...HEAD)" = '.github/workflows/capture-ax5-product-materializer.yml'
+          test "$(git rev-parse "$current_main:$source")" = "$source_blob"
+          test "$(git rev-parse "HEAD:$source")" = "$source_blob"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Apply exact green runtime candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=NembraApp/App/NembraCaptureEntrypoint.swift
+          /usr/bin/python3 -B -I - "$source" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding='utf-8')
+          old = '''        .accessibilityElement(children: .combine)\n        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")'''
+          new = '''        .accessibilityElement(children: .combine)\n        .accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)\n        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")'''
+          if source.count(old) != 1:
+              raise SystemExit('validated build-authority seam is not exact')
+          patched = source.replace(old, new)
+          if patched.count('.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)') != 1:
+              raise SystemExit('AX5 sort priority did not materialize exactly once')
+          path.write_text(patched, encoding='utf-8')
+          PY
+          test "$(git diff --name-only)" = "$source"
+          git diff --check -- "$source"
+          git diff -- "$source"
+
+      - name: Commit only product source
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          source=NembraApp/App/NembraCaptureEntrypoint.swift
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$source"
+          test "$(git diff --cached --name-only)" = "$source"
+          git commit -m 'capture: prioritize AX5 lock authority for VoiceOver'
+          if [[ -n "${HEAD_BRANCH:-}" ]]; then
+            git push origin "HEAD:$HEAD_BRANCH"
+          else
+            branch="$(git branch --show-current)"
+            test -n "$branch"
+            git push origin "HEAD:$branch"
+          fi
