@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 284,
+    "classifiedPRTotal": 283,
     "classifiedPRs": {
+      "2680": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2680,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.361,
+        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
+      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2218,7 +2229,7 @@
         "lane": "dashboard-live-cockpit",
         "pr": 3117,
         "recommendedAction": "independent-review",
-        "similarity": 0.258,
+        "similarity": 0.227,
         "title": "[Dashboard V15][AX5] Preserve full connection wording"
       },
       "3118": {
@@ -2253,17 +2264,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.343,
         "title": "[Capture P0][VALIDATION] Prove Apple Development signing under field UID capability"
-      },
-      "3163": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "7ff02ac1053d5312c9fc18f3c331bab88af5d0bd",
-        "lane": "dashboard-live-cockpit",
-        "pr": 3163,
-        "recommendedAction": "independent-review",
-        "similarity": 0.274,
-        "title": "[Dashboard V15][AX5] Keep stopped-control blocker readable"
       },
       "3169": {
         "classification": "validation",
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T19:00:01Z",
+    "liveRefreshAt": "2026-08-13T19:02:17Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 88,
+  "revision": 89,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T19:01:57Z",
+  "updatedAt": "2026-08-13T19:04:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T19:00:01Z",
+      "updatedAt": "2026-08-13T19:02:17Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
