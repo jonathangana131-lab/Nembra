@@ -703,7 +703,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f",
+        "headSHA": "3568250ee02556185610dd895e3f6d1c8f28dd33",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -1061,8 +1061,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 286,
     "classifiedPRs": {
+      "2711": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2711,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.221,
+        "title": "[Capture P0][RED TEAM] Bind checkout root before trusting private writer path"
+      },
       "2719": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -2336,7 +2347,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3198,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.43,
+        "similarity": 0.305,
         "title": "[Capture P0][VALIDATION] Prove reversible private-Tuya build-UID read lease"
       },
       "3200": {
@@ -2394,17 +2405,6 @@
         "similarity": 0.248,
         "title": "[Capture P0][RED TEAM] Prove descendant rebind credential residue"
       },
-      "3207": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3207,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.391,
-        "title": "[Capture P0][VALIDATION] Re-anchor private-Tuya read lease on current #3142"
-      },
       "3209": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2427,17 +2427,6 @@
         "similarity": 0.419,
         "title": "[P0 Capture][AX RUNTIME] Prove full hero semantics across VoiceOver prefix transport"
       },
-      "3212": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3212,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.362,
-        "title": "[Capture P0][VALIDATION] Prove root-custodied accepted source snapshot"
-      },
       "3213": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2449,17 +2438,6 @@
         "similarity": 0.347,
         "title": "[Capture P0][VALIDATION] Reclassify selected-Xcode janitor repair"
       },
-      "3214": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3214,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.315,
-        "title": "[Capture P0][VALIDATION] Classify stale retirement cache authority"
-      },
       "3215": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2470,6 +2448,28 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.218,
         "title": "[Capture P0] Validate dedicated build-UID launch-domain retirement"
+      },
+      "3216": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3216,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.296,
+        "title": "[Capture P0][VALIDATION] Converge current-head source/private retirement authority"
+      },
+      "3217": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3217,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.277,
+        "title": "[Capture P0][RED TEAM] Bind Apple-signing helpers to verified Git object chain"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2498,8 +2498,8 @@
     "livePRBranchMismatches": [],
     "livePRHeadUpdates": [
       {
-        "from": "b31b6d00da6fd0d274b9d6cf8fe7113aa746b58c",
-        "to": "0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f",
+        "from": "0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f",
+        "to": "3568250ee02556185610dd895e3f6d1c8f28dd33",
         "workItemId": "live-pr-3142"
       }
     ],
@@ -2508,9 +2508,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:09:04Z",
+    "liveRefreshAt": "2026-08-13T03:12:11Z",
     "liveRefreshDuplicatesSuppressed": [
-      3214
+      3217
     ],
     "liveRefreshMainSHA": "3c413fbc6585427bc80adece9e083185ce05fffc",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6282,10 +6282,10 @@
       "userValue": 7
     }
   },
-  "revision": 47,
+  "revision": 48,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:11:48Z",
+  "updatedAt": "2026-08-13T03:13:39Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6354,14 +6354,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f",
+        "headSHA": "3568250ee02556185610dd895e3f6d1c8f28dd33",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:09:04Z",
+      "updatedAt": "2026-08-13T03:12:11Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
