@@ -71,6 +71,11 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
     /// bootstrap callback into a claim of an ongoing authenticated notify path.
     public static let minimumAuthenticatedApplicationPayloadCount = 2
 
+    /// An authenticated generation that still cannot satisfy the application-evidence contract
+    /// after this bounded horizon must be retired and restarted. A bootstrap callback must not
+    /// keep an otherwise non-accepting generation alive indefinitely.
+    public static let maximumIncompleteObservationNanoseconds: UInt64 = 60_000_000_000
+
     public enum Verdict: Equatable, Sendable {
         case blocked(reason: String)
         case readyForStationaryMapping
@@ -117,6 +122,27 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
             return .blocked(reason: "Authenticated connection has not survived the physical stability window yet.")
         }
         return .readyForStationaryMapping
+    }
+
+    /// Returns true only when the current SmartLife-authenticated generation has reached the
+    /// bounded observation horizon without earning canonical readiness. Callers must retire the
+    /// exact generation fail-closed; this helper does not perform transport writes or infer a BLE
+    /// disconnect. Invalid chronology is also terminal rather than silently extending authority.
+    public static func shouldRetireIncompleteObservation(
+        _ snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) -> Bool {
+        guard snapshot.connectionGeneration > 0,
+              snapshot.authenticationState == .authenticated,
+              snapshot.authenticationMethod == .smartLifeAppSDK,
+              let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
+              let latest = snapshot.latestObservedUptimeNanoseconds else {
+            return false
+        }
+        guard latest >= authenticatedAt else { return true }
+        guard latest - authenticatedAt >= maximumIncompleteObservationNanoseconds else {
+            return false
+        }
+        return verdict(for: snapshot) != .readyForStationaryMapping
     }
 }
 
