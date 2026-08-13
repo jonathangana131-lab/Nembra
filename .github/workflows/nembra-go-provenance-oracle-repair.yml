@@ -1,0 +1,67 @@
+name: Nembra GO Provenance Oracle Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812
+    paths:
+      - .github/workflows/nembra-go-provenance-oracle-repair.yml
+
+permissions:
+  contents: write
+
+env:
+  TARGET_BRANCH: repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind repair input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^1)" = "8c6a124154d678b1bc839d9c23ff452f4be48086"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Repair only the stale source oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-field-build-provenance.yml')
+          source = workflow.read_text(encoding='utf-8')
+          old = "grep -Fq '**_structured_credentials(build_uid, build_gid, ())' \"$build_origin_custody\""
+          new = "grep -Fq '**_structured_credentials(uid, gid, ())' \"$build_origin_custody\""
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale credential oracle, found {source.count(old)}')
+          source = source.replace(old, new)
+          workflow.write_text(source, encoding='utf-8')
+          PY
+          grep -Fq "grep -Fq '**_structured_credentials(uid, gid, ())' \"\$build_origin_custody\"" .github/workflows/capture-field-build-provenance.yml
+          if grep -Fq "**_structured_credentials(build_uid, build_gid, ())" .github/workflows/capture-field-build-provenance.yml; then
+            echo 'stale oracle remains' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Commit repaired gate and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/nembra-go-provenance-oracle-repair.yml
+          git diff --check
+          git config user.name "nembra-go-worker"
+          git config user.email "nembra-go-worker@users.noreply.github.com"
+          git add .github/workflows/capture-field-build-provenance.yml .github/workflows/nembra-go-provenance-oracle-repair.yml
+          git diff --cached --check
+          git commit -m "Capture: align provenance oracle with credential helper"
+          git push origin "HEAD:${TARGET_BRANCH}"
