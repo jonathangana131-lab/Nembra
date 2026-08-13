@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-import subprocess
 import unittest
 from unittest import mock
 
@@ -32,10 +31,7 @@ class CaptureSignedAppPartialIdentityCreationCleanupProductionTests(unittest.Tes
 
     def test_partial_creation_failure_requires_strict_absence_proof(self) -> None:
         helper = load_helper()
-        creation_failure = subprocess.CalledProcessError(
-            71,
-            ["/usr/bin/dscl", ".", "-create", "/Groups/nembrabuildtest", "PrimaryGroupID", "55001"],
-        )
+        creation_failure = RuntimeError("synthetic directory-services creation failure")
 
         with (
             mock.patch.object(helper.sys, "platform", "darwin"),
@@ -48,10 +44,13 @@ class CaptureSignedAppPartialIdentityCreationCleanupProductionTests(unittest.Tes
             mock.patch.object(
                 helper,
                 "_run_root_checked",
-                side_effect=[mock.Mock(returncode=0), creation_failure],
+                side_effect=creation_failure,
             ),
             mock.patch.object(helper, "_remove_local_build_identity") as remove_identity,
-            self.assertRaises(subprocess.CalledProcessError),
+            self.assertRaisesRegex(
+                RuntimeError,
+                "synthetic directory-services creation failure",
+            ),
         ):
             helper._create_local_build_identity(
                 "nembrabuildtest",
@@ -68,10 +67,7 @@ class CaptureSignedAppPartialIdentityCreationCleanupProductionTests(unittest.Tes
 
     def test_cleanup_failure_becomes_authoritative_creation_failure(self) -> None:
         helper = load_helper()
-        creation_failure = subprocess.CalledProcessError(
-            71,
-            ["/usr/bin/dscl", ".", "-create", "/Groups/nembrabuildtest", "PrimaryGroupID", "55001"],
-        )
+        creation_failure = RuntimeError("synthetic directory-services creation failure")
         cleanup_failure = helper.BuildOriginCustodyError(
             "partial build identity survived strict cleanup"
         )
@@ -87,7 +83,7 @@ class CaptureSignedAppPartialIdentityCreationCleanupProductionTests(unittest.Tes
             mock.patch.object(
                 helper,
                 "_run_root_checked",
-                side_effect=[mock.Mock(returncode=0), creation_failure],
+                side_effect=creation_failure,
             ),
             mock.patch.object(
                 helper,
