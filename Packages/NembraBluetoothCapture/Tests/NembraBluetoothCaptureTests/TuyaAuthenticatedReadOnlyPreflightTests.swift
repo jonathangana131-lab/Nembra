@@ -154,4 +154,53 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation."))
     }
+
+    @Test("one bootstrap callback cannot keep an incomplete authenticated generation alive past terminal horizon")
+    func bootstrapOnlyGenerationExpires() {
+        let authenticatedAt: UInt64 = 10
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds,
+            applicationPayloadCount: 1,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 1,
+            connectionGeneration: 4
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot))
+    }
+
+    @Test("early repeated callbacks that never survive the historical rejection window also expire")
+    func earlyOnlyPayloadGenerationExpires() {
+        let authenticatedAt: UInt64 = 10
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds - 1,
+            connectionGeneration: 5
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot))
+    }
+
+    @Test("canonical ready generation never expires at the incomplete-observation horizon")
+    func readyGenerationDoesNotExpire() {
+        let authenticatedAt: UInt64 = 10
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
+            connectionGeneration: 6
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
+        #expect(!TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot))
+    }
 }
