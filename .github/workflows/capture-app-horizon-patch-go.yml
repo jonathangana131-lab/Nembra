@@ -109,7 +109,8 @@ jobs:
               '        watchdog = nil',
               '        currentConnectionToken = nil',
               '        localBLESettlementToken = nil',
-              '        sdkLocalBLEOnline = false',
+              '        // Preserve the last observed SDK-local BLE state. This semantic evidence terminal is not',
+              '        // a transport-loss observation and therefore cannot manufacture an offline receipt.',
               '        driver = nil',
               '        await refreshLedgerSnapshot()',
               '        phase = .failed',
@@ -152,6 +153,14 @@ jobs:
           if s.count(old) != 1:
               raise SystemExit(f'app-survival oracle anchor count: {s.count(old)}')
           p.write_text(s.replace(old, new, 1))
+
+          semantic = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationSemanticTerminalTests.swift')
+          t = semantic.read_text()
+          needle = '        #expect(!mirror.contains("recordObservedTransportLoss"))\n'
+          replacement = needle + '        #expect(!mirror.contains("sdkLocalBLEOnline = false"))\n'
+          if t.count(needle) != 1:
+              raise SystemExit(f'transport-truth oracle anchor count: {t.count(needle)}')
+          semantic.write_text(t.replace(needle, replacement, 1))
           PY
 
           rm .github/workflows/capture-app-horizon-patch-go.yml
