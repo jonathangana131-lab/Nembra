@@ -1,0 +1,73 @@
+name: Capture app horizon one-shot patch
+
+on:
+  push:
+    branches:
+      - capture/current-main-tuya-readonly-convergence-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'GO patch app incomplete-horizon terminal'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/current-main-tuya-readonly-convergence-gpt56
+          fetch-depth: 0
+
+      - name: Fast-forward to current canonical branch
+        run: |
+          set -euo pipefail
+          git fetch origin capture/current-main-tuya-readonly-convergence-gpt56
+          git merge --ff-only origin/capture/current-main-tuya-readonly-convergence-gpt56
+
+      - name: Insert exact incomplete-horizon terminal catch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text()
+          old = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
+                    await self.mirrorAlreadyTerminalObservationContinuity(
+                        token: token,
+                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
+                        kind: "session_liveness_continuity_invalidated"
+                    )
+                    return
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {'''
+          new = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
+                    await self.mirrorAlreadyTerminalObservationContinuity(
+                        token: token,
+                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
+                        kind: "session_liveness_continuity_invalidated"
+                    )
+                    return
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required application/provenance evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim.",
+                        kind: "session_authenticated_incomplete_readiness_horizon_reached"
+                    )
+                    return
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {'''
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'fail closed: expected exactly one watchdog terminal insertion point, found {count}')
+          path.write_text(source.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit exact app delta
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(git diff --cached --name-only)" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          git commit -m 'Capture V16.1: classify incomplete horizon in app'
+          git push origin HEAD:capture/current-main-tuya-readonly-convergence-gpt56
