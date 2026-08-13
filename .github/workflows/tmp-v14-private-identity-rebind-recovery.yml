@@ -1,0 +1,97 @@
+name: Temporary Capture Private Identity Rebind Recovery
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-rebind-recovery-sol-20260812-go
+    paths:
+      - .github/workflows/tmp-v14-private-identity-rebind-recovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    name: Materialize and prove #3206 production closure
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-identity-rebind-recovery-sol-20260812-go
+          fetch-depth: 0
+
+      - name: Bind materializer to exact branch head
+        id: bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          trigger="$(git rev-parse HEAD)"
+          echo "trigger=$trigger" >> "$GITHUB_OUTPUT"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize held-parent and final-name custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tmp_materialize_private_identity_rebind_recovery.py
+
+      - name: Compile and run focused adversarial closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_descendant_rebind_current.py
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          python3 -I scripts/ci/tests/test_capture_private_identity_descendant_rebind_current.py
+
+      - name: Run inherited private-identity regression family
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in scripts/ci/tests/test_capture_private_identity_*.py; do
+            case "$test" in
+              *descendant_rebind_redteam.py) continue ;;
+            esac
+            echo "== $test =="
+            python3 -I "$test"
+          done
+
+      - name: Run package custody tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Verify exact writer digest and patch hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(sed -n 's/^WRITER_SHA256="\([0-9a-f]\{64\}\)"$/\1/p' Scripts/provision_capture_tuya_identity.sh)"
+          actual="$(sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}')"
+          test -n "$expected"
+          test "$expected" = "$actual"
+          grep -F "$expected" Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
+          git diff --check
+
+      - name: Remove construction machinery and publish only after green
+        shell: bash
+        env:
+          TRIGGER_SHA: ${{ steps.bind.outputs.trigger }}
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-v14-private-identity-rebind-recovery.yml
+          rm -f scripts/ci/tmp_materialize_private_identity_rebind_recovery.py
+          rm -f .github/workflows/tmp-v14-private-identity-residue-a7e4.yml
+          rm -f scripts/ci/tmp_v14_private_identity_residue_a7e4.py
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): bind private identity publication to admitted names'
+          git fetch origin repair/v14-private-identity-rebind-recovery-sol-20260812-go
+          test "$(git rev-parse FETCH_HEAD)" = "$TRIGGER_SHA"
+          git push origin HEAD:repair/v14-private-identity-rebind-recovery-sol-20260812-go
