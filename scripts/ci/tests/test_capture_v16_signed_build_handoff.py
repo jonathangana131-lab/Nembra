@@ -58,7 +58,7 @@ class CaptureV16SignedBuildHandoffTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, producer)
 
-    def test_signed_candidate_reverifies_and_preserves_private_input_provenance(self) -> None:
+    def test_signed_candidate_reverifies_private_inputs_without_exporting_fingerprints(self) -> None:
         producer = text("scripts/field/build_signed_capture_candidate.command")
         self.assertEqual(
             sum(line.strip() == "verify_private_tuya_inputs" for line in producer.splitlines()),
@@ -66,14 +66,14 @@ class CaptureV16SignedBuildHandoffTests(unittest.TestCase):
         )
         first = producer.index("unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true\nverify_private_tuya_inputs")
         build = producer.index('say "Building signed standalone Nembra Capture archive"')
-        second = producer.index("\nverify_private_tuya_inputs\nPRIVATE_INPUT_PROVENANCE_SHA256_AFTER")
+        second = producer.index("\nverify_private_tuya_inputs\n[[ \"$(GIT_NO_REPLACE_OBJECTS=1")
         app = producer.index('APP="$ARCHIVE_PATH/Products/Applications/Nembra Capture.app"')
         self.assertLess(first, build)
         self.assertLess(build, second)
         self.assertLess(second, app)
-        self.assertIn("private-input-provenance.txt", producer)
-        self.assertIn('"privateInputProvenanceSHA256": private_inputs', producer)
-        self.assertIn('"physicalAuthorityCreated": False', producer)
+        self.assertNotIn("privateInputProvenanceSHA256", producer)
+        self.assertNotIn("private-input-provenance.txt", producer)
+        self.assertIn("fingerprint record itself stays under LocalSecrets", producer)
 
     def test_signed_candidate_binds_current_app_provenance_contract(self) -> None:
         producer = text("scripts/field/build_signed_capture_candidate.command")

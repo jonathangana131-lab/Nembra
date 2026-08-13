@@ -41,7 +41,7 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
             in: producer
         )
         let build = try requiredIndex(of: "say \"Building signed standalone Nembra Capture archive\"", in: producer)
-        let secondCall = try requiredIndex(of: "\nverify_private_tuya_inputs\nPRIVATE_INPUT_PROVENANCE_SHA256_AFTER", in: producer)
+        let secondCall = try requiredIndex(of: "\nverify_private_tuya_inputs\n[[ \"$(GIT_NO_REPLACE_OBJECTS=1", in: producer)
         let appReadback = try requiredIndex(of: "APP=\"$ARCHIVE_PATH/Products/Applications/Nembra Capture.app\"", in: producer)
 
         #expect(firstCall < build)
@@ -51,15 +51,15 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         #expect(producer.contains("Private Tuya SDK/app-identity inputs no longer match the bootstrap fingerprint record"))
     }
 
-    @Test("signed-build candidate preserves the non-secret fingerprint subject")
-    func candidatePreservesPrivateInputFingerprintWithoutSecrets() throws {
+    @Test("private fingerprint subject stays local instead of becoming public candidate metadata")
+    func candidateDoesNotExportCredentialAdjacentFingerprints() throws {
         let producer = try readRepositoryFile("scripts/field/build_signed_capture_candidate.command")
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
-        #expect(producer.contains("private-input-provenance.txt"))
-        #expect(producer.contains("privateInputProvenanceSHA256"))
-        #expect(producer.contains("Podfile.lock"))
-        #expect(producer.contains("physicalAuthorityCreated\": False"))
+        #expect(producer.contains("fingerprint record itself stays under LocalSecrets"))
+        #expect(!producer.contains("privateInputProvenanceSHA256"))
+        #expect(!producer.contains("private-input-provenance.txt"))
+        #expect(producer.contains("\"physicalAuthorityCreated\": False"))
         #expect(helper.contains("cryptographic fingerprints"))
         #expect(helper.contains("It never serializes AppKey/AppSecret"))
         #expect(!producer.contains("app_secret_sha256"))
