@@ -52,7 +52,6 @@ jobs:
           python3 -I scripts/ci/tests/test_capture_signed_app_partial_identity_creation_cleanup_production.py
           python3 -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           git diff --check
-          git diff --exit-code -- . ':!.github/workflows/tmp-capture-partial-identity-cleanup-materialize.yml' >/tmp/nembra-product.diff || true
           grep -Fq '_remove_local_build_identity(name, uid, require_absent=True)' scripts/ci/capture_signed_app_build_origin_custody.py
 
       - name: Publish production byte
