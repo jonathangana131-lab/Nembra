@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Record an accepted non-physical V16 objective integration into Mission Graph.
 
-This is an operator primitive for exact, already-merged software objectives.  It
-cannot accept physical/user-dependent objectives and it refuses to close over an
-unresolved P0/P1 blocker.  The caller must independently bind the supplied PR,
-source head, merge SHA, acceptance runs, and review reference to repository truth.
+This is an operator primitive for exact, already-merged software objectives. It
+cannot accept physical/user-dependent objectives, bypass dependencies, or close
+over unresolved P0/P1 blockers. The trusted caller binds supplied PR/run/review
+identifiers to live GitHub truth before this CAS state mutation runs.
 """
 from __future__ import annotations
 
@@ -27,10 +27,21 @@ from swarmcp import (
 
 _SHA40 = re.compile(r"[0-9a-f]{40}")
 _ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,95}")
+_REF = re.compile(r"[1-9][0-9]{0,19}")
+_PATH = re.compile(r"[A-Za-z0-9._@+/-]{1,240}")
 
 
 def _digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _valid_path(value: str) -> bool:
+    return bool(
+        isinstance(value, str)
+        and _PATH.fullmatch(value)
+        and not value.startswith("/")
+        and ".." not in value.split("/")
+    )
 
 
 def record_objective_integration(
@@ -51,11 +62,25 @@ def record_objective_integration(
         raise ValidationError("source/merge SHA must be exact lowercase 40-hex")
     if pr < 1 or not acceptance_runs or not review_refs or not affected_paths:
         raise ValidationError("integration requires PR, acceptance, review, and affected paths")
+    if any(not _REF.fullmatch(str(value)) for value in acceptance_runs):
+        raise ValidationError("acceptance run references must be numeric GitHub run IDs")
+    if any(not _REF.fullmatch(str(value)) for value in review_refs):
+        raise ValidationError("review references must be numeric GitHub PR review IDs")
+    if any(not _valid_path(value) for value in affected_paths):
+        raise ValidationError("invalid evidence-bound affected path")
+
     objective = graph["objectives"].get(objective_id)
     if not objective:
         raise ValidationError("unknown objective")
     if objective["physicalOrUserDependency"]:
         raise ValidationError("operator software integration cannot accept physical/user-dependent objective")
+    unfinished_dependencies = [
+        dependency_id
+        for dependency_id in objective["dependencies"]
+        if graph["objectives"][dependency_id]["status"] != "DONE"
+    ]
+    if unfinished_dependencies:
+        raise ValidationError("objective dependencies are not DONE: " + ", ".join(unfinished_dependencies))
     unresolved = [
         bid
         for bid in objective["blockerIds"]
@@ -64,6 +89,25 @@ def record_objective_integration(
     ]
     if unresolved:
         raise ValidationError("objective still has unresolved P0/P1 blockers: " + ", ".join(unresolved))
+
+    evidence_ids = [
+        f"{objective_id}-accept-{source_head[:12]}",
+        f"{objective_id}-review-{source_head[:12]}",
+        f"{objective_id}-main-{merge_sha[:12]}",
+    ]
+    if objective["status"] == "DONE":
+        existing = [graph["evidence"].get(evidence_id) for evidence_id in evidence_ids]
+        if all(existing) and existing[2]["details"].get("pr") == pr and existing[2]["details"].get("mergeSHA") == merge_sha:
+            return {
+                "objectiveId": objective_id,
+                "status": "DONE",
+                "integrationState": objective["integrationState"],
+                "evidenceIds": evidence_ids,
+                "canonicalBranch": objective.get("canonicalBranch") or "",
+                "physicalAuthorityPromoted": False,
+                "idempotent": True,
+            }
+        raise ValidationError("objective is already DONE under different integration evidence")
 
     stamp = format_v16_time(now)
     source_digest = _digest({"pr": pr, "sourceHead": source_head, "affectedPaths": list(affected_paths)})
@@ -74,25 +118,24 @@ def record_objective_integration(
 
     evidence_specs = (
         (
-            f"{objective_id}-accept-{source_head[:12]}",
+            evidence_ids[0],
             "software-acceptance",
             acceptance_environment,
             {"pr": pr, "sourceHead": source_head, "acceptanceRuns": list(acceptance_runs)},
         ),
         (
-            f"{objective_id}-review-{source_head[:12]}",
+            evidence_ids[1],
             "independent-review",
             review_environment,
             {"pr": pr, "sourceHead": source_head, "reviewRefs": list(review_refs)},
         ),
         (
-            f"{objective_id}-main-{merge_sha[:12]}",
+            evidence_ids[2],
             "integration-truth",
             integration_environment,
             {"pr": pr, "sourceHead": source_head, "mergeSHA": merge_sha},
         ),
     )
-    evidence_ids: list[str] = []
     for evidence_id, evidence_type, environment_digest, details in evidence_specs:
         add_evidence(
             graph,
@@ -108,7 +151,6 @@ def record_objective_integration(
             details=details,
             now=now,
         )
-        evidence_ids.append(evidence_id)
 
     objective["finishSatisfied"] = [True] * len(objective["finishConditions"])
     objective["integrationState"] = "MAIN"
@@ -157,6 +199,7 @@ def record_objective_integration(
         "evidenceIds": evidence_ids,
         "canonicalBranch": branch_name,
         "physicalAuthorityPromoted": False,
+        "idempotent": False,
     }
 
 
