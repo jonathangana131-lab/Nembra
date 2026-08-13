@@ -11,3 +11,4 @@ from .migration_v16 import *
 # stricter scheduler, branch admission, graph service and Go cycle become the
 # public swarm_control surface without destructively migrating stored graphs.
 from .v16_1 import *
+MissionGraphStore = V16_1MissionGraphStore
