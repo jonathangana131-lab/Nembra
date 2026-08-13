@@ -48,30 +48,30 @@ jobs:
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
 
-          path=Path('scripts/ci/capture_signed_app_build_origin_custody.py')
-          source=path.read_text(encoding='utf-8')
+          path = Path('scripts/ci/capture_signed_app_build_origin_custody.py')
+          source = path.read_text(encoding='utf-8')
 
-          assert_anchor='''def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    zombies = _wait_for_no_live_uid(uid, timeout=timeout)\n    deadline = time.monotonic() + timeout\n    latest_lookups: tuple[str, ...] = ()\n    while True:\n        latest_lookups = _identity_lookup_survivors(name, uid)\n        if not latest_lookups:\n            return\n        if time.monotonic() >= deadline:\n            break\n        subprocess.run(\n            ["/usr/bin/dscacheutil", "-flushcache"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        time.sleep(0.05)\n    raise BuildOriginCustodyError(\n        "ephemeral build identity survived retirement: "\n        f"zombie_pids={list(zombies)} identity_lookups={list(latest_lookups)}"\n    )\n\n\n'''
+          assert_anchor = '''def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    zombies = _wait_for_no_live_uid(uid, timeout=timeout)\n    deadline = time.monotonic() + timeout\n    latest_lookups: tuple[str, ...] = ()\n    while True:\n        latest_lookups = _identity_lookup_survivors(name, uid)\n        if not latest_lookups:\n            return\n        if time.monotonic() >= deadline:\n            break\n        subprocess.run(\n            ["/usr/bin/dscacheutil", "-flushcache"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        time.sleep(0.05)\n    raise BuildOriginCustodyError(\n        "ephemeral build identity survived retirement: "\n        f"zombie_pids={list(zombies)} identity_lookups={list(latest_lookups)}"\n    )\n\n\n'''
           if source.count(assert_anchor) != 1:
               raise SystemExit('current exact retirement assertion anchor was not found once')
 
-          replacement='''def _launch_domain_state(uid: int) -> tuple[bool, int, str]:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot inspect launch domain for root or invalid UID")\n    target = f"user/{uid}"\n    completed = subprocess.run(\n        ["/bin/launchctl", "print", target],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.DEVNULL,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    detail = (completed.stderr or "").strip()\n    if completed.returncode == 0:\n        return True, 0, ""\n    absent_markers = (\n        "Could not find domain",\n        "Could not find service",\n        "No such process",\n        "No such file or directory",\n    )\n    if any(marker in detail for marker in absent_markers):\n        return False, completed.returncode, detail[-1000:]\n    raise BuildOriginCustodyError(\n        f"could not classify dedicated build launch domain: exit {completed.returncode}"\n        + (f": {detail[-1000:]}" if detail else ": empty diagnostic")\n    )\n\n\ndef _request_local_build_launch_domain_retirement(uid: int) -> tuple[bool, int | None]:\n    present, _, _ = _launch_domain_state(uid)\n    if not present:\n        return False, None\n    target = f"user/{uid}"\n    bootout = subprocess.run(\n        ["/bin/launchctl", "bootout", target],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.PIPE,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    if bootout.returncode != 0:\n        detail = (bootout.stderr or "").strip()\n        raise BuildOriginCustodyError(\n            f"could not request dedicated build launch-domain retirement: exit {bootout.returncode}"\n            + (f": {detail[-1000:]}" if detail else "")\n        )\n    return True, bootout.returncode\n\n\ndef _finish_local_build_launch_domain_retirement(\n    uid: int,\n    requested: tuple[bool, int | None],\n    *,\n    timeout: float = 8.0,\n) -> None:\n    domain_present_before, initial_bootout_rc = requested\n    # This function is intentionally called only after the caller has proved zero\n    # live processes under the dedicated UID. A still-present domain at this point\n    # can no longer be justified by keeping the build process alive. One exact\n    # second bootout is allowed to retire a domain recreated during process death.\n    present_after_zero_live, _, _ = _launch_domain_state(uid)\n    second_bootout_rc: int | None = None\n    if present_after_zero_live:\n        target = f"user/{uid}"\n        second = subprocess.run(\n            ["/bin/launchctl", "bootout", target],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.PIPE,\n            stderr=subprocess.PIPE,\n            text=True,\n            check=False,\n        )\n        second_bootout_rc = second.returncode\n        if second.returncode != 0:\n            detail = (second.stderr or "").strip()\n            raise BuildOriginCustodyError(\n                f"could not retire post-zero-live dedicated build launch domain: exit {second.returncode}"\n                + (f": {detail[-1000:]}" if detail else "")\n            )\n    deadline = time.monotonic() + timeout\n    polls = 0\n    while True:\n        polls += 1\n        still_present, _, _ = _launch_domain_state(uid)\n        if not still_present:\n            print(\n                "NEMBRA_BUILD_UID_LAUNCH_DOMAIN_RETIREMENT_JSON="\n                + json.dumps(\n                    {\n                        "schema": 2,\n                        "uid": uid,\n                        "domainPresentBefore": domain_present_before,\n                        "initialBootoutReturnCode": initial_bootout_rc,\n                        "domainPresentAfterZeroLive": present_after_zero_live,\n                        "secondBootoutReturnCode": second_bootout_rc,\n                        "zeroLiveProvedBeforeDomainAbsenceCheck": True,\n                        "domainAbsentObserved": True,\n                        "pollCount": polls,\n                        "physicalAuthorityCreated": False,\n                    },\n                    sort_keys=True,\n                    separators=(",", ":"),\n                ),\n                file=sys.stderr,\n            )\n            return\n        if time.monotonic() >= deadline:\n            raise BuildOriginCustodyError(\n                "dedicated build launch domain survived post-zero-live deadline: "\n                f"uid={uid} polls={polls} initial_bootout={initial_bootout_rc} "\n                f"second_bootout={second_bootout_rc}"\n            )\n        time.sleep(0.05)\n\n\ndef _direct_local_record_present(kind: str, name: str) -> bool:\n    completed = subprocess.run(\n        ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.PIPE,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    if completed.returncode == 0:\n        return True\n    detail = ((completed.stdout or "") + "\\n" + (completed.stderr or "")).strip()\n    if "eDSRecordNotFound" in detail or "-14136" in detail:\n        return False\n    raise BuildOriginCustodyError(\n        f"could not classify direct Directory Services {kind} record: exit {completed.returncode}"\n        + (f": {detail[-1000:]}" if detail else ": empty diagnostic")\n    )\n\n\ndef _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    zombies = _wait_for_no_live_uid(uid, timeout=timeout)\n    deadline = time.monotonic() + timeout\n    while True:\n        user_present = _direct_local_record_present("Users", name)\n        group_present = _direct_local_record_present("Groups", name)\n        if not user_present and not group_present:\n            stale_lookups = _identity_lookup_survivors(name, uid)\n            if stale_lookups and not _numeric_principal_in_use(uid):\n                raise BuildOriginCustodyError(\n                    "stale retired identity metadata would permit premature numeric principal reuse"\n                )\n            print(\n                "NEMBRA_BUILD_UID_RETIREMENT_JSON="\n                + json.dumps(\n                    {\n                        "schema": 1,\n                        "uid": uid,\n                        "directUserRecordPresent": False,\n                        "directGroupRecordPresent": False,\n                        "liveUIDProcesses": [],\n                        "zombieUIDProcesses": list(zombies),\n                        "staleLookupCount": len(stale_lookups),\n                        "numericReuseBlockedWhileStale": bool(stale_lookups),\n                        "physicalAuthorityCreated": False,\n                    },\n                    sort_keys=True,\n                    separators=(",", ":"),\n                ),\n                file=sys.stderr,\n            )\n            return\n        if time.monotonic() >= deadline:\n            raise BuildOriginCustodyError(\n                "direct local build identity survived retirement: "\n                f"user_record={user_present} group_record={group_present} zombie_pids={list(zombies)}"\n            )\n        subprocess.run(\n            ["/usr/bin/dscacheutil", "-flushcache"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        time.sleep(0.05)\n\n\n'''
-          source=source.replace(assert_anchor,replacement)
+          replacement = '''def _launch_domain_state(uid: int) -> tuple[bool, int, str]:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot inspect launch domain for root or invalid UID")\n    target = f"user/{uid}"\n    completed = subprocess.run(\n        ["/bin/launchctl", "print", target],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.DEVNULL,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    detail = (completed.stderr or "").strip()\n    if completed.returncode == 0:\n        return True, 0, ""\n    absent_markers = (\n        "Could not find domain",\n        "Could not find service",\n        "No such process",\n        "No such file or directory",\n    )\n    if any(marker in detail for marker in absent_markers):\n        return False, completed.returncode, detail[-1000:]\n    raise BuildOriginCustodyError(\n        f"could not classify dedicated build launch domain: exit {completed.returncode}"\n        + (f": {detail[-1000:]}" if detail else ": empty diagnostic")\n    )\n\n\ndef _request_local_build_launch_domain_retirement(uid: int) -> tuple[bool, int | None]:\n    present, _, _ = _launch_domain_state(uid)\n    if not present:\n        return False, None\n    target = f"user/{uid}"\n    bootout = subprocess.run(\n        ["/bin/launchctl", "bootout", target],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.PIPE,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    if bootout.returncode != 0:\n        detail = (bootout.stderr or "").strip()\n        raise BuildOriginCustodyError(\n            f"could not request dedicated build launch-domain retirement: exit {bootout.returncode}"\n            + (f": {detail[-1000:]}" if detail else "")\n        )\n    return True, bootout.returncode\n\n\ndef _finish_local_build_launch_domain_retirement(\n    uid: int,\n    requested: tuple[bool, int | None],\n    *,\n    timeout: float = 8.0,\n) -> None:\n    domain_present_before, initial_bootout_rc = requested\n    present_after_zero_live, _, _ = _launch_domain_state(uid)\n    second_bootout_rc: int | None = None\n    second_bootout_tearing_down = False\n    if present_after_zero_live:\n        target = f"user/{uid}"\n        second = subprocess.run(\n            ["/bin/launchctl", "bootout", target],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.PIPE,\n            stderr=subprocess.PIPE,\n            text=True,\n            check=False,\n        )\n        second_bootout_rc = second.returncode\n        detail = (second.stderr or "").strip()\n        if second.returncode == 124 and detail == "Boot-out failed: 124: Domain is tearing down":\n            second_bootout_tearing_down = True\n        elif second.returncode != 0:\n            raise BuildOriginCustodyError(\n                f"could not retire post-zero-live dedicated build launch domain: exit {second.returncode}"\n                + (f": {detail[-1000:]}" if detail else "")\n            )\n    deadline = time.monotonic() + timeout\n    polls = 0\n    while True:\n        polls += 1\n        still_present, _, _ = _launch_domain_state(uid)\n        if not still_present:\n            print(\n                "NEMBRA_BUILD_UID_LAUNCH_DOMAIN_RETIREMENT_JSON="\n                + json.dumps(\n                    {\n                        "schema": 3,\n                        "uid": uid,\n                        "domainPresentBefore": domain_present_before,\n                        "initialBootoutReturnCode": initial_bootout_rc,\n                        "domainPresentAfterZeroLive": present_after_zero_live,\n                        "secondBootoutReturnCode": second_bootout_rc,\n                        "secondBootoutTearingDownObserved": second_bootout_tearing_down,\n                        "zeroLiveProvedBeforeDomainAbsenceCheck": True,\n                        "domainAbsentObserved": True,\n                        "pollCount": polls,\n                        "physicalAuthorityCreated": False,\n                    },\n                    sort_keys=True,\n                    separators=(",", ":"),\n                ),\n                file=sys.stderr,\n            )\n            return\n        if time.monotonic() >= deadline:\n            raise BuildOriginCustodyError(\n                "dedicated build launch domain survived post-zero-live deadline: "\n                f"uid={uid} polls={polls} initial_bootout={initial_bootout_rc} "\n                f"second_bootout={second_bootout_rc} tearing_down={second_bootout_tearing_down}"\n            )\n        time.sleep(0.05)\n\n\ndef _direct_local_record_present(kind: str, name: str) -> bool:\n    completed = subprocess.run(\n        ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.PIPE,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    if completed.returncode == 0:\n        return True\n    detail = ((completed.stdout or "") + "\\n" + (completed.stderr or "")).strip()\n    if "eDSRecordNotFound" in detail or "-14136" in detail:\n        return False\n    raise BuildOriginCustodyError(\n        f"could not classify direct Directory Services {kind} record: exit {completed.returncode}"\n        + (f": {detail[-1000:]}" if detail else ": empty diagnostic")\n    )\n\n\ndef _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    zombies = _wait_for_no_live_uid(uid, timeout=timeout)\n    deadline = time.monotonic() + timeout\n    while True:\n        user_present = _direct_local_record_present("Users", name)\n        group_present = _direct_local_record_present("Groups", name)\n        if not user_present and not group_present:\n            stale_lookups = _identity_lookup_survivors(name, uid)\n            if stale_lookups and not _numeric_principal_in_use(uid):\n                raise BuildOriginCustodyError(\n                    "stale retired identity metadata would permit premature numeric principal reuse"\n                )\n            print(\n                "NEMBRA_BUILD_UID_RETIREMENT_JSON="\n                + json.dumps(\n                    {\n                        "schema": 1,\n                        "uid": uid,\n                        "directUserRecordPresent": False,\n                        "directGroupRecordPresent": False,\n                        "liveUIDProcesses": [],\n                        "zombieUIDProcesses": list(zombies),\n                        "staleLookupCount": len(stale_lookups),\n                        "numericReuseBlockedWhileStale": bool(stale_lookups),\n                        "physicalAuthorityCreated": False,\n                    },\n                    sort_keys=True,\n                    separators=(",", ":"),\n                ),\n                file=sys.stderr,\n            )\n            return\n        if time.monotonic() >= deadline:\n            raise BuildOriginCustodyError(\n                "direct local build identity survived retirement: "\n                f"user_record={user_present} group_record={group_present} zombie_pids={list(zombies)}"\n            )\n        subprocess.run(\n            ["/usr/bin/dscacheutil", "-flushcache"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        time.sleep(0.05)\n\n\n'''
+          source = source.replace(assert_anchor, replacement)
 
-          old='''    if uid is not None and uid > 0:\n        killed = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        if require_absent and killed.returncode not in (0, 1):\n            raise BuildOriginCustodyError(\n                f"could not request build-principal process retirement: pkill exit {killed.returncode}"\n            )\n        if require_absent:\n            _wait_for_no_live_uid(uid)\n'''
-          new='''    if uid is not None and uid > 0:\n        launch_retirement: tuple[bool, int | None] | None = None\n        if require_absent:\n            launch_retirement = _request_local_build_launch_domain_retirement(uid)\n        killed = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        if require_absent and killed.returncode not in (0, 1):\n            raise BuildOriginCustodyError(\n                f"could not request build-principal process retirement: pkill exit {killed.returncode}"\n            )\n        if require_absent:\n            _wait_for_no_live_uid(uid)\n            if launch_retirement is None:\n                raise BuildOriginCustodyError("launch-domain retirement state was not captured")\n            _finish_local_build_launch_domain_retirement(uid, launch_retirement)\n'''
+          old = '''    if uid is not None and uid > 0:\n        killed = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        if require_absent and killed.returncode not in (0, 1):\n            raise BuildOriginCustodyError(\n                f"could not request build-principal process retirement: pkill exit {killed.returncode}"\n            )\n        if require_absent:\n            _wait_for_no_live_uid(uid)\n'''
+          new = '''    if uid is not None and uid > 0:\n        launch_retirement: tuple[bool, int | None] | None = None\n        if require_absent:\n            launch_retirement = _request_local_build_launch_domain_retirement(uid)\n        killed = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        if require_absent and killed.returncode not in (0, 1):\n            raise BuildOriginCustodyError(\n                f"could not request build-principal process retirement: pkill exit {killed.returncode}"\n            )\n        if require_absent:\n            _wait_for_no_live_uid(uid)\n            if launch_retirement is None:\n                raise BuildOriginCustodyError("launch-domain retirement state was not captured")\n            _finish_local_build_launch_domain_retirement(uid, launch_retirement)\n'''
           if source.count(old) != 1:
               raise SystemExit('current exact pkill/zero-live retirement block was not found once')
-          source=source.replace(old,new)
-          compile(source,str(path),'exec',dont_inherit=True)
-          path.write_text(source,encoding='utf-8')
+          source = source.replace(old, new)
+          compile(source, str(path), 'exec', dont_inherit=True)
+          path.write_text(source, encoding='utf-8')
           PY
 
           grep -Fq 'def _request_local_build_launch_domain_retirement' "$helper"
           grep -Fq 'def _finish_local_build_launch_domain_retirement' "$helper"
+          grep -Fq 'Boot-out failed: 124: Domain is tearing down' "$helper"
+          grep -Fq 'secondBootoutTearingDownObserved' "$helper"
           grep -Fq 'zeroLiveProvedBeforeDomainAbsenceCheck' "$helper"
-          grep -Fq 'domainPresentAfterZeroLive' "$helper"
-          grep -Fq 'secondBootoutReturnCode' "$helper"
           grep -Fq 'NEMBRA_BUILD_UID_LAUNCH_DOMAIN_RETIREMENT_JSON=' "$helper"
           grep -Fq 'def _direct_local_record_present' "$helper"
           grep -Fq 'NEMBRA_BUILD_UID_RETIREMENT_JSON=' "$helper"
@@ -94,52 +94,54 @@ jobs:
           import tempfile
           import time
 
-          path=Path('scripts/ci/capture_signed_app_build_origin_custody.py').resolve()
-          spec=importlib.util.spec_from_file_location('nembra_retirement_candidate',path)
+          path = Path('scripts/ci/capture_signed_app_build_origin_custody.py').resolve()
+          spec = importlib.util.spec_from_file_location('nembra_retirement_candidate', path)
           if spec is None or spec.loader is None:
               raise SystemExit('could not load retirement candidate')
-          module=importlib.util.module_from_spec(spec)
-          sys.modules[spec.name]=module
+          module = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = module
           spec.loader.exec_module(module)
 
-          uid=module._choose_ephemeral_id()
-          name=f'nembralight{uid}'
-          home=Path(tempfile.mkdtemp(prefix='nembra-light-retirement.',dir='/private/tmp'))
-          child=None
-          created=False
+          uid = module._choose_ephemeral_id()
+          name = f'nembralight{uid}'
+          home = Path(tempfile.mkdtemp(prefix='nembra-light-retirement.', dir='/private/tmp'))
+          child = None
+          created = False
           try:
-              module._create_local_build_identity(name,uid,uid,home)
-              created=True
-              child=subprocess.Popen(
-                  ['/bin/sleep','120'],
+              module._create_local_build_identity(name, uid, uid, home)
+              created = True
+              child = subprocess.Popen(
+                  ['/bin/sleep', '120'],
                   stdin=subprocess.DEVNULL,
                   stdout=subprocess.DEVNULL,
                   stderr=subprocess.DEVNULL,
                   env={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','HOME':'/var/empty','LANG':'C','LC_ALL':'C'},
-                  **module._structured_credentials(uid,uid,()),
+                  **module._structured_credentials(uid, uid, ()),
               )
               time.sleep(0.15)
-              live,_=module._process_state_for_uid(uid)
+              live, _ = module._process_state_for_uid(uid)
               if child.pid not in live:
                   raise SystemExit(f'lightweight dedicated UID process was not observable: {live}')
-              module._remove_local_build_identity(name,uid,require_absent=True)
-              created=False
+              module._remove_local_build_identity(name, uid, require_absent=True)
+              created = False
               try:
                   child.wait(timeout=2.0)
               except subprocess.TimeoutExpired as error:
                   raise SystemExit('retired lightweight process did not reap') from error
-              live,zombies=module._process_state_for_uid(uid)
+              live, zombies = module._process_state_for_uid(uid)
               if live or zombies:
                   raise SystemExit(f'lightweight retired UID still has process entries: live={live} zombies={zombies}')
               print('NEMBRA_LIGHTWEIGHT_BUILD_UID_RETIREMENT_ACCEPTED physicalAuthorityCreated=false')
           finally:
               if child is not None and child.poll() is None:
                   child.kill()
-                  try: child.wait(timeout=1.0)
-                  except Exception: pass
+                  try:
+                      child.wait(timeout=1.0)
+                  except Exception:
+                      pass
               if created:
-                  module._remove_local_build_identity(name,uid,require_absent=False)
-              shutil.rmtree(home,ignore_errors=True)
+                  module._remove_local_build_identity(name, uid, require_absent=False)
+              shutil.rmtree(home, ignore_errors=True)
           PY
           cat "$log"
           grep -Fq 'NEMBRA_LIGHTWEIGHT_BUILD_UID_RETIREMENT_ACCEPTED physicalAuthorityCreated=false' "$log"
@@ -148,19 +150,21 @@ jobs:
           /usr/bin/python3 -B -I - "$log" <<'PY'
           import json,sys
           from pathlib import Path
-          marker='NEMBRA_BUILD_UID_LAUNCH_DOMAIN_RETIREMENT_JSON='
-          records=[json.loads(line[len(marker):]) for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines() if line.startswith(marker)]
+          marker = 'NEMBRA_BUILD_UID_LAUNCH_DOMAIN_RETIREMENT_JSON='
+          records = [json.loads(line[len(marker):]) for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines() if line.startswith(marker)]
           if len(records) != 1:
               raise SystemExit(f'expected one lightweight launch-domain marker, found {len(records)}')
-          item=records[0]
-          assert item['schema'] == 2
+          item = records[0]
+          assert item['schema'] == 3
           assert item['zeroLiveProvedBeforeDomainAbsenceCheck'] is True
           assert item['domainAbsentObserved'] is True
           assert item['physicalAuthorityCreated'] is False
           if item['domainPresentBefore']:
               assert item['initialBootoutReturnCode'] == 0
           if item['domainPresentAfterZeroLive']:
-              assert item['secondBootoutReturnCode'] == 0
+              assert item['secondBootoutReturnCode'] in (0, 124)
+              if item['secondBootoutReturnCode'] == 124:
+                  assert item['secondBootoutTearingDownObserved'] is True
           PY
 
       - name: Execute exact real-Xcode custody fixture with converged retirement candidate
@@ -193,21 +197,21 @@ jobs:
           from pathlib import Path
           import sys
 
-          lines=Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()
-          real_marker='NEMBRA_REAL_XCODE_ORIGIN_JSON='
-          launch_marker='NEMBRA_BUILD_UID_LAUNCH_DOMAIN_RETIREMENT_JSON='
-          retire_marker='NEMBRA_BUILD_UID_RETIREMENT_JSON='
-          real=[json.loads(line[len(real_marker):]) for line in lines if line.startswith(real_marker)]
-          launch=[json.loads(line[len(launch_marker):]) for line in lines if line.startswith(launch_marker)]
-          retire=[json.loads(line[len(retire_marker):]) for line in lines if line.startswith(retire_marker)]
+          lines = Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()
+          real_marker = 'NEMBRA_REAL_XCODE_ORIGIN_JSON='
+          launch_marker = 'NEMBRA_BUILD_UID_LAUNCH_DOMAIN_RETIREMENT_JSON='
+          retire_marker = 'NEMBRA_BUILD_UID_RETIREMENT_JSON='
+          real = [json.loads(line[len(real_marker):]) for line in lines if line.startswith(real_marker)]
+          launch = [json.loads(line[len(launch_marker):]) for line in lines if line.startswith(launch_marker)]
+          retire = [json.loads(line[len(retire_marker):]) for line in lines if line.startswith(retire_marker)]
           if len(real) != 1:
               raise SystemExit(f'expected one real-Xcode evidence marker, found {len(real)}')
           if not launch:
               raise SystemExit('expected at least one launch-domain retirement marker')
           if not retire:
               raise SystemExit('expected at least one direct-retirement marker')
-          evidence=real[0]
-          required=(
+          evidence = real[0]
+          required = (
               evidence.get('schemaVersion') == 5
               and evidence.get('buildEffectiveGroupAuthorityAttested') is True
               and evidence.get('execBoundCredentialAttestationUsed') is True
@@ -222,7 +226,7 @@ jobs:
           if not required:
               raise SystemExit(f'real-Xcode authority evidence failed: {evidence}')
           for item in launch:
-              assert item['schema'] == 2
+              assert item['schema'] == 3
               assert item['zeroLiveProvedBeforeDomainAbsenceCheck'] is True
               assert item['domainAbsentObserved'] is True
               assert item['physicalAuthorityCreated'] is False
@@ -230,7 +234,9 @@ jobs:
               if item['domainPresentBefore']:
                   assert item['initialBootoutReturnCode'] == 0
               if item['domainPresentAfterZeroLive']:
-                  assert item['secondBootoutReturnCode'] == 0
+                  assert item['secondBootoutReturnCode'] in (0, 124)
+                  if item['secondBootoutReturnCode'] == 124:
+                      assert item['secondBootoutTearingDownObserved'] is True
           for item in retire:
               assert item['schema'] == 1
               assert item['directUserRecordPresent'] is False
