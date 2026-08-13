@@ -1,0 +1,70 @@
+name: Temporary Capture Partial Identity Cleanup Materializer
+
+on:
+  push:
+    branches:
+      - agent/capture-partial-identity-cleanup
+    paths:
+      - .github/workflows/tmp-capture-partial-identity-cleanup-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact construction parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='e72099137463d93bda486e987a6ea8726c540140'
+          git merge-base --is-ancestor "$parent" HEAD
+          test "$(git rev-parse "$parent^{commit}")" = "$parent"
+
+      - name: Apply fail-closed production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/capture_signed_app_build_origin_custody.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''    except Exception:\n        _remove_local_build_identity(name, uid)\n        raise\n'''
+          new = '''    except Exception:\n        _remove_local_build_identity(name, uid, require_absent=True)\n        raise\n'''
+          if source.count(old) != 1:
+              raise SystemExit('ERROR: exact partial-identity cleanup seam was not uniquely found')
+          path.write_text(source.replace(old, new), encoding='utf-8')
+          PY
+
+      - name: Validate focused authority regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_partial_identity_creation_cleanup_production.py
+          python3 -I scripts/ci/tests/test_capture_signed_app_partial_identity_creation_cleanup_production.py
+          python3 -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          git diff --check
+          git diff --exit-code -- . ':!.github/workflows/tmp-capture-partial-identity-cleanup-materialize.yml' >/tmp/nembra-product.diff || true
+          grep -Fq '_remove_local_build_identity(name, uid, require_absent=True)' scripts/ci/capture_signed_app_build_origin_custody.py
+
+      - name: Publish production byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- scripts/ci/capture_signed_app_build_origin_custody.py; then
+            echo 'ERROR: no production repair was materialized' >&2
+            exit 1
+          fi
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add scripts/ci/capture_signed_app_build_origin_custody.py
+          git commit -m 'Capture: fail closed partial build identity cleanup'
+          git push origin HEAD:agent/capture-partial-identity-cleanup
