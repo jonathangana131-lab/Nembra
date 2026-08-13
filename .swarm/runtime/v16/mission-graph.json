@@ -703,7 +703,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "b31b6d00da6fd0d274b9d6cf8fe7113aa746b58c",
+        "headSHA": "0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -1061,8 +1061,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 288,
+    "classifiedPRTotal": 287,
     "classifiedPRs": {
+      "2719": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2719,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.26,
+        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
+      },
       "2733": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1984,7 +1995,7 @@
         "lane": "",
         "pr": 2979,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.222,
+        "similarity": 0.157,
         "title": "[P0 Capture][visual] Tighten first fold; fail closed blank evidence"
       },
       "2980": {
@@ -2207,17 +2218,6 @@
         "similarity": 0.305,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
-      "3145": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "48dc64f7a0f3188f0cca5dd4300f09f079d3aa80",
-        "lane": "capture-flagship-composition",
-        "pr": 3145,
-        "recommendedAction": "independent-review",
-        "similarity": 0.28,
-        "title": "[P0 Capture][AX5 PRODUCT] Remove first-fold text scaling caps exposed by exact runtime audit"
-      },
       "3150": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2233,11 +2233,11 @@
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "09cbc817c018580967ff16460459a59fc62c6359",
+        "headSHA": "",
         "lane": "capture-signed-install-custody",
         "pr": 3152,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.33,
+        "similarity": 0.327,
         "title": "[Capture P0][VALIDATION] Prove Apple Development signing under field UID capability"
       },
       "3163": {
@@ -2498,8 +2498,8 @@
     "livePRBranchMismatches": [],
     "livePRHeadUpdates": [
       {
-        "from": "8c6a124154d678b1bc839d9c23ff452f4be48086",
-        "to": "b31b6d00da6fd0d274b9d6cf8fe7113aa746b58c",
+        "from": "b31b6d00da6fd0d274b9d6cf8fe7113aa746b58c",
+        "to": "0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f",
         "workItemId": "live-pr-3142"
       }
     ],
@@ -2508,7 +2508,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:06:08Z",
+    "liveRefreshAt": "2026-08-13T03:09:04Z",
     "liveRefreshDuplicatesSuppressed": [
       3214
     ],
@@ -6282,10 +6282,10 @@
       "userValue": 7
     }
   },
-  "revision": 46,
+  "revision": 47,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:08:44Z",
+  "updatedAt": "2026-08-13T03:11:48Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6354,14 +6354,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "b31b6d00da6fd0d274b9d6cf8fe7113aa746b58c",
+        "headSHA": "0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:06:08Z",
+      "updatedAt": "2026-08-13T03:09:04Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
