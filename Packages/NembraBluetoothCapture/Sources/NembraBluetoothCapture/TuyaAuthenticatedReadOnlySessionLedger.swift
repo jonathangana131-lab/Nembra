@@ -46,6 +46,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
 
     private static let observationContinuityFailureReason =
         "Authenticated observation continuity was invalidated by a long observation gap."
+    private static let incompleteObservationFailureReason =
+        "Authenticated session ended because required repeated application evidence did not become sufficient before the observation deadline."
     private static let sourceAuthorityFailureReason =
         "Tuya SDK source authority was invalidated."
     private static let internalLifecycleFailureReason =
@@ -255,8 +257,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Once a real current liveness receipt reaches the package-owned 60-second incomplete-session
     /// horizon, the same canonical preflight decides whether this generation must terminate. The
     /// deadline is evaluated against the already-accepted prefix before the receipt can advance
-    /// chronology; the exact token stays current on throw so the app's existing fail-closed
-    /// lifecycle terminal can retire it without inventing a BLE disconnect or a second clock sample.
+    /// chronology. If the generation is still incomplete, the package atomically records the
+    /// bounded preflight failure and retires callback authority before throwing the semantic
+    /// terminal for app-local mirroring.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
@@ -285,9 +288,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         currentToken = nil
     }
 
-    /// Seals a post-authentication attempt that remained connected but failed to produce the
-    /// required application evidence. This is deliberately distinct from `endConnection` and does
-    /// not turn deadline detection into a new liveness observation.
+    /// Explicit compatibility terminal for callers that independently detect an incomplete
+    /// authenticated observation before the package-owned mutation boundary does. It does not
+    /// claim that BLE disconnected and its reason covers insufficient repeated evidence, including
+    /// sessions that legitimately observed one application update.
     public func markApplicationObservationTimedOut(
         for token: TuyaReadOnlyConnectionToken
     ) throws {
@@ -297,7 +301,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
 
         _ = try nextMonotonicObservation()
-        authenticationState = .failed(reason: "Authenticated session produced no application update before the observation deadline.")
+        authenticationState = .failed(reason: Self.incompleteObservationFailureReason)
         currentToken = nil
     }
 
@@ -367,9 +371,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     }
 
     /// Evaluates the bounded incomplete-session deadline against the already-accepted evidence
-    /// prefix and the incoming observation time. A deadline-crossing callback is not allowed to
-    /// become evidence for the same generation. A generation that had already earned canonical
-    /// readiness before the deadline remains valid.
+    /// prefix and incoming observation time. A deadline-crossing callback cannot become evidence
+    /// for the same generation. If readiness was already earned, the generation remains valid.
+    /// Otherwise this package mutation atomically preserves the accepted prefix, records the
+    /// semantic bounded-preflight failure, and retires callback authority before throwing.
     private func requireIncompleteObservationHorizonOpen(at now: UInt64) throws {
         guard let authenticatedAt = authenticatedAtUptimeNanoseconds else {
             return
@@ -383,6 +388,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot()) != .readyForStationaryMapping else {
             return
         }
+        authenticationState = .failed(reason: Self.incompleteObservationFailureReason)
+        currentToken = nil
         throw MutationError.incompleteObservationHorizonReached
     }
 
