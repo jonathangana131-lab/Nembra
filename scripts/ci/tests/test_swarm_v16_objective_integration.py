@@ -34,6 +34,7 @@ class ObjectiveIntegrationTests(unittest.TestCase):
         result = self.record(graph)
         objective = graph["objectives"]["capture-standalone-build"]
         self.assertEqual(result["status"], "DONE")
+        self.assertFalse(result["idempotent"])
         self.assertEqual(objective["status"], "DONE")
         self.assertEqual(objective["integrationState"], "MAIN")
         self.assertTrue(all(objective["finishSatisfied"]))
@@ -47,11 +48,28 @@ class ObjectiveIntegrationTests(unittest.TestCase):
         self.assertEqual(branch["world"], "MAIN")
         self.assertEqual(branch["source"]["mergeSHA"], "b" * 40)
 
+    def test_same_integration_is_idempotent(self):
+        graph = seed_nembra_graph()
+        first = self.record(graph)
+        evidence_count = len(graph["evidence"])
+        memory_count = len(graph["memory"])
+        second = self.record(graph)
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(len(graph["evidence"]), evidence_count)
+        self.assertEqual(len(graph["memory"]), memory_count)
+
     def test_physical_or_user_dependent_objective_cannot_be_auto_accepted(self):
         graph = seed_nembra_graph()
+        graph["objectives"]["capture-signed-build"]["status"] = "DONE"
         with self.assertRaisesRegex(ValidationError, "physical/user-dependent"):
             self.record(graph, objective="capture-installation")
         self.assertNotEqual(graph["objectives"]["capture-installation"]["status"], "DONE")
+
+    def test_unfinished_dependency_cannot_be_bypassed(self):
+        graph = seed_nembra_graph()
+        with self.assertRaisesRegex(ValidationError, "dependencies are not DONE"):
+            self.record(graph, objective="capture-tuya-auth")
 
     def test_unresolved_p0_or_p1_blocks_software_objective_close(self):
         graph = seed_nembra_graph()
@@ -69,18 +87,29 @@ class ObjectiveIntegrationTests(unittest.TestCase):
             self.record(graph)
         self.assertNotEqual(graph["objectives"]["capture-standalone-build"]["status"], "DONE")
 
-    def test_integration_requires_acceptance_review_and_paths(self):
+    def test_integration_references_and_paths_are_bounded(self):
         graph = seed_nembra_graph()
-        with self.assertRaisesRegex(ValidationError, "requires PR, acceptance, review"):
+        with self.assertRaisesRegex(ValidationError, "numeric GitHub PR review IDs"):
             MODULE.record_objective_integration(
                 graph,
                 objective_id="capture-standalone-build",
                 pr=3168,
                 source_head="a" * 40,
                 merge_sha="b" * 40,
-                acceptance_runs=[],
-                review_refs=["review"],
+                acceptance_runs=["31654041247"],
+                review_refs=["not-a-review"],
                 affected_paths=["Capture"],
+            )
+        with self.assertRaisesRegex(ValidationError, "affected path"):
+            MODULE.record_objective_integration(
+                graph,
+                objective_id="capture-standalone-build",
+                pr=3168,
+                source_head="a" * 40,
+                merge_sha="b" * 40,
+                acceptance_runs=["31654041247"],
+                review_refs=["4922282569"],
+                affected_paths=["../outside"],
             )
 
 
@@ -98,19 +127,24 @@ class ObjectiveIntegrationWorkflowTests(unittest.TestCase):
         self.assertIn("fetch-depth: 0", source)
         self.assertNotIn("pull_request.head.sha", source)
 
-    def test_command_verifies_exact_merged_pr_and_reuses_evidence_only_if_paths_unchanged(self):
+    def test_command_verifies_runs_reviews_merged_pr_and_unchanged_paths(self):
         source = self.source
         for fragment in (
             "pr.merged_at",
             "pr.head.sha !== process.env.SOURCE_HEAD",
             "pr.merge_commit_sha !== process.env.MERGE_SHA",
             "pr.base.ref !== context.payload.repository.default_branch",
+            "github.rest.actions.getWorkflowRun",
+            "run.status !== 'completed' || run.conclusion !== 'success'",
+            "run.head_sha === process.env.SOURCE_HEAD",
+            "github.rest.pulls.getReview",
+            "review.commit_id !== process.env.SOURCE_HEAD",
+            "review.body.includes(runId)",
             "git merge-base --is-ancestor \"$MERGE_SHA\" HEAD",
             "git diff --name-only \"$MERGE_SHA..HEAD\" -- \"$path\"",
             "Evidence-bound path changed after integration",
         ):
             self.assertIn(fragment, source)
-        self.assertNotIn("branch.data.commit.sha !== process.env.MERGE_SHA", source)
         self.assertIn("scripts/swarm_v16_record_objective.py", source)
         self.assertIn("--state-branch swarm-state", source)
 
