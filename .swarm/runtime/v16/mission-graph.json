@@ -2457,10 +2457,10 @@
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "",
+        "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.112,
+        "similarity": 0.099,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3234": {
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T21:12:35Z",
+    "liveRefreshAt": "2026-08-13T21:15:37Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 92,
+  "revision": 93,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T21:15:16Z",
+  "updatedAt": "2026-08-13T21:18:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T21:12:35Z",
+      "updatedAt": "2026-08-13T21:15:37Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
