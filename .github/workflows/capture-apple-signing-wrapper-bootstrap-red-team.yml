@@ -1,0 +1,82 @@
+name: Capture Apple Signing Wrapper Bootstrap Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v14-apple-signing-wrapper-bootstrap-sol-20260812-go
+    paths:
+      - scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap_red_team.py
+      - .github/workflows/capture-apple-signing-wrapper-bootstrap-red-team.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap_red_team.py
+      - .github/workflows/capture-apple-signing-wrapper-bootstrap-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-apple-signing-wrapper-bootstrap-red-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exploit-positive:
+    name: Prove mutable wrapper can reach root before self-check
+    runs-on: macos-15
+    timeout-minutes: 5
+    env:
+      EXACT_PARENT: 6b5a953a309a00c93f8a2dd5b46be3b90bc1c8fd
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-apple-wrapper-bootstrap-pycache
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation-only delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual-paths"
+          printf '%s\n' \
+            .github/workflows/capture-apple-signing-wrapper-bootstrap-red-team.yml \
+            scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap_red_team.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
+          diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile witness and parse accepted transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap_red_team.py
+          /bin/bash -n scripts/field/run_apple_signing_context_preflight.command
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Reproduce pre-self-check privileged bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap_red_team.py
+          printf '%s\n' 'EXPLOIT_POSITIVE: field-mutable wrapper bytes reached a harmless sudo root-UID witness before the retained accepted-byte self-check could execute.'
+          printf '%s\n' 'CLASSIFICATION: VALIDATION RED / self-verification inside a mutable privileged launcher is not a trusted bootstrap boundary.'
+          printf '%s\n' 'PHYSICAL_AUTHORITY_CREATED=false'
+
+      - name: Enforce validation-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e LocalSecrets
+          test -z "$(git diff --name-only "$EXACT_PARENT"...HEAD | grep -Ev '^(\.github/workflows/capture-apple-signing-wrapper-bootstrap-red-team\.yml|scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap-red-team\.py)$' || true)" || true
+          ! grep -Eq 'devicectl|CoreBluetooth|bootstrap_capture_tuya_sdk|LocalSecrets' scripts/ci/tests/test_capture_apple_signing_wrapper_bootstrap_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
