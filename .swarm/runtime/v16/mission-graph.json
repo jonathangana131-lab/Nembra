@@ -1061,19 +1061,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 280,
+    "classifiedPRTotal": 281,
     "classifiedPRs": {
-      "2637": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2637,
-        "recommendedAction": "independent-review",
-        "similarity": 0.274,
-        "title": "[Capture P0][FIELD] Restore private-device reader and local-build custody"
-      },
       "2638": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2457,7 +2446,7 @@
         "lane": "battery-range-app-visible",
         "pr": 3201,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.273,
+        "similarity": 0.338,
         "title": "[Battery/Range V15][QA] Capture the real Battery & Range surface"
       },
       "3202": {
@@ -2470,6 +2459,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.273,
         "title": "[Battery/Range V15][A11y] Recompose hero and range headers"
+      },
+      "3204": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3204,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.318,
+        "title": "[Battery/Range V15][QA] Re-prove AX recomposition on real surface"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2502,7 +2502,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T01:02:30Z",
+    "liveRefreshAt": "2026-08-13T02:00:33Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
@@ -6276,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 39,
+  "revision": 40,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T01:04:59Z",
+  "updatedAt": "2026-08-13T02:03:13Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6355,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T01:02:30Z",
+      "updatedAt": "2026-08-13T02:00:33Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
