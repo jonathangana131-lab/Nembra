@@ -3,8 +3,8 @@ import Testing
 
 @Suite("Capture app incomplete-horizon terminal")
 struct TuyaAppIncompleteHorizonTerminalSourceTests {
-    @Test("watchdog preserves the package incomplete-horizon reason")
-    func watchdogDoesNotCollapseIncompleteHorizonIntoGenericLifecycle() throws {
+    @Test("watchdog mirrors package-owned incomplete-horizon retirement without a second terminal")
+    func watchdogDoesNotRetryLedgerRetirementAfterPackageTerminal() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = String(try section(
             in: app,
@@ -17,15 +17,15 @@ struct TuyaAppIncompleteHorizonTerminalSourceTests {
             to: "} catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection"
         ))
 
-        #expect(terminal.contains("invalidateInternalLifecycle"))
-        #expect(terminal.contains("session_authenticated_incomplete_readiness_horizon_reached"))
-        #expect(terminal.contains("60-second incomplete-evidence horizon"))
-        #expect(terminal.contains("without another liveness sample"))
-        #expect(terminal.contains("Bluetooth-disconnect claim"))
-        #expect(!terminal.contains("session_liveness_lifecycle_rejected"))
+        #expect(terminal.contains("mirrorAlreadyTerminal"))
+        #expect(terminal.contains("incomplete"))
+        #expect(terminal.contains("horizon"))
+        #expect(!terminal.contains("invalidateInternalLifecycle"))
+        #expect(!terminal.contains("markInternalLifecycleFailure"))
+        #expect(!terminal.contains("markApplicationObservationTimedOut"))
         #expect(!terminal.contains("recordObservedTransportLoss"))
-        #expect(!terminal.contains("sessionLedger.observeCurrentConnection"))
-        #expect(!terminal.contains("sessionLedger.endConnection"))
+        #expect(!terminal.contains("sessionLedger."))
+        #expect(!terminal.contains("session_liveness_lifecycle_rejected"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
