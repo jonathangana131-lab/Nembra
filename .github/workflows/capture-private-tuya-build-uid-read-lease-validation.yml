@@ -60,9 +60,8 @@ jobs:
           missing = [marker for marker in required if marker not in source]
           if missing:
               raise SystemExit('missing read-lease validation markers: ' + repr(missing))
-          forbidden = ('LocalSecrets/TuyaSDK', 'LocalSecrets/TuyaRuntime')
           # The witness synthesizes these names below its own /private/tmp root;
-          # it must not open a repository LocalSecrets path or consume credentials.
+          # it must not consume credentials.
           assert 'NEMBRA_TUYA_APP_KEY' not in source
           assert 'NEMBRA_TUYA_APP_SECRET' not in source
           PY
@@ -119,12 +118,15 @@ jobs:
           set -euo pipefail
           FIELD_USER="$(/usr/bin/id -un)"
           EVIDENCE="$RUNNER_TEMP/private-tuya-build-uid-read-lease.json"
+          DIAGNOSTIC="$RUNNER_TEMP/private-tuya-build-uid-read-lease.stderr.log"
+          : > "$DIAGNOSTIC"
           /usr/bin/sudo /usr/bin/python3 -I \
             scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py \
             --field-user "$FIELD_USER" \
             --production-helper "$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py" \
             --accepted-attrib-guard "$ACCEPTED_VNODE_DIR/capture_tuya_private_input_build_guard.py" \
             --accepted-vnode-head "$ATTRIB_HEAD" \
+            2> >(/usr/bin/tee "$DIAGNOSTIC" >&2) \
             | /usr/bin/tee "$EVIDENCE"
           /usr/bin/python3 - "$EVIDENCE" "$ATTRIB_HEAD" <<'PY'
           import json,sys
@@ -147,11 +149,13 @@ jobs:
           shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/private-tuya-build-uid-read-lease.sha256"
 
       - name: Upload synthetic authority evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: capture-private-tuya-build-uid-read-lease-evidence
           path: |
             ${{ runner.temp }}/private-tuya-build-uid-read-lease.json
             ${{ runner.temp }}/private-tuya-build-uid-read-lease.sha256
-          if-no-files-found: error
+            ${{ runner.temp }}/private-tuya-build-uid-read-lease.stderr.log
+          if-no-files-found: warn
           retention-days: 7
