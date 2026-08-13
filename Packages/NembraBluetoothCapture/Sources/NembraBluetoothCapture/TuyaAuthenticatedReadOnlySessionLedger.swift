@@ -232,12 +232,21 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
               now >= authenticatedAt else {
             throw MutationError.monotonicClockRegressed
         }
+
+        // The callback itself is a legitimate current liveness receipt, but it must not append
+        // application evidence before the package-owned incomplete-session deadline is evaluated.
+        // This preserves the real receipt horizon while preventing a deadline-crossing second
+        // payload from manufacturing canonical readiness for an already-expired generation.
+        latestObservedUptimeNanoseconds = now
+        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(makeSnapshot()) {
+            throw MutationError.incompleteObservationHorizonReached
+        }
+
         guard applicationPayloadCount < Int.max else {
             throw MutationError.applicationPayloadCountExhausted
         }
         applicationPayloadCount += 1
         latestApplicationPayloadUptimeNanoseconds = now
-        latestObservedUptimeNanoseconds = now
     }
 
     /// Advances only the non-secret liveness observation for the current authenticated connection.
