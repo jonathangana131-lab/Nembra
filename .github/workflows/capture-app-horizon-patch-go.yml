@@ -71,3 +71,5 @@ jobs:
           test "$(git diff --cached --name-only)" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
           git commit -m 'Capture V16.1: classify incomplete horizon in app'
           git push origin HEAD:capture/current-main-tuya-readonly-convergence-gpt56
+
+# one-shot trigger
