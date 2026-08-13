@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 285,
+    "classifiedPRTotal": 284,
     "classifiedPRs": {
+      "2688": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2688,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.357,
+        "title": "[Capture P0][RED TEAM] Pin signed app install subject"
+      },
       "2709": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2462,17 +2473,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.301,
         "title": "[Capture P0][VALIDATION] Prove lingering build-UID launchd service registry is inert"
-      },
-      "3231": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3231,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.149,
-        "title": "[Battery/Range V15][QA] Re-prove evidence clearance on real surface"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T16:07:02Z",
+    "liveRefreshAt": "2026-08-13T17:01:11Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 84,
+  "revision": 85,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T16:09:35Z",
+  "updatedAt": "2026-08-13T17:03:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T16:07:02Z",
+      "updatedAt": "2026-08-13T17:01:11Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
