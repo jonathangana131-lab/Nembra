@@ -187,6 +187,7 @@ class CaptureAppleSigningGitObjectChainRedTeamTests(unittest.TestCase):
                 0 if index_value < first_byte else 1,
             )
         data[-20:] = hashlib.sha1(data[:-20]).digest()
+        index.chmod(index.stat().st_mode | 0o200)
         index.write_bytes(data)
         return index
 
