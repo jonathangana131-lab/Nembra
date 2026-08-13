@@ -2468,7 +2468,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3217,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.277,
+        "similarity": 0.274,
         "title": "[Capture P0][RED TEAM] Bind Apple-signing helpers to verified Git object chain"
       }
     },
@@ -2496,19 +2496,13 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [
-      {
-        "from": "0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f",
-        "to": "3568250ee02556185610dd895e3f6d1c8f28dd33",
-        "workItemId": "live-pr-3142"
-      }
-    ],
+    "livePRHeadUpdates": [],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:12:11Z",
+    "liveRefreshAt": "2026-08-13T03:14:07Z",
     "liveRefreshDuplicatesSuppressed": [
       3217
     ],
@@ -6282,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 48,
+  "revision": 49,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:13:39Z",
+  "updatedAt": "2026-08-13T03:16:52Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6361,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:12:11Z",
+      "updatedAt": "2026-08-13T03:14:07Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
