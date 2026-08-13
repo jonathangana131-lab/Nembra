@@ -106,7 +106,7 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
         #expect(!regression.contains("invalidateSourceAuthority"))
     }
 
-    @Test("watchdog ledger mutations explicitly catch clock regression")
+    @Test("watchdog ledger mutations explicitly preserve clock and horizon failure classes")
     func watchdogLedgerMutationsCannotHideClockFailure() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = String(try section(
@@ -117,8 +117,10 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
 
         #expect(watchdog.contains("sessionLedger.observeCurrentConnection(for: token)"))
         #expect(watchdog.contains("sessionLedger.sealAcceptedObservation(for: token)"))
-        #expect(watchdog.contains("sessionLedger.markApplicationObservationTimedOut(for: token)"))
-        #expect(watchdog.components(separatedBy: "MutationError.monotonicClockRegressed").count - 1 >= 3)
+        #expect(watchdog.contains("MutationError.incompleteObservationHorizonReached"))
+        #expect(watchdog.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
+        #expect(!watchdog.contains("sessionLedger.markApplicationObservationTimedOut(for: token)"))
+        #expect(watchdog.components(separatedBy: "MutationError.monotonicClockRegressed").count - 1 >= 2)
         #expect(watchdog.components(separatedBy: "invalidateInternalLifecycle").count - 1 >= 4)
     }
 
