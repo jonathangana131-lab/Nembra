@@ -1,10 +1,14 @@
 import Foundation
 
-/// The only authentication routes currently allowed to mint authenticated-session provenance.
+/// Authentication/account routes recognized by the physical Tuya preflight.
 ///
 /// `cloud local_key` is deliberately absent. Tuya cloud metadata can retain that secret for
 /// future supported use, but it is not mechanically equivalent to documented FD50 BLE
 /// authentication material and must never unlock the physical preflight by itself.
+///
+/// Device Sharing is account/device authority only. It can establish that the linked account is
+/// allowed to see a device, but it does not itself prove that the current BLE generation was
+/// authenticated. Physical readiness therefore requires `smartLifeAppSDK` provenance.
 public enum TuyaReadOnlyAuthenticationMethod: String, Codable, Equatable, Sendable {
     case smartLifeAppSDK = "tuya-smartlife-sdk"
     case documentedDeviceSharing = "tuya-device-sharing"
@@ -57,6 +61,21 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
     /// Physical acceptance is intentionally stricter than the observed ~29.93 s rejection.
     public static let minimumAuthenticatedConnectionNanoseconds: UInt64 = 45_000_000_000
 
+    /// Require real application evidence after the historical unauthenticated rejection window,
+    /// not merely an initial SDK state replay followed by generic BLE liveness. This proves that
+    /// the authenticated application/notify path itself survived beyond the ~30 s failure mode.
+    public static let minimumPostAuthenticationPayloadSurvivalNanoseconds: UInt64 = 30_000_000_000
+
+    /// A single post-auth callback can be an initial state replay. Require repeated application
+    /// evidence before physical mapping can unlock so transport liveness alone cannot turn one
+    /// bootstrap callback into a claim of an ongoing authenticated notify path.
+    public static let minimumAuthenticatedApplicationPayloadCount = 2
+
+    /// An authenticated generation that still cannot satisfy the application-evidence contract
+    /// after this bounded horizon must be retired and restarted. A bootstrap callback must not
+    /// keep an otherwise non-accepting generation alive indefinitely.
+    public static let maximumIncompleteObservationNanoseconds: UInt64 = 60_000_000_000
+
     public enum Verdict: Equatable, Sendable {
         case blocked(reason: String)
         case readyForStationaryMapping
@@ -78,11 +97,14 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         case .authenticated:
             break
         }
-        guard snapshot.authenticationMethod != nil else {
+        guard let authenticationMethod = snapshot.authenticationMethod else {
             return .blocked(reason: "Authenticated state has no accepted Tuya authentication provenance.")
         }
-        guard snapshot.applicationPayloadCount > 0 else {
-            return .blocked(reason: "Authenticated session has not produced an application payload yet.")
+        guard authenticationMethod == .smartLifeAppSDK else {
+            return .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation.")
+        }
+        guard snapshot.applicationPayloadCount >= minimumAuthenticatedApplicationPayloadCount else {
+            return .blocked(reason: "Authenticated session has not produced repeated application payload evidence yet.")
         }
         guard let connectionStarted = snapshot.connectionStartedAtUptimeNanoseconds,
               let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
@@ -93,10 +115,34 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
               latest >= latestPayload else {
             return .blocked(reason: "Authenticated connection chronology is unavailable or invalid.")
         }
+        guard latestPayload - authenticatedAt >= minimumPostAuthenticationPayloadSurvivalNanoseconds else {
+            return .blocked(reason: "Authenticated application payloads have not survived beyond the historical rejection window yet.")
+        }
         guard latest - authenticatedAt >= minimumAuthenticatedConnectionNanoseconds else {
             return .blocked(reason: "Authenticated connection has not survived the physical stability window yet.")
         }
         return .readyForStationaryMapping
+    }
+
+    /// Returns true only when the current SmartLife-authenticated generation has reached the
+    /// bounded observation horizon without earning canonical readiness. Callers must retire the
+    /// exact generation fail-closed; this helper does not perform transport writes or infer a BLE
+    /// disconnect. Invalid chronology is also terminal rather than silently extending authority.
+    public static func shouldRetireIncompleteObservation(
+        _ snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) -> Bool {
+        guard snapshot.connectionGeneration > 0,
+              snapshot.authenticationState == .authenticated,
+              snapshot.authenticationMethod == .smartLifeAppSDK,
+              let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
+              let latest = snapshot.latestObservedUptimeNanoseconds else {
+            return false
+        }
+        guard latest >= authenticatedAt else { return true }
+        guard latest - authenticatedAt >= maximumIncompleteObservationNanoseconds else {
+            return false
+        }
+        return verdict(for: snapshot) != .readyForStationaryMapping
     }
 }
 
@@ -104,9 +150,10 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
 ///
 /// Implementations may perform only documented authentication/session-establishment transport
 /// writes and authenticated reads/notification decryption. They must not expose generic GATT
-/// writes or DP control through this protocol. An implementation must also report which accepted
-/// authentication method actually established the current generation; possession of a cloud
-/// `local_key` alone is not accepted authentication provenance.
+/// writes or DP control through this protocol. An implementation must also report the provenance
+/// that established the current generation. Device Sharing may establish account/device authority,
+/// but only an official SmartLife SDK-authenticated BLE generation can satisfy physical readiness;
+/// possession of a cloud `local_key` alone is never accepted authentication provenance.
 public protocol TuyaReadOnlyAuthenticationSessionProvider: Sendable {
     func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot
 }
