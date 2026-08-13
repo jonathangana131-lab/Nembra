@@ -302,6 +302,7 @@ final class SpeedInstrumentModel {
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model = SpeedInstrumentModel()
     @State private var energyRailRuntime: PropulsionEnergyRailSimulatorRuntime? = try? PropulsionEnergyRailSimulatorRuntime()
     @State private var energyRailNextTransitionUptimeNanoseconds: UInt64? = nil
@@ -637,7 +638,10 @@ struct DashboardSpeedInstrumentView: View {
                 }
             }
             .font(.caption2.weight(.bold))
-            .tracking(2.2)
+            // Accessibility sizes keep the full font size; only decorative
+            // tracking is retired so semantic currentness never ellipsizes.
+            .tracking(dynamicTypeSize.isAccessibilitySize ? 0 : 2.2)
+            .fixedSize(horizontal: dynamicTypeSize.isAccessibilitySize, vertical: false)
             .foregroundStyle(Color.white.opacity(modePersonality.statusOpacity))
             .animation(modeAnimation, value: modePersonality.statusOpacity)
 
