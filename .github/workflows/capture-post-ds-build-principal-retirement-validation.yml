@@ -1,0 +1,205 @@
+name: Capture Post-DS Build Principal Retirement Validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-post-ds-build-principal-retirement-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-post-ds-build-principal-retirement-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-scope:
+    name: Bind exact #3142 carrier
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require validation-only one-path delta
+        shell: bash
+        env:
+          EXACT_PARENT: 0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-post-ds-build-principal-retirement-validation.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check
+
+      - name: Pin evidence and safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('.github/workflows/capture-post-ds-build-principal-retirement-validation.yml').read_text(encoding='utf-8')
+          required=(
+              '0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f',
+              'eDSRecordNotFound',
+              'final UID-wide kill',
+              '_numeric_principal_in_use',
+              'test_capture_signed_app_real_xcode_group_custody.py',
+              'productionBytesChanged',
+              'physicalAuthorityCreated',
+          )
+          missing=[item for item in required if item not in source]
+          if missing:
+              raise SystemExit('missing post-DS retirement marker(s): '+repr(missing))
+          PY
+
+  real-xcode-post-ds-retirement:
+    name: Prove post-DS final retirement on real Xcode
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current carrier
+        shell: bash
+        env:
+          EXACT_PARENT: 0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-post-ds-build-principal-retirement-validation.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize post-DS destructive-retirement candidate in runner workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=scripts/ci/capture_signed_app_build_origin_custody.py
+          cp "$helper" "$RUNNER_TEMP/capture_signed_app_build_origin_custody.py.original"
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          path=Path('scripts/ci/capture_signed_app_build_origin_custody.py')
+          source=path.read_text(encoding='utf-8')
+
+          old_assert='''def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    zombies = _wait_for_no_live_uid(uid, timeout=timeout)\n    deadline = time.monotonic() + timeout\n    latest_lookups: tuple[str, ...] = ()\n    while True:\n        latest_lookups = _identity_lookup_survivors(name, uid)\n        if not latest_lookups:\n            return\n        if time.monotonic() >= deadline:\n            break\n        subprocess.run(\n            ["/usr/bin/dscacheutil", "-flushcache"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        time.sleep(0.05)\n    raise BuildOriginCustodyError(\n        "ephemeral build identity survived retirement: "\n        f"zombie_pids={list(zombies)} identity_lookups={list(latest_lookups)}"\n    )\n\n\n'''
+          new_assert='''def _direct_local_identity_record_exists(kind: str, name: str) -> bool:\n    completed = subprocess.run(\n        ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.PIPE,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    detail = ((completed.stdout or "") + "\\n" + (completed.stderr or "")).strip()\n    if completed.returncode == 0:\n        return True\n    if "eDSRecordNotFound" in detail or "-14136" in detail:\n        return False\n    raise BuildOriginCustodyError(\n        f"could not classify direct Directory Services {kind} record: "\n        f"rc={completed.returncode} detail={detail[-800:]!r}"\n    )\n\n\ndef _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    deadline = time.monotonic() + timeout\n    latest_live: tuple[int, ...] = ()\n    latest_zombies: tuple[int, ...] = ()\n    latest_user_record = True\n    latest_group_record = True\n    while True:\n        latest_live, latest_zombies = _process_state_for_uid(uid)\n        latest_user_record = _direct_local_identity_record_exists("Users", name)\n        latest_group_record = _direct_local_identity_record_exists("Groups", name)\n        if not latest_live and not latest_zombies and not latest_user_record and not latest_group_record:\n            return\n        if time.monotonic() >= deadline:\n            break\n        subprocess.run(\n            ["/usr/bin/dscacheutil", "-flushcache"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        time.sleep(0.05)\n    raise BuildOriginCustodyError(\n        "ephemeral build destructive authority survived retirement: "\n        f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)} "\n        f"user_record={latest_user_record} group_record={latest_group_record}"\n    )\n\n\n'''
+          if source.count(old_assert) != 1:
+              raise SystemExit('exact current retirement assertion block was not found once')
+          source=source.replace(old_assert,new_assert)
+
+          old_remove='''def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:\n    if sys.platform != "darwin":\n        return\n    if uid is not None and uid > 0:\n        killed = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        if require_absent and killed.returncode not in (0, 1):\n            raise BuildOriginCustodyError(\n                f"could not request build-principal process retirement: pkill exit {killed.returncode}"\n            )\n        if require_absent:\n            _wait_for_no_live_uid(uid)\n    subprocess.run(\n        ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.DEVNULL,\n        stderr=subprocess.DEVNULL,\n        check=False,\n    )\n    subprocess.run(\n        ["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.DEVNULL,\n        stderr=subprocess.DEVNULL,\n        check=False,\n    )\n    subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)\n    if require_absent:\n        if uid is None:\n            raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n        _assert_local_build_identity_retired(name, uid)\n\n\n'''
+          new_remove='''def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:\n    if sys.platform != "darwin":\n        return\n    if require_absent and (uid is None or uid <= 0):\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    if uid is not None and uid > 0:\n        killed = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        if require_absent and killed.returncode not in (0, 1):\n            raise BuildOriginCustodyError(\n                f"could not request initial build-principal process retirement: pkill exit {killed.returncode}"\n            )\n    subprocess.run(\n        ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.DEVNULL,\n        stderr=subprocess.DEVNULL,\n        check=False,\n    )\n    subprocess.run(\n        ["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.DEVNULL,\n        stderr=subprocess.DEVNULL,\n        check=False,\n    )\n    subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)\n    if require_absent:\n        final_kill = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL,\n            stdout=subprocess.DEVNULL,\n            stderr=subprocess.DEVNULL,\n            check=False,\n        )\n        if final_kill.returncode not in (0, 1):\n            raise BuildOriginCustodyError(\n                f"could not request final build-principal process retirement: pkill exit {final_kill.returncode}"\n            )\n        _assert_local_build_identity_retired(name, uid)\n\n\n'''
+          if source.count(old_remove) != 1:
+              raise SystemExit('exact current identity-removal block was not found once')
+          source=source.replace(old_remove,new_remove)
+          compile(source,str(path),'exec',dont_inherit=True)
+          path.write_text(source,encoding='utf-8')
+          PY
+
+          grep -Fq '"eDSRecordNotFound" in detail or "-14136" in detail' "$helper"
+          grep -Fq 'final_kill = subprocess.run(' "$helper"
+          grep -Fq '_assert_local_build_identity_retired(name, uid)' "$helper"
+          grep -Fq 'if candidate <= 0 or _id_in_use(candidate):' "$helper"
+          test "$(grep -Fc '["/usr/bin/pkill", "-9", "-u", str(uid), ".*"]' "$helper")" -eq 2
+          /usr/bin/python3 -B -m py_compile "$helper"
+          shasum -a 256 "$helper" | tee "$RUNNER_TEMP/post-ds-retirement-candidate.sha256"
+
+      - name: Run exact real-Xcode compiler-output custody fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/post-ds-retirement-real-xcode.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py >"$log" 2>&1
+          status=$?
+          set -e
+          cat "$log"
+          printf '%s\n' "$status" > "$RUNNER_TEMP/post-ds-retirement-real-xcode.status"
+          test "$status" -eq 0
+          grep -Fq 'NEMBRA_REAL_XCODE_ORIGIN_JSON=' "$log"
+          if grep -Fq 'NEMBRA_REAL_XCODE_ORIGIN_ERROR=' "$log"; then
+            echo 'ERROR: candidate emitted an authority failure.' >&2
+            exit 1
+          fi
+
+      - name: Require frozen-output plus destructive-retirement semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - "$RUNNER_TEMP/post-ds-retirement-real-xcode.log" "$RUNNER_TEMP/post-ds-retirement-evidence.json" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          marker='NEMBRA_REAL_XCODE_ORIGIN_JSON='
+          lines=[line for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines() if line.startswith(marker)]
+          if len(lines) != 1:
+              raise SystemExit(f'expected one real-Xcode evidence marker, found {len(lines)}')
+          evidence=json.loads(lines[0][len(marker):])
+          required=(
+              evidence.get('schemaVersion') == 5
+              and evidence.get('buildEffectiveGroupAuthorityAttested') is True
+              and evidence.get('execBoundCredentialAttestationUsed') is True
+              and evidence.get('buildIdentityDistinctFromField') is True
+              and evidence.get('xcodebuildReturnCode') == 0
+              and evidence.get('nonForcedDetachReturnCode') == 0
+              and evidence.get('readonlyNonForcedDetachReturnCode') == 0
+              and evidence.get('buildPrincipalRetired') is True
+              and evidence.get('compilerProductSHA256') == evidence.get('readonlyRemountSHA256')
+              and evidence.get('physicalAuthorityCreated') is False
+          )
+          if not required:
+              raise SystemExit(f'post-DS retirement candidate failed semantic acceptance: {evidence}')
+          sanitized={
+              'schema':1,
+              'productionParent':'0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f',
+              'realXcodeCustodyAccepted':True,
+              'buildPrincipalRetired':True,
+              'productionBytesChanged':False,
+              'physicalAuthorityCreated':False,
+          }
+          Path(sys.argv[2]).write_text(json.dumps(sanitized,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
+          print('POST_DS_BUILD_PRINCIPAL_RETIREMENT_ACCEPTED physicalAuthorityCreated=false')
+          PY
+          shasum -a 256 "$RUNNER_TEMP/post-ds-retirement-evidence.json" | tee "$RUNNER_TEMP/post-ds-retirement-evidence.sha256"
+
+      - name: Restore exact production bytes
+        if: always()
+        shell: bash
+        env:
+          EXACT_PARENT: 0ecb43dd86ef3a6ae51d7ce28519a693c687ef2f
+        run: |
+          set -euo pipefail
+          helper=scripts/ci/capture_signed_app_build_origin_custody.py
+          test -f "$RUNNER_TEMP/capture_signed_app_build_origin_custody.py.original"
+          cp "$RUNNER_TEMP/capture_signed_app_build_origin_custody.py.original" "$helper"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-post-ds-build-principal-retirement-validation.yml'
+          printf '%s\n' 'VALIDATION ONLY. Production bytes restored. PHYSICAL NO-GO.'
+
+      - name: Retain real-Xcode retirement evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-post-ds-build-principal-retirement-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/post-ds-retirement-candidate.sha256
+            ${{ runner.temp }}/post-ds-retirement-real-xcode.log
+            ${{ runner.temp }}/post-ds-retirement-real-xcode.status
+            ${{ runner.temp }}/post-ds-retirement-evidence.json
+            ${{ runner.temp }}/post-ds-retirement-evidence.sha256
+          if-no-files-found: warn
+          retention-days: 30
