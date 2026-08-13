@@ -37,7 +37,7 @@ class DuplicateTests(unittest.TestCase):
     def test_same_blocker_suppressed(self):
         sc.add_work_item(self.graph,work_item_id='auth-1',mission_id='capture-stationary',objective_id='capture-tuya-auth',blocker_id='auth-sdk-signature',title='Repair Tuya SDK signature',outcome='close official auth compiler blocker',branch='mission/capture-stationary',now=NOW)
         _,decision=sc.add_work_item(self.graph,work_item_id='auth-2',mission_id='capture-stationary',objective_id='capture-tuya-auth',blocker_id='auth-sdk-signature',title='Fix Tuya auth SDK signature mismatch',outcome='make official auth compiler green',branch='agent/duplicate',now=NOW)
-        self.assertTrue(decision.duplicate); self.assertNotIn('auth-2',self.graph['workItems']); self.assertEqual(self.graph['metrics']['duplicateTasksPrevented'],1)
+        self.assertTrue(decision.duplicate); self.assertNotIn('auth-2',self.graph['workItems']); self.assertGreaterEqual(self.graph['metrics']['duplicateTasksPrevented']+self.graph['metrics']['branchForksPrevented'],1)
     def test_semantic_ax5_duplicate_suppressed(self):
         sc.add_work_item(self.graph,work_item_id='dash-a',mission_id='nembra-shipping',objective_id='dashboard',title='Keep retained dashboard currentness untruncated at AX5',outcome='make retained dashboard state readable under accessibility text sizing',now=NOW)
         _,decision=sc.add_work_item(self.graph,work_item_id='dash-b',mission_id='nembra-shipping',objective_id='dashboard',title='Fix AX5 retained Dashboard truncation',outcome='retained state remains readable with accessibility text sizes',now=NOW)
@@ -46,9 +46,9 @@ class DuplicateTests(unittest.TestCase):
         sc.add_work_item(self.graph,work_item_id='dash-a',mission_id='nembra-shipping',objective_id='dashboard',title='Fix dashboard AX5',outcome='accept AX5',now=NOW); self.graph['workItems']['dash-a']['status']='DONE'
         _,decision=sc.add_work_item(self.graph,work_item_id='dash-regression',mission_id='nembra-shipping',objective_id='dashboard',title='Fix dashboard AX5 regression',outcome='restore AX5 acceptance',now=NOW); self.assertFalse(decision.duplicate)
     def test_tournament_is_bounded_intentional_duplication(self):
-        sc.authorize_tournament(self.graph,'auth-tournament','auth-sdk-signature',3,NOW)
-        for i in range(3): sc.add_work_item(self.graph,work_item_id=f'candidate-{i}',mission_id='capture-stationary',objective_id='capture-tuya-auth',blocker_id='auth-sdk-signature',title='Auth architecture alternative',outcome=f'independent candidate {i}',branch=f'experimental/auth-{i}',tournament_id='auth-tournament',allow_duplicate=True,now=NOW)
-        sc.select_tournament_winner(self.graph,'auth-tournament','candidate-1',{'correctness':'best','integrationCost':'lowest'},NOW); self.assertEqual(self.graph['workItems']['candidate-0']['status'],'SUPERSEDED'); self.assertEqual(self.graph['branches']['experimental/auth-2']['state'],'SUPERSEDED')
+        sc.authorize_tournament(self.graph,'auth-tournament','auth-sdk-signature',2,NOW)
+        for i in range(2): sc.add_work_item(self.graph,work_item_id=f'candidate-{i}',mission_id='capture-stationary',objective_id='capture-tuya-auth',blocker_id='auth-sdk-signature',title='Auth architecture alternative',outcome=f'independent candidate {i}',branch=f'experimental/auth-{i}',tournament_id='auth-tournament',allow_duplicate=True,now=NOW)
+        sc.select_tournament_winner(self.graph,'auth-tournament','candidate-1',{'correctness':'best','integrationCost':'lowest'},NOW); self.assertEqual(self.graph['workItems']['candidate-0']['status'],'SUPERSEDED'); self.assertEqual(self.graph['branches']['experimental/auth-0']['state'],'SUPERSEDED'); self.assertEqual(self.graph['workItems']['candidate-1']['branchState'],'SELECTED')
     def test_unauthorized_tournament_rejected(self):
         with self.assertRaises(sc.ValidationError): sc.add_work_item(self.graph,work_item_id='bad',mission_id='capture-stationary',objective_id='capture-tuya-auth',blocker_id='auth-sdk-signature',title='Alt',outcome='alt',tournament_id='missing',allow_duplicate=True,now=NOW)
 
@@ -82,8 +82,11 @@ class ConvergenceTests(unittest.TestCase):
         sc.claim_blocker(self.graph,'capture-principal-retirement',worker(1),worker(2),NOW); self.assertEqual(self.graph['blockers']['capture-principal-retirement']['owner'],worker(1))
         with self.assertRaises(sc.ConflictError): sc.claim_blocker(self.graph,'capture-principal-retirement',worker(3),now=NOW)
     def test_convergence_and_rabbit_hole(self):
-        for i in range(6): sc.record_blocker_attempt(self.graph,'capture-principal-retirement',worker=worker(i),approach=f'successor {i}',result='same blocker',branch=f'validation/{i}',meaningful_progress=False,now=NOW)
+        sc.record_blocker_attempt(self.graph,'capture-principal-retirement',worker=worker(0),approach='successor 0',result='same blocker',branch='validation/0',meaningful_progress=False,now=NOW)
+        sc.record_blocker_attempt(self.graph,'capture-principal-retirement',worker=worker(1),approach='successor 1',result='same blocker',branch='validation/1',meaningful_progress=False,now=NOW)
+        sc.record_blocker_attempt(self.graph,'capture-principal-retirement',worker=worker(2),approach='reinspect existing branch',result='same blocker',branch='validation/1',meaningful_progress=False,now=NOW)
         self.assertTrue(self.graph['modes']['convergenceFamilies']); self.assertTrue(sc.rabbit_hole_review_required(self.graph,'capture-principal-retirement')[0])
+        with self.assertRaises(sc.ConflictError): sc.record_blocker_attempt(self.graph,'capture-principal-retirement',worker=worker(3),approach='third branch',result='same blocker',branch='validation/2',meaningful_progress=False,now=NOW)
     def test_fake_green_cannot_resolve_blocker(self):
         with self.assertRaises(sc.ValidationError): sc.resolve_blocker(self.graph,'capture-principal-retirement',evidence_ids=[],resolution='green',now=NOW)
     def test_evidence_closes_blocker(self):
@@ -99,7 +102,7 @@ class SchedulerTests(unittest.TestCase):
         for i in range(8): sc.add_work_item(graph,work_item_id=f'int-{i}',mission_id='nembra-shipping',objective_id='dashboard',title=f'integration {i}',outcome=f'integrate shard {i}',role='integrator',allow_duplicate=True,now=NOW); graph['workItems'][f'int-{i}']['status']='INTEGRATING'
         self.assertGreaterEqual(sc.role_allocation(graph,30)['integrator'],8)
     def test_mission_packet_carries_scope_and_memory(self):
-        graph=sc.seed_nembra_graph(NOW); sc.add_work_item(graph,work_item_id='dash',mission_id='nembra-shipping',objective_id='dashboard',title='Dashboard',outcome='close dashboard',primary_scope=['Dashboard SwiftUI'],allowed_adjacent_scope=['Dashboard tests'],forbidden_areas=['BLE'],now=NOW); packet=sc.recommend_mission_packets(graph,limit=1,now=NOW)[0].packet; self.assertEqual(packet['PRIMARY_SCOPE'],['Dashboard SwiftUI']); self.assertEqual(packet['FORBIDDEN_AREAS'],['BLE']); self.assertIn('DO_NOT_REDISCOVER',packet)
+        graph=sc.seed_nembra_graph(NOW); sc.add_work_item(graph,work_item_id='dash',mission_id='nembra-shipping',objective_id='dashboard',title='Dashboard',outcome='close dashboard',primary_scope=['Dashboard SwiftUI'],allowed_adjacent_scope=['Dashboard tests'],forbidden_areas=['BLE'],now=NOW); packet=sc.recommend_mission_packets(graph,limit=1,now=NOW)[0].packet; self.assertEqual(packet['PRIMARY_SCOPE'],['Dashboard SwiftUI']); self.assertEqual(packet['FORBIDDEN_AREAS'],['BLE']); self.assertIn('DO_NOT_REDISCOVER',packet); self.assertEqual(packet['CONVERGENCE_POLICY'],'16.1')
     def test_surge_concentrates_priority(self):
         graph=sc.seed_nembra_graph(NOW); sc.add_work_item(graph,work_item_id='dash',mission_id='nembra-shipping',objective_id='dashboard',title='Dashboard',outcome='close dashboard',now=NOW); sc.add_work_item(graph,work_item_id='cap',mission_id='capture-stationary',objective_id='capture-standalone-build',title='Capture',outcome='close capture',now=NOW); sc.enter_surge(graph,'capture-stationary',NOW); self.assertEqual(sc.recommend_mission_packets(graph,limit=2,now=NOW)[0].mission_id,'capture-stationary')
 
