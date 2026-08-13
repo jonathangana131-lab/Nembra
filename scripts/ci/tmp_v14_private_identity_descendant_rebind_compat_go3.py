@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import hashlib
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "Scripts/provision_capture_tuya_identity_writer.py"
 RACES = ROOT / "scripts/ci/tests/test_capture_private_identity_publication_races.py"
+SHELL = ROOT / "Scripts/provision_capture_tuya_identity.sh"
+SWIFT = ROOT / "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift"
 
 
 def replace_count(text: str, old: str, new: str, expected: int, label: str) -> str:
@@ -67,4 +71,17 @@ for path in (WRITER, RACES):
     if "_secure_replace_beneath" in text:
         raise SystemExit(f"retired root-relative publication seam survived in {path}")
 
-print("publication-race compatibility and sealed-root cleanup applied")
+shell = SHELL.read_text(encoding="utf-8")
+match = re.search(r'WRITER_SHA256="([0-9a-f]{64})"', shell)
+if match is None:
+    raise SystemExit("shell writer digest fence missing")
+old_digest = match.group(1)
+new_digest = hashlib.sha256(WRITER.read_bytes()).hexdigest()
+shell = replace_count(shell, old_digest, new_digest, 1, "shell writer digest repin")
+SHELL.write_text(shell, encoding="utf-8")
+
+swift = SWIFT.read_text(encoding="utf-8")
+swift = replace_count(swift, old_digest, new_digest, 1, "Swift writer digest repin")
+SWIFT.write_text(swift, encoding="utf-8")
+
+print(new_digest)
