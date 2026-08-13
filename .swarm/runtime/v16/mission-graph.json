@@ -974,8 +974,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 281,
+    "classifiedPRTotal": 280,
     "classifiedPRs": {
+      "2637": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2637,
+        "recommendedAction": "independent-review",
+        "similarity": 0.274,
+        "title": "[Capture P0][FIELD] Restore private-device reader and local-build custody"
+      },
       "2638": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2252,17 +2263,6 @@
         "similarity": 0.293,
         "title": "[Dashboard V15][AX5 QA] Re-prove stopped-control blocker at large type"
       },
-      "3168": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3168,
-        "recommendedAction": "independent-review",
-        "similarity": 0.107,
-        "title": "Capture V16: converge standalone build on canonical mission"
-      },
       "3169": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2415,11 +2415,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T00:27:12Z",
+    "liveRefreshAt": "2026-08-13T00:30:13Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
-    "liveRefreshMainSHA": "aa0f80ac4c02c1e34cef56f7ce8c179b3e164e11",
+    "liveRefreshMainSHA": "d79629afe00159bf9eb455bf86e00944d5842152",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -6169,10 +6169,10 @@
       "userValue": 7
     }
   },
-  "revision": 30,
+  "revision": 31,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T00:29:51Z",
+  "updatedAt": "2026-08-13T00:32:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6248,7 +6248,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T00:27:12Z",
+      "updatedAt": "2026-08-13T00:30:13Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
