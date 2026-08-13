@@ -1,0 +1,44 @@
+name: Capture UI state composition
+
+on:
+  push:
+    branches:
+      - capture/ui-state-audit-2b
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/ui-state-audit-2b
+          fetch-depth: 0
+
+      - name: Apply exact app state patch
+        run: |
+          set -euo pipefail
+          git apply --check .github/capture-app-mirror.patch
+          git apply .github/capture-app-mirror.patch
+          rm .github/capture-app-mirror.patch
+          rm .github/workflows/capture-ui-state-compose.yml
+          git diff --check
+
+      - name: Run focused Capture contracts
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaAuthenticatedReadOnlyHorizonTests
+          swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
+
+      - name: Publish tested app state slice
+        run: |
+          set -euo pipefail
+          git config user.name nembra-go-worker
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'Capture V16.1: mirror incomplete horizon in app'
+          git push origin HEAD:capture/ui-state-audit-2b
