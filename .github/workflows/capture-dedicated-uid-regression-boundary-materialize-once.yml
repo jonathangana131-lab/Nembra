@@ -1,0 +1,91 @@
+name: Capture dedicated-UID regression boundary materialize once
+
+on:
+  push:
+    branches:
+      - repair/v14-capture-dedicated-uid-regression-boundary-sol-20260812-go3
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact parent and one-shot carrier
+        shell: bash
+        env:
+          EXPECTED_PARENT: e72099137463d93bda486e987a6ea8726c540140
+          MATERIALIZER: .github/workflows/capture-dedicated-uid-regression-boundary-materialize-once.yml
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only HEAD^..HEAD)" = "$MATERIALIZER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Retarget regression to exec-bound credential transition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py")
+          text = path.read_text(encoding="utf-8")
+          old = '        self.assertIn("**_structured_credentials(build_uid, build_gid, ())", source)\n'
+          new = ''.join([
+              '        exec_bound_start = source.index("def _run_exec_bound_build(")\n',
+              '        exec_bound_end = source.index("\\ndef _group_names(", exec_bound_start)\n',
+              '        exec_bound = source[exec_bound_start:exec_bound_end]\n',
+              '        self.assertIn("**_structured_credentials(uid, gid, ())", exec_bound)\n',
+          ])
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one stale dedicated-UID assertion, found {count}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Prove portable custody regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-capture-regression-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_install_custody.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_install_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
+          grep -Fq 'exec_bound_start = source.index("def _run_exec_bound_build(")' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          if grep -Fq '**_structured_credentials(build_uid, build_gid, ())' scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py; then
+            echo 'ERROR: stale caller-local credential assertion survived' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Self-delete and publish exact repair
+        shell: bash
+        env:
+          MATERIALIZER: .github/workflows/capture-dedicated-uid-regression-boundary-materialize-once.yml
+          BRANCH: repair/v14-capture-dedicated-uid-regression-boundary-sol-20260812-go3
+        run: |
+          set -euo pipefail
+          git rm "$MATERIALIZER"
+          git add scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$MATERIALIZER" scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'Capture: bind dedicated-UID regression to exec boundary'
+          git push origin "HEAD:$BRANCH"
