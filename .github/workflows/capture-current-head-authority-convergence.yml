@@ -1,0 +1,333 @@
+name: Capture Current Head Authority Convergence
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-head-authority-convergence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-current-head-authority-convergence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-scope:
+    name: Bind current production parent and immutable witnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require one-path convergence delta
+        shell: bash
+        env:
+          EXACT_PARENT: 8c6a124154d678b1bc839d9c23ff452f4be48086
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          test "$changed_paths" = '.github/workflows/capture-current-head-authority-convergence.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check
+
+      - name: Pin immutable validation ingredients
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('.github/workflows/capture-current-head-authority-convergence.yml').read_text(encoding='utf-8')
+          required=(
+              '8c6a124154d678b1bc839d9c23ff452f4be48086',
+              '79a3a7768776e28e2668d680fe0670f397eb34b5',
+              'b4d2a932058fb20b43b5e81fe755b91dbc15d4e0',
+              'f82f4f30bee65c8639c1da913bc8c63bfa1f5fe1',
+              'e80f464bc13f17582983346bbf86287b60d9d50a',
+              'test_capture_private_tuya_build_uid_read_lease.py',
+              'test_capture_build_source_root_snapshot.py',
+              'test_capture_retired_principal_stale_cache_authority.py',
+              'capture_signed_app_build_origin_custody.py',
+              'physicalAuthorityCreated',
+          )
+          missing=[marker for marker in required if marker not in source]
+          if missing:
+              raise SystemExit('missing convergence authority marker(s): '+repr(missing))
+          PY
+
+  private-read-lease:
+    name: Current helper / reversible private-input read lease
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact current parent and recover immutable witnesses
+        shell: bash
+        env:
+          EXACT_PARENT: 8c6a124154d678b1bc839d9c23ff452f4be48086
+          LEASE_HEAD: 79a3a7768776e28e2668d680fe0670f397eb34b5
+          ATTRIB_HEAD: e80f464bc13f17582983346bbf86287b60d9d50a
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-current-head-authority-convergence.yml'
+
+          git fetch --no-tags origin \
+            '+refs/pull/3207/head:refs/remotes/origin/nembra-validation-3207' \
+            '+refs/pull/2867/head:refs/remotes/origin/nembra-accepted-vnode-2867'
+          test "$(git rev-parse refs/remotes/origin/nembra-validation-3207)" = "$LEASE_HEAD"
+          test "$(git rev-parse refs/remotes/origin/nembra-accepted-vnode-2867)" = "$ATTRIB_HEAD"
+
+          WITNESS="$RUNNER_TEMP/test_capture_private_tuya_build_uid_read_lease.py"
+          witness_blob="$(git rev-parse "$LEASE_HEAD:scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py")"
+          git cat-file blob "$witness_blob" > "$WITNESS"
+          test "$(git hash-object "$WITNESS")" = "$witness_blob"
+
+          ACCEPTED_DIR="$RUNNER_TEMP/nembra-accepted-vnode"
+          mkdir -m 700 "$ACCEPTED_DIR"
+          for relative in \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            Scripts/capture_tuya_private_input_provenance.py; do
+            blob="$(git rev-parse "$ATTRIB_HEAD:$relative")"
+            output="$ACCEPTED_DIR/$(basename "$relative")"
+            git cat-file blob "$blob" > "$output"
+            test "$(git hash-object "$output")" = "$blob"
+          done
+          grep -Fq '"KQ_NOTE_ATTRIB"' "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          grep -Fq 'select.KQ_NOTE_ATTRIB' "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          printf 'LEASE_WITNESS=%s\nACCEPTED_VNODE_DIR=%s\n' "$WITNESS" "$ACCEPTED_DIR" >> "$GITHUB_ENV"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute lease semantics against current production retirement
+        shell: bash
+        env:
+          ATTRIB_HEAD: e80f464bc13f17582983346bbf86287b60d9d50a
+        run: |
+          set -euo pipefail
+          FIELD_USER="$(/usr/bin/id -un)"
+          EVIDENCE="$RUNNER_TEMP/current-private-tuya-read-lease.json"
+          DIAGNOSTIC="$RUNNER_TEMP/current-private-tuya-read-lease.stderr.log"
+          : > "$DIAGNOSTIC"
+          /usr/bin/sudo /usr/bin/python3 -B -I "$LEASE_WITNESS" \
+            --field-user "$FIELD_USER" \
+            --production-helper "$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py" \
+            --accepted-attrib-guard "$ACCEPTED_VNODE_DIR/capture_tuya_private_input_build_guard.py" \
+            --accepted-vnode-head "$ATTRIB_HEAD" \
+            2> >(/usr/bin/tee "$DIAGNOSTIC" >&2) \
+            | /usr/bin/tee "$EVIDENCE"
+          /usr/bin/python3 - "$EVIDENCE" "$ATTRIB_HEAD" <<'PY'
+          import json,sys
+          from pathlib import Path
+          payload=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert payload['schema'] == 1
+          assert payload['acceptedVnodeHead'] == sys.argv[2]
+          assert payload['preLeaseReadDenied'] is True
+          assert payload['leaseReadSucceeded'] is True
+          assert payload['internalSymlinkReadSucceeded'] is True
+          assert payload['deniedMutations'] == ['append','create','unlink','rename','chmod']
+          assert payload['attribMutationObserved'] is True
+          assert payload['postRevokeReadDenied'] is True
+          assert payload['exactAclListingRestored'] is True
+          assert payload['physicalTuyaSecretsUsed'] is False
+          assert payload['xcodeUsed'] is False
+          assert payload['deviceUsed'] is False
+          PY
+          shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/current-private-tuya-read-lease.sha256"
+
+      - name: Retain sanitized lease evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-private-tuya-read-lease-evidence
+          path: |
+            ${{ runner.temp }}/current-private-tuya-read-lease.json
+            ${{ runner.temp }}/current-private-tuya-read-lease.sha256
+            ${{ runner.temp }}/current-private-tuya-read-lease.stderr.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  source-snapshot:
+    name: Current helper / root-custodied accepted source snapshot
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact current parent and recover immutable source witness
+        shell: bash
+        env:
+          EXACT_PARENT: 8c6a124154d678b1bc839d9c23ff452f4be48086
+          SOURCE_HEAD: b4d2a932058fb20b43b5e81fe755b91dbc15d4e0
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-current-head-authority-convergence.yml'
+          git fetch --no-tags origin '+refs/pull/3212/head:refs/remotes/origin/nembra-validation-3212'
+          test "$(git rev-parse refs/remotes/origin/nembra-validation-3212)" = "$SOURCE_HEAD"
+          WITNESS="$RUNNER_TEMP/test_capture_build_source_root_snapshot.py"
+          blob="$(git rev-parse "$SOURCE_HEAD:scripts/ci/tests/test_capture_build_source_root_snapshot.py")"
+          git cat-file blob "$blob" > "$WITNESS"
+          test "$(git hash-object "$WITNESS")" = "$blob"
+          printf 'SOURCE_WITNESS=%s\n' "$WITNESS" >> "$GITHUB_ENV"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute source snapshot semantics against current production retirement
+        shell: bash
+        env:
+          EXACT_PARENT: 8c6a124154d678b1bc839d9c23ff452f4be48086
+        run: |
+          set -euo pipefail
+          FIELD_USER="$(/usr/bin/id -un)"
+          EVIDENCE="$RUNNER_TEMP/current-build-source-root-snapshot.json"
+          DIAGNOSTIC="$RUNNER_TEMP/current-build-source-root-snapshot.stderr.log"
+          : > "$DIAGNOSTIC"
+          /usr/bin/sudo /usr/bin/python3 -B -I "$SOURCE_WITNESS" \
+            --field-user "$FIELD_USER" \
+            --production-helper "$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py" \
+            --production-parent "$EXACT_PARENT" \
+            2> >(/usr/bin/tee "$DIAGNOSTIC" >&2) \
+            | /usr/bin/tee "$EVIDENCE"
+          /usr/bin/python3 - "$EVIDENCE" "$EXACT_PARENT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          payload=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert payload['schema'] == 1
+          assert payload['productionParent'] == sys.argv[2]
+          assert payload['acceptedSourceTreeSHA256'] == payload['snapshotTreeSHA256']
+          assert payload['liveSourceAfterAttackSHA256'] != payload['acceptedSourceTreeSHA256']
+          assert payload['fieldSourceReplacementSucceeded'] is True
+          assert payload['fieldSnapshotAppendDenied'] is True
+          assert payload['fieldSnapshotRenameDenied'] is True
+          assert payload['dedicatedConsumerReadAcceptedSnapshot'] is True
+          assert payload['dedicatedConsumerReadInternalSymlink'] is True
+          assert payload['dedicatedSnapshotWriteDenied'] is True
+          assert payload['snapshotRootOwnedReadOnly'] is True
+          assert payload['publicSyntheticSourceOnly'] is True
+          assert payload['privateTuyaInputsUsed'] is False
+          assert payload['appleSigningIdentityUsed'] is False
+          assert payload['xcodeBuildUsed'] is False
+          assert payload['deviceUsed'] is False
+          assert payload['bluetoothUsed'] is False
+          assert payload['physicalAuthorityCreated'] is False
+          PY
+          shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/current-build-source-root-snapshot.sha256"
+
+      - name: Retain sanitized source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-build-source-root-snapshot-evidence
+          path: |
+            ${{ runner.temp }}/current-build-source-root-snapshot.json
+            ${{ runner.temp }}/current-build-source-root-snapshot.sha256
+            ${{ runner.temp }}/current-build-source-root-snapshot.stderr.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  stale-cache-authority:
+    name: Current helper / stale retired-principal cache authority
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact current parent and recover immutable cache witness
+        shell: bash
+        env:
+          EXACT_PARENT: 8c6a124154d678b1bc839d9c23ff452f4be48086
+          CACHE_HEAD: f82f4f30bee65c8639c1da913bc8c63bfa1f5fe1
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-current-head-authority-convergence.yml'
+          git fetch --no-tags origin '+refs/pull/3214/head:refs/remotes/origin/nembra-validation-3214'
+          test "$(git rev-parse refs/remotes/origin/nembra-validation-3214)" = "$CACHE_HEAD"
+          WITNESS="$RUNNER_TEMP/test_capture_retired_principal_stale_cache_authority.py"
+          blob="$(git rev-parse "$CACHE_HEAD:scripts/ci/tests/test_capture_retired_principal_stale_cache_authority.py")"
+          git cat-file blob "$blob" > "$WITNESS"
+          test "$(git hash-object "$WITNESS")" = "$blob"
+          printf 'CACHE_WITNESS=%s\n' "$WITNESS" >> "$GITHUB_ENV"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Classify stale lookup metadata after current destructive retirement
+        shell: bash
+        env:
+          EXACT_PARENT: 8c6a124154d678b1bc839d9c23ff452f4be48086
+        run: |
+          set -euo pipefail
+          FIELD_USER="$(/usr/bin/id -un)"
+          EVIDENCE="$RUNNER_TEMP/current-retired-principal-stale-cache-authority.json"
+          DIAGNOSTIC="$RUNNER_TEMP/current-retired-principal-stale-cache-authority.stderr.log"
+          : > "$DIAGNOSTIC"
+          /usr/bin/sudo /usr/bin/python3 -B -I "$CACHE_WITNESS" \
+            --field-user "$FIELD_USER" \
+            --production-helper "$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py" \
+            --production-parent "$EXACT_PARENT" \
+            2> >(/usr/bin/tee "$DIAGNOSTIC" >&2) \
+            | /usr/bin/tee "$EVIDENCE"
+          /usr/bin/python3 - "$EVIDENCE" "$EXACT_PARENT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          payload=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert payload['schema'] == 1
+          assert payload['productionParent'] == sys.argv[2]
+          assert payload['directStateAfterDelete']['userDirectoryServiceRecordResolved'] is False
+          assert payload['directStateAfterDelete']['groupDirectoryServiceRecordResolved'] is False
+          assert payload['stalePwdGrpCacheObserved'] is True
+          assert payload['zeroRetiredUIDProcesses'] is True
+          assert payload['productionNumericReuseBlockedWhileCacheStale'] is True
+          assert payload['ordinaryFieldSetgroupsDenied'] is True
+          assert payload['ordinaryFieldSetgidDenied'] is True
+          assert payload['ordinaryFieldSetuidDenied'] is True
+          assert payload['ordinaryFieldRetiredOwnedReadDenied'] is True
+          assert payload['ordinaryFieldRetiredOwnedWriteDenied'] is True
+          assert payload['retiredOwnedSentinelUnchanged'] is True
+          assert payload['finalDirectState']['userDirectoryServiceRecordResolved'] is False
+          assert payload['finalDirectState']['groupDirectoryServiceRecordResolved'] is False
+          assert payload['modeledFieldAuthorityDeniedDespiteStaleLookup'] is True
+          assert payload['productionBytesChanged'] is False
+          assert payload['xcodeUsed'] is False
+          assert payload['appleSigningIdentityUsed'] is False
+          assert payload['privateTuyaInputsUsed'] is False
+          assert payload['deviceUsed'] is False
+          assert payload['bluetoothUsed'] is False
+          assert payload['physicalAuthorityCreated'] is False
+          PY
+          shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/current-retired-principal-stale-cache-authority.sha256"
+
+      - name: Retain sanitized stale-cache authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-retired-principal-stale-cache-authority-evidence
+          path: |
+            ${{ runner.temp }}/current-retired-principal-stale-cache-authority.json
+            ${{ runner.temp }}/current-retired-principal-stale-cache-authority.sha256
+            ${{ runner.temp }}/current-retired-principal-stale-cache-authority.stderr.log
+          if-no-files-found: warn
+          retention-days: 7
