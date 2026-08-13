@@ -10,8 +10,8 @@ export PATH
 # selected-Xcode launcher/helper/liveness-guard Git objects, requires the launcher
 # to revoke reusable sudo authority before freeze publication, runs harmless frozen
 # tool identity/help commands, then arms a root verifier that seals the final receipt
-# only after this exact field shell exits and the launcher's root janitor removes the
-# exact admitted freeze namespace.
+# only after this exact field shell exits, the exact root janitor removes the exact
+# admitted freeze namespace, and that same janitor process identity retires.
 
 SCRIPT_PATH="scripts/field/run_selected_xcode_freeze_preflight.command"
 LAUNCHER_PATH="scripts/ci/capture_selected_xcode_freeze_launcher.py"
@@ -117,6 +117,39 @@ def verified(encoded: str, expected: str, label: str) -> bytes:
         raise SystemExit(f'{label} failed root Git-blob identity')
     return raw
 
+def ps_value(pid: int, key: str) -> str:
+    if pid <= 1:
+        raise SystemExit('process identity PID is invalid')
+    completed = subprocess.run(
+        ['/bin/ps', '-o', f'{key}=', '-p', str(pid)],
+        env={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','HOME':'/tmp','LANG':'C','LC_ALL':'C'},
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    value = (completed.stdout or '').strip()
+    if completed.returncode != 0 or not value:
+        raise SystemExit(f'process identity could not be inspected: pid={pid} key={key}')
+    return value
+
+def same_exact_process_fail_closed(pid: int, expected_uid: int, expected_start: str) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    try:
+        raw_uid = ps_value(pid, 'uid')
+        start = ps_value(pid, 'lstart')
+    except SystemExit:
+        return True
+    if not raw_uid.isdigit() or not start:
+        return True
+    return int(raw_uid) == expected_uid and start == expected_start
+
 launcher_raw = verified(launcher_b64, launcher_blob, 'launcher')
 helper_raw = verified(helper_b64, helper_blob, 'helper')
 guard_raw = verified(guard_b64, guard_blob, 'liveness guard')
@@ -148,6 +181,13 @@ field_start = field_start_identity(field_pid, field_uid)
 namespace, developer, tools, janitor_pid = run(field_pid, source_sha, helper_b64, helper_blob)
 namespace = Path(namespace)
 developer = Path(developer)
+
+janitor_uid_raw = ps_value(int(janitor_pid), 'uid')
+janitor_start = ps_value(int(janitor_pid), 'lstart')
+if not janitor_uid_raw.isdigit() or int(janitor_uid_raw) != 0 or not janitor_start:
+    raise SystemExit('selected-Xcode janitor is not one live root process at arm time')
+if not same_exact_process_fail_closed(int(janitor_pid), 0, janitor_start):
+    raise SystemExit('selected-Xcode janitor exact process identity is not live at arm time')
 
 lifecycle = namespace / '.nembra-freeze-lifecycle.json'
 metadata = os.lstat(lifecycle)
@@ -218,6 +258,10 @@ base_receipt = {
     'fieldStartIdentity':field_start,
     'freezeNamespace':str(namespace),
     'frozenDeveloper':str(developer),
+    'janitorPID':int(janitor_pid),
+    'janitorUID':0,
+    'janitorStartIdentity':janitor_start,
+    'janitorAliveAtArm':True,
     'xcodebuildVersion':first,
     'xctraceVersionProbeSucceeded':True,
     'devicectlHelpProbeSucceeded':True,
@@ -253,11 +297,19 @@ if verifier == 0:
             time.sleep(0.25)
             cleanup_observed = not namespace.exists()
 
+        janitor_deadline = time.monotonic() + 30.0
+        janitor_retired = not same_exact_process_fail_closed(int(janitor_pid), 0, janitor_start)
+        while not janitor_retired and time.monotonic() < janitor_deadline:
+            time.sleep(0.25)
+            janitor_retired = not same_exact_process_fail_closed(int(janitor_pid), 0, janitor_start)
+
+        accepted = cleanup_observed and janitor_retired
         receipt = dict(base_receipt)
         receipt.update({
             'fieldProcessRetired':True,
             'janitorCleanupObserved':cleanup_observed,
-            'accepted':cleanup_observed,
+            'janitorProcessRetired':janitor_retired,
+            'accepted':accepted,
             'physicalAuthorityCreated':False,
         })
         raw = (json.dumps(receipt, sort_keys=True, separators=(',',':')) + '\n').encode('utf-8')
@@ -283,6 +335,8 @@ armed = {
     'receiptPath':str(receipt_path),
     'freezeNamespace':str(namespace),
     'janitorPID':int(janitor_pid),
+    'janitorStartIdentity':janitor_start,
+    'janitorAliveAtArm':True,
     'postExitVerifierPID':int(verifier),
     'sudoInvalidationOwnedByAcceptedLauncher':True,
     'deviceDiscoveryPerformed':False,
@@ -321,6 +375,8 @@ assert payload['receiptPath'].startswith('/private/tmp/nembra-selected-xcode-fie
 assert payload['receiptPath'].endswith('/receipt.json')
 assert payload['freezeNamespace'].startswith('/Library/NembraSelectedXcodeFreeze.')
 assert payload['janitorPID'] > 1
+assert payload['janitorStartIdentity']
+assert payload['janitorAliveAtArm'] is True
 assert payload['postExitVerifierPID'] > 1
 assert payload['sudoInvalidationOwnedByAcceptedLauncher'] is True
 assert payload['deviceDiscoveryPerformed'] is False
@@ -331,9 +387,10 @@ assert payload['privateTuyaInputsUsed'] is False
 assert payload['physicalAuthorityCreated'] is False
 print('CAPTURE_SELECTED_XCODE_FIELD_PREFLIGHT_ARMED')
 print('FINAL_RECEIPT=' + payload['receiptPath'])
-print('Exit this exact field shell normally. The root verifier seals the final receipt only after the janitor removes the exact freeze namespace.')
+print('Exit this exact field shell normally. The root verifier seals the final receipt only after exact janitor cleanup and retirement.')
 PY
 
 # Success here means only that the validation was armed correctly. The final receipt
-# is authoritative for post-exit janitor cleanup and must contain accepted=true.
+# is authoritative only when janitorCleanupObserved=true, janitorProcessRetired=true,
+# and accepted=true on this exact source/blob lineage.
 exit 0
