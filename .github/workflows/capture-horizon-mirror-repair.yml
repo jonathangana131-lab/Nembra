@@ -1,0 +1,165 @@
+name: Capture horizon mirror repair
+
+on:
+  push:
+    branches:
+      - capture-horizon-mirror-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'GO repair Capture incomplete horizon app mirror'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture-horizon-mirror-gpt56
+          fetch-depth: 0
+
+      - name: Apply exact app and regression repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app = app_path.read_text()
+          error = 'TuyaAuthenticatedReadOnlySessionLedger.MutationError'
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return source.replace(old, new, 1)
+
+          app = replace_once(
+              app,
+              'Waiting for a genuine application update and the canonical 45-second horizon…',
+              'Waiting for repeated same-generation application evidence and the canonical 45-second observation horizon…',
+              'authenticated observation copy',
+          )
+
+          old_row = 'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)'
+          if old_row in app:
+              app = replace_once(
+                  app,
+                  old_row,
+                  'requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)',
+                  'observation checklist copy',
+              )
+
+          receipt_start = app.index('    private func receivedApplicationUpdate(')
+          receipt_end = app.index('    private func redactedApplicationEventDetails(', receipt_start)
+          receipt = app[receipt_start:receipt_end]
+          if f'catch {error}.incompleteObservationHorizonReached' in receipt:
+              raise SystemExit('application horizon catch already exists')
+          receipt_anchor = f'''        }} catch {error}.staleConnection {{
+            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])'''
+          receipt_catch = f'''        }} catch {error}.incompleteObservationHorizonReached {{
+            await mirrorAlreadyTerminalIncompleteObservationHorizon(
+                token: token,
+                message: "Application receipt reached the package-owned incomplete-evidence horizon before the required repeated application evidence earned stationary-mapping readiness. The package already retired this generation; no Bluetooth disconnect is claimed. Relaunch Capture and start again from scooter OFF.",
+                kind: "application_authenticated_incomplete_readiness_horizon_reached"
+            )
+'''
+          if receipt.count(receipt_anchor) != 1:
+              raise SystemExit(f'application stale-catch anchor count: {receipt.count(receipt_anchor)}')
+          receipt = receipt.replace(receipt_anchor, receipt_catch + receipt_anchor, 1)
+          app = app[:receipt_start] + receipt + app[receipt_end:]
+
+          watchdog_start = app.index('    private func startWatchdog(')
+          watchdog_end = app.index('    private func recordObservedTransportLoss(', watchdog_start)
+          watchdog = app[watchdog_start:watchdog_end]
+          if f'catch {error}.incompleteObservationHorizonReached' in watchdog:
+              raise SystemExit('watchdog horizon catch already exists')
+          watchdog_anchor = f'''                }} catch {error}.staleConnection {{
+                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])'''
+          watchdog_catch = f'''                }} catch {error}.incompleteObservationHorizonReached {{
+                    await self.mirrorAlreadyTerminalIncompleteObservationHorizon(
+                        token: token,
+                        message: "Authenticated observation reached the package-owned incomplete-evidence horizon before the required repeated application evidence earned stationary-mapping readiness. The package already retired this generation; no Bluetooth disconnect is claimed. Relaunch Capture and start again from scooter OFF.",
+                        kind: "session_authenticated_incomplete_readiness_horizon_reached"
+                    )
+                    return
+'''
+          if watchdog.count(watchdog_anchor) != 1:
+              raise SystemExit(f'watchdog stale-catch anchor count: {watchdog.count(watchdog_anchor)}')
+          watchdog = watchdog.replace(watchdog_anchor, watchdog_catch + watchdog_anchor, 1)
+          app = app[:watchdog_start] + watchdog + app[watchdog_end:]
+
+          helper_anchor = '    private func invalidateObservationContinuity(\n'
+          if 'private func mirrorAlreadyTerminalIncompleteObservationHorizon' in app:
+              raise SystemExit('incomplete-horizon mirror helper already exists')
+          helper = '''    /// Mirrors the semantic incomplete-evidence terminal already committed by the package
+    /// mutation that threw `incompleteObservationHorizonReached`. The package has already
+    /// preserved the accepted chronology prefix and retired callback authority, so the app must
+    /// only release its matching local generation and present the fail-closed restart state.
+    /// No second ledger terminal, liveness receipt, or Bluetooth-disconnect claim is manufactured.
+    private func mirrorAlreadyTerminalIncompleteObservationHorizon(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        watchdog?.cancel()
+        watchdog = nil
+        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
+    }
+
+'''
+          app = replace_once(app, helper_anchor, helper + helper_anchor, 'incomplete-horizon helper insertion')
+          app_path.write_text(app)
+
+          tests_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift')
+          tests = tests_path.read_text()
+          test_start = tests.index('    @Test("clock regression cannot rewrite accepted chronology")')
+          test_end = tests.index('    @Test("disconnect remains a distinct transport-loss terminal")', test_start)
+          section = tests[test_start:test_end]
+          section = replace_once(
+              section,
+              'try await ledger.markAuthenticated(for: token, method: .documentedDeviceSharing)',
+              'try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)',
+              'clock-regression authentication method',
+          )
+          tests_path.write_text(tests[:test_start] + section + tests[test_end:])
+          PY
+
+          rm .github/workflows/capture-horizon-mirror-repair.yml
+          git diff --check
+          git diff --stat
+
+      - name: Run focused app truth contracts
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
+          swift test --filter TuyaAuthenticatedReadOnlyHorizonTests
+          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests
+
+      - name: Run full Capture package truth suite
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test
+
+      - name: Publish validated repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name nembra-go-worker
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Capture V16.1: mirror package-owned incomplete horizon'
+          git push origin HEAD:capture-horizon-mirror-gpt56
