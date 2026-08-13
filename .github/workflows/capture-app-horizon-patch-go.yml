@@ -41,7 +41,6 @@ jobs:
               'Waiting for repeated same-generation scooter data, including data that stays live beyond the startup rejection window, plus the canonical 45-second observation horizon…',
               'auth copy'
           )
-
           one(
               '    var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {\n',
               '    var applicationEvidenceSurvivedHistoricalWindow: Bool {\n'
@@ -53,7 +52,6 @@ jobs:
               '    var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {\n',
               'application-survival presentation predicate'
           )
-
           one(
               'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)',
               'requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)\n'
@@ -61,54 +59,66 @@ jobs:
               'observation checklist'
           )
 
-          receipt_anchor = '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
-            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])'''
-          receipt_catch = '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
-            await mirrorAlreadyTerminalIncompleteObservationHorizon(
-                token: token,
-                message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
-                kind: "application_authenticated_incomplete_readiness_horizon_reached"
-            )
-          '''
+          receipt_anchor = '\n'.join([
+              '        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {',
+              '            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])'
+          ])
+          receipt_catch = '\n'.join([
+              '        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {',
+              '            await mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '                token: token,',
+              '                message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",',
+              '                kind: "application_authenticated_incomplete_readiness_horizon_reached"',
+              '            )',
+              '          '
+          ])
           one(receipt_anchor, receipt_catch + receipt_anchor, 'application horizon catch')
 
-          watchdog_anchor = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
-                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])'''
-          watchdog_catch = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
-                    await self.mirrorAlreadyTerminalIncompleteObservationHorizon(
-                        token: token,
-                        message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
-                        kind: "session_authenticated_incomplete_readiness_horizon_reached"
-                    )
-                    return
-          '''
+          watchdog_anchor = '\n'.join([
+              '                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {',
+              '                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])'
+          ])
+          watchdog_catch = '\n'.join([
+              '                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {',
+              '                    await self.mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '                        token: token,',
+              '                        message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",',
+              '                        kind: "session_authenticated_incomplete_readiness_horizon_reached"',
+              '                    )',
+              '                    return',
+              '          '
+          ])
           one(watchdog_anchor, watchdog_catch + watchdog_anchor, 'watchdog horizon catch')
 
-          helper_anchor = '''    private func invalidateObservationContinuity(
-        token: TuyaReadOnlyConnectionToken,'''
-          helper = '''    /// Mirrors the bounded incomplete-readiness terminal already committed atomically by the
-    /// package mutation that threw `incompleteObservationHorizonReached`. The package has already
-    /// revoked callback authority, so this helper performs app-local cleanup only and never issues
-    /// another ledger mutation, liveness receipt, transport-loss inference, or disconnect claim.
-    private func mirrorAlreadyTerminalIncompleteObservationHorizon(
-        token: TuyaReadOnlyConnectionToken,
-        message: String,
-        kind: String
-    ) async {
-        guard currentConnectionToken == token else { return }
-        watchdog?.cancel()
-        watchdog = nil
-        currentConnectionToken = nil
-        localBLESettlementToken = nil
-        sdkLocalBLEOnline = false
-        driver = nil
-        await refreshLedgerSnapshot()
-        phase = .failed
-        self.message = message
-        log(kind, ["generation": String(token.diagnosticGeneration)])
-    }
-
-'''
+          helper_anchor = '\n'.join([
+              '    private func invalidateObservationContinuity(',
+              '        token: TuyaReadOnlyConnectionToken,'
+          ])
+          helper = '\n'.join([
+              '    /// Mirrors the bounded incomplete-readiness terminal already committed atomically by the',
+              '    /// package mutation that threw `incompleteObservationHorizonReached`. The package has already',
+              '    /// revoked callback authority, so this helper performs app-local cleanup only and never issues',
+              '    /// another ledger mutation, liveness receipt, transport-loss inference, or disconnect claim.',
+              '    private func mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '        token: TuyaReadOnlyConnectionToken,',
+              '        message: String,',
+              '        kind: String',
+              '    ) async {',
+              '        guard currentConnectionToken == token else { return }',
+              '        watchdog?.cancel()',
+              '        watchdog = nil',
+              '        currentConnectionToken = nil',
+              '        localBLESettlementToken = nil',
+              '        sdkLocalBLEOnline = false',
+              '        driver = nil',
+              '        await refreshLedgerSnapshot()',
+              '        phase = .failed',
+              '        self.message = message',
+              '        log(kind, ["generation": String(token.diagnosticGeneration)])',
+              '    }',
+              '',
+              ''
+          ])
           one(helper_anchor, helper + helper_anchor, 'incomplete-horizon mirror helper')
           p.write_text(s)
           PY
@@ -122,19 +132,23 @@ jobs:
           from pathlib import Path
           p = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift')
           s = p.read_text()
-          old = '''        let exposesApplicationSurvival =
-            panel.contains("TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds")
-            && panel.contains("latestApplicationPayloadUptimeNanoseconds")
-            && panel.contains("authenticatedAtUptimeNanoseconds")
-        let derivesCanonicalVerdict = panel.contains("TuyaAuthenticatedReadOnlyPreflight.verdict")
-        #expect(exposesApplicationSurvival || derivesCanonicalVerdict)
-'''
-          new = '''        #expect(panel.contains("test.applicationEvidenceSurvivedHistoricalWindow"))
-        #expect(source.contains("var applicationEvidenceSurvivedHistoricalWindow: Bool"))
-        #expect(source.contains("TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds"))
-        #expect(source.contains("latestApplicationPayloadUptimeNanoseconds"))
-        #expect(source.contains("authenticatedAtUptimeNanoseconds"))
-'''
+          old = '\n'.join([
+              '        let exposesApplicationSurvival =',
+              '            panel.contains("TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds")',
+              '            && panel.contains("latestApplicationPayloadUptimeNanoseconds")',
+              '            && panel.contains("authenticatedAtUptimeNanoseconds")',
+              '        let derivesCanonicalVerdict = panel.contains("TuyaAuthenticatedReadOnlyPreflight.verdict")',
+              '        #expect(exposesApplicationSurvival || derivesCanonicalVerdict)',
+              ''
+          ])
+          new = '\n'.join([
+              '        #expect(panel.contains("test.applicationEvidenceSurvivedHistoricalWindow"))',
+              '        #expect(source.contains("var applicationEvidenceSurvivedHistoricalWindow: Bool"))',
+              '        #expect(source.contains("TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds"))',
+              '        #expect(source.contains("latestApplicationPayloadUptimeNanoseconds"))',
+              '        #expect(source.contains("authenticatedAtUptimeNanoseconds"))',
+              ''
+          ])
           if s.count(old) != 1:
               raise SystemExit(f'app-survival oracle anchor count: {s.count(old)}')
           p.write_text(s.replace(old, new, 1))
