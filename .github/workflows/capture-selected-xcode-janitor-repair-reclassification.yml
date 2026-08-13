@@ -1,6 +1,12 @@
 name: Capture Selected Xcode Janitor Repair Reclassification
 
 on:
+  push:
+    branches:
+      - validation/v16-selected-xcode-janitor-repair-reclassification-sol-20260812
+    paths:
+      - scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py
+      - .github/workflows/capture-selected-xcode-janitor-repair-reclassification.yml
   pull_request:
     paths:
       - scripts/ci/tests/test_capture_selected_xcode_janitor_startup_authority.py
