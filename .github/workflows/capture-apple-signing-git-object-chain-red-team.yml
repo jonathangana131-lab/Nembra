@@ -78,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           test ! -e LocalSecrets
-          test -z "$(git diff --name-only "$EXACT_PARENT"...HEAD | grep -Ev '^(\.github/workflows/capture-apple-signing-git-object-chain-red-team\.yml|scripts/ci/tests/test_capture_apple_signing_git-object-chain-red-team\.py)$' || true)"
+          test -z "$(git diff --name-only "$EXACT_PARENT"...HEAD | grep -Ev '^(\.github/workflows/capture-apple-signing-git-object-chain-red-team\.yml|scripts/ci/tests/test_capture_apple_signing_git_object_chain_red_team\.py)$' || true)"
           ! grep -Eq '(^|[[:space:]])xcodebuild([[:space:]]|$)' scripts/ci/tests/test_capture_apple_signing_git_object_chain_red_team.py
           ! grep -Eq 'devicectl|CoreBluetooth|bootstrap_capture_tuya_sdk|LocalSecrets' scripts/ci/tests/test_capture_apple_signing_git_object_chain_red_team.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
