@@ -213,7 +213,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     ///
     /// Continuity is checked before the update may advance `latestObserved...`. This closes the
     /// resume-order race where a queued SDK update could otherwise erase a long suspension gap
-    /// before the app watchdog observes it.
+    /// before the app watchdog observes it. The actual callback receipt may advance liveness, but
+    /// once the incomplete-session horizon has been reached it is checked before the callback can
+    /// become accepted application evidence, so a late payload cannot rescue an expired generation.
     public func recordApplicationUpdate(
         isNonEmpty: Bool,
         for token: TuyaReadOnlyConnectionToken
@@ -235,9 +237,14 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard applicationPayloadCount < Int.max else {
             throw MutationError.applicationPayloadCountExhausted
         }
+
+        latestObservedUptimeNanoseconds = now
+        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(makeSnapshot()) {
+            throw MutationError.incompleteObservationHorizonReached
+        }
+
         applicationPayloadCount += 1
         latestApplicationPayloadUptimeNanoseconds = now
-        latestObservedUptimeNanoseconds = now
     }
 
     /// Advances only the non-secret liveness observation for the current authenticated connection.
