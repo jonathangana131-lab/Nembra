@@ -81,6 +81,11 @@ jobs:
           swift test --filter TuyaAuthenticatedTerminalHorizonTests
           swift test --filter TuyaDeviceSharingAuthenticationAuthorityTests
           swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
+          swift test --filter TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration
+          swift test --filter TuyaAlreadyTerminalObservationContinuitySourceTests
+          swift test --filter TuyaIncompleteObservationSemanticTerminalTests
+          swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
+          swift test --filter TuyaFieldFinalAuthoritySourceTests
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
 
