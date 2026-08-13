@@ -1,0 +1,68 @@
+name: Capture Private Identity Descendant Rebind
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-rebind-recovery-sol-20260812-go
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - Scripts/provision_capture_tuya_identity.sh
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
+      - scripts/ci/tests/test_capture_private_identity_descendant_rebind_current.py
+      - .github/workflows/capture-private-identity-descendant-rebind.yml
+  pull_request:
+    paths:
+      - Scripts/provision_capture_tuya_identity_writer.py
+      - Scripts/provision_capture_tuya_identity.sh
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
+      - scripts/ci/tests/test_capture_private_identity_descendant_rebind_current.py
+      - .github/workflows/capture-private-identity-descendant-rebind.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  custody:
+    name: Bind publication to admitted descendants and final inode
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind validation to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile recovered writer and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_descendant_rebind_current.py
+          bash -n Scripts/provision_capture_tuya_identity.sh
+
+      - name: Prove descendant and canonical-name rebind fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          python3 -I scripts/ci/tests/test_capture_private_identity_descendant_rebind_current.py
+
+      - name: Verify privileged writer digest fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(sed -n 's/^WRITER_SHA256="\([0-9a-f]\{64\}\)"$/\1/p' Scripts/provision_capture_tuya_identity.sh)"
+          actual="$(sha256sum Scripts/provision_capture_tuya_identity_writer.py | awk '{print $1}')"
+          test -n "$expected"
+          test "$expected" = "$actual"
+          grep -F "$expected" Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPrivateIdentityProvisionerCustodyTests.swift
+          git diff --check
