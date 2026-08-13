@@ -116,6 +116,12 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard case .authenticating = authenticationState else {
             throw MutationError.invalidAuthenticationTransition
         }
+        // Device Sharing establishes account/device authority, not BLE-session authentication.
+        // Reject it before sampling the clock so failed provenance cannot mint authenticated
+        // chronology or perturb the in-progress authentication state.
+        guard method == .smartLifeAppSDK else {
+            throw MutationError.invalidAuthenticationTransition
+        }
 
         let now = try nextMonotonicObservation()
         authenticationState = .authenticated
