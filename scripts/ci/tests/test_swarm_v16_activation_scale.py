@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 import sys
 import unittest
@@ -112,12 +113,14 @@ class ActivationScaleTests(unittest.TestCase):
         self.assertEqual(refreshed['evidenceIds'],['accepted-evidence'])
         self.assertEqual(refreshed['integrationWorld'],'NEXT')
         self.assertEqual(refreshed['branchState'],'SELECTED')
+        self.assertEqual(current['branches']['repair/capture']['source']['headSHA'],'b'*40)
         self.assertEqual(current['agents'],preserved_agents)
         self.assertEqual(current['memory'],preserved_memory)
         self.assertEqual(current['migration']['phase'],'ACTIVE')
         self.assertFalse(current['migration']['destructiveActionsAllowed'])
         self.assertEqual(current['migration']['liveRefreshMainSHA'],'c'*40)
         self.assertEqual(result['headUpdates'],[{'workItemId':'live-pr-3142','from':'a'*40,'to':'b'*40}])
+        self.assertEqual(result['refreshedWorkItems'],['live-pr-3142'])
         sc.validate_graph(current)
 
     def test_active_refresh_records_missing_open_pr_without_archiving_it(self):
@@ -147,16 +150,28 @@ class ActivationScaleTests(unittest.TestCase):
         self.assertNotIn('live-pr-3142',result['addedWorkItems'])
         sc.validate_graph(current)
 
-    def test_active_refresh_does_not_retarget_a_scheduled_branch_implicitly(self):
+    def test_active_refresh_branch_mismatch_is_observation_only(self):
         current=sc.seed_nembra_graph()
         current['migration']['phase']='ACTIVE'
         current['migration']['legacyImported']=True
         add_live_work(current,number=3142,head='a'*40,branch='repair/original')
-        current['workItems']['live-pr-3142']['status']='ACTIVE'
+        item=current['workItems']['live-pr-3142']
+        item['status']='ACTIVE'
+        item['primaryScope']=['trusted/current.py']
+        item['allowedAdjacentScope']=['trusted/tests']
+        item['forbiddenAreas']=['do-not-cross']
+        item['similarityKey']='trusted-scheduling-key'
+        old_source=copy.deepcopy(item['source'])
+        old_branch_record=copy.deepcopy(current['branches']['repair/original'])
 
         candidate=sc.seed_nembra_graph()
         candidate['migration']['legacyImported']=True
         add_live_work(candidate,number=3142,head='b'*40,branch='repair/renamed')
+        fresh=candidate['workItems']['live-pr-3142']
+        fresh['primaryScope']=['observed/other.py']
+        fresh['allowedAdjacentScope']=['observed/other-tests']
+        fresh['forbiddenAreas']=['different-boundary']
+        fresh['similarityKey']='observed-other-key'
         compact_pr_classifications(candidate,{'selectedCanonicalPRs':[3142],'duplicatesSuppressed':[]})
 
         result=refresh_active_topology(
@@ -165,7 +180,16 @@ class ActivationScaleTests(unittest.TestCase):
             {'selectedCanonicalPRs':[3142],'duplicatesSuppressed':[]},
         )
 
-        self.assertEqual(current['workItems']['live-pr-3142']['branch'],'repair/original')
+        preserved=current['workItems']['live-pr-3142']
+        self.assertEqual(preserved['branch'],'repair/original')
+        self.assertEqual(preserved['source'],old_source)
+        self.assertEqual(preserved['primaryScope'],['trusted/current.py'])
+        self.assertEqual(preserved['allowedAdjacentScope'],['trusted/tests'])
+        self.assertEqual(preserved['forbiddenAreas'],['do-not-cross'])
+        self.assertEqual(preserved['similarityKey'],'trusted-scheduling-key')
+        self.assertEqual(current['branches']['repair/original'],old_branch_record)
+        self.assertEqual(result['headUpdates'],[])
+        self.assertEqual(result['refreshedWorkItems'],[])
         self.assertEqual(result['branchMismatches'],[
             {
                 'workItemId':'live-pr-3142',
@@ -173,6 +197,47 @@ class ActivationScaleTests(unittest.TestCase):
                 'observedBranch':'repair/renamed',
             }
         ])
+        sc.validate_graph(current)
+
+    def test_active_refresh_preserves_scheduling_semantics_when_branch_matches(self):
+        current=sc.seed_nembra_graph()
+        current['migration']['phase']='ACTIVE'
+        current['migration']['legacyImported']=True
+        add_live_work(current,number=3142,head='a'*40,branch='repair/capture')
+        item=current['workItems']['live-pr-3142']
+        item['title']='Current scheduled title'
+        item['outcome']='Current scheduled outcome'
+        item['primaryScope']=['trusted/current.py']
+        item['allowedAdjacentScope']=['trusted/tests']
+        item['forbiddenAreas']=['do-not-cross']
+        item['similarityKey']='trusted-scheduling-key'
+
+        candidate=sc.seed_nembra_graph()
+        candidate['migration']['legacyImported']=True
+        add_live_work(candidate,number=3142,head='b'*40,branch='repair/capture')
+        fresh=candidate['workItems']['live-pr-3142']
+        fresh['title']='Fresh legacy title'
+        fresh['outcome']='Fresh legacy outcome'
+        fresh['primaryScope']=['observed/other.py']
+        fresh['allowedAdjacentScope']=['observed/other-tests']
+        fresh['forbiddenAreas']=['different-boundary']
+        fresh['similarityKey']='observed-other-key'
+        compact_pr_classifications(candidate,{'selectedCanonicalPRs':[3142],'duplicatesSuppressed':[]})
+
+        refresh_active_topology(
+            current,
+            candidate,
+            {'selectedCanonicalPRs':[3142],'duplicatesSuppressed':[]},
+        )
+
+        preserved=current['workItems']['live-pr-3142']
+        self.assertEqual(preserved['source']['headSHA'],'b'*40)
+        self.assertEqual(preserved['title'],'Current scheduled title')
+        self.assertEqual(preserved['outcome'],'Current scheduled outcome')
+        self.assertEqual(preserved['primaryScope'],['trusted/current.py'])
+        self.assertEqual(preserved['allowedAdjacentScope'],['trusted/tests'])
+        self.assertEqual(preserved['forbiddenAreas'],['do-not-cross'])
+        self.assertEqual(preserved['similarityKey'],'trusted-scheduling-key')
         sc.validate_graph(current)
 
     def test_active_refresh_defers_new_work_when_scheduling_parents_are_unknown(self):
