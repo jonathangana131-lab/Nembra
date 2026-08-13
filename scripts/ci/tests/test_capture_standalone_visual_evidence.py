@@ -52,6 +52,7 @@ for needle in [
     'permissions:\n  contents: read',
     'ref: ${{ github.event.pull_request.head.sha || github.sha }}',
     'persist-credentials: false',
+    '- NembraApp/Resources/Localizable.strings',
     '/usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py',
     '/usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py',
     'CODE_SIGNING_ALLOWED=NO',
