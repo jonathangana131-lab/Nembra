@@ -71,8 +71,7 @@ jobs:
           set -uo pipefail
           log="$RUNNER_TEMP/apple-signing-git-object-chain-red-team.log"
           set +e
-          /usr/bin/python3 -B -m unittest -v \
-            scripts.ci.tests.test_capture_apple_signing_git_object_chain_red_team \
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_apple_signing_git_object_chain_red_team.py \
             >"$log" 2>&1
           rc=$?
           set -e
