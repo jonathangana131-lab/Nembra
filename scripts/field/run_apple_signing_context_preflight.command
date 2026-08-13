@@ -48,9 +48,10 @@ case "$OUTPUT_DIR/" in
     "$REPOSITORY_ROOT/"*) fail "Canonical receipt must remain outside the accepted repository." ;;
 esac
 
-# Git authority is explicitly fenced from caller GIT_* state and bound to this one
-# real checkout directory. The accepted source SHA and exact loaded wrapper bytes then
-# name the oracle/sealer objects that root is permitted to execute.
+# Git remains a byte transport only. The externally supplied accepted commit name
+# is never trusted as an object lookup result by itself: authority-bearing commit
+# and tree bytes are bounded-captured and independently re-hashed before their
+# child OIDs are admitted. This closes caller-owned pack-index/name aliasing.
 GIT=(/usr/bin/git --git-dir="$GIT_DIR_ABS" --work-tree="$REPOSITORY_ROOT" -c core.hooksPath=/dev/null)
 GIT_ENV=(/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin LC_ALL=C GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_OPTIONAL_LOCKS=0)
 
@@ -58,17 +59,138 @@ HEAD_SHA="$("${GIT_ENV[@]}" "${GIT[@]}" rev-parse HEAD 2>/dev/null | tr '[:upper
 [[ "$HEAD_SHA" == "$SOURCE_SHA" ]] || fail "Repository HEAD is not the exact accepted preflight source. Checkout the accepted SHA and retry."
 [[ -z "$("${GIT_ENV[@]}" "${GIT[@]}" status --porcelain=v1 --untracked-files=all)" ]] || fail "Accepted-source checkout is dirty. Preserve private/ignored inputs elsewhere and retry from a clean checkout."
 
-SCRIPT_BLOB="$("${GIT_ENV[@]}" "${GIT[@]}" rev-parse "$SOURCE_SHA:$SCRIPT_PATH" 2>/dev/null)" || fail "Field preflight is absent from the accepted Git tree."
-ORACLE_BLOB="$("${GIT_ENV[@]}" "${GIT[@]}" rev-parse "$SOURCE_SHA:$ORACLE_PATH" 2>/dev/null)" || fail "Apple signing oracle is absent from the accepted Git tree."
-SEALER_BLOB="$("${GIT_ENV[@]}" "${GIT[@]}" rev-parse "$SOURCE_SHA:$SEALER_PATH" 2>/dev/null)" || fail "Apple signing receipt sealer is absent from the accepted Git tree."
-[[ "$SCRIPT_BLOB" =~ ^[0-9a-f]{40}$ && "$ORACLE_BLOB" =~ ^[0-9a-f]{40}$ && "$SEALER_BLOB" =~ ^[0-9a-f]{40}$ ]] || fail "Accepted Git blob identity is malformed."
+OBJECT_RESOLVER="$(/bin/cat <<'PY'
+import hashlib
+import os
+import re
+import subprocess
+import sys
+
+MAX_COMMIT_BYTES = 4 * 1024 * 1024
+MAX_TREE_BYTES = 16 * 1024 * 1024
+MAX_TREE_DEPTH = 64
+OID = re.compile(r"^[0-9a-f]{40}$")
+
+git_dir, source_sha, *paths = sys.argv[1:]
+source_sha = source_sha.lower()
+if not OID.fullmatch(source_sha):
+    raise SystemExit("accepted source SHA is not canonical SHA-1")
+if len(paths) != 3 or any(not path or path.startswith("/") or ".." in path.split("/") for path in paths):
+    raise SystemExit("accepted helper path contract is invalid")
+
+environment = {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "LC_ALL": "C",
+    "GIT_NO_REPLACE_OBJECTS": "1",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_OPTIONAL_LOCKS": "0",
+}
+
+def object_oid(object_type, payload):
+    header = object_type.encode("ascii") + b" " + str(len(payload)).encode("ascii") + b"\0"
+    return hashlib.sha1(header + payload).hexdigest()
+
+def capture(object_type, oid, limit):
+    if object_type not in {"commit", "tree"} or not OID.fullmatch(oid) or limit <= 0:
+        raise SystemExit("accepted Git object capture contract is invalid")
+    process = subprocess.Popen(
+        ["/usr/bin/git", f"--git-dir={git_dir}", "cat-file", object_type, oid],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=environment,
+    )
+    if process.stdout is None:
+        process.kill()
+        process.wait()
+        raise SystemExit("accepted Git object capture pipe unavailable")
+    payload = process.stdout.read(limit + 1)
+    if len(payload) > limit:
+        process.kill()
+        process.wait()
+        raise SystemExit("accepted Git object exceeds bounded capture limit")
+    returncode = process.wait()
+    process.stdout.close()
+    if returncode != 0:
+        raise SystemExit("accepted Git object capture failed")
+    actual = object_oid(object_type, payload)
+    if actual != oid:
+        raise SystemExit("accepted Git object lookup returned bytes outside accepted identity")
+    return payload
+
+def commit_tree(commit_payload):
+    headers = commit_payload.split(b"\n\n", 1)[0]
+    tree_oids = [line[5:] for line in headers.splitlines() if line.startswith(b"tree ")]
+    if len(tree_oids) != 1:
+        raise SystemExit("accepted commit must carry exactly one tree header")
+    try:
+        tree_oid = tree_oids[0].decode("ascii").lower()
+    except UnicodeDecodeError as error:
+        raise SystemExit("accepted commit tree identity is not ASCII") from error
+    if not OID.fullmatch(tree_oid):
+        raise SystemExit("accepted commit tree identity is malformed")
+    return tree_oid
+
+def tree_entries(payload):
+    entries = []
+    offset = 0
+    while offset < len(payload):
+        space = payload.find(b" ", offset)
+        nul = payload.find(b"\0", space + 1) if space > offset else -1
+        if space <= offset or nul <= space + 1 or nul + 21 > len(payload):
+            raise SystemExit("accepted tree object is malformed")
+        mode = payload[offset:space]
+        name = payload[space + 1:nul]
+        if not name or name in {b".", b".."} or b"/" in name:
+            raise SystemExit("accepted tree contains unsafe path component")
+        oid = payload[nul + 1:nul + 21].hex()
+        entries.append((mode, name, oid))
+        offset = nul + 21
+    return entries
+
+def resolve_path(root_tree_oid, path):
+    components = [component.encode("utf-8") for component in path.split("/")]
+    tree_oid = root_tree_oid
+    for depth, component in enumerate(components):
+        if depth >= MAX_TREE_DEPTH:
+            raise SystemExit("accepted helper path exceeds tree-depth limit")
+        payload = capture("tree", tree_oid, MAX_TREE_BYTES)
+        matches = [entry for entry in tree_entries(payload) if entry[1] == component]
+        if len(matches) != 1:
+            raise SystemExit("accepted helper path is absent or ambiguous")
+        mode, _, oid = matches[0]
+        is_last = depth == len(components) - 1
+        if is_last:
+            if mode not in {b"100644", b"100755"} or not OID.fullmatch(oid):
+                raise SystemExit("accepted helper leaf is not one regular Git blob")
+            return oid
+        if mode != b"40000" or not OID.fullmatch(oid):
+            raise SystemExit("accepted helper path traverses a non-tree object")
+        tree_oid = oid
+    raise SystemExit("accepted helper path resolution failed")
+
+commit_payload = capture("commit", source_sha, MAX_COMMIT_BYTES)
+root_tree_oid = commit_tree(commit_payload)
+resolved = [resolve_path(root_tree_oid, path) for path in paths]
+print("\t".join(resolved))
+PY
+)"
+
+SCRIPT_BLOB=""
+ORACLE_BLOB=""
+SEALER_BLOB=""
+RESOLVED_BLOBS="$(/usr/bin/python3 -B -I -c "$OBJECT_RESOLVER" "$GIT_DIR_ABS" "$SOURCE_SHA" "$SCRIPT_PATH" "$ORACLE_PATH" "$SEALER_PATH")" || fail "Accepted commit/tree object chain failed independent verification."
+unset OBJECT_RESOLVER
+IFS=$'\t' read -r SCRIPT_BLOB ORACLE_BLOB SEALER_BLOB <<< "$RESOLVED_BLOBS"
+unset RESOLVED_BLOBS
+[[ "$SCRIPT_BLOB" =~ ^[0-9a-f]{40}$ && "$ORACLE_BLOB" =~ ^[0-9a-f]{40}$ && "$SEALER_BLOB" =~ ^[0-9a-f]{40}$ ]] || fail "Verified accepted Git blob identity is malformed."
 
 EXECUTING_SCRIPT="$0"
 if [[ "$EXECUTING_SCRIPT" != /* ]]; then
     EXECUTING_SCRIPT="$(pwd -P)/$EXECUTING_SCRIPT"
 fi
 CURRENT_SCRIPT_BLOB="$("${GIT_ENV[@]}" "${GIT[@]}" hash-object "$EXECUTING_SCRIPT" 2>/dev/null)" || fail "Could not fingerprint executing preflight bytes."
-[[ "$CURRENT_SCRIPT_BLOB" == "$SCRIPT_BLOB" ]] || fail "Executing field-preflight bytes do not match the accepted Git object."
+[[ "$CURRENT_SCRIPT_BLOB" == "$SCRIPT_BLOB" ]] || fail "Executing field-preflight bytes do not match the independently verified accepted Git object."
 
 ROOT_EXEC_DIR="$(/usr/bin/sudo -n /usr/bin/mktemp -d /private/tmp/nembra-apple-signing-preflight.XXXXXX)" || fail "Noninteractive sudo is required for exact root-owned execution subjects."
 [[ "$ROOT_EXEC_DIR" == /private/tmp/nembra-apple-signing-preflight.* ]] || fail "Root execution directory escaped the expected /private/tmp namespace."
