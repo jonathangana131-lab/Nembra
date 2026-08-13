@@ -568,7 +568,7 @@ def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: 
         return
     if uid is not None and uid > 0:
         killed = subprocess.run(
-            ["/usr/bin/pkill", "-9", "-u", str(uid)],
+            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -633,7 +633,7 @@ def _create_local_build_identity(name: str, uid: int, gid: int, home: Path) -> N
         if account.pw_uid != uid or account.pw_gid != gid or group.gr_gid != gid:
             raise BuildOriginCustodyError("directory services did not materialize the exact build identity")
     except Exception:
-        _remove_local_build_identity(name, uid)
+        _remove_local_build_identity(name, uid, require_absent=True)
         raise
 
 
