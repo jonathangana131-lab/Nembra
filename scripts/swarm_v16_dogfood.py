@@ -13,18 +13,29 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import swarm_control as sc
 
+MAX_OPEN_PRS=400
+
 
 def fetch_open_prs(repo: str, token: str) -> list[dict]:
     owner,name=repo.split('/',1); results=[]; page=1
-    while page<=4:
+    while True:
         query=urllib.parse.urlencode({'state':'open','per_page':100,'page':page})
         request=urllib.request.Request(f'https://api.github.com/repos/{owner}/{name}/pulls?{query}',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'nembra-swarm-v16-dogfood'})
         with urllib.request.urlopen(request,timeout=30) as response: batch=json.loads(response.read().decode())
         if not isinstance(batch,list): raise sc.ValidationError('GitHub pulls response was not a list')
         results.extend(batch)
-        if len(batch)<100: break
+        if len(batch)<100: return results
+        if len(results)>=MAX_OPEN_PRS:
+            # A full fourth page is ambiguous: exactly 400 is complete, while
+            # 401+ would previously be silently truncated. Probe once beyond
+            # the supported inventory ceiling and fail closed on any result.
+            probe_query=urllib.parse.urlencode({'state':'open','per_page':100,'page':page+1})
+            probe_request=urllib.request.Request(f'https://api.github.com/repos/{owner}/{name}/pulls?{probe_query}',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'nembra-swarm-v16-dogfood'})
+            with urllib.request.urlopen(probe_request,timeout=30) as response: probe=json.loads(response.read().decode())
+            if not isinstance(probe,list): raise sc.ValidationError('GitHub pulls response was not a list')
+            if probe: raise sc.ValidationError(f'open PR inventory exceeds supported cap of {MAX_OPEN_PRS}; refusing partial classification')
+            return results
         page+=1
-    return results
 
 
 def selected_pr(lane: dict) -> int|None:

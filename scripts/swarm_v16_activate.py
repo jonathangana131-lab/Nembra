@@ -113,22 +113,33 @@ def refresh_active_topology(existing: dict, candidate: dict, summary: dict, *, m
         current=current_live[wid]
         old_source=dict(current.get('source') or {})
         fresh_source=_copy_json(fresh.get('source') or {})
+        fresh_branch=str(fresh.get('branch') or '')
+        current_branch=str(current.get('branch') or '')
+
+        # A different observed branch is evidence of unresolved topology, not
+        # authority to transplant that branch's PR/head/scope into the
+        # scheduled work item or its branch record. Preserve all scheduled
+        # state and report the mismatch for explicit reconciliation.
+        if fresh_branch and current_branch and fresh_branch!=current_branch:
+            branch_mismatches.append({
+                'workItemId':wid,
+                'scheduledBranch':current_branch,
+                'observedBranch':fresh_branch,
+            })
+            continue
+
         old_head=str(old_source.get('headSHA') or '')
         new_head=str(fresh_source.get('headSHA') or '')
         if old_head!=new_head:
             head_updates.append({'workItemId':wid,'from':old_head,'to':new_head})
 
-        # Scheduling fields are intentionally absent from this update set.
-        for field in ('title','outcome','primaryScope','allowedAdjacentScope','forbiddenAreas','similarityKey'):
-            current[field]=_copy_json(fresh[field])
+        # Existing coordination and scheduling semantics remain ACTIVE-graph
+        # authority. A topology refresh may update only observed source/head
+        # metadata after branch identity agrees.
         current['source']=fresh_source
         current['updatedAt']=candidate.get('updatedAt',fresh.get('updatedAt',current['updatedAt']))
 
-        fresh_branch=str(fresh.get('branch') or '')
-        current_branch=str(current.get('branch') or '')
-        if fresh_branch and current_branch and fresh_branch!=current_branch:
-            branch_mismatches.append({'workItemId':wid,'scheduledBranch':current_branch,'observedBranch':fresh_branch})
-        elif fresh_branch and not current_branch:
+        if fresh_branch and not current_branch:
             current['branch']=fresh_branch
             current_branch=fresh_branch
 
