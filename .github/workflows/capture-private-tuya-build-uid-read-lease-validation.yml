@@ -60,8 +60,6 @@ jobs:
           missing = [marker for marker in required if marker not in source]
           if missing:
               raise SystemExit('missing read-lease validation markers: ' + repr(missing))
-          # The witness synthesizes these names below its own /private/tmp root;
-          # it must not consume credentials.
           assert 'NEMBRA_TUYA_APP_KEY' not in source
           assert 'NEMBRA_TUYA_APP_SECRET' not in source
           PY
@@ -176,6 +174,162 @@ jobs:
             /bin/ps -p "$pid" -o pid=,ppid=,uid=,gid=,state=,comm=,args= 2>&1 | tee -a "$PROCESS_LOG" || true
           done
 
+      - name: Classify identity-delete before final UID kill
+        if: failure()
+        shell: bash
+        run: |
+          set -uo pipefail
+          DIAGNOSTIC="$RUNNER_TEMP/private-tuya-build-uid-read-lease.stderr.log"
+          ORDER_LOG="$RUNNER_TEMP/private-tuya-build-uid-read-lease.retirement-order.log"
+          /usr/bin/sudo /usr/bin/python3 - "$DIAGNOSTIC" "$ORDER_LOG" <<'PY'
+          import grp
+          import json
+          import pathlib
+          import pwd
+          import re
+          import subprocess
+          import sys
+          import time
+
+          diagnostic = pathlib.Path(sys.argv[1])
+          output = pathlib.Path(sys.argv[2])
+          text = diagnostic.read_text(encoding='utf-8', errors='replace') if diagnostic.exists() else ''
+          matches = re.findall(r'live_pids=\[([^\]]*)\]', text)
+          uids = []
+          if matches:
+              for raw in matches[-1].split(','):
+                  raw = raw.strip()
+                  if not raw.isdigit():
+                      continue
+                  pid = int(raw)
+                  completed = subprocess.run(
+                      ['/bin/ps', '-p', str(pid), '-o', 'uid='],
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      check=False,
+                  )
+                  value = completed.stdout.strip()
+                  if completed.returncode == 0 and value.isdigit() and int(value) > 0:
+                      uids.append(int(value))
+          uid = uids[0] if uids and len(set(uids)) == 1 else None
+          payload = {
+              'schema': 1,
+              'candidateUID': uid,
+              'identityDeleteAttempted': False,
+              'userDeleteReturnCode': None,
+              'groupDeleteReturnCode': None,
+              'finalKillReturnCode': None,
+              'finalLivePIDs': [],
+              'finalZombiePIDs': [],
+              'finalIdentityLookups': [],
+              'deleteThenKillConverged': False,
+              'productionAcceptanceClaimed': False,
+              'physicalAuthorityCreated': False,
+          }
+          if uid is not None:
+              try:
+                  name = pwd.getpwuid(uid).pw_name
+              except KeyError:
+                  name = None
+              payload['candidateNameResolved'] = name is not None
+              if name:
+                  payload['identityDeleteAttempted'] = True
+                  user_delete = subprocess.run(
+                      ['/usr/bin/dscl', '.', '-delete', f'/Users/{name}'],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      check=False,
+                  )
+                  group_delete = subprocess.run(
+                      ['/usr/bin/dscl', '.', '-delete', f'/Groups/{name}'],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      check=False,
+                  )
+                  payload['userDeleteReturnCode'] = user_delete.returncode
+                  payload['groupDeleteReturnCode'] = group_delete.returncode
+              subprocess.run(
+                  ['/usr/bin/dscacheutil', '-flushcache'],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+              )
+              killed = subprocess.run(
+                  ['/usr/bin/pkill', '-9', '-u', str(uid), '.*'],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+              )
+              payload['finalKillReturnCode'] = killed.returncode
+              deadline = time.monotonic() + 6.0
+              while True:
+                  ps = subprocess.run(
+                      ['/bin/ps', '-axo', 'pid=,uid=,state='],
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      check=False,
+                  )
+                  live = []
+                  zombies = []
+                  if ps.returncode == 0:
+                      for line in ps.stdout.splitlines():
+                          parts = line.split()
+                          if len(parts) != 3:
+                              continue
+                          try:
+                              pid = int(parts[0])
+                              owner = int(parts[1])
+                          except ValueError:
+                              continue
+                          if owner != uid:
+                              continue
+                          if parts[2].upper().startswith('Z'):
+                              zombies.append(pid)
+                          else:
+                              live.append(pid)
+                  if not live or time.monotonic() >= deadline:
+                      payload['finalLivePIDs'] = sorted(live)
+                      payload['finalZombiePIDs'] = sorted(zombies)
+                      break
+                  time.sleep(0.05)
+              lookups = []
+              for lookup, key, label in (
+                  (pwd.getpwuid, uid, 'user UID'),
+                  (grp.getgrgid, uid, 'group GID'),
+              ):
+                  try:
+                      lookup(key)
+                  except KeyError:
+                      pass
+                  else:
+                      lookups.append(label)
+              if name:
+                  for lookup, key, label in (
+                      (pwd.getpwnam, name, 'user name'),
+                      (grp.getgrnam, name, 'group name'),
+                  ):
+                      try:
+                          lookup(key)
+                      except KeyError:
+                          pass
+                      else:
+                          lookups.append(label)
+              payload['finalIdentityLookups'] = lookups
+              payload['deleteThenKillConverged'] = (
+                  payload['userDeleteReturnCode'] == 0
+                  and payload['groupDeleteReturnCode'] == 0
+                  and not payload['finalLivePIDs']
+                  and not payload['finalIdentityLookups']
+              )
+          rendered = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+          output.write_text(rendered + '\n', encoding='utf-8')
+          print(rendered)
+          PY
+
       - name: Upload synthetic authority evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -186,5 +340,6 @@ jobs:
             ${{ runner.temp }}/private-tuya-build-uid-read-lease.sha256
             ${{ runner.temp }}/private-tuya-build-uid-read-lease.stderr.log
             ${{ runner.temp }}/private-tuya-build-uid-read-lease.processes.log
+            ${{ runner.temp }}/private-tuya-build-uid-read-lease.retirement-order.log
           if-no-files-found: warn
           retention-days: 7
