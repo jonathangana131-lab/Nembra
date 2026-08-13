@@ -40,6 +40,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         case monotonicClockRegressed
         case connectionGenerationExhausted
         case observationContinuityInvalidated
+        case incompleteObservationHorizonReached
         case preflightNotReady
     }
 
@@ -242,6 +243,11 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Advances only the non-secret liveness observation for the current authenticated connection.
     /// No telemetry or application payload is manufactured by this call, and a pre-auth poll can
     /// never lengthen the chronology later used by the physical stability gate.
+    ///
+    /// Once a real current liveness receipt reaches the package-owned 60-second incomplete-session
+    /// horizon, the same canonical preflight decides whether this generation must terminate. The
+    /// ledger leaves the exact token current when throwing so the app's existing fail-closed
+    /// lifecycle terminal can retire it without inventing a BLE disconnect or a second clock sample.
     public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
@@ -250,6 +256,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         let now = try nextMonotonicObservation()
         try requireContinuousAuthenticatedObservation(at: now)
         latestObservedUptimeNanoseconds = now
+
+        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(makeSnapshot()) {
+            throw MutationError.incompleteObservationHorizonReached
+        }
     }
 
     /// Seals a failed observation horizon while authenticated transport may still exist.
