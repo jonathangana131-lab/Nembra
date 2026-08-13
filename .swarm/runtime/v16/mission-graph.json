@@ -1061,19 +1061,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 288,
+    "classifiedPRTotal": 289,
     "classifiedPRs": {
-      "2733": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2733,
-        "recommendedAction": "independent-review",
-        "similarity": 0.278,
-        "title": "[Capture P0][REVIEW] Lock root admission before private writer capture"
-      },
       "2734": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2391,7 +2380,7 @@
         "lane": "",
         "pr": 3215,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.246,
+        "similarity": 0.256,
         "title": "[Capture P0] Validate dedicated build-UID launch-domain retirement"
       },
       "3216": {
@@ -2470,6 +2459,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.315,
         "title": "[Capture P0][RED TEAM] Expose Apple-signing mutable-wrapper bootstrap"
+      },
+      "3227": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3227,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.328,
+        "title": "[Capture P0][VALIDATION] Red-team lingering build-UID launchd service authority"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2502,9 +2502,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:50:48Z",
+    "liveRefreshAt": "2026-08-13T04:05:05Z",
     "liveRefreshDuplicatesSuppressed": [
-      3226
+      3227
     ],
     "liveRefreshMainSHA": "3c413fbc6585427bc80adece9e083185ce05fffc",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6276,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 61,
+  "revision": 62,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:53:23Z",
+  "updatedAt": "2026-08-13T04:07:43Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6355,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:50:48Z",
+      "updatedAt": "2026-08-13T04:05:05Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
