@@ -651,14 +651,18 @@
   "branches": {
     "mission/capture-stationary": {
       "branch": "mission/capture-stationary",
-      "integratedAt": "",
+      "integratedAt": "2026-08-13T00:43:13Z",
       "missionId": "capture-stationary",
       "objectiveId": "capture-standalone-build",
-      "pr": null,
+      "pr": 3168,
       "selectedAt": "2026-08-12T10:49:34Z",
-      "source": "V16 canonical seed",
+      "source": {
+        "headSHA": "f753faeefb9efc4894d9ba7b8911b06f7f0c0b89",
+        "mergeSHA": "d79629afe00159bf9eb455bf86e00944d5842152",
+        "pr": 3168
+      },
       "state": "SELECTED",
-      "world": "FRONTIER"
+      "world": "MAIN"
     },
     "mission/swarm-v16-mission-graph": {
       "branch": "mission/swarm-v16-mission-graph",
@@ -708,7 +712,82 @@
     }
   },
   "createdAt": "2026-08-12T09:06:34Z",
-  "evidence": {},
+  "evidence": {
+    "capture-standalone-build-accept-f753faeefb9e": {
+      "affectedPaths": [
+        "NembraCapture.xcodeproj",
+        "NembraApp/Features/Research",
+        "Packages/NembraBluetoothCapture"
+      ],
+      "createdAt": "2026-08-13T00:43:13Z",
+      "dependencyDigest": "5a1b0357a008d96c62189000a84da5b2445f81080452903271fba635a2c439dc",
+      "details": {
+        "acceptanceRuns": [
+          "31654041247",
+          "31654209978"
+        ],
+        "pr": 3168,
+        "sourceHead": "f753faeefb9efc4894d9ba7b8911b06f7f0c0b89"
+      },
+      "environmentDigest": "c1b297bf626b48d935315052bbf000faba2cb43e924e25a0c3874929b355eebf",
+      "evidenceId": "capture-standalone-build-accept-f753faeefb9e",
+      "invalidatedAt": "",
+      "invalidationReason": "",
+      "objectiveId": "capture-standalone-build",
+      "sourceDigest": "ced853efc970c10edbfb77a77dbf8b7b7a4bc1bdc00afa81a1c43f2995ef37cc",
+      "status": "PASS",
+      "truthClass": "OBSERVED",
+      "type": "software-acceptance"
+    },
+    "capture-standalone-build-main-d79629afe001": {
+      "affectedPaths": [
+        "NembraCapture.xcodeproj",
+        "NembraApp/Features/Research",
+        "Packages/NembraBluetoothCapture"
+      ],
+      "createdAt": "2026-08-13T00:43:13Z",
+      "dependencyDigest": "5a1b0357a008d96c62189000a84da5b2445f81080452903271fba635a2c439dc",
+      "details": {
+        "mergeSHA": "d79629afe00159bf9eb455bf86e00944d5842152",
+        "pr": 3168,
+        "sourceHead": "f753faeefb9efc4894d9ba7b8911b06f7f0c0b89"
+      },
+      "environmentDigest": "96c46bebea5b13694ee5509357cf3483256942d248d19172780ebd654807f4e7",
+      "evidenceId": "capture-standalone-build-main-d79629afe001",
+      "invalidatedAt": "",
+      "invalidationReason": "",
+      "objectiveId": "capture-standalone-build",
+      "sourceDigest": "ced853efc970c10edbfb77a77dbf8b7b7a4bc1bdc00afa81a1c43f2995ef37cc",
+      "status": "PASS",
+      "truthClass": "OBSERVED",
+      "type": "integration-truth"
+    },
+    "capture-standalone-build-review-f753faeefb9e": {
+      "affectedPaths": [
+        "NembraCapture.xcodeproj",
+        "NembraApp/Features/Research",
+        "Packages/NembraBluetoothCapture"
+      ],
+      "createdAt": "2026-08-13T00:43:13Z",
+      "dependencyDigest": "5a1b0357a008d96c62189000a84da5b2445f81080452903271fba635a2c439dc",
+      "details": {
+        "pr": 3168,
+        "reviewRefs": [
+          "4922282569"
+        ],
+        "sourceHead": "f753faeefb9efc4894d9ba7b8911b06f7f0c0b89"
+      },
+      "environmentDigest": "5eb4ee304a2b5a4d6cf0d3d1e6218812dc3e1ca3728fe555c10179f1417eb5cd",
+      "evidenceId": "capture-standalone-build-review-f753faeefb9e",
+      "invalidatedAt": "",
+      "invalidationReason": "",
+      "objectiveId": "capture-standalone-build",
+      "sourceDigest": "ced853efc970c10edbfb77a77dbf8b7b7a4bc1bdc00afa81a1c43f2995ef37cc",
+      "status": "PASS",
+      "truthClass": "OBSERVED",
+      "type": "independent-review"
+    }
+  },
   "failureKnowledge": [],
   "graphId": "nembra-v16",
   "kind": "mission-graph",
@@ -938,6 +1017,14 @@
       "message": "V16 migration -> ACTIVE",
       "objectiveId": "",
       "type": "MIGRATION_PHASE"
+    },
+    {
+      "at": "2026-08-13T00:43:13Z",
+      "data": {},
+      "eventId": "dc9ef8651fa146fa",
+      "message": "Standalone build",
+      "objectiveId": "capture-standalone-build",
+      "type": "OBJECTIVE_DONE"
     }
   ],
   "mergeTrain": {
@@ -967,7 +1054,7 @@
   "metrics": {
     "closedBlockers": 0,
     "duplicateTasksPrevented": 2,
-    "meaningfulProgressEvents": 0,
+    "meaningfulProgressEvents": 1,
     "newLegitimateBlockers": 0,
     "startBlockers": 23,
     "supersededBranches": 0
@@ -2429,7 +2516,7 @@
   "missions": {
     "capture-stationary": {
       "captain": "",
-      "lastMeaningfulProgress": "2026-08-12T10:49:34Z",
+      "lastMeaningfulProgress": "2026-08-13T00:43:13Z",
       "missionId": "capture-stationary",
       "objectiveIds": [
         "capture-standalone-build",
@@ -3498,7 +3585,11 @@
       "captain": "",
       "createdAt": "2026-08-12T10:49:34Z",
       "dependencies": [],
-      "evidenceIds": [],
+      "evidenceIds": [
+        "capture-standalone-build-accept-f753faeefb9e",
+        "capture-standalone-build-review-f753faeefb9e",
+        "capture-standalone-build-main-d79629afe001"
+      ],
       "featureGenome": {
         "accessibility": {
           "evidenceIds": [],
@@ -3506,19 +3597,31 @@
           "state": "NOT_STARTED"
         },
         "functionality": {
-          "evidenceIds": [],
-          "notes": "",
-          "state": "NOT_STARTED"
+          "evidenceIds": [
+            "capture-standalone-build-accept-f753faeefb9e",
+            "capture-standalone-build-review-f753faeefb9e",
+            "capture-standalone-build-main-d79629afe001"
+          ],
+          "notes": "Accepted software integration PR #3168 -> d79629afe001",
+          "state": "ACCEPTED"
         },
         "integration": {
-          "evidenceIds": [],
-          "notes": "",
-          "state": "NOT_STARTED"
+          "evidenceIds": [
+            "capture-standalone-build-accept-f753faeefb9e",
+            "capture-standalone-build-review-f753faeefb9e",
+            "capture-standalone-build-main-d79629afe001"
+          ],
+          "notes": "Accepted software integration PR #3168 -> d79629afe001",
+          "state": "ACCEPTED"
         },
         "knownBlockers": {
-          "evidenceIds": [],
-          "notes": "",
-          "state": "NOT_STARTED"
+          "evidenceIds": [
+            "capture-standalone-build-accept-f753faeefb9e",
+            "capture-standalone-build-review-f753faeefb9e",
+            "capture-standalone-build-main-d79629afe001"
+          ],
+          "notes": "Accepted software integration PR #3168 -> d79629afe001",
+          "state": "ACCEPTED"
         },
         "performance": {
           "evidenceIds": [],
@@ -3531,9 +3634,13 @@
           "state": "NOT_APPLICABLE"
         },
         "testing": {
-          "evidenceIds": [],
-          "notes": "",
-          "state": "NOT_STARTED"
+          "evidenceIds": [
+            "capture-standalone-build-accept-f753faeefb9e",
+            "capture-standalone-build-review-f753faeefb9e",
+            "capture-standalone-build-main-d79629afe001"
+          ],
+          "notes": "Accepted software integration PR #3168 -> d79629afe001",
+          "state": "ACCEPTED"
         },
         "visualQuality": {
           "evidenceIds": [],
@@ -3549,19 +3656,19 @@
         "no unresolved software blocker"
       ],
       "finishSatisfied": [
-        false,
-        false,
-        false,
-        false,
-        false
+        true,
+        true,
+        true,
+        true,
+        true
       ],
       "forbiddenAreas": [
         "scooter commands",
         "invented telemetry semantics",
         "outdoor ride procedure"
       ],
-      "integrationState": "FRONTIER",
-      "lastMeaningfulProgress": "2026-08-12T10:49:34Z",
+      "integrationState": "MAIN",
+      "lastMeaningfulProgress": "2026-08-13T00:43:13Z",
       "missionId": "capture-stationary",
       "objectiveId": "capture-standalone-build",
       "physicalOrUserDependency": false,
@@ -3569,7 +3676,7 @@
       "releaseBlocking": true,
       "safetyCritical": false,
       "severity": "P0",
-      "status": "READY",
+      "status": "DONE",
       "title": "Standalone build",
       "userValue": 10
     },
@@ -6169,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 34,
+  "revision": 35,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T00:42:34Z",
+  "updatedAt": "2026-08-13T00:43:13Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
