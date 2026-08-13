@@ -1,0 +1,316 @@
+name: Nembra GO Materialize Post-DS Retirement
+
+on:
+  push:
+    branches:
+      - repair/v14-post-ds-retirement-production-sol-20260812-go2
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v14-post-ds-retirement-production-sol-20260812-go2
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact source carrier
+        shell: bash
+        env:
+          EXACT_PARENT: 3568250ee02556185610dd895e3f6d1c8f28dd33
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/nembra-go-materialize-post-ds-retirement.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize proved destructive-retirement ordering and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          helper_path = Path('scripts/ci/capture_signed_app_build_origin_custody.py')
+          helper = helper_path.read_text(encoding='utf-8')
+          start = helper.index('def _assert_local_build_identity_retired(')
+          end = helper.index('def _create_local_build_identity(', start)
+          replacement = '''def _direct_local_identity_record_exists(kind: str, name: str) -> bool:
+    completed = subprocess.run(
+        ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    detail = ((completed.stdout or "") + "\\n" + (completed.stderr or "")).strip()
+    if completed.returncode == 0:
+        return True
+    if "eDSRecordNotFound" in detail or "-14136" in detail:
+        return False
+    raise BuildOriginCustodyError(
+        f"could not classify direct Directory Services {kind} record: "
+        f"rc={completed.returncode} detail={detail[-800:]!r}"
+    )
+
+
+def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:
+    if uid <= 0:
+        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+    deadline = time.monotonic() + timeout
+    latest_live: tuple[int, ...] = ()
+    latest_zombies: tuple[int, ...] = ()
+    latest_user_record = True
+    latest_group_record = True
+    while True:
+        latest_live, latest_zombies = _process_state_for_uid(uid)
+        latest_user_record = _direct_local_identity_record_exists("Users", name)
+        latest_group_record = _direct_local_identity_record_exists("Groups", name)
+        if not latest_live and not latest_zombies and not latest_user_record and not latest_group_record:
+            return
+        if time.monotonic() >= deadline:
+            break
+        subprocess.run(
+            ["/usr/bin/dscacheutil", "-flushcache"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        time.sleep(0.05)
+    raise BuildOriginCustodyError(
+        "ephemeral build destructive authority survived retirement: "
+        f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)} "
+        f"user_record={latest_user_record} group_record={latest_group_record}"
+    )
+
+
+def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:
+    if sys.platform != "darwin":
+        return
+    if require_absent and (uid is None or uid <= 0):
+        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+    if uid is not None and uid > 0:
+        killed = subprocess.run(
+            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if require_absent and killed.returncode not in (0, 1):
+            raise BuildOriginCustodyError(
+                f"could not request initial build-principal process retirement: pkill exit {killed.returncode}"
+            )
+    subprocess.run(
+        ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    subprocess.run(
+        ["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
+    if require_absent:
+        final_kill = subprocess.run(
+            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if final_kill.returncode not in (0, 1):
+            raise BuildOriginCustodyError(
+                f"could not request final build-principal process retirement: pkill exit {final_kill.returncode}"
+            )
+        _assert_local_build_identity_retired(name, uid)
+
+
+'''
+          old = helper[start:end]
+          if '_wait_for_no_live_uid(uid)' not in old or '_identity_lookup_survivors(name, uid)' not in old:
+              raise SystemExit('current retirement block no longer matches the proved parent semantics')
+          helper = helper[:start] + replacement + helper[end:]
+          if helper.count('["/usr/bin/pkill", "-9", "-u", str(uid), ".*"]') != 2:
+              raise SystemExit('expected exactly initial + final UID-wide kill in materialized helper')
+          if 'if candidate <= 0 or _id_in_use(candidate):' not in helper:
+              raise SystemExit('conservative stale-identity numeric reuse guard disappeared')
+          compile(helper, str(helper_path), 'exec', dont_inherit=True)
+          helper_path.write_text(helper, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py')
+          tests = test_path.read_text(encoding='utf-8')
+          old_source_marker = '        self.assertIn("_wait_for_no_live_uid(uid)", source)\n'
+          new_source_markers = (
+              '        self.assertIn("def _direct_local_identity_record_exists(", source)\n'
+              '        self.assertIn("final_kill = subprocess.run(", source)\n'
+              '        self.assertIn("if not latest_live and not latest_zombies and not latest_user_record and not latest_group_record:", source)\n'
+          )
+          if tests.count(old_source_marker) != 1:
+              raise SystemExit('expected one obsolete pre-delete zero-live source marker')
+          tests = tests.replace(old_source_marker, new_source_markers)
+
+          method_start = tests.index('    def test_verified_identity_retirement_requires_no_live_uid_or_identity_lookup')
+          method_end = tests.index('    def test_strict_identity_removal_rejects_unclassifiable_pkill_failure', method_start)
+          new_methods = '''    def test_verified_identity_retirement_requires_no_process_or_direct_ds_authority(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_retirement")
+        with (
+            mock.patch.object(helper, "_process_state_for_uid", return_value=((), ())),
+            mock.patch.object(helper, "_direct_local_identity_record_exists", side_effect=(False, False)),
+        ):
+            helper._assert_local_build_identity_retired("nembrabuildtest", 55001)
+
+        for process_state in (((1234,), ()), ((), (1234,))):
+            with (
+                self.subTest(process_state=process_state),
+                mock.patch.object(helper, "_process_state_for_uid", return_value=process_state),
+                mock.patch.object(helper, "_direct_local_identity_record_exists", side_effect=(False, False)),
+                self.assertRaises(helper.BuildOriginCustodyError),
+            ):
+                helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
+
+        for direct_state in ((True, False), (False, True)):
+            with (
+                self.subTest(direct_state=direct_state),
+                mock.patch.object(helper, "_process_state_for_uid", return_value=((), ())),
+                mock.patch.object(helper, "_direct_local_identity_record_exists", side_effect=direct_state),
+                self.assertRaises(helper.BuildOriginCustodyError),
+            ):
+                helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
+
+        with self.assertRaises(helper.BuildOriginCustodyError):
+            helper._assert_local_build_identity_retired("nembrabuildtest", 0)
+
+    def test_direct_directory_service_record_classifier_fails_closed(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_direct_ds")
+        present = mock.Mock(returncode=0, stdout="record", stderr="")
+        with mock.patch.object(helper.subprocess, "run", return_value=present):
+            self.assertTrue(helper._direct_local_identity_record_exists("Users", "nembrabuildtest"))
+
+        absent = mock.Mock(returncode=56, stdout="", stderr="DS Error: -14136 (eDSRecordNotFound)")
+        with mock.patch.object(helper.subprocess, "run", return_value=absent):
+            self.assertFalse(helper._direct_local_identity_record_exists("Groups", "nembrabuildtest"))
+
+        unclassifiable = mock.Mock(returncode=1, stdout="", stderr="transport failed")
+        with (
+            mock.patch.object(helper.subprocess, "run", return_value=unclassifiable),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._direct_local_identity_record_exists("Users", "nembrabuildtest")
+
+    def test_strict_identity_removal_deletes_ds_before_final_uid_retirement(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_strict_retirement")
+        events: list[str] = []
+        kill_count = 0
+
+        def run_side_effect(argv, **_kwargs):
+            nonlocal kill_count
+            if argv[:3] == ["/usr/bin/pkill", "-9", "-u"]:
+                kill_count += 1
+                events.append(f"pkill-{kill_count}")
+            elif argv[:3] == ["/usr/bin/dscl", ".", "-delete"]:
+                if argv[3].startswith("/Users/"):
+                    events.append("delete-user")
+                elif argv[3].startswith("/Groups/"):
+                    events.append("delete-group")
+            return mock.Mock(returncode=0)
+
+        def verify_side_effect(_name, _uid):
+            events.append("verify-destructive-authority")
+
+        with (
+            mock.patch.object(helper.sys, "platform", "darwin"),
+            mock.patch.object(helper.subprocess, "run", side_effect=run_side_effect),
+            mock.patch.object(helper, "_assert_local_build_identity_retired", side_effect=verify_side_effect),
+        ):
+            helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
+
+        self.assertEqual(kill_count, 2)
+        self.assertLess(events.index("pkill-1"), events.index("delete-user"))
+        self.assertLess(events.index("delete-user"), events.index("delete-group"))
+        self.assertLess(events.index("delete-group"), events.index("pkill-2"))
+        self.assertLess(events.index("pkill-2"), events.index("verify-destructive-authority"))
+
+    def test_strict_identity_removal_rejects_final_pkill_failure(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_final_pkill_failure")
+        kill_count = 0
+
+        def run_side_effect(argv, **_kwargs):
+            nonlocal kill_count
+            if argv[:3] == ["/usr/bin/pkill", "-9", "-u"]:
+                kill_count += 1
+                return mock.Mock(returncode=0 if kill_count == 1 else 3)
+            return mock.Mock(returncode=0)
+
+        with (
+            mock.patch.object(helper.sys, "platform", "darwin"),
+            mock.patch.object(helper.subprocess, "run", side_effect=run_side_effect),
+            mock.patch.object(helper, "_assert_local_build_identity_retired") as verify,
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
+        verify.assert_not_called()
+
+'''
+          retired_method_names = (
+              'test_verified_identity_retirement_requires_no_live_uid_or_identity_lookup',
+              'test_strict_identity_removal_proves_zero_live_uid_before_directory_service_deletion',
+          )
+          retired_block = tests[method_start:method_end]
+          for name in retired_method_names:
+              if name not in retired_block:
+                  raise SystemExit(f'missing retired regression method {name}')
+          tests = tests[:method_start] + new_methods + tests[method_end:]
+          compile(tests, str(test_path), 'exec', dont_inherit=True)
+          test_path.write_text(tests, encoding='utf-8')
+
+          field_path = Path('.github/workflows/capture-field-build-provenance.yml')
+          field = field_path.read_text(encoding='utf-8')
+          stale = "          grep -Fq '**_structured_credentials(build_uid, build_gid, ())' \"$build_origin_custody\"\n"
+          current = "          grep -Fq '**_structured_credentials(uid, gid, ())' \"$build_origin_custody\"\n"
+          if field.count(stale) != 1:
+              raise SystemExit('stale Field Provenance credential spelling was not found exactly once')
+          field = field.replace(stale, current)
+          field_path.write_text(field, encoding='utf-8')
+          PY
+
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          grep -Fq 'def _direct_local_identity_record_exists(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq 'final_kill = subprocess.run(' scripts/ci/capture_signed_app_build_origin_custody.py
+          grep -Fq "grep -Fq '**_structured_credentials(uid, gid, ())' \"\$build_origin_custody\"" .github/workflows/capture-field-build-provenance.yml
+          if grep -Fq "grep -Fq '**_structured_credentials(build_uid, build_gid, ())' \"\$build_origin_custody\"" .github/workflows/capture-field-build-provenance.yml; then
+            echo 'ERROR: stale Field Provenance credential spelling survived.' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Commit production successor and remove materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/nembra-go-materialize-post-ds-retirement.yml
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' \
+            '.github/workflows/capture-field-build-provenance.yml' \
+            'scripts/ci/capture_signed_app_build_origin_custody.py' \
+            'scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py' | sort)"
+          git diff --check
+          git config user.name 'nembra-go-sol'
+          git config user.email 'nembra-go-sol@users.noreply.github.com'
+          git add -A
+          git commit -m 'Capture: compose post-DS build-principal retirement'
+          git push origin HEAD:repair/v14-post-ds-retirement-production-sol-20260812-go2
