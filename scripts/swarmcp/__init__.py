@@ -14,6 +14,11 @@ from .v16_1 import *
 # The rollout guard is even narrower: it closes the post-activation unmanaged
 # PR escape hatch while preserving pre-V16.1 open PR compatibility.
 from .v16_1_pr_guard import evaluate_pr_admission, V16_1_PR_METADATA_ENFORCEMENT_STARTED_AT
+# Worker persistence is the final routing layer. Duplicate suppression can make
+# the exclusive queue smaller than a 20-30 worker burst, so an empty exclusive
+# slot now falls through to review/integration/debug/capacity assist instead of
+# being mistaken for permission to stop.
+from .v16_1_persistence import *
 MissionGraphStore = V16_1MissionGraphStore
 _v16_1_add_work_item = add_work_item
 def add_work_item(graph, **kwargs):
