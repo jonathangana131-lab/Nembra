@@ -2193,7 +2193,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3152,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.327,
+        "similarity": 0.328,
         "title": "[Capture P0][VALIDATION] Prove Apple Development signing under field UID capability"
       },
       "3163": {
@@ -2416,17 +2416,6 @@
         "similarity": 0.359,
         "title": "[Capture P0][VALIDATION] Prove post-DS build-principal retirement on real Xcode"
       },
-      "3219": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3219,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.383,
-        "title": "[Capture P0][VALIDATION] Classify selected-Xcode runner sudo authority"
-      },
       "3220": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2446,7 +2435,7 @@
         "lane": "capture-build-authority",
         "pr": 3222,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.379,
+        "similarity": 0.33,
         "title": "[Capture P0][VALIDATION] Add selected-Xcode private field preflight"
       },
       "3223": {
@@ -2457,7 +2446,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3223,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.248,
+        "similarity": 0.337,
         "title": "[Capture P0][VALIDATION] Prove Apple-signing Git alias rejection"
       },
       "3224": {
@@ -2470,6 +2459,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.341,
         "title": "[Capture P0][VALIDATION] Converge build-UID launch-domain and stale-cache retirement"
+      },
+      "3225": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "00d47132dc62426cae7c4dafc2306ad326601280",
+        "lane": "capture-flagship-composition",
+        "pr": 3225,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.344,
+        "title": "[P0 Capture][AX RUNTIME] Validate AX5 lock-state VoiceOver ordering"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2502,7 +2502,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:31:26Z",
+    "liveRefreshAt": "2026-08-13T03:34:32Z",
     "liveRefreshDuplicatesSuppressed": [
       3224
     ],
@@ -6276,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 55,
+  "revision": 56,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:34:16Z",
+  "updatedAt": "2026-08-13T03:37:20Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6355,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:31:26Z",
+      "updatedAt": "2026-08-13T03:34:32Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
