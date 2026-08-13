@@ -109,8 +109,9 @@ jobs:
               '        watchdog = nil',
               '        currentConnectionToken = nil',
               '        localBLESettlementToken = nil',
-              '        // Preserve the last observed SDK-local BLE state. This semantic evidence terminal is not',
-              '        // a transport-loss observation and therefore cannot manufacture an offline receipt.',
+              '        // Clear current local-BLE proof only. In product copy/export semantics false means',
+              '        // “Not proven”; this does not create an observed transport-loss receipt.',
+              '        sdkLocalBLEOnline = false',
               '        driver = nil',
               '        await refreshLedgerSnapshot()',
               '        phase = .failed',
@@ -126,11 +127,10 @@ jobs:
 
           git fetch origin refs/pull/3246/head:refs/remotes/origin/capture-ui-3246
           git checkout refs/remotes/origin/capture-ui-3246 -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift
-          git fetch origin refs/pull/3251/head:refs/remotes/origin/capture-semantic-3251
-          git checkout refs/remotes/origin/capture-semantic-3251 -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationSemanticTerminalTests.swift
 
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift')
           s = p.read_text()
           old = '\n'.join([
@@ -154,13 +154,17 @@ jobs:
               raise SystemExit(f'app-survival oracle anchor count: {s.count(old)}')
           p.write_text(s.replace(old, new, 1))
 
-          semantic = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationSemanticTerminalTests.swift')
-          t = semantic.read_text()
-          needle = '        #expect(!mirror.contains("recordObservedTransportLoss"))\n'
-          replacement = needle + '        #expect(!mirror.contains("sdkLocalBLEOnline = false"))\n'
-          if t.count(needle) != 1:
-              raise SystemExit(f'transport-truth oracle anchor count: {t.count(needle)}')
-          semantic.write_text(t.replace(needle, replacement, 1))
+          old_reason = 'Authenticated session produced no application update before the observation deadline.'
+          new_reason = 'Authenticated session ended because required repeated application evidence did not become sufficient before the observation deadline.'
+          for path in [
+              Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift'),
+              Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift'),
+          ]:
+              text = path.read_text()
+              count = text.count(old_reason)
+              if count != 2:
+                  raise SystemExit(f'{path.name}: expected two stale timeout reason assertions, found {count}')
+              path.write_text(text.replace(old_reason, new_reason))
           PY
 
           rm .github/workflows/capture-app-horizon-patch-go.yml
@@ -171,6 +175,8 @@ jobs:
         working-directory: Packages/NembraBluetoothCapture
         run: |
           set -euo pipefail
+          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests
+          swift test --filter TuyaAuthenticatedTerminalHorizonTests
           swift test --filter TuyaAuthenticatedReadOnlyHorizonTests
           swift test --filter TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration
           swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
