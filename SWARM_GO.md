@@ -1,8 +1,8 @@
-# Nembra Swarm V16 — `Go`
+# Nembra Swarm V16.1 — `Go`
 
 This is the short bootstrap for a fresh GPT-5.6 Sol worker when the user says **Go**, **continue**, **keep going**, or otherwise asks Nembra development to advance without assigning a task.
 
-The canonical architecture and recovery guide is `docs/SWARM_CONTROL_PLANE.md`.
+The canonical architecture and recovery guide is `docs/SWARM_CONTROL_PLANE.md`. The V16.1 branch/PR convergence contract is `docs/SWARM_V16_1_CONVERGENCE.md`.
 
 ## What Go means
 
@@ -15,42 +15,58 @@ A green check, merged PR, completed first task, lost claim, or externally blocke
 ## Boot
 
 1. Inspect current `main`, meaningful open PRs/branches, recent commits, and relevant CI/Xcode state. Live GitHub product truth outranks stale prose.
-2. Read trusted `.swarm/config.json`.
-3. Read/validate the V16 Mission Graph on `swarm-state` plus relevant V16 claims.
+2. Read trusted `.swarm/config.json` and require `v16.policyVersion == "16.1"` for new swarm work.
+3. Read/validate the V16 Mission Graph on `swarm-state` plus relevant V16 claims. V16.1 upgrades schema-16 state in place; do not reset the graph.
 4. During migration, inspect legacy lane/claim state for useful truth not yet represented in V16; import/reconcile rather than creating parallel copies.
 5. Read the compact recent memory/failure knowledge for the chosen objective so known facts are not rediscovered.
 6. Register/use a unique `sol-YYYYMMDD-<unique>` worker identity.
-7. Request V16 recommendations and take the highest-value safe mission packet matching current truth and the worker’s capabilities.
+7. Request V16.1 recommendations and take the highest-value safe mission packet matching current truth and the worker’s capabilities.
 
 Unknown/corrupt/newer authority state means fail closed for new exclusive work. Do not guess ownership.
 
-## Before creating work or a branch
+## Before creating work, a branch, or a PR
 
 Search the active mission graph, blockers, work items, selected branches, PR classifications, and recent memory.
 
-If substantially equivalent work already exists:
+**V16.1 hard rule: one active builder branch per blocker.** If substantially equivalent work already exists:
 
-- join/assist the current owner;
-- review/red-team it;
+- join/assist the current owner on the existing branch;
+- review/red-team the existing PR;
 - integrate/debug it;
-- or participate only if an explicit bounded solution tournament was authorized.
+- or participate only if an explicit bounded two-candidate solution tournament was authorized.
 
-Do **not** create another near-identical PR.
+Do **not** create another near-identical PR, recovery child, validation successor, or “independent” builder branch. `allow_duplicate` is not a builder escape hatch.
 
-Use the objective’s canonical selected branch whenever practical. Temporary branches are for experiments, bounded tournaments, diagnostics, and adversarial testing; they must carry a lifecycle state and be superseded/archived after selection.
+A blocker may use at most two distinct low-progress attempt branches. A third low-progress successor is rejected and the blocker family enters convergence freeze. Three low-progress attempts are enough to trigger early Rabbit Hole/convergence review.
+
+Use the assigned/selected branch whenever one exists. A temporary experimental branch requires an explicit tournament. Losing a claim means refresh and select different scheduled work; **never invent a successor branch because another worker won the claim.**
+
+Every new swarm-managed PR must carry:
+
+```text
+SWARM_PROTOCOL: 16.1
+SWARM_SCHEMA: 2
+SWARM_LANE: <stable lane id>
+SWARM_SLOT: <stable blocker/work slot>
+SWARM_WORKER: sol-YYYYMMDD-<unique>
+SWARM_BRANCH_INTENT: canonical|validation|review|integration|tournament
+```
+
+Validation/tournament PRs also require `SWARM_PARENT_PR`; tournament PRs require `SWARM_TOURNAMENT_ID`. The trusted `Swarm V16.1 PR Admission` gate will reject a new PR and point at the existing PR when the worker should converge instead.
 
 ## Claim and execute
 
 1. Atomically claim the exact V16 work item. Claim first, branch second.
-2. If another worker wins, refresh and choose another mission. A lost claim is not a reason to stop.
+2. If another worker wins, refresh and choose another mission. A lost claim is not a reason to stop or create new work.
 3. Acquire scarce resources in configured order and release them when idle.
-4. Follow the mission packet’s `PRIMARY_SCOPE`, `ALLOWED_EXPANSION`, and `FORBIDDEN_AREAS`.
-5. Solve the coherent outcome, including small directly related adjacent defects when allowed. Do not default to one-defect-one-PR.
-6. Heartbeat at meaningful checkpoints.
-7. Record only high-signal shared memory: blockers, root causes, accepted evidence, selected solutions, integration results, and facts another worker should not rediscover.
-8. Run dependency-aware impacted tests immediately; run broader integration/release suites at the required boundaries.
-9. Reuse strong evidence only when its source/dependency/environment bindings still match.
-10. Never claim a blocker is closed or a feature is done without required evidence.
+4. Follow the mission packet’s `PRIMARY_SCOPE`, `ALLOWED_EXPANSION`, `FORBIDDEN_AREAS`, `BRANCH_ACTION`, and `JOIN_BRANCH`.
+5. Treat `MAY_CREATE_SUCCESSOR_PR: false` as authoritative unless an explicit two-candidate tournament says otherwise.
+6. Solve the coherent outcome, including small directly related adjacent defects when allowed. Do not default to one-defect-one-PR.
+7. Heartbeat at meaningful checkpoints.
+8. Record only high-signal shared memory: blockers, root causes, accepted evidence, selected solutions, integration results, and facts another worker should not rediscover.
+9. Run dependency-aware impacted tests immediately; run broader integration/release suites at the required boundaries.
+10. Reuse strong evidence only when its source/dependency/environment bindings still match.
+11. Never claim a blocker is closed or a feature is done without required evidence.
 
 ## Review and integration
 
@@ -68,7 +84,7 @@ Major missions have captains. Captains coordinate workers, blockers, solution se
 
 Meaningful blockers are first-class objects with owner/backup, evidence, attempts, current hypothesis, next action, and exit condition. Random workers do not independently create competing repairs for an owned blocker unless the scheduler explicitly launches a tournament.
 
-Repeated successor/validation churn triggers convergence mode. High activity with little blocker removal triggers a Rabbit Hole Review.
+Repeated successor/validation churn triggers convergence mode. V16.1 triggers it earlier and prevents a third low-progress branch instead of merely documenting the churn afterward.
 
 ## Surge and milestone attack
 
@@ -102,7 +118,7 @@ When the current work becomes accepted, blocked, handed off, integrated, superse
 
 1. preserve durable graph/evidence/blocker state;
 2. release claims/resources that should not remain held;
-3. refresh current GitHub + V16 truth;
+3. refresh current GitHub + V16.1 truth;
 4. request another safe mission in the **same Go execution window**;
 5. continue.
 
@@ -121,8 +137,8 @@ Before stopping, preserve newly discovered blockers, evidence, supersession, and
 
 ## Compatibility window
 
-V15 lane commands remain available while migration finishes. They are compatibility surfaces, not the new organizing model.
+V15 lane commands remain available while migration finishes. Older V16 evidence and graph state remain valid when their source/dependency/environment bindings still match, but **new swarm branches/PRs use the V16.1 convergence contract**.
 
-New work should consume V16 objective/work packets. Old workers should either receive V16-compatible work or fail safely with a clear migration state. Existing accepted V15 evidence remains useful when its relevant source/dependency/environment contract is unchanged.
+New work should consume V16.1 objective/work packets. Old workers should either receive V16.1-compatible work or fail safely with a clear migration state. Existing accepted V15/V16 evidence remains useful when its relevant source/dependency/environment contract is unchanged.
 
 The user should not need to coordinate agents, name PRs, or repeatedly say what to do next. `Go` is sufficient.

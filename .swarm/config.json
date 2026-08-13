@@ -28,6 +28,7 @@
   "legacyPRCompatibility": "shadow-warn",
   "v16": {
     "enabled": true,
+    "policyVersion": "16.1",
     "graphPath": ".swarm/runtime/v16/mission-graph.json",
     "defaultWorkers": 30,
     "roleTargets": {
@@ -36,11 +37,21 @@
       "integrator": 0.2
     },
     "semanticDuplicateThreshold": 0.58,
-    "solutionTournamentMaxCandidates": 3,
+    "solutionTournamentMaxCandidates": 2,
     "missionPacketMemoryLimit": 12,
     "integrationWorlds": ["MAIN", "NEXT", "FRONTIER", "EXPERIMENTAL"],
     "truthClasses": ["SIMULATED", "ESTIMATED", "OBSERVED", "AUTHENTICATED", "PHYSICALLY_MAPPED", "COMMAND_VERIFIED"],
     "destructiveMigrationActionsAllowed": false,
+    "convergence": {
+      "oneBuilderBranchPerBlocker": true,
+      "claimBeforeBranch": true,
+      "joinBeforeSuccessor": true,
+      "maxDistinctAttemptBranchesPerBlocker": 2,
+      "maxOpenNoncanonicalPRsPerLane": 6,
+      "lowProgressAttemptsBeforeFreeze": 3,
+      "automaticPRAdmission": true,
+      "newSwarmPRProtocol": "16.1"
+    },
     "physicalSafety": {
       "schedulerMayPromotePhysicalGo": false,
       "authenticatedEvidenceIsPhysicalEvidence": false,
