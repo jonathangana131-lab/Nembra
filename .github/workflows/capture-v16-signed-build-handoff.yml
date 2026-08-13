@@ -1,0 +1,147 @@
+name: Capture V16 Signed Build Handoff
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.gitignore'
+      - 'Podfile'
+      - 'Scripts/bootstrap_capture_tuya_sdk.sh'
+      - 'Scripts/capture_tuya_private_input_provenance.py'
+      - 'Scripts/provision_capture_tuya_identity.sh'
+      - 'scripts/field/build_signed_capture_candidate.command'
+      - 'scripts/ci/tests/test_capture_v16_signed_build_handoff.py'
+      - '.github/workflows/capture-v16-signed-build-handoff.yml'
+      - 'NembraCapture.xcodeproj/**'
+      - 'NembraApp/App/NembraCapture*.swift'
+      - 'NembraApp/Features/Research/**'
+      - 'Packages/NembraBluetoothCapture/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-v16-signed-build-handoff-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Validate signed-build-only contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout immutable PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout dispatched ref
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v6
+
+      - name: Verify immutable PR head
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate shell and Python source
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          bash -n scripts/field/build_signed_capture_candidate.command
+          python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          python3 -m py_compile scripts/ci/tests/test_capture_v16_signed_build_handoff.py
+
+      - name: Run V16 signed-build handoff contract
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_v16_signed_build_handoff.py
+
+      - name: Preserve signed-build boundary
+        run: |
+          set -euo pipefail
+          test ! -e scripts/field/install_one_time_capture.command
+          grep -Fq 'SIGNED BUILD CANDIDATE ONLY — NOT INSTALLED — PHYSICAL NO-GO.' scripts/field/build_signed_capture_candidate.command
+          printf '%s\n' 'Validated build-only signed candidate handoff; no install/device/Bluetooth authority is present.'
+
+  standalone-regression:
+    name: Rebuild standalone Capture on Xcode 27
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout immutable PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout dispatched ref
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v6
+
+      - name: Verify immutable PR head
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+
+      - name: Record toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Compile Capture package against current Core
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift build
+
+      - name: Run standalone truth regressions
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter CoreBluetoothCaptureMappingTests
+          swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
+          swift test --filter CaptureFirstFoldCopySourceTests
+
+      - name: Build public standalone Capture without field authority
+        run: |
+          set -euo pipefail
+          rm -rf "${RUNNER_TEMP}/NembraCaptureV16SignedHandoffDerivedData"
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureV16SignedHandoffDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify public regression remains fail-closed
+        run: |
+          set -euo pipefail
+          app="${RUNNER_TEMP}/NembraCaptureV16SignedHandoffDerivedData/Build/Products/Debug-iphonesimulator/Nembra Capture.app"
+          plist="$app/Info.plist"
+          test -d "$app"
+          test -f "$plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = 'com.jonathangana131.nembra.capturelearn'
+          for key in \
+            NembraCaptureBuildIdentifier \
+            NembraCaptureSourceCommitSHA \
+            NembraCaptureTuyaDependencyLockSHA256 \
+            NembraCaptureProcedureIdentifier
+          do
+            value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null || true)"
+            test -z "$value"
+          done
+          printf '%s\n' 'Public standalone regression remains software-only and carries no field authority.'
