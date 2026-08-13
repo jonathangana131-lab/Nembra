@@ -75,7 +75,7 @@ class CaptureV16SignedBuildHandoffTests(unittest.TestCase):
         self.assertNotIn("private-input-provenance.txt", producer)
         self.assertIn("fingerprint record itself stays under LocalSecrets", producer)
 
-    def test_signed_candidate_binds_current_app_provenance_contract(self) -> None:
+    def test_signed_candidate_binds_current_app_and_development_signature(self) -> None:
         producer = text("scripts/field/build_signed_capture_candidate.command")
         project = text("NembraCapture.xcodeproj/project.pbxproj")
         identity = text("NembraApp/App/NembraCaptureBuildIdentity.swift")
@@ -102,6 +102,8 @@ class CaptureV16SignedBuildHandoffTests(unittest.TestCase):
         self.assertIn('BUILD_LABEL="capture-v14-${SOURCE_SHA:0:12}"', producer)
         self.assertIn('requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"', identity)
         self.assertIn("capture-v14-", identity)
+        self.assertIn('[[ "$SIGNING_AUTHORITY" == "Apple Development:"* ]]', producer)
+        self.assertIn('"signingAuthority": authority', producer)
 
     def test_candidate_manifest_cannot_claim_install_or_physical_authority(self) -> None:
         producer = text("scripts/field/build_signed_capture_candidate.command")

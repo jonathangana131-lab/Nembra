@@ -130,8 +130,12 @@ read_plist() { /usr/bin/plutil -extract "$1" raw -o - "$INFO_PLIST" 2>/dev/null 
 [[ "$(read_plist NembraCaptureTuyaDependencyLockSHA256)" == "$TUYA_LOCK_SHA256" ]] || die "Signed app Tuya dependency provenance does not match reviewed lock."
 [[ "$(read_plist NembraCaptureProcedureIdentifier)" == "$PROCEDURE_ID" ]] || die "Signed app procedure provenance does not match the canonical stationary procedure."
 
-TEAM_IDENTIFIER="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign -dv --verbose=4 "$APP" 2>&1 | /usr/bin/awk -F= '$1 == "TeamIdentifier" {print $2; exit}')"
+SIGNATURE_DETAILS="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign -dv --verbose=4 "$APP" 2>&1)"
+TEAM_IDENTIFIER="$(printf '%s\n' "$SIGNATURE_DETAILS" | /usr/bin/awk -F= '$1 == "TeamIdentifier" {print $2; exit}')"
+SIGNING_AUTHORITY="$(printf '%s\n' "$SIGNATURE_DETAILS" | /usr/bin/awk -F= '$1 == "Authority" {print $2; exit}')"
+unset SIGNATURE_DETAILS
 [[ "$TEAM_IDENTIFIER" == "$NEMBRA_DEVELOPMENT_TEAM" ]] || die "Signed app TeamIdentifier does not match NEMBRA_DEVELOPMENT_TEAM."
+[[ "$SIGNING_AUTHORITY" == "Apple Development:"* ]] || die "Signed app is not an Apple Development research build."
 
 EXECUTABLE_NAME="$(read_plist CFBundleExecutable)"
 [[ -n "$EXECUTABLE_NAME" && -f "$APP/$EXECUTABLE_NAME" ]] || die "Signed app executable is unavailable for candidate fingerprinting."
@@ -153,13 +157,13 @@ STAGING_DIR="${FINAL_ARTIFACTS_DIR}.staging-$BUILD_INSTANCE_ID"
 /usr/bin/python3 -I - \
     "$STAGING_DIR/candidate-manifest.json" \
     "$SOURCE_SHA" "$BUILD_LABEL" "$BUILD_INSTANCE_ID" "$TUYA_LOCK_SHA256" \
-    "$PROCEDURE_ID" "$BUNDLE_ID" "$TEAM_IDENTIFIER" "$EXECUTABLE_SHA256" "$INFO_PLIST_SHA256" <<'PY'
+    "$PROCEDURE_ID" "$BUNDLE_ID" "$TEAM_IDENTIFIER" "$SIGNING_AUTHORITY" "$EXECUTABLE_SHA256" "$INFO_PLIST_SHA256" <<'PY'
 import datetime as dt
 import json
 import os
 import sys
 
-(path, source, build, instance, lock, procedure, bundle, team, executable_sha, plist_sha) = sys.argv[1:]
+(path, source, build, instance, lock, procedure, bundle, team, authority, executable_sha, plist_sha) = sys.argv[1:]
 record = {
     "schema": "nembra-v16-signed-build-candidate-v1",
     "createdAt": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -171,6 +175,7 @@ record = {
     "procedureIdentifier": procedure,
     "bundleIdentifier": bundle,
     "teamIdentifier": team,
+    "signingAuthority": authority,
     "executableSHA256": executable_sha,
     "infoPlistSHA256": plist_sha,
     "installationExecuted": False,
