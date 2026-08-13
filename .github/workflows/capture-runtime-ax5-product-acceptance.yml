@@ -1,0 +1,64 @@
+name: Capture Runtime AX5 Product Acceptance Bootstrap
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - .github/workflows/capture-runtime-ax5-product-acceptance.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-runtime-ax5-product-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  materialize-validated-source:
+    name: Materialize validated AX5 source once
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind lineage and apply exact validated candidate once
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          parent=5817fcc5159e5101d1b13056ef6a8852c59dc908
+          source=NembraApp/App/NembraCaptureEntrypoint.swift
+          original_blob=5d1bc8aa617063730c234c596bb82db199c8b0c4
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          if grep -Fq '.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)' "$source"; then
+            test "$(grep -Fc '.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)' "$source")" = 1
+            exit 0
+          fi
+          test "$(git rev-parse "HEAD:$source")" = "$original_blob"
+          test "$(git diff --name-only "$parent"...HEAD)" = '.github/workflows/capture-runtime-ax5-product-acceptance.yml'
+          /usr/bin/python3 -B -I - "$source" <<'PY'
+          from pathlib import Path
+          import sys
+          path=Path(sys.argv[1])
+          text=path.read_text(encoding='utf-8')
+          old='''        .accessibilityElement(children: .combine)\n        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")'''
+          new='''        .accessibilityElement(children: .combine)\n        .accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)\n        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")'''
+          if text.count(old) != 1:
+              raise SystemExit('validated build-authority seam is not exact')
+          text=text.replace(old,new)
+          if text.count('.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)') != 1:
+              raise SystemExit('candidate did not materialize exactly once')
+          path.write_text(text,encoding='utf-8')
+          PY
+          git diff --check -- "$source"
+          test "$(git diff --name-only)" = "$source"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$source"
+          test "$(git diff --cached --name-only)" = "$source"
+          git commit -m 'capture: prioritize AX5 lock authority for VoiceOver'
+          git push origin "HEAD:$HEAD_BRANCH"
