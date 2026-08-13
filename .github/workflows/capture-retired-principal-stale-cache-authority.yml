@@ -1,0 +1,168 @@
+name: Capture Retired Principal Stale Cache Authority
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_retired_principal_stale_cache_authority.py
+      - .github/workflows/capture-retired-principal-stale-cache-authority.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-retired-principal-stale-cache-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-contract:
+    name: Stale-cache authority source contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current production parent and scope
+        shell: bash
+        env:
+          EXACT_PARENT: e72099137463d93bda486e987a6ea8726c540140
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-retired-principal-stale-cache-authority.yml \
+            scripts/ci/tests/test_capture_retired_principal_stale_cache_authority.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile and pin validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/ci/tests/test_capture_retired_principal_stale_cache_authority.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('scripts/ci/tests/test_capture_retired_principal_stale_cache_authority.py').read_text(encoding='utf-8')
+          required=(
+              '_require_direct_records_absent(',
+              '_cached_lookup_state(',
+              'stalePwdGrpCacheObserved',
+              '_numeric_principal_in_use(retired_uid)',
+              'productionNumericReuseBlockedWhileCacheStale',
+              'setgroupsDenied',
+              'setgidDenied',
+              'setuidDenied',
+              'retiredOwnedFileReadDenied',
+              'retiredOwnedFileWriteDenied',
+              'modeledFieldAuthorityDeniedDespiteStaleLookup',
+              '"productionBytesChanged": False',
+              '"physicalAuthorityCreated": False',
+          )
+          missing=[marker for marker in required if marker not in source]
+          if missing:
+              raise SystemExit('missing stale-cache authority markers: '+repr(missing))
+          forbidden=('NEMBRA_TUYA_APP_KEY','NEMBRA_TUYA_APP_SECRET','CBCentralManager','CoreBluetooth','xcodebuild')
+          for marker in forbidden:
+              if marker in source:
+                  raise SystemExit('stale-cache witness crossed forbidden boundary: '+marker)
+          PY
+          git diff --check
+
+  real-macos-authority:
+    name: Real macOS stale-cache authority classification
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current production parent and scope
+        shell: bash
+        env:
+          EXACT_PARENT: e72099137463d93bda486e987a6ea8726c540140
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed_paths="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_paths="$(printf '%s\n' \
+            .github/workflows/capture-retired-principal-stale-cache-authority.yml \
+            scripts/ci/tests/test_capture_retired_principal_stale_cache_authority.py | LC_ALL=C sort)"
+          test "$changed_paths" = "$expected_paths"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Classify stale lookup metadata after destructive retirement
+        shell: bash
+        env:
+          EXACT_PARENT: e72099137463d93bda486e987a6ea8726c540140
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          FIELD_USER="$(/usr/bin/id -un)"
+          EVIDENCE="$RUNNER_TEMP/capture-retired-principal-stale-cache-authority.json"
+          DIAGNOSTIC="$RUNNER_TEMP/capture-retired-principal-stale-cache-authority.stderr.log"
+          : > "$DIAGNOSTIC"
+          /usr/bin/sudo /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_retired_principal_stale_cache_authority.py \
+            --field-user "$FIELD_USER" \
+            --production-helper "$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py" \
+            --production-parent "$EXACT_PARENT" \
+            2> >(/usr/bin/tee "$DIAGNOSTIC" >&2) \
+            | /usr/bin/tee "$EVIDENCE"
+
+          /usr/bin/python3 - "$EVIDENCE" "$EXACT_PARENT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          payload=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert payload['schema'] == 1
+          assert payload['productionParent'] == sys.argv[2]
+          assert payload['directStateAfterDelete']['userDirectoryServiceRecordResolved'] is False
+          assert payload['directStateAfterDelete']['groupDirectoryServiceRecordResolved'] is False
+          assert payload['stalePwdGrpCacheObserved'] is True
+          assert payload['zeroRetiredUIDProcesses'] is True
+          assert payload['productionNumericReuseBlockedWhileCacheStale'] is True
+          assert payload['ordinaryFieldSetgroupsDenied'] is True
+          assert payload['ordinaryFieldSetgidDenied'] is True
+          assert payload['ordinaryFieldSetuidDenied'] is True
+          assert payload['ordinaryFieldRetiredOwnedReadDenied'] is True
+          assert payload['ordinaryFieldRetiredOwnedWriteDenied'] is True
+          assert payload['retiredOwnedSentinelUnchanged'] is True
+          assert payload['finalDirectState']['userDirectoryServiceRecordResolved'] is False
+          assert payload['finalDirectState']['groupDirectoryServiceRecordResolved'] is False
+          assert payload['modeledFieldAuthorityDeniedDespiteStaleLookup'] is True
+          assert payload['productionBytesChanged'] is False
+          assert payload['xcodeUsed'] is False
+          assert payload['appleSigningIdentityUsed'] is False
+          assert payload['privateTuyaInputsUsed'] is False
+          assert payload['deviceUsed'] is False
+          assert payload['bluetoothUsed'] is False
+          assert payload['physicalAuthorityCreated'] is False
+          PY
+          shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/capture-retired-principal-stale-cache-authority.sha256"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Upload sanitized retirement authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-retired-principal-stale-cache-authority-evidence
+          path: |
+            ${{ runner.temp }}/capture-retired-principal-stale-cache-authority.json
+            ${{ runner.temp }}/capture-retired-principal-stale-cache-authority.sha256
+            ${{ runner.temp }}/capture-retired-principal-stale-cache-authority.stderr.log
+          if-no-files-found: warn
+          retention-days: 7
