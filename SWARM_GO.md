@@ -1,47 +1,87 @@
-# Nembra Swarm V16.1 — `Go`
+# Nembra Swarm V16.1 — Persistent `Go`
 
-This is the short bootstrap for a fresh GPT-5.6 Sol worker when the user says **Go**, **continue**, **keep going**, or otherwise asks Nembra development to advance without assigning a task.
+This is the bootstrap for a fresh GPT-5.6 Sol worker when the user says **Go**, **continue**, **keep going**, or otherwise asks Nembra development to advance without assigning a task.
 
-The canonical architecture and recovery guide is `docs/SWARM_CONTROL_PLANE.md`. The V16.1 branch/PR convergence contract is `docs/SWARM_V16_1_CONVERGENCE.md`.
+Canonical architecture lives in `docs/SWARM_CONTROL_PLANE.md`. Convergence rules live in `docs/SWARM_V16_1_CONVERGENCE.md`.
 
-## What Go means
+## The rule that matters most
 
-A `Go` worker is an autonomous engineering worker, not a status reporter.
+**A worker does not decide that the swarm is out of work. The V16.1 control plane does.**
 
-**Go means:** refresh truth → select the highest-value safe Mission Graph work → claim it → execute a coherent outcome → test/evidence → review/integrate or hand off → refresh again → request another safe mission.
+An empty exclusive queue, a lost claim, a green CI run, a merged PR, a pending review, a blocked first task, or completion of the first task is **not** permission to stop.
 
-A green check, merged PR, completed first task, lost claim, or externally blocked first task is a checkpoint. None of those is a normal endpoint.
+`v16-go` now returns one of:
+
+- `WORK` — claim and execute the primary mission packet.
+- `ASSIST` — exclusive work is occupied or sparse; continue immediately in non-exclusive review/integration/debug/capacity mode.
+- `STOP` with `stopAuthorized: true` — only this is a normal voluntary stop condition.
+
+If a `WORK` claim collides with another worker, consume the returned fallback list immediately. Do not stop and do not create a successor branch.
+
+## What `Go` means
+
+`Go` means a complete autonomous engineering loop:
+
+refresh truth → get continuation → execute → test/evidence → review/integrate/handoff → refresh → get another continuation → repeat.
+
+The user should not need to keep saying Go to keep an already-started worker useful.
 
 ## Boot
 
-1. Inspect current `main`, meaningful open PRs/branches, recent commits, and relevant CI/Xcode state. Live GitHub product truth outranks stale prose.
-2. Read trusted `.swarm/config.json` and require `v16.policyVersion == "16.1"` for new swarm work.
-3. Read/validate the V16 Mission Graph on `swarm-state` plus relevant V16 claims. V16.1 upgrades schema-16 state in place; do not reset the graph.
-4. During migration, inspect legacy lane/claim state for useful truth not yet represented in V16; import/reconcile rather than creating parallel copies.
-5. Read the compact recent memory/failure knowledge for the chosen objective so known facts are not rediscovered.
-6. Register/use a unique `sol-YYYYMMDD-<unique>` worker identity.
-7. Request V16.1 recommendations and take the highest-value safe mission packet matching current truth and the worker’s capabilities.
+1. Inspect current `main`, meaningful open PRs/branches, recent commits, and relevant CI/Xcode state.
+2. Read `.swarm/config.json`; new work requires V16.1.
+3. Read/validate the V16 Mission Graph on `swarm-state`, relevant claims, recent memory, and known failures.
+4. Register a unique `sol-YYYYMMDD-<unique>` worker identity.
+5. Request `v16-go` / V16.1 continuation before inventing work.
+6. Treat live GitHub and the Mission Graph as stronger authority than stale prose.
 
-Unknown/corrupt/newer authority state means fail closed for new exclusive work. Do not guess ownership.
+Unknown/corrupt/newer authority state fails closed for exclusive writes. It does **not** mean the chat should stop; switch to read-only assist/review until authority is clear.
 
-## Before creating work, a branch, or a PR
+## WORK mode
 
-Search the active mission graph, blockers, work items, selected branches, PR classifications, and recent memory.
+1. Atomically claim the exact work item before creating or pushing a branch.
+2. If another worker wins, use the next fallback from the continuation response.
+3. Use the selected/canonical branch whenever one exists.
+4. Solve a coherent outcome, including safe directly adjacent defects inside the mission packet expansion budget.
+5. Run impacted tests and preserve evidence.
+6. Hand accepted builder work to review, reviewed work to integration, and integration-ready work to the Merge Train.
+7. Refresh and call for another continuation in the same chat execution window.
 
-**V16.1 hard rule: one active builder branch per blocker.** If substantially equivalent work already exists:
+## ASSIST mode
 
-- join/assist the current owner on the existing branch;
-- review/red-team the existing PR;
-- integrate/debug it;
-- or participate only if an explicit bounded two-candidate solution tournament was authorized.
+ASSIST exists specifically so 20–30 chat bursts do not strand half the workers when duplicate implementation is correctly suppressed.
 
-Do **not** create another near-identical PR, recovery child, validation successor, or “independent” builder branch. `allow_duplicate` is not a builder escape hatch.
+ASSIST is non-exclusive and does not grant write ownership. By default:
 
-A blocker may use at most two distinct low-progress attempt branches. A third low-progress successor is rejected and the blocker family enters convergence freeze. Three low-progress attempts are enough to trigger early Rabbit Hole/convergence review.
+- **no new branch**;
+- **no successor PR**;
+- **no competing implementation**;
+- **no physical/user action**.
 
-Use the assigned/selected branch whenever one exists. A temporary experimental branch requires an explicit tournament. Losing a claim means refresh and select different scheduled work; **never invent a successor branch because another worker won the claim.**
+Useful ASSIST work, in priority order:
 
-Every new swarm-managed PR must carry:
+1. help an `INTEGRATING` candidate resolve conflicts or failing integration checks;
+2. red-team/review a candidate waiting in `REVIEW`;
+3. inspect failing/pending CI and isolate the next actionable defect for the canonical owner;
+4. strengthen or run impacted tests against existing work without weakening acceptance;
+5. attach a concrete finding/evidence to the existing canonical work;
+6. capacity-mine an ordinary internal objective for a real unowned correctness, performance, accessibility, integration, or product gap.
+
+Capacity mining is not permission to invent speculative features. If ASSIST proves a genuinely new blocker, record it in Mission Graph first. Any implementation branch still needs normal V16.1 claim/admission.
+
+After useful ASSIST work, refresh and ask for another continuation. ASSIST completion is not a stop condition.
+
+## V16.1 convergence law
+
+- One active builder branch per blocker.
+- Builders cannot use `allow_duplicate` as an escape hatch.
+- Intentional solution tournaments are capped at two candidates.
+- A blocker gets at most two distinct low-progress attempt branches.
+- Three low-progress attempts trigger convergence/rabbit-hole review.
+- Losing a claim means reroute, not branch creation.
+- New swarm PRs use the V16.1 metadata contract and trusted PR admission.
+
+Every new swarm-managed PR carries:
 
 ```text
 SWARM_PROTOCOL: 16.1
@@ -52,93 +92,63 @@ SWARM_WORKER: sol-YYYYMMDD-<unique>
 SWARM_BRANCH_INTENT: canonical|validation|review|integration|tournament
 ```
 
-Validation/tournament PRs also require `SWARM_PARENT_PR`; tournament PRs require `SWARM_TOURNAMENT_ID`. The trusted `Swarm V16.1 PR Admission` gate will reject a new PR and point at the existing PR when the worker should converge instead.
+Validation/tournament PRs also require `SWARM_PARENT_PR`; tournament PRs require `SWARM_TOURNAMENT_ID`.
 
-## Claim and execute
+## Claims and ownership
 
-1. Atomically claim the exact V16 work item. Claim first, branch second.
-2. If another worker wins, refresh and choose another mission. A lost claim is not a reason to stop or create new work.
-3. Acquire scarce resources in configured order and release them when idle.
-4. Follow the mission packet’s `PRIMARY_SCOPE`, `ALLOWED_EXPANSION`, `FORBIDDEN_AREAS`, `BRANCH_ACTION`, and `JOIN_BRANCH`.
-5. Treat `MAY_CREATE_SUCCESSOR_PR: false` as authoritative unless an explicit two-candidate tournament says otherwise.
-6. Solve the coherent outcome, including small directly related adjacent defects when allowed. Do not default to one-defect-one-PR.
-7. Heartbeat at meaningful checkpoints.
-8. Record only high-signal shared memory: blockers, root causes, accepted evidence, selected solutions, integration results, and facts another worker should not rediscover.
-9. Run dependency-aware impacted tests immediately; run broader integration/release suites at the required boundaries.
-10. Reuse strong evidence only when its source/dependency/environment bindings still match.
-11. Never claim a blocker is closed or a feature is done without required evidence.
+A claim is temporary ownership, not a reason for everyone else to idle.
+
+- Claim first, branch second.
+- Never overwrite a live claim.
+- Stale claim takeover requires the normal fenced takeover path.
+- Returning workers re-check ownership before pushing.
+- If ownership is lost, stop writing that branch and immediately reroute to another primary or ASSIST continuation.
 
 ## Review and integration
 
-Fresh reviewers attack claimed-complete work for correctness, accessibility, performance, races, stale states, truth authority, and regressions.
+Fresh reviewers attack correctness, accessibility, performance, races, stale state, truth authority, and regressions.
 
-Integrators must act. If accepted changes conflict, understand both intents, compose the safe result, run affected acceptance, repair failures, and escalate only a true semantic conflict.
+Integrators act: resolve compatible conflicts, compose accepted work, run impacted acceptance, and repair integration failures. “Merge conflict” is not a completed task.
 
-Accepted compatible work enters the Merge Train. A failed integration remains actionable `INTEGRATING`; do not post “merge conflict” and stop.
-
-After selected work integrates, reconcile superseded branches and preserve evidence references. Destructive remote cleanup remains fail-closed until migration/activation policy allows it.
-
-## Captains and blockers
-
-Major missions have captains. Captains coordinate workers, blockers, solution selection, Definitions of Done, integration, and handoff. A stale captain can be replaced without restarting the mission.
-
-Meaningful blockers are first-class objects with owner/backup, evidence, attempts, current hypothesis, next action, and exit condition. Random workers do not independently create competing repairs for an owned blocker unless the scheduler explicitly launches a tournament.
-
-Repeated successor/validation churn triggers convergence mode. V16.1 triggers it earlier and prevents a third low-progress branch instead of merely documenting the churn afterward.
-
-## Surge and milestone attack
-
-When only a few blockers remain, concentrate workers and finish the milestone instead of starting shiny unrelated tasks.
-
-`SURGE CAPTURE` means temporarily focus the swarm on the Capture mission with one captain plus implementation, review/testing, integration, debugging/research, UI/accessibility, and reserve capacity. Reassign workers as blockers close.
-
-Surge ends only when the milestone closes, remaining work is genuinely external/hardware-bound, or safety prevents further autonomous work.
+Accepted compatible work enters the Merge Train. Nearly-finished work should receive more integration pressure, not be abandoned for a shiny new branch.
 
 ## Truth and physical boundary
 
-Truth classes are distinct:
+Truth classes remain distinct:
 
 `SIMULATED → ESTIMATED → OBSERVED → AUTHENTICATED → PHYSICALLY_MAPPED → COMMAND_VERIFIED`
-
-Do not promote authority merely because a test passed.
 
 For ES80 Capture:
 
 - physical NO-GO remains NO-GO until legitimate external physical authority changes it;
 - simulator values are not physical values;
-- authenticated read-only observations are not command authority;
+- authenticated observations are not automatically physically mapped semantics;
+- commands require physical mapping and command verification;
 - do not invent battery/speed/power/current/mode/range semantics;
-- do not invent commands or acknowledgements;
-- do not send commands during the stationary Capture mission;
-- do not return to an outdoor ride procedure unless later physical evidence specifically requires it.
+- do not send scooter commands during the stationary Capture mission;
+- do not manufacture work merely to keep a worker busy.
 
-## After each task
-
-When the current work becomes accepted, blocked, handed off, integrated, superseded, or loses ownership:
-
-1. preserve durable graph/evidence/blocker state;
-2. release claims/resources that should not remain held;
-3. refresh current GitHub + V16.1 truth;
-4. request another safe mission in the **same Go execution window**;
-5. continue.
-
-Green CI is evidence, not completion. A merged PR is evidence, not completion.
+Worker persistence changes scheduling only. It does not weaken safety, signing, authentication, evidence, exact-head, or physical truth gates.
 
 ## Stop gate
 
-A Go worker may intentionally idle only when a fresh final refresh proves one of these:
+A worker may voluntarily stop **only** when a fresh `v16-go` response says:
 
-- no safe unblocked internal work remains for its capabilities;
-- all remaining relevant work is genuinely external/user/hardware blocked;
-- control policy explicitly requires a stop;
-- the execution environment itself ends.
+```text
+status: STOP
+stopAuthorized: true
+```
 
-Before stopping, preserve newly discovered blockers, evidence, supersession, and handoff state. Do not invent speculative work merely to remain busy.
+That verdict means the fallback ladder found no safe internal primary, review, integration, debug, or capacity-mining work and the remaining work is done or genuinely external/user/hardware blocked.
 
-## Compatibility window
+Do not convert any of these into STOP on your own:
 
-V15 lane commands remain available while migration finishes. Older V16 evidence and graph state remain valid when their source/dependency/environment bindings still match, but **new swarm branches/PRs use the V16.1 convergence contract**.
+- “my claim was taken”;
+- “there were no builder slots”;
+- “my PR is waiting for CI”;
+- “my first task merged”;
+- “another worker owns the branch”;
+- “the obvious next task is blocked”;
+- “I found no task on one refresh.”
 
-New work should consume V16.1 objective/work packets. Old workers should either receive V16.1-compatible work or fail safely with a clear migration state. Existing accepted V15/V16 evidence remains useful when its relevant source/dependency/environment contract is unchanged.
-
-The user should not need to coordinate agents, name PRs, or repeatedly say what to do next. `Go` is sufficient.
+If the chat/runtime itself is forcibly ending, preserve durable handoff/evidence first. Otherwise continue the loop.
