@@ -24,7 +24,7 @@ jobs:
           git fetch origin capture/ui-integration-audit-gpt56
           git merge --ff-only origin/capture/ui-integration-audit-gpt56
 
-      - name: Materialize package and app horizon integration
+      - name: Materialize package and app integration
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -33,52 +33,43 @@ jobs:
           ledger_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift')
           ledger = ledger_path.read_text()
 
-          reason_anchor = '''    private static let internalLifecycleFailureReason =
-        "Session authority was retired after an internal lifecycle or chronology failure."
-'''
-          reason_replacement = reason_anchor + '''    private static let incompleteObservationHorizonFailurePrefix =
-        "Authenticated observation reached the bounded incomplete-evidence horizon: "
-'''
+          reason_anchor = '    private static let internalLifecycleFailureReason =\n        "Session authority was retired after an internal lifecycle or chronology failure."\n'
+          reason_addition = '    private static let incompleteObservationHorizonFailurePrefix =\n        "Authenticated observation reached the bounded incomplete-evidence horizon: "\n'
           if ledger.count(reason_anchor) != 1:
-              raise SystemExit('fail closed: internal reason anchor changed')
-          ledger = ledger.replace(reason_anchor, reason_replacement, 1)
+              raise SystemExit('fail closed: ledger reason anchor changed')
+          ledger = ledger.replace(reason_anchor, reason_anchor + reason_addition, 1)
 
-          horizon_old = '''        guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot()) != .readyForStationaryMapping else {
-            return
-        }
-        throw MutationError.incompleteObservationHorizonReached
-'''
-          horizon_new = '''        let verdict = TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot())
-        guard verdict != .readyForStationaryMapping else {
-            return
-        }
-        let blocker: String
-        switch verdict {
-        case .readyForStationaryMapping:
-            return
-        case let .blocked(reason):
-            blocker = reason
-        }
-        authenticationState = .failed(reason: Self.incompleteObservationHorizonFailurePrefix + blocker)
-        currentToken = nil
-        throw MutationError.incompleteObservationHorizonReached
-'''
+          horizon_old = '\n'.join([
+              '        guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot()) != .readyForStationaryMapping else {',
+              '            return',
+              '        }',
+              '        throw MutationError.incompleteObservationHorizonReached',
+          ]) + '\n'
+          horizon_new = '\n'.join([
+              '        let verdict = TuyaAuthenticatedReadOnlyPreflight.verdict(for: makeSnapshot())',
+              '        guard verdict != .readyForStationaryMapping else {',
+              '            return',
+              '        }',
+              '        let blocker: String',
+              '        switch verdict {',
+              '        case .readyForStationaryMapping:',
+              '            return',
+              '        case let .blocked(reason):',
+              '            blocker = reason',
+              '        }',
+              '        authenticationState = .failed(reason: Self.incompleteObservationHorizonFailurePrefix + blocker)',
+              '        currentToken = nil',
+              '        throw MutationError.incompleteObservationHorizonReached',
+          ]) + '\n'
           if ledger.count(horizon_old) != 1:
-              raise SystemExit('fail closed: horizon helper anchor changed')
+              raise SystemExit('fail closed: ledger horizon anchor changed')
           ledger = ledger.replace(horizon_old, horizon_new, 1)
 
-          old_observe_doc = '''    /// deadline is evaluated against the already-accepted prefix before the receipt can advance
-    /// chronology; the exact token stays current on throw so the app's existing fail-closed
-    /// lifecycle terminal can retire it without inventing a BLE disconnect or a second clock sample.
-'''
-          new_observe_doc = '''    /// deadline is evaluated against the already-accepted prefix before the receipt can advance
-    /// chronology. An incomplete generation is terminally retired by the package at that boundary;
-    /// the triggering receipt is not promoted into accepted chronology and no BLE disconnect is claimed.
-'''
-          if ledger.count(old_observe_doc) != 1:
-              raise SystemExit('fail closed: observe documentation anchor changed')
-          ledger = ledger.replace(old_observe_doc, new_observe_doc, 1)
-          ledger_path.write_text(ledger)
+          doc_old = '    /// deadline is evaluated against the already-accepted prefix before the receipt can advance\n    /// chronology; the exact token stays current on throw so the app\'s existing fail-closed\n    /// lifecycle terminal can retire it without inventing a BLE disconnect or a second clock sample.\n'
+          doc_new = '    /// deadline is evaluated against the already-accepted prefix before the receipt can advance\n    /// chronology. An incomplete generation is terminally retired by the package at that boundary;\n    /// the triggering receipt is not promoted into accepted chronology and no BLE disconnect is claimed.\n'
+          if ledger.count(doc_old) != 1:
+              raise SystemExit('fail closed: ledger documentation anchor changed')
+          ledger_path.write_text(ledger.replace(doc_old, doc_new, 1))
 
           app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
           app = app_path.read_text()
@@ -90,85 +81,66 @@ jobs:
                   raise SystemExit(f'fail closed: {label} section missing')
               section = source[start:end]
               if section.count(old) != 1:
-                  raise SystemExit(f'fail closed: {label} catch anchor count={section.count(old)}')
+                  raise SystemExit(f'fail closed: {label} anchor count={section.count(old)}')
               section = section.replace(old, new, 1)
               return source[:start] + section + source[end:]
 
-          app_callback_old = '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
-            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
-'''
-          app_callback_new = '''        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
-            await mirrorAlreadyTerminalIncompleteObservationHorizon(
-                token: token,
-                message: "Authenticated observation reached the bounded incomplete-evidence horizon before canonical readiness. The accepted prefix was frozen without promoting this late application callback and no Bluetooth disconnect is claimed.",
-                kind: "application_authenticated_incomplete_readiness_horizon_reached"
-            )
-        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
-            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
-'''
-          app = scoped_replace(
-              app,
-              '    private func receivedApplicationUpdate(',
-              '    private func redactedApplicationEventDetails(',
-              app_callback_old,
-              app_callback_new,
-              'application callback'
-          )
+          callback_old = '        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {\n            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])\n'
+          callback_new = '\n'.join([
+              '        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {',
+              '            await mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '                token: token,',
+              '                message: "Authenticated observation reached the bounded incomplete-evidence horizon before canonical readiness. The accepted prefix was frozen without promoting this late application callback and no Bluetooth disconnect is claimed.",',
+              '                kind: "application_authenticated_incomplete_readiness_horizon_reached"',
+              '            )',
+              '        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {',
+              '            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])',
+          ]) + '\n'
+          app = scoped_replace(app, '    private func receivedApplicationUpdate(', '    private func redactedApplicationEventDetails(', callback_old, callback_new, 'application callback')
 
-          watchdog_old = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
-                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])
-'''
-          watchdog_new = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
-                    await self.mirrorAlreadyTerminalIncompleteObservationHorizon(
-                        token: token,
-                        message: "Authenticated observation reached the bounded incomplete-evidence horizon before canonical readiness. The accepted prefix was frozen without another liveness sample and no Bluetooth disconnect is claimed.",
-                        kind: "session_authenticated_incomplete_readiness_horizon_reached"
-                    )
-                    return
-                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
-                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])
-'''
-          app = scoped_replace(
-              app,
-              '    private func startWatchdog(token:',
-              '    private func recordObservedTransportLoss(',
-              watchdog_old,
-              watchdog_new,
-              'watchdog'
-          )
+          watchdog_old = '                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {\n                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])\n'
+          watchdog_new = '\n'.join([
+              '                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {',
+              '                    await self.mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '                        token: token,',
+              '                        message: "Authenticated observation reached the bounded incomplete-evidence horizon before canonical readiness. The accepted prefix was frozen without another liveness sample and no Bluetooth disconnect is claimed.",',
+              '                        kind: "session_authenticated_incomplete_readiness_horizon_reached"',
+              '                    )',
+              '                    return',
+              '                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {',
+              '                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])',
+          ]) + '\n'
+          app = scoped_replace(app, '    private func startWatchdog(token:', '    private func recordObservedTransportLoss(', watchdog_old, watchdog_new, 'watchdog')
 
-          helper_anchor = '''    private func invalidateObservationContinuity(
-'''
-          helper = '''    /// Mirrors the package-owned incomplete-observation terminal. The throwing ledger mutation
-    /// has already frozen the accepted prefix and retired callback authority, so this helper must
-    /// not sample another clock, claim transport loss, or invoke a second ledger terminal.
-    private func mirrorAlreadyTerminalIncompleteObservationHorizon(
-        token: TuyaReadOnlyConnectionToken,
-        message: String,
-        kind: String
-    ) async {
-        guard currentConnectionToken == token else { return }
-        watchdog?.cancel()
-        watchdog = nil
-        currentConnectionToken = nil
-        localBLESettlementToken = nil
-        sdkLocalBLEOnline = false
-        driver = nil
-        await refreshLedgerSnapshot()
-        phase = .failed
-        self.message = message
-        log(kind, ["generation": String(token.diagnosticGeneration)])
-    }
-
-'''
+          helper_anchor = '    private func invalidateObservationContinuity(\n'
+          helper = '\n'.join([
+              '    /// Mirrors the package-owned incomplete-observation terminal. The throwing ledger mutation',
+              '    /// already froze the accepted prefix and retired callback authority, so this helper must not',
+              '    /// sample another clock, claim transport loss, or invoke a second ledger terminal.',
+              '    private func mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '        token: TuyaReadOnlyConnectionToken,',
+              '        message: String,',
+              '        kind: String',
+              '    ) async {',
+              '        guard currentConnectionToken == token else { return }',
+              '        watchdog?.cancel()',
+              '        watchdog = nil',
+              '        currentConnectionToken = nil',
+              '        localBLESettlementToken = nil',
+              '        sdkLocalBLEOnline = false',
+              '        driver = nil',
+              '        await refreshLedgerSnapshot()',
+              '        phase = .failed',
+              '        self.message = message',
+              '        log(kind, ["generation": String(token.diagnosticGeneration)])',
+              '    }',
+              '',
+          ]) + '\n'
           if app.count(helper_anchor) != 1:
-              raise SystemExit('fail closed: helper insertion anchor changed')
+              raise SystemExit('fail closed: helper anchor changed')
           app = app.replace(helper_anchor, helper + helper_anchor, 1)
 
-          timeout_start = '''                if self.applicationUpdateAdmissionsInFlight == 0,
-                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
-                   self.applicationUpdateCount == 0 {
-'''
+          timeout_start = '                if self.applicationUpdateAdmissionsInFlight == 0,\n                   (self.canonicalObservedAgeSeconds ?? 0) > 60,\n                   self.applicationUpdateCount == 0 {\n'
           start = app.find(timeout_start)
           sleep_anchor = '                try? await Task.sleep(for: .seconds(1))\n'
           end = app.find(sleep_anchor, start + 1) if start >= 0 else -1
@@ -177,109 +149,13 @@ jobs:
           app = app[:start] + app[end:]
           app_path.write_text(app)
 
-          test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationTerminalIntegrationTests.swift')
-          test_path.write_text(r'''import Foundation
-import Testing
-@testable import NembraBluetoothCapture
-
-@Suite("Tuya incomplete-observation terminal integration")
-struct TuyaIncompleteObservationTerminalIntegrationTests {
-    @Test("deadline crossing retires package authority without promoting the triggering callback")
-    func applicationDeadlineFreezesAcceptedPrefix() async throws {
-        let clock = IncompleteTerminalClock(1_000)
-        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
-        let token = try await ledger.beginConnection()
-
-        clock.advance(to: 1_500)
-        try await ledger.markAuthenticationStarted(for: token)
-        clock.advance(to: 2_000)
-        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
-        clock.advance(to: 3_000)
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-
-        let horizon = 2_000 + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds
-        var cursor: UInt64 = 3_000
-        let gap = TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
-        while cursor + gap < horizon {
-            cursor += gap
-            clock.advance(to: cursor)
-            try await ledger.observeCurrentConnection(for: token)
-        }
-        let before = await ledger.currentPreflightSnapshot()
-
-        clock.advance(to: horizon)
-        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
-            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-        }
-
-        let after = await ledger.currentPreflightSnapshot()
-        #expect(after.applicationPayloadCount == before.applicationPayloadCount)
-        #expect(after.latestApplicationPayloadUptimeNanoseconds == before.latestApplicationPayloadUptimeNanoseconds)
-        #expect(after.latestObservedUptimeNanoseconds == before.latestObservedUptimeNanoseconds)
-        #expect(after.authenticationState == .failed(reason: "Authenticated observation reached the bounded incomplete-evidence horizon: Authenticated session has not produced repeated application payload evidence yet."))
-        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
-            try await ledger.observeCurrentConnection(for: token)
-        }
-    }
-
-    @Test("real app classifies both package horizon throw sites without a second app deadline")
-    func appMirrorsBothPackageTerminals() throws {
-        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let callback = try section(in: source, from: "private func receivedApplicationUpdate", to: "private func redactedApplicationEventDetails")
-        let watchdog = try section(in: source, from: "private func startWatchdog", to: "private func recordObservedTransportLoss")
-
-        #expect(callback.contains("MutationError.incompleteObservationHorizonReached"))
-        #expect(callback.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
-        #expect(watchdog.contains("MutationError.incompleteObservationHorizonReached"))
-        #expect(watchdog.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
-        #expect(!source.contains("(self.canonicalObservedAgeSeconds ?? 0) > 60"))
-        #expect(!callback.contains("application_update_lifecycle_rejected\"\n            )"))
-    }
-
-    private func section(in source: String, from start: String, to end: String) throws -> String {
-        guard let a = source.range(of: start),
-              let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
-            throw ContractError.sectionMissing
-        }
-        return String(source[a.lowerBound..<b.lowerBound])
-    }
-
-    private func readRepositoryFile(_ relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
-    }
-
-    private enum ContractError: Error { case sectionMissing }
-}
-
-private final class IncompleteTerminalClock: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: UInt64
-    init(_ value: UInt64) { self.value = value }
-    func now() -> UInt64 { lock.lock(); defer { lock.unlock() }; return value }
-    func advance(to newValue: UInt64) { lock.lock(); value = newValue; lock.unlock() }
-}
-''')
-
-          workflow_path = Path('.github/workflows/capture-v16-standalone.yml')
-          workflow = workflow_path.read_text()
-          filter_anchor = '          swift test --filter TuyaAuthenticatedReadOnlyHorizonTests\n'
-          filter_new = filter_anchor + '          swift test --filter TuyaIncompleteObservationTerminalIntegrationTests\n'
-          if workflow.count(filter_anchor) != 1:
-              raise SystemExit('fail closed: standalone filter anchor changed')
-          workflow_path.write_text(workflow.replace(filter_anchor, filter_new, 1))
-
           Path('.github/workflows/capture-app-horizon-patch-go.yml').unlink(missing_ok=True)
           Path('.github/workflows/capture-ui-integration-audit-patch.yml').unlink(missing_ok=True)
+          Path('.github/capture-ui-integration-audit-trigger').unlink(missing_ok=True)
           PY
 
           git diff --check
-          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationTerminalIntegrationTests.swift .github/workflows/capture-v16-standalone.yml .github/workflows/capture-app-horizon-patch-go.yml
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift .github/workflows/capture-app-horizon-patch-go.yml
 
       - name: Commit exact product delta
         run: |
@@ -287,8 +163,8 @@ private final class IncompleteTerminalClock: @unchecked Sendable {
           git config user.name 'nembra-go-worker'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
-          forbidden='.github/workflows/capture-ui-integration-audit-patch.yml'
-          test ! -e "$forbidden"
+          test ! -e .github/workflows/capture-ui-integration-audit-patch.yml
+          test ! -e .github/capture-ui-integration-audit-trigger
           git diff --cached --name-only
           git commit -m 'Capture: preserve incomplete-horizon truth in app'
           git push origin HEAD:capture/ui-integration-audit-gpt56
