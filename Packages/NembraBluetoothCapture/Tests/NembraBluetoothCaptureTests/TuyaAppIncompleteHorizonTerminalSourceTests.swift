@@ -50,6 +50,7 @@ struct TuyaAppIncompleteHorizonTerminalSourceTests {
         #expect(!mirror.contains("sessionLedger.endConnection"))
         #expect(!mirror.contains("sessionLedger.observeCurrentConnection"))
         #expect(!mirror.contains("recordObservedTransportLoss"))
+        #expect(!mirror.contains("sdkLocalBLEOnline = false"))
         #expect(mirror.contains("refreshLedgerSnapshot"))
         #expect(mirror.contains("phase = .failed"))
     }
