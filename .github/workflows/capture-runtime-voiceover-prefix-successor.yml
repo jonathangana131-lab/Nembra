@@ -81,52 +81,35 @@ jobs:
           path = pathlib.Path(sys.argv[1])
           source = path.read_text()
 
-          old_hero = '''        XCTAssertTrue(
-              app.staticTexts.matching(NSPredicate(format: "label == %@", heroAuthority)).firstMatch.waitForExistence(timeout: 3),
-              "The compact sighted hero must retain the full nonlocalized spoken authority restored by the #2990 finding."
-          )'''
-          new_hero = '''        let heroAuthorityElement = app.staticTexts.matching(
-              NSPredicate(format: "label == %@", heroAuthority)
-          ).firstMatch
-          XCTAssertTrue(
-              heroAuthorityElement.waitForExistence(timeout: 3),
-              "The compact sighted hero must retain the full nonlocalized spoken authority restored by the #2990 finding."
-          )
-          XCTAssertEqual(
-              heroAuthorityElement.label,
-              heroAuthority,
-              "Full fail-closed hero semantics must remain exact even when VoiceOver automation returns only a bounded utterance prefix."
-          )'''
-          old_standard_speech = '''            requiredSpeech: [
-                  "Link this scooter",
-                  "Link the Tuya Smart account that owns this scooter",
-                  "Bluetooth and physical evidence stay locked",
-                  "reviewed field build and fresh scooter authority",
-                  "Physical capture locked",
-                  "Tuya Smart user code",
-                  "Create approval QR",
-                  "Engineering details"
-              ]'''
-          new_standard_speech = '''            requiredSpeech: [
-                  "Link this scooter",
-                  "Link the Tuya Smart account that owns this scooter",
-                  "Physical capture locked",
-                  "Tuya Smart user code",
-                  "Create approval QR",
-                  "Engineering details"
-              ]'''
+          hero_block = '\n'.join([
+              '        XCTAssertTrue(',
+              '            app.staticTexts.matching(NSPredicate(format: "label == %@", heroAuthority)).firstMatch.waitForExistence(timeout: 3),',
+              '            "The compact sighted hero must retain the full nonlocalized spoken authority restored by the #2990 finding."',
+              '        )',
+          ])
+          hero_guard = '\n'.join([
+              hero_block,
+              '        XCTAssertEqual(',
+              '            app.staticTexts.matching(NSPredicate(format: "label == %@", heroAuthority)).firstMatch.label,',
+              '            heroAuthority,',
+              '            "Full fail-closed hero semantics must remain exact even when VoiceOver automation returns only a bounded utterance prefix."',
+              '        )',
+          ])
+          if source.count(hero_block) != 1:
+              raise SystemExit(f'explicit full hero semantic equality: expected one hero block, found {source.count(hero_block)}')
+          source = source.replace(hero_block, hero_guard)
 
-          replacements = {
-              'explicit full hero semantic equality': (old_hero, new_hero),
-              'standard VoiceOver prefix contract': (old_standard_speech, new_standard_speech),
-          }
-          for label, (old, new) in replacements.items():
-              count = source.count(old)
+          for phrase in [
+              'Bluetooth and physical evidence stay locked',
+              'reviewed field build and fresh scooter authority',
+          ]:
+              needle = f'                "{phrase}",\n'
+              count = source.count(needle)
               if count != 1:
-                  raise SystemExit(f'{label}: expected exactly one parent occurrence, found {count}')
-              source = source.replace(old, new)
+                  raise SystemExit(f'standard VoiceOver prefix contract for {phrase!r}: expected one isolated speech requirement, found {count}')
+              source = source.replace(needle, '')
 
-          if source.count('heroAuthorityElement.label') != 1:
+          if source.count('firstMatch.label') != 1:
               raise SystemExit('full hero semantic equality must exist exactly once')
           if source.count('Bluetooth and physical evidence stay locked') != 1:
               raise SystemExit('full Bluetooth-lock hero authority must remain present exactly once')
