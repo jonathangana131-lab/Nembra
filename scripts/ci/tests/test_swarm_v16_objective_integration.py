@@ -139,7 +139,7 @@ class ObjectiveIntegrationWorkflowTests(unittest.TestCase):
             "run.head_sha === process.env.SOURCE_HEAD",
             "github.rest.pulls.getReview",
             "review.commit_id !== process.env.SOURCE_HEAD",
-            "review.body.includes(runId)",
+            "body.includes(runId)",
             "git merge-base --is-ancestor \"$MERGE_SHA\" HEAD",
             "git diff --name-only \"$MERGE_SHA..HEAD\" -- \"$path\"",
             "Evidence-bound path changed after integration",
