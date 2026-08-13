@@ -124,16 +124,16 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         return .readyForStationaryMapping
     }
 
-    /// Returns true only when the current SmartLife-authenticated generation has reached the
-    /// bounded observation horizon without earning canonical readiness. Callers must retire the
-    /// exact generation fail-closed; this helper does not perform transport writes or infer a BLE
-    /// disconnect. Invalid chronology is also terminal rather than silently extending authority.
+    /// Returns true when any current authenticated generation reaches the bounded observation
+    /// horizon without earning canonical readiness. SmartLife SDK provenance remains mandatory for
+    /// readiness, but unsupported or missing provenance must not keep callback authority alive
+    /// indefinitely. Callers retire the exact generation fail-closed; this helper performs no
+    /// transport writes and never infers a BLE disconnect. Invalid chronology is terminal too.
     public static func shouldRetireIncompleteObservation(
         _ snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) -> Bool {
         guard snapshot.connectionGeneration > 0,
               snapshot.authenticationState == .authenticated,
-              snapshot.authenticationMethod == .smartLifeAppSDK,
               let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
               let latest = snapshot.latestObservedUptimeNanoseconds else {
             return false
