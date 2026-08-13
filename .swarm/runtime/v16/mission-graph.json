@@ -1061,52 +1061,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 291,
     "classifiedPRs": {
-      "2719": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2719,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.26,
-        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
-      },
-      "2733": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2733,
-        "recommendedAction": "independent-review",
-        "similarity": 0.278,
-        "title": "[Capture P0][REVIEW] Lock root admission before private writer capture"
-      },
-      "2734": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2734,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.365,
-        "title": "[Capture P0][RED TEAM] Break private identity publication custody"
-      },
-      "2741": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2741,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.256,
-        "title": "[Capture P0][RED TEAM] Pin signed-app custody helper execution bytes"
-      },
       "2754": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2281,7 +2237,7 @@
         "lane": "capture-build-authority",
         "pr": 3178,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.212,
+        "similarity": 0.216,
         "title": "[Capture P0][BUILD] Materialize selected-Xcode freeze custodian"
       },
       "3180": {
@@ -2446,7 +2402,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3217,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.274,
+        "similarity": 0.432,
         "title": "[Capture P0][RED TEAM] Bind Apple-signing helpers to verified Git object chain"
       },
       "3218": {
@@ -2468,8 +2424,52 @@
         "lane": "capture-build-authority",
         "pr": 3219,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.339,
+        "similarity": 0.383,
         "title": "[Capture P0][VALIDATION] Classify selected-Xcode runner sudo authority"
+      },
+      "3220": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3220,
+        "recommendedAction": "independent-review",
+        "similarity": 0.152,
+        "title": "[Capture P0][V16] Add build-only signed Capture candidate handoff"
+      },
+      "3221": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "c19a68d7c1f5412e13674f751906540dffb3cc5a",
+        "lane": "capture-signed-install-custody",
+        "pr": 3221,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.433,
+        "title": "[Capture P0][REPAIR] Root Apple-signing helpers in verified Git object chain"
+      },
+      "3222": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3222,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.379,
+        "title": "[Capture P0][VALIDATION] Add selected-Xcode private field preflight"
+      },
+      "3223": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "212c80b8ac801f32d87ce3bfa29bee794102e154",
+        "lane": "capture-signed-install-custody",
+        "pr": 3223,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.366,
+        "title": "[Capture P0][VALIDATION] Prove Apple-signing Git alias rejection"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2502,9 +2502,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:20:05Z",
+    "liveRefreshAt": "2026-08-13T03:22:54Z",
     "liveRefreshDuplicatesSuppressed": [
-      3218
+      3223
     ],
     "liveRefreshMainSHA": "3c413fbc6585427bc80adece9e083185ce05fffc",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6276,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 51,
+  "revision": 52,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:22:41Z",
+  "updatedAt": "2026-08-13T03:25:34Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6355,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:20:05Z",
+      "updatedAt": "2026-08-13T03:22:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
