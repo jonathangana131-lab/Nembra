@@ -71,7 +71,7 @@ struct TuyaAlreadyTerminalObservationContinuitySourceTests {
         #expect(String(seal).contains("accepted_prefix_seal_lifecycle_rejected"))
     }
 
-    @Test("mirror helper mutates app ownership only without inventing transport loss")
+    @Test("mirror helper mutates app ownership only and clears current BLE proof")
     func mirrorHelperDoesNotInventSecondLedgerTerminal() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let helper = try section(
@@ -84,7 +84,7 @@ struct TuyaAlreadyTerminalObservationContinuitySourceTests {
         #expect(helper.contains("watchdog?.cancel()"))
         #expect(helper.contains("currentConnectionToken = nil"))
         #expect(helper.contains("localBLESettlementToken = nil"))
-        #expect(!helper.contains("sdkLocalBLEOnline = false"))
+        #expect(helper.contains("sdkLocalBLEOnline = false"))
         #expect(helper.contains("driver = nil"))
         #expect(helper.contains("refreshLedgerSnapshot"))
         #expect(helper.contains("phase = .failed"))
@@ -92,6 +92,7 @@ struct TuyaAlreadyTerminalObservationContinuitySourceTests {
         #expect(!helper.contains("markObservationContinuityInvalidated"))
         #expect(!helper.contains("markInternalLifecycleFailure"))
         #expect(!helper.contains("endConnection"))
+        #expect(app.contains("test.sdkLocalBLEOnline ? \"Online\" : \"Not proven\""))
     }
 
     private func catchBody(in source: String, functionStart: String, errorCase: String) throws -> Substring {
