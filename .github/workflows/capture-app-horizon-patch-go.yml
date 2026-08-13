@@ -55,7 +55,7 @@ jobs:
                 message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The exact generation was retired without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
                 kind: "application_authenticated_incomplete_readiness_horizon_reached"
             )
-'''
+          '''
           one(receipt_anchor, receipt_catch + receipt_anchor, 'application horizon catch')
 
           watchdog_anchor = '''                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
@@ -67,7 +67,7 @@ jobs:
                         kind: "session_authenticated_incomplete_readiness_horizon_reached"
                     )
                     return
-'''
+          '''
           one(watchdog_anchor, watchdog_catch + watchdog_anchor, 'watchdog horizon catch')
           p.write_text(s)
           PY
