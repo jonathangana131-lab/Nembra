@@ -974,19 +974,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 283,
+    "classifiedPRTotal": 284,
     "classifiedPRs": {
-      "2680": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2680,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.361,
-        "title": "[Capture P0][RED TEAM] Bind generated CocoaPods build subject"
-      },
       "2688": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2381,8 +2370,19 @@
         "lane": "battery-range-app-visible",
         "pr": 3201,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.128,
+        "similarity": 0.273,
         "title": "[Battery/Range V15][QA] Capture the real Battery & Range surface"
+      },
+      "3202": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "851a3cac4787130fc710a42eed027f7625cd9bf4",
+        "lane": "",
+        "pr": 3202,
+        "recommendedAction": "independent-review",
+        "similarity": 0.273,
+        "title": "[Battery/Range V15][A11y] Recompose hero and range headers"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2415,7 +2415,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-12T23:00:44Z",
+    "liveRefreshAt": "2026-08-13T00:04:44Z",
     "liveRefreshDuplicatesSuppressed": [
       3198
     ],
@@ -6169,10 +6169,10 @@
       "userValue": 7
     }
   },
-  "revision": 21,
+  "revision": 22,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-12T23:03:27Z",
+  "updatedAt": "2026-08-13T00:07:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6248,7 +6248,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-12T23:00:44Z",
+      "updatedAt": "2026-08-13T00:04:44Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
