@@ -1,0 +1,158 @@
+name: Capture Selected Xcode Sudo Policy Classification
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-selected-xcode-sudo-policy-classification.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-selected-xcode-sudo-policy-classification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    name: Classify runner authority without freezing Xcode
+    runs-on: xcode-27
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact selected-Xcode ingredient and one-path scope
+        shell: bash
+        env:
+          EXACT_PARENT: 6c085b65532c82afa953e2da14e1dbf674031ad2
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git cat-file -e "${EXACT_PARENT}^{commit}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-selected-xcode-sudo-policy-classification.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check
+
+      - name: Classify invoking-user sudo policy through exact accepted launcher bytes
+        shell: bash
+        env:
+          EXACT_PARENT: 6c085b65532c82afa953e2da14e1dbf674031ad2
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          launcher_path='scripts/ci/capture_selected_xcode_freeze_launcher.py'
+          launcher_blob="$(/usr/bin/env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+            /usr/bin/git -c core.hooksPath=/dev/null rev-parse "$EXACT_PARENT:$launcher_path")"
+          [[ "$launcher_blob" =~ ^[0-9a-f]{40}$ ]]
+          launcher_b64="$(/usr/bin/env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+            /usr/bin/git -c core.hooksPath=/dev/null cat-file blob "$launcher_blob" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+          test -n "$launcher_b64"
+
+          OUT="$RUNNER_TEMP/selected-xcode-sudo-policy-classification.json"
+          LOG="$RUNNER_TEMP/selected-xcode-sudo-policy-classification.stderr.log"
+          : > "$LOG"
+
+          root_program="$(/bin/cat <<'PY'
+          import base64
+          import hashlib
+          import json
+          import re
+          import subprocess
+          import sys
+
+          encoded, expected = sys.argv[1:]
+          if re.fullmatch(r'[0-9a-f]{40}', expected) is None:
+              raise SystemExit('launcher blob identity malformed')
+          raw = base64.b64decode(encoded, validate=True)
+          actual = hashlib.sha1(b'blob ' + str(len(raw)).encode('ascii') + b'\0' + raw).hexdigest()
+          if actual != expected:
+              raise SystemExit('launcher bytes failed exact Git-object identity')
+
+          ns = {'__name__':'nembra_selected_xcode_freeze_launcher_policy_classifier','__file__':'<accepted-launcher>'}
+          exec(compile(raw, '<accepted-launcher>', 'exec', dont_inherit=True), ns)
+          identify = ns.get('_invoking_field_identity')
+          group_names = ns.get('_group_names')
+          classify = ns.get('_sudo_policy_exposes_passwordless_authority')
+          if not callable(identify) or not callable(group_names) or not callable(classify):
+              raise SystemExit('accepted launcher lacks sudo-policy classifier contract')
+
+          user, uid, gid, home, groups = identify()
+          listing = subprocess.run(
+              ['/usr/bin/sudo','-ll','-U',user],
+              env={'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','HOME':home,'USER':user,'LOGNAME':user,'LANG':'C','LC_ALL':'C'},
+              stdin=subprocess.DEVNULL,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+              check=False,
+          )
+          policy = (listing.stdout or '') + '\n' + (listing.stderr or '')
+          passwordless = False
+          if listing.returncode == 0:
+              passwordless = bool(classify(policy, group_names(groups)))
+
+          payload = {
+              'schema':1,
+              'launcherGitBlob':expected,
+              'policyInspectionReturnCode':listing.returncode,
+              'passwordlessAuthorityDetected':passwordless,
+              'productionFreezeEligibleOnThisRunner':listing.returncode == 0 and not passwordless,
+              'policyTextRetained':False,
+              'xcodeCopied':False,
+              'freezePublished':False,
+              'deviceUsed':False,
+              'bluetoothUsed':False,
+              'privateTuyaInputsUsed':False,
+              'physicalAuthorityCreated':False,
+          }
+          print(json.dumps(payload,sort_keys=True,separators=(',',':')))
+          PY
+          )"
+
+          set +e
+          /usr/bin/sudo -n /usr/bin/python3 -B -I -c "$root_program" "$launcher_b64" "$launcher_blob" \
+            >"$OUT" 2>"$LOG"
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$RUNNER_TEMP/selected-xcode-sudo-policy-classification.status"
+          test "$rc" -eq 0
+
+          /usr/bin/python3 - "$OUT" "$launcher_blob" <<'PY'
+          import json,sys
+          from pathlib import Path
+          payload=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert payload['schema'] == 1
+          assert payload['launcherGitBlob'] == sys.argv[2]
+          assert payload['policyInspectionReturnCode'] == 0
+          assert payload['policyTextRetained'] is False
+          assert payload['xcodeCopied'] is False
+          assert payload['freezePublished'] is False
+          assert payload['deviceUsed'] is False
+          assert payload['bluetoothUsed'] is False
+          assert payload['privateTuyaInputsUsed'] is False
+          assert payload['physicalAuthorityCreated'] is False
+          # This is a classifier, not production acceptance. Either environment
+          # class is a legitimate terminal result when mechanically measured.
+          assert payload['productionFreezeEligibleOnThisRunner'] is (not payload['passwordlessAuthorityDetected'])
+          PY
+          shasum -a 256 "$OUT" | tee "$RUNNER_TEMP/selected-xcode-sudo-policy-classification.sha256"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Upload sanitized environment classification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-selected-xcode-sudo-policy-classification
+          path: |
+            ${{ runner.temp }}/selected-xcode-sudo-policy-classification.json
+            ${{ runner.temp }}/selected-xcode-sudo-policy-classification.sha256
+            ${{ runner.temp }}/selected-xcode-sudo-policy-classification.status
+            ${{ runner.temp }}/selected-xcode-sudo-policy-classification.stderr.log
+          if-no-files-found: warn
+          retention-days: 14
