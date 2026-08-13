@@ -1,0 +1,53 @@
+name: Temporary Private Identity Descendant Rebind Repair
+
+on:
+  push:
+    branches:
+      - repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+    paths:
+      - scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.py
+      - .github/workflows/tmp-v14-private-identity-descendant-rebind-go3.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind trigger and materialize production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          trigger="$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          python3 scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.py
+          python3 -m py_compile Scripts/provision_capture_tuya_identity_writer.py
+          python3 -m py_compile scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+          python3 -I Scripts/provision_capture_tuya_identity_writer.py --self-test
+          python3 -I scripts/ci/tests/test_capture_private_identity_descendant_rebind_redteam.py
+          python3 -I scripts/ci/tests/test_capture_private_identity_publication_races.py
+          /bin/bash -n Scripts/provision_capture_tuya_identity.sh
+          swift test --package-path Packages/NembraBluetoothCapture
+          git diff --check
+
+          rm -f scripts/ci/tmp_v14_private_identity_descendant_rebind_go3.py
+          rm -f .github/workflows/tmp-v14-private-identity-descendant-rebind-go3.yml
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'ERROR: repair materialized no durable changes' >&2; exit 1; }
+          git commit -m 'fix(capture): bind private identity publication to held descendants'
+          git fetch origin repair/v14-private-identity-descendant-rebind-sol-20260812-go3
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger"
+          git push origin HEAD:repair/v14-private-identity-descendant-rebind-sol-20260812-go3
