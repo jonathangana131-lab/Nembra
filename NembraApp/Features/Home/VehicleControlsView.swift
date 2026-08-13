@@ -594,21 +594,25 @@ private struct BatteryRangeView: View {
     }
 
     private func evidenceRow(title: String, value: String, symbol: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol)
                 .frame(width: 22)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
-            Text(title)
-                .font(.subheadline.weight(.semibold))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
 
-            Spacer(minLength: 12)
+                Text(value)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.trailing, 72)
+            }
 
-            Text(value)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
+            Spacer(minLength: 0)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
