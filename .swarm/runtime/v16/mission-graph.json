@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 286,
     "classifiedPRs": {
+      "2711": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2711,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.221,
+        "title": "[Capture P0][RED TEAM] Bind checkout root before trusting private writer path"
+      },
       "2719": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -2419,28 +2430,6 @@
         "similarity": 0.172,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
-      "3235": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3235,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.382,
-        "title": "[Capture P0][RED TEAM] Reject payload-at-horizon readiness bypass"
-      },
-      "3238": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-acceptance-gate",
-        "pr": 3238,
-        "recommendedAction": "independent-review",
-        "similarity": 0.12,
-        "title": "[Capture P0][GATE] Run complete authenticated truth family"
-      },
       "3239": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2449,30 +2438,41 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3239,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.35,
+        "similarity": 0.353,
         "title": "[Capture P0][REPAIR] Enforce incomplete horizon before chronology mutation"
       },
-      "3240": {
+      "3242": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-tuya-readonly-preflight",
-        "pr": 3240,
+        "pr": 3242,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.356,
-        "title": "[Capture P0][REPAIR] Fence payload admission at incomplete-session horizon"
+        "similarity": 0.338,
+        "title": "[Capture P0][REPAIR] Re-anchor payload deadline admission fix"
       },
-      "3241": {
+      "3243": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-tuya-readonly-preflight",
-        "pr": 3241,
+        "pr": 3243,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.382,
-        "title": "[Capture P0][RED TEAM] Reject Device Sharing BLE authentication state"
+        "similarity": 0.305,
+        "title": "[Capture P0][VALIDATION] Execute deadline adversary in standalone gate"
+      },
+      "3245": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "fe38dd12f2c44674f3fb6d2340bd133aff6b7e3a",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3245,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.352,
+        "title": "[Capture P0][RED TEAM] Preserve horizon prefix"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T22:41:47Z",
+    "liveRefreshAt": "2026-08-13T22:44:50Z",
     "liveRefreshDuplicatesSuppressed": [
       3228
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 99,
+  "revision": 100,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T22:44:30Z",
+  "updatedAt": "2026-08-13T22:47:34Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T22:41:47Z",
+      "updatedAt": "2026-08-13T22:44:50Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
