@@ -218,10 +218,13 @@ struct DashboardView: View {
             stoppedControls
                 .transition(.opacity)
         } else if vehicle.state.connection == .connected && !hasUsableStoppedSpeed {
-            Label("Live speed required for controls", systemImage: "speedometer")
+            Label("Speed required", systemImage: "speedometer")
+                .labelStyle(.titleOnly)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .lineLimit(2)
                 .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel("Controls unavailable until current stopped speed is known")
                 .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
         } else if isVehicleMoving {
