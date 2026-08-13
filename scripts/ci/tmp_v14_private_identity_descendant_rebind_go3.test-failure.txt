@@ -1,0 +1,181 @@
+d64525a763b6685ef8edb8025dbda406d695d2274a4639dd0acc533ee2a192e7
+
+transformer_status=0
+
+=== pycompile_writer status=0 ===
+
+=== pycompile_redteam status=0 ===
+
+=== writer_self_test status=0 ===
+
+=== descendant_redteam status=0 ===
+test_post_open_destination_replacement_cannot_be_accepted (__main__.PrivateIdentityDescendantRebindTests.test_post_open_destination_replacement_cannot_be_accepted) ... ok
+test_replacement_descendant_cannot_retain_credentials_after_rejection (__main__.PrivateIdentityDescendantRebindTests.test_replacement_descendant_cannot_retain_credentials_after_rejection) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.013s
+
+OK
+
+=== publication_races status=1 ===
+test_detached_private_directory_cannot_receive_or_stage_credential_identity (__main__.PrivateIdentityPublicationRaceTests.test_detached_private_directory_cannot_receive_or_stage_credential_identity) ... ERROR
+test_same_staging_inode_payload_mutation_cannot_be_accepted (__main__.PrivateIdentityPublicationRaceTests.test_same_staging_inode_payload_mutation_cannot_be_accepted) ... ERROR
+test_staging_name_substitution_cannot_be_accepted_as_published_payload (__main__.PrivateIdentityPublicationRaceTests.test_staging_name_substitution_cannot_be_accepted_as_published_payload) ... ERROR
+
+======================================================================
+ERROR: test_detached_private_directory_cannot_receive_or_stage_credential_identity (__main__.PrivateIdentityPublicationRaceTests.test_detached_private_directory_cannot_receive_or_stage_credential_identity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_identity_publication_races.py", line 176, in test_detached_private_directory_cannot_receive_or_stage_credential_identity
+    original_publish = writer._secure_replace_beneath
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'nembra_private_identity_writer_redteam' has no attribute '_secure_replace_beneath'
+
+======================================================================
+ERROR: test_same_staging_inode_payload_mutation_cannot_be_accepted (__main__.PrivateIdentityPublicationRaceTests.test_same_staging_inode_payload_mutation_cannot_be_accepted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_identity_publication_races.py", line 109, in test_same_staging_inode_payload_mutation_cannot_be_accepted
+    original_publish = writer._secure_replace_beneath
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'nembra_private_identity_writer_redteam' has no attribute '_secure_replace_beneath'
+
+======================================================================
+ERROR: test_staging_name_substitution_cannot_be_accepted_as_published_payload (__main__.PrivateIdentityPublicationRaceTests.test_staging_name_substitution_cannot_be_accepted_as_published_payload)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/Nembra/Nembra/scripts/ci/tests/test_capture_private_identity_publication_races.py", line 41, in test_staging_name_substitution_cannot_be_accepted_as_published_payload
+    original_publish = writer._secure_replace_beneath
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'nembra_private_identity_writer_redteam' has no attribute '_secure_replace_beneath'
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.013s
+
+FAILED (errors=3)
+
+=== shell_syntax status=0 ===
+
+=== swift_package status=1 ===
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[132/160] Compiling NembraBluetoothCapture TuyaAuthenticatedReadOnlySessionLedger.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[133/160] Compiling NembraBluetoothCapture TuyaLocalBLEAcquisitionWindow.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[134/160] Compiling NembraBluetoothCapture TuyaSDKAccountDeviceMembershipGate.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[135/160] Compiling NembraBluetoothCapture TuyaSDKAccountIdentityLeaseGate.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[136/160] Compiling NembraBluetoothCapture CoreBluetoothCaptureMapping.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[137/160] Compiling NembraBluetoothCapture ES80PassiveCaptureResearchView.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[138/160] Compiling NembraBluetoothCapture ForegroundCoreBluetoothCaptureController.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[139/160] Compiling NembraBluetoothCapture PassiveBluetoothCaptureComparison.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[140/160] Compiling NembraBluetoothCapture PassiveBluetoothCaptureCorrelationReadiness.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[141/160] Compiling NembraBluetoothCapture PassiveBluetoothCaptureExternalBuildRecord.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[142/160] Compiling NembraBluetoothCapture PassiveBluetoothCaptureFieldAuthorization.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[143/160] Compiling NembraBluetoothCapture PassiveBluetoothCaptureFieldBuildEvidenceRecord.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[144/160] Compiling NembraBluetoothCapture PassiveBluetoothCaptureFieldBuildRendezvous.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[145/160] Compiling NembraBluetoothCapture PassiveBluetoothCaptureRuntimeBuildIdentity.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[146/160] Compiling NembraBluetoothCapture PassiveBluetoothCorrelation.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[147/160] Compiling NembraBluetoothCapture PassiveBluetoothExperimentOneCaptureEvidenceAssessment.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[148/160] Compiling NembraBluetoothCapture PassiveBluetoothExperimentOneCoordinator+CanonicalES80.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[149/160] Compiling NembraBluetoothCapture PassiveBluetoothExperimentOneCoordinator.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+[150/160] Compiling NembraBluetoothCapture PassiveBluetoothExperimentOneFieldExecutionGate.swift
+/home/runner/work/Nembra/Nembra/Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/CoreBluetoothCaptureMapping.swift:1:24: error: no such module 'CoreBluetooth'
+  1 | @preconcurrency import CoreBluetooth
+    |                        `- error: no such module 'CoreBluetooth'
+  2 | import Foundation
+  3 | import NembraCore
+error: fatalError
+
+=== diff_check status=0 ===
