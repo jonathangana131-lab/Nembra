@@ -1052,10 +1052,13 @@
     "queue": []
   },
   "metrics": {
+    "branchForksPrevented": 0,
     "closedBlockers": 0,
+    "duplicateBlockersPrevented": 0,
     "duplicateTasksPrevented": 2,
     "meaningfulProgressEvents": 1,
     "newLegitimateBlockers": 0,
+    "prAdmissionsRejected": 0,
     "startBlockers": 23,
     "supersededBranches": 0
   },
@@ -2596,7 +2599,18 @@
     "convergenceFamilies": [],
     "frozenBranchFamilies": [],
     "milestoneAttackObjectives": [],
-    "surgeMissionId": ""
+    "surgeMissionId": "",
+    "v16_1": {
+      "automaticPRAdmission": true,
+      "claimBeforeBranch": true,
+      "joinBeforeSuccessor": true,
+      "lowProgressAttemptsBeforeFreeze": 3,
+      "maxDistinctAttemptBranchesPerBlocker": 2,
+      "maxOpenNoncanonicalPRsPerLane": 6,
+      "maxTournamentCandidates": 2,
+      "oneBuilderBranchPerBlocker": true,
+      "policyVersion": "16.1"
+    }
   },
   "objectives": {
     "accessibility": {
@@ -6276,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 73,
+  "revision": 74,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T09:57:40Z",
+  "updatedAt": "2026-08-13T12:00:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
