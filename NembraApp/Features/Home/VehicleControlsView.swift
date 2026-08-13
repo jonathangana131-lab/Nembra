@@ -423,22 +423,7 @@ private struct BatteryRangeView: View {
 
     private var batteryHero: some View {
         VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 18 : 14) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("BATTERY")
-                        .font(.caption.weight(.bold))
-                        .tracking(1.5)
-                        .foregroundStyle(.secondary)
-
-                    Text(batteryPrimaryText)
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold).monospacedDigit())
-                        .foregroundStyle(batteryPrimaryColor)
-                        .contentTransition(reduceMotion ? .identity : .numericText())
-                }
-
-                Spacer(minLength: 12)
-                dataBadge
-            }
+            batteryHeader
 
             batteryGauge
                 .frame(height: colorSchemeContrast == .increased ? 18 : 14)
@@ -464,6 +449,37 @@ private struct BatteryRangeView: View {
         .accessibilityIdentifier("battery-range.battery")
     }
 
+    @ViewBuilder
+    private var batteryHeader: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 12) {
+                batteryHeadingAndValue
+                dataBadge
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline) {
+                batteryHeadingAndValue
+                Spacer(minLength: 12)
+                dataBadge
+            }
+        }
+    }
+
+    private var batteryHeadingAndValue: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("BATTERY")
+                .font(.caption.weight(.bold))
+                .tracking(1.5)
+                .foregroundStyle(.secondary)
+
+            Text(batteryPrimaryText)
+                .font(.system(.largeTitle, design: .rounded, weight: .bold).monospacedDigit())
+                .foregroundStyle(batteryPrimaryColor)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+        }
+    }
+
     private var batteryGauge: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
@@ -483,15 +499,7 @@ private struct BatteryRangeView: View {
 
     private var rangeCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Range", systemImage: "location.fill")
-                    .font(.headline)
-                Spacer()
-                Text("NOT CALIBRATED")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.9)
-                    .foregroundStyle(.secondary)
-            }
+            rangeHeader
 
             Text("—")
                 .font(
@@ -523,6 +531,31 @@ private struct BatteryRangeView: View {
         .accessibilityValue("Unavailable, not calibrated")
         .accessibilityHint("No manufacturer range, battery-percentage multiplication, or guessed efficiency is used.")
         .accessibilityIdentifier("battery-range.range")
+    }
+
+    @ViewBuilder
+    private var rangeHeader: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Range", systemImage: "location.fill")
+                    .font(.headline)
+                Text("NOT CALIBRATED")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.9)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        } else {
+            HStack {
+                Label("Range", systemImage: "location.fill")
+                    .font(.headline)
+                Spacer()
+                Text("NOT CALIBRATED")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.9)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var evidenceCard: some View {
