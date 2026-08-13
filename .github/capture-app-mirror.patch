@@ -1,0 +1,105 @@
+diff --git a/NembraApp/App/NembraCaptureEntrypoint.swift b/NembraApp/App/NembraCaptureEntrypoint.swift
+--- a/NembraApp/App/NembraCaptureEntrypoint.swift
++++ b/NembraApp/App/NembraCaptureEntrypoint.swift
+@@ -1754,6 +1754,13 @@
+                 message: "Application receipt crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
+                 kind: "application_observation_continuity_invalidated"
+             )
++        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
++            await mirrorAlreadyTerminalIncompleteObservationHorizon(
++                token: token,
++                message: "Application receipt reached the bounded incomplete application evidence horizon before canonical readiness. The package preserved the accepted prefix, retired this generation, and did not accept the deadline-crossing receipt or claim a Bluetooth disconnect.",
++                kind: "application_authenticated_incomplete_readiness_horizon_reached"
++            )
+         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+             log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
+         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+@@ -1871,6 +1878,14 @@
+                         kind: "session_liveness_continuity_invalidated"
+                     )
+                     return
++                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
++                    await self.mirrorAlreadyTerminalIncompleteObservationHorizon(
++                        token: token,
++                        message: "Authenticated observation reached the bounded incomplete application evidence horizon before canonical readiness. The package preserved the accepted prefix, retired this generation, and did not accept the deadline-crossing liveness receipt or claim a Bluetooth disconnect.",
++                        kind: "session_authenticated_incomplete_readiness_horizon_reached"
++                    )
++                    return
+                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+                     self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])
+                     return
+@@ -2013,40 +2028,6 @@
+                 case .blocked:
+                     break
+                 }
+-
+-                if self.applicationUpdateAdmissionsInFlight == 0,
+-                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
+-                   self.applicationUpdateCount == 0 {
+-                    do {
+-                        try await sessionLedger.markApplicationObservationTimedOut(for: token)
+-                    guard self.currentConnectionToken == token,
+-                          self.phase == .observing else {
+-                        self.log("stale_application_timeout_completion_ignored", [
+-                            "generation": String(token.diagnosticGeneration),
+-                            "phase": self.phase.rawValue
+-                        ])
+-                        return
+-                    }
+-                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+-                        await self.invalidateInternalLifecycle(
+-                            token: token,
+-                            message: "The application-observation deadline encountered a monotonic-clock regression.",
+-                            kind: "application_timeout_clock_regressed"
+-                        )
+-                        return
+-                    } catch {
+-                        await self.invalidateInternalLifecycle(
+-                            token: token,
+-                            message: "The application-observation terminal could not complete safely: \(error.localizedDescription)",
+-                            kind: "application_timeout_lifecycle_rejected"
+-                        )
+-                        return
+-                    }
+-                    self.currentConnectionToken = nil
+-                    self.localBLESettlementToken = nil
+-                    self.sdkLocalBLEOnline = false
+-                    self.driver = nil
+-                    await self.refreshLedgerSnapshot()
+-                    self.phase = .failed
+-                    self.message = "Authenticated session produced no application update before the observation deadline. Export diagnostics; relaunch Capture before any new stationary read-only attempt."
+-                    self.log("authenticated_application_timeout", ["generation": String(token.diagnosticGeneration)])
+-                    return
+-                }
+ 
+                 try? await Task.sleep(for: .seconds(1))
+             }
+@@ -2147,6 +2128,28 @@
+         log(kind, ["generation": String(token.diagnosticGeneration)])
+     }
+ 
++    /// Mirrors the bounded incomplete-evidence result already committed by the package mutation
++    /// that threw `incompleteObservationHorizonReached`. The package has already frozen the
++    /// accepted prefix and retired callback authority, so app presentation must not attempt a
++    /// second ledger mutation, advance the clock, or invent a Bluetooth disconnect.
++    private func mirrorAlreadyTerminalIncompleteObservationHorizon(
++        token: TuyaReadOnlyConnectionToken,
++        message: String,
++        kind: String
++    ) async {
++        guard currentConnectionToken == token else { return }
++        watchdog?.cancel()
++        watchdog = nil
++        currentConnectionToken = nil
++        localBLESettlementToken = nil
++        sdkLocalBLEOnline = false
++        driver = nil
++        await refreshLedgerSnapshot()
++        phase = .failed
++        self.message = message
++        log(kind, ["generation": String(token.diagnosticGeneration)])
++    }
++
+     private func invalidateObservationContinuity(
+         token: TuyaReadOnlyConnectionToken,
+         message: String,
