@@ -1,0 +1,60 @@
+name: Capture clock-regression fixture one-shot patch
+
+on:
+  push:
+    branches:
+      - repair/v161-capture-clock-regression-fixture-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'GO patch clock-regression fixture'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v161-capture-clock-regression-fixture-gpt56
+          fetch-depth: 0
+
+      - name: Repair exact clock-regression fixture provenance
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift')
+          source = path.read_text()
+          start = source.find('    @Test("clock regression cannot rewrite accepted chronology")')
+          end = source.find('    @Test(', start + 1)
+          if start < 0 or end < 0:
+              raise SystemExit('fail closed: clock-regression test bounds missing')
+          section = source[start:end]
+          old = 'try await ledger.markAuthenticated(for: token, method: .documentedDeviceSharing)'
+          new = 'try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)'
+          if section.count(old) != 1:
+              raise SystemExit(f'fail closed: expected exactly one stale provenance use, found {section.count(old)}')
+          section = section.replace(old, new, 1)
+          source = source[:start] + section + source[end:]
+          path.write_text(source)
+          PY
+          git diff --check
+          git diff -- Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift
+
+      - name: Run focused ledger suite
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests
+
+      - name: Publish one-file test repair and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-go-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/capture-clock-regression-fixture-patch.yml
+          git add Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift
+          test "$(git diff --cached --name-only)" = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift'
+          git commit -m 'Capture V16.1: repair clock-regression auth fixture'
+          git push origin HEAD:repair/v161-capture-clock-regression-fixture-gpt56
