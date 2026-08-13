@@ -2402,7 +2402,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3217,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.432,
+        "similarity": 0.274,
         "title": "[Capture P0][RED TEAM] Bind Apple-signing helpers to verified Git object chain"
       },
       "3218": {
@@ -2435,19 +2435,8 @@
         "lane": "",
         "pr": 3220,
         "recommendedAction": "independent-review",
-        "similarity": 0.154,
+        "similarity": 0.155,
         "title": "[Capture P0][V16] Add build-only signed Capture candidate handoff"
-      },
-      "3221": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c19a68d7c1f5412e13674f751906540dffb3cc5a",
-        "lane": "capture-signed-install-custody",
-        "pr": 3221,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.433,
-        "title": "[Capture P0][REPAIR] Root Apple-signing helpers in verified Git object chain"
       },
       "3222": {
         "classification": "validation",
@@ -2459,6 +2448,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.379,
         "title": "[Capture P0][VALIDATION] Add selected-Xcode private field preflight"
+      },
+      "3223": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "e4bcc5ed9316c13d1d95415c7c0ad39de6656063",
+        "lane": "capture-signed-install-custody",
+        "pr": 3223,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.248,
+        "title": "[Capture P0][VALIDATION] Prove Apple-signing Git alias rejection"
       },
       "3224": {
         "classification": "validation",
@@ -2502,7 +2502,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-13T03:29:00Z",
+    "liveRefreshAt": "2026-08-13T03:31:26Z",
     "liveRefreshDuplicatesSuppressed": [
       3224
     ],
@@ -6276,10 +6276,10 @@
       "userValue": 7
     }
   },
-  "revision": 54,
+  "revision": 55,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-13T03:31:03Z",
+  "updatedAt": "2026-08-13T03:34:16Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6355,7 +6355,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-13T03:29:00Z",
+      "updatedAt": "2026-08-13T03:31:26Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
