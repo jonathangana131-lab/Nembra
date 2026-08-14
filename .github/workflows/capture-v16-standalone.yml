@@ -92,6 +92,7 @@ jobs:
           swift test --filter TuyaExportLocalBLEProofStateSourceTests
           swift test --filter TuyaPostSealTransportAuthoritySourceTests
           swift test --filter TuyaCorrelationProvenanceExportSourceTests
+          swift test --filter TuyaExportSchemaV11ProvenanceContinuitySourceTests
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
 
