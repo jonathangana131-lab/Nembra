@@ -1092,7 +1092,7 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "be20be89fdfdf994b5d60dad73f33a613c2b5e34",
+        "headSHA": "",
         "lane": "dashboard-energy-rail-app-visible",
         "pr": 3314,
         "recommendedAction": "independent-review",
@@ -1185,7 +1185,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:44:58Z",
+    "liveRefreshAt": "2026-08-14T23:46:55Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4970,10 +4970,10 @@
       "userValue": 7
     }
   },
-  "revision": 315,
+  "revision": 316,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:44:58Z",
+  "updatedAt": "2026-08-14T23:46:55Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5049,7 +5049,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:44:58Z",
+      "updatedAt": "2026-08-14T23:46:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
