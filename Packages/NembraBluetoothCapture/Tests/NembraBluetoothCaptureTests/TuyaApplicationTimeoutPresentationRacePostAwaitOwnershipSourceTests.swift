@@ -2,18 +2,18 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-/// Expected-red validation child for the package-owned incomplete-observation horizon.
+/// Expected-red validation child for package-owned observation terminals.
 ///
-/// The ledger already owns the terminal. This contract is narrower: after the app mirror
+/// The ledger already owns these terminals. This contract is narrower: after an app mirror
 /// suspends to refresh the ledger snapshot, it may publish rider-visible terminal presentation
 /// only if the same app-local request/lifecycle owner still owns that presentation.
 ///
 /// The suite name deliberately extends the canonical presentation-race suite so the existing
 /// `swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests` standalone gate also
 /// discovers this validation child without changing workflow bytes.
-@Suite("Tuya incomplete-horizon post-await presentation ownership")
+@Suite("Tuya terminal mirrors preserve post-await presentation ownership")
 struct TuyaApplicationTimeoutPresentationRaceSourceTestsPostAwaitOwnership {
-    @Test("package-owned horizon mirror cannot repaint a newer lifecycle owner after actor suspension")
+    @Test("package-owned incomplete-horizon mirror cannot repaint a newer lifecycle owner")
     func incompleteHorizonMirrorRevalidatesPresentationOwnerAfterSnapshotRefresh() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let mirror = String(try section(
@@ -21,7 +21,21 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTestsPostAwaitOwnership {
             from: "private func mirrorAlreadyTerminalIncompleteObservationHorizon",
             to: "private func invalidateObservationContinuity"
         ))
+        try requirePostAwaitPresentationOwnerFence(in: mirror)
+    }
 
+    @Test("package-owned continuity mirror cannot repaint a newer lifecycle owner")
+    func continuityMirrorRevalidatesPresentationOwnerAfterSnapshotRefresh() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let mirror = String(try section(
+            in: source,
+            from: "private func mirrorAlreadyTerminalObservationContinuity",
+            to: "private func mirrorAlreadyTerminalIncompleteObservationHorizon"
+        ))
+        try requirePostAwaitPresentationOwnerFence(in: mirror)
+    }
+
+    private func requirePostAwaitPresentationOwnerFence(in mirror: String) throws {
         let ownerCapture = try requiredOffset(
             "let presentationOwnerRequestID = officialConnectionRequestID",
             in: mirror
