@@ -1,0 +1,63 @@
+name: Materialize Capture seal recoverability
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/materialize-capture-seal-recoverability.yml'
+      - 'scripts/ci/materialize_capture_seal_recoverability.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXACT_PARENT: 3803df1eb5c6e486c827025e65fedeb95a506897
+      WORKFLOW_PATH: .github/workflows/materialize-capture-seal-recoverability.yml
+      SCRIPT_PATH: scripts/ci/materialize_capture_seal_recoverability.py
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Bind exact parent and constructor-only delta
+        run: |
+          set -euo pipefail
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' "$WORKFLOW_PATH" "$SCRIPT_PATH" | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+      - name: Materialize recoverable seal ordering
+        run: |
+          set -euo pipefail
+          python3 -B "$SCRIPT_PATH"
+          rm "$WORKFLOW_PATH" "$SCRIPT_PATH"
+      - name: Verify final two-file correction
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort > "$RUNNER_TEMP/actual-final"
+          printf '%s\n' \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected-final"
+          diff -u "$RUNNER_TEMP/expected-final" "$RUNNER_TEMP/actual-final"
+          grep -Fq 'let snapshot = makeSnapshot()' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'switch receiptAuthority.beginSeal(for: token)' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'let delivery = try ledger.captureApplicationDelivery(for: token)' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedTerminalHorizonTests.swift
+      - name: Commit correction and retire constructor
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-seal-recoverability-materializer'
+          git config user.email 'nembra-seal-recoverability-materializer@users.noreply.github.com'
+          git add -A
+          git commit -m 'capture: preserve receipt authority after premature seal refusal'
+          git push origin "HEAD:$BRANCH"
