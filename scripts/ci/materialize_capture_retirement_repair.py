@@ -13,44 +13,29 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new)
 
 
+def replace_region(text: str, start_marker: str, end_marker: str, replacement: str, label: str) -> str:
+    if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+        raise SystemExit(f"could not uniquely locate {label}")
+    start = text.index(start_marker)
+    end = text.index(end_marker, start)
+    return text[:start] + replacement.rstrip() + "\n\n\n" + text[end:]
+
+
 def replace_test(text: str, start_name: str, next_name: str, replacement: str) -> str:
-    start = text.index(f"    def {start_name}(")
-    end = text.index(f"    def {next_name}(", start)
-    return text[:start] + replacement.rstrip() + "\n\n" + text[end:]
+    return replace_region(
+        text,
+        f"    def {start_name}(",
+        f"    def {next_name}(",
+        replacement,
+        start_name,
+    )
 
 
 def patch_helper() -> None:
     path = Path("scripts/ci/capture_signed_app_build_origin_custody.py")
     source = path.read_text(encoding="utf-8")
 
-    old_assert = '''def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:
-    if uid <= 0:
-        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
-    zombies = _wait_for_no_live_uid(uid, timeout=timeout)
-    deadline = time.monotonic() + timeout
-    latest_lookups: tuple[str, ...] = ()
-    while True:
-        latest_lookups = _identity_lookup_survivors(name, uid)
-        if not latest_lookups:
-            return
-        if time.monotonic() >= deadline:
-            break
-        subprocess.run(
-            ["/usr/bin/dscacheutil", "-flushcache"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        time.sleep(0.05)
-    raise BuildOriginCustodyError(
-        "ephemeral build identity survived retirement: "
-        f"zombie_pids={list(zombies)} identity_lookups={list(latest_lookups)}"
-    )
-
-
-'''
-    new_assert = '''def _direct_local_identity_record_exists(kind: str, name: str) -> bool:
+    assertion = '''def _direct_local_identity_record_exists(kind: str, name: str) -> bool:
     completed = subprocess.run(
         ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],
         stdin=subprocess.DEVNULL,
@@ -98,52 +83,16 @@ def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float 
         "ephemeral build destructive authority survived retirement: "
         f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)} "
         f"user_record={latest_user_record} group_record={latest_group_record}"
+    )'''
+    source = replace_region(
+        source,
+        "def _assert_local_build_identity_retired(",
+        "def _remove_local_build_identity(",
+        assertion,
+        "retirement assertion",
     )
 
-
-'''
-    source = replace_once(source, old_assert, new_assert, "current retirement assertion")
-
-    old_remove = '''def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:
-    if sys.platform != "darwin":
-        return
-    if uid is not None and uid > 0:
-        killed = subprocess.run(
-            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if require_absent and killed.returncode not in (0, 1):
-            raise BuildOriginCustodyError(
-                f"could not request build-principal process retirement: pkill exit {killed.returncode}"
-            )
-        if require_absent:
-            _wait_for_no_live_uid(uid)
-    subprocess.run(
-        ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    subprocess.run(
-        ["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
-    if require_absent:
-        if uid is None:
-            raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
-        _assert_local_build_identity_retired(name, uid)
-
-
-'''
-    new_remove = '''def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:
+    remover = '''def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:
     if sys.platform != "darwin":
         return
     if require_absent and (uid is None or uid <= 0):
@@ -187,11 +136,17 @@ def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float 
             raise BuildOriginCustodyError(
                 f"could not request final build-principal process retirement: pkill exit {final_kill.returncode}"
             )
-        _assert_local_build_identity_retired(name, uid)
+        _assert_local_build_identity_retired(name, uid)'''
+    source = replace_region(
+        source,
+        "def _remove_local_build_identity(",
+        "def _create_local_build_identity(",
+        remover,
+        "identity remover",
+    )
 
-
-'''
-    source = replace_once(source, old_remove, new_remove, "current identity remover")
+    if source.count('["/usr/bin/pkill", "-9", "-u", str(uid), ".*"]') != 2:
+        raise SystemExit("post-DS candidate must contain exactly two UID-wide kills")
     compile(source, str(path), "exec", dont_inherit=True)
     path.write_text(source, encoding="utf-8")
 
@@ -226,7 +181,7 @@ def patch_tests() -> None:
         '        self.assertIn("def _direct_local_identity_record_exists(", source)\n'
         '        self.assertIn("if not latest_live and not latest_zombies and not latest_user_record and not latest_group_record:", source)\n'
         '        self.assertEqual(source.count(\'["/usr/bin/pkill", "-9", "-u", str(uid), ".*"]\'), 2)\n',
-        "stale pre-DS source assertion",
+        "pre-DS source assertion",
     )
 
     verified = '''    def test_verified_identity_retirement_requires_zero_process_and_direct_ds_authority(self) -> None:
@@ -258,8 +213,7 @@ def patch_tests() -> None:
             helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
 
         with self.assertRaises(helper.BuildOriginCustodyError):
-            helper._assert_local_build_identity_retired("nembrabuildtest", 0)
-'''
+            helper._assert_local_build_identity_retired("nembrabuildtest", 0)'''
     source = replace_test(
         source,
         "test_verified_identity_retirement_requires_no_live_uid_or_identity_lookup",
@@ -303,8 +257,7 @@ def patch_tests() -> None:
         self.assertLess(events.index("delete-user"), events.index("delete-group"))
         self.assertLess(events.index("delete-group"), second_kill)
         self.assertLess(second_kill, events.index("verify-direct-authority"))
-        legacy_wait.assert_not_called()
-'''
+        legacy_wait.assert_not_called()'''
     source = replace_test(
         source,
         "test_strict_identity_removal_proves_zero_live_uid_before_directory_service_deletion",
