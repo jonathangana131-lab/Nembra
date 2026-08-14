@@ -167,7 +167,8 @@ def _load_installed_policy() -> dict[str, Any]:
             raise BrokerError(f"trusted policy directory is unavailable: {path}") from error
         _validate_directory_stat(info, str(path))
 
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    _require(hasattr(os, "O_NOFOLLOW"), "platform lacks O_NOFOLLOW")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
     try:
         fd = os.open(POLICY_PATH, flags)
     except OSError as error:
