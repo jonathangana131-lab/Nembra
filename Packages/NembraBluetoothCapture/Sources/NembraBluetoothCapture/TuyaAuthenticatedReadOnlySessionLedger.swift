@@ -232,6 +232,25 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
               now >= authenticatedAt else {
             throw MutationError.monotonicClockRegressed
         }
+
+        // A callback arriving at or beyond the package-owned incomplete-session horizon cannot
+        // bootstrap itself into acceptance. Evaluate retirement using the current evidence with
+        // `now` only as the candidate liveness receipt, before mutating payload count/timestamps.
+        // Canonically ready generations remain allowed to receive later read-only updates.
+        let preMutationHorizonSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: authenticationState,
+            authenticationMethod: authenticationMethod,
+            connectionStartedAtUptimeNanoseconds: connectionStartedAtUptimeNanoseconds,
+            authenticatedAtUptimeNanoseconds: authenticatedAtUptimeNanoseconds,
+            latestObservedUptimeNanoseconds: now,
+            applicationPayloadCount: applicationPayloadCount,
+            latestApplicationPayloadUptimeNanoseconds: latestApplicationPayloadUptimeNanoseconds,
+            connectionGeneration: currentToken?.generation ?? generation
+        )
+        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(preMutationHorizonSnapshot) {
+            throw MutationError.incompleteObservationHorizonReached
+        }
+
         guard applicationPayloadCount < Int.max else {
             throw MutationError.applicationPayloadCountExhausted
         }
