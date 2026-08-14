@@ -1,0 +1,36 @@
+name: Capture receipt seal-fence materializer
+
+on:
+  push:
+    branches:
+      - capture/application-delivery-cutoff-repair-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/application-delivery-cutoff-repair-sol-20260814
+          fetch-depth: 2
+          persist-credentials: true
+      - name: Materialize package seal and watchdog cadence fences
+        env:
+          EXPECTED_PARENT: 9dff8848214acd5e6cc3a0e744348ce05b636a67
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test -f scripts/ci/materialize_capture_receipt_seal_fence.py
+          python3 scripts/ci/materialize_capture_receipt_seal_fence.py
+          test ! -e scripts/ci/materialize_capture_receipt_seal_fence.py
+          test ! -e .github/workflows/capture-receipt-seal-fence-materializer.yml
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add -A
+          git commit -m 'Capture V16.1: fence package seal on pending application delivery'
+          git push origin HEAD:capture/application-delivery-cutoff-repair-sol-20260814
