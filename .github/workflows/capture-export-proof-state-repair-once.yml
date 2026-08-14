@@ -1,0 +1,110 @@
+name: Materialize Capture export proof-state repair
+
+on:
+  push:
+    branches:
+      - repair/v161-capture-export-proof-state-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'GO materialize Capture export proof-state repair'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Apply exact schema repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='1b3da19408af926bfd10101e38974103a05fb0fb'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$parent" HEAD
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+
+          def replace_one(old: str, new: str, label: str) -> None:
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              s = s.replace(old, new, 1)
+
+          phase = '''    enum Phase: String, Codable {
+        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed
+    }
+
+'''
+          evidence = '''    enum LocalBLEEvidenceState: String, Codable {
+        /// The controller's latest retained direct official-SDK local-BLE sample was online.
+        /// Diagnostic exports do not promote this into an export-time currentness claim.
+        case observedOnlineAtLatestDirectSample = "observed-online-at-latest-direct-sample"
+        /// No current online proof is retained. This must never be interpreted as an observed
+        /// offline/disconnect fact; actual transport loss remains separate timestamped evidence.
+        case notProven = "not-proven"
+    }
+
+'''
+          replace_one(phase, phase + evidence, 'local-BLE evidence enum insertion')
+          replace_one(
+              '        let sdkLocalBLEOnline: Bool\n',
+              '        let sdkLocalBLEEvidenceState: LocalBLEEvidenceState\n',
+              'export local-BLE field',
+          )
+          replace_one('            schemaVersion: 10,\n', '            schemaVersion: 11,\n', 'schema version')
+          replace_one(
+              '            sdkLocalBLEOnline: sdkLocalBLEOnline,\n',
+              '            sdkLocalBLEEvidenceState: sdkLocalBLEOnline ? .observedOnlineAtLatestDirectSample : .notProven,\n',
+              'export proof-state mapping',
+          )
+
+          p.write_text(s)
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          assert source.count('enum LocalBLEEvidenceState: String, Codable') == 1
+          assert source.count('let sdkLocalBLEEvidenceState: LocalBLEEvidenceState') == 1
+          assert 'let sdkLocalBLEOnline: Bool' not in source
+          assert source.count('schemaVersion: 11') == 1
+          assert 'sdkLocalBLEOnline ? .observedOnlineAtLatestDirectSample : .notProven' in source
+          assert 'observed-online-at-latest-direct-sample' in source
+          assert 'case notProven = "not-proven"' in source
+          assert 'sdkLocalBLEOnline: sdkLocalBLEOnline' not in source
+          assert 'log("sdk_local_ble_dropped"' in source
+
+          watchdog = source[source.index('private func startWatchdog'):source.index('private func recordObservedTransportLoss')]
+          seal = watchdog.index('try await sessionLedger.sealAcceptedObservation(for: token)')
+          direct = watchdog.index('driver.isLocallyConnected(uuid: self.tuyaUUID)', seal)
+          fence = watchdog.index('guard postSealLocalBLEOnline else', direct)
+          freeze = watchdog.index('self.sealedAcceptedExport = self.makeExport(', fence)
+          assert seal < direct < fence < freeze
+          PY
+
+          rm .github/workflows/capture-export-proof-state-repair-once.yml
+          git diff --check
+
+      - name: Publish clean repair checkpoint if branch is unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v161-capture-export-proof-state-sol-20260814'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git config user.name nembra-go-worker
+          git config user.email actions@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-export-proof-state-repair-once.yml
+          git diff --cached --check
+          git commit -m 'Capture V16.1: make local-BLE export proof explicit'
+          git push origin HEAD:"$branch"
