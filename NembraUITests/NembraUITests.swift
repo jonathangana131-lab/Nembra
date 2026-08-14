@@ -99,9 +99,8 @@ final class NembraUITests: XCTestCase {
             energyRail.waitForExistence(timeout: 3),
             "The riding Simulator cockpit must mount the canonical Energy Rail."
         )
-        XCTAssertEqual(
-            energyRail.value as? String,
-            "356 watts",
+        XCTAssertTrue(
+            waitForValue("356 watts", element: energyRail),
             "Cockpit watts must expose the sealed Simulator receipt, never a render midpoint or cached aggregate field."
         )
 
@@ -177,9 +176,8 @@ final class NembraUITests: XCTestCase {
             energyRail.waitForExistence(timeout: 2),
             "The Simulator cockpit must preserve a designed unavailable Energy Rail state."
         )
-        XCTAssertEqual(
-            energyRail.value as? String,
-            "Unavailable",
+        XCTAssertTrue(
+            waitForValue("Unavailable", element: energyRail),
             "Cached VehicleState watts must not fabricate propulsion authority after transport loss."
         )
 
@@ -219,9 +217,8 @@ final class NembraUITests: XCTestCase {
             energyRail.waitForExistence(timeout: 2),
             "The never-observed Simulator state must still render an explicit Energy Rail unavailable state."
         )
-        XCTAssertEqual(
-            energyRail.value as? String,
-            "Unavailable",
+        XCTAssertTrue(
+            waitForValue("Unavailable", element: energyRail),
             "No source receipt means no numeric propulsion power, including zero."
         )
 
@@ -246,7 +243,7 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
+    func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() throws {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
 
@@ -258,9 +255,8 @@ final class NembraUITests: XCTestCase {
             energyRail.waitForExistence(timeout: 2),
             "Connected-stopped must keep the Energy Rail present at a source-observed zero."
         )
-        XCTAssertEqual(
-            energyRail.value as? String,
-            "0 watts",
+        XCTAssertTrue(
+            waitForValue("0 watts", element: energyRail),
             "A sealed zero-watt receipt is accepted measurement truth and must remain distinct from unavailable."
         )
 
@@ -311,6 +307,16 @@ final class NembraUITests: XCTestCase {
             screenshotName: "Dashboard Sport Confirmed Landscape",
             in: app,
             confirmedMode: confirmedMode
+        )
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .textClipped,
+                .trait,
+                .dynamicType
+            ]
         )
     }
 
