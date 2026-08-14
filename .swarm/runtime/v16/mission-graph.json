@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 301,
+    "classifiedPRTotal": 302,
     "classifiedPRs": {
-      "2798": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2798,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.298,
-        "title": "[Capture P0][RED TEAM] Pin private-review parent module execution"
-      },
       "2805": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2262,7 +2251,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.191,
+        "similarity": 0.181,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3253": {
@@ -2328,7 +2317,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3274,
         "recommendedAction": "independent-review",
-        "similarity": 0.162,
+        "similarity": 0.17,
         "title": "[Capture P0][INTEGRATE] Close schema v11 provenance contract coverage"
       },
       "3275": {
@@ -2438,7 +2427,7 @@
         "lane": "capture-application-delivery-cutoff",
         "pr": 3294,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.238,
+        "similarity": 0.256,
         "title": "[Capture P0][EXPECTED-RED] Reject replayed application delivery receipts"
       },
       "3295": {
@@ -2468,11 +2457,22 @@
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-application-delivery-receipt-authority",
+        "lane": "capture-application-delivery-occurrence-custody",
         "pr": 3297,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.117,
-        "title": "[Capture P0][EXPECTED-RED] Reject replayable caller-mintable application receipts"
+        "similarity": 0.128,
+        "title": "[Capture P0][EXPECTED-RED] Seal application-delivery occurrence with chronology"
+      },
+      "3298": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-application-delivery-cutoff",
+        "pr": 3298,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.381,
+        "title": "[Capture P0][REPAIR] Ledger-issue one-shot application delivery receipts"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:04:06Z",
+    "liveRefreshAt": "2026-08-14T09:06:38Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 159,
+  "revision": 160,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:06:16Z",
+  "updatedAt": "2026-08-14T09:08:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:04:06Z",
+      "updatedAt": "2026-08-14T09:06:38Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
