@@ -39,9 +39,14 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             'SIGNED_APP_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 '
             'GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse'
         )
+        selected_xcode_orchestrator = (
+            'SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 '
+            'GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse'
+        )
         markers = {
             "origin_helper": origin_helper,
             "install_helper": install_helper,
+            "selected_xcode_orchestrator": selected_xcode_orchestrator,
             "supervisor": "/usr/bin/sudo /usr/bin/python3 -I -c",
             "derived": '-derivedDataPath "$DERIVED_PLACEHOLDER"',
             "stage_result": 'APP_INSTALL_STAGE_ROOT="${BUILD_ORIGIN_CUSTODY_RESULT%%$\'\\t\'*}"',
@@ -57,6 +62,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
 
         self.assertLess(indexes["origin_helper"], indexes["supervisor"])
         self.assertLess(indexes["install_helper"], indexes["supervisor"])
+        self.assertLess(indexes["selected_xcode_orchestrator"], indexes["supervisor"])
         self.assertLess(indexes["supervisor"], indexes["stage_result"])
         self.assertLess(indexes["stage_result"], indexes["switch"])
         self.assertLess(indexes["switch"], indexes["verify"])
@@ -64,7 +70,11 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertLess(indexes["codesign"], indexes["install"])
         self.assertIn('DERIVED_PLACEHOLDER="__NEMBRA_PROTECTED_DERIVED__"', source)
         self.assertIn(
-            '--install-custody-helper-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"',
+            '--install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"',
+            source,
+        )
+        self.assertIn(
+            '--install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"',
             source,
         )
         self.assertIn(
@@ -75,7 +85,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             '[[ "$VERIFIED_STAGE_TREE_SHA256" == "$STAGED_APP_TREE_SHA256" ]]',
             source,
         )
-        self.assertIn("Noninteractive sudo authority remained after build-origin custody", source)
+        self.assertIn("Noninteractive sudo authority remained after selected-Xcode/build-origin custody", source)
         self.assertNotIn(
             'APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"',
             source,
