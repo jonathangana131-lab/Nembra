@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.205,
+        "similarity": 0.21,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3313": {
@@ -1118,7 +1118,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3315,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.264,
+        "similarity": 0.269,
         "title": "[Capture P0][VALIDATION] Re-prove source + private-input custody on current carrier"
       },
       "3316": {
@@ -1140,7 +1140,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3317,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.249,
+        "similarity": 0.259,
         "title": "[Capture P0][VALIDATION] Probe APFS sparse-image backing-file custody"
       }
     },
@@ -1174,7 +1174,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:02:18Z",
+    "liveRefreshAt": "2026-08-14T23:02:36Z",
     "liveRefreshDuplicatesSuppressed": [
       3317
     ],
@@ -4959,10 +4959,10 @@
       "userValue": 7
     }
   },
-  "revision": 238,
+  "revision": 239,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:02:18Z",
+  "updatedAt": "2026-08-14T23:02:36Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5038,7 +5038,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:02:18Z",
+      "updatedAt": "2026-08-14T23:02:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
