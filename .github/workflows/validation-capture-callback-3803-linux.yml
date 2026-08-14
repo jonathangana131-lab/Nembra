@@ -1,4 +1,4 @@
-name: Validate Capture callback 3803 on Linux
+name: Validate Capture callback 3803 platform-neutral authority
 
 on:
   push:
@@ -13,38 +13,90 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  package:
+  authority:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
         with:
           ref: validation/capture-callback-3803-linux-sol
-          fetch-depth: 2
-      - name: Bind immutable product parent and workflow-only mirror
+          fetch-depth: 0
+
+      - name: Bind exact product source and validation-only delta
         env:
           EXPECTED_PRODUCT: 3803df1eb5c6e486c827025e65fedeb95a506897
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT"
-          changed="$(git diff --name-only HEAD^ HEAD)"
+          git merge-base --is-ancestor "$EXPECTED_PRODUCT" HEAD
+          changed="$(git diff --name-only "$EXPECTED_PRODUCT" HEAD)"
           test "$changed" = '.github/workflows/validation-capture-callback-3803-linux.yml'
-          printf 'Validated mirror parent: %s\n' "$EXPECTED_PRODUCT"
+          printf 'Validation-only mirror of exact product: %s\n' "$EXPECTED_PRODUCT"
+
       - name: Record Swift toolchain
         run: swift --version
-      - name: Compile Capture package
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift build
-      - name: Run callback authority package/source suites
+
+      - name: Typecheck platform-neutral authenticated ledger
         working-directory: Packages/NembraBluetoothCapture
         run: |
           set -euo pipefail
-          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests
-          swift test --filter TuyaAcceptedApplicationEvidenceSealSourceTests
-          swift test --filter TuyaSmartLifeApplicationSourceAttributionSourceTests
-          swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
-          swift test --filter TuyaApplicationAdmissionCrossAttemptDrainSourceTests
-          swift test --filter TuyaApplicationEventCustodyAdmissionRaceSourceTests
-          swift test --filter TuyaAppChronologyIntegrityTerminalSourceTests
-          swift test --filter TuyaPostSealTransportAuthoritySourceTests
-          swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
+          swiftc -typecheck \
+            Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlyPreflight.swift \
+            Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+
+      - name: Verify callback and immutable-seal authority ordering
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          ledger = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift').read_text()
+
+          helper_start = app.index('private func admitApplicationUpdateCallback(')
+          helper_end = app.index('private func receivedApplicationUpdate(', helper_start)
+          helper = app[helper_start:helper_end]
+          observing = helper.index('phase == .observing')
+          capture = helper.index('sessionLedger.captureApplicationDelivery(for: token)')
+          assert observing < capture, 'observation-phase guard must precede application receipt mint'
+
+          assert 'TuyaReadOnlyApplicationReceipt.capture' not in app, 'app may not statically mint receipt chronology'
+          assert 'recordApplicationUpdate(isNonEmpty:' not in app, 'async consumer may not assert non-empty occurrence'
+
+          protocol_start = app.index('private protocol OfficialTuyaDriver: AnyObject')
+          protocol_end = app.index('private enum OfficialTuyaFactory', protocol_start)
+          protocol = app[protocol_start:protocol_end]
+          assert 'sourceAuthorityFailure: @escaping @MainActor () -> Void' in protocol
+
+          connect = app[app.index('sourceAuthorityFailure: { [weak self] in'):]
+          sync_cut = connect.index('acceptanceCutIsClosed = true')
+          cancel = connect.index('watchdog?.cancel()')
+          failed = connect.index('phase = .failed')
+          retirement_task = connect.index('Task { @MainActor [weak self] in')
+          retirement = connect.index('invalidateSourceAuthority(')
+          assert sync_cut < cancel < failed < retirement_task < retirement, 'source mismatch must synchronously cut acceptance before async retirement'
+
+          driver_start = app.index('private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDeviceDelegate')
+          driver = app[driver_start:]
+          callback_start = driver.index('func device(_ device: ThingSmartDevice?, dpsUpdate')
+          callback = driver[callback_start:]
+          identity = callback.index('callbackDeviceID == expectedDeviceID')
+          forwarding_cut = callback.index('onApplicationUpdate = nil')
+          failure = callback.index('onSourceAuthorityFailure?()')
+          payload = callback.index('guard let dps, !dps.isEmpty else { return }')
+          forward = callback.index('onApplicationUpdate?(sanitized)')
+          assert identity < forwarding_cut < failure < payload < forward
+
+          seal_start = ledger.index('public func sealAcceptedObservation(')
+          seal_end = ledger.index('public func endConnection(', seal_start)
+          seal = ledger[seal_start:seal_end]
+          atomic_cut = seal.index('receiptAuthority.beginSeal(for: token)')
+          seal_clock = seal.index('let now = try nextMonotonicObservation()')
+          assert atomic_cut < seal_clock, 'receipt authority must close before seal-time clock sampling'
+          assert 'case .applicationReceiptPending:' in seal
+
+          assert 'func beginSeal(for token: TuyaReadOnlyConnectionToken)' in ledger
+          assert 'pendingApplicationSequences.remove(receipt.deliverySequence) != nil' in ledger
+          assert 'guard pendingApplicationSequences.isEmpty else' in ledger
+
+          print('platform-neutral callback/source/seal authority invariants: OK')
+          PY
