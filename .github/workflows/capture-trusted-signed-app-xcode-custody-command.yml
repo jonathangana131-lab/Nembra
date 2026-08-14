@@ -8,9 +8,12 @@ permissions:
   contents: read
   pull-requests: read
 
+env:
+  ROOT_SUBJECT_MANIFEST: .github/capture-trusted-signed-app-root-subjects.json
+
 jobs:
   resolve:
-    name: Resolve human-owner-authorized exact Capture custody head
+    name: Resolve human-owner and default-branch root authority
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/capture-signed-install-custody ') &&
@@ -21,10 +24,10 @@ jobs:
     outputs:
       head_sha: ${{ steps.pr.outputs.head_sha }}
       pr_number: ${{ steps.pr.outputs.pr_number }}
-      same_repo: ${{ steps.pr.outputs.same_repo }}
+      control_sha: ${{ steps.pr.outputs.control_sha }}
 
     steps:
-      - name: Resolve immutable live PR head from exact human-owner command
+      - name: Resolve immutable human-owner request and trusted control SHA
         id: pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
@@ -39,14 +42,19 @@ jobs:
               return
             }
 
-            const body = comment.body.trim()
-            const match = body.match(/^\/capture-signed-install-custody ([0-9a-fA-F]{40})$/)
+            const match = comment.body.trim().match(/^\/capture-signed-install-custody ([0-9a-fA-F]{40})$/)
             if (!match) {
-              core.setFailed('Trusted signed-app custody command must be exactly /capture-signed-install-custody <40-hex-head-sha>.')
+              core.setFailed('Command must be exactly /capture-signed-install-custody <40-hex-live-head-sha>.')
               return
             }
 
             const requestedHead = match[1].toLowerCase()
+            const controlSHA = context.sha.toLowerCase()
+            if (!/^[0-9a-f]{40}$/.test(controlSHA)) {
+              core.setFailed('Default-branch workflow control SHA is malformed.')
+              return
+            }
+
             const response = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -54,30 +62,122 @@ jobs:
             })
             const pr = response.data
             const repository = `${context.repo.owner}/${context.repo.repo}`
-            const sameRepo = pr.head.repo.full_name === repository
-
-            core.info(`Trusted workflow source SHA: ${context.sha}`)
-            core.info(`Human-owner-authorized PR #${pr.number} head: ${requestedHead}`)
-            core.info(`Live PR head: ${pr.head.sha}`)
-
-            if (pr.state !== 'open') {
-              core.setFailed('Trusted signed-app custody requires an open pull request.')
-            }
-            if (!sameRepo) {
-              core.setFailed('Trusted signed-app custody refuses fork-controlled source.')
-            }
+            if (pr.state !== 'open') core.setFailed('Trusted custody requires an open pull request.')
+            if (pr.head.repo.full_name !== repository) core.setFailed('Trusted custody refuses fork-controlled source.')
             if (pr.head.sha.toLowerCase() !== requestedHead) {
-              core.setFailed('Owner-authorized SHA is not the live PR head; stale authority is non-evidence.')
+              core.setFailed('Human-authorized SHA is not the live PR head; stale authority is non-evidence.')
             }
 
+            core.info(`Default-branch trusted control SHA: ${controlSHA}`)
+            core.info(`Human-authorized PR #${pr.number} exact head: ${requestedHead}`)
             core.setOutput('head_sha', requestedHead)
             core.setOutput('pr_number', String(pr.number))
-            core.setOutput('same_repo', String(sameRepo))
+            core.setOutput('control_sha', controlSHA)
+
+      - name: Checkout immutable trusted control bytes
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ steps.pr.outputs.control_sha }}
+          path: trusted-control
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout immutable candidate as data only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ steps.pr.outputs.head_sha }}
+          path: candidate
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify default-branch authorization and candidate Git subjects
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          EXPECTED_CONTROL_SHA: ${{ steps.pr.outputs.control_sha }}
+        run: |
+          set -euo pipefail
+          export GIT_NO_REPLACE_OBJECTS=1
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_GLOBAL=/dev/null
+
+          test "$(git -C trusted-control rev-parse --verify HEAD^{commit})" = "$EXPECTED_CONTROL_SHA"
+          test "$(git -C candidate rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+
+          /usr/bin/python3 -B -I - \
+            "trusted-control/$ROOT_SUBJECT_MANIFEST" candidate "$EXPECTED_HEAD_SHA" <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          manifest_path = Path(sys.argv[1])
+          candidate = Path(sys.argv[2])
+          head = sys.argv[3]
+          required_exec = {
+              'scripts/ci/capture_signed_app_build_origin_custody.py',
+              'scripts/ci/capture_signed_app_install_custody.py',
+              'scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py',
+              'scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py',
+          }
+          required_read = {'scripts/field/install_one_time_capture.command'}
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if set(manifest) != {'schemaVersion', 'authorizedCandidates'} or manifest['schemaVersion'] != 1:
+              raise SystemExit('trusted root-subject manifest schema is not exact v1')
+          authorized = manifest['authorizedCandidates']
+          if not isinstance(authorized, dict):
+              raise SystemExit('authorizedCandidates must be an object')
+          entry = authorized.get(head)
+          if not isinstance(entry, dict):
+              raise SystemExit('exact candidate is not authorized by the default-branch root-subject manifest')
+          if set(entry) != {'rootExecutableSubjects', 'rootReadOnlySubjects'}:
+              raise SystemExit('candidate authorization keys are not exact')
+          root_exec = entry['rootExecutableSubjects']
+          root_read = entry['rootReadOnlySubjects']
+          if not isinstance(root_exec, dict) or set(root_exec) != required_exec:
+              raise SystemExit('root executable subject set is not exact')
+          if not isinstance(root_read, dict) or set(root_read) != required_read:
+              raise SystemExit('root read-only subject set is not exact')
+
+          env = os.environ.copy()
+          env.update({
+              'GIT_NO_REPLACE_OBJECTS': '1',
+              'GIT_CONFIG_NOSYSTEM': '1',
+              'GIT_CONFIG_GLOBAL': '/dev/null',
+          })
+          for role, subjects in (('exec', root_exec), ('read', root_read)):
+              for path, expected_oid in sorted(subjects.items()):
+                  if re.fullmatch(r'[0-9a-f]{40}', expected_oid or '') is None:
+                      raise SystemExit(f'malformed admitted blob for {path}')
+                  result = subprocess.run(
+                      ['/usr/bin/git', '-C', str(candidate), 'ls-tree', 'HEAD', '--', path],
+                      check=True, capture_output=True, text=True, env=env,
+                  ).stdout.strip().split()
+                  if len(result) != 4 or result[1] != 'blob' or result[0] not in {'100644', '100755'}:
+                      raise SystemExit(f'admitted subject is not one regular Git blob: {path}')
+                  if result[2] != expected_oid:
+                      raise SystemExit(f'default-branch blob pin does not match candidate tree: {path}')
+                  print(f'authorized {role} subject {path} blob={expected_oid}')
+          PY
+
+      - name: Mechanically reject candidate-checkout root execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='trusted-control/.github/workflows/capture-trusted-signed-app-xcode-custody-command.yml'
+          test -f "$workflow"
+          ! /usr/bin/grep -E '/usr/bin/sudo[^\n]*(candidate/|candidate\$|candidate")' "$workflow"
+          ! /usr/bin/grep -E '/usr/bin/python3[^\n]*(candidate/|candidate\$|candidate")' "$workflow"
+          /usr/bin/grep -Fq 'authorizedCandidates' "$workflow"
+          /usr/bin/grep -Fq 'performed_via_github_app == null' "$workflow"
+          /usr/bin/grep -Fq 'trusted_root/scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py' "$workflow"
+          /usr/bin/grep -Fq 'trusted_root/scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py' "$workflow"
 
   trusted-xcode-custody:
-    name: Run human-owner-authorized root/Xcode custody probe
+    name: Run default-branch-admitted root/Xcode custody probe
     needs: resolve
-    if: needs.resolve.outputs.same_repo == 'true'
     runs-on: xcode-27
     timeout-minutes: 25
     concurrency:
@@ -85,7 +185,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Reject stale head before scarce privileged Mac work
+      - name: Reject head movement before scarce privileged Mac work
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
@@ -101,59 +201,168 @@ jobs:
             const repository = `${context.repo.owner}/${context.repo.repo}`
             if (pr.state !== 'open') core.setFailed('PR closed before trusted custody started.')
             if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed before trusted custody.')
-            if (pr.head.sha.toLowerCase() !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved before trusted custody; stale run is non-evidence.')
+            if (pr.head.sha.toLowerCase() !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved before trusted custody; stale run is non-evidence.')
+            }
 
-      - name: Checkout immutable human-owner-authorized head
+      - name: Checkout immutable trusted control bytes
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ needs.resolve.outputs.head_sha }}
+          ref: ${{ needs.resolve.outputs.control_sha }}
+          path: trusted-control
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Bind exact candidate and fixed privileged subjects
+      - name: Checkout immutable candidate as data only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+          path: candidate
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Rebind exact control, candidate, and admitted Git subjects
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          EXPECTED_CONTROL_SHA: ${{ needs.resolve.outputs.control_sha }}
         run: |
           set -euo pipefail
-          actual="$(/usr/bin/git rev-parse --verify HEAD^{commit} | /usr/bin/tr '[:upper:]' '[:lower:]')"
-          test "$actual" = "$EXPECTED_HEAD_SHA"
+          export GIT_NO_REPLACE_OBJECTS=1
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_GLOBAL=/dev/null
+          test "$(/usr/bin/git -C trusted-control rev-parse --verify HEAD^{commit})" = "$EXPECTED_CONTROL_SHA"
+          test "$(/usr/bin/git -C candidate rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
 
-          for path in \
-            scripts/ci/capture_signed_app_build_origin_custody.py \
-            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
-            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
-          do
-            test -f "$path"
-            test ! -L "$path"
-            mode="$(/usr/bin/git ls-tree HEAD -- "$path" | /usr/bin/awk '{print $1}')"
-            case "$mode" in
-              100644|100755) ;;
-              *) printf 'Privileged subject is not a regular Git blob: %s mode=%s\n' "$path" "$mode" >&2; exit 1 ;;
-            esac
-            blob="$(/usr/bin/git rev-parse "HEAD:$path")"
-            test "$(/usr/bin/git cat-file -t "$blob")" = blob
-            printf 'Authorized subject %s blob=%s\n' "$path" "$blob"
-          done
+          /usr/bin/python3 -B -I - \
+            "trusted-control/$ROOT_SUBJECT_MANIFEST" candidate "$EXPECTED_HEAD_SHA" "$RUNNER_TEMP/nembra-authorized-root-subjects.tsv" <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
 
-          test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
+          manifest_path, candidate_path, head, output_path = sys.argv[1:]
+          candidate = Path(candidate_path)
+          required_exec = {
+              'scripts/ci/capture_signed_app_build_origin_custody.py',
+              'scripts/ci/capture_signed_app_install_custody.py',
+              'scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py',
+              'scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py',
+          }
+          required_read = {'scripts/field/install_one_time_capture.command'}
+          manifest = json.loads(Path(manifest_path).read_text(encoding='utf-8'))
+          if set(manifest) != {'schemaVersion', 'authorizedCandidates'} or manifest['schemaVersion'] != 1:
+              raise SystemExit('trusted root-subject manifest schema is not exact v1')
+          entry = manifest['authorizedCandidates'].get(head)
+          if not isinstance(entry, dict) or set(entry) != {'rootExecutableSubjects', 'rootReadOnlySubjects'}:
+              raise SystemExit('exact candidate lacks a complete default-branch root authorization')
+          root_exec = entry['rootExecutableSubjects']
+          root_read = entry['rootReadOnlySubjects']
+          if not isinstance(root_exec, dict) or set(root_exec) != required_exec:
+              raise SystemExit('root executable subject set is not exact')
+          if not isinstance(root_read, dict) or set(root_read) != required_read:
+              raise SystemExit('root read-only subject set is not exact')
+
+          env = os.environ.copy()
+          env.update({'GIT_NO_REPLACE_OBJECTS':'1','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null'})
+          rows = []
+          for role, subjects in (('exec', root_exec), ('read', root_read)):
+              for path, expected_oid in sorted(subjects.items()):
+                  if re.fullmatch(r'[0-9a-f]{40}', expected_oid or '') is None:
+                      raise SystemExit(f'malformed admitted blob for {path}')
+                  fields = subprocess.run(
+                      ['/usr/bin/git','-C',str(candidate),'ls-tree','HEAD','--',path],
+                      check=True,capture_output=True,text=True,env=env,
+                  ).stdout.strip().split()
+                  if len(fields) != 4 or fields[1] != 'blob' or fields[0] not in {'100644','100755'}:
+                      raise SystemExit(f'admitted subject is not one regular Git blob: {path}')
+                  if fields[2] != expected_oid:
+                      raise SystemExit(f'default-branch blob pin does not match candidate tree: {path}')
+                  rows.append(f'{role}\t{path}\t{expected_oid}\n')
+          Path(output_path).write_text(''.join(rows), encoding='utf-8')
+          PY
+
+          test -s "$RUNNER_TEMP/nembra-authorized-root-subjects.tsv"
           /usr/bin/xcodebuild -version
           /usr/bin/swift --version
 
-      - name: Run permanent pre-stage regression through trusted privilege transition
+      - name: Materialize only default-branch-pinned subjects into root-owned custody
+        id: materialize
         shell: bash
         run: |
           set -euo pipefail
-          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-trusted-signed-custody-pycache"
-          /usr/bin/python3 -m py_compile \
-            scripts/ci/capture_signed_app_build_origin_custody.py \
-            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
-            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
-          /usr/bin/sudo -n /usr/bin/python3 -B -I \
-            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          export GIT_NO_REPLACE_OBJECTS=1
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_GLOBAL=/dev/null
 
-      - name: Run fixed root probe entry with trusted field-identity arguments
+          trusted_root="$(/usr/bin/sudo -n /usr/bin/mktemp -d /private/tmp/nembra-trusted-signed-custody.XXXXXX)"
+          case "$trusted_root" in
+            /private/tmp/nembra-trusted-signed-custody.*) ;;
+            *) echo 'Unexpected trusted root path' >&2; exit 1 ;;
+          esac
+          printf 'trusted_root=%s\n' "$trusted_root" >> "$GITHUB_OUTPUT"
+
+          while IFS=$'\t' read -r role path oid; do
+            test -n "$role" && test -n "$path" && test -n "$oid"
+            case "$path" in
+              scripts/ci/capture_signed_app_build_origin_custody.py|\
+              scripts/ci/capture_signed_app_install_custody.py|\
+              scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py|\
+              scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py|\
+              scripts/field/install_one_time_capture.command) ;;
+              *) echo "Unexpected admitted path: $path" >&2; exit 1 ;;
+            esac
+            dest="$trusted_root/$path"
+            /usr/bin/sudo -n /bin/mkdir -p -- "$(/usr/bin/dirname "$dest")"
+            /usr/bin/git -C candidate cat-file blob "$oid" | /usr/bin/sudo -n /usr/bin/tee "$dest" >/dev/null
+            /usr/bin/sudo -n /usr/sbin/chown 0:0 "$dest"
+            /usr/bin/sudo -n /bin/chmod 0400 "$dest"
+          done < "$RUNNER_TEMP/nembra-authorized-root-subjects.tsv"
+
+          /usr/bin/sudo -n /usr/bin/python3 -B -I - \
+            "$trusted_root" "$RUNNER_TEMP/nembra-authorized-root-subjects.tsv" <<'PY'
+          import hashlib
+          import os
+          import stat
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          rows = Path(sys.argv[2]).read_text(encoding='utf-8').splitlines()
+          if len(rows) != 5:
+              raise SystemExit('trusted root subject count is not exact')
+          for row in rows:
+              role, relative, expected = row.split('\t')
+              path = root / relative
+              info = path.lstat()
+              if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0:
+                  raise SystemExit(f'root subject is not a root-owned regular file: {relative}')
+              if stat.S_IMODE(info.st_mode) != 0o400:
+                  raise SystemExit(f'root subject mode is not 0400: {relative}')
+              raw = path.read_bytes()
+              actual = hashlib.sha1(b'blob ' + str(len(raw)).encode('ascii') + b'\0' + raw).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f'root materialization Git blob mismatch: {relative}')
+          PY
+
+          /usr/bin/sudo -n /usr/bin/find "$trusted_root" -type d -exec /bin/chmod 0700 {} +
+
+      - name: Run admitted pre-stage regression from root-owned bytes
         shell: bash
+        env:
+          TRUSTED_ROOT: ${{ steps.materialize.outputs.trusted_root }}
+        run: |
+          set -euo pipefail
+          test -n "$TRUSTED_ROOT"
+          /usr/bin/sudo -n /usr/bin/python3 -B -I \
+            "$TRUSTED_ROOT/scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py"
+
+      - name: Run admitted real-Xcode root probe from root-owned bytes
+        shell: bash
+        env:
+          TRUSTED_ROOT: ${{ steps.materialize.outputs.trusted_root }}
         run: |
           set -euo pipefail
           field_uid="$(/usr/bin/id -u)"
@@ -171,8 +380,8 @@ jobs:
           done
 
           fixture="$(/usr/bin/mktemp -d "$RUNNER_TEMP/nembra-trusted-xcode-package.XXXXXX")"
-          cleanup() { /bin/rm -rf -- "$fixture"; }
-          trap cleanup EXIT
+          cleanup_fixture() { /bin/rm -rf -- "$fixture"; }
+          trap cleanup_fixture EXIT
           package="$fixture/package"
           /bin/mkdir -p "$package/Sources/OriginDedicatedUIDProof"
           /bin/cat > "$package/Package.swift" <<'SWIFT'
@@ -185,7 +394,7 @@ jobs:
               targets: [.executableTarget(name: "OriginDedicatedUIDProof")]
           )
           SWIFT
-          printf '%s\n' 'print("Nembra trusted human-owner-authorized Xcode custody proof")' \
+          printf '%s\n' 'print("Nembra default-branch-admitted Xcode custody proof")' \
             > "$package/Sources/OriginDedicatedUIDProof/main.swift"
 
           root_args=(
@@ -202,14 +411,12 @@ jobs:
           output="$RUNNER_TEMP/nembra-trusted-xcode-custody-output.txt"
           set +e
           /usr/bin/sudo -n /usr/bin/python3 -B -I \
-            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py \
+            "$TRUSTED_ROOT/scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py" \
             "${root_args[@]}" >"$output" 2>&1
           rc=$?
           set -e
           /bin/cat "$output"
-          if [[ "$rc" != 0 ]]; then
-            exit "$rc"
-          fi
+          if [[ "$rc" != 0 ]]; then exit "$rc"; fi
 
           active_joined="${active_groups[*]}"
           /usr/bin/python3 -B -I - "$output" "$field_uid" "$field_gid" "$active_joined" <<'PY'
@@ -217,47 +424,61 @@ jobs:
           import sys
           from pathlib import Path
 
-          marker = "NEMBRA_REAL_XCODE_ORIGIN_JSON="
-          output = Path(sys.argv[1]).read_text(encoding="utf-8")
+          marker = 'NEMBRA_REAL_XCODE_ORIGIN_JSON='
+          output = Path(sys.argv[1]).read_text(encoding='utf-8')
           expected_uid = int(sys.argv[2])
           expected_gid = int(sys.argv[3])
           expected_groups = [int(value) for value in sys.argv[4].split()] if sys.argv[4] else []
           records = [line[len(marker):] for line in output.splitlines() if line.startswith(marker)]
           if len(records) != 1:
-              raise SystemExit("trusted custody produced missing or ambiguous evidence")
+              raise SystemExit('trusted custody produced missing or ambiguous evidence')
           evidence = json.loads(records[0])
-          build_groups = evidence.get("buildDirectoryServiceGroups")
+          build_groups = evidence.get('buildDirectoryServiceGroups')
           required = (
-              evidence.get("schemaVersion") == 5
-              and evidence.get("fieldUID") == expected_uid
-              and evidence.get("fieldPrimaryGID") == expected_gid
-              and evidence.get("fieldActiveSupplementaryGroups") == expected_groups
-              and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
+              evidence.get('schemaVersion') == 5
+              and evidence.get('fieldUID') == expected_uid
+              and evidence.get('fieldPrimaryGID') == expected_gid
+              and evidence.get('fieldActiveSupplementaryGroups') == expected_groups
+              and evidence.get('fieldActiveGroupsSubsetOfDirectoryService') is True
               and isinstance(build_groups, list)
-              and evidence.get("buildPrimaryGID") in build_groups
-              and evidence.get("buildEffectiveGroupAuthorityAttested") is True
-              and evidence.get("execBoundCredentialAttestationUsed") is True
-              and evidence.get("fieldGroupsContainBuildGID") is False
-              and evidence.get("fieldActiveGroupsContainBuildGID") is False
-              and evidence.get("buildIdentityDistinctFromField") is True
-              and evidence.get("xcodebuildReturnCode") == 0
-              and evidence.get("fieldAttackReturnCode") != 0
-              and evidence.get("formerBuildWritablePathAttackReturnCode") != 0
-              and evidence.get("nonForcedDetachReturnCode") == 0
-              and evidence.get("rootReadonlyAttackReturnCode") != 0
-              and evidence.get("formerBuildReadonlyAttackReturnCode") != 0
-              and evidence.get("readonlyNonForcedDetachReturnCode") == 0
-              and evidence.get("buildPrincipalRetired") is True
-              and evidence.get("compilerProductSHA256") == evidence.get("readonlyRemountSHA256")
-              and evidence.get("physicalAuthorityCreated") is False
+              and evidence.get('buildPrimaryGID') in build_groups
+              and evidence.get('buildEffectiveGroupAuthorityAttested') is True
+              and evidence.get('execBoundCredentialAttestationUsed') is True
+              and evidence.get('fieldGroupsContainBuildGID') is False
+              and evidence.get('fieldActiveGroupsContainBuildGID') is False
+              and evidence.get('buildIdentityDistinctFromField') is True
+              and evidence.get('xcodebuildReturnCode') == 0
+              and evidence.get('fieldAttackReturnCode') != 0
+              and evidence.get('formerBuildWritablePathAttackReturnCode') != 0
+              and evidence.get('nonForcedDetachReturnCode') == 0
+              and evidence.get('rootReadonlyAttackReturnCode') != 0
+              and evidence.get('formerBuildReadonlyAttackReturnCode') != 0
+              and evidence.get('readonlyNonForcedDetachReturnCode') == 0
+              and evidence.get('buildPrincipalRetired') is True
+              and evidence.get('compilerProductSHA256') == evidence.get('readonlyRemountSHA256')
+              and evidence.get('physicalAuthorityCreated') is False
           )
           if not required:
-              raise SystemExit(f"trusted custody evidence failed semantic checks: {evidence!r}")
+              raise SystemExit(f'trusted custody evidence failed semantic checks: {evidence!r}')
           PY
 
           printf 'Trusted field identity: %s uid=%s gid=%s groups=%s\n' \
             "$field_user" "$field_uid" "$field_gid" "$active_joined"
-          test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Verify root subjects unchanged and remove private materialization
+        if: always()
+        shell: bash
+        env:
+          TRUSTED_ROOT: ${{ steps.materialize.outputs.trusted_root }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TRUSTED_ROOT:-}" ]]; then exit 0; fi
+          case "$TRUSTED_ROOT" in
+            /private/tmp/nembra-trusted-signed-custody.*) ;;
+            *) echo 'Refusing unexpected cleanup path' >&2; exit 1 ;;
+          esac
+          /usr/bin/sudo -n /bin/rm -rf -- "$TRUSTED_ROOT"
+          test ! -e "$TRUSTED_ROOT"
 
       - name: Reject head movement after privileged evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -275,4 +496,6 @@ jobs:
             const repository = `${context.repo.owner}/${context.repo.repo}`
             if (pr.state !== 'open') core.setFailed('PR closed during trusted custody.')
             if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed during trusted custody.')
-            if (pr.head.sha.toLowerCase() !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved during trusted custody; run is non-evidence.')
+            if (pr.head.sha.toLowerCase() !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed('PR head moved during trusted custody; run is non-evidence.')
+            }
