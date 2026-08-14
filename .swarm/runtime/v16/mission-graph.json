@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 6,
+    "classifiedPRTotal": 7,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1118,7 +1118,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3315,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.206,
+        "similarity": 0.264,
         "title": "[Capture P0][VALIDATION] Re-prove source + private-input custody on current carrier"
       },
       "3316": {
@@ -1131,6 +1131,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.044,
         "title": "[Capture P0][QA] Align authenticated observation copy oracle with shipping language"
+      },
+      "3317": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "e720bd1677ff74efa19579ddd12ca361e57f8980",
+        "lane": "capture-signed-install-custody",
+        "pr": 3317,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.249,
+        "title": "[Capture P0][VALIDATION] Probe APFS sparse-image backing-file custody"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1163,9 +1174,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:01:47Z",
+    "liveRefreshAt": "2026-08-14T23:02:18Z",
     "liveRefreshDuplicatesSuppressed": [
-      3315
+      3317
     ],
     "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4948,10 +4959,10 @@
       "userValue": 7
     }
   },
-  "revision": 237,
+  "revision": 238,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:01:47Z",
+  "updatedAt": "2026-08-14T23:02:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5027,7 +5038,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:01:47Z",
+      "updatedAt": "2026-08-14T23:02:18Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
