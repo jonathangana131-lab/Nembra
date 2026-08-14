@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 299,
+    "classifiedPRTotal": 298,
     "classifiedPRs": {
+      "2791": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2791,
+        "recommendedAction": "independent-review",
+        "similarity": 0.288,
+        "title": "[Capture P0][PHYSICAL GO] Carry reviewed private Tuya authority into Final GO"
+      },
       "2794": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2462,17 +2473,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.193,
         "title": "[Capture P0][CORRECTION] Preserve receipt authority after premature seal"
-      },
-      "3307": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "foundry-v17-activation",
-        "pr": 3307,
-        "recommendedAction": "independent-review",
-        "similarity": 0.147,
-        "title": "Activate Swarm Foundry 17 congestion control"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:53:10Z",
+    "liveRefreshAt": "2026-08-14T10:44:39Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 175,
+  "revision": 176,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:55:17Z",
+  "updatedAt": "2026-08-14T10:47:31Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:53:10Z",
+      "updatedAt": "2026-08-14T10:44:39Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
