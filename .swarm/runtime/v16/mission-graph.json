@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 286,
     "classifiedPRs": {
+      "2711": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2711,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.221,
+        "title": "[Capture P0][RED TEAM] Bind checkout root before trusting private writer path"
+      },
       "2719": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -1998,7 +2009,7 @@
         "lane": "",
         "pr": 2979,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.201,
+        "similarity": 0.207,
         "title": "[P0 Capture][visual] Tighten first fold; fail closed blank evidence"
       },
       "2980": {
@@ -2416,30 +2427,8 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.186,
+        "similarity": 0.086,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
-      },
-      "3246": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3246,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.337,
-        "title": "[Capture P0][RED TEAM] Keep stricter preflight truthful in app UI"
-      },
-      "3251": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3251,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.336,
-        "title": "[Capture P0][RED TEAM] Preserve semantic incomplete-horizon terminal"
       },
       "3253": {
         "classification": "validation",
@@ -2460,7 +2449,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3260,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.19,
+        "similarity": 0.417,
         "title": "[Capture P0][VISUAL VALIDATION] Restore fail-closed standalone iPhone 12 evidence"
       },
       "3262": {
@@ -2473,6 +2462,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.303,
         "title": "[Capture P0][VALIDATION] Harden trusted Apple-signing bootstrap boundary"
+      },
+      "3265": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3265,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.409,
+        "title": "[Capture P0][VISUAL] Re-anchor standalone iPhone 12 evidence on 77c2"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T07:35:43Z",
+    "liveRefreshAt": "2026-08-14T07:38:42Z",
     "liveRefreshDuplicatesSuppressed": [
       3262
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 138,
+  "revision": 139,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T07:38:25Z",
+  "updatedAt": "2026-08-14T07:41:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T07:35:43Z",
+      "updatedAt": "2026-08-14T07:38:42Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
