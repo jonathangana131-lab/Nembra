@@ -70,6 +70,20 @@ class CaptureSelectedXcodeBuildOrchestratorTests(unittest.TestCase):
                 selected_xcodebuild=Path("/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild"),
             )
 
+    def test_frozen_tool_must_remain_inside_frozen_developer_tree(self) -> None:
+        helper = load()
+        developer = Path("/Library/NembraSelectedXcodeFreeze.test/Xcode.app/Contents/Developer")
+        expected = developer / "usr/bin/devicectl"
+        self.assertEqual(helper._require_frozen_tool({"devicectl": expected}, "devicectl", developer), expected)
+        with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+            helper._require_frozen_tool(
+                {"devicectl": Path("/usr/bin/devicectl")},
+                "devicectl",
+                developer,
+            )
+        with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+            helper._require_frozen_tool({}, "devicectl", developer)
+
     def test_git_blob_transport_rejects_substitution(self) -> None:
         helper = load()
         raw = b"accepted selected-Xcode helper bytes\n"
@@ -93,10 +107,15 @@ from pathlib import Path
 def run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob):
     assert field_pid == 4242
     assert source_sha == "a" * 40
+    developer = Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer")
     return (
         Path("/Library/NembraSelectedXcodeFreeze.fixture"),
-        Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"),
-        {"xcodebuild": Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer/usr/bin/xcodebuild")},
+        developer,
+        {
+            "xcodebuild": developer / "usr/bin/xcodebuild",
+            "xctrace": developer / "usr/bin/xctrace",
+            "devicectl": developer / "usr/bin/devicectl",
+        },
         777,
     )
 '''
@@ -123,7 +142,7 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             mock.patch.object(helper.sys, "platform", "darwin"),
             mock.patch.object(helper.os, "geteuid", return_value=0),
         ):
-            stage, fingerprint = helper.orchestrate(
+            stage, fingerprint, developer, xctrace, devicectl = helper.orchestrate(
                 field_pid=4242,
                 source_sha="a" * 40,
                 freeze_launcher_base64=encode(launcher_source),
@@ -143,8 +162,14 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
                     "-version",
                 ],
             )
+        expected_developer = Path(
+            "/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"
+        )
         self.assertEqual(stage, Path("/private/tmp/nembra-authenticated-capture-install.fixture"))
         self.assertEqual(fingerprint, "b" * 64)
+        self.assertEqual(developer, expected_developer)
+        self.assertEqual(xctrace, expected_developer / "usr/bin/xctrace")
+        self.assertEqual(devicectl, expected_developer / "usr/bin/devicectl")
 
     def test_installer_transports_and_invokes_exact_composition(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
