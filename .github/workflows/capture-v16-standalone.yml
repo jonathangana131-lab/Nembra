@@ -1,4 +1,5 @@
 name: Capture V16 Standalone Exact-Head
+# Post-convergence exact-head acceptance trigger. Semantic extension tests run through their owning suite.
 
 on:
   pull_request:
