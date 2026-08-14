@@ -1448,8 +1448,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                         let applicationReceipt: TuyaReadOnlyApplicationReceipt
                         do {
-                            applicationReceipt = try self.sessionLedger.captureApplicationReceipt(
-                                isNonEmpty: true,
+                            applicationReceipt = try self.sessionLedger.captureApplicationDelivery(
                                 for: token
                             )
                         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {

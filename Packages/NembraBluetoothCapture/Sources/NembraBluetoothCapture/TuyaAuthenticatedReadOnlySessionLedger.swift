@@ -277,11 +277,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Synchronously issues one one-shot application-delivery receipt from this exact ledger.
     /// The app calls this only at the trusted SmartLife callback edge, before its first new Task.
     /// The caller cannot choose timestamp, issuer identity, or delivery sequence.
-    public nonisolated func captureApplicationReceipt(
-        isNonEmpty: Bool,
+    public nonisolated func captureApplicationDelivery(
         for token: TuyaReadOnlyConnectionToken
     ) throws -> TuyaReadOnlyApplicationReceipt {
-        try receiptAuthority.captureApplicationReceipt(isNonEmpty: isNonEmpty, for: token)
+        try receiptAuthority.captureApplicationDelivery(for: token)
     }
 
     /// Releases an issued application receipt that never reached actor consumption. A consumed or
@@ -530,7 +529,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         private var activeToken: TuyaReadOnlyConnectionToken?
         private var nextDeliverySequence: UInt64 = 0
         private var lastIssuedUptimeNanoseconds: UInt64?
-        private var pendingApplicationSequences: Set<UInt64> = []
+        private var pendingApplicationSequences: [UInt64] = []
         private var pendingLivenessSequences: Set<UInt64> = []
 
         init(nowUptimeNanoseconds: @escaping @Sendable () -> UInt64) {
@@ -556,16 +555,14 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             pendingLivenessSequences.removeAll(keepingCapacity: true)
         }
 
-        func captureApplicationReceipt(
-            isNonEmpty: Bool,
+        func captureApplicationDelivery(
             for token: TuyaReadOnlyConnectionToken
         ) throws -> TuyaReadOnlyApplicationReceipt {
             lock.lock()
             defer { lock.unlock() }
             try requireActive(token)
-            guard isNonEmpty else { throw MutationError.emptyApplicationUpdate }
             let (sequence, now) = try issueNextReceipt()
-            pendingApplicationSequences.insert(sequence)
+            pendingApplicationSequences.append(sequence)
             return TuyaReadOnlyApplicationReceipt(
                 issuerID: issuerID,
                 token: token,
@@ -596,8 +593,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         func releaseApplicationReceipt(_ receipt: TuyaReadOnlyApplicationReceipt) {
             lock.lock()
             defer { lock.unlock() }
-            guard receipt.issuerID == issuerID else { return }
-            pendingApplicationSequences.remove(receipt.deliverySequence)
+            guard receipt.issuerID == issuerID,
+                  let index = pendingApplicationSequences.firstIndex(of: receipt.deliverySequence) else { return }
+            pendingApplicationSequences.remove(at: index)
         }
 
         func hasPendingApplicationReceipt(for token: TuyaReadOnlyConnectionToken) -> Bool {
@@ -614,10 +612,19 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             defer { lock.unlock() }
             try requireActive(token)
             guard receipt.issuerID == issuerID,
-                  receipt.token == token,
-                  pendingApplicationSequences.remove(receipt.deliverySequence) != nil else {
+                  receipt.token == token else {
                 throw MutationError.observationAdmissionInvalidOrConsumed
             }
+            guard let first = pendingApplicationSequences.first else {
+                throw MutationError.observationAdmissionInvalidOrConsumed
+            }
+            guard first == receipt.deliverySequence else {
+                guard pendingApplicationSequences.contains(receipt.deliverySequence) else {
+                    throw MutationError.observationAdmissionInvalidOrConsumed
+                }
+                throw MutationError.applicationAdmissionPending
+            }
+            pendingApplicationSequences.removeFirst()
             return receipt.receivedAtUptimeNanoseconds
         }
 
