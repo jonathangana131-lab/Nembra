@@ -7,6 +7,10 @@ privileged process: the freeze launcher first revokes reusable field-user sudo a
 then this helper substitutes only the launcher-returned frozen xcodebuild into the guarded
 build command and calls the accepted build-origin helper directly.
 
+The same freeze also resolves exact xctrace/devicectl subjects. Their paths are returned
+only after the signed app is staged so later install/launch can remain on the same root-
+custodied Xcode namespace while its lifecycle janitor is tied to the exact field shell.
+
 The helper does not discover/install/launch a device, open Bluetooth, interpret Tuya
 traffic, or create physical authority. Accepted-source/private-input and Apple signing
 boundaries remain independent gates.
@@ -60,6 +64,18 @@ def _require_callable(namespace: dict[str, object], name: str, label: str) -> Ca
     return value
 
 
+def _require_frozen_tool(tools: dict[object, object], name: str, frozen_developer: Path) -> Path:
+    value = tools.get(name)
+    if not isinstance(value, Path) or not value.is_absolute():
+        raise SelectedXcodeBuildOrchestratorError(f"selected-Xcode freeze exposes no absolute {name} path")
+    expected_prefix = str(frozen_developer) + os.sep
+    if not str(value).startswith(expected_prefix):
+        raise SelectedXcodeBuildOrchestratorError(f"selected {name} escaped the frozen Developer tree")
+    if "\t" in str(value) or "\n" in str(value):
+        raise SelectedXcodeBuildOrchestratorError(f"selected {name} path contains an invalid separator")
+    return value
+
+
 def _replace_selected_xcode(
     command: Sequence[str],
     *,
@@ -103,7 +119,7 @@ def orchestrate(
     install_custody_base64: str,
     install_custody_blob: str,
     command: Sequence[str],
-) -> tuple[Path, str]:
+) -> tuple[Path, str, Path, Path, Path]:
     if sys.platform != "darwin" or os.geteuid() != 0:
         raise SelectedXcodeBuildOrchestratorError("selected-Xcode build composition requires root on macOS")
     if field_pid <= 1:
@@ -130,11 +146,13 @@ def orchestrate(
     if not isinstance(freeze_result, tuple) or len(freeze_result) != 4:
         raise SelectedXcodeBuildOrchestratorError("selected-Xcode freeze launcher returned malformed authority")
     _namespace, frozen_developer, tools, _janitor_pid = freeze_result
-    if not isinstance(frozen_developer, Path) or not isinstance(tools, dict):
+    if not isinstance(frozen_developer, Path) or not frozen_developer.is_absolute() or not isinstance(tools, dict):
         raise SelectedXcodeBuildOrchestratorError("selected-Xcode freeze launcher returned invalid paths")
-    selected_xcodebuild = tools.get("xcodebuild")
-    if not isinstance(selected_xcodebuild, Path):
-        raise SelectedXcodeBuildOrchestratorError("selected-Xcode freeze exposes no xcodebuild path")
+    if "\t" in str(frozen_developer) or "\n" in str(frozen_developer):
+        raise SelectedXcodeBuildOrchestratorError("frozen Developer path contains an invalid separator")
+    selected_xcodebuild = _require_frozen_tool(tools, "xcodebuild", frozen_developer)
+    selected_xctrace = _require_frozen_tool(tools, "xctrace", frozen_developer)
+    selected_devicectl = _require_frozen_tool(tools, "devicectl", frozen_developer)
 
     guarded_command = _replace_selected_xcode(
         command,
@@ -160,7 +178,7 @@ def orchestrate(
     stage_root, fingerprint = result
     if not isinstance(stage_root, Path) or not isinstance(fingerprint, str):
         raise SelectedXcodeBuildOrchestratorError("signed build-origin helper returned invalid custody types")
-    return stage_root, fingerprint
+    return stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl
 
 
 def _parse(argv: Sequence[str]) -> argparse.Namespace:
@@ -187,7 +205,7 @@ def _parse(argv: Sequence[str]) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         args = _parse(sys.argv[1:] if argv is None else argv)
-        stage_root, fingerprint = orchestrate(
+        stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl = orchestrate(
             field_pid=args.field_pid,
             source_sha=args.source_sha.lower(),
             freeze_launcher_base64=args.freeze_launcher_base64,
@@ -200,7 +218,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             install_custody_blob=args.install_custody_blob,
             command=args.command,
         )
-        sys.stdout.write(f"{stage_root}\t{fingerprint}\n")
+        values = (
+            str(stage_root),
+            fingerprint,
+            str(frozen_developer),
+            str(selected_xctrace),
+            str(selected_devicectl),
+        )
+        if any("\t" in value or "\n" in value for value in values):
+            raise SelectedXcodeBuildOrchestratorError("selected-Xcode build result contains malformed separators")
+        sys.stdout.write("\t".join(values) + "\n")
         return 0
     except Exception as error:
         print(f"ERROR: selected-Xcode signed-build composition failed: {error}", file=sys.stderr)
