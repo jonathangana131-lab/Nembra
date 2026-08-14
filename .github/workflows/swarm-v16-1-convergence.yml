@@ -10,6 +10,7 @@ on:
       - 'scripts/swarm_v16_1_pr_admission.py'
       - 'scripts/ci/tests/test_swarm_v16_mission_graph.py'
       - 'scripts/ci/tests/test_swarm_v16_1_convergence.py'
+      - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
       - '.github/workflows/swarm-v16-1-*.yml'
   push:
     branches:
@@ -22,6 +23,7 @@ on:
       - 'scripts/swarm_v16_1_pr_admission.py'
       - 'scripts/ci/tests/test_swarm_v16_mission_graph.py'
       - 'scripts/ci/tests/test_swarm_v16_1_convergence.py'
+      - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
       - '.github/workflows/swarm-v16-1-*.yml'
   workflow_dispatch:
 
@@ -66,7 +68,8 @@ jobs:
             scripts/swarm_v16_1_pr_admission.py \
             scripts/swarmcp/*.py \
             scripts/ci/tests/test_swarm_v16_mission_graph.py \
-            scripts/ci/tests/test_swarm_v16_1_convergence.py
+            scripts/ci/tests/test_swarm_v16_1_convergence.py \
+            scripts/ci/tests/test_swarm_v16_1_rollout.py
 
       - name: Validate policy config
         shell: bash
@@ -93,7 +96,10 @@ jobs:
 
       - name: Run V16.1 convergence suite
         shell: bash
-        run: python3 scripts/ci/tests/test_swarm_v16_1_convergence.py
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_swarm_v16_1_convergence.py
+          python3 scripts/ci/tests/test_swarm_v16_1_rollout.py
 
       - name: Run neighboring V16 operations and activation regressions
         shell: bash
