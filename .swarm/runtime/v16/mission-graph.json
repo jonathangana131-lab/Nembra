@@ -703,7 +703,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "3b0a2de6992e057716dd8ea3248de89a7c032be2",
+        "headSHA": "bce7df7994cda0c43118995ec0b7a84e2bd78537",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 10,
+    "classifiedPRTotal": 9,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1087,17 +1087,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.179,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
-      },
-      "3313": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "shared-xcode-launch-metric",
-        "pr": 3313,
-        "recommendedAction": "independent-review",
-        "similarity": 0.0,
-        "title": "[QA V14] Isolate landscape launch metric from residual Dashboard animation"
       },
       "3314": {
         "classification": "requires-review",
@@ -1201,17 +1190,23 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [],
+    "livePRHeadUpdates": [
+      {
+        "from": "3b0a2de6992e057716dd8ea3248de89a7c032be2",
+        "to": "bce7df7994cda0c43118995ec0b7a84e2bd78537",
+        "workItemId": "live-pr-3142"
+      }
+    ],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:13:42Z",
+    "liveRefreshAt": "2026-08-14T23:14:14Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
-    "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
+    "liveRefreshMainSHA": "cb339e500ccf7b164dcc72452368e1aa22720e35",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -4992,10 +4987,10 @@
       "userValue": 7
     }
   },
-  "revision": 271,
+  "revision": 272,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:13:43Z",
+  "updatedAt": "2026-08-14T23:14:14Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5064,14 +5059,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "3b0a2de6992e057716dd8ea3248de89a7c032be2",
+        "headSHA": "bce7df7994cda0c43118995ec0b7a84e2bd78537",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:13:42Z",
+      "updatedAt": "2026-08-14T23:14:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
