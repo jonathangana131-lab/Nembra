@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 94,
+    "classifiedPRTotal": 83,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1660,17 +1660,6 @@
         "similarity": 0.137,
         "title": "[recover-es80-passive-capture-final] Gate latest passive capture truth"
       },
-      "300": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 300,
-        "recommendedAction": "independent-review",
-        "similarity": 0.099,
-        "title": "[ride-history-duration] Attach monotonic duration to completed history"
-      },
       "301": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1679,7 +1668,7 @@
         "lane": "",
         "pr": 301,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.151,
+        "similarity": 0.138,
         "title": "[es80-offline-report] Turn capture artifacts into framing reports"
       },
       "302": {
@@ -1690,7 +1679,7 @@
         "lane": "",
         "pr": 302,
         "recommendedAction": "independent-review",
-        "similarity": 0.129,
+        "similarity": 0.112,
         "title": "[propulsion-envelope-persistence] Make learned power calibration durable"
       },
       "303": {
@@ -1715,17 +1704,6 @@
         "similarity": 0.23,
         "title": "[recover-home-ride-summary] Restore compact completed-ride truth on current main"
       },
-      "307": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 307,
-        "recommendedAction": "independent-review",
-        "similarity": 0.219,
-        "title": "[recover-es80-correlation] Reconcile repeated markers onto hardened capture runtime"
-      },
       "309": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -1745,7 +1723,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.07,
+        "similarity": 0.069,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "316": {
@@ -1759,61 +1737,6 @@
         "similarity": 0.187,
         "title": "[simulator-truth] Recover synthetic QA profile on V13 main"
       },
-      "327": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 327,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.173,
-        "title": "[navigation] Recover MapKit adapter onto V13 main"
-      },
-      "328": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 328,
-        "recommendedAction": "independent-review",
-        "similarity": 0.206,
-        "title": "[es80-capture-readiness] Gate passive artifacts for offline correlation"
-      },
-      "333": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 333,
-        "recommendedAction": "independent-review",
-        "similarity": 0.114,
-        "title": "[propulsion source identity] Fence foreign lifecycle callbacks"
-      },
-      "334": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 334,
-        "recommendedAction": "independent-review",
-        "similarity": 0.236,
-        "title": "[es80-capture-comparison-truth] Preserve controlled-comparison provenance"
-      },
-      "336": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 336,
-        "recommendedAction": "independent-review",
-        "similarity": 0.116,
-        "title": "[propulsion semantics] Fence verified near-max wording"
-      },
       "34": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1825,17 +1748,6 @@
         "similarity": 0.426,
         "title": "[battery-evidence-domain] Separate measured, observed, estimated, and display battery truth"
       },
-      "342": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 342,
-        "recommendedAction": "independent-review",
-        "similarity": 0.101,
-        "title": "[ride peak provenance] Seal verified checkpoint restore"
-      },
       "347": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1844,7 +1756,7 @@
         "lane": "",
         "pr": 347,
         "recommendedAction": "independent-review",
-        "similarity": 0.197,
+        "similarity": 0.193,
         "title": "[es80-stationary-capture-manifest] Bind physical setup to exact capture bytes"
       },
       "349": {
@@ -1869,17 +1781,6 @@
         "similarity": 0.105,
         "title": "[propulsion accessibility identity] Bind assistive truth to vehicle scope"
       },
-      "353": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 353,
-        "recommendedAction": "independent-review",
-        "similarity": 0.19,
-        "title": "[recover es80 passive capture] Compose current-main parent for truth closure"
-      },
       "356": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1891,28 +1792,6 @@
         "similarity": 0.204,
         "title": "[es80 home hero] Integrate primary vehicle artwork into Home"
       },
-      "357": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 357,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.15,
-        "title": "[validation-only] Capture ES80 Home hero on truthful ordinary launch"
-      },
-      "358": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 358,
-        "recommendedAction": "independent-review",
-        "similarity": 0.28,
-        "title": "[es80 target correlation] Fail closed on physical power-cycle candidate delta"
-      },
       "361": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1921,7 +1800,7 @@
         "lane": "",
         "pr": 361,
         "recommendedAction": "independent-review",
-        "similarity": 0.271,
+        "similarity": 0.192,
         "title": "[es80 observation windows] Isolate repeated power-cycle scans by manager epoch"
       },
       "363": {
@@ -1932,7 +1811,7 @@
         "lane": "",
         "pr": 363,
         "recommendedAction": "independent-review",
-        "similarity": 0.205,
+        "similarity": 0.203,
         "title": "[es80 capture] Preserve immutable observation horizon evidence"
       },
       "38": {
@@ -2131,7 +2010,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:59:35Z",
+    "liveRefreshAt": "2026-08-14T11:00:14Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5914,10 +5793,10 @@
       "userValue": 7
     }
   },
-  "revision": 187,
+  "revision": 188,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:59:55Z",
+  "updatedAt": "2026-08-14T11:00:28Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5993,7 +5872,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:59:35Z",
+      "updatedAt": "2026-08-14T11:00:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
