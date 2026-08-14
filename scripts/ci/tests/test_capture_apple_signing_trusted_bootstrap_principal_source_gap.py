@@ -66,14 +66,20 @@ def main() -> int:
         "numeric identity freshness no longer has the reviewed records-plus-UID-only shape; re-review/re-anchor diagnostic",
     )
 
+    retirement_wait = section(source, "def wait_for_numeric_uid_processes", "def retire_numeric_uid_processes")
+    require(
+        "last = numeric_uid_processes(numeric_id)" in retirement_wait,
+        "pinned parent retirement waiter no longer delegates to the reviewed UID-only process inventory",
+    )
+
     retirement = section(source, "def retire_numeric_uid_processes", "def ds_record_exists")
     require(
         'for selector in ("-U", "-u")' in retirement,
         "pinned parent UID retirement selectors moved; re-review/re-anchor diagnostic",
     )
     require(
-        "numeric_uid_processes(numeric_id)" in retirement,
-        "pinned parent no longer proves retirement through the reviewed UID-only process inventory",
+        "wait_for_numeric_uid_processes(numeric_id, present=False" in retirement,
+        "pinned parent no longer closes retirement through the reviewed UID-only process waiter",
     )
 
     # This source witness deliberately does not prescribe the eventual macOS implementation for
