@@ -17,7 +17,7 @@ import zlib
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_PIXELS = 20_000_000
-DARK_CHANNEL_THRESHOLD = 32
+COLOR_BUCKET_SHIFT = 4
 CONTENT_FRACTION_DENOMINATOR = 500
 MIN_CONTENT_PIXELS = 1_024
 VERTICAL_BANDS = 4
@@ -95,6 +95,10 @@ def _parse_png(path: Path) -> tuple[int, int, int, bytes]:
     return width, height, color_type, bytes(idat)
 
 
+def _color_bucket(r: int, g: int, b: int) -> tuple[int, int, int]:
+    return (r >> COLOR_BUCKET_SHIFT, g >> COLOR_BUCKET_SHIFT, b >> COLOR_BUCKET_SHIFT)
+
+
 def inspect_rendered_content(path: Path) -> dict[str, object]:
     width, height, color_type, compressed = _parse_png(path)
     bytes_per_pixel = 4 if color_type == 6 else 3
@@ -111,8 +115,9 @@ def inspect_rendered_content(path: Path) -> dict[str, object]:
         raise PNGGuardError("screenshot has no app-content region")
     previous = bytearray(stride)
     cursor = 0
-    non_dark_pixels = 0
-    band_counts = [0] * VERTICAL_BANDS
+    color_counts: dict[tuple[int, int, int], int] = {}
+    band_color_counts: list[dict[tuple[int, int, int], int]] = [dict() for _ in range(VERTICAL_BANDS)]
+    band_pixel_counts = [0] * VERTICAL_BANDS
     for y in range(height):
         filter_type = raw[cursor]
         cursor += 1
@@ -139,25 +144,37 @@ def inspect_rendered_content(path: Path) -> dict[str, object]:
         if y >= app_y_start:
             band = min(VERTICAL_BANDS - 1, ((y - app_y_start) * VERTICAL_BANDS) // app_rows)
             for x in range(0, stride, bytes_per_pixel):
-                if max(reconstructed[x], reconstructed[x + 1], reconstructed[x + 2]) > DARK_CHANNEL_THRESHOLD:
-                    non_dark_pixels += 1
-                    band_counts[band] += 1
+                bucket = _color_bucket(reconstructed[x], reconstructed[x + 1], reconstructed[x + 2])
+                color_counts[bucket] = color_counts.get(bucket, 0) + 1
+                band_counts = band_color_counts[band]
+                band_counts[bucket] = band_counts.get(bucket, 0) + 1
+                band_pixel_counts[band] += 1
         previous = reconstructed
     app_pixels = width * app_rows
+    if not color_counts or sum(color_counts.values()) != app_pixels:
+        raise PNGGuardError("could not classify app-content pixels")
+    dominant_bucket, dominant_pixels = max(color_counts.items(), key=lambda item: item[1])
+    variant_pixels = app_pixels - dominant_pixels
+    band_variant_pixels = [
+        band_pixel_counts[index] - band_color_counts[index].get(dominant_bucket, 0)
+        for index in range(VERTICAL_BANDS)
+    ]
     required_pixels = max(MIN_CONTENT_PIXELS, app_pixels // CONTENT_FRACTION_DENOMINATOR)
     band_pixels = width * max(1, app_rows // VERTICAL_BANDS)
     required_band_pixels = max(64, band_pixels // 5_000)
-    active_bands = sum(count >= required_band_pixels for count in band_counts)
-    ready = non_dark_pixels >= required_pixels and active_bands >= MIN_ACTIVE_BANDS
+    active_bands = sum(count >= required_band_pixels for count in band_variant_pixels)
+    ready = variant_pixels >= required_pixels and active_bands >= MIN_ACTIVE_BANDS
     return {
         "width": width,
         "height": height,
         "appYStart": app_y_start,
-        "nonDarkPixels": non_dark_pixels,
-        "requiredNonDarkPixels": required_pixels,
+        "dominantColorBucketRGB4": list(dominant_bucket),
+        "dominantColorPixels": dominant_pixels,
+        "variantPixels": variant_pixels,
+        "requiredVariantPixels": required_pixels,
         "activeVerticalBands": active_bands,
         "requiredActiveVerticalBands": MIN_ACTIVE_BANDS,
-        "bandNonDarkPixels": band_counts,
+        "bandVariantPixels": band_variant_pixels,
         "ready": ready,
     }
 

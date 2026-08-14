@@ -40,8 +40,34 @@ with tempfile.TemporaryDirectory() as temp_dir:
     result = guard.inspect_rendered_content(status_only)
     if result["ready"]:
         raise SystemExit(f"status-bar-only screenshot must fail closed: {result}")
-    if result["nonDarkPixels"] != 0:
+    if result["variantPixels"] != 0:
         raise SystemExit(f"status bar leaked into app-content evidence: {result}")
+
+    blank_white = temp / "blank-white.png"
+    blank_white.write_bytes(rgba_png(width, height, lambda _x, _y: (255, 255, 255, 255)))
+    result = guard.inspect_rendered_content(blank_white)
+    if result["ready"] or result["variantPixels"] != 0:
+        raise SystemExit(f"blank white app content must fail closed: {result}")
+
+    # Regress the actual false-positive shape: a bright launch surface plus enough
+    # system-style bottom chrome to exceed the total variant-pixel threshold, but
+    # confined to one app-content band. It must still fail because real product
+    # content has not appeared across the required vertical span.
+    blank_transition = temp / "blank-white-system-chrome.png"
+
+    def blank_transition_pixel(_x: int, y: int) -> tuple[int, int, int, int]:
+        if height - 16 <= y < height:
+            return (174, 174, 174, 255)
+        return (255, 255, 255, 255)
+
+    blank_transition.write_bytes(rgba_png(width, height, blank_transition_pixel))
+    result = guard.inspect_rendered_content(blank_transition)
+    if result["variantPixels"] < result["requiredVariantPixels"]:
+        raise SystemExit(f"blank transition fixture did not exercise the vertical-band guard: {result}")
+    if result["activeVerticalBands"] >= guard.MIN_ACTIVE_BANDS:
+        raise SystemExit(f"blank transition fixture unexpectedly spans product-content bands: {result}")
+    if result["ready"]:
+        raise SystemExit(f"blank white transition with system chrome must fail closed: {result}")
 
     rendered = temp / "rendered.png"
 
@@ -55,9 +81,23 @@ with tempfile.TemporaryDirectory() as temp_dir:
     rendered.write_bytes(rgba_png(width, height, rendered_pixel))
     result = guard.inspect_rendered_content(rendered)
     if not result["ready"]:
-        raise SystemExit(f"non-trivial rendered app content should pass readiness: {result}")
+        raise SystemExit(f"non-trivial dark rendered app content should pass readiness: {result}")
     if result["activeVerticalBands"] < guard.MIN_ACTIVE_BANDS:
-        raise SystemExit(f"rendered proof did not span required app-content bands: {result}")
+        raise SystemExit(f"dark rendered proof did not span required app-content bands: {result}")
+
+    light_rendered = temp / "light-rendered.png"
+
+    def light_rendered_pixel(_x: int, y: int) -> tuple[int, int, int, int]:
+        if status_bar_end + 16 <= y < status_bar_end + 32:
+            return (24, 24, 24, 255)
+        if status_bar_end + 112 <= y < status_bar_end + 128:
+            return (80, 80, 80, 255)
+        return (250, 250, 250, 255)
+
+    light_rendered.write_bytes(rgba_png(width, height, light_rendered_pixel))
+    result = guard.inspect_rendered_content(light_rendered)
+    if not result["ready"]:
+        raise SystemExit(f"non-trivial light rendered app content should pass readiness: {result}")
 
     corrupted = bytearray(rendered.read_bytes())
     corrupted[-5] ^= 0x01
