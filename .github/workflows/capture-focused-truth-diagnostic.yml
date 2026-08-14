@@ -1,0 +1,81 @@
+name: Capture focused truth diagnostic
+
+on:
+  push:
+    branches:
+      - capture/current-main-tuya-readonly-convergence-gpt56
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.event.head_commit.message == 'Diagnose Capture focused truth'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/current-main-tuya-readonly-convergence-gpt56
+          fetch-depth: 0
+
+      - name: Apply candidate app-truth repair without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/capture-app-horizon-patch-go.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/capture-app-horizon-patch-go.yml')
+          text = p.read_text()
+          start = text.index("      - name: Repair Capture app truth\n")
+          end = text.index("\n      - name: Run focused truth contracts\n", start)
+          block = text[start:end]
+          marker = "        run: |\n"
+          script = block.split(marker, 1)[1]
+          lines = script.splitlines()
+          deindented = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
+          Path('/tmp/apply-candidate-repair.sh').write_text(deindented)
+          PY
+          bash /tmp/apply-candidate-repair.sh
+
+      - name: Run focused contracts and retain exact failures
+        shell: bash
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set +e
+          mkdir -p "$GITHUB_WORKSPACE/.diagnostic"
+          failed=0
+          filters=(
+            TuyaAuthenticatedReadOnlySessionLedgerTests
+            TuyaAuthenticatedTerminalHorizonTests
+            TuyaAuthenticatedReadOnlyHorizonTests
+            TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration
+            TuyaAppIncompleteHorizonTerminalSourceTests
+            TuyaAlreadyTerminalObservationContinuitySourceTests
+            TuyaDeviceSharingAuthenticationAuthorityTests
+          )
+          : > "$GITHUB_WORKSPACE/.diagnostic/summary.txt"
+          for filter in "${filters[@]}"; do
+            echo "===== $filter =====" | tee -a "$GITHUB_WORKSPACE/.diagnostic/summary.txt"
+            swift test --filter "$filter" 2>&1 | tee "$GITHUB_WORKSPACE/.diagnostic/$filter.log"
+            status=${PIPESTATUS[0]}
+            echo "exit=$status" | tee -a "$GITHUB_WORKSPACE/.diagnostic/summary.txt"
+            if [ "$status" -ne 0 ]; then failed=1; fi
+          done
+          echo "$failed" > "$GITHUB_WORKSPACE/.diagnostic/failed"
+          exit 0
+
+      - name: Upload focused truth diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-focused-truth-diagnostic-${{ github.sha }}
+          path: .diagnostic/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve fail-closed result
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat .diagnostic/failed)" = "0"
