@@ -74,13 +74,15 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         let directBLE = try #require(watchdog.range(of: "driver.isLocallyConnected(uuid: self.tuyaUUID)", range: localDrain.upperBound..<watchdog.endIndex))
         let packageReceipt = try #require(watchdog.range(of: "captureLivenessReceipt(for: token)", range: directBLE.upperBound..<watchdog.endIndex))
         let pendingCatch = try #require(watchdog.range(of: "MutationError.applicationAdmissionPending", range: packageReceipt.upperBound..<watchdog.endIndex))
-        let ledgerMutation = try #require(watchdog.range(of: "self.sessionLedger.observeCurrentConnection(", range: pendingCatch.upperBound..<watchdog.endIndex))
+        let localClockAdvance = try #require(watchdog.range(of: "previousPollUptime = now", range: pendingCatch.upperBound..<watchdog.endIndex))
+        let ledgerMutation = try #require(watchdog.range(of: "self.sessionLedger.observeCurrentConnection(", range: localClockAdvance.upperBound..<watchdog.endIndex))
         let receiptArgument = try #require(watchdog.range(of: "receipt: livenessReceipt", range: ledgerMutation.upperBound..<watchdog.endIndex))
 
         #expect(localDrain.lowerBound < directBLE.lowerBound)
         #expect(directBLE.lowerBound < packageReceipt.lowerBound)
         #expect(packageReceipt.lowerBound < pendingCatch.lowerBound)
-        #expect(pendingCatch.lowerBound < ledgerMutation.lowerBound)
+        #expect(pendingCatch.lowerBound < localClockAdvance.lowerBound)
+        #expect(localClockAdvance.lowerBound < ledgerMutation.lowerBound)
         #expect(ledgerMutation.lowerBound < receiptArgument.lowerBound)
         #expect(!watchdog.contains("sessionLedger.observeCurrentConnection(for: token)"))
     }
@@ -106,6 +108,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(ledger.contains("pendingApplicationSequences.remove(receipt.deliverySequence) != nil"))
         #expect(ledger.contains("guard pendingApplicationSequences.isEmpty else"))
         #expect(ledger.contains("throw MutationError.applicationAdmissionPending"))
+        #expect(ledger.contains("guard !receiptAuthority.hasPendingApplicationReceipt(for: token) else"))
         #expect(ledger.contains("throw MutationError.observationAdmissionInvalidOrConsumed"))
         #expect(!ledger.contains("public func observeCurrentConnection(for token:"))
     }
