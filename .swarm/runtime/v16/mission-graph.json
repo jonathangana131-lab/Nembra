@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.179,
+        "similarity": 0.182,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3314": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3325,
         "recommendedAction": "independent-review",
-        "similarity": 0.264,
+        "similarity": 0.323,
         "title": "[Capture P0][ORACLE] Align install-custody regression with selected-Xcode ABI"
       },
       "3326": {
@@ -1187,16 +1187,16 @@
         "similarity": 0.53,
         "title": "[Capture P0][VISUAL][VALIDATION] Reject blank light Capture evidence"
       },
-      "3329": {
-        "classification": "validation",
+      "3330": {
+        "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-exact-private-guard-current-contract",
-        "pr": 3329,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
-        "title": "[Capture P0][VALIDATION] Repair exact private-guard current contract"
+        "lane": "capture-signed-install-custody",
+        "pr": 3330,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.327,
+        "title": "[Capture P0][SECURITY] Restore scoped private build read lease"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1229,7 +1229,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:56:34Z",
+    "liveRefreshAt": "2026-08-14T23:56:51Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -5014,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 324,
+  "revision": 325,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:56:34Z",
+  "updatedAt": "2026-08-14T23:56:52Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5093,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:56:34Z",
+      "updatedAt": "2026-08-14T23:56:51Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
