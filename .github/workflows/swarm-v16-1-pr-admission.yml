@@ -1,4 +1,4 @@
-name: Swarm V16.1 PR Admission
+name: Swarm V16.2 PR Admission
 
 on:
   pull_request_target:
@@ -18,7 +18,7 @@ env:
   GITHUB_REPOSITORY: ${{ github.repository }}
 
 concurrency:
-  group: swarm-v16-1-pr-admission-${{ github.event.pull_request.number || github.run_id }}
+  group: swarm-v16-2-pr-admission-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -42,6 +42,6 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           python3 -m py_compile scripts/swarm_control.py scripts/swarm_v16_1_pr_admission.py scripts/swarmcp/*.py
 
-      - name: Enforce one-branch-per-blocker PR topology
+      - name: Enforce V16.2 canonical absorption topology
         shell: bash
         run: python3 scripts/swarm_v16_1_pr_admission.py
