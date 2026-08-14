@@ -143,6 +143,9 @@ def main() -> int:
     identity = (ROOT / "NembraApp/App/NembraCaptureBuildIdentity.swift").read_text(encoding="utf-8")
     if f'static let requiredFieldProcedureIdentifier = "{PROCEDURE}"' not in identity:
         raise RuntimeError("canonical procedure source contract missing")
+    app_source_path = ROOT / "NembraApp/App/NembraCaptureEntrypoint.swift"
+    app_source = app_source_path.read_text(encoding="utf-8")
+    app_forces_dark = "CaptureP0Root().preferredColorScheme(.dark)" in app_source
     guard, guard_path = load_guard()
     if ARTIFACTS.exists() or ARTIFACTS.is_symlink():
         raise RuntimeError(f"refusing prior evidence directory: {ARTIFACTS}")
@@ -169,9 +172,10 @@ def main() -> int:
 
         run("xcrun", "simctl", "ui", udid, "appearance", "light")
         terminate(udid)
-        light = ARTIFACTS / "screenshots/standalone-unprovisioned-light-iphone12.png"
+        light_request = ARTIFACTS / "screenshots/standalone-unprovisioned-system-light-requested-iphone12.png"
+        light_state = "unprovisioned-system-light-requested-app-forced-dark" if app_forces_dark else "unprovisioned-light-standard"
         pid = launch(udid)
-        capture_ready(guard, udid, pid, light, "light-standard", ARTIFACTS / "logs/screenshot-readiness.jsonl")
+        capture_ready(guard, udid, pid, light_request, light_state, ARTIFACTS / "logs/screenshot-readiness.jsonl")
 
         run("xcrun", "simctl", "ui", udid, "appearance", "dark")
         run("xcrun", "simctl", "ui", udid, "content_size", "accessibility-extra-extra-extra-large")
@@ -181,7 +185,7 @@ def main() -> int:
         capture_ready(guard, udid, pid, ax5, "dark-accessibility-xxxl", ARTIFACTS / "logs/screenshot-readiness.jsonl")
 
         record = {
-            "schemaVersion": 8,
+            "schemaVersion": 9,
             "authority": "standalone-capture-simulator-presentation-only",
             "buildIdentifier": build_id,
             "sourceCommitSHA": source_sha,
@@ -194,6 +198,10 @@ def main() -> int:
             "simulatorDeviceType": device_type,
             "syntheticAuthorityEnvironmentRejected": True,
             "visualAcceptanceRequiresHumanReview": True,
+            "requestedSystemAppearances": ["dark", "light"],
+            "appPreferredColorScheme": "forced-dark" if app_forces_dark else "system",
+            "genuineLightAppearanceCoverage": not app_forces_dark,
+            "appearanceSourceSHA256": sha256(app_source_path),
             "screenshotRenderedContentReadinessVerified": True,
             "screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v1",
             "screenshotRenderedContentGuardSHA256": sha256(guard_path),
@@ -203,7 +211,7 @@ def main() -> int:
             "protocolAuthorityCreated": False,
             "screenshots": [
                 {"state": "unprovisioned-dark-standard", "relativePath": str(standard.relative_to(ARTIFACTS)), "sha256": sha256(standard)},
-                {"state": "unprovisioned-light-standard", "relativePath": str(light.relative_to(ARTIFACTS)), "sha256": sha256(light)},
+                {"state": light_state, "relativePath": str(light_request.relative_to(ARTIFACTS)), "sha256": sha256(light_request)},
                 {"state": "unprovisioned-dark-accessibility-xxxl", "relativePath": str(ax5.relative_to(ARTIFACTS)), "sha256": sha256(ax5)},
             ],
             "infoPlistSHA256": sha256(info_path),

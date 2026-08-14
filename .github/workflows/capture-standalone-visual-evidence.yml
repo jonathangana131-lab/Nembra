@@ -108,13 +108,18 @@ jobs:
           import json, re, sys
           with open(sys.argv[1], encoding='utf-8') as handle:
               r = json.load(handle)
-          assert r['schemaVersion'] == 8
+          assert r['schemaVersion'] == 9
           assert r['sourceCommitSHA'] == sys.argv[2]
           assert r['baselineDevice'] == 'iPhone 12' and r['baselineOS'] == 'iOS 27'
           assert r['procedureIdentifier'] == 'ES80-AUTHENTICATED-STATIONARY-v1'
           assert r['tuyaDependencyLockSHA256'] == '' and r['expectedFieldBuildAuthority'] is False
           assert r['syntheticAuthorityEnvironmentRejected'] is True
           assert r['visualAcceptanceRequiresHumanReview'] is True
+          assert r['requestedSystemAppearances'] == ['dark', 'light']
+          assert r['appPreferredColorScheme'] in {'forced-dark', 'system'}
+          assert isinstance(r['genuineLightAppearanceCoverage'], bool)
+          assert r['genuineLightAppearanceCoverage'] is (r['appPreferredColorScheme'] == 'system')
+          assert re.fullmatch(r'[0-9a-f]{64}', r['appearanceSourceSHA256'])
           assert r['screenshotRenderedContentReadinessVerified'] is True
           assert r['screenshotRenderedContentGuard'] == 'capture_visual_png_content_guard.py/v1'
           assert re.fullmatch(r'[0-9a-f]{64}', r['screenshotRenderedContentGuardSHA256'])
@@ -122,9 +127,10 @@ jobs:
           assert re.fullmatch(r'[0-9a-f]{64}', r['simctlIOHelpSHA256'])
           assert r['physicalAuthorityCreated'] is False
           assert r['protocolAuthorityCreated'] is False
+          light_state = 'unprovisioned-system-light-requested-app-forced-dark' if r['appPreferredColorScheme'] == 'forced-dark' else 'unprovisioned-light-standard'
           assert {x['state'] for x in r['screenshots']} == {
               'unprovisioned-dark-standard',
-              'unprovisioned-light-standard',
+              light_state,
               'unprovisioned-dark-accessibility-xxxl',
           }
           PY
