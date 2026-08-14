@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 9,
+    "classifiedPRTotal": 8,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1085,14 +1085,14 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.183,
+        "similarity": 0.179,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3314": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "f1f8093039a86b055bc87c2eb054a4666a785e4b",
+        "headSHA": "be20be89fdfdf994b5d60dad73f33a613c2b5e34",
         "lane": "dashboard-energy-rail-app-visible",
         "pr": 3314,
         "recommendedAction": "independent-review",
@@ -1143,17 +1143,6 @@
         "similarity": 0.318,
         "title": "[Capture P0][VALIDATION] Attest former-build mutation authority"
       },
-      "3322": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3322,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.266,
-        "title": "[Capture P0][SECURITY] Add trusted owner-gated Xcode custody command"
-      },
       "3323": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1196,7 +1185,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:23:45Z",
+    "liveRefreshAt": "2026-08-14T23:24:24Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4981,10 +4970,10 @@
       "userValue": 7
     }
   },
-  "revision": 297,
+  "revision": 298,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:23:45Z",
+  "updatedAt": "2026-08-14T23:24:24Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5060,7 +5049,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:23:45Z",
+      "updatedAt": "2026-08-14T23:24:24Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
