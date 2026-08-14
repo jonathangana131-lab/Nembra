@@ -50,8 +50,29 @@ jobs:
           PY
           chmod 700 /tmp/nembra-source-contract-diagnostic.sh
 
-      - name: Run source contract with exact failing command disclosure
+      - name: Run source contract and retain exact failure
+        id: source_contract
         shell: bash
         run: |
-          set -euo pipefail
-          bash -x /tmp/nembra-source-contract-diagnostic.sh
+          set +e
+          bash -x /tmp/nembra-source-contract-diagnostic.sh > /tmp/nembra-source-contract.log 2>&1
+          rc=$?
+          cat /tmp/nembra-source-contract.log
+          printf 'exit_code=%s\n' "$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload exact source-contract diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-source-contract-${{ github.sha }}
+          path: /tmp/nembra-source-contract.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve failing contract verdict
+        if: steps.source_contract.outputs.exit_code != '0'
+        shell: bash
+        run: |
+          echo 'Source contract failed; retained exact bash trace in the diagnostic artifact.' >&2
+          exit 1
