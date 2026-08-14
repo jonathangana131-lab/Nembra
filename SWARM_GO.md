@@ -1,8 +1,10 @@
 # Nembra Swarm V16.1 — Persistent `Go`
 
-This is the bootstrap for a fresh GPT-5.6 Sol worker when the user says **Go**, **continue**, **keep going**, or otherwise asks Nembra development to advance without assigning a task.
+This is the bootstrap for a fresh ordinary ChatGPT worker using the GitHub connector when the user says **Go**, **continue**, **keep going**, or otherwise asks Nembra development to advance without assigning a task.
 
 Canonical architecture lives in `docs/SWARM_CONTROL_PLANE.md`. Convergence rules live in `docs/SWARM_V16_1_CONVERGENCE.md`.
+
+Repository congestion is governed by `docs/SWARM_FOUNDRY_V17.md`. Before requesting or creating primary work, inspect current open PR and active branch counts. If Foundry reports no headroom, new product branches are forbidden except one explicit red-main emergency repair. Take review, integration, evidence-transfer, or retirement work instead.
 
 ## The rule that matters most
 
@@ -32,7 +34,7 @@ The user should not need to keep saying Go to keep an already-started worker use
 2. Read `.swarm/config.json`; new work requires V16.1.
 3. Read/validate the V16 Mission Graph on `swarm-state`, relevant claims, recent memory, and known failures.
 4. Register a unique `sol-YYYYMMDD-<unique>` worker identity.
-5. Request `v16-go` / V16.1 continuation before inventing work.
+5. Apply Foundry 17 admission from exact GitHub PR/branch pressure, then request `v16-go` / V16.1 continuation before inventing work.
 6. Treat live GitHub and the Mission Graph as stronger authority than stale prose.
 
 Unknown/corrupt/newer authority state fails closed for exclusive writes. It does **not** mean the chat should stop; switch to read-only assist/review until authority is clear.
