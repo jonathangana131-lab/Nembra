@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 114,
+    "classifiedPRTotal": 96,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1098,17 +1098,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.212,
         "title": "[recover-ride-location-lifecycle-v7] Harden route/GPS completion truth"
-      },
-      "1117": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1117,
-        "recommendedAction": "independent-review",
-        "similarity": 0.09,
-        "title": "[POST-CAPTURE HARDENING] Pin exact signed-field release-source custody"
       },
       "113": {
         "classification": "requires-review",
@@ -1272,7 +1261,7 @@
         "lane": "",
         "pr": 164,
         "recommendedAction": "independent-review",
-        "similarity": 0.087,
+        "similarity": 0.083,
         "title": "[es80] Keep solicited services out of transport candidates"
       },
       "165": {
@@ -1338,7 +1327,7 @@
         "lane": "",
         "pr": 204,
         "recommendedAction": "independent-review",
-        "similarity": 0.127,
+        "similarity": 0.119,
         "title": "[ride-distance] Preserve selected coverage and seal record bridge"
       },
       "208": {
@@ -1349,7 +1338,7 @@
         "lane": "",
         "pr": 208,
         "recommendedAction": "independent-review",
-        "similarity": 0.235,
+        "similarity": 0.119,
         "title": "[ride-speed-session] Bind peak and quality evidence to one ride stream"
       },
       "21": {
@@ -1646,7 +1635,7 @@
         "lane": "",
         "pr": 293,
         "recommendedAction": "independent-review",
-        "similarity": 0.223,
+        "similarity": 0.177,
         "title": "[speed-currentness recovery] Project source-owned live speed truth"
       },
       "295": {
@@ -1668,7 +1657,7 @@
         "lane": "",
         "pr": 297,
         "recommendedAction": "independent-review",
-        "similarity": 0.153,
+        "similarity": 0.137,
         "title": "[recover-es80-passive-capture-final] Gate latest passive capture truth"
       },
       "300": {
@@ -1679,7 +1668,7 @@
         "lane": "",
         "pr": 300,
         "recommendedAction": "independent-review",
-        "similarity": 0.118,
+        "similarity": 0.099,
         "title": "[ride-history-duration] Attach monotonic duration to completed history"
       },
       "301": {
@@ -1756,7 +1745,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.079,
+        "similarity": 0.07,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "316": {
@@ -1811,7 +1800,7 @@
         "lane": "",
         "pr": 334,
         "recommendedAction": "independent-review",
-        "similarity": 0.251,
+        "similarity": 0.236,
         "title": "[es80-capture-comparison-truth] Preserve controlled-comparison provenance"
       },
       "336": {
@@ -1855,7 +1844,7 @@
         "lane": "",
         "pr": 347,
         "recommendedAction": "independent-review",
-        "similarity": 0.209,
+        "similarity": 0.197,
         "title": "[es80-stationary-capture-manifest] Bind physical setup to exact capture bytes"
       },
       "349": {
@@ -1888,7 +1877,7 @@
         "lane": "",
         "pr": 353,
         "recommendedAction": "independent-review",
-        "similarity": 0.209,
+        "similarity": 0.19,
         "title": "[recover es80 passive capture] Compose current-main parent for truth closure"
       },
       "356": {
@@ -1954,7 +1943,7 @@
         "lane": "",
         "pr": 364,
         "recommendedAction": "independent-review",
-        "similarity": 0.239,
+        "similarity": 0.155,
         "title": "[es80 capture] Gate post-ready duration from immutable evidence"
       },
       "366": {
@@ -1968,61 +1957,6 @@
         "similarity": 0.118,
         "title": "[live-distance cockpit] Preserve observed trip-distance truth"
       },
-      "367": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 367,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.293,
-        "title": "[recover es80 comparison truth] Seal canonical controlled comparison"
-      },
-      "370": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 370,
-        "recommendedAction": "independent-review",
-        "similarity": 0.212,
-        "title": "[recover es80 passive lifecycle] Reject markers during terminal quarantine"
-      },
-      "372": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 372,
-        "recommendedAction": "independent-review",
-        "similarity": 0.248,
-        "title": "[recover es80 observation duration] Bind assessment to exact capture"
-      },
-      "375": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 375,
-        "recommendedAction": "independent-review",
-        "similarity": 0.256,
-        "title": "[recover es80 horizon clock] Seal boundary timestamp authority"
-      },
-      "379": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 379,
-        "recommendedAction": "independent-review",
-        "similarity": 0.195,
-        "title": "[es80 observation horizon] Compose clock authority and duration provenance"
-      },
       "38": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2034,72 +1968,6 @@
         "similarity": 0.167,
         "title": "[battery-range-evidence-bridge] Gate adaptive range on verified battery truth"
       },
-      "380": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 380,
-        "recommendedAction": "independent-review",
-        "similarity": 0.284,
-        "title": "[recover es80 comparison] Reject same-session direct metrics"
-      },
-      "385": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 385,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.303,
-        "title": "[es80 live boundary ordering] Gate ready/horizon queue cutoffs"
-      },
-      "386": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 386,
-        "recommendedAction": "independent-review",
-        "similarity": 0.157,
-        "title": "[recover es80 offline] Bound capture artifact ingress before decode"
-      },
-      "388": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 388,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.322,
-        "title": "[es80 live horizon] Compose accepted horizon authority onto current runtime"
-      },
-      "391": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 391,
-        "recommendedAction": "independent-review",
-        "similarity": 0.192,
-        "title": "[es80 power cycle] Re-anchor accepted four-window producer onto current runtime"
-      },
-      "397": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 397,
-        "recommendedAction": "independent-review",
-        "similarity": 0.234,
-        "title": "[ride observed max stats] Keep selected-period max speed quality-bound"
-      },
       "40": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2110,72 +1978,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.4,
         "title": "[recover-adaptive-range-core] Reconcile truthful learned range model"
-      },
-      "438": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 438,
-        "recommendedAction": "independent-review",
-        "similarity": 0.185,
-        "title": "[recover ride-distance] Preserve selected coverage and seal record bridge"
-      },
-      "443": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 443,
-        "recommendedAction": "independent-review",
-        "similarity": 0.168,
-        "title": "[ride-distance history] Bind reconciliation inputs to immutable history"
-      },
-      "444": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 444,
-        "recommendedAction": "independent-review",
-        "similarity": 0.224,
-        "title": "[speed-currentness recovery] Complete Simulator source-owned live speed truth"
-      },
-      "461": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 461,
-        "recommendedAction": "independent-review",
-        "similarity": 0.165,
-        "title": "[CI review only] ride-distance sealed coordinator exact product v6"
-      },
-      "463": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 463,
-        "recommendedAction": "independent-review",
-        "similarity": 0.173,
-        "title": "[app icon] Ship production Nembra identity"
-      },
-      "464": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 464,
-        "recommendedAction": "independent-review",
-        "similarity": 0.128,
-        "title": "[recover ride lifecycle] Keep task cancellation non-failure"
       },
       "48": {
         "classification": "requires-review",
@@ -2351,7 +2153,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:58:25Z",
+    "liveRefreshAt": "2026-08-14T10:59:04Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6134,10 +5936,10 @@
       "userValue": 7
     }
   },
-  "revision": 185,
+  "revision": 186,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:58:46Z",
+  "updatedAt": "2026-08-14T10:59:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6213,7 +6015,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:58:25Z",
+      "updatedAt": "2026-08-14T10:59:04Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
