@@ -94,21 +94,75 @@ def main() -> int:
 
     cutoff = "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationDeliveryCutoffSourceTests.swift"
     update(cutoff, [
-        ("captureApplicationReceipt(for: token)", "captureApplicationDelivery(for: token)", "delivery-cutoff capture spelling"),
-        ("captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken)", "captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken)", "ledger capture declaration spelling"),
-        ("captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:", "captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:", "forbid caller timestamp spelling"),
-        ("applicationDeliveryArbiter.captureApplicationReceipt(for: token)", "applicationDeliveryArbiter.captureApplicationDelivery(for: token)", "arbiter capture spelling"),
-        ("receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)", "receivedApplicationUpdate(update, delivery: applicationDelivery, token: token)", "receiver call spelling"),
-        ("#expect(receiver.contains(\"receipt: TuyaReadOnlyApplicationReceipt\"))", "#expect(receiver.contains(\"delivery: TuyaReadOnlyApplicationReceipt\"))", "receiver opaque delivery contract"),
-        ("#expect(receiver.contains(\"recordApplicationUpdate(isNonEmpty: !update.isEmpty, receipt: receipt, for: token)\"))", "#expect(receiver.contains(\"recordApplicationUpdate(delivery: delivery, for: token)\"))\n        #expect(!receiver.contains(\"recordApplicationUpdate(isNonEmpty:\"))", "consumer occurrence custody contract"),
-        ("#expect(record.contains(\"receipt: TuyaReadOnlyApplicationReceipt\"))", "#expect(record.contains(\"delivery: TuyaReadOnlyApplicationReceipt\"))\n        #expect(!record.contains(\"isNonEmpty: Bool\"))\n        #expect(record.contains(\"delivery.nonEmptyApplicationDeliveryOccurred\"))", "public mutation seals occurrence"),
-        ("applicationDeliveryArbiter.consumeApplicationReceipt(receipt, for: token)", "applicationDeliveryArbiter.consumeApplicationReceipt(delivery, for: token)", "cutoff consume spelling"),
-        ("let now = receipt.receivedAtUptimeNanoseconds", "let now = delivery.receivedAtUptimeNanoseconds", "cutoff delivery chronology spelling"),
+        (
+            "\"let applicationReceipt = sessionLedger.captureApplicationReceipt(for: token)\"",
+            "\"let applicationDelivery = sessionLedger.captureApplicationDelivery(for: token)\"",
+            "delivery-cutoff admission capture spelling",
+        ),
+        (
+            "deliveryCutoffOccurrenceCount(\"captureApplicationReceipt(for: token)\", in: app)",
+            "deliveryCutoffOccurrenceCount(\"captureApplicationDelivery(for: token)\", in: app)",
+            "delivery-cutoff one shipping capture callsite",
+        ),
+        (
+            "receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)",
+            "receivedApplicationUpdate(update, delivery: applicationDelivery, token: token)",
+            "receiver call spelling",
+        ),
+        (
+            "#expect(receiver.contains(\"receipt: TuyaReadOnlyApplicationReceipt\"))",
+            "#expect(receiver.contains(\"delivery: TuyaReadOnlyApplicationReceipt\"))",
+            "receiver opaque delivery contract",
+        ),
+        (
+            "#expect(receiver.contains(\"recordApplicationUpdate(isNonEmpty: !update.isEmpty, receipt: receipt, for: token)\"))",
+            "#expect(receiver.contains(\"recordApplicationUpdate(delivery: delivery, for: token)\"))\n        #expect(!receiver.contains(\"recordApplicationUpdate(isNonEmpty:\"))",
+            "consumer occurrence custody contract",
+        ),
+        (
+            "#expect(ledger.contains(\"nonisolated public func captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken)\")",
+            "#expect(ledger.contains(\"nonisolated public func captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken)\")",
+            "ledger delivery capture declaration spelling",
+        ),
+        (
+            "from: \"nonisolated public func captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken)\"",
+            "from: \"nonisolated public func captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken)\"",
+            "delivery capture source section spelling",
+        ),
+        (
+            "#expect(capture.contains(\"applicationDeliveryArbiter.captureApplicationReceipt(for: token)\"))",
+            "#expect(capture.contains(\"applicationDeliveryArbiter.captureApplicationDelivery(for: token)\"))",
+            "arbiter capture spelling",
+        ),
+        (
+            "captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:",
+            "captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:",
+            "forbid caller timestamp spelling",
+        ),
+        (
+            "#expect(record.contains(\"receipt: TuyaReadOnlyApplicationReceipt\"))",
+            "#expect(record.contains(\"delivery: TuyaReadOnlyApplicationReceipt\"))\n        #expect(!record.contains(\"isNonEmpty: Bool\"))\n        #expect(record.contains(\"delivery.nonEmptyApplicationDeliveryOccurred\"))",
+            "public mutation seals occurrence",
+        ),
+        (
+            "applicationDeliveryArbiter.consumeApplicationReceipt(receipt, for: token)",
+            "applicationDeliveryArbiter.consumeApplicationReceipt(delivery, for: token)",
+            "cutoff consume spelling",
+        ),
+        (
+            "let now = receipt.receivedAtUptimeNanoseconds",
+            "let now = delivery.receivedAtUptimeNanoseconds",
+            "cutoff delivery chronology spelling",
+        ),
     ])
 
     arbitration = "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptArbitrationSourceTests.swift"
     update(arbitration, [
-        ("applicationDeliveryArbiter.consumeApplicationReceipt(receipt, for: token)", "applicationDeliveryArbiter.consumeApplicationReceipt(delivery, for: token)", "arbitration consume spelling"),
+        (
+            "applicationDeliveryArbiter.consumeApplicationReceipt(receipt, for: token)",
+            "applicationDeliveryArbiter.consumeApplicationReceipt(delivery, for: token)",
+            "arbitration consume spelling",
+        ),
     ])
 
     runtime = "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptAuthorityTests.swift"
@@ -116,8 +170,6 @@ def main() -> int:
     text = target.read_text(encoding="utf-8")
     text = text.replace("captureApplicationReceipt(for:", "captureApplicationDelivery(for:")
     text = text.replace("recordApplicationUpdate(isNonEmpty: true, receipt: ", "recordApplicationUpdate(delivery: ")
-    text = text.replace(", for: ", ", for: ")
-    # The replacement above leaves valid `recordApplicationUpdate(delivery: receipt, for: token)` calls.
     target.write_text(text, encoding="utf-8")
 
     return 0
