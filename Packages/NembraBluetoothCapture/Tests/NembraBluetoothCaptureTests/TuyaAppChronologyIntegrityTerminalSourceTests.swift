@@ -115,7 +115,10 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
             to: "private func recordObservedTransportLoss"
         ))
 
-        #expect(watchdog.contains("sessionLedger.observeCurrentConnection(for: token)"))
+        #expect(watchdog.contains("captureLivenessReceipt(for: token)"))
+        #expect(watchdog.contains("sessionLedger.observeCurrentConnection("))
+        #expect(watchdog.contains("receipt: livenessReceipt"))
+        #expect(!watchdog.contains("sessionLedger.observeCurrentConnection(for: token)"))
         #expect(watchdog.contains("sessionLedger.sealAcceptedObservation(for: token)"))
         #expect(watchdog.contains("MutationError.incompleteObservationHorizonReached"))
         #expect(watchdog.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
