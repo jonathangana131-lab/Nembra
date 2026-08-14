@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 8,
+    "classifiedPRTotal": 9,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1153,6 +1153,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.0,
         "title": "[Capture P0][VISUAL] Re-anchor iPhone 12 evidence to d306 exact product"
+      },
+      "3325": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "203afd39db23e2308ee491fc7a80caa44878cc16",
+        "lane": "capture-signed-install-custody",
+        "pr": 3325,
+        "recommendedAction": "independent-review",
+        "similarity": 0.264,
+        "title": "[Capture P0][ORACLE] Align install-custody regression with selected-Xcode ABI"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1179,19 +1190,13 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [
-      {
-        "from": "8ed3bf6a1fd746f5fec540f0f5f26f265dcd5a4c",
-        "to": "82b3a3c5ca57a623f2a93f421fbfad972ce346f7",
-        "workItemId": "live-pr-3142"
-      }
-    ],
+    "livePRHeadUpdates": [],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:51:44Z",
+    "liveRefreshAt": "2026-08-14T23:55:14Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4976,10 +4981,10 @@
       "userValue": 7
     }
   },
-  "revision": 319,
+  "revision": 320,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:51:45Z",
+  "updatedAt": "2026-08-14T23:55:14Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5055,7 +5060,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:51:44Z",
+      "updatedAt": "2026-08-14T23:55:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
