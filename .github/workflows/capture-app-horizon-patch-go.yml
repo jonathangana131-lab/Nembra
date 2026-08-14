@@ -171,11 +171,16 @@ jobs:
           t = terminal.read_text()
           old_reason = 'Authenticated session produced no application update before the observation deadline.'
           new_reason = 'Authenticated session ended because required repeated application evidence did not become sufficient before the observation deadline.'
-          if t.count(old_reason) != 2:
-              raise SystemExit(f'terminal-horizon stale reason count: {t.count(old_reason)}')
-          t = t.replace(old_reason, new_reason)
-          t = t.replace('@Test("no-application deadline is terminal without inventing disconnect")', '@Test("incomplete-evidence deadline is terminal without inventing disconnect")')
-          terminal.write_text(t)
+          old_count = t.count(old_reason)
+          new_count = t.count(new_reason)
+          if old_count == 2:
+              t = t.replace(old_reason, new_reason)
+              t = t.replace('@Test("no-application deadline is terminal without inventing disconnect")', '@Test("incomplete-evidence deadline is terminal without inventing disconnect")')
+              terminal.write_text(t)
+          elif old_count == 0 and new_count == 2 and t.count('@Test("incomplete-evidence deadline is terminal without inventing disconnect")') == 1:
+              pass
+          else:
+              raise SystemExit(f'terminal-horizon reason state unexpected: old={old_count} new={new_count}')
 
           gate = Path('.github/workflows/capture-v16-standalone.yml')
           g = gate.read_text()
