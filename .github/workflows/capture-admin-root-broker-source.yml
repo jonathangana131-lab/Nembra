@@ -1,0 +1,96 @@
+name: Capture Administrator Root Broker Source
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/capture-admin-root-broker-source.yml'
+      - 'scripts/field/nembra_capture_root_broker.py'
+      - 'scripts/ci/tests/test_nembra_capture_root_broker.py'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  source-contract:
+    name: Prove broker source contract only
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable head and exact three-path scope
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git diff --name-only "$BASE_SHA"...HEAD | LC_ALL=C sort > /tmp/actual-paths
+          cat > /tmp/expected-paths <<'EOF'
+          .github/workflows/capture-admin-root-broker-source.yml
+          scripts/ci/tests/test_nembra_capture_root_broker.py
+          scripts/field/nembra_capture_root_broker.py
+          EOF
+          LC_ALL=C sort -o /tmp/expected-paths /tmp/expected-paths
+          diff -u /tmp/expected-paths /tmp/actual-paths
+
+      - name: Compile broker and regression witness
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/field/nembra_capture_root_broker.py \
+            scripts/ci/tests/test_nembra_capture_root_broker.py
+
+      - name: Run fail-closed broker regressions
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_nembra_capture_root_broker.py
+
+      - name: Pin non-self-installing authority boundary
+        run: |
+          set -euo pipefail
+          broker='scripts/field/nembra_capture_root_broker.py'
+          grep -Fq 'POLICY_PATH = Path("/Library/NembraCaptureAuthority/v1/policy.json")' "$broker"
+          grep -Fq 'sys.flags.isolated == 1' "$broker"
+          grep -Fq 'NEMBRA_APPROVED_ROOT_SUBJECTS' "$broker"
+          grep -Fq 'set(encoded_subjects) == set(policy_subjects)' "$broker"
+          grep -Fq 'os.O_NOFOLLOW' "$broker"
+          grep -Fq 'stat.S_IMODE(info.st_mode) == 0o444' "$broker"
+          grep -Fq 'info.st_uid == 0 and info.st_gid == 0' "$broker"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/field/nembra_capture_root_broker.py').read_text(encoding='utf-8')
+          forbidden = (
+              '/usr/bin/sudo',
+              '/usr/bin/dscl',
+              '/usr/bin/xcodebuild',
+              'devicectl',
+              'xctrace',
+              'CoreBluetooth',
+              'CBCentralManager',
+              'NEMBRA_TUYA_APP_KEY',
+              'NEMBRA_TUYA_APP_SECRET',
+              '--policy',
+              'git cat-file',
+              'subprocess.',
+              'os.system(',
+          )
+          for marker in forbidden:
+              if marker in source:
+                  raise SystemExit(f'broker source contains forbidden self-install/product authority marker: {marker}')
+          PY
+
+      - name: Classify source-only evidence
+        run: |
+          printf '%s\n' \
+            'BROKER_SOURCE_ACCEPTED sourceOnly=true installedAuthority=false signingAuthority=false deviceAuthority=false bluetoothAuthority=false physicalAuthorityCreated=false'
