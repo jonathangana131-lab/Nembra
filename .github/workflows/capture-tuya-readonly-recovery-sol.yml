@@ -1,0 +1,165 @@
+name: Capture Tuya read-only recovery Sol
+
+on:
+  push:
+    branches:
+      - capture/tuya-readonly-preflight-recovery-sol-20260814
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'chore(capture): install Tuya read-only recovery gate'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/tuya-readonly-preflight-recovery-sol-20260814
+          fetch-depth: 0
+
+      - name: Compose package-owned horizon mirror and truthful app readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+
+          def one(old: str, new: str, label: str) -> None:
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one anchor, found {count}')
+              s = s.replace(old, new, 1)
+
+          one(
+              'Waiting for a genuine application update and the canonical 45-second horizon…',
+              'Waiting for repeated same-generation scooter application evidence, including evidence at least 30 seconds after authentication, plus the canonical 45-second observation horizon…',
+              'authentication presentation copy',
+          )
+
+          one(
+              '    var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {\n',
+              '    var applicationEvidenceSurvivedHistoricalWindow: Bool {\n'
+              '        guard let authenticatedAt = ledgerSnapshot.authenticatedAtUptimeNanoseconds,\n'
+              '              let latestPayload = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,\n'
+              '              latestPayload >= authenticatedAt else { return false }\n'
+              '        return latestPayload - authenticatedAt >= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds\n'
+              '    }\n\n'
+              '    var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {\n',
+              'application survival presentation predicate',
+          )
+
+          one(
+              'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)',
+              'requirementRow("Repeated application evidence", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)\n'
+              '                        requirementRow("Application evidence stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)',
+              'observation checklist truth',
+          )
+
+          receipt_anchor = '\n'.join([
+              '        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {',
+              '            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])',
+          ])
+          receipt_terminal = '\n'.join([
+              '        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {',
+              '            await mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '                token: token,',
+              '                message: "Authenticated read-only preflight is incomplete: required repeated application evidence did not become sufficient within the package-owned observation horizon. The package already retired this exact generation; no Bluetooth disconnect is claimed.",',
+              '                kind: "application_authenticated_incomplete_readiness_horizon_reached"',
+              '            )',
+          ])
+          one(receipt_anchor, receipt_terminal + '\n' + receipt_anchor, 'application incomplete-horizon mirror')
+
+          watchdog_anchor = '\n'.join([
+              '                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {',
+              '                    self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])',
+          ])
+          watchdog_terminal = '\n'.join([
+              '                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {',
+              '                    await self.mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '                        token: token,',
+              '                        message: "Authenticated read-only preflight is incomplete: required repeated application evidence did not become sufficient within the package-owned observation horizon. The package already retired this exact generation; no Bluetooth disconnect is claimed.",',
+              '                        kind: "session_authenticated_incomplete_readiness_horizon_reached"',
+              '                    )',
+              '                    return',
+          ])
+          one(watchdog_anchor, watchdog_terminal + '\n' + watchdog_anchor, 'watchdog incomplete-horizon mirror')
+
+          helper_anchor = '\n'.join([
+              '    private func invalidateObservationContinuity(',
+              '        token: TuyaReadOnlyConnectionToken,',
+          ])
+          helper = '\n'.join([
+              '    /// Mirrors the incomplete-readiness terminal already committed atomically by the package.',
+              '    /// The throwing package mutation has revoked callback authority, so this helper performs',
+              '    /// app-local cleanup only. It never issues a second ledger terminal, samples liveness, or',
+              '    /// manufactures a Bluetooth disconnect or source-loss observation.',
+              '    private func mirrorAlreadyTerminalIncompleteObservationHorizon(',
+              '        token: TuyaReadOnlyConnectionToken,',
+              '        message: String,',
+              '        kind: String',
+              '    ) async {',
+              '        guard currentConnectionToken == token else { return }',
+              '        watchdog?.cancel()',
+              '        watchdog = nil',
+              '        currentConnectionToken = nil',
+              '        localBLESettlementToken = nil',
+              '        sdkLocalBLEOnline = false',
+              '        driver = nil',
+              '        await refreshLedgerSnapshot()',
+              '        phase = .failed',
+              '        self.message = message',
+              '        log(kind, ["generation": String(token.diagnosticGeneration)])',
+              '    }',
+              '',
+              '',
+          ])
+          one(helper_anchor, helper + helper_anchor, 'package-terminal app mirror helper')
+
+          legacy_start = '\n                if self.applicationUpdateAdmissionsInFlight == 0,\n'
+          legacy_end = '\n                try? await Task.sleep(for: .seconds(1))'
+          count = s.count(legacy_start)
+          if count != 1:
+              raise SystemExit(f'legacy app-owned timeout: expected exactly one start anchor, found {count}')
+          start = s.index(legacy_start)
+          end = s.index(legacy_end, start)
+          s = s[:start] + s[end:]
+
+          forbidden = [
+              'markApplicationObservationTimedOut(for: token)',
+              'done: model.applicationUpdateCount > 0',
+              'Waiting for a genuine application update',
+          ]
+          for fragment in forbidden:
+              if fragment in s:
+                  raise SystemExit(f'forbidden stale app truth remains: {fragment}')
+
+          p.write_text(s)
+          PY
+          git diff --check
+
+      - name: Run focused Capture truth contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAppIncompleteHorizonTerminalSourceTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAuthenticatedReadOnlyHorizonTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAuthenticatedReadOnlySessionLedgerTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAuthenticatedTerminalHorizonTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaDeviceSharingAuthenticationAuthorityTests
+
+      - name: Publish recovery product checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name nembra-go-worker
+          git config user.email actions@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          git commit -m 'fix(capture-app): mirror package-owned incomplete horizon'
+          git push origin HEAD:capture/tuya-readonly-preflight-recovery-sol-20260814
