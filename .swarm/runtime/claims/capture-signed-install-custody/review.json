@@ -9,15 +9,15 @@
   "generation": 19,
   "status": "ACTIVE",
   "claimedAt": "2026-08-14T22:53:00Z",
-  "lastHeartbeatAt": "2026-08-14T22:53:00Z",
+  "lastHeartbeatAt": "2026-08-14T23:00:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3142,
   "sourceSHA": "3568250ee02556185610dd895e3f6d1c8f28dd33",
-  "currentHeadSHA": "3568250ee02556185610dd895e3f6d1c8f28dd33",
+  "currentHeadSHA": "cd8a398f54d70c866e74091b04df9bc9f9eefa55",
   "takeoverFromWorkerId": "gpt56-sol-20260812-1129-retirement-review",
   "takeoverFromLeaseId": "capture-signed-install-review-gpt56-20260812-112900",
-  "takeoverReason": "Generation-18 review lease expired on 2026-08-12. Recover adversarial review on the live exact #3142 head without touching implementation paths while the production owner remains active.",
+  "takeoverReason": "Generation-18 review lease expired on 2026-08-12. Recover adversarial review on the live #3142 lineage without touching implementation paths while the production owner remains active.",
   "intent": "Adversarially review current exact #3142 custody for authority paths outside the mounted APFS namespace. Preserve strict principal retirement, source/private-input, selected-Xcode and signing blockers. Do not edit production from this review slot. PHYSICAL NO-GO.",
-  "checkpoint": "Live #3142 exact 3568250e has Main green, Field source-contract red, and Signed Install real-Xcode red after BUILD SUCCEEDED due principal retirement. Review is checking whether the dedicated build identity can reach or mutate the sparse-image backing file directly through the root:build_gid 0710 workspace, bypassing the mountpoint freeze assumptions."
+  "checkpoint": "Exact #3142 advanced 3568250e -> cd8a398f by two commits changing only the Field source-oracle workflow; production helper/test bytes are unchanged. GitHub review 4941773381 records a new blocking custody invariant: workspace is root:build_gid 0710 and the predictable compiler-output.sparseimage backing file is created without explicit lstat/root-only mode/ACL verification, while current tests attack only mounted paths. Require explicit root-only backing-file custody plus a dedicated-build write-denial witness. Current cd8a gates: Field/Main in progress, Signed Install queued, generic Xcode skipped. PHYSICAL NO-GO."
 }
