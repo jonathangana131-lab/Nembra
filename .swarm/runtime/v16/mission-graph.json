@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 173,
+    "classifiedPRTotal": 159,
     "classifiedPRs": {
       "1117": {
         "classification": "requires-review",
@@ -1264,6 +1264,83 @@
         "similarity": 0.173,
         "title": "[validation-only] Guard Capture against Dynamic Type scale caps"
       },
+      "155": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 155,
+        "recommendedAction": "independent-review",
+        "similarity": 0.101,
+        "title": "[battery-receipt] Give battery truth explicit callback identity"
+      },
+      "156": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 156,
+        "recommendedAction": "independent-review",
+        "similarity": 0.113,
+        "title": "[es80-home-hero] Give AOVOPRO ES80 a distinct Home silhouette"
+      },
+      "160": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 160,
+        "recommendedAction": "independent-review",
+        "similarity": 0.1,
+        "title": "[ride-durability] Fail closed on ambiguous checkpoint authority"
+      },
+      "161": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 161,
+        "recommendedAction": "independent-review",
+        "similarity": 0.174,
+        "title": "[home-dynamic-type] Make Home structurally accessible at large text sizes"
+      },
+      "164": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 164,
+        "recommendedAction": "independent-review",
+        "similarity": 0.087,
+        "title": "[es80] Keep solicited services out of transport candidates"
+      },
+      "165": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 165,
+        "recommendedAction": "independent-review",
+        "similarity": 0.187,
+        "title": "[home] Recover truthful status + large-text layout on v12 main"
+      },
+      "166": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 166,
+        "recommendedAction": "independent-review",
+        "similarity": 0.184,
+        "title": "[simulator-truth] Separate synthetic QA from physical scooter profiles"
+      },
       "1684": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1285,6 +1362,28 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.336,
         "title": "[VALIDATION ONLY][V14][Rides] Run exact completed-subject NembraCore gate"
+      },
+      "170": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 170,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.189,
+        "title": "[validation] Exercise Home large-text layout with fresh XCUI queries"
+      },
+      "184": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 184,
+        "recommendedAction": "independent-review",
+        "similarity": 0.194,
+        "title": "[navigation] Recover deterministic MapKit adapter"
       },
       "1897": {
         "classification": "requires-review",
@@ -1308,6 +1407,17 @@
         "similarity": 0.138,
         "title": "[Dashboard V14] Compose receipt-fenced Energy Rail on current main"
       },
+      "200": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 200,
+        "recommendedAction": "independent-review",
+        "similarity": 0.146,
+        "title": "[navigation-arrival] Require sustained truthful destination evidence"
+      },
       "2030": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1319,6 +1429,17 @@
         "similarity": 0.161,
         "title": "[Capture P0] Lock private Tuya launch-secret custody regression"
       },
+      "204": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 204,
+        "recommendedAction": "independent-review",
+        "similarity": 0.127,
+        "title": "[ride-distance] Preserve selected coverage and seal record bridge"
+      },
       "2054": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1327,8 +1448,30 @@
         "lane": "",
         "pr": 2054,
         "recommendedAction": "independent-review",
-        "similarity": 0.155,
+        "similarity": 0.145,
         "title": "[Dashboard V14] Capture real AX5 landscape cockpit evidence"
+      },
+      "208": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 208,
+        "recommendedAction": "independent-review",
+        "similarity": 0.235,
+        "title": "[ride-speed-session] Bind peak and quality evidence to one ride stream"
+      },
+      "216": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "b0a7e40c457192cf100bbdf69eaa25141964d2a5",
+        "lane": "",
+        "pr": 216,
+        "recommendedAction": "independent-review",
+        "similarity": 0.106,
+        "title": "[home-ride-summary] Preserve compact completed-ride truth"
       },
       "2166": {
         "classification": "requires-review",
@@ -1352,17 +1495,6 @@
         "similarity": 0.17,
         "title": "[Dashboard V14][RED] Pin learned-range VoiceOver terminology"
       },
-      "2222": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "b955bbafd3ac35e14d3998d94670eac4d3a0de90",
-        "lane": "",
-        "pr": 2222,
-        "recommendedAction": "independent-review",
-        "similarity": 0.164,
-        "title": "[Battery/Range V14] Restore Simulator display-only battery surface"
-      },
       "2232": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1373,6 +1505,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.137,
         "title": "[Rides V14] Preserve observed zero odometer distance"
+      },
+      "226": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 226,
+        "recommendedAction": "independent-review",
+        "similarity": 0.199,
+        "title": "[ride-detail] Turn completed ride details into a premium logbook"
       },
       "2289": {
         "classification": "requires-review",
@@ -1525,19 +1668,8 @@
         "lane": "",
         "pr": 2507,
         "recommendedAction": "independent-review",
-        "similarity": 0.162,
+        "similarity": 0.133,
         "title": "[Rides V14] Pin route map render projection churn"
-      },
-      "2509": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2509,
-        "recommendedAction": "independent-review",
-        "similarity": 0.156,
-        "title": "[Navigation V14] Close truthful Navigation launch accessibility"
       },
       "251": {
         "classification": "requires-review",
@@ -1572,17 +1704,6 @@
         "similarity": 0.17,
         "title": "[adaptive-range authority recovery] Bind range to sealed battery receipts"
       },
-      "2596": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2596,
-        "recommendedAction": "independent-review",
-        "similarity": 0.158,
-        "title": "[Vehicle Controls] Reconcile premium surface on current main"
-      },
       "262": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1593,17 +1714,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.307,
         "title": "[es80-tuya-dp-correlation] Rank opaque DP candidates against stock-app markers"
-      },
-      "2637": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2637,
-        "recommendedAction": "independent-review",
-        "similarity": 0.274,
-        "title": "[Capture P0][FIELD] Restore private-device reader and local-build custody"
       },
       "2638": {
         "classification": "requires-review",
@@ -1626,17 +1736,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.21,
         "title": "[product-identity] Ship Nembra app icon"
-      },
-      "2679": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2679,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.22,
-        "title": "[Capture P0][RED TEAM] Pin Final-GO intended-device ancestry"
       },
       "2680": {
         "classification": "validation",
@@ -1712,7 +1811,7 @@
         "lane": "",
         "pr": 273,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.143,
+        "similarity": 0.207,
         "title": "[recover-es80-passive-capture-qa] Close passive capture integrity gaps"
       },
       "2733": {
@@ -1723,7 +1822,7 @@
         "lane": "",
         "pr": 2733,
         "recommendedAction": "independent-review",
-        "similarity": 0.278,
+        "similarity": 0.265,
         "title": "[Capture P0][REVIEW] Lock root admission before private writer capture"
       },
       "2734": {
@@ -1734,7 +1833,7 @@
         "lane": "",
         "pr": 2734,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.365,
+        "similarity": 0.261,
         "title": "[Capture P0][RED TEAM] Break private identity publication custody"
       },
       "274": {
@@ -1748,17 +1847,6 @@
         "similarity": 0.106,
         "title": "[acceleration] Own generation-scoped measurement attempts"
       },
-      "2741": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2741,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.256,
-        "title": "[Capture P0][RED TEAM] Pin signed-app custody helper execution bytes"
-      },
       "2754": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1769,17 +1857,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.359,
         "title": "[Capture P0][FIELD] Protect exact signed app install subject"
-      },
-      "2755": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2755,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.378,
-        "title": "[Capture P0][REPAIR] Close private identity publication races"
       },
       "276": {
         "classification": "superseded",
@@ -1792,39 +1869,6 @@
         "similarity": 0.271,
         "title": "[es80-dp-cross-session] Preserve independent-session consistency evidence"
       },
-      "2767": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2767,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.209,
-        "title": "[Capture P0][RED TEAM] Bind sealed staging payload bytes"
-      },
-      "2775": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2775,
-        "recommendedAction": "independent-review",
-        "similarity": 0.215,
-        "title": "[Capture P0][PHYSICAL GO] Pin generated build authority onto current Final GO modules"
-      },
-      "2779": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2779,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.231,
-        "title": "[Capture P0][SECURITY] Bind reviewed private Tuya generation before field build"
-      },
       "280": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1836,50 +1880,6 @@
         "similarity": 0.248,
         "title": "[es80-dp-numeric] Evaluate explicit numeric hypotheses after marker pairing"
       },
-      "2817": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 2817,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.157,
-        "title": "[Dashboard V15] Recover current-main Energy Rail composition"
-      },
-      "2822": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "swarm-orphan-claim-worker-integrity",
-        "pr": 2822,
-        "recommendedAction": "independent-review",
-        "similarity": 0.091,
-        "title": "[Swarm V15.1] Reject orphan live-claim ownership"
-      },
-      "2825": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2825,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.228,
-        "title": "[Capture P0][SECURITY][SUCCESSOR] Close complete authority helper execution chain"
-      },
-      "2829": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2829,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.233,
-        "title": "[Capture P0][QA] Align Field Build Provenance with accepted helper execution custody"
-      },
       "286": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1890,17 +1890,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.1,
         "title": "[es80-tuya-offline] Recover packet-zero restarts on chronology parent"
-      },
-      "2868": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2868,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.233,
-        "title": "[Capture P0][RED TEAM] Reject private identity destination-name re-resolution"
       },
       "288": {
         "classification": "validation",
@@ -1990,6 +1979,17 @@
         "similarity": 0.129,
         "title": "[propulsion-envelope-persistence] Make learned power calibration durable"
       },
+      "303": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 303,
+        "recommendedAction": "independent-review",
+        "similarity": 0.229,
+        "title": "[recover-es80-research-capture-app] Restore exact-head Xcode acceptance"
+      },
       "304": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2031,7 +2031,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.121,
+        "similarity": 0.114,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "316": {
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:54:20Z",
+    "liveRefreshAt": "2026-08-14T10:55:29Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6288,10 +6288,10 @@
       "userValue": 7
     }
   },
-  "revision": 181,
+  "revision": 182,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:55:14Z",
+  "updatedAt": "2026-08-14T10:56:20Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6367,7 +6367,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:54:20Z",
+      "updatedAt": "2026-08-14T10:55:29Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
