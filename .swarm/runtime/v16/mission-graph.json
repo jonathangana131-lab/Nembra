@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 10,
+    "classifiedPRTotal": 9,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1107,7 +1107,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.172,
+        "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3317": {
@@ -1164,17 +1164,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.0,
         "title": "[Capture P0][VISUAL] Re-anchor iPhone 12 evidence to d306 exact product"
-      },
-      "3324": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3324,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.188,
-        "title": "[Capture P0][VALIDATION] Repair receipt-era source-attribution oracle"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1207,7 +1196,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:15:14Z",
+    "liveRefreshAt": "2026-08-14T23:15:33Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4992,10 +4981,10 @@
       "userValue": 7
     }
   },
-  "revision": 276,
+  "revision": 277,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:15:14Z",
+  "updatedAt": "2026-08-14T23:15:34Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5071,7 +5060,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:15:14Z",
+      "updatedAt": "2026-08-14T23:15:33Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
