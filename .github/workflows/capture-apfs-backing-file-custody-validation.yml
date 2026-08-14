@@ -66,7 +66,11 @@ jobs:
           UMASKS = (0o077, 0o022, 0o000)
           CHILD = r'''
           import json, os, sys
-          payload = {"uid": os.getuid(), "euid": os.geteuid(), "gid": os.getgid(), "egid": os.getegid(), "groups": sorted(set(os.getgroups()))}
+          payload = {"uid": os.getuid(), "euid": os.geteuid(), "gid": os.getgid(), "egid": os.getegid()}
+          try:
+              payload.update({"groups": sorted(set(os.getgroups())), "groupsErrno": None})
+          except OSError as error:
+              payload.update({"groups": None, "groupsErrno": error.errno})
           try:
               fd = os.open(sys.argv[1], os.O_WRONLY | os.O_APPEND)
           except OSError as error:
@@ -127,6 +131,7 @@ jobs:
                   "workspaceGroupGID": None,
                   "workspaceMode": "0710",
                   "cases": [],
+                  "credentialGroupsClassified": False,
                   "observedBackingWriteAuthority": False,
                   "productionBytesChanged": False,
                   "productionAcceptanceClaimed": False,
@@ -198,9 +203,18 @@ jobs:
 
                   payload["stage"] = "classify-authority"
                   wrote = any(case.get("child", {}).get("writeResult") == "wrote" for case in cases)
+                  groups_classified = all(case.get("child", {}).get("groups") is not None for case in cases)
                   payload["observedBackingWriteAuthority"] = wrote
-                  payload["result"] = "write-authority-observed" if wrote else "all-write-attempts-denied"
-                  return_code = 42 if wrote else 0
+                  payload["credentialGroupsClassified"] = groups_classified
+                  if wrote:
+                      payload["result"] = "write-authority-observed"
+                      return_code = 42
+                  elif not groups_classified:
+                      payload["result"] = "all-write-attempts-denied-credential-groups-unclassified"
+                      return_code = 43
+                  else:
+                      payload["result"] = "all-write-attempts-denied"
+                      return_code = 0
               except Exception as error:
                   payload["result"] = "probe-error"
                   payload["errorKind"] = type(error).__name__
@@ -251,7 +265,12 @@ jobs:
           assert payload["productionBytesChanged"] is False
           assert payload["productionAcceptanceClaimed"] is False
           assert payload["physicalAuthorityCreated"] is False
-          assert payload["result"] in {"probe-error", "write-authority-observed", "all-write-attempts-denied"}
+          assert payload["result"] in {
+              "probe-error",
+              "write-authority-observed",
+              "all-write-attempts-denied-credential-groups-unclassified",
+              "all-write-attempts-denied",
+          }
           if payload["result"] == "probe-error":
               assert isinstance(payload["stage"], str) and payload["stage"]
               assert isinstance(payload["errorKind"], str) and payload["errorKind"]
@@ -260,6 +279,7 @@ jobs:
               assert payload["errorKind"] is None
               assert payload["errorMessage"] is None
               assert len(payload["cases"]) == 3
+              assert isinstance(payload["credentialGroupsClassified"], bool)
           PY
           git diff --check cd8a398f54d70c866e74091b04df9bc9f9eefa55 HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
