@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 7,
+    "classifiedPRTotal": 9,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1118,7 +1118,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3315,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.269,
+        "similarity": 0.277,
         "title": "[Capture P0][VALIDATION] Re-prove source + private-input custody on current carrier"
       },
       "3316": {
@@ -1129,7 +1129,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.044,
+        "similarity": 0.317,
         "title": "[Capture P0][QA] Align authenticated observation copy oracle with shipping language"
       },
       "3317": {
@@ -1140,8 +1140,30 @@
         "lane": "capture-signed-install-custody",
         "pr": 3317,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.259,
+        "similarity": 0.307,
         "title": "[Capture P0][VALIDATION] Probe APFS sparse-image backing-file custody"
+      },
+      "3318": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3318,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.314,
+        "title": "[Capture P0][VALIDATION] Re-earn private Tuya read lease on current #3142"
+      },
+      "3319": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3319,
+        "recommendedAction": "independent-review",
+        "similarity": 0.324,
+        "title": "[Capture P0][COMPOSE] Add terminal-presentation phase fence to current callback candidate"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1174,9 +1196,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:02:36Z",
+    "liveRefreshAt": "2026-08-14T23:02:52Z",
     "liveRefreshDuplicatesSuppressed": [
-      3317
+      3318
     ],
     "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4959,10 +4981,10 @@
       "userValue": 7
     }
   },
-  "revision": 239,
+  "revision": 240,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:02:36Z",
+  "updatedAt": "2026-08-14T23:02:52Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5038,7 +5060,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:02:36Z",
+      "updatedAt": "2026-08-14T23:02:52Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
