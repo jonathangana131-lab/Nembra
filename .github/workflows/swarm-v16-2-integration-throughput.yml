@@ -1,0 +1,138 @@
+name: Swarm V16.2 Integration Throughput Readiness
+
+on:
+  pull_request:
+    paths:
+      - '.swarm/config.json'
+      - 'SWARM_GO.md'
+      - 'docs/SWARM_V16_2_INTEGRATION_THROUGHPUT.md'
+      - 'scripts/swarm_control.py'
+      - 'scripts/swarmcp/**'
+      - 'scripts/swarm_v16_1_pr_admission.py'
+      - 'scripts/ci/tests/test_swarm_v16_2.py'
+      - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
+      - '.github/workflows/swarm-v16-2-*.yml'
+      - '.github/workflows/swarm-v16-1-pr-admission.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.swarm/config.json'
+      - 'SWARM_GO.md'
+      - 'docs/SWARM_V16_2_INTEGRATION_THROUGHPUT.md'
+      - 'scripts/swarm_control.py'
+      - 'scripts/swarmcp/**'
+      - 'scripts/swarm_v16_1_pr_admission.py'
+      - 'scripts/ci/tests/test_swarm_v16_2.py'
+      - '.github/workflows/swarm-v16-2-*.yml'
+      - '.github/workflows/swarm-v16-1-pr-admission.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  V16_2_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+concurrency:
+  group: swarm-v16-2-readiness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.V16_2_CANDIDATE_SHA }}
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Bind literal candidate head
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$V16_2_CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$V16_2_CANDIDATE_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile V16.2 control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/swarm_control.py \
+            scripts/swarm_v16_1_pr_admission.py \
+            scripts/swarmcp/*.py \
+            scripts/ci/tests/test_swarm_v16_mission_graph.py \
+            scripts/ci/tests/test_swarm_v16_1_convergence.py \
+            scripts/ci/tests/test_swarm_v16_1_rollout.py \
+            scripts/ci/tests/test_swarm_v16_2.py
+
+      - name: Validate V16.2 policy config
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          cfg=json.load(open('.swarm/config.json'))
+          v=cfg['v16']
+          assert v['enabled'] is True
+          assert v['policyVersion']=='16.2'
+          assert v['convergence']['newSwarmPRProtocol']=='16.2'
+          t=v['integrationThroughput']
+          assert t['automaticMergePressure'] is True
+          assert t['integrationBeforeCapacityMining'] is True
+          assert t['canonicalAbsorptionRequired'] is True
+          assert t['maxOpenChildrenPerParent']==2
+          assert t['maxOpenIntegrationChildrenPerParent']==1
+          assert t['producerSchemaFence'] is True
+          assert t['mergePressureMayBypassTruthGates'] is False
+          PY
+
+      - name: Run retained V16 and V16.1 suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_swarm_v16_mission_graph.py
+          python3 scripts/ci/tests/test_swarm_v16_1_convergence.py
+          python3 scripts/ci/tests/test_swarm_v16_1_rollout.py
+          python3 scripts/ci/tests/test_swarm_v16_ops.py
+          python3 scripts/ci/tests/test_swarm_v16_activation_scale.py
+          python3 scripts/ci/tests/test_swarm_v16_live_refresh_workflow.py
+
+      - name: Run V16.2 integration-throughput regressions
+        run: python3 scripts/ci/tests/test_swarm_v16_2.py
+
+      - name: Re-run adversarial 30-worker simulations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt, json, sys
+          sys.path.insert(0,'scripts')
+          import swarm_control as sc
+          now=dt.datetime(2026,8,14,8,10,tzinfo=dt.timezone.utc)
+          old=sc.run_v16_adversarial_simulation(30,now)
+          v161=sc.run_v16_1_adversarial_simulation(30,now)
+          graph=sc.seed_nembra_graph(now)
+          workers=[f'sol-v162-{i}' for i in range(30)]
+          routed=sc.recommend_mission_packets(graph,worker_ids=workers,limit=30,now=now)
+          print(json.dumps({'v16':old,'v16_1':v161,'v16_2_workers':len(routed)},indent=2,sort_keys=True))
+          assert old['passed']
+          assert v161['passed']
+          assert len(routed)==30
+          PY
+
+      - name: Prove physical truth boundary unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          cfg=json.load(open('.swarm/config.json'))
+          assert cfg['physicalSafety']['schedulerMayPromotePhysicalGo'] is False
+          assert cfg['v16']['physicalSafety']['schedulerMayPromotePhysicalGo'] is False
+          assert cfg['v16']['physicalSafety']['commandsRequirePhysicalMapping'] is True
+          assert cfg['v16']['integrationThroughput']['mergePressureMayBypassTruthGates'] is False
+          PY
