@@ -1,0 +1,36 @@
+name: Capture receipt gate collapse materializer
+
+on:
+  push:
+    branches:
+      - capture/application-delivery-cutoff-repair-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/application-delivery-cutoff-repair-sol-20260814
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Collapse regressions into canonical selected suites
+        env:
+          EXPECTED_PARENT: 0a932e5a71279fb66e03437270fb0c308632cb92
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test -f scripts/ci/materialize_capture_receipt_gate_collapse.py
+          python3 scripts/ci/materialize_capture_receipt_gate_collapse.py
+          test ! -e scripts/ci/materialize_capture_receipt_gate_collapse.py
+          test ! -e .github/workflows/capture-receipt-gate-collapse-materializer.yml
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add -A
+          git commit -m 'Capture V16.1: collapse receipt proof into canonical gates'
+          git push origin HEAD:capture/application-delivery-cutoff-repair-sol-20260814
