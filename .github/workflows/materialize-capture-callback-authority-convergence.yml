@@ -1,0 +1,94 @@
+name: Materialize Capture callback authority convergence
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/materialize-capture-callback-authority-convergence.yml'
+      - 'scripts/ci/materialize_capture_callback_authority_convergence.py'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationDeliveryCutoffSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptAuthorityTests.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptArbitrationSourceTests.swift'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-capture-callback-authority-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: 29fb304613c142ba99e1259e9d612c1919309145
+      WORKFLOW_PATH: .github/workflows/materialize-capture-callback-authority-convergence.yml
+      SCRIPT_PATH: scripts/ci/materialize_capture_callback_authority_convergence.py
+    steps:
+      - name: Checkout immutable construction head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact parent and construction-only delta
+        run: |
+          set -euo pipefail
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            "$WORKFLOW_PATH" \
+            "$SCRIPT_PATH" \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationDeliveryCutoffSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptAuthorityTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptArbitrationSourceTests.swift \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Materialize product and package authority repair
+        run: |
+          set -euo pipefail
+          python3 -B "$SCRIPT_PATH"
+          rm "$WORKFLOW_PATH" "$SCRIPT_PATH"
+
+      - name: Verify bounded final product delta
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort > "$RUNNER_TEMP/final-actual"
+          printf '%s\n' \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationDeliveryCutoffSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptAuthorityTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptArbitrationSourceTests.swift \
+            | LC_ALL=C sort > "$RUNNER_TEMP/final-expected"
+          diff -u "$RUNNER_TEMP/final-expected" "$RUNNER_TEMP/final-actual"
+          test ! -e "$WORKFLOW_PATH"
+          test ! -e "$SCRIPT_PATH"
+          grep -Fq 'nonisolated public func captureApplicationReceipt' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'consumedApplicationDeliveryIDs' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'captureLivenessBoundary(for: token)' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'self?.admitApplicationUpdateCallback(update, token: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'device?.deviceModel.devId' NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(grep -Fc 'captureApplicationReceipt(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift)" -eq 1
+          ! grep -Fq 'TuyaReadOnlyApplicationReceipt.capture' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit exact materialized repair and retire constructor
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-callback-authority-materializer'
+          git config user.email 'nembra-callback-authority-materializer@users.noreply.github.com'
+          git add -A
+          git commit -m 'capture: bind callback source and one-shot delivery chronology'
+          git push origin "HEAD:$BRANCH"
