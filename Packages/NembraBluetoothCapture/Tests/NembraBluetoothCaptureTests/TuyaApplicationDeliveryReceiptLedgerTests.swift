@@ -7,7 +7,7 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
     @Test("opaque receipt preserves callback delivery time across delayed actor admission")
     func applicationReceiptPreservesDeliveryInstant() async throws {
         let baseline = DispatchTime.now().uptimeNanoseconds
-        let clock = TestUptimeClock(baseline)
+        let clock = DeliveryReceiptTestUptimeClock(baseline)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
         let token = try await ledger.beginConnection()
         try await ledger.markAuthenticationStarted(for: token)
@@ -38,6 +38,54 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
             payloadTime - baseline
                 < TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds
         )
+    }
+
+    @Test("a genuinely post-cut package receipt still retires incomplete observation")
+    func postCutApplicationReceiptCannotRescueGeneration() async throws {
+        let realNow = DispatchTime.now().uptimeNanoseconds
+        let horizon = TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds
+        let oneSecond: UInt64 = 1_000_000_000
+        let fiveSeconds: UInt64 = 5_000_000_000
+
+        // Authenticate 61 seconds before the package-owned receipt clock. Advance accepted
+        // liveness in <=5-second steps only through +59 seconds, so continuity remains valid while
+        // canonical readiness remains incomplete. The later real DispatchTime receipt is therefore
+        // genuinely beyond the strict 60-second horizon and must terminalize rather than rescue it.
+        let authenticatedBaseline = realNow - horizon - oneSecond
+        let clock = DeliveryReceiptTestUptimeClock(authenticatedBaseline)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: token)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+
+        var offset = fiveSeconds
+        while offset <= 55 * oneSecond {
+            clock.advance(to: authenticatedBaseline + offset)
+            try await ledger.observeCurrentConnection(for: token)
+            offset += fiveSeconds
+        }
+        clock.advance(to: authenticatedBaseline + 59 * oneSecond)
+        try await ledger.observeCurrentConnection(for: token)
+
+        let postCutReceipt = TuyaReadOnlyApplicationReceipt.capture(for: token)
+        await #expect(
+            throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached
+        ) {
+            try await ledger.recordApplicationUpdate(
+                isNonEmpty: true,
+                receipt: postCutReceipt,
+                for: token
+            )
+        }
+
+        let terminal = await ledger.currentPreflightSnapshot()
+        #expect(terminal.applicationPayloadCount == 0)
+        #expect(terminal.latestApplicationPayloadUptimeNanoseconds == nil)
+        if case .failed = terminal.authenticationState {
+            // Expected package-owned terminal; no disconnect claim is manufactured here.
+        } else {
+            Issue.record("Post-cut receipt must leave the generation terminally failed.")
+        }
     }
 
     @Test("application receipt cannot cross exact connection-token ownership")
@@ -92,6 +140,29 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(mutation.contains("try requireContinuousAuthenticatedObservation(at: now)"))
         #expect(mutation.contains("try requireIncompleteObservationHorizonOpen(at: now)"))
         #expect(!mutation.contains("public func recordApplicationUpdate(\n        isNonEmpty: Bool,\n        receipt: TuyaReadOnlyApplicationReceipt,\n        receivedAtUptimeNanoseconds:"))
+    }
+}
+
+private final class DeliveryReceiptTestUptimeClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64
+
+    init(_ value: UInt64) {
+        self.value = value
+    }
+
+    var now: @Sendable () -> UInt64 {
+        { [self] in
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+    }
+
+    func advance(to newValue: UInt64) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
     }
 }
 
