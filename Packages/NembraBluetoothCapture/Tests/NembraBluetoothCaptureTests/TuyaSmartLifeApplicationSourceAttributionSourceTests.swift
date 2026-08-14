@@ -36,8 +36,11 @@ extension TuyaSecureLinkProductSurfaceSourceTests {
         // Application payloads are part of physical-readiness evidence. The driver therefore
         // needs an explicit fail-closed source-authority channel rather than treating any
         // non-empty callback delivered to this delegate as evidence from the selected device.
-        #expect(protocolBody.contains("sourceAuthorityFailure: @escaping () -> Void"))
+        #expect(protocolBody.contains("sourceAuthorityFailure: @escaping @MainActor () -> Void"))
         #expect(connectCall.contains("sourceAuthorityFailure:"))
+        #expect(connectCall.contains("acceptanceCutIsClosed = true"))
+        #expect(connectCall.contains("watchdog?.cancel()"))
+        #expect(connectCall.contains("phase = .failed"))
         #expect(connectCall.contains("invalidateSourceAuthority("))
 
         // Bind callback admission to the exact Tuya device ID selected for this connection.

@@ -1484,11 +1484,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         self.applicationUpdateAdmissionTail = admissionTask
                     },
                     sourceAuthorityFailure: { [weak self] in
-                        Task { @MainActor in
-                            guard let self else { return }
-                            await self.invalidateSourceAuthority(
+                        guard let self,
+                              self.currentConnectionToken == token else { return }
+
+                        // SmartLifeDriver has already latched application forwarding closed.
+                        // Close acceptance on the same MainActor turn before package retirement is
+                        // scheduled so a ready watchdog continuation cannot win the scheduler race.
+                        self.acceptanceCutIsClosed = true
+                        self.watchdog?.cancel()
+                        self.watchdog = nil
+                        self.phase = .failed
+                        self.message = "SmartLife application callback source no longer matched the selected scooter. The exact session is being retired; relaunch Capture before another attempt."
+
+                        Task { @MainActor [weak self] in
+                            await self?.invalidateSourceAuthority(
                                 token: token,
-                                message: "SmartLife application callback source no longer matched the selected scooter. The generation was retired without admitting that payload.",
+                                message: "SmartLife application callback source no longer matched the selected scooter. The generation was retired without admitting that payload or claiming Bluetooth disconnected.",
                                 kind: "sdk_application_callback_source_mismatch"
                             )
                         }
@@ -2480,7 +2491,7 @@ private protocol OfficialTuyaDriver: AnyObject {
         uuid: String,
         productID: String,
         onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,
-        sourceAuthorityFailure: @escaping () -> Void,
+        sourceAuthorityFailure: @escaping @MainActor () -> Void,
         success: @escaping () -> Void,
         failure: @escaping () -> Void
     )
@@ -2689,14 +2700,14 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
     private var device: ThingSmartDevice?
     private var expectedDeviceID: String?
     private var onApplicationUpdate: (@MainActor ([String: String]) -> Void)?
-    private var onSourceAuthorityFailure: (() -> Void)?
+    private var onSourceAuthorityFailure: (@MainActor () -> Void)?
 
     func connect(
         deviceID: String,
         uuid: String,
         productID: String,
         onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,
-        sourceAuthorityFailure: @escaping () -> Void,
+        sourceAuthorityFailure: @escaping @MainActor () -> Void,
         success: @escaping () -> Void,
         failure: @escaping () -> Void
     ) {
