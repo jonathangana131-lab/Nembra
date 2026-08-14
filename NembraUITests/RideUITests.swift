@@ -189,6 +189,71 @@ final class RideUITests: XCTestCase {
     }
 
     @MainActor
+    func testLongCompletedRideRouteStaysInteractiveAfterDetailInvalidation() {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            XCUIDevice.shared.appearance = previousAppearance
+            XCUIDevice.shared.orientation = .portrait
+        }
+
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.appearance = .light
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"] = "1"
+        app.launchEnvironment["NEMBRA_SIMULATION_ROUTE_POINT_COUNT"] = "5000"
+        app.launch()
+
+        let ridesTab = app.tabBars.buttons["Rides"]
+        XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
+        ridesTab.tap()
+
+        let row = app.descendants(matching: .any)["rides.completed-row"]
+        XCTAssertTrue(
+            row.waitForExistence(timeout: 15),
+            "The bounded 5,000-point QA route must still complete through the real recorder/history pipeline."
+        )
+        row.tap()
+
+        let routeMap = app.descendants(matching: .any)["rides.route-map"]
+        XCTAssertTrue(
+            routeMap.waitForExistence(timeout: 8),
+            "A 5,000-point persisted route must become an interactive real MapKit Ride Detail within the UI acceptance bound."
+        )
+        let routeSemantics = routeMap.value as? String ?? ""
+        XCTAssertTrue(
+            routeSemantics.localizedCaseInsensitiveContains("5000 recorded points"),
+            "Long-route acceptance must prove the exact persisted fixture volume rather than a short-route fallback."
+        )
+        XCTAssertTrue(routeSemantics.localizedCaseInsensitiveContains("Route coverage partial"))
+        keepScreenshot(named: "Completed Ride Details Long Route")
+
+        let recordingDetails = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Recording details")
+        ).firstMatch
+        for _ in 0..<3 where !recordingDetails.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(
+            recordingDetails.waitForExistence(timeout: 3) && recordingDetails.isHittable,
+            "The long MapKit route must not make the final detail disclosure unreachable."
+        )
+        recordingDetails.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Recorded points"].waitForExistence(timeout: 4),
+            "Expanding Recording details forces the parent Ride Detail to update and must remain responsive with a long route."
+        )
+        XCTAssertTrue(
+            app.staticTexts["5000"].waitForExistence(timeout: 4),
+            "The post-invalidation detail view must still expose the exact long-route point count."
+        )
+        keepScreenshot(named: "Completed Ride Details Long Route Expanded")
+    }
+
+    @MainActor
     private func waitForValue(
         _ value: String,
         element: XCUIElement,
