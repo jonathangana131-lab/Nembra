@@ -253,6 +253,17 @@ final class NembraUITests: XCTestCase {
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
         XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
 
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "Connected-stopped must keep the Energy Rail present at a source-observed zero."
+        )
+        XCTAssertEqual(
+            energyRail.value as? String,
+            "0 watts",
+            "A sealed zero-watt receipt is accepted measurement truth and must remain distinct from unavailable."
+        )
+
         let light = app.buttons["dashboard.control.light"]
         let lock = app.buttons["dashboard.control.lock"]
         assertMinimumTouchTarget(light, named: "Dashboard light")
