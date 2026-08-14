@@ -1100,6 +1100,7 @@
       "capture-package-test-runner-recovery",
       "capture-private-identity-custody",
       "capture-signed-install-custody",
+      "dashboard-live-cockpit",
       "go-worker-persistence-hardening",
       "home-accessibility-product",
       "legacy-github-reconciliation",
@@ -1118,7 +1119,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T13:00:09Z",
+    "liveRefreshAt": "2026-08-14T13:00:27Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4901,10 +4902,10 @@
       "userValue": 7
     }
   },
-  "revision": 204,
+  "revision": 205,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T13:00:09Z",
+  "updatedAt": "2026-08-14T13:00:28Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -4980,7 +4981,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T13:00:09Z",
+      "updatedAt": "2026-08-14T13:00:27Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
