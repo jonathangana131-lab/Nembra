@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 10,
+    "classifiedPRTotal": 12,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1175,6 +1175,28 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.361,
         "title": "[Capture P0][VISUAL RECOVERY] Re-anchor iPhone 12 evidence to ba615 exact product"
+      },
+      "3327": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "dd7e7d793a5513cb53d672a12cead05b5eae265d",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3327,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.502,
+        "title": "[Capture P0][VALIDATION] Reject blank light visual evidence"
+      },
+      "3328": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "a730f8a7677cb90b8501fe54132cc484d90fea5a",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3328,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.53,
+        "title": "[Capture P0][VISUAL][VALIDATION] Reject blank light Capture evidence"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1207,7 +1229,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:55:47Z",
+    "liveRefreshAt": "2026-08-14T23:56:18Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4992,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 322,
+  "revision": 323,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:55:47Z",
+  "updatedAt": "2026-08-14T23:56:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5071,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:55:47Z",
+      "updatedAt": "2026-08-14T23:56:18Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
