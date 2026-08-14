@@ -240,6 +240,7 @@ def _parse(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
+        _require(sys.flags.isolated == 1, "privileged broker requires isolated Python (-I)")
         _require(sys.platform == "darwin", "privileged broker requires macOS")
         _require(os.geteuid() == 0 and os.getuid() == 0, "privileged broker requires real/effective uid 0")
         args = _parse(sys.argv[1:] if argv is None else argv)
