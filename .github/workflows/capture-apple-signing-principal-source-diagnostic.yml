@@ -1,0 +1,64 @@
+name: Capture Apple signing principal source diagnostic
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-apple-signing-principal-source-diagnostic.yml
+      - scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_principal_source_gap.py
+      - scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-apple-signing-principal-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prove-pinned-parent-red:
+    name: Prove bf8 principal authority is source-RED without root
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact parent and additive diagnostic
+        shell: bash
+        env:
+          EXACT_PARENT: bf8fd13b0bab33365a306b3fb39988e2dee0f759
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-apple-signing-principal-source-diagnostic.yml \
+            scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_principal_source_gap.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; compile(Path("scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_principal_source_gap.py").read_text(encoding="utf-8"), "<principal-source-diagnostic>", "exec", dont_inherit=True)'
+
+      - name: Prove pinned source gap without privilege
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(/usr/bin/id -u)" != 0
+          ! command -v sudo >/dev/null 2>&1 || true
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_principal_source_gap.py | tee "$RUNNER_TEMP/diagnostic.txt"
+          grep -F 'CAPTURE_SIGNING_PRINCIPAL_SOURCE_PARENT_RED' "$RUNNER_TEMP/diagnostic.txt"
+          grep -F 'rootExecuted=false' "$RUNNER_TEMP/diagnostic.txt"
+          grep -F 'physicalAuthorityCreated=false' "$RUNNER_TEMP/diagnostic.txt"
+
+      - name: Preserve authority boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'Source diagnostic only: candidate bytes never execute as root; no signing, Xcode, install, Bluetooth/device, or physical authority.'
