@@ -1,0 +1,174 @@
+name: Capture callback source + occurrence convergence materializer
+
+on:
+  push:
+    branches:
+      - capture/application-delivery-cutoff-repair-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: f7d054da0d13e4233421e510d2c3120f4b6d6cfe
+      BASE: 29fb304613c142ba99e1259e9d612c1919309145
+      APP: NembraApp/App/NembraCaptureEntrypoint.swift
+      LEDGER: Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+      SOURCE_TEST: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift
+      RUNTIME_TEST: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift
+      ATTRIBUTION_ORACLE: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift
+      ATTRIBUTION_ORACLE_COMMIT: 988854cdb171f86ce36c19f99d48471bb329d504
+      WORKFLOW: .github/workflows/capture-callback-source-occurrence-convergence-materializer.yml
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/application-delivery-cutoff-repair-sol-20260814
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact clean product parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' "$WORKFLOW" | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test ! -e "$ATTRIBUTION_ORACLE"
+
+      - name: Converge source identity and single-event receipt authority
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$ATTRIBUTION_ORACLE_COMMIT"
+          git show "$ATTRIBUTION_ORACLE_COMMIT:$ATTRIBUTION_ORACLE" > "$RUNNER_TEMP/attribution-oracle.swift"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          app = app_path.read_text(encoding='utf-8')
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          # Official driver contract + implementation both get the fail-closed source channel.
+          signature_old = '''        onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,\n        success: @escaping () -> Void,\n        failure: @escaping () -> Void\n'''
+          signature_new = '''        onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,\n        sourceAuthorityFailure: @escaping () -> Void,\n        success: @escaping () -> Void,\n        failure: @escaping () -> Void\n'''
+          if app.count(signature_old) != 2:
+              raise SystemExit(f'driver signatures: expected 2 matches, found {app.count(signature_old)}')
+          app = app.replace(signature_old, signature_new)
+
+          app = replace_once(
+              app,
+              '''    private var device: ThingSmartDevice?\n    private var onApplicationUpdate: (@MainActor ([String: String]) -> Void)?\n''',
+              '''    private var device: ThingSmartDevice?\n    private var expectedDeviceID: String?\n    private var onApplicationUpdate: (@MainActor ([String: String]) -> Void)?\n    private var onSourceAuthorityFailure: (() -> Void)?\n''',
+              'driver source state'
+          )
+          app = replace_once(
+              app,
+              '''        self.onApplicationUpdate = onApplicationUpdate\n        device = ThingSmartDevice(deviceId: deviceID)\n''',
+              '''        expectedDeviceID = deviceID\n        self.onApplicationUpdate = onApplicationUpdate\n        onSourceAuthorityFailure = sourceAuthorityFailure\n        device = ThingSmartDevice(deviceId: deviceID)\n''',
+              'driver exact selected device binding'
+          )
+          app = replace_once(
+              app,
+              '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {\n        guard let dps, !dps.isEmpty else { return }\n''',
+              '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {\n        guard let callbackDeviceID = device?.deviceModel.devId,\n              callbackDeviceID == expectedDeviceID else {\n            // Latch application forwarding closed synchronously at the SDK delegate boundary\n            // before controller retirement is scheduled; no mismatched payload may slip through.\n            onApplicationUpdate = nil\n            onSourceAuthorityFailure?()\n            onSourceAuthorityFailure = nil\n            expectedDeviceID = nil\n            return\n        }\n        guard let dps, !dps.isEmpty else { return }\n''',
+              'delegate exact device source fence'
+          )
+
+          callback_tail = '''                        self.applicationUpdateAdmissionTail = admissionTask\n                    },\n                    success: { [weak self] in\n'''
+          callback_tail_new = '''                        self.applicationUpdateAdmissionTail = admissionTask\n                    },\n                    sourceAuthorityFailure: { [weak self] in\n                        Task { @MainActor in\n                            guard let self else { return }\n                            await self.invalidateSourceAuthority(\n                                token: token,\n                                message: "SmartLife application callback source no longer matched the selected scooter. The generation was retired without admitting that payload.",\n                                kind: "sdk_application_callback_source_mismatch"\n                            )\n                        }\n                    },\n                    success: { [weak self] in\n'''
+          app = replace_once(app, callback_tail, callback_tail_new, 'controller source-failure channel')
+
+          # The receipt already exists only after package-owned non-empty admission at callback
+          # delivery. Actor consumption therefore accepts one opaque event object, not a second
+          # caller-selected occurrence bit.
+          app = replace_once(
+              app,
+              '''            try await sessionLedger.recordApplicationUpdate(\n                isNonEmpty: !update.isEmpty,\n                receipt: receipt,\n                for: token\n            )\n''',
+              '''            try await sessionLedger.recordApplicationUpdate(\n                receipt: receipt,\n                for: token\n            )\n''',
+              'app single-event receipt consumption'
+          )
+          app_path.write_text(app, encoding='utf-8')
+
+          ledger_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift')
+          ledger = ledger_path.read_text(encoding='utf-8')
+          public_old = '''    public func recordApplicationUpdate(\n        isNonEmpty: Bool,\n        receipt: TuyaReadOnlyApplicationReceipt,\n        for token: TuyaReadOnlyConnectionToken\n    ) throws {\n        try requireCurrent(token)\n        let now = try receiptAuthority.consumeApplicationReceipt(receipt, for: token)\n        guard case .authenticated = authenticationState else {\n            throw MutationError.authenticationRequired\n        }\n        guard isNonEmpty else {\n            throw MutationError.emptyApplicationUpdate\n        }\n\n        try admitApplicationUpdate(at: now)\n    }\n'''
+          public_new = '''    public func recordApplicationUpdate(\n        receipt: TuyaReadOnlyApplicationReceipt,\n        for token: TuyaReadOnlyConnectionToken\n    ) throws {\n        try requireCurrent(token)\n        let now = try receiptAuthority.consumeApplicationReceipt(receipt, for: token)\n        guard case .authenticated = authenticationState else {\n            throw MutationError.authenticationRequired\n        }\n\n        // Receipt issuance already proved a non-empty trusted callback occurrence and sealed its\n        // chronology. Consumption cannot combine that event with a second caller-selected fact.\n        try admitApplicationUpdate(at: now)\n    }\n'''
+          ledger = replace_once(ledger, public_old, public_new, 'public receipt consumption API')
+          ledger_path.write_text(ledger, encoding='utf-8')
+
+          runtime_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlySessionLedgerTests.swift')
+          runtime = runtime_path.read_text(encoding='utf-8')
+          runtime = runtime.replace(
+              'recordApplicationUpdate(isNonEmpty: true, receipt:',
+              'recordApplicationUpdate(receipt:'
+          )
+          runtime = runtime.replace(
+              '''recordApplicationUpdate(\n            isNonEmpty: true,\n            receipt:''',
+              '''recordApplicationUpdate(\n            receipt:'''
+          )
+          if 'recordApplicationUpdate(isNonEmpty: true, receipt:' in runtime or 'recordApplicationUpdate(\n            isNonEmpty: true,\n            receipt:' in runtime:
+              raise SystemExit('runtime tests still carry second occurrence bit with receipt')
+          runtime_path.write_text(runtime, encoding='utf-8')
+
+          source_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift')
+          source = source_path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              '''        #expect(receiver.contains("receipt: TuyaReadOnlyApplicationReceipt"))\n        #expect(receiver.contains("receipt: receipt"))\n        #expect(!receiver.contains("captureApplicationReceipt("))\n''',
+              '''        #expect(receiver.contains("receipt: TuyaReadOnlyApplicationReceipt"))\n        #expect(receiver.contains("receipt: receipt"))\n        #expect(!receiver.contains("isNonEmpty:"))\n        #expect(!receiver.contains("captureApplicationReceipt("))\n''',
+              'receiver single-event source assertion'
+          )
+          source = replace_once(
+              source,
+              '''        #expect(ledger.contains("public nonisolated func captureApplicationReceipt("))\n        #expect(ledger.contains("public nonisolated func captureLivenessReceipt("))\n''',
+              '''        #expect(ledger.contains("public nonisolated func captureApplicationReceipt("))\n        #expect(ledger.contains("isNonEmpty: Bool"))\n        #expect(ledger.contains("guard isNonEmpty else { throw MutationError.emptyApplicationUpdate }"))\n        #expect(ledger.contains("public func recordApplicationUpdate(\\n        receipt: TuyaReadOnlyApplicationReceipt,"))\n        #expect(!ledger.contains("public func recordApplicationUpdate(\\n        isNonEmpty: Bool,\\n        receipt: TuyaReadOnlyApplicationReceipt,"))\n        #expect(ledger.contains("public nonisolated func captureLivenessReceipt("))\n''',
+              'package occurrence sealed in receipt assertion'
+          )
+          source_path.write_text(source, encoding='utf-8')
+          PY
+
+          mkdir -p "$(dirname "$ATTRIBUTION_ORACLE")"
+          cp "$RUNNER_TEMP/attribution-oracle.swift" "$ATTRIBUTION_ORACLE"
+          rm "$WORKFLOW"
+
+      - name: Verify exact product-only convergence
+        run: |
+          set -euo pipefail
+          git add -A "$APP" "$LEDGER" "$SOURCE_TEST" "$RUNTIME_TEST" "$ATTRIBUTION_ORACLE" "$WORKFLOW"
+          git diff --cached --check "$BASE"
+          git diff --cached --name-only "$BASE" | LC_ALL=C sort > "$RUNNER_TEMP/final-actual"
+          printf '%s\n' \
+            "$APP" \
+            "$LEDGER" \
+            "$SOURCE_TEST" \
+            "$RUNTIME_TEST" \
+            "$ATTRIBUTION_ORACLE" \
+            | LC_ALL=C sort > "$RUNNER_TEMP/final-expected"
+          diff -u "$RUNNER_TEMP/final-expected" "$RUNNER_TEMP/final-actual"
+
+          grep -Fq 'sourceAuthorityFailure: @escaping () -> Void' "$APP"
+          grep -Fq 'guard let callbackDeviceID = device?.deviceModel.devId' "$APP"
+          grep -Fq 'callbackDeviceID == expectedDeviceID' "$APP"
+          grep -Fq 'onApplicationUpdate = nil' "$APP"
+          grep -Fq 'sdk_application_callback_source_mismatch' "$APP"
+          grep -Fq 'public func recordApplicationUpdate(' "$LEDGER"
+          grep -Fq 'receipt: TuyaReadOnlyApplicationReceipt' "$LEDGER"
+          ! grep -Fq $'public func recordApplicationUpdate(\n        isNonEmpty: Bool,\n        receipt: TuyaReadOnlyApplicationReceipt' "$LEDGER"
+          grep -Fq 'smartLifeApplicationEvidenceRequiresExactSelectedDeviceSource' "$ATTRIBUTION_ORACLE"
+
+      - name: Commit convergence and retire constructor
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-callback-authority-convergence'
+          git config user.email 'nembra-callback-authority-convergence@users.noreply.github.com'
+          git commit -m 'Capture V16.1: bind application occurrence to exact callback source receipt'
+          git push origin HEAD:capture/application-delivery-cutoff-repair-sol-20260814
