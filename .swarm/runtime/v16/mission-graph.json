@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 12,
+    "classifiedPRTotal": 11,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.179,
+        "similarity": 0.18,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3314": {
@@ -1143,17 +1143,6 @@
         "similarity": 0.318,
         "title": "[Capture P0][VALIDATION] Attest former-build mutation authority"
       },
-      "3325": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "203afd39db23e2308ee491fc7a80caa44878cc16",
-        "lane": "capture-signed-install-custody",
-        "pr": 3325,
-        "recommendedAction": "independent-review",
-        "similarity": 0.264,
-        "title": "[Capture P0][ORACLE] Align install-custody regression with selected-Xcode ABI"
-      },
       "3326": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1164,17 +1153,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.398,
         "title": "[Capture P0][VISUAL RECOVERY] Re-anchor iPhone 12 evidence to ba615 exact product"
-      },
-      "3328": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "a730f8a7677cb90b8501fe54132cc484d90fea5a",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3328,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.372,
-        "title": "[Capture P0][VISUAL][VALIDATION] Reject blank light Capture evidence"
       },
       "3329": {
         "classification": "validation",
@@ -1197,6 +1175,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.392,
         "title": "[Capture P0][VALIDATION] Reject blank light visual evidence on ba615 recovery"
+      },
+      "3332": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "0a5ec0c2cd887d260cc2af60f6d16926d3b9bcb7",
+        "lane": "capture-signed-install-custody",
+        "pr": 3332,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.299,
+        "title": "[Capture P0][ORACLE] Rebase install-custody regression on live carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1229,7 +1218,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:57:35Z",
+    "liveRefreshAt": "2026-08-14T23:57:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -5014,10 +5003,10 @@
       "userValue": 7
     }
   },
-  "revision": 327,
+  "revision": 328,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:57:35Z",
+  "updatedAt": "2026-08-14T23:57:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5093,7 +5082,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:57:35Z",
+      "updatedAt": "2026-08-14T23:57:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
