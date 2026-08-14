@@ -2237,6 +2237,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
+        guard phase == .observing else { return }
         phase = .failed
         self.message = message
         log(kind, ["generation": String(token.diagnosticGeneration)])
@@ -2261,6 +2262,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
+        guard phase == .observing else { return }
         phase = .failed
         self.message = message
         log(kind, ["generation": String(token.diagnosticGeneration)])
