@@ -32,7 +32,7 @@ struct TuyaAppIncompleteHorizonTerminalSourceTests {
         for terminal in [applicationTerminal, watchdogTerminal] {
             #expect(terminal.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
             #expect(terminal.contains("incomplete"))
-            #expect(terminal.contains("application evidence"))
+            #expect(terminal.contains("Scooter data did not become sufficient within 60 seconds."))
             #expect(!terminal.contains("invalidateInternalLifecycle"))
             #expect(!terminal.contains("markApplicationObservationTimedOut"))
             #expect(!terminal.contains("recordObservedTransportLoss"))
