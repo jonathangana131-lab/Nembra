@@ -1768,7 +1768,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
                 kind: "application_authenticated_incomplete_readiness_horizon_reached"
             )
-                  } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
             log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
             log("retired_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
@@ -1891,7 +1891,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         kind: "session_authenticated_incomplete_readiness_horizon_reached"
                     )
                     return
-                          } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
                     self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])
                     return
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
@@ -3484,7 +3484,7 @@ private struct SecureLinkView: View {
                             .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
                         requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
                         requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)
-                    requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)
+                        requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)
                     }
                 }
             }
