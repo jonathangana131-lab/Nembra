@@ -1064,52 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 291,
     "classifiedPRs": {
-      "2719": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2719,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.26,
-        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
-      },
-      "2733": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2733,
-        "recommendedAction": "independent-review",
-        "similarity": 0.278,
-        "title": "[Capture P0][REVIEW] Lock root admission before private writer capture"
-      },
-      "2734": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2734,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.365,
-        "title": "[Capture P0][RED TEAM] Break private identity publication custody"
-      },
-      "2741": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2741,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.256,
-        "title": "[Capture P0][RED TEAM] Pin signed-app custody helper execution bytes"
-      },
       "2754": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1998,7 +1954,7 @@
         "lane": "",
         "pr": 2979,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.207,
+        "similarity": 0.157,
         "title": "[P0 Capture][visual] Tighten first fold; fail closed blank evidence"
       },
       "2980": {
@@ -2416,7 +2372,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.097,
+        "similarity": 0.103,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3253": {
@@ -2449,8 +2405,8 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3265,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.197,
-        "title": "[Capture P0][VISUAL] Re-anchor standalone iPhone 12 evidence on 77c2"
+        "similarity": 0.539,
+        "title": "[Capture P0][VISUAL] Re-anchor standalone iPhone 12 evidence on e295"
       },
       "3268": {
         "classification": "validation",
@@ -2473,6 +2429,50 @@
         "recommendedAction": "independent-review",
         "similarity": 0.09,
         "title": "[Swarm V16.2] Convert burst output into canonical integration"
+      },
+      "3270": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3270,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.513,
+        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current 1b3da"
+      },
+      "3271": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-accessibility-visual-truth",
+        "pr": 3271,
+        "recommendedAction": "independent-review",
+        "similarity": 0.133,
+        "title": "[Capture P0][AX] Re-anchor lock-banner hierarchy regression on e295"
+      },
+      "3272": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3272,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.496,
+        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current e295"
+      },
+      "3273": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-export-ble-state-redteam",
+        "pr": 3273,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.108,
+        "title": "Validate Capture export BLE currentness ambiguity"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:22:47Z",
+    "liveRefreshAt": "2026-08-14T08:25:55Z",
     "liveRefreshDuplicatesSuppressed": [
       3262
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 147,
+  "revision": 148,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:25:31Z",
+  "updatedAt": "2026-08-14T08:27:58Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:22:47Z",
+      "updatedAt": "2026-08-14T08:25:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
