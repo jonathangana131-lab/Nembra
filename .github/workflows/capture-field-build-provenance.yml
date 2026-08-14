@@ -131,8 +131,8 @@ jobs:
           test "$(grep -xc 'verify_private_tuya_inputs' "$installer")" = '2'
           grep -Fq -- '--record "$TUYA_DEPENDENCY_PROVENANCE"' "$installer"
           first_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '1s/:.*//p')"
-          guard_line="$(grep -nF '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \\' "$installer" | sed -n '1s/:.*//p')"
-          build_line="$(grep -nF -- '-- xcodebuild \\' "$installer" | sed -n '1s/:.*//p')"
+          guard_line="$(grep -nF '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \' "$installer" | sed -n '1s/:.*//p')"
+          build_line="$(grep -nF -- '-- xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
           second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
           test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
           test "$first_private_verify_line" -lt "$guard_line"
