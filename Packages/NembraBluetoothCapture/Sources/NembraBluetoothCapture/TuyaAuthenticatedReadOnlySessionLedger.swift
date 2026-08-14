@@ -16,6 +16,31 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
     }
 }
 
+/// Opaque package-owned monotonic receipt captured at trusted application-callback delivery.
+///
+/// The caller may request a receipt for an already-issued connection token, but cannot choose or
+/// rewrite its monotonic timestamp. `recordApplicationUpdate` also revalidates exact token ownership
+/// before the receipt may move accepted chronology.
+public struct TuyaReadOnlyApplicationReceipt: Sendable {
+    fileprivate let token: TuyaReadOnlyConnectionToken
+    fileprivate let receivedAtUptimeNanoseconds: UInt64
+
+    fileprivate init(
+        token: TuyaReadOnlyConnectionToken,
+        receivedAtUptimeNanoseconds: UInt64
+    ) {
+        self.token = token
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+    }
+
+    public static func capture(for token: TuyaReadOnlyConnectionToken) -> Self {
+        Self(
+            token: token,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+    }
+}
+
 /// Owns the non-secret chronology consumed by `TuyaAuthenticatedReadOnlyPreflight`.
 ///
 /// The official Tuya adapter reports lifecycle events here rather than assembling preflight
@@ -222,6 +247,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Continuity and the incomplete-session deadline are checked before the update may advance
     /// accepted chronology. A deadline-crossing callback cannot become the evidence that rescues
     /// the same expired generation.
+    /// Compatibility admission for callers that do not own an earlier trusted delivery boundary.
+    /// It preserves the historical actor-entry chronology by sampling the ledger clock only after
+    /// exact-token/authentication/non-empty validation. The field app should prefer the explicit
+    /// receipt overload when it has a synchronous SDK callback-delivery boundary.
     public func recordApplicationUpdate(
         isNonEmpty: Bool,
         for token: TuyaReadOnlyConnectionToken
@@ -234,7 +263,40 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.emptyApplicationUpdate
         }
 
-        let now = try nextMonotonicObservation()
+        let legacyReceipt = TuyaReadOnlyApplicationReceipt(
+            token: token,
+            receivedAtUptimeNanoseconds: try nextMonotonicObservation()
+        )
+        try admitApplicationUpdate(receipt: legacyReceipt)
+    }
+
+    /// Records a non-empty application update at its package-owned delivery receipt instant.
+    ///
+    /// The opaque receipt is bound to the exact connection token and carries no caller-selected
+    /// scalar time. Continuity and the strict incomplete-session horizon are evaluated against that
+    /// captured delivery instant, so later actor scheduling cannot move a pre-cut callback past the
+    /// cutoff or rescue a genuinely post-cut callback.
+    public func recordApplicationUpdate(
+        isNonEmpty: Bool,
+        receipt: TuyaReadOnlyApplicationReceipt,
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        guard receipt.token == token else {
+            throw MutationError.staleConnection
+        }
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+        guard isNonEmpty else {
+            throw MutationError.emptyApplicationUpdate
+        }
+
+        try admitApplicationUpdate(receipt: receipt)
+    }
+
+    private func admitApplicationUpdate(receipt: TuyaReadOnlyApplicationReceipt) throws {
+        let now = receipt.receivedAtUptimeNanoseconds
         try requireContinuousAuthenticatedObservation(at: now)
         try requireIncompleteObservationHorizonOpen(at: now)
         guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
