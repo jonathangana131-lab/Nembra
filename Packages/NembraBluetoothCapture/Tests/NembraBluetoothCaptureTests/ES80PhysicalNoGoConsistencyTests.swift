@@ -70,8 +70,39 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("accepted receipt-bounded minimum duration"))
         #expect(runbook.contains("elapsed UI time is not evidence"))
         #expect(runbook.contains("Exactly one repeatable full CoreBluetooth UUID") || runbook.contains("exactly one repeatable full CoreBluetooth UUID"))
-        #expect(runbook.contains("Confirm correlated Bluetooth target"))
+        #expect(runbook.contains("Confirm this scooter signal"))
         #expect(runbook.contains("There is no hint-based override."))
+    }
+
+    @Test("operator correlation recipe uses the literal shipping controls")
+    func currentRunbookMatchesShippingCorrelationControls() throws {
+        let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let app = try repositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+
+        for control in [
+            "Start with scooter OFF",
+            "Finish OFF1",
+            "Start ON1",
+            "Finish ON1",
+            "Start OFF2",
+            "Finish OFF2",
+            "Start ON2",
+            "Finish ON2",
+            "Confirm this scooter signal",
+        ] {
+            #expect(runbook.contains("`\(control)`"))
+        }
+
+        #expect(!runbook.contains("Confirm correlated Bluetooth target"))
+        #expect(!runbook.contains("seal OFF1"))
+        #expect(!runbook.contains("seal ON1"))
+        #expect(!runbook.contains("seal OFF2"))
+        #expect(!runbook.contains("seal ON2"))
+
+        #expect(app.contains("Label(\"Start with scooter OFF\""))
+        #expect(app.contains("Label(\"Start \\(test.correlationWindowLabel)\""))
+        #expect(app.contains("Label(\"Finish \\(test.correlationWindowLabel)\""))
+        #expect(app.contains("Label(\"Confirm this scooter signal\""))
     }
 
     @Test("current account lease does not overclaim home identity continuity")
