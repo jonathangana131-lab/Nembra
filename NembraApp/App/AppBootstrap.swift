@@ -22,6 +22,7 @@ final class AppRuntime {
     private let simulationScenario: ScooterSimulationScenario?
     private let simulatorAutoCompletesRide: Bool
     private let simulatorStartsWithSpeedEvidenceGap: Bool
+    private let simulatorRoutePointCount: Int
     private let simulatorRouteRecorder: RideRouteRecorder?
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
@@ -35,6 +36,7 @@ final class AppRuntime {
         simulationScenario: ScooterSimulationScenario?,
         simulatorAutoCompletesRide: Bool,
         simulatorStartsWithSpeedEvidenceGap: Bool,
+        simulatorRoutePointCount: Int,
         simulatorRouteRecorder: RideRouteRecorder?
     ) {
         self.vehicleStore = vehicleStore
@@ -45,6 +47,7 @@ final class AppRuntime {
         self.simulationScenario = simulationScenario
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
         self.simulatorStartsWithSpeedEvidenceGap = simulatorStartsWithSpeedEvidenceGap
+        self.simulatorRoutePointCount = simulatorRoutePointCount
         self.simulatorRouteRecorder = simulatorRouteRecorder
     }
 
@@ -117,12 +120,7 @@ final class AppRuntime {
                         coverageAlreadyPartial: true
                     )
                     let now = Date()
-                    let route = [
-                        (37.33490, -122.00902),
-                        (37.33535, -122.00840),
-                        (37.33586, -122.00773),
-                        (37.33642, -122.00712)
-                    ]
+                    let route = simulatorRouteCoordinates()
                     for (index, coordinate) in route.enumerated() {
                         try await simulatorRouteRecorder.append(
                             latitude: coordinate.0,
@@ -169,12 +167,37 @@ final class AppRuntime {
         }
         return nil
     }
+
+    private func simulatorRouteCoordinates() -> [(Double, Double)] {
+        let canonicalShortRoute = [
+            (37.33490, -122.00902),
+            (37.33535, -122.00840),
+            (37.33586, -122.00773),
+            (37.33642, -122.00712)
+        ]
+        guard simulatorRoutePointCount > canonicalShortRoute.count else {
+            return canonicalShortRoute
+        }
+
+        // Long-route QA remains explicit Simulator evidence. Generate a bounded,
+        // deterministic path near the canonical fixture so MapKit sees realistic
+        // coordinate volume without claiming these points came from a physical ride.
+        let finalIndex = simulatorRoutePointCount - 1
+        return (0..<simulatorRoutePointCount).map { index in
+            let progress = Double(index) / Double(finalIndex)
+            let phase = progress * Double.pi * 6
+            let latitude = 37.33490 + (0.0060 * progress) + (sin(phase) * 0.00012)
+            let longitude = -122.00902 + (0.0080 * progress) + (cos(phase) * 0.00012)
+            return (latitude, longitude)
+        }
+    }
 }
 
 enum AppBootstrap {
     static let simulationStorageNamespaceEnvironmentKey = "NEMBRA_SIMULATION_STORAGE_NAMESPACE"
     static let simulationAutoCompleteRideEnvironmentKey = "NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"
     static let simulationSpeedEvidenceGapEnvironmentKey = "NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"
+    static let simulationRoutePointCountEnvironmentKey = "NEMBRA_SIMULATION_ROUTE_POINT_COUNT"
 
     private struct VehicleBootstrap {
         let service: any ScooterService
@@ -295,12 +318,18 @@ enum AppBootstrap {
             && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
         let simulatorStartsWithSpeedEvidenceGap = bootstrap.scenario == .connectedStopped
             && environment[simulationSpeedEvidenceGapEnvironmentKey] == "1"
+        let simulatorRoutePointCount = simulatorAutoCompletesRide
+            ? simulationRoutePointCount(environment: environment)
+            : 4
         let simulatorRouteRecorder: RideRouteRecorder?
         if bootstrap.scenario != nil,
            let routeStore = persistence?.routeStore {
+            let chunkSize = simulatorRoutePointCount > 4
+                ? min(simulatorRoutePointCount, 256)
+                : 2
             simulatorRouteRecorder = try? RideRouteRecorder(
                 store: routeStore,
-                chunkSize: 2
+                chunkSize: chunkSize
             )
         } else {
             simulatorRouteRecorder = nil
@@ -315,6 +344,7 @@ enum AppBootstrap {
             simulationScenario: bootstrap.scenario,
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
             simulatorStartsWithSpeedEvidenceGap: simulatorStartsWithSpeedEvidenceGap,
+            simulatorRoutePointCount: simulatorRoutePointCount,
             simulatorRouteRecorder: simulatorRouteRecorder
         )
     }
@@ -332,6 +362,15 @@ enum AppBootstrap {
         case .disabled, .invalid:
             return nil
         }
+    }
+
+    private static func simulationRoutePointCount(environment: [String: String]) -> Int {
+        guard let rawValue = environment[simulationRoutePointCountEnvironmentKey],
+              let requested = Int(rawValue),
+              (4...5_000).contains(requested) else {
+            return 4
+        }
+        return requested
     }
 
     @MainActor
