@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 302,
+    "classifiedPRTotal": 301,
     "classifiedPRs": {
+      "2798": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2798,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.298,
+        "title": "[Capture P0][RED TEAM] Pin private-review parent module execution"
+      },
       "2805": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2350,7 +2361,7 @@
         "lane": "capture-smartlife-application-source-attribution",
         "pr": 3283,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.382,
+        "similarity": 0.121,
         "title": "[Capture P0][EXPECTED-RED] Require exact SmartLife callback source attribution"
       },
       "3284": {
@@ -2396,28 +2407,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.429,
         "title": "[Capture P0][EXPECTED-RED] Preserve SmartLife callback delivery cutoff"
-      },
-      "3290": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-smartlife-application-source-attribution",
-        "pr": 3290,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.377,
-        "title": "[Capture P0][REPAIR] Bind SmartLife callbacks to selected device"
-      },
-      "3291": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-application-delivery-cutoff",
-        "pr": 3291,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.37,
-        "title": "[Capture P0][REPAIR] Package-own application callback delivery time"
       },
       "3292": {
         "classification": "canonical-candidate",
@@ -2473,6 +2462,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.446,
         "title": "[Capture P0][REPAIR] Preserve SmartLife callback delivery chronology"
+      },
+      "3297": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-application-delivery-receipt-authority",
+        "pr": 3297,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.117,
+        "title": "[Capture P0][EXPECTED-RED] Reject replayable caller-mintable application receipts"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:00:56Z",
+    "liveRefreshAt": "2026-08-14T09:04:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 158,
+  "revision": 159,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:03:46Z",
+  "updatedAt": "2026-08-14T09:06:16Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:00:56Z",
+      "updatedAt": "2026-08-14T09:04:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
