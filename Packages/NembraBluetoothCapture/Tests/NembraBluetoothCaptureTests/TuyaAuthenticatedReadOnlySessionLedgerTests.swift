@@ -396,7 +396,9 @@ private func advanceLedgerContinuously(
         clock.advance(to: cursor)
         try await ledger.observeCurrentConnection(for: token)
     }
+}
 
+extension TuyaAuthenticatedReadOnlySessionLedgerTests {
     @Test("pre-cut application delivery remains pre-cut when actor admission happens after the deadline")
     func delayedApplicationAdmissionUsesLedgerDeliveryTime() async throws {
         let clock = TestUptimeClock(1_000)
@@ -409,7 +411,7 @@ private func advanceLedgerContinuously(
 
         let deliveredAt: UInt64 = 3_000
         clock.advance(to: deliveredAt)
-        let receipt = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
+        let receipt = try ledger.captureApplicationDelivery(for: token)
 
         clock.advance(
             to: 2_000
@@ -434,7 +436,7 @@ private func advanceLedgerContinuously(
         let token = try await authenticatedToken(ledger: ledger, clock: clock, base: 10)
 
         clock.advance(to: 20)
-        let receipt = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
+        let receipt = try ledger.captureApplicationDelivery(for: token)
         try await ledger.recordApplicationUpdate(receipt: receipt, for: token)
 
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationAdmissionInvalidOrConsumed) {
@@ -450,7 +452,7 @@ private func advanceLedgerContinuously(
         let token = try await authenticatedToken(ledger: ledger, clock: clock, base: 100)
 
         clock.advance(to: 110)
-        let applicationReceipt = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
+        let applicationReceipt = try ledger.captureApplicationDelivery(for: token)
 
         #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationAdmissionPending) {
             _ = try ledger.captureLivenessReceipt(for: token)
@@ -501,7 +503,7 @@ private func advanceLedgerContinuously(
         clock.advance(to: 4_000)
         let earlierLiveness = try ledger.captureLivenessReceipt(for: token)
         clock.advance(to: 4_500)
-        let laterApplication = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
+        let laterApplication = try ledger.captureApplicationDelivery(for: token)
 
         // Deliberately execute the later actor mutation first to model actor scheduling inversion.
         try await ledger.recordApplicationUpdate(receipt: laterApplication, for: token)
@@ -522,7 +524,7 @@ private func advanceLedgerContinuously(
         let firstLedger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
         let firstToken = try await authenticatedToken(ledger: firstLedger, clock: clock, base: 1_000)
         clock.advance(to: 1_010)
-        let foreignReceipt = try firstLedger.captureApplicationReceipt(isNonEmpty: true, for: firstToken)
+        let foreignReceipt = try firstLedger.captureApplicationDelivery(for: firstToken)
 
         clock.advance(to: 2_000)
         let secondLedger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -530,7 +532,6 @@ private func advanceLedgerContinuously(
 
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationAdmissionInvalidOrConsumed) {
             try await secondLedger.recordApplicationUpdate(
-                isNonEmpty: true,
                 receipt: foreignReceipt,
                 for: secondToken
             )
@@ -565,7 +566,7 @@ private func advanceLedgerContinuously(
         try await ledger.observeCurrentConnection(receipt: finalLiveness, for: token)
 
         clock.advance(to: deadline)
-        let receipt = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
+        let receipt = try ledger.captureApplicationDelivery(for: token)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
             try await ledger.recordApplicationUpdate(receipt: receipt, for: token)
         }
@@ -602,13 +603,37 @@ private func advanceLedgerContinuously(
         clock.advance(to: 2_000)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
-        let pending = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
+        let pending = try ledger.captureApplicationDelivery(for: token)
 
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationAdmissionPending) {
             try await ledger.sealAcceptedObservation(for: token)
         }
         ledger.releaseApplicationReceipt(pending)
         #expect((await ledger.currentPreflightSnapshot()).applicationPayloadCount == 0)
+    }
+
+    @Test("package consumes application deliveries in issuance order before evidence mutation")
+    func applicationDeliveryFIFOIsPackageOwned() async throws {
+        let clock = TestUptimeClock(10_000)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await authenticatedToken(ledger: ledger, clock: clock, base: 10_000)
+
+        clock.advance(to: 10_010)
+        let first = try ledger.captureApplicationDelivery(for: token)
+        clock.advance(to: 10_020)
+        let second = try ledger.captureApplicationDelivery(for: token)
+
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationAdmissionPending) {
+            try await ledger.recordApplicationUpdate(receipt: second, for: token)
+        }
+        #expect((await ledger.currentPreflightSnapshot()).applicationPayloadCount == 0)
+
+        try await ledger.recordApplicationUpdate(receipt: first, for: token)
+        try await ledger.recordApplicationUpdate(receipt: second, for: token)
+        let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.applicationPayloadCount == 2)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 10_020)
+        #expect(snapshot.latestObservedUptimeNanoseconds == 10_020)
     }
 
 }
