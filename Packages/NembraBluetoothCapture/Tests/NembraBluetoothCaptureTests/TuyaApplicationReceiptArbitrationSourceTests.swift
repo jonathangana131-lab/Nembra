@@ -28,8 +28,8 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
         #expect(arbiter.contains("return .applicationReceiptPending"))
         #expect(arbiter.contains("let now = nowUptimeNanoseconds()"))
 
-        #expect(ledger.contains("private let nowUptimeNanoseconds: @Sendable () -> UInt64"))
-        #expect(ledger.contains("private let applicationDeliveryArbiter: TuyaApplicationDeliveryArbiter"))
+        #expect(ledger.contains("private nonisolated let nowUptimeNanoseconds: @Sendable () -> UInt64"))
+        #expect(ledger.contains("private nonisolated let applicationDeliveryArbiter: TuyaApplicationDeliveryArbiter"))
         #expect(ledger.contains("TuyaApplicationDeliveryArbiter(nowUptimeNanoseconds: clock)"))
         #expect(ledger.contains("applicationDeliveryArbiter.activate(for: token)"))
         #expect(ledger.contains("applicationDeliveryArbiter.retire(for: token)"))
