@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 39,
+    "classifiedPRTotal": 31,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1099,17 +1099,6 @@
         "similarity": 0.212,
         "title": "[recover-ride-location-lifecycle-v7] Harden route/GPS completion truth"
       },
-      "113": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "203faa6da0e944e1b71b4013876c843963cd0d49",
-        "lane": "",
-        "pr": 113,
-        "recommendedAction": "independent-review",
-        "similarity": 0.169,
-        "title": "[recover-battery-primary-readout-baseline-qa] Recover truthful battery readout and unblock baseline UI QA"
-      },
       "120": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1120,17 +1109,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.164,
         "title": "[battery-evidence-domain] Recover sealed battery truth on v9 main"
-      },
-      "125": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "934acfcb364676f787b2b1431378b49e483a7d13",
-        "lane": "",
-        "pr": 125,
-        "recommendedAction": "independent-review",
-        "similarity": 0.179,
-        "title": "[recover-rolling-number-performance] Preserve reviewed hardening on V10 main"
       },
       "13": {
         "classification": "requires-review",
@@ -1154,17 +1132,6 @@
         "similarity": 0.157,
         "title": "[recover-home-vehicle-status-field] Reconcile truthful Home status on v9 main"
       },
-      "135": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "8a47e82789fb7929b30226eaec14289e9f29fd16",
-        "lane": "",
-        "pr": 135,
-        "recommendedAction": "independent-review",
-        "similarity": 0.169,
-        "title": "[battery-readout-v11] Fail closed on Dashboard battery currentness and range"
-      },
       "148": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1175,28 +1142,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.108,
         "title": "[TRAIN CI-SECURITY-01] Trusted exact-head self-hosted admission"
-      },
-      "149": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 149,
-        "recommendedAction": "independent-review",
-        "similarity": 0.119,
-        "title": "[recover-ride-provenance-v10] Make checkpoint acknowledgement monotonic"
-      },
-      "156": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 156,
-        "recommendedAction": "independent-review",
-        "similarity": 0.106,
-        "title": "[es80-home-hero] Give AOVOPRO ES80 a distinct Home silhouette"
       },
       "16": {
         "classification": "requires-review",
@@ -1217,19 +1162,8 @@
         "lane": "",
         "pr": 164,
         "recommendedAction": "independent-review",
-        "similarity": 0.072,
+        "similarity": 0.07,
         "title": "[es80] Keep solicited services out of transport candidates"
-      },
-      "170": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 170,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.118,
-        "title": "[validation] Exercise Home large-text layout with fresh XCUI queries"
       },
       "184": {
         "classification": "requires-review",
@@ -1250,30 +1184,8 @@
         "lane": "",
         "pr": 200,
         "recommendedAction": "independent-review",
-        "similarity": 0.083,
+        "similarity": 0.072,
         "title": "[navigation-arrival] Require sustained truthful destination evidence"
-      },
-      "204": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 204,
-        "recommendedAction": "independent-review",
-        "similarity": 0.113,
-        "title": "[ride-distance] Preserve selected coverage and seal record bridge"
-      },
-      "208": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 208,
-        "recommendedAction": "independent-review",
-        "similarity": 0.103,
-        "title": "[ride-speed-session] Bind peak and quality evidence to one ride stream"
       },
       "21": {
         "classification": "requires-review",
@@ -1426,7 +1338,7 @@
         "lane": "",
         "pr": 70,
         "recommendedAction": "independent-review",
-        "similarity": 0.103,
+        "similarity": 0.099,
         "title": "[home-vehicle-status-field] Unify truthful Home connection status"
       },
       "75": {
@@ -1437,7 +1349,7 @@
         "lane": "",
         "pr": 75,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.141,
+        "similarity": 0.11,
         "title": "[ride-history-accessibility][integration] Remove duplicate completed-row announcement"
       },
       "77": {
@@ -1526,7 +1438,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T11:03:09Z",
+    "liveRefreshAt": "2026-08-14T11:03:29Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5309,10 +5221,10 @@
       "userValue": 7
     }
   },
-  "revision": 194,
+  "revision": 195,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T11:03:12Z",
+  "updatedAt": "2026-08-14T11:03:31Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5388,7 +5300,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T11:03:09Z",
+      "updatedAt": "2026-08-14T11:03:29Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
