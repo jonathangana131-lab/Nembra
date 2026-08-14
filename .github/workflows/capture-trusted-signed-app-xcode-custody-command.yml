@@ -1,0 +1,266 @@
+name: Capture Trusted Signed-App Xcode Custody
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  resolve:
+    name: Resolve owner-authorized exact Capture custody head
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/capture-signed-install-custody ') &&
+      github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      same_repo: ${{ steps.pr.outputs.same_repo }}
+
+    steps:
+      - name: Resolve immutable live PR head from exact owner command
+        id: pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const body = context.payload.comment.body.trim()
+            const match = body.match(/^\/capture-signed-install-custody ([0-9a-fA-F]{40})$/)
+            if (!match) {
+              core.setFailed('Trusted signed-app custody command must be exactly /capture-signed-install-custody <40-hex-head-sha>.')
+              return
+            }
+
+            const requestedHead = match[1].toLowerCase()
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            const sameRepo = pr.head.repo.full_name === repository
+
+            core.info(`Trusted workflow source SHA: ${context.sha}`)
+            core.info(`Owner-authorized PR #${pr.number} head: ${requestedHead}`)
+            core.info(`Live PR head: ${pr.head.sha}`)
+
+            if (pr.state !== 'open') {
+              core.setFailed('Trusted signed-app custody requires an open pull request.')
+            }
+            if (!sameRepo) {
+              core.setFailed('Trusted signed-app custody refuses fork-controlled source.')
+            }
+            if (pr.head.sha.toLowerCase() !== requestedHead) {
+              core.setFailed('Owner-authorized SHA is not the live PR head; stale authority is non-evidence.')
+            }
+
+            core.setOutput('head_sha', requestedHead)
+            core.setOutput('pr_number', String(pr.number))
+            core.setOutput('same_repo', String(sameRepo))
+
+  trusted-xcode-custody:
+    name: Run owner-authorized root/Xcode custody probe
+    needs: resolve
+    if: needs.resolve.outputs.same_repo == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 25
+    concurrency:
+      group: nembra-capture-trusted-signed-custody-${{ needs.resolve.outputs.pr_number }}-${{ needs.resolve.outputs.head_sha }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Reject stale head before scarce privileged Mac work
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            if (pr.state !== 'open') core.setFailed('PR closed before trusted custody started.')
+            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed before trusted custody.')
+            if (pr.head.sha.toLowerCase() !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved before trusted custody; stale run is non-evidence.')
+
+      - name: Checkout immutable owner-authorized head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact candidate and fixed privileged subjects
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(/usr/bin/git rev-parse --verify HEAD^{commit} | /usr/bin/tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+
+          for path in \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          do
+            test -f "$path"
+            test ! -L "$path"
+            mode="$(/usr/bin/git ls-tree HEAD -- "$path" | /usr/bin/awk '{print $1}')"
+            case "$mode" in
+              100644|100755) ;;
+              *) printf 'Privileged subject is not a regular Git blob: %s mode=%s\n' "$path" "$mode" >&2; exit 1 ;;
+            esac
+            blob="$(/usr/bin/git rev-parse "HEAD:$path")"
+            test "$(/usr/bin/git cat-file -t "$blob")" = blob
+            printf 'Authorized subject %s blob=%s\n' "$path" "$blob"
+          done
+
+          test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
+          /usr/bin/xcodebuild -version
+          /usr/bin/swift --version
+
+      - name: Run permanent pre-stage regression through trusted privilege transition
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-trusted-signed-custody-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          /usr/bin/sudo -n /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+
+      - name: Run fixed root probe entry with trusted field-identity arguments
+        shell: bash
+        run: |
+          set -euo pipefail
+          field_uid="$(/usr/bin/id -u)"
+          field_gid="$(/usr/bin/id -g)"
+          field_user="$(/usr/bin/id -un)"
+          test "$field_uid" -gt 0
+          test "$field_gid" -gt 0
+
+          active_groups=()
+          for group in $(/usr/bin/id -G | /usr/bin/tr ' ' '\n' | /usr/bin/sort -nu); do
+            if [[ "$group" != "$field_gid" ]]; then
+              test "$group" -gt 0
+              active_groups+=("$group")
+            fi
+          done
+
+          fixture="$(/usr/bin/mktemp -d "$RUNNER_TEMP/nembra-trusted-xcode-package.XXXXXX")"
+          cleanup() { /bin/rm -rf -- "$fixture"; }
+          trap cleanup EXIT
+          package="$fixture/package"
+          /bin/mkdir -p "$package/Sources/OriginDedicatedUIDProof"
+          /bin/cat > "$package/Package.swift" <<'SWIFT'
+          // swift-tools-version: 6.0
+          import PackageDescription
+          let package = Package(
+              name: "OriginDedicatedUIDProof",
+              platforms: [.macOS(.v14)],
+              products: [.executable(name: "OriginDedicatedUIDProof", targets: ["OriginDedicatedUIDProof"])],
+              targets: [.executableTarget(name: "OriginDedicatedUIDProof")]
+          )
+          SWIFT
+          printf '%s\n' 'print("Nembra trusted owner-authorized Xcode custody proof")' \
+            > "$package/Sources/OriginDedicatedUIDProof/main.swift"
+
+          root_args=(
+            --root-probe
+            --package-root "$package"
+            --field-uid "$field_uid"
+            --field-gid "$field_gid"
+            --field-active-group-count "${#active_groups[@]}"
+          )
+          for group in "${active_groups[@]}"; do
+            root_args+=(--field-active-group "$group")
+          done
+
+          output="$RUNNER_TEMP/nembra-trusted-xcode-custody-output.txt"
+          set +e
+          /usr/bin/sudo -n /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py \
+            "${root_args[@]}" >"$output" 2>&1
+          rc=$?
+          set -e
+          /bin/cat "$output"
+          if [[ "$rc" != 0 ]]; then
+            exit "$rc"
+          fi
+
+          active_joined="${active_groups[*]}"
+          /usr/bin/python3 -B -I - "$output" "$field_uid" "$field_gid" "$active_joined" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          marker = "NEMBRA_REAL_XCODE_ORIGIN_JSON="
+          output = Path(sys.argv[1]).read_text(encoding="utf-8")
+          expected_uid = int(sys.argv[2])
+          expected_gid = int(sys.argv[3])
+          expected_groups = [int(value) for value in sys.argv[4].split()] if sys.argv[4] else []
+          records = [line[len(marker):] for line in output.splitlines() if line.startswith(marker)]
+          if len(records) != 1:
+              raise SystemExit("trusted custody produced missing or ambiguous evidence")
+          evidence = json.loads(records[0])
+          build_groups = evidence.get("buildDirectoryServiceGroups")
+          required = (
+              evidence.get("schemaVersion") == 5
+              and evidence.get("fieldUID") == expected_uid
+              and evidence.get("fieldPrimaryGID") == expected_gid
+              and evidence.get("fieldActiveSupplementaryGroups") == expected_groups
+              and evidence.get("fieldActiveGroupsSubsetOfDirectoryService") is True
+              and isinstance(build_groups, list)
+              and evidence.get("buildPrimaryGID") in build_groups
+              and evidence.get("buildEffectiveGroupAuthorityAttested") is True
+              and evidence.get("execBoundCredentialAttestationUsed") is True
+              and evidence.get("fieldGroupsContainBuildGID") is False
+              and evidence.get("fieldActiveGroupsContainBuildGID") is False
+              and evidence.get("buildIdentityDistinctFromField") is True
+              and evidence.get("xcodebuildReturnCode") == 0
+              and evidence.get("fieldAttackReturnCode") != 0
+              and evidence.get("formerBuildWritablePathAttackReturnCode") != 0
+              and evidence.get("nonForcedDetachReturnCode") == 0
+              and evidence.get("rootReadonlyAttackReturnCode") != 0
+              and evidence.get("formerBuildReadonlyAttackReturnCode") != 0
+              and evidence.get("readonlyNonForcedDetachReturnCode") == 0
+              and evidence.get("buildPrincipalRetired") is True
+              and evidence.get("compilerProductSHA256") == evidence.get("readonlyRemountSHA256")
+              and evidence.get("physicalAuthorityCreated") is False
+          )
+          if not required:
+              raise SystemExit(f"trusted custody evidence failed semantic checks: {evidence!r}")
+          PY
+
+          printf 'Trusted field identity: %s uid=%s gid=%s groups=%s\n' \
+            "$field_user" "$field_uid" "$field_gid" "$active_joined"
+          test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Reject head movement after privileged evidence
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        with:
+          script: |
+            const response = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            })
+            const pr = response.data
+            const repository = `${context.repo.owner}/${context.repo.repo}`
+            if (pr.state !== 'open') core.setFailed('PR closed during trusted custody.')
+            if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed during trusted custody.')
+            if (pr.head.sha.toLowerCase() !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved during trusted custody; run is non-evidence.')
