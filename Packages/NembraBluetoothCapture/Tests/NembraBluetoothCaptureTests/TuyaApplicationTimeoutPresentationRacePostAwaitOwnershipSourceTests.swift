@@ -4,17 +4,16 @@ import Testing
 
 /// Expected-red validation child for package-owned observation terminals.
 ///
-/// The ledger already owns these terminals. This contract is narrower: an app mirror may not
-/// publish rider-visible terminal presentation after an actor suspension unless the same app-local
-/// presentation owner is still current. An equivalent repair may instead publish the complete
-/// terminal presentation before the suspension, leaving no stale post-await write to resume.
+/// The ledger already owns these terminal verdicts. The app mirror must consume the exact local
+/// token without issuing a second package terminal, but a lifecycle failure that became visible
+/// while the package actor was suspended must not be repainted by the resumed mirror.
 ///
 /// The suite name deliberately extends the canonical presentation-race suite so the existing
 /// `swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests` standalone gate also
 /// discovers this validation child without changing workflow bytes.
-@Suite("Tuya terminal mirrors preserve post-await presentation ownership")
+@Suite("Tuya terminal mirrors preserve lifecycle presentation ownership")
 struct TuyaApplicationTimeoutPresentationRaceSourceTestsPostAwaitOwnership {
-    @Test("package-owned incomplete-horizon mirror cannot repaint a newer lifecycle owner")
+    @Test("package-owned incomplete-horizon mirror preserves a newer lifecycle failure")
     func incompleteHorizonMirrorPreservesPresentationOwnership() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let mirror = String(try section(
@@ -22,10 +21,10 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTestsPostAwaitOwnership {
             from: "private func mirrorAlreadyTerminalIncompleteObservationHorizon",
             to: "private func invalidateObservationContinuity"
         ))
-        try requireNoStalePostAwaitPresentation(in: mirror)
+        try requireLifecyclePresentationFence(in: mirror)
     }
 
-    @Test("package-owned continuity mirror cannot repaint a newer lifecycle owner")
+    @Test("package-owned continuity mirror preserves a newer lifecycle failure")
     func continuityMirrorPreservesPresentationOwnership() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let mirror = String(try section(
@@ -33,68 +32,53 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTestsPostAwaitOwnership {
             from: "private func mirrorAlreadyTerminalObservationContinuity",
             to: "private func mirrorAlreadyTerminalIncompleteObservationHorizon"
         ))
-        try requireNoStalePostAwaitPresentation(in: mirror)
+        try requireLifecyclePresentationFence(in: mirror)
     }
 
-    private func requireNoStalePostAwaitPresentation(in mirror: String) throws {
-        let snapshotRefresh = try requiredOffset("await refreshLedgerSnapshot()", in: mirror)
-        let failedPresentation = try requiredOffset("phase = .failed", in: mirror)
-        let messagePresentation = try requiredOffset("self.message = message", in: mirror)
+    private func requireLifecyclePresentationFence(in mirror: String) throws {
+        let tokenGuard = try requiredOffset("guard currentConnectionToken == token", in: mirror)
+        let tokenClear = try requiredOffset(
+            "currentConnectionToken = nil",
+            in: mirror,
+            after: tokenGuard
+        )
+        let snapshotRefresh = try requiredOffset(
+            "await refreshLedgerSnapshot()",
+            in: mirror,
+            after: tokenClear
+        )
+        let failedPresentation = try requiredOffset(
+            "phase = .failed",
+            in: mirror,
+            after: snapshotRefresh
+        )
+        let phaseFence = try requiredOffset(
+            "phase == .observing",
+            in: mirror,
+            after: snapshotRefresh,
+            before: failedPresentation
+        )
+        let messagePresentation = try requiredOffset(
+            "self.message = message",
+            in: mirror,
+            after: failedPresentation
+        )
 
-        // One valid implementation is to publish the complete app-local terminal presentation
-        // synchronously before suspending for the snapshot refresh. A newer lifecycle owner can
-        // then overwrite it while this task is suspended; the old task has no stale presentation
-        // write left to resume with.
-        let presentationIsCompleteBeforeSuspension =
-            failedPresentation < snapshotRefresh && messagePresentation < snapshotRefresh
+        // Consume app-local generation ownership even when another lifecycle path already changed
+        // presentation. This makes the lifecycle retirement task's exact-token guard fail closed
+        // instead of attempting a second package terminal against the already-terminal ledger.
+        #expect(tokenGuard < tokenClear)
+        #expect(tokenClear < snapshotRefresh)
 
-        if !presentationIsCompleteBeforeSuspension {
-            // If presentation remains downstream of the await, it needs a post-await owner fence.
-            // Keeping `currentConnectionToken` through the suspension is acceptable if the mirror
-            // revalidates that exact token + observation phase before clearing it. If the mirror
-            // intentionally clears the token before the await to prevent a second package terminal,
-            // it must snapshot another stable app-local owner (the established request ID) and
-            // revalidate that owner + phase after the await.
-            let tokenClear = try requiredOffset("currentConnectionToken = nil", in: mirror)
-            let phaseFence = try requiredOffset(
-                "phase == .observing",
-                in: mirror,
-                after: snapshotRefresh,
-                before: failedPresentation
-            )
+        // The package actor hop can resume after foreground/view teardown has already published a
+        // more specific failure. Only an observation that still owns presentation may publish the
+        // package-terminal copy after cleanup/snapshot refresh.
+        #expect(snapshotRefresh < phaseFence)
+        #expect(phaseFence < failedPresentation)
+        #expect(failedPresentation < messagePresentation)
 
-            if tokenClear < snapshotRefresh {
-                let ownerCapture = try requiredOffset(
-                    "officialConnectionRequestID",
-                    in: mirror,
-                    before: snapshotRefresh
-                )
-                let ownerFence = try requiredOffset(
-                    "officialConnectionRequestID",
-                    in: mirror,
-                    after: snapshotRefresh,
-                    before: failedPresentation
-                )
-                #expect(ownerCapture < snapshotRefresh)
-                #expect(snapshotRefresh < ownerFence)
-                #expect(ownerFence <= phaseFence)
-            } else {
-                let tokenFence = try requiredOffset(
-                    "currentConnectionToken == token",
-                    in: mirror,
-                    after: snapshotRefresh,
-                    before: failedPresentation
-                )
-                #expect(snapshotRefresh < tokenFence)
-                #expect(tokenFence <= phaseFence)
-                #expect(phaseFence < tokenClear)
-            }
-            #expect(phaseFence < failedPresentation)
-            #expect(failedPresentation < messagePresentation)
-        }
-
-        // The fix is app-local presentation fencing only. The package already terminalized this
-        // generation; do not regress into a second ledger terminal or invent transport loss.
+        // The package already terminalized this generation. Never regress to a second ledger
+        // terminal or manufacture transport-loss evidence while fixing presentation ownership.
         #expect(!mirror.contains("sessionLedger."))
         #expect(!mirror.contains("markApplicationObservationTimedOut"))
         #expect(!mirror.contains("markInternalLifecycleFailure"))
@@ -112,7 +96,7 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTestsPostAwaitOwnership {
         let upper = upperBound ?? source.endIndex
         guard lower <= upper,
               let range = source.range(of: token, range: lower..<upper) else {
-            Issue.record("Expected presentation-ownership source contract missing: \(token)")
+            Issue.record("Expected lifecycle-presentation source contract missing: \(token)")
             throw SourceContractError.requiredTokenMissing
         }
         return range.lowerBound
