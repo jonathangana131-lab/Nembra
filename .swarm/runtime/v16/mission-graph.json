@@ -1122,15 +1122,15 @@
         "title": "[Capture P0][VALIDATION] Re-prove source + private-input custody on current carrier"
       },
       "3316": {
-        "classification": "validation",
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.044,
-        "title": "[Capture P0][QA] Align authenticated observation copy oracle with shipping language"
+        "recommendedAction": "independent-review",
+        "similarity": 0.057,
+        "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3317": {
         "classification": "validation",
@@ -1185,7 +1185,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:03:11Z",
+    "liveRefreshAt": "2026-08-14T23:03:28Z",
     "liveRefreshDuplicatesSuppressed": [
       3318
     ],
@@ -4970,10 +4970,10 @@
       "userValue": 7
     }
   },
-  "revision": 241,
+  "revision": 242,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:03:11Z",
+  "updatedAt": "2026-08-14T23:03:28Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5049,7 +5049,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:03:11Z",
+      "updatedAt": "2026-08-14T23:03:28Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
