@@ -1,0 +1,48 @@
+name: Capture signing bootstrap candidate-root executor red team
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'scripts/ci/tests/test_capture_signing_bootstrap_candidate_root_executor_redteam.py'
+      - '.github/workflows/capture-signing-bootstrap-candidate-root-executor-redteam.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  redteam:
+    name: Prove mutable PR bytes can become root child
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable diagnostic head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact parent and additive diagnostic scope
+        env:
+          EXACT_PARENT: bf8fd13b0bab33365a306b3fb39988e2dee0f759
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-signing-bootstrap-candidate-root-executor-redteam.yml \
+            scripts/ci/tests/test_capture_signing_bootstrap_candidate_root_executor_redteam.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Execute source-only adversary
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_signing_bootstrap_candidate_root_executor_redteam.py | tee "$RUNNER_TEMP/redteam.log"
+          grep -Fq 'PARENT_RED candidateControlledRootExecutor=true rootExecuted=false physicalAuthorityCreated=false' "$RUNNER_TEMP/redteam.log"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
