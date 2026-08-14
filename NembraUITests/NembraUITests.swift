@@ -94,6 +94,17 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 3),
+            "The riding Simulator cockpit must mount the canonical Energy Rail."
+        )
+        XCTAssertEqual(
+            energyRail.value as? String,
+            "356 watts",
+            "Cockpit watts must expose the sealed Simulator receipt, never a render midpoint or cached aggregate field."
+        )
+
         XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
@@ -160,6 +171,18 @@ final class NembraUITests: XCTestCase {
             app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
             "Disconnected transport must fail the field-specific speed projection closed."
         )
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The Simulator cockpit must preserve a designed unavailable Energy Rail state."
+        )
+        XCTAssertEqual(
+            energyRail.value as? String,
+            "Unavailable",
+            "Cached VehicleState watts must not fabricate propulsion authority after transport loss."
+        )
+
         XCTAssertFalse(app.staticTexts["READY"].exists)
         XCTAssertFalse(app.staticTexts["RIDING"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
@@ -190,6 +213,17 @@ final class NembraUITests: XCTestCase {
             "The Cockpit must not manufacture a numeric speed before any accepted source evidence exists."
         )
         XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The never-observed Simulator state must still render an explicit Energy Rail unavailable state."
+        )
+        XCTAssertEqual(
+            energyRail.value as? String,
+            "Unavailable",
+            "No source receipt means no numeric propulsion power, including zero."
+        )
 
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
