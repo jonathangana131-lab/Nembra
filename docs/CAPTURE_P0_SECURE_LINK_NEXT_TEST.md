@@ -24,7 +24,7 @@ The final field candidate must be one exact composed source/build lineage with:
 4. Fresh exact-device membership after complete enumeration of the current SDK account's homes, plus a lease bound to the same current account UID and exact device ID, before OFF1 and again before authenticated ownership. Nembra does not currently retain a home-ID continuity lease and this procedure must not claim one.
 5. A package-owned, fresh-manager `OFF1 → ON1 → OFF2 → ON2` correlation series. Every window must prove scan readiness and the accepted receipt-bounded minimum duration; elapsed UI time is not evidence.
 6. Exactly one repeatable full CoreBluetooth UUID from the accepted four-window chronology. No result or ambiguous results are terminal STOP/restart-from-OFF1 outcomes. There is no hint-based override.
-7. Explicit operator action **Confirm correlated Bluetooth target** for the freshly correlated current-attempt target. Confirmation is session authority only, not permanent scooter identity.
+7. Explicit operator action **tap `Confirm this scooter signal`** for the freshly correlated current-attempt target. Confirmation is session authority only, not permanent scooter identity.
 8. Tuya SmartLife SDK becomes the sole authenticated BLE owner after target confirmation. Nembra must not open a second independent CoreBluetooth connection.
 9. Every counted `ThingSmartDeviceDelegate.dpsUpdate` must be fail-closed source-attributed to the exact selected SmartLife device ID before it can enter physical-readiness evidence. Nil/wrong-device source cannot mint application chronology or acceptance and must synchronously block promotion while source authority retires.
 10. Delivered application evidence must own accepted monotonic delivery chronology before any async scheduling can reorder it. The final repair must use package-visible, exact-generation, non-caller-mintable, one-shot/order-preserving admission so one callback cannot be replayed as repeated evidence and the watchdog cannot overtake an already-delivered pending prefix. Independent task execution order is not delivery-order proof.
@@ -55,13 +55,13 @@ This procedure is indoors and stationary. It requires no riding. Setup and all p
 
 ### Fresh four-window target correlation
 
-6. Start **OFF1** with the scooter OFF. Wait for package scan readiness and the accepted receipt-bounded minimum duration, then seal OFF1.
-7. Turn the scooter **ON**, let the physical state settle, then start **ON1**. Wait for scan readiness and the accepted receipt-bounded minimum duration, then seal ON1.
-8. Turn the scooter **OFF**, let the physical state settle, then start **OFF2**. Wait for scan readiness and the accepted receipt-bounded minimum duration, then seal OFF2.
-9. Turn the scooter **ON**, let the physical state settle, then start **ON2**. Wait for scan readiness and the accepted receipt-bounded minimum duration, then seal ON2.
+6. Tap **`Start with scooter OFF`** with the scooter OFF. Wait for package scan readiness and the accepted receipt-bounded minimum duration, then tap **`Finish OFF1`**.
+7. Turn the scooter **ON**, let the physical state settle, then tap **`Start ON1`**. Wait for scan readiness and the accepted receipt-bounded minimum duration, then tap **`Finish ON1`**.
+8. Turn the scooter **OFF**, let the physical state settle, then tap **`Start OFF2`**. Wait for scan readiness and the accepted receipt-bounded minimum duration, then tap **`Finish OFF2`**.
+9. Turn the scooter **ON**, let the physical state settle, then tap **`Start ON2`**. Wait for scan readiness and the accepted receipt-bounded minimum duration, then tap **`Finish ON2`**.
 10. Require exactly one repeatable full CoreBluetooth UUID from the accepted chronology. None, ambiguity, invalid order, invalid liveness, invalid duration, or invalid provenance means **STOP** and restart only from a fresh OFF1 after correcting the blocker.
 11. Treat the result only as a correlated Bluetooth target for this attempt. Do not use historical UUID, name, RSSI, FD50 presence, Tuya manufacturer/product hints, or service-name similarity as fallback authority.
-12. Tap **Confirm correlated Bluetooth target**. If current same-account exact-device authority is no longer valid, confirmation must fail closed.
+12. Tap **`Confirm this scooter signal`**. If current same-account exact-device authority is no longer valid, confirmation must fail closed.
 
 ### Supported read-only Tuya session
 
