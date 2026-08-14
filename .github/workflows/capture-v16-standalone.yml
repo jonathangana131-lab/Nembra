@@ -89,6 +89,7 @@ jobs:
           swift test --filter TuyaApplicationReceiptChronologyTests
           swift test --filter TuyaApplicationAdmissionCrossAttemptDrainSourceTests
           swift test --filter TuyaApplicationEventCustodyAdmissionRaceSourceTests
+          swift test --filter ES80CaptureSimulatorPreflightSnapshotHandoffTests
           swift test --filter TuyaSecureLinkProductSurfaceSourceTests
           swift test --filter TuyaAppChronologyIntegrityTerminalSourceTests
           swift test --filter TuyaAuthenticationPromotionTransportTruthSourceTests
