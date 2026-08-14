@@ -8,7 +8,7 @@
   "generation": 1,
   "status": "ACTIVE",
   "claimedAt": "2026-08-14T22:52:00Z",
-  "lastHeartbeatAt": "2026-08-14T22:52:00Z",
+  "lastHeartbeatAt": "2026-08-14T23:00:24Z",
   "leaseSeconds": 1800,
   "branch": "repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812"
 }
