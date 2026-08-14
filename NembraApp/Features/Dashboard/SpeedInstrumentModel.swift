@@ -298,14 +298,12 @@ private enum DashboardEnergyRailCurrentness: Equatable {
 private struct DashboardEnergyRailVisualState: Equatable {
     let currentness: DashboardEnergyRailCurrentness
     let acceptedWatts: Double?
-    let displayWatts: Double?
     let railFraction: Double?
     let peakMarkerFraction: Double?
 
     static let unavailable = DashboardEnergyRailVisualState(
         currentness: .unavailable,
         acceptedWatts: nil,
-        displayWatts: nil,
         railFraction: nil,
         peakMarkerFraction: nil
     )
@@ -316,12 +314,20 @@ private struct DashboardEnergyRailVisualState: Equatable {
 /// The only positive input is `VehicleStore.simulatorPowerStoreProjection`, which
 /// already joins an exact source-owned Simulator receipt with aggregate transport
 /// currentness. This model copies that immutable receipt into NembraCore's explicit
-/// Simulator factory and then consumes render-only frames. It has no production
-/// measurement factory and no path back into vehicle state, persistence, rides,
-/// battery learning, protocol evidence, or physical ES80 claims.
+/// Simulator factory, then consumes the canonical cockpit projection so numeric watts
+/// remain accepted measurement truth while rail geometry alone uses the display clock.
+/// It has no production measurement factory and no path back into vehicle state,
+/// persistence, rides, battery learning, protocol evidence, or physical ES80 claims.
 @MainActor
 @Observable
 private final class DashboardEnergyRailModel {
+    private enum Timing {
+        static let riseNanoseconds: UInt64 = 220_000_000
+        static let fallNanoseconds: UInt64 = 150_000_000
+        static let peakHoldNanoseconds: UInt64 = 2_000_000_000
+        static let freshnessNanoseconds: UInt64 = 30_000_000_000
+    }
+
     private struct Receipt: Equatable {
         let watts: Double
         let receiptSequenceNumber: UInt64
@@ -337,14 +343,23 @@ private final class DashboardEnergyRailModel {
     @ObservationIgnored private var scale: NembraCore.PropulsionGaugeScale?
     @ObservationIgnored private var acceptedReceipt: Receipt?
     @ObservationIgnored private var rejectedCurrentReceipt = false
+    @ObservationIgnored private var animationEndTask: Task<Void, Never>?
+    @ObservationIgnored private var peakExpiryTask: Task<Void, Never>?
+    @ObservationIgnored private var freshnessTask: Task<Void, Never>?
 
     init() {
         rebuildPresentationModel()
     }
 
+    deinit {
+        animationEndTask?.cancel()
+        peakExpiryTask?.cancel()
+        freshnessTask?.cancel()
+    }
+
     func stop() {
+        cancelScheduledWakes()
         projection = .unavailable
-        shouldTick = false
         acceptedReceipt = nil
         rejectedCurrentReceipt = false
         rebuildPresentationModel()
@@ -372,7 +387,7 @@ private final class DashboardEnergyRailModel {
                 failClosedForCurrentProjection()
                 return
             }
-            shouldTick = false
+            cancelScheduledWakes()
             acceptedReceipt = nil
             rejectedCurrentReceipt = false
             rebuildPresentationModel()
@@ -385,16 +400,25 @@ private final class DashboardEnergyRailModel {
                 return
             }
 
+            var animationDuration: UInt64 = 0
             if acceptedReceipt != receipt {
-                guard accept(receipt) else {
+                guard let acceptedAnimationDuration = accept(receipt) else {
                     failClosedForCurrentProjection()
                     return
                 }
                 acceptedReceipt = receipt
+                animationDuration = acceptedAnimationDuration
             }
 
             rejectedCurrentReceipt = false
-            shouldTick = incoming.currentness == .live
+            if incoming.currentness == .live {
+                scheduleLivePresentationWakes(
+                    for: receipt,
+                    animationDurationNanoseconds: animationDuration
+                )
+            } else {
+                cancelScheduledWakes()
+            }
             revision &+= 1
         }
     }
@@ -414,27 +438,25 @@ private final class DashboardEnergyRailModel {
             return .unavailable
         }
 
-        let frame = gauge.frame(
+        let snapshot = gauge.cockpitSnapshot(
             atUptimeNanoseconds: uptimeNanoseconds,
             scale: scale
         )
-
-        // Every positive frame must still name the exact Store-authorized receipt.
-        // Display interpolation may change `displayWatts` and rail geometry only;
-        // it may never change or substitute the accepted measurement identity.
-        guard frame.latestAuthority == .simulator,
-              frame.latestAcceptedWatts == receipt.watts,
-              frame.latestAcceptedReceiptSequenceNumber == receipt.receiptSequenceNumber,
-              frame.latestAcceptedUptimeNanoseconds == receipt.receivedAtUptimeNanoseconds,
-              frame.latestAcceptedContinuityGeneration == receipt.continuityGeneration else {
+        guard snapshot.identity == gauge.identity else {
             return .unavailable
         }
 
         if projection.currentness == .retained {
+            guard let accepted = validatedAcceptedMeasurement(
+                snapshot.measurement,
+                receipt: receipt,
+                expectedIdentity: gauge.identity
+            ) else {
+                return .unavailable
+            }
             return DashboardEnergyRailVisualState(
                 currentness: .retained,
-                acceptedWatts: receipt.watts,
-                displayWatts: receipt.watts,
+                acceptedWatts: accepted.watts,
                 railFraction: nil,
                 peakMarkerFraction: nil
             )
@@ -444,36 +466,50 @@ private final class DashboardEnergyRailModel {
             return .unavailable
         }
 
-        switch frame.availability {
+        switch snapshot.measurement {
         case .unavailable:
             return .unavailable
 
         case .retained:
             // NembraCore is allowed to be more conservative than Store truth. A
             // package freshness demotion never gets promoted back to LIVE here.
+            guard let accepted = validatedAcceptedMeasurement(
+                snapshot.measurement,
+                receipt: receipt,
+                expectedIdentity: gauge.identity
+            ) else {
+                return .unavailable
+            }
             return DashboardEnergyRailVisualState(
                 currentness: .retained,
-                acceptedWatts: receipt.watts,
-                displayWatts: receipt.watts,
+                acceptedWatts: accepted.watts,
                 railFraction: nil,
                 peakMarkerFraction: nil
             )
 
         case .live:
-            let displayWatts = prefersReducedMotion
-                ? receipt.watts
-                : sanitizedWatts(frame.displayWatts) ?? receipt.watts
+            guard let accepted = validatedAcceptedMeasurement(
+                snapshot.measurement,
+                receipt: receipt,
+                expectedIdentity: gauge.identity
+            ) else {
+                return .unavailable
+            }
+
             let railFraction = prefersReducedMotion
-                ? acceptedTargetFraction(receipt.watts, ceilingWatts: scale.ceilingWatts)
-                : sanitizedFraction(frame.normalizedPropulsion)
+                ? acceptedTargetFraction(accepted.watts, ceilingWatts: scale.ceilingWatts)
+                : sanitizedFraction(snapshot.visualPropulsionFraction)
             let peakMarker = prefersReducedMotion
                 ? nil
-                : sanitizedFraction(frame.acceptedPeakNormalized)
+                : sanitizedFraction(snapshot.recentAcceptedPeakMarkerFraction)
+
+            if railFraction != nil, snapshot.scaleOrigin != .simulator {
+                return .unavailable
+            }
 
             return DashboardEnergyRailVisualState(
                 currentness: .live,
-                acceptedWatts: receipt.watts,
-                displayWatts: displayWatts,
+                acceptedWatts: accepted.watts,
                 railFraction: railFraction,
                 peakMarkerFraction: railFraction == nil ? nil : peakMarker
             )
@@ -486,12 +522,12 @@ private final class DashboardEnergyRailModel {
                 vehicleID: "nembra-simulator-dashboard"
             )
             let animationPolicy = try NembraCore.PropulsionGaugeAnimationPolicy(
-                riseSettlingDurationNanoseconds: 220_000_000,
-                fallSettlingDurationNanoseconds: 150_000_000,
-                acceptedPeakHoldNanoseconds: 2_000_000_000
+                riseSettlingDurationNanoseconds: Timing.riseNanoseconds,
+                fallSettlingDurationNanoseconds: Timing.fallNanoseconds,
+                acceptedPeakHoldNanoseconds: Timing.peakHoldNanoseconds
             )
             let freshnessPolicy = try NembraCore.PropulsionGaugeFreshnessPolicy(
-                staleAfterNanoseconds: 30_000_000_000
+                staleAfterNanoseconds: Timing.freshnessNanoseconds
             )
             gauge = NembraCore.PropulsionGaugeDisplayModel(
                 identity: identity,
@@ -518,8 +554,11 @@ private final class DashboardEnergyRailModel {
         )
     }
 
-    private func accept(_ receipt: Receipt) -> Bool {
-        guard var gauge else { return false }
+    /// Returns the exact display-clock window created by this accepted receipt.
+    /// `frame.displayWatts` is consulted only to determine which bounded animation
+    /// duration to schedule; it is never exposed as the cockpit numeric value.
+    private func accept(_ receipt: Receipt) -> UInt64? {
+        guard var gauge else { return nil }
 
         do {
             let sample = try NembraCore.PropulsionPowerSample.simulator(
@@ -530,22 +569,129 @@ private final class DashboardEnergyRailModel {
                 continuityGeneration: receipt.continuityGeneration
             )
             try gauge.accept(sample)
+            let frame = gauge.frame(
+                atUptimeNanoseconds: receipt.receivedAtUptimeNanoseconds,
+                scale: scale
+            )
             self.gauge = gauge
-            return true
+
+            guard frame.origin == .visuallyInterpolated,
+                  let displayWatts = frame.displayWatts,
+                  let acceptedWatts = frame.latestAcceptedWatts else {
+                return 0
+            }
+            return acceptedWatts >= displayWatts
+                ? Timing.riseNanoseconds
+                : Timing.fallNanoseconds
         } catch {
-            return false
+            return nil
         }
     }
 
-    private func failClosedForCurrentProjection() {
-        shouldTick = false
-        rejectedCurrentReceipt = true
-        revision &+= 1
+    private func validatedAcceptedMeasurement(
+        _ measurement: NembraCore.PropulsionGaugeCockpitMeasurement,
+        receipt: Receipt,
+        expectedIdentity: NembraCore.PropulsionGaugeIdentity
+    ) -> NembraCore.PropulsionGaugeCockpitAcceptedMeasurement? {
+        let accepted: NembraCore.PropulsionGaugeCockpitAcceptedMeasurement
+        switch measurement {
+        case let .live(value), let .retained(value):
+            accepted = value
+        case .unavailable:
+            return nil
+        }
+
+        guard accepted.identity == expectedIdentity,
+              accepted.authority == .simulator,
+              accepted.watts == receipt.watts,
+              accepted.receiptSequenceNumber == receipt.receiptSequenceNumber,
+              accepted.receivedAtUptimeNanoseconds == receipt.receivedAtUptimeNanoseconds,
+              accepted.continuityGeneration == receipt.continuityGeneration else {
+            return nil
+        }
+        return accepted
     }
 
-    private func sanitizedWatts(_ value: Double?) -> Double? {
-        guard let value, value.isFinite, value >= 0 else { return nil }
-        return value == 0 ? 0 : value
+    private func scheduleLivePresentationWakes(
+        for receipt: Receipt,
+        animationDurationNanoseconds: UInt64
+    ) {
+        cancelScheduledWakes()
+        shouldTick = animationDurationNanoseconds > 0
+
+        if animationDurationNanoseconds > 0 {
+            animationEndTask = scheduleWake(afterNanoseconds: animationDurationNanoseconds) { model in
+                model.shouldTick = false
+                model.animationEndTask = nil
+                model.revision &+= 1
+            }
+        }
+
+        if let delay = delayFromReceipt(
+            receipt,
+            offsetNanoseconds: Timing.peakHoldNanoseconds
+        ) {
+            peakExpiryTask = scheduleWake(afterNanoseconds: delay) { model in
+                model.peakExpiryTask = nil
+                model.revision &+= 1
+            }
+        }
+
+        if let delay = delayFromReceipt(
+            receipt,
+            offsetNanoseconds: Timing.freshnessNanoseconds
+        ) {
+            freshnessTask = scheduleWake(afterNanoseconds: delay) { model in
+                model.shouldTick = false
+                model.freshnessTask = nil
+                model.revision &+= 1
+            }
+        }
+    }
+
+    private func scheduleWake(
+        afterNanoseconds delayNanoseconds: UInt64,
+        action: @escaping @MainActor (DashboardEnergyRailModel) -> Void
+    ) -> Task<Void, Never> {
+        Task { [weak self] in
+            do {
+                if delayNanoseconds > 0 {
+                    try await Task.sleep(nanoseconds: delayNanoseconds)
+                }
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            action(self)
+        }
+    }
+
+    private func delayFromReceipt(
+        _ receipt: Receipt,
+        offsetNanoseconds: UInt64
+    ) -> UInt64? {
+        guard receipt.receivedAtUptimeNanoseconds <= UInt64.max - offsetNanoseconds - 1 else {
+            return nil
+        }
+        let deadline = receipt.receivedAtUptimeNanoseconds + offsetNanoseconds + 1
+        let now = DispatchTime.now().uptimeNanoseconds
+        return deadline > now ? deadline - now : 0
+    }
+
+    private func cancelScheduledWakes() {
+        animationEndTask?.cancel()
+        peakExpiryTask?.cancel()
+        freshnessTask?.cancel()
+        animationEndTask = nil
+        peakExpiryTask = nil
+        freshnessTask = nil
+        shouldTick = false
+    }
+
+    private func failClosedForCurrentProjection() {
+        cancelScheduledWakes()
+        rejectedCurrentReceipt = true
+        revision &+= 1
     }
 
     private func sanitizedFraction(_ value: Double?) -> Double? {
@@ -698,7 +844,10 @@ private struct DashboardEnergyRailView: View {
     private var powerReadout: some View {
         VStack(spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                if let watts = state.displayWatts {
+                if let watts = state.acceptedWatts {
+                    // The input is the typed accepted cockpit measurement. SwiftUI's
+                    // numeric transition may animate glyphs, but no render midpoint
+                    // is ever rebound as semantic or persisted power evidence.
                     DashboardRollingPowerValueView(value: watts)
                 } else {
                     Text("—")
