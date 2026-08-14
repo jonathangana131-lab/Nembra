@@ -9,15 +9,15 @@
   "generation": 9,
   "status": "ACTIVE",
   "claimedAt": "2026-08-14T23:03:00Z",
-  "lastHeartbeatAt": "2026-08-14T23:03:00Z",
+  "lastHeartbeatAt": "2026-08-14T23:05:00Z",
   "leaseSeconds": 1800,
   "branch": "validation/v17-capture-apfs-backing-file-custody-sol-20260814",
-  "pr": null,
+  "pr": 3317,
   "sourceSHA": "cd8a398f54d70c866e74091b04df9bc9f9eefa55",
-  "currentHeadSHA": "cd8a398f54d70c866e74091b04df9bc9f9eefa55",
+  "currentHeadSHA": "e720bd1677ff74efa19579ddd12ca361e57f8980",
   "takeoverFromWorkerId": "gpt56-sol-20260812-1118-uid-allocation",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-20260812-111800",
   "takeoverReason": "Generation-8 lease expired on 2026-08-12 and its numeric-UID allocation question is already separately classified. Recover the tests slot for the new exact-head sparse-image backing-file custody finding recorded in review 4941773381.",
   "intent": "Validation-only real-macOS witness over #3142@cd8a398f: inspect root-created APFS sparse-image backing-file owner/mode under hostile umasks and prove whether a production-shaped non-root UID/GID can open the predictable backing path for mutation. No production edit, app build, signing, install, device, Bluetooth, Tuya, telemetry, command, or physical authority.",
-  "checkpoint": "Claimed before branch creation. #3142 Field exact run 31848604539 is green; Signed Install real-Xcode job 94919930302 reproduces fail-closed principal-retirement red after BUILD SUCCEEDED. PHYSICAL NO-GO."
+  "checkpoint": "Draft validation #3317 exact e720bd16 is one workflow path over #3142@cd8a398f. Run 31848888523 is QUEUED on macos-15; queued != green. The witness uses hostile root umasks 077/022/000, records owner/group/mode/ACL, and attacks the predictable backing path from an unused synthetic non-root UID/GID. Production bytes unchanged; PHYSICAL NO-GO."
 }
