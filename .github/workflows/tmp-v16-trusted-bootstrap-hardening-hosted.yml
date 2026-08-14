@@ -50,7 +50,22 @@ jobs:
           Path('/tmp/nembra-bootstrap-hardening-transform.sh').write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
           bash /tmp/nembra-bootstrap-hardening-transform.sh
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''def process_numeric_ids() -> tuple[set[int], set[int]]:\n    result = run(["/bin/ps", "-axo", "uid=,gid=,pid=,stat="], check=True)\n    uids: set[int] = set()\n    gids: set[int] = set()\n    for raw_line in result.stdout.splitlines():\n        line = raw_line.strip()\n        if not line:\n            continue\n        parts = line.split(None, 3)\n        if len(parts) != 4:\n            raise ValidationError(f"process credential inventory is malformed: {raw_line!r}")\n        try:\n            uid = int(parts[0], 10)\n            gid = int(parts[1], 10)\n            pid = int(parts[2], 10)\n        except ValueError as error:\n            raise ValidationError(f"process credential inventory is non-numeric: {raw_line!r}") from error\n        if uid < 0 or gid < 0 or pid <= 0 or not parts[3]:\n            raise ValidationError(f"process credential inventory contains an invalid row: {raw_line!r}")\n        uids.add(uid)\n        gids.add(gid)\n    return uids, gids\n'''
+          new = '''def process_numeric_ids() -> tuple[set[int], set[int]]:\n    result = run(["/bin/ps", "-n", "-axo", "pid=,stat=,uid=,gid=,groups="], check=True)\n    uids: set[int] = set()\n    gids: set[int] = set()\n    for raw_line in result.stdout.splitlines():\n        line = raw_line.strip()\n        if not line:\n            continue\n        parts = line.split(None, 4)\n        if len(parts) != 5:\n            raise ValidationError(f"process credential inventory is malformed: {raw_line!r}")\n        try:\n            pid = int(parts[0], 10)\n            uid = int(parts[2], 10)\n            gid = int(parts[3], 10)\n            group_tokens = [token for token in re.split(r"[,\\s]+", parts[4].strip()) if token]\n            supplementary_gids = {int(token, 10) for token in group_tokens}\n        except ValueError as error:\n            raise ValidationError(f"process credential inventory is non-numeric: {raw_line!r}") from error\n        if pid <= 0 or uid < 0 or gid < 0 or not parts[1] or not group_tokens or any(value < 0 for value in supplementary_gids):\n            raise ValidationError(f"process credential inventory contains an invalid row: {raw_line!r}")\n        uids.add(uid)\n        gids.add(gid)\n        gids.update(supplementary_gids)\n    return uids, gids\n'''
+          if source.count(old) != 1:
+              raise SystemExit(f'supplementary-group inventory patch expected one match, found {source.count(old)}')
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+
           /usr/bin/python3 -B -I -c 'from pathlib import Path; source=Path("scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py").read_text(encoding="utf-8"); compile(source, "<trusted-bootstrap>", "exec", dont_inherit=True)'
+          grep -Fq '"groups="' scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py
+          grep -Fq 'gids.update(supplementary_gids)' scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py
           git diff --check
 
       - name: Execute hardened root-boundary witness
