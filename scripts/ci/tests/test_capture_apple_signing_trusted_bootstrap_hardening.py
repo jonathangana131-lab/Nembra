@@ -356,11 +356,14 @@ def root_main() -> dict[str, object]:
     os.chown(root_dir, 0, 0)
     os.chmod(root_dir, 0o755)
     rule_path = SUDOERS_DIR / f"nembra-trusted-bootstrap-hardening-{numeric_id}"
-    identity_created = False
+    identity_cleanup_required = False
 
     try:
+        # Arm retirement before the first multi-step Directory Services mutation. If creation
+        # fails after only a group or partial user record exists, the strong existing cleanup
+        # still owns that numeric principal and must retire any process/record residue.
+        identity_cleanup_required = True
         create_identity(user, numeric_id)
-        identity_created = True
         launcher, invocation_log, _body, digest = write_root_subject(root_dir)
         install_argument_free_sudoers_rule(user, launcher, digest, rule_path)
 
@@ -392,7 +395,7 @@ def root_main() -> dict[str, object]:
     finally:
         if rule_path.exists() or rule_path.is_symlink():
             rule_path.unlink()
-        if identity_created:
+        if identity_cleanup_required:
             delete_identity_after_process_retirement(user, numeric_id)
             evidence["numericUidProcessesRetiredBeforeDeletion"] = True
             evidence["numericUidProcessFreeAfterDeletion"] = True
