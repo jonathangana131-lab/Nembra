@@ -426,6 +426,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         for token: TuyaReadOnlyConnectionToken
     ) throws {
         try requireCurrent(token)
+        guard !receiptAuthority.hasPendingApplicationReceipt(for: token) else {
+            throw MutationError.applicationAdmissionPending
+        }
         let now = try nextMonotonicObservation()
         try requireContinuousAuthenticatedObservation(at: now)
         let snapshot = makeSnapshot()
@@ -597,6 +600,12 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             defer { lock.unlock() }
             guard receipt.issuerID == issuerID else { return }
             pendingApplicationSequences.remove(receipt.deliverySequence)
+        }
+
+        func hasPendingApplicationReceipt(for token: TuyaReadOnlyConnectionToken) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return activeToken == token && !pendingApplicationSequences.isEmpty
         }
 
         func consumeApplicationReceipt(

@@ -1907,8 +1907,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     )
                     return
                 }
-                previousPollUptime = now
-
                 guard self.sdkAccountLoggedIn,
                       self.sdkDeviceMembershipVerified,
                       self.accountIdentityLeaseIsAuthorized else {
@@ -1951,6 +1949,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     )
                     return
                 }
+
+                // Only a package-issued liveness receipt advances the app's watchdog cadence. If
+                // package arbitration reports an earlier application delivery still pending, the
+                // prior poll time stays frozen and the existing 5 s continuity gate can still fail
+                // closed instead of being refreshed by a non-observation.
+                previousPollUptime = now
 
                 do {
                     try await self.sessionLedger.observeCurrentConnection(
