@@ -162,7 +162,7 @@ jobs:
           grep -Fq 'mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX"' "$installer"
           grep -Fq 'trap '\''rm -f -- "$INSTALL_LOG"'\'' EXIT' "$installer"
           grep -Fq 'chmod 600 "$INSTALL_LOG"' "$installer"
-          grep -Fq 'payload = sys.stdin.buffer.read()' "$installer"
+          grep -Eq 'payload[[:space:]]*=[[:space:]]*sys\.stdin\.buffer\.read\(\)' "$installer"
           grep -Fq 'private_udid_raw, selector_raw = payload.split(b"\0", 1)' "$installer"
           grep -Fq 'secret.replace("-", "")' "$installer"
           grep -Fq 'flags=re.IGNORECASE' "$installer"
