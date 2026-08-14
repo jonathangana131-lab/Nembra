@@ -74,12 +74,15 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("There is no hint-based override."))
     }
 
-    @Test("operator correlation recipe uses the literal shipping controls")
-    func currentRunbookMatchesShippingCorrelationControls() throws {
+    @Test("operator recipe uses literal shipping controls from login through artifact share")
+    func currentRunbookMatchesShippingFieldControls() throws {
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
         let app = try repositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         for control in [
+            "Send verification code",
+            "Continue",
+            "Verify this scooter",
             "Start with scooter OFF",
             "Finish OFF1",
             "Start ON1",
@@ -89,20 +92,37 @@ struct ES80PhysicalNoGoConsistencyTests {
             "Start ON2",
             "Finish ON2",
             "Confirm this scooter signal",
+            "Start secure read-only link",
+            "Share Capture",
+            "Retry sealed Capture preparation",
         ] {
             #expect(runbook.contains("`\(control)`"))
         }
 
+        #expect(runbook.contains("CAPTURE COMPLETE"))
+        #expect(runbook.contains("Ready for analysis"))
+        #expect(runbook.contains("Hold steady"))
+        #expect(runbook.contains("Read-only observation"))
         #expect(!runbook.contains("Confirm correlated Bluetooth target"))
         #expect(!runbook.contains("seal OFF1"))
         #expect(!runbook.contains("seal ON1"))
         #expect(!runbook.contains("seal OFF2"))
         #expect(!runbook.contains("seal ON2"))
 
+        #expect(app.contains("Button(sdkAccount.busy ? \"Contacting Tuya…\" : \"Send verification code\")"))
+        #expect(app.contains("Button(\"Continue\") { sdkAccount.login() }"))
+        #expect(app.contains("Button(test.membershipBusy ? \"Checking scooter…\" : \"Verify this scooter\")"))
         #expect(app.contains("Label(\"Start with scooter OFF\""))
         #expect(app.contains("Label(\"Start \\(test.correlationWindowLabel)\""))
         #expect(app.contains("Label(\"Finish \\(test.correlationWindowLabel)\""))
         #expect(app.contains("Label(\"Confirm this scooter signal\""))
+        #expect(app.contains("Label(\"Start secure read-only link\""))
+        #expect(app.contains("Text(\"Hold steady\")"))
+        #expect(app.contains("Text(\"Read-only observation\")"))
+        #expect(app.contains("Text(\"CAPTURE COMPLETE\")"))
+        #expect(app.contains("Text(\"Ready for analysis\")"))
+        #expect(app.contains("Label(\"Share Capture\""))
+        #expect(app.contains("Label(\"Retry sealed Capture preparation\""))
     }
 
     @Test("current account lease does not overclaim home identity continuity")
