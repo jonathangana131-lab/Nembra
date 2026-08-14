@@ -6,18 +6,20 @@ SOURCE BYTES ARE NOT PRIVILEGED AUTHORITY MERELY BECAUSE THEY LIVE IN GIT.
 This program becomes an authority boundary only after a human administrator installs
 reviewed bytes at the canonical root-owned broker path and separately installs a
 root-owned policy at POLICY_PATH. The field checkout cannot select a policy path,
-authorize a source SHA, authorize a root subject, install this broker, or spend sudo
-from this program.
+authorize a source SHA, authorize a root subject, select the root entry subject, install
+this broker, or spend sudo from this program.
 
-The broker has one intentionally narrow job: authenticate an exact root-executed Python
-subject against the independently installed policy, then execute those already-approved
-bytes in this root process. Candidate/helper bytes arrive as data. A matching digest in a
-field-owned file, Git object database, environment variable, command argument, or workflow
-is never sufficient authority.
+The broker authenticates the COMPLETE privileged Python subject bundle against the
+independently installed policy before executing the one policy-selected entry subject.
+Candidate/helper bytes arrive only as data on stdin. A matching digest in a field-owned
+file, Git object database, environment variable, command argument, workflow, or candidate
+manifest is never sufficient authority.
 
-No device, Bluetooth, Tuya, Apple signing, xcodebuild, APFS, Directory Services, or scooter
-operation is implemented here. Those operations remain the responsibility of separately
-reviewed policy-approved subjects and their own truth contracts.
+The accepted entry subject receives an immutable NEMBRA_APPROVED_ROOT_SUBJECTS mapping
+containing only the fully policy-verified bytes. A later production composition must be
+source-reviewed to consume privileged helper bytes from that mapping and to reject any
+alternate candidate-controlled root loader. The broker itself does not implement product,
+device, signing, compiler, filesystem-custody, account-management, or scooter operations.
 """
 from __future__ import annotations
 
@@ -31,13 +33,16 @@ from pathlib import Path
 import re
 import stat
 import sys
-from typing import Any, Sequence
+from types import MappingProxyType
+from typing import Any, Mapping, Sequence
 
 
 POLICY_PATH = Path("/Library/NembraCaptureAuthority/v1/policy.json")
 POLICY_ROOT = Path("/Library/NembraCaptureAuthority/v1")
 POLICY_SCHEMA = 1
+BUNDLE_SCHEMA = 1
 MAX_POLICY_BYTES = 64 * 1024
+MAX_BUNDLE_BYTES = 4 * 1024 * 1024
 MAX_SUBJECT_BYTES = 2 * 1024 * 1024
 MAX_SUBJECTS = 16
 MAX_ARGUMENTS = 256
@@ -58,24 +63,28 @@ def _duplicate_rejecting_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
-            raise BrokerError(f"policy contains duplicate key: {key}")
+            raise BrokerError(f"JSON contains duplicate key: {key}")
         result[key] = value
     return result
 
 
-def _parse_policy_bytes(raw: bytes) -> dict[str, Any]:
-    _require(0 < len(raw) <= MAX_POLICY_BYTES, "policy size is invalid")
+def _strict_json_object(raw: bytes, *, label: str, maximum_bytes: int) -> dict[str, Any]:
+    _require(0 < len(raw) <= maximum_bytes, f"{label} size is invalid")
     try:
         decoded = raw.decode("utf-8", errors="strict")
-        policy = json.loads(decoded, object_pairs_hook=_duplicate_rejecting_object)
+        value = json.loads(decoded, object_pairs_hook=_duplicate_rejecting_object)
     except BrokerError:
         raise
     except Exception as error:
-        raise BrokerError("policy is not strict UTF-8 JSON") from error
+        raise BrokerError(f"{label} is not strict UTF-8 JSON") from error
+    _require(isinstance(value, dict), f"{label} root must be an object")
+    return value
 
-    _require(isinstance(policy, dict), "policy root must be an object")
+
+def _parse_policy_bytes(raw: bytes) -> dict[str, Any]:
+    policy = _strict_json_object(raw, label="policy", maximum_bytes=MAX_POLICY_BYTES)
     _require(
-        set(policy) == {"schema", "authorizedSourceSHA", "subjects"},
+        set(policy) == {"schema", "authorizedSourceSHA", "entrySubject", "subjects"},
         "policy root contains missing or unknown fields",
     )
     _require(policy["schema"] == POLICY_SCHEMA, "policy schema is not accepted")
@@ -105,6 +114,12 @@ def _parse_policy_bytes(raw: bytes) -> dict[str, Any]:
             isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
             f"policy subject {name} digest is malformed",
         )
+
+    entry_subject = policy["entrySubject"]
+    _require(
+        isinstance(entry_subject, str) and entry_subject in subjects,
+        "policy entry subject is not one authorized subject",
+    )
     return policy
 
 
@@ -145,32 +160,53 @@ def _load_installed_policy() -> dict[str, Any]:
     return _parse_policy_bytes(raw)
 
 
-def _decode_subject_payload(encoded: str) -> bytes:
-    _require(isinstance(encoded, str) and encoded != "", "approved subject transport is empty")
+def _decode_subject_payload(encoded: str, *, name: str) -> bytes:
+    _require(isinstance(encoded, str) and encoded != "", f"approved subject {name} transport is empty")
     try:
         raw = base64.b64decode(encoded, validate=True)
     except (binascii.Error, ValueError) as error:
-        raise BrokerError("approved subject transport is not strict base64") from error
-    _require(0 < len(raw) <= MAX_SUBJECT_BYTES, "approved subject byte count is invalid")
+        raise BrokerError(f"approved subject {name} transport is not strict base64") from error
+    _require(0 < len(raw) <= MAX_SUBJECT_BYTES, f"approved subject {name} byte count is invalid")
     return raw
 
 
-def _authorize_subject(
-    policy: dict[str, Any],
-    *,
-    source_sha: str,
-    subject_name: str,
-    payload: bytes,
-) -> bytes:
-    _require(re.fullmatch(r"[0-9a-f]{40}", source_sha) is not None, "requested source SHA is malformed")
-    _require(source_sha == policy["authorizedSourceSHA"], "requested source SHA is not administrator-authorized")
-    subjects = policy["subjects"]
-    _require(subject_name in subjects, "requested root subject is not administrator-authorized")
-    contract = subjects[subject_name]
-    _require(contract["kind"] == SUBJECT_KIND, "requested root subject kind is not executable")
-    actual = hashlib.sha256(payload).hexdigest()
-    _require(actual == contract["sha256"], "requested root subject bytes do not match administrator policy")
-    return payload
+def _parse_and_authorize_bundle(policy: dict[str, Any], raw: bytes) -> Mapping[str, bytes]:
+    bundle = _strict_json_object(raw, label="subject bundle", maximum_bytes=MAX_BUNDLE_BYTES)
+    _require(
+        set(bundle) == {"schema", "sourceSHA", "subjects"},
+        "subject bundle contains missing or unknown fields",
+    )
+    _require(bundle["schema"] == BUNDLE_SCHEMA, "subject bundle schema is not accepted")
+    source_sha = bundle["sourceSHA"]
+    _require(
+        isinstance(source_sha, str) and re.fullmatch(r"[0-9a-f]{40}", source_sha) is not None,
+        "subject bundle source SHA is malformed",
+    )
+    _require(source_sha == policy["authorizedSourceSHA"], "subject bundle source SHA is not administrator-authorized")
+
+    encoded_subjects = bundle["subjects"]
+    _require(isinstance(encoded_subjects, dict), "subject bundle subjects must be an object")
+    policy_subjects = policy["subjects"]
+    _require(
+        set(encoded_subjects) == set(policy_subjects),
+        "subject bundle must contain exactly the administrator-authorized privileged subject set",
+    )
+
+    approved: dict[str, bytes] = {}
+    for name in sorted(policy_subjects):
+        payload = _decode_subject_payload(encoded_subjects[name], name=name)
+        actual = hashlib.sha256(payload).hexdigest()
+        expected = policy_subjects[name]["sha256"]
+        _require(actual == expected, f"approved subject {name} bytes do not match administrator policy")
+        approved[name] = payload
+    return MappingProxyType(approved)
+
+
+def _read_bundle_stdin() -> bytes:
+    raw = sys.stdin.buffer.read(MAX_BUNDLE_BYTES + 1)
+    _require(0 < len(raw) <= MAX_BUNDLE_BYTES, "subject bundle stdin size is invalid")
+    _require(sys.stdin.buffer.read(1) == b"", "subject bundle stdin exceeds maximum size")
+    return raw
 
 
 def _sanitize_root_environment() -> None:
@@ -209,17 +245,26 @@ def _validate_subject_arguments(arguments: Sequence[str]) -> list[str]:
     return result
 
 
-def _execute_approved_python(subject_name: str, payload: bytes, arguments: Sequence[str]) -> int:
+def _execute_approved_python(
+    policy: dict[str, Any],
+    approved_subjects: Mapping[str, bytes],
+    arguments: Sequence[str],
+) -> int:
     argv = _validate_subject_arguments(arguments)
+    entry_subject = policy["entrySubject"]
+    _require(entry_subject in approved_subjects, "administrator entry subject is missing after bundle verification")
+    payload = approved_subjects[entry_subject]
     _sanitize_root_environment()
     old_argv = sys.argv
-    sys.argv = [f"<nembra-approved:{subject_name}>", *argv]
+    sys.argv = [f"<nembra-approved:{entry_subject}>", *argv]
     namespace: dict[str, Any] = {
         "__name__": "__main__",
-        "__file__": f"<nembra-approved:{subject_name}>",
+        "__file__": f"<nembra-approved:{entry_subject}>",
+        "NEMBRA_AUTHORIZED_SOURCE_SHA": policy["authorizedSourceSHA"],
+        "NEMBRA_APPROVED_ROOT_SUBJECTS": approved_subjects,
     }
     try:
-        code = compile(payload, f"<nembra-approved:{subject_name}>", "exec", dont_inherit=True)
+        code = compile(payload, f"<nembra-approved:{entry_subject}>", "exec", dont_inherit=True)
         exec(code, namespace)
         return 0
     finally:
@@ -228,9 +273,6 @@ def _execute_approved_python(subject_name: str, payload: bytes, arguments: Seque
 
 def _parse(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Nembra Capture administrator-rooted privileged broker")
-    parser.add_argument("--source-sha", required=True)
-    parser.add_argument("--subject", required=True)
-    parser.add_argument("--payload-base64", required=True)
     parser.add_argument("subject_arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args(list(argv))
     if args.subject_arguments and args.subject_arguments[0] == "--":
@@ -245,14 +287,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _require(os.geteuid() == 0 and os.getuid() == 0, "privileged broker requires real/effective uid 0")
         args = _parse(sys.argv[1:] if argv is None else argv)
         policy = _load_installed_policy()
-        payload = _decode_subject_payload(args.payload_base64)
-        approved = _authorize_subject(
-            policy,
-            source_sha=args.source_sha.lower(),
-            subject_name=args.subject,
-            payload=payload,
-        )
-        return _execute_approved_python(args.subject, approved, args.subject_arguments)
+        approved_subjects = _parse_and_authorize_bundle(policy, _read_bundle_stdin())
+        return _execute_approved_python(policy, approved_subjects, args.subject_arguments)
     except BrokerError as error:
         print(f"NEMBRA_CAPTURE_ROOT_BROKER_REJECTED: {error}", file=sys.stderr)
         return 78
