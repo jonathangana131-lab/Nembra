@@ -43,6 +43,20 @@ with tempfile.TemporaryDirectory() as temp_dir:
     if result["nonDarkPixels"] != 0:
         raise SystemExit(f"status bar leaked into app-content evidence: {result}")
 
+    blank_light = temp / "blank-light.png"
+
+    def blank_light_pixel(_x: int, y: int) -> tuple[int, int, int, int]:
+        if height - 6 <= y < height - 3:
+            return (174, 174, 174, 255)
+        return (255, 255, 255, 255)
+
+    blank_light.write_bytes(rgba_png(width, height, blank_light_pixel))
+    result = guard.inspect_rendered_content(blank_light)
+    if result["ready"]:
+        raise SystemExit(f"blank light product surface must fail closed even with system-style chrome: {result}")
+    if result["darkSurfacePixels"] >= result["requiredContrastPixels"]:
+        raise SystemExit(f"blank light fixture unexpectedly established dark product-surface contrast: {result}")
+
     rendered = temp / "rendered.png"
 
     def rendered_pixel(_x: int, y: int) -> tuple[int, int, int, int]:
@@ -58,6 +72,10 @@ with tempfile.TemporaryDirectory() as temp_dir:
         raise SystemExit(f"non-trivial rendered app content should pass readiness: {result}")
     if result["activeVerticalBands"] < guard.MIN_ACTIVE_BANDS:
         raise SystemExit(f"rendered proof did not span required app-content bands: {result}")
+    if result["darkSurfacePixels"] < result["requiredContrastPixels"]:
+        raise SystemExit(f"rendered proof did not establish dark product-surface pixels: {result}")
+    if result["brightSurfacePixels"] < result["requiredContrastPixels"]:
+        raise SystemExit(f"rendered proof did not establish bright product-content pixels: {result}")
 
     corrupted = bytearray(rendered.read_bytes())
     corrupted[-5] ^= 0x01
