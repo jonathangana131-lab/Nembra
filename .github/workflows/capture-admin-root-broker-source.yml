@@ -1,6 +1,13 @@
 name: Capture Administrator Root Broker Source
 
 on:
+  push:
+    branches:
+      - 'security/v17-capture-admin-root-broker-sol'
+    paths:
+      - '.github/workflows/capture-admin-root-broker-source.yml'
+      - 'scripts/field/nembra_capture_root_broker.py'
+      - 'scripts/ci/tests/test_nembra_capture_root_broker.py'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -15,26 +22,39 @@ permissions:
 jobs:
   source-contract:
     name: Prove broker source contract only
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - name: Checkout immutable PR head
+      - name: Checkout immutable candidate head
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Verify immutable head and exact three-path scope
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_EXPECTED_HEAD: ${{ github.sha }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          git cat-file -e "${BASE_SHA}^{commit}"
-          git diff --name-only "$BASE_SHA"...HEAD | LC_ALL=C sort > /tmp/actual-paths
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            expected_head="$PR_EXPECTED_HEAD"
+            base_sha="$PR_BASE_SHA"
+          else
+            expected_head="$PUSH_EXPECTED_HEAD"
+            git fetch --no-tags origin main
+            base_sha="$(git merge-base HEAD origin/main)"
+          fi
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "${base_sha}^{commit}"
+          git diff --name-only "$base_sha"...HEAD | LC_ALL=C sort > /tmp/actual-paths
           cat > /tmp/expected-paths <<'EOF'
           .github/workflows/capture-admin-root-broker-source.yml
           scripts/ci/tests/test_nembra_capture_root_broker.py
