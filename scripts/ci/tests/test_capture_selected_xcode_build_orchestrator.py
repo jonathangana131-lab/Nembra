@@ -99,7 +99,7 @@ class CaptureSelectedXcodeBuildOrchestratorTests(unittest.TestCase):
         with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
             helper._decode_verified_git_blob(encoded, "not-a-git-blob", "fixture")
 
-    def test_orchestration_requires_full_launcher_toolset_and_uses_frozen_xcodebuild(self) -> None:
+    def test_orchestration_returns_full_frozen_device_toolset_and_uses_frozen_xcodebuild(self) -> None:
         helper = load()
         launcher_source = b'''\
 from pathlib import Path
@@ -142,7 +142,7 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             mock.patch.object(helper.sys, "platform", "darwin"),
             mock.patch.object(helper.os, "geteuid", return_value=0),
         ):
-            stage, fingerprint = helper.orchestrate(
+            stage, fingerprint, developer, xctrace, devicectl = helper.orchestrate(
                 field_pid=4242,
                 source_sha="a" * 40,
                 freeze_launcher_base64=encode(launcher_source),
@@ -162,8 +162,43 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
                     "-version",
                 ],
             )
+        expected_developer = Path(
+            "/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"
+        )
         self.assertEqual(stage, Path("/private/tmp/nembra-authenticated-capture-install.fixture"))
         self.assertEqual(fingerprint, "b" * 64)
+        self.assertEqual(developer, expected_developer)
+        self.assertEqual(xctrace, expected_developer / "usr/bin/xctrace")
+        self.assertEqual(devicectl, expected_developer / "usr/bin/devicectl")
+
+    def test_main_serializes_exact_five_field_handoff(self) -> None:
+        helper = load()
+        expected = (
+            Path("/private/tmp/nembra-authenticated-capture-install.fixture"),
+            "b" * 64,
+            Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"),
+            Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer/usr/bin/xctrace"),
+            Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer/usr/bin/devicectl"),
+        )
+        with (
+            mock.patch.object(helper, "_parse", return_value=mock.Mock(
+                field_pid=4242,
+                source_sha="a" * 40,
+                freeze_launcher_base64="launcher",
+                freeze_launcher_blob="a" * 40,
+                freeze_helper_base64="freeze",
+                freeze_helper_blob="b" * 40,
+                build_origin_base64="origin",
+                build_origin_blob="c" * 40,
+                install_custody_base64="install",
+                install_custody_blob="d" * 40,
+                command=["/usr/bin/xcodebuild"],
+            )),
+            mock.patch.object(helper, "orchestrate", return_value=expected),
+            mock.patch.object(helper.sys, "stdout") as stdout,
+        ):
+            self.assertEqual(helper.main([]), 0)
+        stdout.write.assert_called_once_with("\t".join(str(value) for value in expected) + "\n")
 
     def test_installer_transports_and_invokes_exact_composition(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
