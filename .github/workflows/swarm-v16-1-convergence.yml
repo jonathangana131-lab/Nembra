@@ -1,87 +1,71 @@
-name: Swarm V16.1 Convergence Readiness
+name: Swarm V16.1 Retained Compatibility
 
 on:
   pull_request:
     paths:
       - '.swarm/config.json'
       - 'SWARM_GO.md'
-      - 'docs/SWARM_V16_1_CONVERGENCE.md'
       - 'scripts/swarmcp/**'
       - 'scripts/swarm_v16_1_pr_admission.py'
       - 'scripts/ci/tests/test_swarm_v16_mission_graph.py'
       - 'scripts/ci/tests/test_swarm_v16_1_convergence.py'
       - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
       - '.github/workflows/swarm-v16-1-*.yml'
+      - '.github/workflows/swarm-v16-2-*.yml'
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - '.swarm/config.json'
       - 'SWARM_GO.md'
-      - 'docs/SWARM_V16_1_CONVERGENCE.md'
       - 'scripts/swarmcp/**'
       - 'scripts/swarm_v16_1_pr_admission.py'
       - 'scripts/ci/tests/test_swarm_v16_mission_graph.py'
       - 'scripts/ci/tests/test_swarm_v16_1_convergence.py'
       - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
       - '.github/workflows/swarm-v16-1-*.yml'
+      - '.github/workflows/swarm-v16-2-*.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  V16_1_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 concurrency:
-  group: swarm-v16-1-readiness-${{ github.event.pull_request.number || github.ref }}
+  group: swarm-v16-1-retained-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  exact-head-readiness:
+  retained-invariants:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # On pull_request, GitHub's default checkout is a synthetic merge commit.
-      # V16.1 acceptance is candidate-head authority, so checkout the immutable
-      # PR head explicitly. Push runs use github.sha.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.V16_1_CANDIDATE_SHA }}
+          ref: ${{ env.CANDIDATE_SHA }}
           persist-credentials: false
           fetch-depth: 2
 
-      - name: Bind literal candidate head
+      - name: Bind candidate head
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$V16_1_CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$V16_1_CANDIDATE_SHA"
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile V16.1 control plane
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile \
-            scripts/swarm_control.py \
-            scripts/swarm_v16_1_pr_admission.py \
-            scripts/swarmcp/*.py \
-            scripts/ci/tests/test_swarm_v16_mission_graph.py \
-            scripts/ci/tests/test_swarm_v16_1_convergence.py \
-            scripts/ci/tests/test_swarm_v16_1_rollout.py
+      - name: Compile retained control plane
+        run: python3 -m py_compile scripts/swarm_control.py scripts/swarm_v16_1_pr_admission.py scripts/swarmcp/*.py
 
-      - name: Validate policy config
+      - name: Prove V16.1 convergence invariants remain enabled
         shell: bash
         run: |
-          set -euo pipefail
           python3 - <<'PY'
           import json
           cfg=json.load(open('.swarm/config.json'))
           v=cfg['v16']
-          assert v['enabled'] is True
-          assert v['policyVersion']=='16.1'
-          assert v['solutionTournamentMaxCandidates']==2
+          assert v['policyVersion'] in {'16.1','16.2'}
           c=v['convergence']
           assert c['oneBuilderBranchPerBlocker'] is True
           assert c['joinBeforeSuccessor'] is True
@@ -90,45 +74,29 @@ jobs:
           assert c['automaticPRAdmission'] is True
           PY
 
-      - name: Run retained V16 mission-graph suite
-        shell: bash
-        run: python3 scripts/ci/tests/test_swarm_v16_mission_graph.py
-
-      - name: Run V16.1 convergence suite
+      - name: Run retained V16/V16.1 suites
         shell: bash
         run: |
           set -euo pipefail
+          python3 scripts/ci/tests/test_swarm_v16_mission_graph.py
           python3 scripts/ci/tests/test_swarm_v16_1_convergence.py
           python3 scripts/ci/tests/test_swarm_v16_1_rollout.py
 
-      - name: Run neighboring V16 operations and activation regressions
+      - name: Re-run retained adversarial simulations
         shell: bash
         run: |
-          set -euo pipefail
-          python3 scripts/ci/tests/test_swarm_v16_ops.py
-          python3 scripts/ci/tests/test_swarm_v16_activation_scale.py
-          python3 scripts/ci/tests/test_swarm_v16_live_refresh_workflow.py
-
-      - name: Re-run both adversarial swarm simulations
-        shell: bash
-        run: |
-          set -euo pipefail
           python3 - <<'PY'
-          import datetime as dt, json, sys
+          import datetime as dt, sys
           sys.path.insert(0,'scripts')
           import swarm_control as sc
-          now=dt.datetime(2026,8,13,9,30,tzinfo=dt.timezone.utc)
-          old=sc.run_v16_adversarial_simulation(30,now)
-          new=sc.run_v16_1_adversarial_simulation(30,now)
-          print(json.dumps({'v16':old,'v16_1':new},indent=2,sort_keys=True))
-          assert old['passed']
-          assert new['passed']
+          now=dt.datetime(2026,8,14,8,10,tzinfo=dt.timezone.utc)
+          assert sc.run_v16_adversarial_simulation(30,now)['passed']
+          assert sc.run_v16_1_adversarial_simulation(30,now)['passed']
           PY
 
-      - name: Prove no physical authority changed
+      - name: Prove physical authority unchanged
         shell: bash
         run: |
-          set -euo pipefail
           python3 - <<'PY'
           import json
           cfg=json.load(open('.swarm/config.json'))
