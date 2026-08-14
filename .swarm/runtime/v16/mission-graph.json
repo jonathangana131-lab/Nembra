@@ -2427,7 +2427,7 @@
         "lane": "capture-callback-authority-convergence",
         "pr": 3292,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.104,
+        "similarity": 0.101,
         "title": "[Capture P0][REPAIR] Converge callback delivery, liveness, and exact SmartLife source authority"
       },
       "3293": {
@@ -2467,11 +2467,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "cad822387886ad178bb5013dba5fdf0f88242c23",
+        "headSHA": "",
         "lane": "capture-physical-runbook-field-followability",
         "pr": 3303,
         "recommendedAction": "independent-review",
-        "similarity": 0.114,
+        "similarity": 0.135,
         "title": "[Capture P0][NO-GO] Make stationary runbook match shipping controls"
       }
     },
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:33:27Z",
+    "liveRefreshAt": "2026-08-14T09:36:52Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 169,
+  "revision": 170,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:36:27Z",
+  "updatedAt": "2026-08-14T09:39:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:33:27Z",
+      "updatedAt": "2026-08-14T09:36:52Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
