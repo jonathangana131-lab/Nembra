@@ -122,11 +122,19 @@ final class AppRuntime {
                     let now = Date()
                     let route = simulatorRouteCoordinates()
                     for (index, coordinate) in route.enumerated() {
+                        // The canonical four-point fixture keeps its historical
+                        // one-second spacing. A long-route load fixture intentionally
+                        // shares one finite fixture timestamp across all points: its
+                        // sequence is the ordering authority, and the load fixture
+                        // must not fabricate minutes of physical sampling cadence.
+                        let fixtureDate = simulatorRoutePointCount > 4
+                            ? now
+                            : now.addingTimeInterval(Double(index))
                         try await simulatorRouteRecorder.append(
                             latitude: coordinate.0,
                             longitude: coordinate.1,
-                            capturedAtDate: now.addingTimeInterval(Double(index)),
-                            sourceMeasurementDate: now.addingTimeInterval(Double(index)),
+                            capturedAtDate: fixtureDate,
+                            sourceMeasurementDate: fixtureDate,
                             horizontalAccuracyMeters: 4
                         )
                     }
