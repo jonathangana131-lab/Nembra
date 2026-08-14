@@ -1,0 +1,36 @@
+name: Capture source-attribution donor materializer
+
+on:
+  push:
+    branches:
+      - capture/application-delivery-cutoff-repair-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/application-delivery-cutoff-repair-sol-20260814
+          fetch-depth: 2
+          persist-credentials: true
+      - name: Materialize exact-device source fence into donor
+        env:
+          EXPECTED_PARENT: 3d76af6322da4555b9b40c87443f8f77b4dcca17
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test -f scripts/ci/materialize_capture_source_attribution_donor.py
+          python3 scripts/ci/materialize_capture_source_attribution_donor.py
+          test ! -e scripts/ci/materialize_capture_source_attribution_donor.py
+          test ! -e .github/workflows/capture-source-attribution-donor-materializer.yml
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add -A
+          git commit -m 'Capture V16.1: bind SmartLife DPS to exact selected device'
+          git push origin HEAD:capture/application-delivery-cutoff-repair-sol-20260814
