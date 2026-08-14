@@ -1,0 +1,166 @@
+name: Home Exact Accessibility XXXL Witness
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/home-exact-xxxl-witness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  home-xxxl:
+    name: Exact iPhone 12 Home Accessibility XXXL
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: xcode-27
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable PR head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Inject witness-only Home XCUITest
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 <<'PY'
+          from pathlib import Path
+          path = Path('NembraUITests/NembraUITests.swift')
+          source = path.read_text()
+          anchor = '''    @MainActor
+              private func selectDashboardMode('''
+          if anchor not in source:
+              raise SystemExit('NembraUITests injection anchor missing')
+          witness = r'''    @MainActor
+              func testHomeExactAccessibilityXXXLClosureWitness() {
+                  let app = launch(scenario: "connected-stopped", orientation: .portrait)
+                  XCTAssertTrue(app.navigationBars["Nembra"].waitForExistence(timeout: 4))
+
+                  let battery = app.descendants(matching: .any)["home.metric.battery"]
+                  let trip = app.descendants(matching: .any)["home.metric.trip"]
+                  let mode = app.descendants(matching: .any)["home.metric.mode"]
+                  XCTAssertTrue(battery.waitForExistence(timeout: 3))
+                  XCTAssertTrue(trip.waitForExistence(timeout: 2))
+                  XCTAssertTrue(mode.waitForExistence(timeout: 2))
+                  keepScreenshot(named: "Home Exact XXXL Metrics")
+
+                  app.swipeUp()
+                  XCTAssertTrue(app.staticTexts["Controls"].waitForExistence(timeout: 2))
+                  keepScreenshot(named: "Home Exact XXXL Controls")
+
+                  app.swipeUp()
+                  XCTAssertTrue(app.staticTexts["Ride Mode"].waitForExistence(timeout: 2))
+                  keepScreenshot(named: "Home Exact XXXL Ride Mode")
+
+                  app.swipeUp()
+                  XCTAssertTrue(app.staticTexts["All Vehicle Controls"].waitForExistence(timeout: 2))
+                  keepScreenshot(named: "Home Exact XXXL Vehicle")
+                  app.terminate()
+              }
+
+          '''
+          path.write_text(source.replace(anchor, witness + anchor, 1))
+          Path('/tmp/nembra-home-exact-xxxl-injected.swift').write_text(path.read_text())
+          PY
+
+      - name: Capture exact Accessibility XXXL Home states
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACTS="$RUNNER_TEMP/home-exact-xxxl"
+          DERIVED="$RUNNER_TEMP/home-exact-xxxl-derived"
+          RESULT="$ARTIFACTS/NembraHomeExactXXXL.xcresult"
+          ATTACHMENTS="$ARTIFACTS/attachments"
+          mkdir -p "$ARTIFACTS" "$ATTACHMENTS"
+          cp /tmp/nembra-home-exact-xxxl-injected.swift "$ARTIFACTS/injected-test-source.swift"
+          shasum -a 256 "$ARTIFACTS/injected-test-source.swift" > "$ARTIFACTS/injected-test-source.sha256"
+
+          runtime="$({ xcrun simctl list runtimes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=json.load(sys.stdin)["runtimes"]
+          candidates=[r for r in rows if r.get("isAvailable", True) and str(r.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          if not candidates: raise SystemExit(1)
+          candidates.sort(key=lambda r: tuple(int(p) for p in str(r.get("version", "0")).split(".") if p.isdigit()), reverse=True)
+          print(candidates[0]["identifier"])
+          '; } 2>/dev/null)" || { echo 'No iOS 27 runtime' >&2; exit 2; }
+
+          device_type="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
+          import json,sys
+          for row in json.load(sys.stdin)["devicetypes"]:
+              if row.get("name") == "iPhone 12":
+                  print(row["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)
+          '; } 2>/dev/null)" || { echo 'No iPhone 12 Simulator device type' >&2; exit 3; }
+
+          udid="$(xcrun simctl create "Nembra Home XXXL ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$device_type" "$runtime")"
+          cleanup() {
+            xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+            xcrun simctl delete "$udid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT INT TERM
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+
+          # Fail closed: no fallback to a smaller accessibility size.
+          xcrun simctl ui "$udid" content_size accessibility-extra-extra-extra-large
+
+          {
+            printf 'source_sha=%s\n' "$(git rev-parse HEAD)"
+            printf 'runtime=%s\n' "$runtime"
+            printf 'device_type=%s\n' "$device_type"
+            printf 'simulator_udid=%s\n' "$udid"
+            printf 'accessibility_content_size=accessibility-extra-extra-extra-large\n'
+            xcodebuild -version
+          } > "$ARTIFACTS/environment.txt"
+
+          set +e
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$udid" \
+            -derivedDataPath "$DERIVED" \
+            -resultBundlePath "$RESULT" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 180 \
+            -maximum-test-execution-time-allowance 180 \
+            -collect-test-diagnostics never \
+            -only-testing:NembraUITests/NembraUITests/testHomeExactAccessibilityXXXLClosureWitness \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            test | tee "$ARTIFACTS/xcodebuild.log"
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [[ -d "$RESULT" ]]; then
+            xcrun xcresulttool export attachments \
+              --path "$RESULT" \
+              --output-path "$ATTACHMENTS" \
+              > "$ARTIFACTS/xcresult-attachments.log" 2>&1 || true
+          fi
+          find "$ATTACHMENTS" -type f -maxdepth 2 -print | sort > "$ARTIFACTS/attachments.txt" || true
+          test "$status" -eq 0 || exit "$status"
+          test -s "$ARTIFACTS/attachments.txt"
+
+      - name: Upload exact Home XXXL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-home-exact-xxxl-${{ github.event.pull_request.number }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/home-exact-xxxl
+          if-no-files-found: error
+          retention-days: 30
