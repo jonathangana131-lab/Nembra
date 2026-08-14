@@ -21,8 +21,8 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         #expect(app.contains("var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }"))
         #expect(app.contains("procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier"))
         #expect(app.contains("LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)"))
-        #expect(app.contains("schemaVersion: 10"))
-        #expect(!app.contains("schemaVersion: 9"))
+        #expect(app.contains("schemaVersion: 11"))
+        #expect(!app.contains("schemaVersion: 10"))
     }
 
     @Test("canonical runbook and field installer pin the same exact required procedure")
