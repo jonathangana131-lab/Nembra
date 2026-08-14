@@ -50,8 +50,8 @@ This procedure is indoors and stationary. It requires no riding. Setup and all p
 1. Install the exact accepted signed Capture build on the intended iPhone 12 / iOS 27.
 2. In Engineering Details, verify the exact Build, Source commit, and Procedure tuple. Procedure must be `ES80-AUTHENTICATED-STATIONARY-v1`.
 3. Keep the scooter stationary and initially **OFF**.
-4. Use the official Tuya SDK verification-code account flow when login is required. Require a fresh exact-device membership check after complete enumeration of the current account's homes and retain the same-account-UID + exact-device identity lease.
-5. If build authority, SDK login, exact-device membership, account identity, foreground integrity, private dependency provenance, or any software evidence-custody gate is unavailable or changes, **STOP**. Do not begin OFF1.
+4. If the Tuya account is not logged in, use the shipping **Sign in with Apple** control or the Tuya verification-code path. For the verification-code path, choose Email/Phone, enter country code + account, tap **`Send verification code`**, enter the received code, then tap **`Continue`**. Nembra never asks for the Tuya password.
+5. After login, tap **`Verify this scooter`** and wait until the shipping requirement **This scooter in account** reports Ready. This must be a fresh exact-device membership check after complete enumeration of the current account's homes and must retain the same-account-UID + exact-device identity lease. If build authority, SDK login, exact-device membership, account identity, foreground integrity, private dependency provenance, or any software evidence-custody gate is unavailable or changes, **STOP**. Do not begin OFF1.
 
 ### Fresh four-window target correlation
 
@@ -65,13 +65,13 @@ This procedure is indoors and stationary. It requires no riding. Setup and all p
 
 ### Supported read-only Tuya session
 
-13. Re-prove current same-account exact-device authority. Tuya's official SDK becomes the sole authenticated BLE owner. Nembra sends no scooter DP query/control command and opens no second CoreBluetooth connection.
-14. After authentication, preserve one current generation only. Require valid accepted observation chronology, supported SmartLife SDK provenance, exact callback-device source attribution, and observed local-BLE-online proof from the accepted source before readiness can be earned.
-15. Keep the scooter stationary, keep Capture in the foreground, and do not change mode/light/brake/throttle/charger state during this preflight. This freezes the physical setup; charger state is not measured or sensed by Nembra.
-16. Require at least **two** genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate` application observations admitted through the final source/chronology custody path. Require the latest accepted application payload to occur at least **30 seconds after authentication** and require at least **45 seconds of canonical authenticated observation**.
+13. With **Scooter signal confirmed** visible, tap **`Start secure read-only link`**. This action must re-prove current same-account exact-device authority before Tuya's official SDK becomes the sole authenticated BLE owner. Nembra sends no scooter DP query/control command and opens no second CoreBluetooth connection.
+14. During **Establishing secure link**, do not interact with scooter controls. After authentication, preserve one current generation only. Require valid accepted observation chronology, supported SmartLife SDK provenance, exact callback-device source attribution, and observed local-BLE-online proof from the accepted source before readiness can be earned.
+15. When the shipping screen changes to **Hold steady**, keep the scooter stationary, keep Capture in the foreground, and do not change mode/light/brake/throttle/charger state. This freezes the physical setup; charger state is not measured or sensed by Nembra.
+16. Let **Read-only observation** progress without touching the scooter. Acceptance still mechanically requires at least **two** genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate` application observations admitted through the final source/chronology custody path, the latest accepted application payload at least **30 seconds after authentication**, and at least **45 seconds of canonical authenticated observation**. The displayed progress is guidance, not evidence authority.
 17. If the current generation reaches **60 seconds after authentication** without satisfying the full readiness contract, it must retire fail-closed. Do not wait indefinitely and do not let a callback physically delivered after the retirement boundary rescue the generation.
 18. The app must seal the canonical ready prefix before presenting success. Delayed callbacks after seal/failure cannot mutate the accepted artifact.
-19. Prepare and share the sanitized Capture JSON. It must preserve exact build/source/procedure and target-correlation provenance and explicitly carry `rawFD50BytesCaptured=false`, `dpQueriesSent=false`, and `dpCommandsSent=false` for this path.
+19. Only after **CAPTURE COMPLETE** and **Ready for analysis** appear, tap **`Share Capture`** and share the immutable accepted artifact. If the screen instead says **CAPTURE SEALED — Artifact preparation needed**, use **`Retry sealed Capture preparation`**; do not treat the attempt as share-ready until **CAPTURE COMPLETE** appears. The shared schema-v11 Capture JSON must preserve exact build/source/procedure and target-correlation provenance and explicitly carry `rawFD50BytesCaptured=false`, `dpQueriesSent=false`, and `dpCommandsSent=false` for this path.
 
 ### Stop conditions
 
