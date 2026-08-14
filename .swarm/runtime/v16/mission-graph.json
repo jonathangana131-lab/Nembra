@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 297,
+    "classifiedPRTotal": 298,
     "classifiedPRs": {
-      "2789": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2789,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.206,
-        "title": "[Capture P0][REPAIR] Pin private-device runner execution bytes"
-      },
       "2791": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2438,7 +2427,7 @@
         "lane": "capture-callback-authority-convergence",
         "pr": 3292,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.101,
+        "similarity": 0.201,
         "title": "[Capture P0][REPAIR] Converge callback delivery, liveness, and exact SmartLife source authority"
       },
       "3293": {
@@ -2473,6 +2462,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.135,
         "title": "[Capture P0][NO-GO] Make stationary runbook match shipping controls"
+      },
+      "3306": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-callback-authority-convergence",
+        "pr": 3306,
+        "recommendedAction": "independent-review",
+        "similarity": 0.193,
+        "title": "[Capture P0][CORRECTION] Preserve receipt authority after premature seal"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:46:05Z",
+    "liveRefreshAt": "2026-08-14T09:49:18Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 173,
+  "revision": 174,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:48:58Z",
+  "updatedAt": "2026-08-14T09:51:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:46:05Z",
+      "updatedAt": "2026-08-14T09:49:18Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
