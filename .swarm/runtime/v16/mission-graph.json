@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 11,
+    "classifiedPRTotal": 12,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1186,6 +1186,17 @@
         "recommendedAction": "archive-after-evidence-transfer",
         "similarity": 0.299,
         "title": "[Capture P0][ORACLE] Rebase install-custody regression on live carrier"
+      },
+      "3333": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3333,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.0,
+        "title": "[Capture P0][BUILD] Preserve frozen device-tool custody after build"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1218,7 +1229,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:58:11Z",
+    "liveRefreshAt": "2026-08-14T23:58:36Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -5003,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 329,
+  "revision": 330,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:58:11Z",
+  "updatedAt": "2026-08-14T23:58:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5082,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:58:11Z",
+      "updatedAt": "2026-08-14T23:58:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
