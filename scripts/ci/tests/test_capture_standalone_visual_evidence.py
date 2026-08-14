@@ -54,10 +54,14 @@ for forbidden in ["devicectl", "xctrace", "connectBLE", "writeValue", "publishDp
         raise SystemExit(f"visual evidence runner contains forbidden physical/protocol surface: {forbidden}")
 
 for needle in [
+    'source-contract:',
+    'runs-on: ubuntu-latest',
+    'needs: source-contract',
     'runs-on: xcode-27',
     'permissions:\n  contents: read',
     'ref: ${{ github.event.pull_request.head.sha || github.sha }}',
     'persist-credentials: false',
+    '/usr/bin/python3 -m py_compile scripts/ci/capture_standalone_visual_evidence.py scripts/ci/capture_visual_png_content_guard.py',
     '/usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py',
     '/usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py',
     'CODE_SIGNING_ALLOWED=NO',
@@ -76,6 +80,11 @@ for needle in [
 ]:
     if needle not in workflow:
         raise SystemExit(f"missing standalone visual workflow contract: {needle}")
+
+if workflow.count('runs-on: xcode-27') != 1:
+    raise SystemExit("visual workflow must retain exactly one scarce xcode-27 Simulator job")
+if workflow.count('runs-on: ubuntu-latest') != 1:
+    raise SystemExit("visual workflow must retain exactly one portable source-contract job")
 
 if re.search(r"NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=\"[0-9a-f]{64}\"", workflow):
     raise SystemExit("public visual QA must not synthesize Tuya dependency authority")

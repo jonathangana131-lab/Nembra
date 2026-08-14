@@ -18,8 +18,37 @@ permissions:
   contents: read
 
 jobs:
+  source-contract:
+    name: Portable visual evidence source contract
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify portable visual contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          /usr/bin/python3 -m py_compile scripts/ci/capture_standalone_visual_evidence.py scripts/ci/capture_visual_png_content_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj)" = 2
+
   standalone-visual:
     name: Exact iPhone 12 standalone Capture evidence
+    needs: source-contract
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
     timeout-minutes: 25
