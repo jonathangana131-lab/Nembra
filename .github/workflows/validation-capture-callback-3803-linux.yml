@@ -1,0 +1,50 @@
+name: Validate Capture callback 3803 on Linux
+
+on:
+  push:
+    branches:
+      - validation/capture-callback-3803-linux-sol
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-capture-callback-3803-linux
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: validation/capture-callback-3803-linux-sol
+          fetch-depth: 2
+      - name: Bind immutable product parent and workflow-only mirror
+        env:
+          EXPECTED_PRODUCT: 3803df1eb5c6e486c827025e65fedeb95a506897
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PRODUCT"
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          test "$changed" = '.github/workflows/validation-capture-callback-3803-linux.yml'
+          printf 'Validated mirror parent: %s\n' "$EXPECTED_PRODUCT"
+      - name: Record Swift toolchain
+        run: swift --version
+      - name: Compile Capture package
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift build
+      - name: Run callback authority package/source suites
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests
+          swift test --filter TuyaAcceptedApplicationEvidenceSealSourceTests
+          swift test --filter TuyaSmartLifeApplicationSourceAttributionSourceTests
+          swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
+          swift test --filter TuyaApplicationAdmissionCrossAttemptDrainSourceTests
+          swift test --filter TuyaApplicationEventCustodyAdmissionRaceSourceTests
+          swift test --filter TuyaAppChronologyIntegrityTerminalSourceTests
+          swift test --filter TuyaPostSealTransportAuthoritySourceTests
+          swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
