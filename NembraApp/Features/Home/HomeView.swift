@@ -27,7 +27,12 @@ struct HomeView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 120 : 96)
+            .padding(.bottom, 24)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear
+                .frame(height: dynamicTypeSize.isAccessibilitySize ? 100 : 76)
+                .accessibilityHidden(true)
         }
         .background(Color(uiColor: .systemBackground))
         .navigationTitle("Nembra")
