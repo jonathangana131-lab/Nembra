@@ -10,14 +10,14 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         let firstToken = try await authenticatedApplicationReceiptToken(ledger: firstLedger, clock: firstClock)
 
         firstClock.set(3_000_000_000)
-        let receipt = try #require(firstLedger.captureApplicationReceipt(for: firstToken))
-        try await firstLedger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: firstToken)
+        let receipt = try #require(firstLedger.captureApplicationDelivery(for: firstToken))
+        try await firstLedger.recordApplicationUpdate(delivery: receipt, for: firstToken)
         let accepted = await firstLedger.currentPreflightSnapshot()
         #expect(accepted.applicationPayloadCount == 1)
         #expect(accepted.latestApplicationPayloadUptimeNanoseconds == 3_000_000_000)
 
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.duplicateApplicationReceipt) {
-            try await firstLedger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: firstToken)
+            try await firstLedger.recordApplicationUpdate(delivery: receipt, for: firstToken)
         }
         let afterReplay = await firstLedger.currentPreflightSnapshot()
         #expect(afterReplay.applicationPayloadCount == 1)
@@ -27,7 +27,7 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         let secondLedger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: secondClock.now)
         let secondToken = try await authenticatedApplicationReceiptToken(ledger: secondLedger, clock: secondClock)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.invalidApplicationReceipt) {
-            try await secondLedger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: secondToken)
+            try await secondLedger.recordApplicationUpdate(delivery: receipt, for: secondToken)
         }
         let foreign = await secondLedger.currentPreflightSnapshot()
         #expect(foreign.applicationPayloadCount == 0)
@@ -40,12 +40,12 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         let token = try await authenticatedApplicationReceiptToken(ledger: ledger, clock: clock)
 
         clock.set(3_000_000_000)
-        let receipt = try #require(ledger.captureApplicationReceipt(for: token))
+        let receipt = try #require(ledger.captureApplicationDelivery(for: token))
 
         // Actor execution occurs much later. If recordApplicationUpdate resampled another clock,
         // this would cross both continuity and the bounded incomplete-observation horizon.
         clock.set(100_000_000_000)
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)
+        try await ledger.recordApplicationUpdate(delivery: receipt, for: token)
 
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.applicationPayloadCount == 1)
@@ -61,17 +61,17 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         let token = try await authenticatedApplicationReceiptToken(ledger: ledger, clock: clock)
 
         clock.set(3_000_000_000)
-        let first = try #require(ledger.captureApplicationReceipt(for: token))
+        let first = try #require(ledger.captureApplicationDelivery(for: token))
         clock.set(4_000_000_000)
-        let second = try #require(ledger.captureApplicationReceipt(for: token))
+        let second = try #require(ledger.captureApplicationDelivery(for: token))
 
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationReceiptOrderPending) {
-            try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: second, for: token)
+            try await ledger.recordApplicationUpdate(delivery: second, for: token)
         }
         #expect((await ledger.currentPreflightSnapshot()).applicationPayloadCount == 0)
 
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: first, for: token)
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: second, for: token)
+        try await ledger.recordApplicationUpdate(delivery: first, for: token)
+        try await ledger.recordApplicationUpdate(delivery: second, for: token)
 
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.applicationPayloadCount == 2)
@@ -86,7 +86,7 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         let token = try await authenticatedApplicationReceiptToken(ledger: ledger, clock: clock)
 
         clock.set(3_000_000_000)
-        let receipt = try #require(ledger.captureApplicationReceipt(for: token))
+        let receipt = try #require(ledger.captureApplicationDelivery(for: token))
         clock.set(4_000_000_000)
 
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationReceiptPending) {
@@ -94,7 +94,7 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         }
         #expect((await ledger.currentPreflightSnapshot()).latestObservedUptimeNanoseconds == 2_000_000_000)
 
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)
+        try await ledger.recordApplicationUpdate(delivery: receipt, for: token)
         try await ledger.observeCurrentConnection(for: token)
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.latestObservedUptimeNanoseconds == 4_000_000_000)
@@ -113,9 +113,9 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         }
 
         clock.set(59_000_000_000)
-        let first = try #require(ledger.captureApplicationReceipt(for: token))
+        let first = try #require(ledger.captureApplicationDelivery(for: token))
         clock.set(61_500_000_000)
-        let second = try #require(ledger.captureApplicationReceipt(for: token))
+        let second = try #require(ledger.captureApplicationDelivery(for: token))
 
         // The watchdog reaches the actor only after the 60-second absolute horizon. Both app
         // deliveries were already synchronously receipted before it, so package arbitration must
@@ -125,8 +125,8 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
             try await ledger.observeCurrentConnection(for: token)
         }
 
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: first, for: token)
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: second, for: token)
+        try await ledger.recordApplicationUpdate(delivery: first, for: token)
+        try await ledger.recordApplicationUpdate(delivery: second, for: token)
         try await ledger.observeCurrentConnection(for: token)
 
         let snapshot = await ledger.currentPreflightSnapshot()
@@ -147,9 +147,9 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         }
 
         clock.set(62_100_000_000)
-        let late = try #require(ledger.captureApplicationReceipt(for: token))
+        let late = try #require(ledger.captureApplicationDelivery(for: token))
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
-            try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: late, for: token)
+            try await ledger.recordApplicationUpdate(delivery: late, for: token)
         }
 
         let snapshot = await ledger.currentPreflightSnapshot()
@@ -157,7 +157,7 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         #expect(snapshot.authenticationState == .failed(
             reason: "Authenticated session ended because required repeated application evidence did not become sufficient before the observation deadline."
         ))
-        #expect(ledger.captureApplicationReceipt(for: token) == nil)
+        #expect(ledger.captureApplicationDelivery(for: token) == nil)
     }
 
     private func authenticatedApplicationReceiptToken(

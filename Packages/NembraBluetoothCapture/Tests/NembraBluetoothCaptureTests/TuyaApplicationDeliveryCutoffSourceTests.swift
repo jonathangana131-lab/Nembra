@@ -29,7 +29,7 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             to: "private func receivedApplicationUpdate("
         ))
         let receipt = try deliveryCutoffRequiredOffset(
-            "let applicationReceipt = sessionLedger.captureApplicationReceipt(for: token)",
+            "let applicationDelivery = sessionLedger.captureApplicationDelivery(for: token)",
             in: admission
         )
         let inFlight = try deliveryCutoffRequiredOffset(
@@ -53,7 +53,7 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             after: deferFence
         )
         let receiverCall = try deliveryCutoffRequiredOffset(
-            "receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)",
+            "receivedApplicationUpdate(update, delivery: applicationDelivery, token: token)",
             in: admission,
             after: release
         )
@@ -63,7 +63,7 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
         #expect(asyncHop < deferFence)
         #expect(deferFence < release)
         #expect(release < receiverCall)
-        #expect(deliveryCutoffOccurrenceCount("captureApplicationReceipt(for: token)", in: app) == 1)
+        #expect(deliveryCutoffOccurrenceCount("captureApplicationDelivery(for: token)", in: app) == 1)
         #expect(!app.contains("TuyaReadOnlyApplicationReceipt.capture"))
 
         let receiver = String(try deliveryCutoffSection(
@@ -71,8 +71,9 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             from: "private func receivedApplicationUpdate(",
             to: "private func redactedApplicationEventDetails("
         ))
-        #expect(receiver.contains("receipt: TuyaReadOnlyApplicationReceipt"))
-        #expect(receiver.contains("recordApplicationUpdate(isNonEmpty: !update.isEmpty, receipt: receipt, for: token)"))
+        #expect(receiver.contains("delivery: TuyaReadOnlyApplicationReceipt"))
+        #expect(receiver.contains("recordApplicationUpdate(delivery: delivery, for: token)"))
+        #expect(!receiver.contains("recordApplicationUpdate(isNonEmpty:"))
         #expect(!receiver.contains("applicationUpdateAdmissionsInFlight += 1"))
         #expect(!receiver.contains("applicationUpdateAdmissionsInFlight -= 1"))
 
@@ -113,16 +114,16 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
 
         #expect(ledger.contains("applicationReceiptIssuerID"))
         #expect(ledger.contains("consumedApplicationDeliveryIDs"))
-        #expect(ledger.contains("nonisolated public func captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken)"),
+        #expect(ledger.contains("nonisolated public func captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken)"),
                 Comment(rawValue: "Receipt capture must be synchronous at SDK delivery; an actor hop before timestamping recreates scheduler-defined chronology."))
 
         let capture = String(try deliveryCutoffSection(
             in: ledger,
-            from: "nonisolated public func captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken)",
+            from: "nonisolated public func captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken)",
             to: "public func recordApplicationUpdate("
         ))
-        #expect(capture.contains("applicationDeliveryArbiter.captureApplicationReceipt(for: token)"))
-        #expect(!ledger.contains("captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:"),
+        #expect(capture.contains("applicationDeliveryArbiter.captureApplicationDelivery(for: token)"))
+        #expect(!ledger.contains("captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:"),
                 Comment(rawValue: "The public capture API must not accept caller-selected receipt time."))
 
         let record = String(try deliveryCutoffSection(
@@ -130,9 +131,11 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             from: "public func recordApplicationUpdate(",
             to: "public func observeCurrentConnection("
         ))
-        #expect(record.contains("receipt: TuyaReadOnlyApplicationReceipt"))
-        #expect(record.contains("applicationDeliveryArbiter.consumeApplicationReceipt(receipt, for: token)"))
-        #expect(record.contains("let now = receipt.receivedAtUptimeNanoseconds"))
+        #expect(record.contains("delivery: TuyaReadOnlyApplicationReceipt"))
+        #expect(!record.contains("isNonEmpty: Bool"))
+        #expect(record.contains("delivery.nonEmptyApplicationDeliveryOccurred"))
+        #expect(record.contains("applicationDeliveryArbiter.consumeApplicationReceipt(delivery, for: token)"))
+        #expect(record.contains("let now = delivery.receivedAtUptimeNanoseconds"))
         #expect(!record.contains("receivedAtUptimeNanoseconds: UInt64"))
         #expect(!record.contains("let now = try nextMonotonicObservation()"))
         #expect(record.contains("try requireContinuousAuthenticatedObservation(at: now)"))

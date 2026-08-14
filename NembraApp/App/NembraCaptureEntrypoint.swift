@@ -1728,7 +1728,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             }
             return
         }
-        guard let applicationReceipt = sessionLedger.captureApplicationReceipt(for: token) else {
+        guard let applicationDelivery = sessionLedger.captureApplicationDelivery(for: token) else {
             log("application_receipt_authority_unavailable", ["generation": String(token.diagnosticGeneration)])
             return
         }
@@ -1736,13 +1736,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         applicationUpdateAdmissionsInFlight += 1
         Task { @MainActor [self] in
             defer { applicationUpdateAdmissionsInFlight -= 1 }
-            await receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)
+            await receivedApplicationUpdate(update, delivery: applicationDelivery, token: token)
         }
     }
 
     private func receivedApplicationUpdate(
         _ update: [String: String],
-        receipt: TuyaReadOnlyApplicationReceipt,
+        delivery: TuyaReadOnlyApplicationReceipt,
         token: TuyaReadOnlyConnectionToken
     ) async {
         guard !update.isEmpty else { return }
@@ -1797,7 +1797,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             var applicationReceiptRecorded = false
             while !applicationReceiptRecorded {
                 do {
-                    try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, receipt: receipt, for: token)
+                    try await sessionLedger.recordApplicationUpdate(delivery: delivery, for: token)
                     applicationReceiptRecorded = true
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationReceiptOrderPending {
                     guard currentConnectionToken == token,

@@ -40,7 +40,7 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             to: "public func observeCurrentConnection("
         ))
         let consume = try receiptArbitrationRequired(
-            "applicationDeliveryArbiter.consumeApplicationReceipt(receipt, for: token)",
+            "applicationDeliveryArbiter.consumeApplicationReceipt(delivery, for: token)",
             in: record
         )
         let count = try receiptArbitrationRequired("applicationPayloadCount += 1", in: record)

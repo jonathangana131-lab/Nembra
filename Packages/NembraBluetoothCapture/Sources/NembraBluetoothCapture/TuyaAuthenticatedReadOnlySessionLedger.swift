@@ -25,17 +25,20 @@ public struct TuyaReadOnlyApplicationReceipt: Sendable {
     fileprivate let issuerID: UUID
     fileprivate let deliveryID: UUID
     fileprivate let receivedAtUptimeNanoseconds: UInt64
+    fileprivate let nonEmptyApplicationDeliveryOccurred: Bool
 
     fileprivate init(
         token: TuyaReadOnlyConnectionToken,
         issuerID: UUID,
         deliveryID: UUID,
-        receivedAtUptimeNanoseconds: UInt64
+        receivedAtUptimeNanoseconds: UInt64,
+        nonEmptyApplicationDeliveryOccurred: Bool
     ) {
         self.token = token
         self.issuerID = issuerID
         self.deliveryID = deliveryID
         self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+        self.nonEmptyApplicationDeliveryOccurred = nonEmptyApplicationDeliveryOccurred
     }
 }
 
@@ -97,7 +100,7 @@ private final class TuyaApplicationDeliveryArbiter: @unchecked Sendable {
         lock.unlock()
     }
 
-    func captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken) -> TuyaReadOnlyApplicationReceipt? {
+    func captureApplicationDelivery(for token: TuyaReadOnlyConnectionToken) -> TuyaReadOnlyApplicationReceipt? {
         lock.lock()
         defer { lock.unlock() }
         guard activeToken == token else { return nil }
@@ -105,7 +108,8 @@ private final class TuyaApplicationDeliveryArbiter: @unchecked Sendable {
             token: token,
             issuerID: applicationReceiptIssuerID,
             deliveryID: UUID(),
-            receivedAtUptimeNanoseconds: nowUptimeNanoseconds()
+            receivedAtUptimeNanoseconds: nowUptimeNanoseconds(),
+            nonEmptyApplicationDeliveryOccurred: true
         )
         pendingApplicationDeliveries.append(receipt)
         return receipt
@@ -372,27 +376,26 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
 
     /// Synchronously receipts one application callback at the exact SDK-delivery boundary.
     /// The receipt is minted by this ledger instance, with this ledger's clock and one-shot issuer.
-    nonisolated public func captureApplicationReceipt(
+    nonisolated public func captureApplicationDelivery(
         for token: TuyaReadOnlyConnectionToken
     ) -> TuyaReadOnlyApplicationReceipt? {
-        applicationDeliveryArbiter.captureApplicationReceipt(for: token)
+        applicationDeliveryArbiter.captureApplicationDelivery(for: token)
     }
 
     /// Records only the presence and package-owned delivery time of a non-empty application update.
     public func recordApplicationUpdate(
-        isNonEmpty: Bool,
-        receipt: TuyaReadOnlyApplicationReceipt,
+        delivery: TuyaReadOnlyApplicationReceipt,
         for token: TuyaReadOnlyConnectionToken
     ) throws {
         try requireCurrent(token)
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
-        guard isNonEmpty else {
+        guard delivery.nonEmptyApplicationDeliveryOccurred else {
             throw MutationError.emptyApplicationUpdate
         }
 
-        switch applicationDeliveryArbiter.consumeApplicationReceipt(receipt, for: token) {
+        switch applicationDeliveryArbiter.consumeApplicationReceipt(delivery, for: token) {
         case .accepted:
             break
         case .invalidApplicationReceipt:
@@ -403,7 +406,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.applicationReceiptOrderPending
         }
 
-        let now = receipt.receivedAtUptimeNanoseconds
+        let now = delivery.receivedAtUptimeNanoseconds
         try requireContinuousAuthenticatedObservation(at: now)
         try requireIncompleteObservationHorizonOpen(at: now)
         guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
