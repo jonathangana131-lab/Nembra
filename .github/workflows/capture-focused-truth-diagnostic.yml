@@ -9,30 +9,50 @@ permissions:
   contents: read
 
 jobs:
-  expose-test-target-failure:
-    if: github.event.head_commit.message == 'Diagnose Capture test-target compiler failure'
-    runs-on: ubuntu-latest
+  expose-xcode-truth-failures:
+    if: github.event.head_commit.message == 'Diagnose Capture truth on Xcode'
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v6
-      - name: Run one focused truth filter and surface compiler diagnostics
+      - name: Run focused Capture truth suites on Apple toolchain
         working-directory: Packages/NembraBluetoothCapture
         shell: bash
         run: |
           set +e
-          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests > /tmp/capture-test.log 2>&1
-          status=$?
-          cat /tmp/capture-test.log
-          if [ "$status" -ne 0 ]; then
-            python3 - <<'PY'
+          failed=0
+          filters=(
+            TuyaAuthenticatedReadOnlySessionLedgerTests
+            TuyaAuthenticatedTerminalHorizonTests
+            TuyaAuthenticatedReadOnlyHorizonTests
+            TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration
+            TuyaAppIncompleteHorizonTerminalSourceTests
+            TuyaAlreadyTerminalObservationContinuitySourceTests
+            TuyaDeviceSharingAuthenticationAuthorityTests
+          )
+          for filter in "${filters[@]}"; do
+            log="/tmp/${filter}.log"
+            swift test --filter "$filter" > "$log" 2>&1
+            status=$?
+            cat "$log"
+            if [ "$status" -eq 0 ]; then
+              echo "::notice title=Capture truth suite passed::$filter"
+              continue
+            fi
+            failed=1
+            echo "::error title=Capture truth suite failed::$filter"
+            FILTER="$filter" LOG="$log" python3 - <<'PY'
+          import os
           from pathlib import Path
 
-          lines = Path('/tmp/capture-test.log').read_text(errors='replace').splitlines()
-          diagnostics = [line.strip() for line in lines if 'error:' in line.lower() or 'fatal error:' in line.lower()]
+          name = os.environ['FILTER']
+          lines = Path(os.environ['LOG']).read_text(errors='replace').splitlines()
+          needles = ('error:', 'failed', 'expectation failed', 'issue recorded')
+          diagnostics = [line.strip() for line in lines if any(n in line.lower() for n in needles)]
           if not diagnostics:
-              diagnostics = [line.strip() for line in lines[-30:] if line.strip()]
+              diagnostics = [line.strip() for line in lines[-40:] if line.strip()]
           for line in diagnostics[:20]:
               escaped = line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-              print(f'::error title=Capture Swift test failure::{escaped}')
+              print(f'::error title={name}::{escaped}')
           PY
-          fi
-          exit "$status"
+          done
+          exit "$failed"
