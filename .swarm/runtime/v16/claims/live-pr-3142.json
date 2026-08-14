@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 16,
+  "kind": "mission-work-claim",
+  "workItemId": "live-pr-3142",
+  "objectiveId": "legacy-capture-signed-install-custody",
+  "workerId": "sol-20260814-gopt3142a",
+  "leaseId": "82ea423e4ad14ad3a0d2e2b28d8f4e1a",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-14T22:52:00Z",
+  "lastHeartbeatAt": "2026-08-14T22:52:00Z",
+  "leaseSeconds": 1800,
+  "branch": "repair/v14-signed-origin-dedicated-uid-apfs-sol-20260812"
+}
