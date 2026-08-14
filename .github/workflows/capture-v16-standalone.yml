@@ -86,6 +86,7 @@ jobs:
           swift test --filter TuyaAlreadyTerminalObservationContinuitySourceTests
           swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
           swift test --filter TuyaAcceptedApplicationEvidenceSealSourceTests
+          swift test --filter TuyaApplicationReceiptChronologyTests
           swift test --filter TuyaApplicationAdmissionCrossAttemptDrainSourceTests
           swift test --filter TuyaApplicationEventCustodyAdmissionRaceSourceTests
           swift test --filter TuyaSecureLinkProductSurfaceSourceTests

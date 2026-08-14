@@ -26,7 +26,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(!body.contains("self.sealedAcceptedEventPrefix = self.events"))
     }
 
-    @Test("SDK application callback enters admission synchronously before any new MainActor task can reorder it")
+    @Test("SDK application callback receipts and owns admission before the first async hop")
     func sdkCallbackAdmissionPrecedesAsyncScheduling() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         guard let connect = app.range(of: "newDriver.connect("),
@@ -37,50 +37,70 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         }
         let body = String(app[callback.lowerBound..<success.lowerBound])
 
-        #expect(body.contains("admitApplicationUpdateCallback(update, token: token)"),
-                Comment(rawValue: "A callback already delivered by the official SDK must synchronously cross Nembra's admission boundary before control returns to the MainActor scheduler."))
-        #expect(!body.contains("Task { @MainActor"),
-                Comment(rawValue: "Spawning a new task before admission lets the watchdog overtake an already-delivered callback at the package-owned 60-second horizon."))
+        let receipt = try #require(body.range(of: "let applicationReceipt = TuyaReadOnlyApplicationReceipt.capture(for: token)"))
+        let increment = try #require(body.range(of: "applicationUpdateAdmissionsInFlight += 1", range: receipt.upperBound..<body.endIndex))
+        let predecessor = try #require(body.range(of: "let predecessor = self.applicationUpdateAdmissionTail", range: increment.upperBound..<body.endIndex))
+        let task = try #require(body.range(of: "Task { @MainActor", range: predecessor.upperBound..<body.endIndex))
+        let wait = try #require(body.range(of: "await predecessor?.value", range: task.upperBound..<body.endIndex))
+        let release = try #require(body.range(of: "defer { self.applicationUpdateAdmissionsInFlight -= 1 }", range: wait.upperBound..<body.endIndex))
+        let receiver = try #require(body.range(of: "receivedApplicationUpdate(", range: release.upperBound..<body.endIndex))
+
+        #expect(receipt.lowerBound < increment.lowerBound)
+        #expect(increment.lowerBound < predecessor.lowerBound)
+        #expect(predecessor.lowerBound < task.lowerBound)
+        #expect(task.lowerBound < wait.lowerBound)
+        #expect(wait.lowerBound < release.lowerBound)
+        #expect(release.lowerBound < receiver.lowerBound)
     }
 
-    @Test("application admission owns the in-flight drain before asynchronous ledger work begins")
-    func applicationAdmissionIsOwnedBeforeAsyncLedgerWork() throws {
+    @Test("receiver consumes the opaque receipt without reminting application chronology")
+    func receiverUsesPackageOwnedReceipt() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let admission = try section(in: app, from: "private func admitApplicationUpdateCallback", to: "private func receivedApplicationUpdate")
-        let body = String(admission)
+        let receiver = String(try section(in: app, from: "private func receivedApplicationUpdate(", to: "private func redactedApplicationEventDetails("))
 
-        guard let cutGuard = body.range(of: "guard !acceptanceCutIsClosed"),
-              let increment = body.range(of: "applicationUpdateAdmissionsInFlight += 1", range: cutGuard.upperBound..<body.endIndex),
-              let task = body.range(of: "Task { @MainActor", range: increment.upperBound..<body.endIndex),
-              let decrement = body.range(of: "applicationUpdateAdmissionsInFlight -= 1", range: task.upperBound..<body.endIndex),
-              let receiver = body.range(of: "receivedApplicationUpdate(update, token: token)", range: task.upperBound..<body.endIndex) else {
-            Issue.record("Application callback admission must synchronously own the drain before scheduling its asynchronous package mutation.")
-            throw SourceContractError.sectionMissing
-        }
-
-        #expect(cutGuard.lowerBound < increment.lowerBound)
-        #expect(increment.lowerBound < task.lowerBound)
-        #expect(task.lowerBound < receiver.lowerBound)
-        #expect(task.lowerBound < decrement.lowerBound)
+        #expect(receiver.contains("receipt: TuyaReadOnlyApplicationReceipt"))
+        #expect(receiver.contains("receipt: receipt"))
+        #expect(!receiver.contains("applicationUpdateAdmissionsInFlight += 1"))
+        #expect(!receiver.contains("applicationUpdateAdmissionsInFlight -= 1"))
+        #expect(!receiver.contains("TuyaReadOnlyApplicationReceipt.capture"))
     }
 
-    @Test("package-owned horizon poll cannot overtake an already-admitted application callback")
+    @Test("package-owned horizon poll cannot overtake an already-receipted application callback")
     func packageHorizonWaitsForApplicationAdmissionDrain() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = try section(in: app, from: "private func startWatchdog", to: "private func recordObservedTransportLoss")
         let body = String(watchdog)
 
-        guard let drainGate = body.range(of: "applicationUpdateAdmissionsInFlight > 0"),
+        guard let drainGate = body.range(of: "guard self.applicationUpdateAdmissionsInFlight == 0 else {"),
               let packagePoll = body.range(of: "try await self.sessionLedger.observeCurrentConnection(for: token)") else {
-            Issue.record("The package-owned horizon poll must defer while a synchronously admitted SDK application callback is still draining.")
+            Issue.record("The package-owned horizon poll must defer while a synchronously receipted SDK application callback is still draining.")
             throw SourceContractError.sectionMissing
         }
 
         #expect(drainGate.lowerBound < packagePoll.lowerBound)
         #expect(body.contains("catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached"))
         #expect(body.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
-        #expect(!body.contains("markApplicationObservationTimedOut"),
-                Comment(rawValue: "The app must not recreate a second timeout terminal now that the package owns the bounded incomplete-observation horizon."))
+        #expect(!body.contains("markApplicationObservationTimedOut"))
+    }
+
+    @Test("application receipt owns its scalar clock and exact token inside the package")
+    func applicationReceiptCannotSmuggleCallerSelectedTime() throws {
+        let ledger = try readRepositoryFile("Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift")
+        let receipt = String(try section(in: ledger, from: "public struct TuyaReadOnlyApplicationReceipt", to: "public actor TuyaAuthenticatedReadOnlySessionLedger"))
+        let record = String(try section(in: ledger, from: "public func recordApplicationUpdate(", to: "public func observeCurrentConnection("))
+
+        #expect(receipt.contains("fileprivate let token: TuyaReadOnlyConnectionToken"))
+        #expect(receipt.contains("fileprivate let receivedAtUptimeNanoseconds: UInt64"))
+        #expect(receipt.contains("public static func capture(for token: TuyaReadOnlyConnectionToken)"))
+        #expect(receipt.contains("DispatchTime.now().uptimeNanoseconds"))
+        #expect(!receipt.contains("public init("))
+        #expect(!receipt.contains("public static func capture(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:"))
+        #expect(record.contains("receipt: TuyaReadOnlyApplicationReceipt"))
+        #expect(record.contains("guard receipt.token == token else"))
+        #expect(record.contains("let now = receipt.receivedAtUptimeNanoseconds"))
+        #expect(!record.contains("let now = try nextMonotonicObservation()"))
+        #expect(record.contains("try requireContinuousAuthenticatedObservation(at: now)"))
+        #expect(record.contains("try requireIncompleteObservationHorizonOpen(at: now)"))
     }
 
     @Test("accepted export consumes the frozen whole envelope instead of reconstructing from mutable controller state")
