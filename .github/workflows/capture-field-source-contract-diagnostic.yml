@@ -44,7 +44,8 @@ jobs:
                   body.append(line[10:])
               else:
                   body.append(line)
-          script = '#!/bin/bash\nset -Eeuo pipefail\ntrap '\''rc=$?; printf "SOURCE_CONTRACT_FAIL line=%s rc=%s command=%q\\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2; exit "$rc"'\'' ERR\n' + '\n'.join(body) + '\n'
+          trap = """trap 'rc=$?; printf \"SOURCE_CONTRACT_FAIL line=%s rc=%s command=%q\\n\" \"$LINENO\" \"$rc\" \"$BASH_COMMAND\" >&2; exit \"$rc\"' ERR\n"""
+          script = '#!/bin/bash\nset -Eeuo pipefail\n' + trap + '\n'.join(body) + '\n'
           Path('/tmp/nembra-source-contract-diagnostic.sh').write_text(script)
           PY
           chmod 700 /tmp/nembra-source-contract-diagnostic.sh
