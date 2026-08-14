@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 69,
+    "classifiedPRTotal": 54,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1217,7 +1217,7 @@
         "lane": "",
         "pr": 156,
         "recommendedAction": "independent-review",
-        "similarity": 0.113,
+        "similarity": 0.106,
         "title": "[es80-home-hero] Give AOVOPRO ES80 a distinct Home silhouette"
       },
       "16": {
@@ -1261,7 +1261,7 @@
         "lane": "",
         "pr": 164,
         "recommendedAction": "independent-review",
-        "similarity": 0.08,
+        "similarity": 0.072,
         "title": "[es80] Keep solicited services out of transport candidates"
       },
       "165": {
@@ -1283,7 +1283,7 @@
         "lane": "",
         "pr": 166,
         "recommendedAction": "independent-review",
-        "similarity": 0.098,
+        "similarity": 0.087,
         "title": "[simulator-truth] Separate synthetic QA from physical scooter profiles"
       },
       "170": {
@@ -1316,7 +1316,7 @@
         "lane": "",
         "pr": 200,
         "recommendedAction": "independent-review",
-        "similarity": 0.141,
+        "similarity": 0.083,
         "title": "[navigation-arrival] Require sustained truthful destination evidence"
       },
       "204": {
@@ -1327,7 +1327,7 @@
         "lane": "",
         "pr": 204,
         "recommendedAction": "independent-review",
-        "similarity": 0.119,
+        "similarity": 0.113,
         "title": "[ride-distance] Preserve selected coverage and seal record bridge"
       },
       "208": {
@@ -1393,7 +1393,7 @@
         "lane": "",
         "pr": 238,
         "recommendedAction": "independent-review",
-        "similarity": 0.299,
+        "similarity": 0.132,
         "title": "[es80-tuya-dp] Parse generic DP candidates without inventing ES80 semantics"
       },
       "239": {
@@ -1404,41 +1404,8 @@
         "lane": "",
         "pr": 239,
         "recommendedAction": "independent-review",
-        "similarity": 0.199,
+        "similarity": 0.106,
         "title": "[es80-passive-capture recovery] Close ambiguous acquisition restart"
-      },
-      "241": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 241,
-        "recommendedAction": "independent-review",
-        "similarity": 0.199,
-        "title": "[es80-correlation] Rank repeated stock-app marker evidence"
-      },
-      "242": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 242,
-        "recommendedAction": "independent-review",
-        "similarity": 0.183,
-        "title": "[home-truth] Fail closed on ambiguous feedback and lock evidence"
-      },
-      "244": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 244,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.118,
-        "title": "[propulsion-envelope-persistence] Retain calibration without reopening authority"
       },
       "246": {
         "classification": "requires-review",
@@ -1462,116 +1429,6 @@
         "similarity": 0.149,
         "title": "[vehicle-controls] Replace settings Form with premium confirmed-control surface"
       },
-      "248": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 248,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.193,
-        "title": "[validation-only] Capture Vehicle Controls runtime states"
-      },
-      "250": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 250,
-        "recommendedAction": "independent-review",
-        "similarity": 0.148,
-        "title": "[navigation-arrival] Recover sustained destination evidence"
-      },
-      "251": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "1690781ce78822af60e8c01ab9ade635118c4d69",
-        "lane": "",
-        "pr": 251,
-        "recommendedAction": "independent-review",
-        "similarity": 0.062,
-        "title": "[navigation] Make route request identity collision-resistant"
-      },
-      "257": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "137783a0d83bd70f8ef8d04da3f18abf955de8f3",
-        "lane": "",
-        "pr": 257,
-        "recommendedAction": "independent-review",
-        "similarity": 0.161,
-        "title": "[adaptive-range authority recovery] Bind range to sealed battery receipts"
-      },
-      "262": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 262,
-        "recommendedAction": "independent-review",
-        "similarity": 0.307,
-        "title": "[es80-tuya-dp-correlation] Rank opaque DP candidates against stock-app markers"
-      },
-      "267": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 267,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.21,
-        "title": "[product-identity] Ship Nembra app icon"
-      },
-      "269": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 269,
-        "recommendedAction": "independent-review",
-        "similarity": 0.118,
-        "title": "[speed-format] Fail closed when speed text is unrepresentable"
-      },
-      "273": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 273,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.143,
-        "title": "[recover-es80-passive-capture-qa] Close passive capture integrity gaps"
-      },
-      "274": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 274,
-        "recommendedAction": "independent-review",
-        "similarity": 0.102,
-        "title": "[acceleration] Own generation-scoped measurement attempts"
-      },
-      "276": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 276,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.271,
-        "title": "[es80-dp-cross-session] Preserve independent-session consistency evidence"
-      },
       "28": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1583,28 +1440,6 @@
         "similarity": 0.389,
         "title": "[ride-provenance recovery] Restore Xcode target visibility"
       },
-      "280": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 280,
-        "recommendedAction": "independent-review",
-        "similarity": 0.248,
-        "title": "[es80-dp-numeric] Evaluate explicit numeric hypotheses after marker pairing"
-      },
-      "288": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 288,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.212,
-        "title": "[validation-only] Capture Nembra app icon on SpringBoard"
-      },
       "289": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1613,7 +1448,7 @@
         "lane": "",
         "pr": 289,
         "recommendedAction": "independent-review",
-        "similarity": 0.269,
+        "similarity": 0.131,
         "title": "[es80-dp-electrical] Correlate explicit voltage/current/power hypotheses"
       },
       "293": {
@@ -1646,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.069,
+        "similarity": 0.067,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "34": {
@@ -1800,7 +1635,7 @@
         "lane": "",
         "pr": 84,
         "recommendedAction": "independent-review",
-        "similarity": 0.144,
+        "similarity": 0.101,
         "title": "[visual-capture-matrix] Preserve missing portrait QA states"
       },
       "90": {
@@ -1856,7 +1691,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T11:01:32Z",
+    "liveRefreshAt": "2026-08-14T11:02:04Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5639,10 +5474,10 @@
       "userValue": 7
     }
   },
-  "revision": 190,
+  "revision": 191,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T11:01:43Z",
+  "updatedAt": "2026-08-14T11:02:10Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5718,7 +5553,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T11:01:32Z",
+      "updatedAt": "2026-08-14T11:02:04Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
