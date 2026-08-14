@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 8,
+    "classifiedPRTotal": 6,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.21,
+        "similarity": 0.167,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3313": {
@@ -1110,17 +1110,6 @@
         "similarity": 0.054,
         "title": "Mount truthful Energy Rail in Dashboard"
       },
-      "3315": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "55c91017b571f8fa23d3947064d56585ac57a17f",
-        "lane": "capture-signed-install-custody",
-        "pr": 3315,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.277,
-        "title": "[Capture P0][VALIDATION] Re-prove source + private-input custody on current carrier"
-      },
       "3316": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1140,19 +1129,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3317,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.307,
+        "similarity": 0.16,
         "title": "[Capture P0][VALIDATION] Probe APFS sparse-image backing-file custody"
-      },
-      "3318": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3318,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.314,
-        "title": "[Capture P0][VALIDATION] Re-earn private Tuya read lease on current #3142"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1179,21 +1157,15 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [
-      {
-        "from": "cd8a398f54d70c866e74091b04df9bc9f9eefa55",
-        "to": "eb4034dc2961cdb496cffb7a95f05c77c341c2a2",
-        "workItemId": "live-pr-3142"
-      }
-    ],
+    "livePRHeadUpdates": [],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:04:00Z",
+    "liveRefreshAt": "2026-08-14T23:04:21Z",
     "liveRefreshDuplicatesSuppressed": [
-      3318
+      3317
     ],
     "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4976,10 +4948,10 @@
       "userValue": 7
     }
   },
-  "revision": 244,
+  "revision": 245,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:04:00Z",
+  "updatedAt": "2026-08-14T23:04:21Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5055,7 +5027,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:04:00Z",
+      "updatedAt": "2026-08-14T23:04:21Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
