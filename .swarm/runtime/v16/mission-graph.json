@@ -1115,10 +1115,10 @@
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "",
+        "lane": "dashboard-energy-rail-app-visible",
         "pr": 3314,
         "recommendedAction": "independent-review",
-        "similarity": 0.073,
+        "similarity": 0.078,
         "title": "Mount truthful Energy Rail in Dashboard"
       }
     },
@@ -1152,7 +1152,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T22:59:43Z",
+    "liveRefreshAt": "2026-08-14T23:00:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3312
     ],
@@ -4937,10 +4937,10 @@
       "userValue": 7
     }
   },
-  "revision": 231,
+  "revision": 232,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T22:59:43Z",
+  "updatedAt": "2026-08-14T23:00:20Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5016,7 +5016,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T22:59:43Z",
+      "updatedAt": "2026-08-14T23:00:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
