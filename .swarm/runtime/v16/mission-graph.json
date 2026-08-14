@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 96,
+    "classifiedPRTotal": 94,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1558,7 +1558,7 @@
         "lane": "",
         "pr": 274,
         "recommendedAction": "independent-review",
-        "similarity": 0.106,
+        "similarity": 0.102,
         "title": "[acceleration] Own generation-scoped measurement attempts"
       },
       "276": {
@@ -1935,28 +1935,6 @@
         "similarity": 0.205,
         "title": "[es80 capture] Preserve immutable observation horizon evidence"
       },
-      "364": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 364,
-        "recommendedAction": "independent-review",
-        "similarity": 0.155,
-        "title": "[es80 capture] Gate post-ready duration from immutable evidence"
-      },
-      "366": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 366,
-        "recommendedAction": "independent-review",
-        "similarity": 0.118,
-        "title": "[live-distance cockpit] Preserve observed trip-distance truth"
-      },
       "38": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2153,7 +2131,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:59:04Z",
+    "liveRefreshAt": "2026-08-14T10:59:35Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5936,10 +5914,10 @@
       "userValue": 7
     }
   },
-  "revision": 186,
+  "revision": 187,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:59:18Z",
+  "updatedAt": "2026-08-14T10:59:55Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6015,7 +5993,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:59:04Z",
+      "updatedAt": "2026-08-14T10:59:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
