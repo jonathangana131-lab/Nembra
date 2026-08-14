@@ -11,8 +11,8 @@ from .migration_v16 import *
 # stricter scheduler, branch admission, graph service and Go cycle become the
 # public swarm_control surface without destructively migrating stored graphs.
 from .v16_1 import *
-# The rollout guard is even narrower: it closes the post-activation unmanaged
-# PR escape hatch while preserving pre-V16.1 open PR compatibility.
+# The rollout guard closes the post-activation unmanaged PR escape hatch while
+# preserving pre-V16.1 open PR compatibility.
 from .v16_1_pr_guard import evaluate_pr_admission, V16_1_PR_METADATA_ENFORCEMENT_STARTED_AT
 # Worker persistence keeps spare burst workers useful without creating duplicate
 # implementation. The v2 wrapper preserves dependency gates and legacy operator
@@ -28,3 +28,10 @@ def add_work_item(graph, **kwargs):
         if not tournament.get('authorized'):
             raise ValidationError('solution tournament must be explicitly authorized')
     return _v16_1_add_work_item(graph, **kwargs)
+
+# V16.2 keeps every V16.1 safety/convergence property and adds integration
+# pressure, canonical absorption, and tighter child-PR admission. It remains an
+# in-place policy upgrade over schema-16 graph state.
+from .v16_2 import *
+from .v16_2_pr_guard import evaluate_pr_admission, V16_2_PR_METADATA_ENFORCEMENT_STARTED_AT
+MissionGraphStore = V16_2MissionGraphStore
