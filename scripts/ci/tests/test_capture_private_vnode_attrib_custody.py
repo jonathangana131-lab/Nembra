@@ -68,6 +68,25 @@ class FakeSelect:
         return SimpleNamespace(ident=descriptor, filter=filter, flags=flags, fflags=fflags)
 
 
+class MissingAttribSelect:
+    KQ_FILTER_VNODE = -4
+    KQ_EV_ADD = 0x0001
+    KQ_EV_ENABLE = 0x0004
+    KQ_EV_CLEAR = 0x0020
+    KQ_NOTE_DELETE = 0x0001
+    KQ_NOTE_WRITE = 0x0002
+    KQ_NOTE_EXTEND = 0x0004
+    KQ_NOTE_LINK = 0x0010
+    KQ_NOTE_RENAME = 0x0020
+    KQ_NOTE_REVOKE = 0x0040
+
+    def kqueue(self):
+        return FakeQueue()
+
+    def kevent(self, descriptor: int, *, filter: int, flags: int, fflags: int):
+        return SimpleNamespace(ident=descriptor, filter=filter, flags=flags, fflags=fflags)
+
+
 class CapturePrivateVnodeAttribCustodyTests(unittest.TestCase):
     def test_kqueue_capability_admission_requires_attribute_events(self) -> None:
         fake_select = FakeSelect()
@@ -82,10 +101,8 @@ class CapturePrivateVnodeAttribCustodyTests(unittest.TestCase):
                 backend.close()
 
     def test_missing_attribute_capability_fails_closed(self) -> None:
-        fake_select = FakeSelect()
-        delattr(fake_select, "KQ_NOTE_ATTRIB")
         with (
-            mock.patch.object(guard, "select", fake_select),
+            mock.patch.object(guard, "select", MissingAttribSelect()),
             self.assertRaises(guard.BuildGuardError),
         ):
             guard.KqueueVnodeBackend()
