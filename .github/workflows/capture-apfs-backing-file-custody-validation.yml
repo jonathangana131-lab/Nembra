@@ -108,68 +108,111 @@ jobs:
                       return candidate
               raise RuntimeError("no unused numeric identity")
 
+          def write_evidence(output: Path, payload: dict[str, object]) -> None:
+              output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              os.chmod(output, 0o644)
+              print("NEMBRA_APFS_BACKING_CUSTODY_JSON=" + json.dumps(payload, sort_keys=True))
+
           def main() -> int:
-              if sys.platform != "darwin" or os.geteuid() != 0:
-                  raise RuntimeError("probe requires root on real macOS")
               output = Path(sys.argv[1])
-              build_id = unused_id()
-              workspace = Path(tempfile.mkdtemp(prefix="nembra-apfs-backing.", dir="/private/tmp"))
-              os.chown(workspace, 0, build_id)
-              os.chmod(workspace, 0o710)
-              cases = []
-              original_umask = os.umask(0o077)
+              payload: dict[str, object] = {
+                  "schemaVersion": 2,
+                  "exactProductionParent": PARENT,
+                  "stage": "preflight",
+                  "result": "probe-error",
+                  "errorKind": None,
+                  "errorMessage": None,
+                  "syntheticBuildUIDGID": None,
+                  "workspaceOwnerUID": 0,
+                  "workspaceGroupGID": None,
+                  "workspaceMode": "0710",
+                  "cases": [],
+                  "observedBackingWriteAuthority": False,
+                  "productionBytesChanged": False,
+                  "productionAcceptanceClaimed": False,
+                  "physicalAuthorityCreated": False,
+              }
+              workspace: Path | None = None
+              original_umask: int | None = None
+              return_code = 70
               try:
+                  if sys.platform != "darwin" or os.geteuid() != 0:
+                      raise RuntimeError("probe requires root on real macOS")
+
+                  payload["stage"] = "allocate-unused-numeric-principal"
+                  build_id = unused_id()
+                  payload["syntheticBuildUIDGID"] = build_id
+                  payload["workspaceGroupGID"] = build_id
+
+                  payload["stage"] = "create-production-shaped-workspace"
+                  workspace = Path(tempfile.mkdtemp(prefix="nembra-apfs-backing.", dir="/private/tmp"))
+                  os.chown(workspace, 0, build_id)
+                  os.chmod(workspace, 0o710)
+
+                  original_umask = os.umask(0o077)
+                  cases: list[dict[str, object]] = []
+                  payload["cases"] = cases
                   for requested in UMASKS:
+                      case: dict[str, object] = {"requestedUmask": f"{requested:03o}"}
+                      cases.append(case)
                       image = workspace / f"compiler-output-{requested:03o}.sparseimage"
+
+                      payload["stage"] = f"hdiutil-create-{requested:03o}"
                       os.umask(requested)
                       created = subprocess.run([
                           "/usr/bin/hdiutil", "create", "-quiet", "-size", "128m", "-type", "SPARSE", "-fs", "APFS", "-volname", "NembraBackingProbe", str(image)
                       ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+                      case["hdiutilReturnCode"] = created.returncode
                       if created.returncode != 0:
-                          raise RuntimeError(f"hdiutil create failed for umask {requested:03o}: {created.stderr.strip()}")
+                          detail = created.stderr.strip().replace(str(workspace), "<probe-workspace>")
+                          raise RuntimeError(f"hdiutil create failed for umask {requested:03o}: {detail[-600:]}")
+
+                      payload["stage"] = f"inspect-backing-subject-{requested:03o}"
                       metadata = os.lstat(image)
                       if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
                           raise RuntimeError("backing subject is not one real regular file")
                       before = metadata.st_size
                       acl = subprocess.run(["/bin/ls", "-lde", str(image)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
                       if acl.returncode != 0:
-                          raise RuntimeError(f"ACL inspection failed: {acl.stderr.strip()}")
-                      attack = subprocess.run([
-                          sys.executable, "-B", "-I", "-c", CHILD, str(image)
-                      ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False, user=build_id, group=build_id, extra_groups=[])
-                      if attack.returncode != 0:
-                          raise RuntimeError(f"write probe failed to execute: rc={attack.returncode} stderr={attack.stderr.strip()}")
-                      child = json.loads(attack.stdout.strip())
-                      cases.append({
-                          "requestedUmask": f"{requested:03o}",
+                          detail = acl.stderr.strip().replace(str(workspace), "<probe-workspace>")
+                          raise RuntimeError(f"ACL inspection failed: {detail[-600:]}")
+                      case.update({
                           "ownerUID": metadata.st_uid,
                           "groupGID": metadata.st_gid,
                           "mode": f"{stat.S_IMODE(metadata.st_mode):04o}",
-                          "aclListing": acl.stdout.strip(),
+                          "aclListing": acl.stdout.strip().replace(str(workspace), "<probe-workspace>"),
                           "sizeBefore": before,
-                          "sizeAfter": os.lstat(image).st_size,
-                          "child": child,
                       })
+
+                      payload["stage"] = f"execute-build-identity-write-probe-{requested:03o}"
+                      attack = subprocess.run([
+                          sys.executable, "-B", "-I", "-c", CHILD, str(image)
+                      ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False, user=build_id, group=build_id, extra_groups=[])
+                      case["attackReturnCode"] = attack.returncode
+                      if attack.returncode != 0:
+                          detail = attack.stderr.strip().replace(str(workspace), "<probe-workspace>")
+                          raise RuntimeError(f"write probe failed to execute: rc={attack.returncode} stderr={detail[-600:]}")
+                      child = json.loads(attack.stdout.strip())
+                      case["child"] = child
+                      case["sizeAfter"] = os.lstat(image).st_size
+
+                  payload["stage"] = "classify-authority"
+                  wrote = any(case.get("child", {}).get("writeResult") == "wrote" for case in cases)
+                  payload["observedBackingWriteAuthority"] = wrote
+                  payload["result"] = "write-authority-observed" if wrote else "all-write-attempts-denied"
+                  return_code = 42 if wrote else 0
+              except Exception as error:
+                  payload["result"] = "probe-error"
+                  payload["errorKind"] = type(error).__name__
+                  payload["errorMessage"] = str(error)[:900]
+                  return_code = 70
               finally:
-                  os.umask(original_umask)
-                  shutil.rmtree(workspace, ignore_errors=True)
-              wrote = any(case["child"]["writeResult"] == "wrote" for case in cases)
-              payload = {
-                  "schemaVersion": 1,
-                  "exactProductionParent": PARENT,
-                  "syntheticBuildUIDGID": build_id,
-                  "workspaceOwnerUID": 0,
-                  "workspaceGroupGID": build_id,
-                  "workspaceMode": "0710",
-                  "cases": cases,
-                  "observedBackingWriteAuthority": wrote,
-                  "productionBytesChanged": False,
-                  "productionAcceptanceClaimed": False,
-                  "physicalAuthorityCreated": False,
-              }
-              output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-              print("NEMBRA_APFS_BACKING_CUSTODY_JSON=" + json.dumps(payload, sort_keys=True))
-              return 42 if wrote else 0
+                  if original_umask is not None:
+                      os.umask(original_umask)
+                  if workspace is not None:
+                      shutil.rmtree(workspace, ignore_errors=True)
+                  write_evidence(output, payload)
+              return return_code
 
           raise SystemExit(main())
           PY
@@ -197,19 +240,26 @@ jobs:
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/nembra-apfs-backing-custody.json"
-          if [[ -f "$evidence" ]]; then
-            /usr/bin/python3 - "$evidence" <<'PY'
+          test -f "$evidence"
+          /usr/bin/python3 - "$evidence" <<'PY'
           import json
           from pathlib import Path
           import sys
           payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-          assert payload["schemaVersion"] == 1
+          assert payload["schemaVersion"] == 2
           assert payload["exactProductionParent"] == "cd8a398f54d70c866e74091b04df9bc9f9eefa55"
           assert payload["productionBytesChanged"] is False
           assert payload["productionAcceptanceClaimed"] is False
           assert payload["physicalAuthorityCreated"] is False
-          assert len(payload["cases"]) == 3
+          assert payload["result"] in {"probe-error", "write-authority-observed", "all-write-attempts-denied"}
+          if payload["result"] == "probe-error":
+              assert isinstance(payload["stage"], str) and payload["stage"]
+              assert isinstance(payload["errorKind"], str) and payload["errorKind"]
+              assert isinstance(payload["errorMessage"], str) and payload["errorMessage"]
+          else:
+              assert payload["errorKind"] is None
+              assert payload["errorMessage"] is None
+              assert len(payload["cases"]) == 3
           PY
-          fi
           git diff --check cd8a398f54d70c866e74091b04df9bc9f9eefa55 HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
