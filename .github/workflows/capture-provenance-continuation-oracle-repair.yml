@@ -82,7 +82,7 @@ jobs:
           set -euo pipefail
           git rm .github/workflows/capture-provenance-continuation-oracle-repair.yml
           git diff --check
-          changed="$(git diff --name-only | sort)"
+          changed="$( { git diff --name-only; git diff --cached --name-only; } | sort -u )"
           expected=$'.github/workflows/capture-field-build-provenance.yml\n.github/workflows/capture-provenance-continuation-oracle-repair.yml'
           test "$changed" = "$expected"
           git config user.name 'github-actions[bot]'
