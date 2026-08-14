@@ -1,0 +1,61 @@
+name: Capture Export Proof-State Red Team
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - scripts/ci/tests/test_capture_export_local_ble_proof_state_redteam.py
+      - .github/workflows/capture-export-proof-state-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-parent-ambiguity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind validation child to exact canonical parent and two-path scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='1b3da19408af926bfd10101e38974103a05fb0fb'
+          git merge-base --is-ancestor "$parent" HEAD
+          mapfile -t changed < <(git diff --name-only "$parent"...HEAD | sort)
+          expected=(
+            '.github/workflows/capture-export-proof-state-redteam.yml'
+            'scripts/ci/tests/test_capture_export_local_ble_proof_state_redteam.py'
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          test "${#changed[@]}" -eq "${#expected_sorted[@]}"
+          for i in "${!expected_sorted[@]}"; do
+            test "${changed[$i]}" = "${expected_sorted[$i]}"
+          done
+
+      - name: Prove schema-v10 local-BLE export ambiguity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_export_local_ble_proof_state_redteam.py | tee capture-export-proof-state-redteam.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path('capture-export-proof-state-redteam.json').read_text())
+          assert evidence['parentExportTruthSafe'] is False
+          assert evidence['bareFalseCanEncodeObservedOfflineSafely'] is False
+          assert evidence['productionAcceptanceClaimed'] is False
+          assert evidence['physicalAuthorityCreated'] is False
+          PY
+
+      - name: Retain validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-export-proof-state-redteam-${{ github.run_id }}
+          path: capture-export-proof-state-redteam.json
+          if-no-files-found: error
