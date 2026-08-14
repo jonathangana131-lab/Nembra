@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 12,
+    "classifiedPRTotal": 13,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3326,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.398,
+        "similarity": 0.399,
         "title": "[Capture P0][VISUAL RECOVERY] Re-anchor iPhone 12 evidence to ba615 exact product"
       },
       "3329": {
@@ -1197,6 +1197,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.0,
         "title": "[Capture P0][BUILD] Preserve frozen device-tool custody after build"
+      },
+      "3334": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "4576ef07538fc3b91c7e2866f7705405046c56d2",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3334,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.401,
+        "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1229,7 +1240,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:58:36Z",
+    "liveRefreshAt": "2026-08-14T23:59:35Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -5014,10 +5025,10 @@
       "userValue": 7
     }
   },
-  "revision": 330,
+  "revision": 331,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:58:37Z",
+  "updatedAt": "2026-08-14T23:59:35Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5093,7 +5104,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:58:36Z",
+      "updatedAt": "2026-08-14T23:59:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
