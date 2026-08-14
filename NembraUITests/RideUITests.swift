@@ -37,7 +37,7 @@ final class RideUITests: XCTestCase {
     }
 
     @MainActor
-    func testCompletedRideAppearsWithDurableRouteThroughRealRidePipeline() {
+    func testCompletedRideAppearsWithDurableRouteThroughRealRidePipeline() throws {
         XCUIDevice.shared.orientation = .portrait
 
         let app = XCUIApplication()
@@ -118,6 +118,16 @@ final class RideUITests: XCTestCase {
             "A ride with verified persisted route geometry must not fall back to the no-route state."
         )
         keepScreenshot(named: "Completed Ride Details With Route")
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .textClipped,
+                .trait,
+                .dynamicType
+            ]
+        )
     }
 
     @MainActor
