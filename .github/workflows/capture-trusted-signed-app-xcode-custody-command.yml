@@ -10,11 +10,13 @@ permissions:
 
 jobs:
   resolve:
-    name: Resolve owner-authorized exact Capture custody head
+    name: Resolve human-owner-authorized exact Capture custody head
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/capture-signed-install-custody ') &&
-      github.actor == github.repository_owner
+      github.actor == github.repository_owner &&
+      github.event.comment.author_association == 'OWNER' &&
+      github.event.comment.performed_via_github_app == null
     runs-on: ubuntu-latest
     outputs:
       head_sha: ${{ steps.pr.outputs.head_sha }}
@@ -22,12 +24,22 @@ jobs:
       same_repo: ${{ steps.pr.outputs.same_repo }}
 
     steps:
-      - name: Resolve immutable live PR head from exact owner command
+      - name: Resolve immutable live PR head from exact human-owner command
         id: pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const body = context.payload.comment.body.trim()
+            const comment = context.payload.comment
+            if (comment.performed_via_github_app !== null) {
+              core.setFailed('Trusted signed-app custody refuses app-performed authorization comments.')
+              return
+            }
+            if (comment.author_association !== 'OWNER' || context.actor !== context.repo.owner) {
+              core.setFailed('Trusted signed-app custody requires a direct repository-owner comment.')
+              return
+            }
+
+            const body = comment.body.trim()
             const match = body.match(/^\/capture-signed-install-custody ([0-9a-fA-F]{40})$/)
             if (!match) {
               core.setFailed('Trusted signed-app custody command must be exactly /capture-signed-install-custody <40-hex-head-sha>.')
@@ -45,7 +57,7 @@ jobs:
             const sameRepo = pr.head.repo.full_name === repository
 
             core.info(`Trusted workflow source SHA: ${context.sha}`)
-            core.info(`Owner-authorized PR #${pr.number} head: ${requestedHead}`)
+            core.info(`Human-owner-authorized PR #${pr.number} head: ${requestedHead}`)
             core.info(`Live PR head: ${pr.head.sha}`)
 
             if (pr.state !== 'open') {
@@ -63,7 +75,7 @@ jobs:
             core.setOutput('same_repo', String(sameRepo))
 
   trusted-xcode-custody:
-    name: Run owner-authorized root/Xcode custody probe
+    name: Run human-owner-authorized root/Xcode custody probe
     needs: resolve
     if: needs.resolve.outputs.same_repo == 'true'
     runs-on: xcode-27
@@ -91,7 +103,7 @@ jobs:
             if (pr.head.repo.full_name !== repository) core.setFailed('PR source repository changed before trusted custody.')
             if (pr.head.sha.toLowerCase() !== process.env.EXPECTED_HEAD_SHA) core.setFailed('PR head moved before trusted custody; stale run is non-evidence.')
 
-      - name: Checkout immutable owner-authorized head
+      - name: Checkout immutable human-owner-authorized head
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ needs.resolve.outputs.head_sha }}
@@ -173,7 +185,7 @@ jobs:
               targets: [.executableTarget(name: "OriginDedicatedUIDProof")]
           )
           SWIFT
-          printf '%s\n' 'print("Nembra trusted owner-authorized Xcode custody proof")' \
+          printf '%s\n' 'print("Nembra trusted human-owner-authorized Xcode custody proof")' \
             > "$package/Sources/OriginDedicatedUIDProof/main.swift"
 
           root_args=(
