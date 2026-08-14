@@ -537,15 +537,39 @@ def _wait_for_no_live_uid(uid: int, *, timeout: float = 6.0) -> tuple[int, ...]:
         time.sleep(0.05)
 
 
+def _direct_local_identity_record_exists(kind: str, name: str) -> bool:
+    completed = subprocess.run(
+        ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    detail = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
+    if completed.returncode == 0:
+        return True
+    if "eDSRecordNotFound" in detail or "-14136" in detail:
+        return False
+    raise BuildOriginCustodyError(
+        f"could not classify direct Directory Services {kind} record: "
+        f"rc={completed.returncode} detail={detail[-800:]!r}"
+    )
+
+
 def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:
     if uid <= 0:
         raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
-    zombies = _wait_for_no_live_uid(uid, timeout=timeout)
     deadline = time.monotonic() + timeout
-    latest_lookups: tuple[str, ...] = ()
+    latest_live: tuple[int, ...] = ()
+    latest_zombies: tuple[int, ...] = ()
+    latest_user_record = True
+    latest_group_record = True
     while True:
-        latest_lookups = _identity_lookup_survivors(name, uid)
-        if not latest_lookups:
+        latest_live, latest_zombies = _process_state_for_uid(uid)
+        latest_user_record = _direct_local_identity_record_exists("Users", name)
+        latest_group_record = _direct_local_identity_record_exists("Groups", name)
+        if not latest_live and not latest_zombies and not latest_user_record and not latest_group_record:
             return
         if time.monotonic() >= deadline:
             break
@@ -558,14 +582,17 @@ def _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float 
         )
         time.sleep(0.05)
     raise BuildOriginCustodyError(
-        "ephemeral build identity survived retirement: "
-        f"zombie_pids={list(zombies)} identity_lookups={list(latest_lookups)}"
+        "ephemeral build destructive authority survived retirement: "
+        f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)} "
+        f"user_record={latest_user_record} group_record={latest_group_record}"
     )
 
 
 def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:
     if sys.platform != "darwin":
         return
+    if require_absent and (uid is None or uid <= 0):
+        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
     if uid is not None and uid > 0:
         killed = subprocess.run(
             ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],
@@ -576,10 +603,8 @@ def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: 
         )
         if require_absent and killed.returncode not in (0, 1):
             raise BuildOriginCustodyError(
-                f"could not request build-principal process retirement: pkill exit {killed.returncode}"
+                f"could not request initial build-principal process retirement: pkill exit {killed.returncode}"
             )
-        if require_absent:
-            _wait_for_no_live_uid(uid)
     subprocess.run(
         ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],
         stdin=subprocess.DEVNULL,
@@ -596,8 +621,17 @@ def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: 
     )
     subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
     if require_absent:
-        if uid is None:
-            raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")
+        final_kill = subprocess.run(
+            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if final_kill.returncode not in (0, 1):
+            raise BuildOriginCustodyError(
+                f"could not request final build-principal process retirement: pkill exit {final_kill.returncode}"
+            )
         _assert_local_build_identity_retired(name, uid)
 
 
