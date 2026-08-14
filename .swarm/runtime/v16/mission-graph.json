@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 9,
+    "classifiedPRTotal": 8,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1129,7 +1129,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.317,
+        "similarity": 0.044,
         "title": "[Capture P0][QA] Align authenticated observation copy oracle with shipping language"
       },
       "3317": {
@@ -1153,17 +1153,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.314,
         "title": "[Capture P0][VALIDATION] Re-earn private Tuya read lease on current #3142"
-      },
-      "3319": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3319,
-        "recommendedAction": "independent-review",
-        "similarity": 0.324,
-        "title": "[Capture P0][COMPOSE] Add terminal-presentation phase fence to current callback candidate"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1196,7 +1185,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:02:52Z",
+    "liveRefreshAt": "2026-08-14T23:03:11Z",
     "liveRefreshDuplicatesSuppressed": [
       3318
     ],
@@ -4981,10 +4970,10 @@
       "userValue": 7
     }
   },
-  "revision": 240,
+  "revision": 241,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:02:52Z",
+  "updatedAt": "2026-08-14T23:03:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5060,7 +5049,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:02:52Z",
+      "updatedAt": "2026-08-14T23:03:11Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
