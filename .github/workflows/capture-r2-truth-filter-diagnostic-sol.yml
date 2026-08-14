@@ -1,0 +1,80 @@
+name: Diagnose Capture r2 truth filters
+
+on:
+  push:
+    branches:
+      - diag/capture-r2-truth-sol-20260814
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.event.head_commit.message == 'Diagnose Capture r2 truth filters'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: diag/capture-r2-truth-sol-20260814
+          fetch-depth: 0
+
+      - name: Reuse exact r2 composition without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/capture-app-truth-repair-r2.yml').read_text()
+          start_marker = '      - name: Compose canonical Capture app truth\n'
+          end_marker = '      - name: Run focused truth contracts\n'
+          if workflow.count(start_marker) != 1 or workflow.count(end_marker) != 1:
+              raise SystemExit('r2 compose-step anchors are not unique')
+          block = workflow[workflow.index(start_marker):workflow.index(end_marker)]
+          run_marker = '        run: |\n'
+          if block.count(run_marker) != 1:
+              raise SystemExit('r2 compose run block is not unique')
+          script = block.split(run_marker, 1)[1]
+          lines = script.splitlines()
+          if any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit('unexpected r2 compose indentation')
+          script = '\n'.join(line[10:] if line.startswith('          ') else '' for line in lines) + '\n'
+          exact_prefix = (
+              'set -euo pipefail\n'
+              'git fetch origin capture/current-main-tuya-readonly-convergence-gpt56\n'
+              'git merge --ff-only origin/capture/current-main-tuya-readonly-convergence-gpt56\n'
+          )
+          if script.count(exact_prefix) != 1:
+              raise SystemExit('r2 canonical-refresh prefix changed')
+          script = script.replace(exact_prefix, 'set -euo pipefail\n', 1)
+          Path('/tmp/compose-r2.sh').write_text(script)
+          PY
+          bash /tmp/compose-r2.sh
+          git diff --check
+
+      - name: Run truth filters independently
+        shell: bash
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -uo pipefail
+          failed=0
+          for filter in \
+            TuyaAuthenticatedReadOnlySessionLedgerTests \
+            TuyaAuthenticatedTerminalHorizonTests \
+            TuyaAuthenticatedReadOnlyHorizonTests \
+            TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration \
+            TuyaAppIncompleteHorizonTerminalSourceTests \
+            TuyaAlreadyTerminalObservationContinuitySourceTests \
+            TuyaDeviceSharingAuthenticationAuthorityTests
+          do
+            log="/tmp/${filter}.log"
+            if swift test --filter "$filter" >"$log" 2>&1; then
+              echo "::notice title=Capture truth filter passed::$filter"
+            else
+              failed=1
+              tail -n 30 "$log"
+              message="$(tail -n 18 "$log" | sed 's/%/%25/g; s/\r/%0D/g' | awk 'BEGIN { ORS="%0A" } { print }')"
+              echo "::error title=Capture truth filter failed: $filter::$message"
+            fi
+          done
+          exit "$failed"
