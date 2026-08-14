@@ -1,0 +1,64 @@
+name: Capture Visual Exact Parent Guard
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-standalone-visual-evidence.yml
+      - .github/workflows/capture-visual-exact-parent-guard.yml
+      - scripts/ci/capture_standalone_visual_evidence.py
+      - scripts/ci/capture_visual_png_content_guard.py
+      - scripts/ci/tests/test_capture_standalone_visual_evidence.py
+      - scripts/ci/tests/test_capture_visual_png_content_guard.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-visual-exact-parent-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PRODUCT_PARENT: d3069832ff1cfdd6f6e7c5a23b69ca7b663c135e
+
+jobs:
+  exact-parent:
+    name: Bind visual evidence to exact Capture product parent
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require exact additive validation child
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$head_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          test "$(git merge-base HEAD "$EXACT_PRODUCT_PARENT")" = "$EXACT_PRODUCT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PRODUCT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-standalone-visual-evidence.yml' \
+            '.github/workflows/capture-visual-exact-parent-guard.yml' \
+            'scripts/ci/capture_standalone_visual_evidence.py' \
+            'scripts/ci/capture_visual_png_content_guard.py' \
+            'scripts/ci/tests/test_capture_standalone_visual_evidence.py' \
+            'scripts/ci/tests/test_capture_visual_png_content_guard.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check "$EXACT_PRODUCT_PARENT"...HEAD
+
+      - name: Pin visual-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"physicalAuthorityCreated": False' scripts/ci/capture_standalone_visual_evidence.py
+          grep -Fq '"protocolAuthorityCreated": False' scripts/ci/capture_standalone_visual_evidence.py
+          grep -Fq '"visualAcceptanceRequiresHumanReview": True' scripts/ci/capture_standalone_visual_evidence.py
+          ! git diff --name-only "$EXACT_PRODUCT_PARENT"...HEAD | grep -Ev '^(\.github/workflows/capture-(standalone-visual-evidence|visual-exact-parent-guard)\.yml|scripts/ci/capture_(standalone_visual_evidence|visual_png_content_guard)\.py|scripts/ci/tests/test_capture_(standalone_visual_evidence|visual_png_content_guard)\.py)$'
