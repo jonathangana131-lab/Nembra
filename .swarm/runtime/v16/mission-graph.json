@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 144,
+    "classifiedPRTotal": 125,
     "classifiedPRs": {
+      "10": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 10,
+        "recommendedAction": "independent-review",
+        "similarity": 0.124,
+        "title": "[adaptive-range-core] Add truthful learned battery range model"
+      },
       "105": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1096,7 +1107,7 @@
         "lane": "",
         "pr": 1117,
         "recommendedAction": "independent-review",
-        "similarity": 0.31,
+        "similarity": 0.162,
         "title": "[POST-CAPTURE HARDENING] Pin exact signed-field release-source custody"
       },
       "113": {
@@ -1132,72 +1143,6 @@
         "similarity": 0.203,
         "title": "[POST-CAPTURE HARDENING] Make receipt-bound report publication the public API boundary"
       },
-      "1173": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1173,
-        "recommendedAction": "independent-review",
-        "similarity": 0.313,
-        "title": "[POST-CAPTURE HARDENING] Pin selected Xcode developer-directory custody"
-      },
-      "1174": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1174,
-        "recommendedAction": "independent-review",
-        "similarity": 0.357,
-        "title": "[POST-CAPTURE HARDENING] Pin signed-evidence output-parent custody"
-      },
-      "1176": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1176,
-        "recommendedAction": "independent-review",
-        "similarity": 0.399,
-        "title": "[POST-CAPTURE HARDENING] Gate signed-evidence parent-custody regression"
-      },
-      "1178": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1178,
-        "recommendedAction": "independent-review",
-        "similarity": 0.404,
-        "title": "[POST-CAPTURE HARDENING] Carry signed-field custody into exact-head Xcode acceptance"
-      },
-      "1180": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1180,
-        "recommendedAction": "independent-review",
-        "similarity": 0.338,
-        "title": "[POST-CAPTURE HARDENING] Bind complete signed-field evidence set with one manifest"
-      },
-      "1192": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1192,
-        "recommendedAction": "independent-review",
-        "similarity": 0.216,
-        "title": "[POST-CAPTURE hardening] Reject duplicate final Share JSON authority keys"
-      },
       "120": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1231,6 +1176,17 @@
         "similarity": 0.209,
         "title": "[cell-ci-trusted-exact-head] Trusted exact-head admission — V11 TRAIN_READY source"
       },
+      "13": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "3f49dae3d77e01d63845dbd78d7ba24e506e1294",
+        "lane": "",
+        "pr": 13,
+        "recommendedAction": "independent-review",
+        "similarity": 0.129,
+        "title": "[ride-location-lifecycle] Route Simulator location through real ride lifecycle"
+      },
       "130": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1252,61 +1208,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.169,
         "title": "[battery-readout-v11] Fail closed on Dashboard battery currentness and range"
-      },
-      "1410": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1410,
-        "recommendedAction": "independent-review",
-        "similarity": 0.18,
-        "title": "[V14 adaptive recovery] Re-anchor monotonic ride-duration history attachment"
-      },
-      "1421": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c28f37c3c4747d3d768b50c3a2e76770b2da02df",
-        "lane": "",
-        "pr": 1421,
-        "recommendedAction": "independent-review",
-        "similarity": 0.175,
-        "title": "[V14][Battery/Range] Restore receipt-bound learned-range authority"
-      },
-      "1426": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1426,
-        "recommendedAction": "independent-review",
-        "similarity": 0.182,
-        "title": "[V14][Battery/Range] Recover receipt-bound primary range presentation"
-      },
-      "1463": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "350c7804f385745189604592d529e746b9043044",
-        "lane": "",
-        "pr": 1463,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.171,
-        "title": "[V14][Battery/Range] Bridge accepted battery chronology to range candidates (r3)"
-      },
-      "1474": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1474,
-        "recommendedAction": "independent-review",
-        "similarity": 0.154,
-        "title": "[V14][Rides] Seal completed-duration import authority"
       },
       "148": {
         "classification": "requires-review",
@@ -1330,50 +1231,6 @@
         "similarity": 0.119,
         "title": "[recover-ride-provenance-v10] Make checkpoint acknowledgement monotonic"
       },
-      "1494": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "8e832269efc6fd1766d83b1acc02cf4fe5b67ca7",
-        "lane": "",
-        "pr": 1494,
-        "recommendedAction": "independent-review",
-        "similarity": 0.18,
-        "title": "[V14 CI] Stop blanket full-Xcode feature push runs"
-      },
-      "1513": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1513,
-        "recommendedAction": "independent-review",
-        "similarity": 0.146,
-        "title": "[V14][Battery/Range] Make live currentness owner-bound"
-      },
-      "1514": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1514,
-        "recommendedAction": "independent-review",
-        "similarity": 0.196,
-        "title": "[V14][Rides] Persist duration archives without reminting authority"
-      },
-      "1521": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1521,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.173,
-        "title": "[validation-only] Guard Capture against Dynamic Type scale caps"
-      },
       "155": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1395,6 +1252,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.113,
         "title": "[es80-home-hero] Give AOVOPRO ES80 a distinct Home silhouette"
+      },
+      "16": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 16,
+        "recommendedAction": "independent-review",
+        "similarity": 0.186,
+        "title": "[adaptive-range-persistence] Version and validate learned range storage"
       },
       "160": {
         "classification": "requires-review",
@@ -1451,28 +1319,6 @@
         "similarity": 0.184,
         "title": "[simulator-truth] Separate synthetic QA from physical scooter profiles"
       },
-      "1684": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1684,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.337,
-        "title": "[VALIDATION ONLY][V14][Battery/Range] Re-run repaired NembraCore package gate"
-      },
-      "1686": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1686,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.336,
-        "title": "[VALIDATION ONLY][V14][Rides] Run exact completed-subject NembraCore gate"
-      },
       "170": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1494,28 +1340,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.194,
         "title": "[navigation] Recover deterministic MapKit adapter"
-      },
-      "1897": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "e84a03e3cd57824c445aac9b4ea777e6105df5cd",
-        "lane": "",
-        "pr": 1897,
-        "recommendedAction": "independent-review",
-        "similarity": 0.268,
-        "title": "[POST-CAPTURE HARDENING] Isolate signed-field release authority"
-      },
-      "1995": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c5cb2e16374108a070cb292fddeaa39e7cfd82f7",
-        "lane": "",
-        "pr": 1995,
-        "recommendedAction": "independent-review",
-        "similarity": 0.138,
-        "title": "[Dashboard V14] Compose receipt-fenced Energy Rail on current main"
       },
       "200": {
         "classification": "requires-review",
@@ -1558,7 +1382,7 @@
         "lane": "",
         "pr": 2054,
         "recommendedAction": "independent-review",
-        "similarity": 0.145,
+        "similarity": 0.111,
         "title": "[Dashboard V14] Capture real AX5 landscape cockpit evidence"
       },
       "208": {
@@ -1571,6 +1395,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.235,
         "title": "[ride-speed-session] Bind peak and quality evidence to one ride stream"
+      },
+      "21": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "3f5d58ef89e024306e4189a522d96af76cd826f0",
+        "lane": "",
+        "pr": 21,
+        "recommendedAction": "independent-review",
+        "similarity": 0.109,
+        "title": "[ride-provenance] Persist truthful transport-gap evidence"
       },
       "216": {
         "classification": "requires-review",
@@ -1602,7 +1437,7 @@
         "lane": "",
         "pr": 2211,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.12,
+        "similarity": 0.099,
         "title": "[Dashboard V14][RED] Pin learned-range VoiceOver terminology"
       },
       "226": {
@@ -1745,7 +1580,7 @@
         "lane": "",
         "pr": 257,
         "recommendedAction": "independent-review",
-        "similarity": 0.17,
+        "similarity": 0.161,
         "title": "[adaptive-range authority recovery] Bind range to sealed battery receipts"
       },
       "262": {
@@ -1813,6 +1648,17 @@
         "recommendedAction": "archive-after-evidence-transfer",
         "similarity": 0.271,
         "title": "[es80-dp-cross-session] Preserve independent-session consistency evidence"
+      },
+      "28": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 28,
+        "recommendedAction": "independent-review",
+        "similarity": 0.389,
+        "title": "[ride-provenance recovery] Restore Xcode target visibility"
       },
       "280": {
         "classification": "requires-review",
@@ -1899,7 +1745,7 @@
         "lane": "",
         "pr": 300,
         "recommendedAction": "independent-review",
-        "similarity": 0.184,
+        "similarity": 0.118,
         "title": "[ride-history-duration] Attach monotonic duration to completed history"
       },
       "301": {
@@ -1976,7 +1822,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.097,
+        "similarity": 0.085,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "316": {
@@ -2045,6 +1891,17 @@
         "similarity": 0.116,
         "title": "[propulsion semantics] Fence verified near-max wording"
       },
+      "34": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 34,
+        "recommendedAction": "independent-review",
+        "similarity": 0.426,
+        "title": "[battery-evidence-domain] Separate measured, observed, estimated, and display battery truth"
+      },
       "342": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2053,7 +1910,7 @@
         "lane": "",
         "pr": 342,
         "recommendedAction": "independent-review",
-        "similarity": 0.103,
+        "similarity": 0.101,
         "title": "[ride peak provenance] Seal verified checkpoint restore"
       },
       "347": {
@@ -2232,6 +2089,17 @@
         "similarity": 0.195,
         "title": "[es80 observation horizon] Compose clock authority and duration provenance"
       },
+      "38": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 38,
+        "recommendedAction": "independent-review",
+        "similarity": 0.167,
+        "title": "[battery-range-evidence-bridge] Gate adaptive range on verified battery truth"
+      },
       "380": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2297,6 +2165,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.234,
         "title": "[ride observed max stats] Keep selected-period max speed quality-bound"
+      },
+      "40": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 40,
+        "recommendedAction": "independent-review",
+        "similarity": 0.4,
+        "title": "[recover-adaptive-range-core] Reconcile truthful learned range model"
       },
       "412": {
         "classification": "requires-review",
@@ -2419,6 +2298,94 @@
         "similarity": 0.128,
         "title": "[recover ride lifecycle] Keep task cancellation non-failure"
       },
+      "48": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 48,
+        "recommendedAction": "independent-review",
+        "similarity": 0.68,
+        "title": "[battery-evidence-snapshot] Prevent stale/fresh battery field mixing"
+      },
+      "50": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 50,
+        "recommendedAction": "independent-review",
+        "similarity": 0.405,
+        "title": "[recover-ride-location-lifecycle] Reconcile proven ride capture lifecycle"
+      },
+      "51": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 51,
+        "recommendedAction": "independent-review",
+        "similarity": 0.705,
+        "title": "[battery-evidence-availability] Keep battery freshness evidence-driven"
+      },
+      "52": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 52,
+        "recommendedAction": "independent-review",
+        "similarity": 0.637,
+        "title": "[battery-evidence-live-truth] Require fresh and verified for live battery data"
+      },
+      "54": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "76880f826604e941cd4d75d09edf2619fd774d26",
+        "lane": "",
+        "pr": 54,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.181,
+        "title": "[adaptive-range-window-assembly][integration] Assemble truthful learning windows"
+      },
+      "56": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 56,
+        "recommendedAction": "independent-review",
+        "similarity": 0.582,
+        "title": "[battery-electrical-coherence] Gate voltage/current pairing on verified timing"
+      },
+      "70": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 70,
+        "recommendedAction": "independent-review",
+        "similarity": 0.136,
+        "title": "[home-vehicle-status-field] Unify truthful Home connection status"
+      },
+      "75": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 75,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.202,
+        "title": "[ride-history-accessibility][integration] Remove duplicate completed-row announcement"
+      },
       "77": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2475,7 +2442,7 @@
         "title": "[rolling-number-performance] Recover hardening onto current main"
       }
     },
-    "classifiedPRsTruncated": true,
+    "classifiedPRsTruncated": false,
     "destructiveActionsAllowed": false,
     "legacyImported": true,
     "legacyLaneIds": [
@@ -2505,7 +2472,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:56:37Z",
+    "liveRefreshAt": "2026-08-14T10:57:34Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6288,10 +6255,10 @@
       "userValue": 7
     }
   },
-  "revision": 183,
+  "revision": 184,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:57:19Z",
+  "updatedAt": "2026-08-14T10:58:06Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6367,7 +6334,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:56:37Z",
+      "updatedAt": "2026-08-14T10:57:34Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
