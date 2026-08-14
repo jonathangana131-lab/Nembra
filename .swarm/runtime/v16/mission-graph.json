@@ -2295,7 +2295,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.197,
+        "similarity": 0.191,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3253": {
@@ -2361,7 +2361,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3274,
         "recommendedAction": "independent-review",
-        "similarity": 0.168,
+        "similarity": 0.162,
         "title": "[Capture P0][INTEGRATE] Close schema v11 provenance contract coverage"
       },
       "3275": {
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:54:42Z",
+    "liveRefreshAt": "2026-08-14T08:57:55Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 156,
+  "revision": 157,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:57:34Z",
+  "updatedAt": "2026-08-14T09:00:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:54:42Z",
+      "updatedAt": "2026-08-14T08:57:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
