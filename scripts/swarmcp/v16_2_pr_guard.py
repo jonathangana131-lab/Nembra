@@ -16,7 +16,11 @@ _CHILD_INTENTS = {"validation", "review", "integration", "tournament"}
 
 def _created_after_activation(pr: Mapping[str, Any]) -> bool:
     created_at = str(pr.get("created_at") or "")
-    return not created_at or created_at >= V16_2_PR_METADATA_ENFORCEMENT_STARTED_AT
+    # Real GitHub PR payloads always carry created_at. Timestamp-less objects are
+    # retained unit-test/operator fixtures from pre-V16.2 code and must continue
+    # through the structural V16.1 compatibility path rather than being silently
+    # reclassified as newly-created production PRs.
+    return bool(created_at) and created_at >= V16_2_PR_METADATA_ENFORCEMENT_STARTED_AT
 
 
 def _normalize_protocol_for_v16_1(pr: Mapping[str, Any]) -> dict[str, Any]:
