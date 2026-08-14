@@ -425,6 +425,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
         case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed
     }
 
+    enum LocalBLEEvidenceState: String, Codable {
+        /// The controller's latest retained direct official-SDK local-BLE sample was online.
+        /// Diagnostic exports do not promote this into an export-time currentness claim.
+        case observedOnlineAtLatestDirectSample = "observed-online-at-latest-direct-sample"
+        /// No current online proof is retained. This must never be interpreted as an observed
+        /// offline/disconnect fact; actual transport loss remains separate timestamped evidence.
+        case notProven = "not-proven"
+    }
+
     struct Export: Codable {
         let schemaVersion: Int
         let purpose: String
@@ -447,7 +456,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let sdkDeviceMembershipVerified: Bool
         let secureSessionEstablished: Bool
         let canonicalObservedAgeSeconds: Double?
-        let sdkLocalBLEOnline: Bool
+        let sdkLocalBLEEvidenceState: LocalBLEEvidenceState
         let applicationUpdateCount: Int
         let connectionGeneration: UInt64
         let authenticationMethod: String?
@@ -2233,7 +2242,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {
         Export(
-            schemaVersion: 10,
+            schemaVersion: 11,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: exportedAt,
             buildIdentifier: buildIdentity.buildIdentifier,
@@ -2254,7 +2263,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             sdkDeviceMembershipVerified: sdkDeviceMembershipVerified,
             secureSessionEstablished: secureSessionEstablished,
             canonicalObservedAgeSeconds: canonicalObservedAgeSeconds,
-            sdkLocalBLEOnline: sdkLocalBLEOnline,
+            sdkLocalBLEEvidenceState: sdkLocalBLEOnline ? .observedOnlineAtLatestDirectSample : .notProven,
             applicationUpdateCount: applicationUpdateCount,
             connectionGeneration: ledgerSnapshot.connectionGeneration,
             authenticationMethod: ledgerSnapshot.authenticationMethod?.rawValue,
