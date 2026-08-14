@@ -1140,7 +1140,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3320,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.364,
+        "similarity": 0.318,
         "title": "[Capture P0][VALIDATION] Prove full numeric-principal credential inventory"
       },
       "3321": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3321,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.365,
+        "similarity": 0.312,
         "title": "[Capture P0][VALIDATION] Attest former-build mutation authority"
       },
       "3322": {
@@ -1201,19 +1201,13 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [
-      {
-        "from": "1d5fe1cffd0d0ec25cbe19a600f355f8fab3f9f2",
-        "to": "3b0a2de6992e057716dd8ea3248de89a7c032be2",
-        "workItemId": "live-pr-3142"
-      }
-    ],
+    "livePRHeadUpdates": [],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:12:50Z",
+    "liveRefreshAt": "2026-08-14T23:13:04Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4998,10 +4992,10 @@
       "userValue": 7
     }
   },
-  "revision": 268,
+  "revision": 269,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:12:51Z",
+  "updatedAt": "2026-08-14T23:13:05Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5077,7 +5071,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:12:50Z",
+      "updatedAt": "2026-08-14T23:13:04Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
