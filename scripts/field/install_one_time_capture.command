@@ -235,8 +235,10 @@ DERIVED_PLACEHOLDER="__NEMBRA_PROTECTED_DERIVED__"
 say "Field procedure: $PROCEDURE_ID"
 verify_private_tuya_inputs
 
-# Both custody helpers are executed from exact accepted Git-object bytes. Build-output
-# authority must not depend on a mutable worktree helper at the privileged handoff.
+# Every privileged custody component below is transported from exact accepted Git-object
+# bytes. The selected-Xcode orchestrator keeps freeze publication and compiler-output
+# creation inside one root process, so the field shell never needs to regain sudo between
+# those two authority transitions.
 BUILD_ORIGIN_CUSTODY_HELPER_PATH="scripts/ci/capture_signed_app_build_origin_custody.py"
 BUILD_ORIGIN_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$SOURCE_SHA:$BUILD_ORIGIN_CUSTODY_HELPER_PATH" 2>/dev/null)" || \
     die "Signed-app build-origin custody helper is missing from the exact accepted Git tree."
@@ -257,6 +259,33 @@ SIGNED_APP_CUSTODY_HELPER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM
 [[ "$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git hash-object --stdin)" == "$SIGNED_APP_CUSTODY_HELPER_BLOB" ]] || \
     die "Decoded signed-app custody helper bytes do not match the accepted Git blob."
 
+SELECTED_XCODE_FREEZE_HELPER_PATH="scripts/ci/capture_selected_xcode_freeze.py"
+SELECTED_XCODE_FREEZE_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$SOURCE_SHA:$SELECTED_XCODE_FREEZE_HELPER_PATH" 2>/dev/null)" || \
+    die "Selected-Xcode freeze helper is missing from the exact accepted Git tree."
+[[ "$SELECTED_XCODE_FREEZE_HELPER_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Selected-Xcode freeze helper Git blob identity is malformed."
+SELECTED_XCODE_FREEZE_HELPER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$SELECTED_XCODE_FREEZE_HELPER_BLOB" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || \
+    die "Could not capture selected-Xcode freeze helper from the accepted Git object."
+[[ "$(printf '%s' "$SELECTED_XCODE_FREEZE_HELPER_BASE64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git hash-object --stdin)" == "$SELECTED_XCODE_FREEZE_HELPER_BLOB" ]] || \
+    die "Decoded selected-Xcode freeze helper bytes do not match the accepted Git blob."
+
+SELECTED_XCODE_FREEZE_LAUNCHER_PATH="scripts/ci/capture_selected_xcode_freeze_launcher.py"
+SELECTED_XCODE_FREEZE_LAUNCHER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$SOURCE_SHA:$SELECTED_XCODE_FREEZE_LAUNCHER_PATH" 2>/dev/null)" || \
+    die "Selected-Xcode freeze launcher is missing from the exact accepted Git tree."
+[[ "$SELECTED_XCODE_FREEZE_LAUNCHER_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Selected-Xcode freeze launcher Git blob identity is malformed."
+SELECTED_XCODE_FREEZE_LAUNCHER_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$SELECTED_XCODE_FREEZE_LAUNCHER_BLOB" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || \
+    die "Could not capture selected-Xcode freeze launcher from the accepted Git object."
+[[ "$(printf '%s' "$SELECTED_XCODE_FREEZE_LAUNCHER_BASE64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git hash-object --stdin)" == "$SELECTED_XCODE_FREEZE_LAUNCHER_BLOB" ]] || \
+    die "Decoded selected-Xcode freeze launcher bytes do not match the accepted Git blob."
+
+SELECTED_XCODE_BUILD_ORCHESTRATOR_PATH="scripts/ci/capture_selected_xcode_build_orchestrator.py"
+SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$SOURCE_SHA:$SELECTED_XCODE_BUILD_ORCHESTRATOR_PATH" 2>/dev/null)" || \
+    die "Selected-Xcode build orchestrator is missing from the exact accepted Git tree."
+[[ "$SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Selected-Xcode build orchestrator Git blob identity is malformed."
+SELECTED_XCODE_BUILD_ORCHESTRATOR_BASE64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || \
+    die "Could not capture selected-Xcode build orchestrator from the accepted Git object."
+[[ "$(printf '%s' "$SELECTED_XCODE_BUILD_ORCHESTRATOR_BASE64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git hash-object --stdin)" == "$SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB" ]] || \
+    die "Decoded selected-Xcode build orchestrator bytes do not match the accepted Git blob."
+
 APP_INSTALL_STAGE_ROOT=""
 INSTALL_LOG=""
 cleanup_install_subject() {
@@ -271,31 +300,48 @@ cleanup_install_subject() {
 }
 trap cleanup_install_subject EXIT
 
-say "Building SDK-integrated Nembra Capture inside protected compiler-output custody"
-# The accepted helper runs as one root supervisor. It immediately invalidates the invoking
-# user's cached sudo authority, creates root-owned DerivedData whose only write/traverse
-# capability is an otherwise-unused supplementary gid given to this guarded build process
-# group, retires ordinary descendants when xcodebuild finishes, revokes that gid from the
-# filesystem, then hashes and root-stages the exact locked output before returning here.
+say "Building SDK-integrated Nembra Capture with frozen Xcode inside protected compiler-output custody"
+# The exact accepted orchestrator remains in one privileged process. Its accepted freeze
+# launcher invalidates reusable field-user sudo before publishing a root/no-write COW Xcode,
+# then the orchestrator replaces the one canonical xcodebuild marker with that frozen tool
+# and calls the dedicated-UID/APFS build-origin helper directly. No return-to-shell/re-sudo
+# window exists between selected-toolchain publication and compiler-output custody.
 if ! BUILD_ORIGIN_CUSTODY_RESULT="$(
     /usr/bin/sudo /usr/bin/python3 -I -c '
 import base64
+import hashlib
+import re
 import sys
 encoded = sys.argv[1]
+expected = sys.argv[2]
+if re.fullmatch(r"[0-9a-f]{40}", expected) is None:
+    raise SystemExit("selected-Xcode orchestrator expected blob is malformed")
 source = base64.b64decode(encoded, validate=True)
-sys.argv = ["<accepted-build-origin-custody>"] + sys.argv[2:]
+actual = hashlib.sha1(b"blob " + str(len(source)).encode("ascii") + b"\0" + source).hexdigest()
+if actual != expected:
+    raise SystemExit("selected-Xcode orchestrator bytes do not match the accepted Git blob")
+sys.argv = ["<accepted-selected-xcode-build-orchestrator>"] + sys.argv[3:]
 namespace = {
     "__name__": "__main__",
-    "__file__": "<accepted-build-origin-custody>",
+    "__file__": "<accepted-selected-xcode-build-orchestrator>",
 }
 exec(
-    compile(source, "<accepted-build-origin-custody>", "exec", dont_inherit=True),
+    compile(source, "<accepted-selected-xcode-build-orchestrator>", "exec", dont_inherit=True),
     namespace,
 )
 ' \
-        "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64" \
-        --app-relative "Build/Products/Debug-iphoneos/Nembra Capture.app" \
-        --install-custody-helper-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64" \
+        "$SELECTED_XCODE_BUILD_ORCHESTRATOR_BASE64" \
+        "$SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB" \
+        --field-pid "$$" \
+        --source-sha "$SOURCE_SHA" \
+        --freeze-launcher-base64 "$SELECTED_XCODE_FREEZE_LAUNCHER_BASE64" \
+        --freeze-launcher-blob "$SELECTED_XCODE_FREEZE_LAUNCHER_BLOB" \
+        --freeze-helper-base64 "$SELECTED_XCODE_FREEZE_HELPER_BASE64" \
+        --freeze-helper-blob "$SELECTED_XCODE_FREEZE_HELPER_BLOB" \
+        --build-origin-base64 "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64" \
+        --build-origin-blob "$BUILD_ORIGIN_CUSTODY_HELPER_BLOB" \
+        --install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64" \
+        --install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" \
         -- \
         /usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \
         --lockfile "$ROOT/Podfile.lock" \
@@ -319,7 +365,7 @@ exec(
         "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
         "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"
 )"; then
-    die "The signed build could not be bound from isolated xcodebuild output into protected install custody. No field artifact was admitted."
+    die "The signed build could not bind frozen selected-Xcode execution to isolated compiler output and protected install custody. No field artifact was admitted."
 fi
 
 [[ "$BUILD_ORIGIN_CUSTODY_RESULT" == *$'\t'* ]] || die "Build-origin custody returned no canonical stage/fingerprint record."
@@ -332,10 +378,14 @@ STAGED_APP_TREE_SHA256="${BUILD_ORIGIN_CUSTODY_RESULT#*$'\t'}"
 APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"
 APP="$APP_INSTALL_STAGE"
 
-# The root supervisor revoked caller-side cached sudo before creating DerivedData.
-# Reprove that no noninteractive elevation authority survived the compiler/staging life.
+# Both privileged layers revoke caller-side cached sudo before selected toolchain
+# publication/compiler output. Reprove command and policy-listing noninteractive
+# elevation are unavailable before the staged app can be promoted.
 if /usr/bin/sudo -n /usr/bin/true >/dev/null 2>&1; then
-    die "Noninteractive sudo authority remained after build-origin custody; do not install from this stage."
+    die "Noninteractive sudo authority remained after selected-Xcode/build-origin custody; do not install from this stage."
+fi
+if /usr/bin/sudo -n -l >/dev/null 2>&1; then
+    die "Noninteractive sudo policy listing remained after selected-Xcode/build-origin custody; do not install from this stage."
 fi
 
 VERIFIED_STAGE_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | /usr/bin/base64 -D | /usr/bin/python3 -I - verify-stage \
@@ -511,6 +561,7 @@ else
 fi
 trap - EXIT
 unset STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_BASE64 BUILD_ORIGIN_CUSTODY_HELPER_PATH BUILD_ORIGIN_CUSTODY_HELPER_BLOB BUILD_ORIGIN_CUSTODY_HELPER_BASE64 APP_INSTALL_STAGE
+unset SELECTED_XCODE_FREEZE_HELPER_PATH SELECTED_XCODE_FREEZE_HELPER_BLOB SELECTED_XCODE_FREEZE_HELPER_BASE64 SELECTED_XCODE_FREEZE_LAUNCHER_PATH SELECTED_XCODE_FREEZE_LAUNCHER_BLOB SELECTED_XCODE_FREEZE_LAUNCHER_BASE64 SELECTED_XCODE_BUILD_ORCHESTRATOR_PATH SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB SELECTED_XCODE_BUILD_ORCHESTRATOR_BASE64
 
 say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \
