@@ -15,7 +15,12 @@ extension TuyaSecureLinkProductSurfaceSourceTests {
         let connectCall = String(try applicationSourceAttributionSection(
             in: source,
             from: "newDriver.connect(",
-            to: "            } catch {"
+            to: "    private func authenticated(token:"
+        ))
+        let sourceFailureClosure = String(try applicationSourceAttributionSection(
+            in: connectCall,
+            from: "sourceAuthorityFailure:",
+            to: "                    success:"
         ))
         let driverBody = String(try applicationSourceAttributionSection(
             in: source,
@@ -38,10 +43,19 @@ extension TuyaSecureLinkProductSurfaceSourceTests {
         // non-empty callback delivered to this delegate as evidence from the selected device.
         #expect(protocolBody.contains("sourceAuthorityFailure: @escaping @MainActor () -> Void"))
         #expect(connectCall.contains("sourceAuthorityFailure:"))
-        #expect(connectCall.contains("acceptanceCutIsClosed = true"))
-        #expect(connectCall.contains("watchdog?.cancel()"))
-        #expect(connectCall.contains("phase = .failed"))
-        #expect(connectCall.contains("invalidateSourceAuthority("))
+        #expect(sourceFailureClosure.contains("acceptanceCutIsClosed = true"))
+        #expect(sourceFailureClosure.contains("watchdog?.cancel()"))
+        #expect(sourceFailureClosure.contains("phase = .failed"))
+        #expect(sourceFailureClosure.contains("invalidateSourceAuthority("))
+
+        // Keep the source-authority retirement closure structurally inside this exact connect
+        // invocation and before transport success/failure callbacks. Nested receipt-era catch
+        // blocks inside onApplicationUpdate must not truncate this oracle.
+        let sourceFailure = try applicationSourceAttributionRequiredRange("sourceAuthorityFailure:", in: connectCall)
+        let success = try applicationSourceAttributionRequiredRange("                    success:", in: connectCall)
+        let failure = try applicationSourceAttributionRequiredRange("                    failure:", in: connectCall)
+        #expect(sourceFailure.lowerBound < success.lowerBound)
+        #expect(success.lowerBound < failure.lowerBound)
 
         // Bind callback admission to the exact Tuya device ID selected for this connection.
         #expect(driverBody.contains("private var expectedDeviceID: String?"))
