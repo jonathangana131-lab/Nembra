@@ -272,10 +272,17 @@ final class NembraUITests: XCTestCase {
     @MainActor
     func testLandscapeDashboardLaunchPerformance() {
         defer { XCUIDevice.shared.orientation = .portrait }
+
+        // A prior Dashboard UI test can leave the app alive with continuous
+        // instrument animation. Rotating that live process makes XCTest wait for
+        // an animation-idle notification for ~60 seconds before launch metrics
+        // even begin. Terminate residual app state first so this test measures
+        // launch responsiveness instead of predecessor-test animation lifetime.
+        let app = XCUIApplication()
+        app.terminate()
         XCUIDevice.shared.orientation = .landscapeRight
 
         measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)]) {
-            let app = XCUIApplication()
             app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
             app.launch()
 
