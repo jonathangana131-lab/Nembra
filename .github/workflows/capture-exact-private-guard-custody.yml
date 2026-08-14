@@ -36,24 +36,49 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'Exact private-guard source: %s\n' "$actual"
 
-      - name: Prove accepted Git bytes replace the live guard marker
+      - name: Prove accepted Git bytes drive the composed guard boundary
         shell: bash
         run: |
           set -euo pipefail
+          orchestrator='scripts/ci/capture_selected_xcode_build_orchestrator.py'
+          tests='scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py'
           export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-exact-private-guard-pycache"
-          /usr/bin/python3 -m py_compile \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'def _read_accepted_git_blob(' scripts/ci/capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'GIT_NO_REPLACE_OBJECTS' scripts/ci/capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'GIT_CONFIG_NOSYSTEM' scripts/ci/capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'GIT_CONFIG_GLOBAL' scripts/ci/capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'def _materialize_accepted_guard_bundle(' scripts/ci/capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'os.chmod(bundle, 0o555)' scripts/ci/capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'def _replace_live_guard(' scripts/ci/capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'ACCEPTED_GUARD_RELATIVE = Path("Scripts/capture_tuya_private_input_build_guard.py")' scripts/ci/capture_selected_xcode_build_orchestrator.py
-          grep -Fq 'ACCEPTED_PROVENANCE_RELATIVE = Path("Scripts/capture_tuya_private_input_provenance.py")' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -m py_compile "$orchestrator" "$tests"
+          /usr/bin/python3 -B -I "$tests"
+
+          # Accepted helpers are transported as strict base64 bound to their exact Git blob IDs,
+          # then compiled directly from those verified bytes. No mutable checkout guard path is
+          # promoted into authority by this boundary.
+          grep -Fq 'def _git_blob_oid(' "$orchestrator"
+          grep -Fq 'def _decode_verified_git_blob(' "$orchestrator"
+          grep -Fq 'base64.b64decode(encoded, validate=True)' "$orchestrator"
+          grep -Fq 'if _git_blob_oid(raw) != expected_blob:' "$orchestrator"
+          grep -Fq 'def _load_namespace(' "$orchestrator"
+          grep -Fq 'exec(compile(raw, filename, "exec", dont_inherit=True), namespace)' "$orchestrator"
+          grep -Fq 'launcher_raw = _decode_verified_git_blob(' "$orchestrator"
+          grep -Fq 'build_origin_raw = _decode_verified_git_blob(' "$orchestrator"
+          grep -Fq 'launcher = _load_namespace(' "$orchestrator"
+          grep -Fq 'build_origin = _load_namespace(' "$orchestrator"
+
+          # The caller cannot choose an ambient toolchain. The exact frozen Developer tree must
+          # supply all three authority-bearing tools and exactly one canonical xcodebuild marker.
+          grep -Fq 'if any(argument.startswith("DEVELOPER_DIR=") for argument in command):' "$orchestrator"
+          grep -Fq 'matches = [index for index, argument in enumerate(command) if argument == "/usr/bin/xcodebuild"]' "$orchestrator"
+          grep -Fq 'if len(matches) != 1:' "$orchestrator"
+          grep -Fq 'selected_xcodebuild = _require_frozen_tool(tools, "xcodebuild", frozen_developer)' "$orchestrator"
+          grep -Fq '_require_frozen_tool(tools, "xctrace", frozen_developer)' "$orchestrator"
+          grep -Fq '_require_frozen_tool(tools, "devicectl", frozen_developer)' "$orchestrator"
+          grep -Fq 'guarded_command = _replace_selected_xcode(' "$orchestrator"
+          grep -Fq 'run_custodied_build = _require_callable(' "$orchestrator"
+          grep -Fq 'result = run_custodied_build(' "$orchestrator"
+
+          # Retired checkout-file replacement machinery must not silently return as an alternate
+          # authority path. The current design executes only exact verified Git-object bytes.
+          ! grep -Fq 'def _materialize_accepted_guard_bundle(' "$orchestrator"
+          ! grep -Fq 'def _replace_live_guard(' "$orchestrator"
+          ! grep -Fq 'ACCEPTED_GUARD_RELATIVE' "$orchestrator"
+          ! grep -Fq 'ACCEPTED_PROVENANCE_RELATIVE' "$orchestrator"
+
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
   macos-root-snapshot-model:
