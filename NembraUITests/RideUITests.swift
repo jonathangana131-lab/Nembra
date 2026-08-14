@@ -121,6 +121,64 @@ final class RideUITests: XCTestCase {
     }
 
     @MainActor
+    func testCompletedRideDetailDarkAppearancePreservesRouteAndBottomControl() {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            XCUIDevice.shared.appearance = previousAppearance
+            XCUIDevice.shared.orientation = .portrait
+        }
+
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.appearance = .dark
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"] = "1"
+        app.launch()
+
+        let ridesTab = app.tabBars.buttons["Rides"]
+        XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
+        ridesTab.tap()
+
+        let row = app.descendants(matching: .any)["rides.completed-row"]
+        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        row.tap()
+
+        let detail = app.descendants(matching: .any)["rides.detail"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 3))
+
+        let routeMap = app.descendants(matching: .any)["rides.route-map"]
+        if !routeMap.waitForExistence(timeout: 3) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(routeMap.waitForExistence(timeout: 3))
+        XCTAssertEqual(routeMap.label, "Recorded ride route")
+        XCTAssertTrue(
+            (routeMap.value as? String ?? "").localizedCaseInsensitiveContains("Route coverage partial"),
+            "Dark appearance must preserve the same accepted partial-route semantics as light appearance."
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["rides.route-unavailable"].exists)
+        keepScreenshot(named: "Completed Ride Details Dark")
+
+        let recordingDetails = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Recording details")
+        ).firstMatch
+        if !recordingDetails.waitForExistence(timeout: 2) || !recordingDetails.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(
+            recordingDetails.waitForExistence(timeout: 3),
+            "The final Ride Details control must remain reachable in dark appearance."
+        )
+        XCTAssertTrue(
+            recordingDetails.isHittable,
+            "The floating shell chrome must not make the final Ride Details control inoperable."
+        )
+        keepScreenshot(named: "Completed Ride Details Dark Bottom")
+    }
+
+    @MainActor
     private func waitForValue(
         _ value: String,
         element: XCUIElement,
