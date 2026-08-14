@@ -1444,6 +1444,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         guard let self,
                               !update.isEmpty,
                               self.currentConnectionToken == token,
+                              self.phase == .observing,
                               !self.acceptanceCutIsClosed else { return }
 
                         let applicationReceipt: TuyaReadOnlyApplicationReceipt
