@@ -1064,8 +1064,30 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 299,
+    "classifiedPRTotal": 297,
     "classifiedPRs": {
+      "2789": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2789,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.206,
+        "title": "[Capture P0][REPAIR] Pin private-device runner execution bytes"
+      },
+      "2791": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2791,
+        "recommendedAction": "independent-review",
+        "similarity": 0.288,
+        "title": "[Capture P0][PHYSICAL GO] Carry reviewed private Tuya authority into Final GO"
+      },
       "2794": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2284,7 +2306,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.167,
+        "similarity": 0.175,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3253": {
@@ -2350,7 +2372,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3274,
         "recommendedAction": "independent-review",
-        "similarity": 0.156,
+        "similarity": 0.144,
         "title": "[Capture P0][INTEGRATE] Close schema v11 provenance contract coverage"
       },
       "3275": {
@@ -2374,17 +2396,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.119,
         "title": "[Capture P0][EXPECTED-RED] Preserve terminal mirror presentation owner"
-      },
-      "3283": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-smartlife-application-source-attribution",
-        "pr": 3283,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.121,
-        "title": "[Capture P0][EXPECTED-RED] Require exact SmartLife callback source attribution"
       },
       "3284": {
         "classification": "validation",
@@ -2418,17 +2429,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.128,
         "title": "[Capture P0][NO-GO] Converge single authenticated stationary field authority"
-      },
-      "3288": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-application-delivery-cutoff",
-        "pr": 3288,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.137,
-        "title": "[Capture P0][EXPECTED-RED] Preserve SmartLife callback delivery cutoff"
       },
       "3292": {
         "classification": "canonical-candidate",
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:39:38Z",
+    "liveRefreshAt": "2026-08-14T09:42:51Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 171,
+  "revision": 172,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:42:32Z",
+  "updatedAt": "2026-08-14T09:45:49Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:39:38Z",
+      "updatedAt": "2026-08-14T09:42:51Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
