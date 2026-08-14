@@ -208,9 +208,13 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort > "$RUNNER_TEMP/final-actual"
+          # Stage the generated test and workflow deletion before comparing to the construction
+          # parent; ordinary `git diff <commit>` deliberately ignores untracked files.
+          git add -A "$LEDGER_PATH" "$TEST_PATH" "$WORKFLOW_PATH"
+          git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort > "$RUNNER_TEMP/final-actual"
           printf '%s\n' "$LEDGER_PATH" "$TEST_PATH" | LC_ALL=C sort > "$RUNNER_TEMP/final-expected"
           diff -u "$RUNNER_TEMP/final-expected" "$RUNNER_TEMP/final-actual"
+          git diff --cached --check "$EXACT_PARENT"
           grep -Fq 'public struct TuyaReadOnlyApplicationReceipt' "$LEDGER_PATH"
           grep -Fq 'public static func capture(for token: TuyaReadOnlyConnectionToken)' "$LEDGER_PATH"
           grep -Fq 'receipt.token == token' "$LEDGER_PATH"
@@ -225,6 +229,5 @@ jobs:
           set -euo pipefail
           git config user.name 'nembra-delivery-receipt-materializer'
           git config user.email 'nembra-delivery-receipt-materializer@users.noreply.github.com'
-          git add "$LEDGER_PATH" "$TEST_PATH" "$WORKFLOW_PATH"
           git commit -m 'capture: preserve trusted application callback receipt time'
           git push origin "HEAD:$BRANCH"
