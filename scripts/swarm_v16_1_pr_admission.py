@@ -5,7 +5,6 @@ import json
 import os
 from pathlib import Path
 import sys
-import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,7 +19,7 @@ def _request_json(url: str, token: str):
             'Accept': 'application/vnd.github+json',
             'Authorization': f'Bearer {token}',
             'X-GitHub-Api-Version': '2022-11-28',
-            'User-Agent': 'nembra-swarm-v16.1-admission',
+            'User-Agent': 'nembra-swarm-v16.2-admission',
         },
     )
     with urllib.request.urlopen(request, timeout=20) as response:
@@ -54,8 +53,9 @@ def main() -> int:
         raise SystemExit('pull_request event payload required')
     peers = list_open_prs(repo, token)
     decision = sc.evaluate_pr_admission(pr, peers)
+    policy = getattr(sc, 'V16_2_POLICY_VERSION', getattr(sc, 'V16_1_POLICY_VERSION', '16'))
     payload = {
-        'policyVersion': sc.V16_1_POLICY_VERSION,
+        'policyVersion': policy,
         'pr': pr.get('number'),
         'allowed': decision.allowed,
         'action': decision.action,
@@ -69,14 +69,14 @@ def main() -> int:
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
         with open(summary, 'a', encoding='utf-8') as handle:
-            handle.write('## Swarm V16.1 PR admission\n\n')
+            handle.write(f'## Swarm V{policy} PR admission\n\n')
             handle.write(f"**Verdict:** {'ALLOW' if decision.allowed else 'CONVERGE'}  \n")
             handle.write(f"**Action:** `{decision.action}`  \n")
             if decision.join_pr:
                 handle.write(f"**Join PR:** `#{decision.join_pr}`  \n")
             handle.write(f"**Reason:** {decision.reason}\n")
     if not decision.allowed:
-        print(f'::error title=Swarm V16.1 convergence::{decision.reason}')
+        print(f'::error title=Swarm V{policy} convergence::{decision.reason}')
         if decision.join_pr:
             print(f'::notice title=Join existing work::Continue on PR #{decision.join_pr}; do not create another successor PR.')
         return 2
