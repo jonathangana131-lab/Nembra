@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 292,
+    "classifiedPRTotal": 293,
     "classifiedPRs": {
-      "2755": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2755,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.378,
-        "title": "[Capture P0][REPAIR] Close private identity publication races"
-      },
       "2767": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2361,7 +2350,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.143,
+        "similarity": 0.194,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3253": {
@@ -2394,8 +2383,8 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3265,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.375,
-        "title": "[Capture P0][VISUAL] Re-anchor standalone iPhone 12 evidence on e295"
+        "similarity": 0.36,
+        "title": "[Capture P0][VISUAL] Harden standalone iPhone 12 evidence instrument"
       },
       "3268": {
         "classification": "validation",
@@ -2438,19 +2427,19 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3272,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.371,
+        "similarity": 0.364,
         "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current 34d438f"
       },
       "3274": {
-        "classification": "validation",
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3274,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.144,
-        "title": "[Capture P0][VALIDATION] Close schema v11 provenance contract coverage"
+        "recommendedAction": "independent-review",
+        "similarity": 0.18,
+        "title": "[Capture P0][INTEGRATE] Close schema v11 provenance contract coverage"
       },
       "3275": {
         "classification": "validation",
@@ -2460,7 +2449,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3275,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.216,
+        "similarity": 0.335,
         "title": "[Capture P0][RED TEAM] Reject partial bootstrap principal residue"
       },
       "3276": {
@@ -2473,6 +2462,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.137,
         "title": "[Capture P0][VALIDATION] Gate schema-11 correlation export oracle"
+      },
+      "3278": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3278,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.339,
+        "title": "[Capture P0][RED TEAM] Prove signing bootstrap GID occupancy gap"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,9 +2505,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:28:14Z",
+    "liveRefreshAt": "2026-08-14T08:31:15Z",
     "liveRefreshDuplicatesSuppressed": [
-      3275
+      3278
     ],
     "liveRefreshMainSHA": "de37ee4769022d32765bf63340f8420ee7c0e04b",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 149,
+  "revision": 150,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:30:54Z",
+  "updatedAt": "2026-08-14T08:34:04Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:28:14Z",
+      "updatedAt": "2026-08-14T08:31:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
