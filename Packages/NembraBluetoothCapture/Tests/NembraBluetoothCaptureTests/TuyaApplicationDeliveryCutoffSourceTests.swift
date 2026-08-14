@@ -36,21 +36,21 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             in: callback,
             after: inFlight
         )
-        let admission = try deliveryCutoffRequiredOffset(
-            "receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)",
+        let release = try deliveryCutoffRequiredOffset(
+            "defer { self.applicationUpdateAdmissionsInFlight -= 1 }",
             in: callback,
             after: asyncHop
         )
-        let release = try deliveryCutoffRequiredOffset(
-            "applicationUpdateAdmissionsInFlight -= 1",
+        let admission = try deliveryCutoffRequiredOffset(
+            "receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)",
             in: callback,
-            after: admission
+            after: release
         )
 
         #expect(receipt < inFlight)
         #expect(inFlight < asyncHop)
-        #expect(asyncHop < admission)
-        #expect(admission < release)
+        #expect(asyncHop < release)
+        #expect(release < admission)
 
         let receiver = String(try deliveryCutoffSection(
             in: app,
