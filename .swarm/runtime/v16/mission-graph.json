@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 125,
+    "classifiedPRTotal": 114,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1107,7 +1107,7 @@
         "lane": "",
         "pr": 1117,
         "recommendedAction": "independent-review",
-        "similarity": 0.162,
+        "similarity": 0.09,
         "title": "[POST-CAPTURE HARDENING] Pin exact signed-field release-source custody"
       },
       "113": {
@@ -1120,28 +1120,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.169,
         "title": "[recover-battery-primary-readout-baseline-qa] Recover truthful battery readout and unblock baseline UI QA"
-      },
-      "1166": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1166,
-        "recommendedAction": "independent-review",
-        "similarity": 0.203,
-        "title": "[POST-CAPTURE HARDENING] Converge offline report input/output custody"
-      },
-      "1171": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 1171,
-        "recommendedAction": "independent-review",
-        "similarity": 0.203,
-        "title": "[POST-CAPTURE HARDENING] Make receipt-bound report publication the public API boundary"
       },
       "120": {
         "classification": "requires-review",
@@ -1352,17 +1330,6 @@
         "similarity": 0.146,
         "title": "[navigation-arrival] Require sustained truthful destination evidence"
       },
-      "2030": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2030,
-        "recommendedAction": "independent-review",
-        "similarity": 0.129,
-        "title": "[Capture P0] Lock private Tuya launch-secret custody regression"
-      },
       "204": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1373,17 +1340,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.127,
         "title": "[ride-distance] Preserve selected coverage and seal record bridge"
-      },
-      "2054": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2054,
-        "recommendedAction": "independent-review",
-        "similarity": 0.111,
-        "title": "[Dashboard V14] Capture real AX5 landscape cockpit evidence"
       },
       "208": {
         "classification": "requires-review",
@@ -1417,28 +1373,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.103,
         "title": "[home-ride-summary] Preserve compact completed-ride truth"
-      },
-      "2166": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "23062a2c7fd2a03287327ee337ab59712388dc06",
-        "lane": "",
-        "pr": 2166,
-        "recommendedAction": "independent-review",
-        "similarity": 0.127,
-        "title": "[Capture P0][RESEARCH] Pin Tuya iOS structured-vs-raw evidence boundary"
-      },
-      "2211": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c968a0ca7d8d734477b34b599ebc9d739dbd3aa5",
-        "lane": "",
-        "pr": 2211,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.099,
-        "title": "[Dashboard V14][RED] Pin learned-range VoiceOver terminology"
       },
       "226": {
         "classification": "requires-review",
@@ -1536,7 +1470,7 @@
         "lane": "",
         "pr": 247,
         "recommendedAction": "independent-review",
-        "similarity": 0.214,
+        "similarity": 0.149,
         "title": "[vehicle-controls] Replace settings Form with premium confirmed-control surface"
       },
       "248": {
@@ -1547,7 +1481,7 @@
         "lane": "",
         "pr": 248,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.205,
+        "similarity": 0.193,
         "title": "[validation-only] Capture Vehicle Controls runtime states"
       },
       "250": {
@@ -1822,7 +1756,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.085,
+        "similarity": 0.079,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "316": {
@@ -1976,7 +1910,7 @@
         "lane": "",
         "pr": 357,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.196,
+        "similarity": 0.15,
         "title": "[validation-only] Capture ES80 Home hero on truthful ordinary launch"
       },
       "358": {
@@ -2176,61 +2110,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.4,
         "title": "[recover-adaptive-range-core] Reconcile truthful learned range model"
-      },
-      "412": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 412,
-        "recommendedAction": "independent-review",
-        "similarity": 0.146,
-        "title": "[observed peak history] Persist revalidatable peak-quality evidence"
-      },
-      "417": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 417,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.206,
-        "title": "[recover vehicle controls] Re-anchor premium confirmed-control surface"
-      },
-      "422": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 422,
-        "recommendedAction": "independent-review",
-        "similarity": 0.124,
-        "title": "[ride speed stats composite] Bind average and max to one ride scope"
-      },
-      "423": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 423,
-        "recommendedAction": "independent-review",
-        "similarity": 0.124,
-        "title": "[es80 boundary transaction] Seal decision to queue transaction"
-      },
-      "424": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 424,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.206,
-        "title": "[validation-only] Capture recovered Vehicle Controls runtime states"
       },
       "438": {
         "classification": "requires-review",
@@ -2472,7 +2351,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:57:34Z",
+    "liveRefreshAt": "2026-08-14T10:58:25Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6255,10 +6134,10 @@
       "userValue": 7
     }
   },
-  "revision": 184,
+  "revision": 185,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:58:06Z",
+  "updatedAt": "2026-08-14T10:58:46Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6334,7 +6213,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:57:34Z",
+      "updatedAt": "2026-08-14T10:58:25Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
