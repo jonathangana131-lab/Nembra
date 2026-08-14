@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 2,
+    "classifiedPRTotal": 1,
     "classifiedPRs": {
-      "2842": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "home-accessibility-product",
-        "pr": 2842,
-        "recommendedAction": "independent-review",
-        "similarity": 0.0,
-        "title": "[Home V15] Recover truthful large-text product surface on current main"
-      },
       "3142": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1119,9 +1108,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T16:03:44Z",
+    "liveRefreshAt": "2026-08-14T16:04:07Z",
     "liveRefreshDuplicatesSuppressed": [],
-    "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
+    "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -4902,10 +4891,10 @@
       "userValue": 7
     }
   },
-  "revision": 212,
+  "revision": 213,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T16:03:45Z",
+  "updatedAt": "2026-08-14T16:04:08Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -4981,7 +4970,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T16:03:44Z",
+      "updatedAt": "2026-08-14T16:04:07Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
