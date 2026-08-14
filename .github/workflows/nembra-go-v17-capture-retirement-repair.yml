@@ -23,7 +23,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Bind structural materializer to exact Capture carrier
         shell: bash
@@ -37,7 +37,7 @@ jobs:
           test "$changed" = "$expected"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize proved production repair
+      - name: Materialize and validate proved production repair
         shell: bash
         run: |
           set -euo pipefail
@@ -49,23 +49,84 @@ jobs:
           python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           bash -n scripts/field/install_one_time_capture.command
           git diff --check
-
-      - name: Commit three-path production delta and retire materializer
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm .github/workflows/nembra-go-v17-capture-retirement-repair.yml
-          rm scripts/ci/materialize_capture_retirement_repair.py
           changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-field-build-provenance.yml \
+            .github/workflows/nembra-go-v17-capture-retirement-repair.yml \
             scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/materialize_capture_retirement_repair.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
-          git diff --check
-          git config user.name "nembra-go-worker"
-          git config user.email "nembra-go-worker@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "Capture: compose proved post-DS principal retirement"
-          git push origin "HEAD:${TARGET_BRANCH}"
+
+      - name: Publish clean three-path commit from exact parent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["GH_TOKEN"]
+          repo = os.environ["REPOSITORY"]
+          parent = os.environ["EXACT_PARENT"]
+          branch = os.environ["TARGET_BRANCH"]
+          api = f"https://api.github.com/repos/{repo}"
+
+          def request(method: str, url: str, payload=None):
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              req = urllib.request.Request(
+                  url,
+                  data=data,
+                  method=method,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "nembra-capture-retirement-repair",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  detail = error.read().decode("utf-8", errors="replace")
+                  raise SystemExit(f"GitHub API {method} {url} failed: {error.code} {detail}") from error
+
+          parent_commit = request("GET", f"{api}/git/commits/{parent}")
+          base_tree = parent_commit["tree"]["sha"]
+          paths = (
+              ".github/workflows/capture-field-build-provenance.yml",
+              "scripts/ci/capture_signed_app_build_origin_custody.py",
+              "scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py",
+          )
+          entries = [
+              {
+                  "path": path,
+                  "mode": "100644",
+                  "type": "blob",
+                  "content": Path(path).read_text(encoding="utf-8"),
+              }
+              for path in paths
+          ]
+          tree = request("POST", f"{api}/git/trees", {"base_tree": base_tree, "tree": entries})
+          commit = request(
+              "POST",
+              f"{api}/git/commits",
+              {
+                  "message": "Capture: compose proved post-DS principal retirement",
+                  "tree": tree["sha"],
+                  "parents": [parent],
+              },
+          )
+          ref = urllib.parse.quote(f"heads/{branch}", safe="")
+          request("PATCH", f"{api}/git/refs/{ref}", {"sha": commit["sha"], "force": True})
+          print(f"NEMBRA_PRODUCTION_COMMIT={commit['sha']}")
+          print(f"NEMBRA_PRODUCTION_TREE={tree['sha']}")
+          PY
