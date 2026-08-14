@@ -39,9 +39,13 @@ struct TuyaAlreadyTerminalObservationContinuitySourceTests {
     func watchdogLivenessDoesNotReterminalize() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = try section(in: app, from: "private func startWatchdog", to: "private func recordObservedTransportLoss")
+        let watchdogSource = String(watchdog)
+        #expect(watchdogSource.contains("captureLivenessReceipt(for: token)"))
+        #expect(watchdogSource.contains("receipt: livenessReceipt"))
+
         let body = try catchBody(
-            in: String(watchdog),
-            functionStart: "sessionLedger.observeCurrentConnection(for: token)",
+            in: watchdogSource,
+            functionStart: "sessionLedger.observeCurrentConnection(",
             errorCase: "MutationError.observationContinuityInvalidated"
         )
 
