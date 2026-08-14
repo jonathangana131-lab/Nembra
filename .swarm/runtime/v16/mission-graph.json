@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 6,
+    "classifiedPRTotal": 7,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.167,
+        "similarity": 0.169,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3313": {
@@ -1129,8 +1129,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3317,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.16,
+        "similarity": 0.277,
         "title": "[Capture P0][VALIDATION] Probe APFS sparse-image backing-file custody"
+      },
+      "3318": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3318,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.286,
+        "title": "[Capture P0][VALIDATION] Re-earn private Tuya read lease on current #3142"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1163,9 +1174,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:04:39Z",
+    "liveRefreshAt": "2026-08-14T23:04:58Z",
     "liveRefreshDuplicatesSuppressed": [
-      3317
+      3318
     ],
     "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4948,10 +4959,10 @@
       "userValue": 7
     }
   },
-  "revision": 246,
+  "revision": 247,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:04:39Z",
+  "updatedAt": "2026-08-14T23:04:58Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5027,7 +5038,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:04:39Z",
+      "updatedAt": "2026-08-14T23:04:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
