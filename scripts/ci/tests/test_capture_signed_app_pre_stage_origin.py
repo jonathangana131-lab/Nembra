@@ -138,10 +138,17 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         self.assertNotIn("build = subprocess.run(\n            guarded_command,", source)
         self.assertIn("def _process_state_for_uid(", source)
         self.assertIn("if not _numeric_principal_in_use(candidate):", source)
-        self.assertIn("def _wait_for_no_live_uid(", source)
-        self.assertIn("if not latest_live:", source)
-        self.assertIn("_wait_for_no_live_uid(uid)", source)
-        self.assertIn('["/usr/bin/pkill", "-9", "-u", str(uid), ".*"]', source)
+        self.assertIn("def _direct_local_identity_record_exists(", source)
+        self.assertIn('"eDSRecordNotFound" in detail or "-14136" in detail', source)
+        self.assertIn(
+            "if not latest_live and not latest_zombies and not latest_user_record and not latest_group_record:",
+            source,
+        )
+        self.assertEqual(
+            source.count('["/usr/bin/pkill", "-9", "-u", str(uid), ".*"]'),
+            2,
+        )
+        self.assertNotIn("_wait_for_no_live_uid(uid)", source)
         self.assertIn("_remove_local_build_identity(name, uid, require_absent=True)", source)
         self.assertIn("if detach.returncode != 0:", source)
         self.assertIn("normal non-forced quiescence", source)
@@ -408,34 +415,26 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
                     Path("/private/tmp"),
                 )
 
-    def test_verified_identity_retirement_requires_no_live_uid_or_identity_lookup(self) -> None:
+    def test_verified_identity_retirement_requires_no_process_or_direct_ds_authority(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_retirement")
-        missing = mock.Mock(side_effect=KeyError)
         with (
-            mock.patch.object(helper.pwd, "getpwnam", missing),
-            mock.patch.object(helper.pwd, "getpwuid", missing),
-            mock.patch.object(helper.grp, "getgrnam", missing),
-            mock.patch.object(helper.grp, "getgrgid", missing),
             mock.patch.object(helper, "_process_state_for_uid", return_value=((), ())),
+            mock.patch.object(helper, "_direct_local_identity_record_exists", return_value=False),
         ):
             helper._assert_local_build_identity_retired("nembrabuildtest", 55001)
 
-        with (
-            mock.patch.object(helper.pwd, "getpwnam", missing),
-            mock.patch.object(helper.pwd, "getpwuid", missing),
-            mock.patch.object(helper.grp, "getgrnam", missing),
-            mock.patch.object(helper.grp, "getgrgid", missing),
-            mock.patch.object(helper, "_process_state_for_uid", return_value=((1234,), ())),
-            self.assertRaises(helper.BuildOriginCustodyError),
-        ):
-            helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
+        for process_state in (((1234,), ()), ((), (1234,))):
+            with (
+                self.subTest(process_state=process_state),
+                mock.patch.object(helper, "_process_state_for_uid", return_value=process_state),
+                mock.patch.object(helper, "_direct_local_identity_record_exists", return_value=False),
+                self.assertRaises(helper.BuildOriginCustodyError),
+            ):
+                helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
 
         with (
-            mock.patch.object(helper.pwd, "getpwnam", return_value=object()),
-            mock.patch.object(helper.pwd, "getpwuid", missing),
-            mock.patch.object(helper.grp, "getgrnam", missing),
-            mock.patch.object(helper.grp, "getgrgid", missing),
             mock.patch.object(helper, "_process_state_for_uid", return_value=((), ())),
+            mock.patch.object(helper, "_direct_local_identity_record_exists", return_value=True),
             self.assertRaises(helper.BuildOriginCustodyError),
         ):
             helper._assert_local_build_identity_retired("nembrabuildtest", 55001, timeout=0)
@@ -443,13 +442,31 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         with self.assertRaises(helper.BuildOriginCustodyError):
             helper._assert_local_build_identity_retired("nembrabuildtest", 0)
 
-    def test_strict_identity_removal_proves_zero_live_uid_before_directory_service_deletion(self) -> None:
+    def test_direct_ds_record_classifier_is_fail_closed(self) -> None:
+        helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_ds_classifier")
+        present = mock.Mock(returncode=0, stdout="record", stderr="")
+        missing = mock.Mock(returncode=1, stdout="", stderr="eDSRecordNotFound: -14136")
+        ambiguous = mock.Mock(returncode=1, stdout="", stderr="permission denied")
+        with mock.patch.object(helper.subprocess, "run", return_value=present):
+            self.assertTrue(helper._direct_local_identity_record_exists("Users", "nembrabuildtest"))
+        with mock.patch.object(helper.subprocess, "run", return_value=missing):
+            self.assertFalse(helper._direct_local_identity_record_exists("Users", "nembrabuildtest"))
+        with (
+            mock.patch.object(helper.subprocess, "run", return_value=ambiguous),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._direct_local_identity_record_exists("Users", "nembrabuildtest")
+
+    def test_strict_identity_removal_deletes_ds_before_final_uid_kill_and_verification(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_strict_retirement")
         events: list[str] = []
+        pkill_count = 0
 
         def run_side_effect(argv, **_kwargs):
+            nonlocal pkill_count
             if argv[:3] == ["/usr/bin/pkill", "-9", "-u"]:
-                events.append("pkill")
+                pkill_count += 1
+                events.append(f"pkill-{pkill_count}")
             elif argv[:3] == ["/usr/bin/dscl", ".", "-delete"]:
                 if argv[3].startswith("/Users/"):
                     events.append("delete-user")
@@ -457,17 +474,12 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
                     events.append("delete-group")
             return mock.Mock(returncode=0)
 
-        def wait_side_effect(_uid, **_kwargs):
-            events.append("zero-live")
-            return ()
-
         def verify_side_effect(_name, _uid):
-            events.append("verify-lookups")
+            events.append("verify-retired")
 
         with (
             mock.patch.object(helper.sys, "platform", "darwin"),
             mock.patch.object(helper.subprocess, "run", side_effect=run_side_effect),
-            mock.patch.object(helper, "_wait_for_no_live_uid", side_effect=wait_side_effect),
             mock.patch.object(
                 helper,
                 "_assert_local_build_identity_retired",
@@ -476,17 +488,33 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
         ):
             helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
 
-        self.assertLess(events.index("pkill"), events.index("zero-live"))
-        self.assertLess(events.index("zero-live"), events.index("delete-user"))
+        self.assertLess(events.index("pkill-1"), events.index("delete-user"))
         self.assertLess(events.index("delete-user"), events.index("delete-group"))
-        self.assertLess(events.index("delete-group"), events.index("verify-lookups"))
+        self.assertLess(events.index("delete-group"), events.index("pkill-2"))
+        self.assertLess(events.index("pkill-2"), events.index("verify-retired"))
 
-    def test_strict_identity_removal_rejects_unclassifiable_pkill_failure(self) -> None:
+    def test_strict_identity_removal_rejects_unclassifiable_initial_or_final_pkill_failure(self) -> None:
         helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_pkill_failure")
         failed = mock.Mock(returncode=3)
         with (
             mock.patch.object(helper.sys, "platform", "darwin"),
             mock.patch.object(helper.subprocess, "run", return_value=failed),
+            self.assertRaises(helper.BuildOriginCustodyError),
+        ):
+            helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
+
+        calls = 0
+
+        def final_failure(argv, **_kwargs):
+            nonlocal calls
+            if argv[:3] == ["/usr/bin/pkill", "-9", "-u"]:
+                calls += 1
+                return mock.Mock(returncode=0 if calls == 1 else 3)
+            return mock.Mock(returncode=0)
+
+        with (
+            mock.patch.object(helper.sys, "platform", "darwin"),
+            mock.patch.object(helper.subprocess, "run", side_effect=final_failure),
             self.assertRaises(helper.BuildOriginCustodyError),
         ):
             helper._remove_local_build_identity("nembrabuildtest", 55001, require_absent=True)
