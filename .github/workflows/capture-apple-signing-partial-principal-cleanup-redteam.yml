@@ -1,0 +1,47 @@
+name: Capture Apple signing partial-principal cleanup red team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py
+      - .github/workflows/capture-apple-signing-partial-principal-cleanup-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  partial-principal-cleanup-redteam:
+    name: Reject partial synthetic-principal residue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact validation parent and diagnostic scope
+        shell: bash
+        env:
+          EXACT_PARENT: 963967e1986ae60f6414b351571d7ea0af3c5121
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-apple-signing-partial-principal-cleanup-redteam.yml \
+            scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; source=Path("scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py").read_text(encoding="utf-8"); compile(source, "<capture-bootstrap-partial-principal-redteam>", "exec", dont_inherit=True)'
+
+      - name: Require fail-closed partial principal cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py
