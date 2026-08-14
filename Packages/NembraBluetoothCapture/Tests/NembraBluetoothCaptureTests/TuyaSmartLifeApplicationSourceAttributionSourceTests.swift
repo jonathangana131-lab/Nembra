@@ -15,7 +15,7 @@ extension TuyaSecureLinkProductSurfaceSourceTests {
         let connectCall = String(try applicationSourceAttributionSection(
             in: source,
             from: "newDriver.connect(",
-            to: "            } catch {"
+            to: "    private func authenticated(token: TuyaReadOnlyConnectionToken) async"
         ))
         let driverBody = String(try applicationSourceAttributionSection(
             in: source,
