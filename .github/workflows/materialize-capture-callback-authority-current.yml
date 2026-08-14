@@ -1,0 +1,212 @@
+name: Materialize current Capture callback authority
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/materialize-capture-callback-authority-current.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-capture-callback-authority-current-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact chronology donor
+        shell: bash
+        env:
+          EXPECTED_PARENT: d139c09e011f71482d6cdf13fdd40220472404c7
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          git diff --name-only "$EXPECTED_PARENT"...HEAD > /tmp/materializer-scope
+          test "$(wc -l < /tmp/materializer-scope | tr -d ' ')" = 1
+          grep -Fxq '.github/workflows/materialize-capture-callback-authority-current.yml' /tmp/materializer-scope
+
+      - name: Materialize exact callback-authority product delta
+        shell: bash
+        env:
+          SOURCE_TEST_COMMIT: 988854cdb171f86ce36c19f99d48471bb329d504
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          ledger_path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift')
+          source_test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift')
+          app = app_path.read_text()
+          ledger = ledger_path.read_text()
+          source_test = source_test_path.read_text()
+
+          def once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one exact match, found {count}')
+              return text.replace(old, new, 1)
+
+          # Exact driver protocol: add a dedicated fail-closed source-authority channel.
+          app = once(
+              app,
+              '''        onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,\n        success: @escaping () -> Void,''',
+              '''        onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,\n        sourceAuthorityFailure: @escaping () -> Void,\n        success: @escaping () -> Void,''',
+              'driver protocol source-failure parameter'
+          )
+
+          # Exact controller call: source mismatch retirement is scheduled only after the driver
+          # has synchronously latched application forwarding closed.
+          app = once(
+              app,
+              '''                        self.applicationUpdateAdmissionTail = admissionTask\n                    },\n                    success: { [weak self] in''',
+              '''                        self.applicationUpdateAdmissionTail = admissionTask\n                    },\n                    sourceAuthorityFailure: { [weak self] in\n                        guard let self else { return }\n                        Task { @MainActor [weak self] in\n                            await self?.invalidateSourceAuthority(\n                                token: token,\n                                message: "SmartLife delivered application data without the exact selected-device source identity. The generation was retired without counting that payload.",\n                                kind: "sdk_application_source_identity_rejected"\n                            )\n                        }\n                    },\n                    success: { [weak self] in''',
+              'controller source-failure closure'
+          )
+
+          # Driver owns the expected device identity and latches forwarding closed before handing
+          # the source failure back to the controller.
+          app = once(
+              app,
+              '''private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDeviceDelegate {\n    private var device: ThingSmartDevice?\n    private var onApplicationUpdate: (@MainActor ([String: String]) -> Void)?''',
+              '''private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDeviceDelegate {\n    private var device: ThingSmartDevice?\n    private var expectedDeviceID: String?\n    private var onApplicationUpdate: (@MainActor ([String: String]) -> Void)?\n    private var onSourceAuthorityFailure: (() -> Void)?''',
+              'driver authority fields'
+          )
+          app = once(
+              app,
+              '''        onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,\n        success: @escaping () -> Void,\n        failure: @escaping () -> Void\n    ) {\n        guard OfficialTuyaFactory.bootstrap() else {''',
+              '''        onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,\n        sourceAuthorityFailure: @escaping () -> Void,\n        success: @escaping () -> Void,\n        failure: @escaping () -> Void\n    ) {\n        guard OfficialTuyaFactory.bootstrap() else {''',
+              'driver implementation source-failure parameter'
+          )
+          app = once(
+              app,
+              '''        self.onApplicationUpdate = onApplicationUpdate\n        device = ThingSmartDevice(deviceId: deviceID)''',
+              '''        expectedDeviceID = deviceID\n        self.onApplicationUpdate = onApplicationUpdate\n        onSourceAuthorityFailure = sourceAuthorityFailure\n        device = ThingSmartDevice(deviceId: deviceID)''',
+              'driver expected device binding'
+          )
+          app = once(
+              app,
+              '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {\n        guard let dps, !dps.isEmpty else { return }''',
+              '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {\n        guard let callbackDeviceID = device?.deviceModel.devId,\n              callbackDeviceID == expectedDeviceID else {\n            onApplicationUpdate = nil\n            let sourceAuthorityFailure = onSourceAuthorityFailure\n            onSourceAuthorityFailure = nil\n            sourceAuthorityFailure?()\n            return\n        }\n        guard let dps, !dps.isEmpty else { return }''',
+              'driver callback identity fence'
+          )
+
+          # Seal non-empty occurrence and chronology as one opaque receipt event. The shipping
+          # async consumer no longer accepts a second caller-selected Bool.
+          app = once(
+              app,
+              '''                            applicationReceipt = try self.sessionLedger.captureApplicationReceipt(\n                                isNonEmpty: true,\n                                for: token\n                            )''',
+              '''                            applicationReceipt = try self.sessionLedger.captureApplicationReceipt(for: token)''',
+              'app application receipt issuance'
+          )
+          app = once(
+              app,
+              '''            try await sessionLedger.recordApplicationUpdate(\n                isNonEmpty: !update.isEmpty,\n                receipt: receipt,\n                for: token\n            )''',
+              '''            try await sessionLedger.recordApplicationUpdate(\n                receipt: receipt,\n                for: token\n            )''',
+              'app application receipt consumption'
+          )
+
+          ledger = once(
+              ledger,
+              '''    public nonisolated func captureApplicationReceipt(\n        isNonEmpty: Bool,\n        for token: TuyaReadOnlyConnectionToken\n    ) throws -> TuyaReadOnlyApplicationReceipt {\n        try receiptAuthority.captureApplicationReceipt(isNonEmpty: isNonEmpty, for: token)\n    }''',
+              '''    public nonisolated func captureApplicationReceipt(\n        for token: TuyaReadOnlyConnectionToken\n    ) throws -> TuyaReadOnlyApplicationReceipt {\n        try receiptAuthority.captureApplicationReceipt(for: token)\n    }''',
+              'public application receipt issuance'
+          )
+          ledger = once(
+              ledger,
+              '''    public func recordApplicationUpdate(\n        isNonEmpty: Bool,\n        receipt: TuyaReadOnlyApplicationReceipt,\n        for token: TuyaReadOnlyConnectionToken\n    ) throws {\n        try requireCurrent(token)\n        let now = try receiptAuthority.consumeApplicationReceipt(receipt, for: token)\n        guard case .authenticated = authenticationState else {\n            throw MutationError.authenticationRequired\n        }\n        guard isNonEmpty else {\n            throw MutationError.emptyApplicationUpdate\n        }\n\n        try admitApplicationUpdate(at: now)\n    }''',
+              '''    public func recordApplicationUpdate(\n        receipt: TuyaReadOnlyApplicationReceipt,\n        for token: TuyaReadOnlyConnectionToken\n    ) throws {\n        try requireCurrent(token)\n        let now = try receiptAuthority.consumeApplicationReceipt(receipt, for: token)\n        guard case .authenticated = authenticationState else {\n            throw MutationError.authenticationRequired\n        }\n\n        try admitApplicationUpdate(at: now)\n    }''',
+              'public application receipt consumption'
+          )
+          ledger = once(
+              ledger,
+              '''        func captureApplicationReceipt(\n            isNonEmpty: Bool,\n            for token: TuyaReadOnlyConnectionToken\n        ) throws -> TuyaReadOnlyApplicationReceipt {\n            lock.lock()\n            defer { lock.unlock() }\n            try requireActive(token)\n            guard isNonEmpty else { throw MutationError.emptyApplicationUpdate }''',
+              '''        func captureApplicationReceipt(\n            for token: TuyaReadOnlyConnectionToken\n        ) throws -> TuyaReadOnlyApplicationReceipt {\n            lock.lock()\n            defer { lock.unlock() }\n            try requireActive(token)''',
+              'receipt authority non-empty event issuance'
+          )
+
+          # Update only the new receipt runtime suite's shipping API calls; package-internal legacy
+          # deterministic helpers intentionally retain their Bool contract for existing tests.
+          receipt_test_path = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptChronologyTests.swift')
+          receipt_test = receipt_test_path.read_text()
+          receipt_test = receipt_test.replace('captureApplicationReceipt(isNonEmpty: true, for: token)', 'captureApplicationReceipt(for: token)')
+          receipt_test = receipt_test.replace('recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)', 'recordApplicationUpdate(receipt: receipt, for: token)')
+          receipt_test = receipt_test.replace('recordApplicationUpdate(isNonEmpty: true, receipt: laterApplication, for: token)', 'recordApplicationUpdate(receipt: laterApplication, for: token)')
+          receipt_test = receipt_test.replace('recordApplicationUpdate(isNonEmpty: true, receipt: foreignReceipt, for: secondToken)', 'recordApplicationUpdate(receipt: foreignReceipt, for: secondToken)')
+          receipt_test_path.write_text(receipt_test)
+
+          # Pin the exact ordering that regressed once during #3292: a pending earlier application
+          # receipt may not refresh watchdog cadence unless a liveness receipt was actually issued.
+          cadence_anchor = '''        #expect(packageReceipt.lowerBound < pendingCatch.lowerBound)\n        #expect(pendingCatch.lowerBound < ledgerMutation.lowerBound)'''
+          cadence_replacement = '''        let cadence = try #require(watchdog.range(of: "previousPollUptime = now", range: pendingCatch.upperBound..<watchdog.endIndex))\n        #expect(packageReceipt.lowerBound < pendingCatch.lowerBound)\n        #expect(pendingCatch.lowerBound < cadence.lowerBound)\n        #expect(cadence.lowerBound < ledgerMutation.lowerBound)'''
+          source_test = once(source_test, cadence_anchor, cadence_replacement, 'watchdog cadence source pin')
+          source_test_path.write_text(source_test)
+
+          app_path.write_text(app)
+          ledger_path.write_text(ledger)
+          PY
+
+          git fetch --no-tags origin "$SOURCE_TEST_COMMIT"
+          git show "$SOURCE_TEST_COMMIT:Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift" \
+            > Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift
+
+          # Strengthen the borrowed source oracle for occurrence custody and the current API shape.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift')
+          s = p.read_text()
+          needle = '''        #expect(!callback.contains("publishDps"))\n        #expect(!callback.contains("writeValue"))\n'''
+          replacement = needle + '''\n        // Non-empty occurrence and chronology are one package-issued event. The later async\n        // consumer may not receive a second caller-selected occurrence bit.\n        #expect(connectCall.contains("captureApplicationReceipt(for: token)"))\n        #expect(!connectCall.contains("captureApplicationReceipt(isNonEmpty:"))\n        #expect(source.contains("public func recordApplicationUpdate(\\n        receipt: TuyaReadOnlyApplicationReceipt,"))\n        #expect(!source.contains("public func recordApplicationUpdate(\\n        isNonEmpty: Bool,\\n        receipt: TuyaReadOnlyApplicationReceipt,"))\n'''
+          if s.count(needle) != 1:
+              raise SystemExit('source attribution oracle anchor mismatch')
+          p.write_text(s.replace(needle, replacement, 1))
+          PY
+
+          rm .github/workflows/materialize-capture-callback-authority-current.yml
+
+      - name: Validate bounded materialized source shape
+        shell: bash
+        env:
+          EXPECTED_PARENT: d139c09e011f71482d6cdf13fdd40220472404c7
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/materialize-capture-callback-authority-current.yml
+          grep -Fq 'guard let callbackDeviceID = device?.deviceModel.devId' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'callbackDeviceID == expectedDeviceID' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sourceAuthorityFailure:' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'captureApplicationReceipt(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'captureApplicationReceipt(isNonEmpty: true' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -Fq 'isNonEmpty: !update.isEmpty' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'previousPollUptime = now' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'TuyaSmartLifeApplicationSourceAttributionSourceTests.swift' <(git status --short --untracked-files=all)
+
+          git diff --name-only "$EXPECTED_PARENT" -- \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptChronologyTests.swift \
+            > /tmp/existing
+          test "$(wc -l < /tmp/existing | tr -d ' ')" = 4
+
+      - name: Commit materialized product successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git commit -m 'Capture V16.1: seal exact SmartLife callback authority'
+          git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
