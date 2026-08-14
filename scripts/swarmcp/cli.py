@@ -8,6 +8,7 @@ from .mission_graph import *
 from .v16_ops import *
 from .migration_v16 import *
 from .v16_1_persistence_v2 import go_cycle, recommend_mission_packets
+from .foundry_v17 import RepositoryPressure, admission_plan
 from .resources import release_resource
 from .enforcement import (
     acquire_resources_for_claim,
@@ -36,6 +37,7 @@ def parser():
     p=argparse.ArgumentParser(description='Nembra Swarm Control Plane');sub=p.add_subparsers(dest='cmd',required=True)
     q=sub.add_parser('simulate');q.add_argument('--workers',type=int,default=30)
     q=sub.add_parser('v16-simulate');q.add_argument('--workers',type=int,default=30)
+    q=sub.add_parser('v17-admission');q.add_argument('--workers',type=int,default=20);q.add_argument('--ready-builders',type=int,required=True);q.add_argument('--active-builders',type=int,required=True);q.add_argument('--review-backlog',type=int,required=True);q.add_argument('--integration-backlog',type=int,required=True);q.add_argument('--retirement-candidates',type=int,required=True);q.add_argument('--open-prs',type=int,required=True);q.add_argument('--open-branches',type=int,required=True);q.add_argument('--red-main',action='store_true')
     names=('remote-validate','register','claim','takeover','heartbeat','release','event','recommend','board','resource-acquire','resource-heartbeat','resource-release','v16-init','v16-status','v16-recommend','v16-go','v16-surge','v16-migrate','v16-captain','v16-cleanup-plan','v16-claim','v16-takeover','v16-work-heartbeat','v16-work-release')
     for name in names:
         q=sub.add_parser(name);remote(q)
@@ -63,6 +65,8 @@ def main(argv=None):
         a=parser().parse_args(argv)
         if a.cmd=='simulate':r=run_adversarial_simulation(a.workers);print(pretty_json(r),end='');return 0 if r['passed'] else 1
         if a.cmd=='v16-simulate':r=run_v16_adversarial_simulation(a.workers,utc_now());print(pretty_json(r),end='');return 0 if r['passed'] else 1
+        if a.cmd=='v17-admission':
+            r=admission_plan(requested_workers=a.workers,ready_builders=a.ready_builders,active_builders=a.active_builders,review_backlog=a.review_backlog,integration_backlog=a.integration_backlog,retirement_candidates=a.retirement_candidates,pressure=RepositoryPressure(a.open_prs,a.open_branches),red_main=a.red_main);print(pretty_json(r),end='');return 0
         config=trusted_config(a);s=store(a,config)
         if a.cmd=='remote-validate':
             l,c,w,e,r=snapshot(s);errs=validate_state_snapshot(l,c,w,e,r,utc_now());print('\n'.join('ERROR: '+x for x in errs) if errs else f'validated lanes={len(l)} claims={len(c)} workers={len(w)} events={len(e)} resources={len(r)}');return 1 if errs else 0
