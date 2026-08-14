@@ -1165,17 +1165,6 @@
         "similarity": 0.398,
         "title": "[Capture P0][VISUAL RECOVERY] Re-anchor iPhone 12 evidence to ba615 exact product"
       },
-      "3327": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "dd7e7d793a5513cb53d672a12cead05b5eae265d",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3327,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.488,
-        "title": "[Capture P0][VALIDATION] Reject blank light visual evidence"
-      },
       "3328": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1184,8 +1173,19 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3328,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.545,
+        "similarity": 0.372,
         "title": "[Capture P0][VISUAL][VALIDATION] Reject blank light Capture evidence"
+      },
+      "3329": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-exact-private-guard-current-contract",
+        "pr": 3329,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.0,
+        "title": "[Capture P0][VALIDATION] Repair exact private-guard current contract"
       },
       "3331": {
         "classification": "validation",
@@ -1195,7 +1195,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3331,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.458,
+        "similarity": 0.392,
         "title": "[Capture P0][VALIDATION] Reject blank light visual evidence on ba615 recovery"
       }
     },
@@ -1229,7 +1229,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:57:19Z",
+    "liveRefreshAt": "2026-08-14T23:57:35Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -5014,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 326,
+  "revision": 327,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:57:19Z",
+  "updatedAt": "2026-08-14T23:57:35Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5093,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:57:19Z",
+      "updatedAt": "2026-08-14T23:57:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
