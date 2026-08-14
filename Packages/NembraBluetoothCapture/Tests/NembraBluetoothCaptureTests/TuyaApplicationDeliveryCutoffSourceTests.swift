@@ -5,10 +5,10 @@ import Testing
 /// Expected-red source contract for the exact boundary where SmartLife delivers an application
 /// callback before the app creates a new Task. A callback delivered before the package-owned
 /// incomplete-observation cutoff must not become "late" merely because its async ledger admission
-/// is scheduled after the watchdog. The receipt time must be package-owned/opaque rather than a
-/// freely caller-selected scalar timestamp.
+/// is scheduled after the watchdog. Delivery chronology must be bound to the exact ledger instance,
+/// non-forgeable by raw timestamps, and one-shot when consumed.
 extension TuyaApplicationTimeoutPresentationRaceSourceTests {
-    @Test("SmartLife delivery is receipted before the first async hop and blocks watchdog overtaking")
+    @Test("SmartLife delivery crosses the synchronous admission boundary before any new MainActor task")
     func deliveredApplicationCallbackOwnsItsCutoffBeforeTaskScheduling() throws {
         let app = try deliveryCutoffReadRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let connection = String(try deliveryCutoffSection(
@@ -22,35 +22,49 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             to: "success: { [weak self] in"
         ))
 
+        #expect(callback.contains("admitApplicationUpdateCallback(update, token: token)"))
+        #expect(!callback.contains("Task { @MainActor"))
+
+        let admission = String(try deliveryCutoffSection(
+            in: app,
+            from: "private func admitApplicationUpdateCallback(",
+            to: "private func receivedApplicationUpdate("
+        ))
         let receipt = try deliveryCutoffRequiredOffset(
-            "let applicationReceipt = TuyaReadOnlyApplicationReceipt.capture(for: token)",
-            in: callback
+            "let applicationReceipt = sessionLedger.captureApplicationReceipt(for: token)",
+            in: admission
         )
         let inFlight = try deliveryCutoffRequiredOffset(
             "applicationUpdateAdmissionsInFlight += 1",
-            in: callback,
+            in: admission,
             after: receipt
         )
         let asyncHop = try deliveryCutoffRequiredOffset(
             "Task { @MainActor",
-            in: callback,
+            in: admission,
             after: inFlight
         )
         let release = try deliveryCutoffRequiredOffset(
             "defer { self.applicationUpdateAdmissionsInFlight -= 1 }",
-            in: callback,
+            in: admission,
             after: asyncHop
         )
-        let admission = try deliveryCutoffRequiredOffset(
+        let receiverCall = try deliveryCutoffRequiredOffset(
             "receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)",
-            in: callback,
+            in: admission,
             after: release
         )
 
         #expect(receipt < inFlight)
         #expect(inFlight < asyncHop)
         #expect(asyncHop < release)
-        #expect(release < admission)
+        #expect(release < receiverCall)
+
+        // The shipping app must have exactly one delivery-receipt minting call and it must be in
+        // this synchronous callback admission path. A second app callsite would recreate a
+        // pre-mintable evidence-authority surface even if the receipt's fields stay opaque.
+        #expect(deliveryCutoffOccurrenceCount("captureApplicationReceipt(for: token)", in: app) == 1)
+        #expect(!app.contains("TuyaReadOnlyApplicationReceipt.capture"))
 
         let receiver = String(try deliveryCutoffSection(
             in: app,
@@ -68,7 +82,7 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             to: "private func recordObservedTransportLoss"
         ))
         let pendingFence = try deliveryCutoffRequiredOffset(
-            "guard self.applicationUpdateAdmissionsInFlight == 0 else {",
+            "applicationUpdateAdmissionsInFlight > 0",
             in: watchdog
         )
         let livenessMutation = try deliveryCutoffRequiredOffset(
@@ -79,8 +93,8 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
         #expect(pendingFence < livenessMutation)
     }
 
-    @Test("application receipt owns its clock and exact connection token")
-    func applicationReceiptCannotSmuggleCallerSelectedCutoffTime() throws {
+    @Test("delivery receipt is ledger-issued, token-bound, timestamp-opaque, and one-shot")
+    func applicationReceiptCannotBeCrossLedgerForgedOrReused() throws {
         let ledger = try deliveryCutoffReadRepositoryFile(
             "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift"
         )
@@ -91,11 +105,25 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
         ))
 
         #expect(receiptType.contains("fileprivate let token: TuyaReadOnlyConnectionToken"))
+        #expect(receiptType.contains("fileprivate let issuerID: UUID"))
+        #expect(receiptType.contains("fileprivate let deliveryID: UUID"))
         #expect(receiptType.contains("fileprivate let receivedAtUptimeNanoseconds: UInt64"))
-        #expect(receiptType.contains("public static func capture(for token: TuyaReadOnlyConnectionToken)"))
-        #expect(receiptType.contains("DispatchTime.now().uptimeNanoseconds"))
         #expect(!receiptType.contains("public init("))
-        #expect(!receiptType.contains("public static func capture(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:"))
+        #expect(!receiptType.contains("public static func capture"))
+
+        #expect(ledger.contains("applicationReceiptIssuerID"))
+        #expect(ledger.contains("consumedApplicationDeliveryIDs"))
+
+        let capture = String(try deliveryCutoffSection(
+            in: ledger,
+            from: "func captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken)",
+            to: "public func recordApplicationUpdate("
+        ))
+        #expect(capture.contains("DispatchTime.now().uptimeNanoseconds"))
+        #expect(capture.contains("issuerID: applicationReceiptIssuerID"))
+        #expect(capture.contains("deliveryID: UUID()"))
+        #expect(!capture.contains("receivedAtUptimeNanoseconds:"),
+                Comment(rawValue: "The public capture signature must not accept caller-selected receipt time."))
 
         let record = String(try deliveryCutoffSection(
             in: ledger,
@@ -104,11 +132,18 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
         ))
         #expect(record.contains("receipt: TuyaReadOnlyApplicationReceipt"))
         #expect(record.contains("receipt.token == token"))
+        #expect(record.contains("receipt.issuerID == applicationReceiptIssuerID"))
+        #expect(record.contains("consumedApplicationDeliveryIDs.insert(receipt.deliveryID).inserted"))
         #expect(record.contains("let now = receipt.receivedAtUptimeNanoseconds"))
         #expect(!record.contains("receivedAtUptimeNanoseconds: UInt64"))
         #expect(!record.contains("let now = try nextMonotonicObservation()"))
         #expect(record.contains("try requireContinuousAuthenticatedObservation(at: now)"))
         #expect(record.contains("try requireIncompleteObservationHorizonOpen(at: now)"))
+    }
+
+    private func deliveryCutoffOccurrenceCount(_ needle: String, in source: String) -> Int {
+        guard !needle.isEmpty else { return 0 }
+        return source.components(separatedBy: needle).count - 1
     }
 
     private func deliveryCutoffRequiredOffset(
