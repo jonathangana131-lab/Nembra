@@ -1,0 +1,84 @@
+name: Capture Current Former-Build Attested Attack Validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-former-build-attested-attack-validation.yml
+      - scripts/ci/tests/materialize_capture_former_build_attested_attacks.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-current-former-build-attested-attack-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 627236d6e73d41f326de093e0b6896b8ba4ac94a
+  CURRENT_TEST_BLOB: 5af13638af31f230bf8359c3fdc776e23c7ce79a
+  VALIDATOR_BLOB: 0f9e417c0ad6f539be1f5817be069bd3c2df00c4
+
+jobs:
+  attested-former-build-attacks:
+    name: Re-prove former-build denials with same-process credential attestation
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current carrier and validation-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-current-former-build-attested-attack-validation.yml \
+            scripts/ci/tests/materialize_capture_former_build_attested_attacks.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          test "$(git hash-object scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py)" = "$CURRENT_TEST_BLOB"
+          test "$(git hash-object scripts/ci/tests/materialize_capture_former_build_attested_attacks.py)" = "$VALIDATOR_BLOB"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize attested attackers in runner worktree only
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -m py_compile scripts/ci/tests/materialize_capture_former_build_attested_attacks.py
+          /usr/bin/python3 -B -I scripts/ci/tests/materialize_capture_former_build_attested_attacks.py materialize
+          /usr/bin/python3 -B -m py_compile scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          test "$(grep -Fc 'former_build_writable_attack = helper._run_exec_bound_build(' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py)" = 1
+          test "$(grep -Fc 'former_build_attack = helper._run_exec_bound_build(' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py)" = 1
+          test "$(grep -Fc '**structured_credentials(build_uid, build_gid, [])' scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py)" = 0
+          git diff --check
+
+      - name: Execute real-Xcode attested authority witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          out="$RUNNER_TEMP/nembra-former-build-attested-attack.log"
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py >"$out" 2>&1
+          status=$?
+          set -e
+          cat "$out"
+          test "$status" -eq 0
+          /usr/bin/python3 -B -I scripts/ci/tests/materialize_capture_former_build_attested_attacks.py verify-log "$out"
+
+      - name: Restore exact production witness bytes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout HEAD -- scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          test "$(git hash-object scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py)" = "$CURRENT_TEST_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
