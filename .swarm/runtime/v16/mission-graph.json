@@ -1064,30 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 293,
+    "classifiedPRTotal": 295,
     "classifiedPRs": {
-      "2767": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2767,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.26,
-        "title": "[Capture P0][RED TEAM] Bind sealed staging payload bytes"
-      },
-      "2775": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2775,
-        "recommendedAction": "independent-review",
-        "similarity": 0.216,
-        "title": "[Capture P0][PHYSICAL GO] Pin generated build authority onto current Final GO modules"
-      },
       "2779": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2383,7 +2361,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3265,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.39,
+        "similarity": 0.434,
         "title": "[Capture P0][VISUAL] Harden standalone iPhone 12 evidence instrument"
       },
       "3268": {
@@ -2409,15 +2387,15 @@
         "title": "[Swarm V16.2] Convert burst output into canonical integration"
       },
       "3272": {
-        "classification": "superseded",
+        "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3272,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.414,
-        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current bc0cfb0"
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.451,
+        "title": "[Capture P0][VISUAL] Current bc0cfb0 schema-8 iPhone 12 evidence"
       },
       "3274": {
         "classification": "requires-review",
@@ -2438,19 +2416,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3275,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.33,
+        "similarity": 0.331,
         "title": "[Capture P0][RED TEAM] Reject partial bootstrap principal residue"
-      },
-      "3278": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3278,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.277,
-        "title": "[Capture P0][RED TEAM] Prove signing bootstrap GID occupancy gap"
       },
       "3280": {
         "classification": "validation",
@@ -2473,6 +2440,39 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.121,
         "title": "[Capture P0][EXPECTED-RED] Require exact SmartLife callback source attribution"
+      },
+      "3284": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3284,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.312,
+        "title": "[Capture P0][RED TEAM] Prove candidate-controlled signing root executor"
+      },
+      "3285": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3285,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.32,
+        "title": "[Capture P0][RED TEAM] Re-anchor signing bootstrap GID occupancy on bf8"
+      },
+      "3286": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-physical-runbook-authority",
+        "pr": 3286,
+        "recommendedAction": "independent-review",
+        "similarity": 0.133,
+        "title": "[Capture P0][NO-GO] Restore authenticated stationary field authority"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,9 +2505,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:38:32Z",
+    "liveRefreshAt": "2026-08-14T08:40:38Z",
     "liveRefreshDuplicatesSuppressed": [
-      3278
+      3285
     ],
     "liveRefreshMainSHA": "de37ee4769022d32765bf63340f8420ee7c0e04b",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 152,
+  "revision": 153,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:40:04Z",
+  "updatedAt": "2026-08-14T08:43:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:38:32Z",
+      "updatedAt": "2026-08-14T08:40:38Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
