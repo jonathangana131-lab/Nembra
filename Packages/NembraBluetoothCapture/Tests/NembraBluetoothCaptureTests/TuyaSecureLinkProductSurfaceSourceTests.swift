@@ -68,6 +68,28 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
     }
 
+    @Test("capture-stopped receipt failures use rider-facing scooter language")
+    func captureStoppedReceiptFailuresAvoidEngineeringJargon() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let receipt = String(try section(
+            in: app,
+            from: "private func receivedApplicationUpdate(",
+            to: "private func redactedApplicationEventDetails("
+        ))
+        let surface = String(try section(
+            in: app,
+            from: "private struct SecureLinkView: View",
+            to: "private struct SecureTransfer: Transferable"
+        ))
+
+        // These controller messages are not engineering-only diagnostics: the stopped-state
+        // product surface renders test.message directly. Keep internal event kinds precise, but
+        // make the sentence shown to the rider describe scooter data and the safe restart action.
+        #expect(surface.contains("Text(test.message)"))
+        #expect(receipt.contains("mirrorAlreadyTerminalIncompleteObservationHorizon("))
+        #expect(!receipt.contains("message: \"Application receipt"))
+    }
+
     @Test("large Dynamic Type receives a recomposed stage indicator")
     func accessibilityStageRailRecomposes() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
