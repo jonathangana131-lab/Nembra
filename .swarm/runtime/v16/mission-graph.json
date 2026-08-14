@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 300,
+    "classifiedPRTotal": 299,
     "classifiedPRs": {
+      "2794": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2794,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.425,
+        "title": "[Capture P0][SECURITY] Bind private review witness to external HMAC authority"
+      },
       "2795": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2441,17 +2452,6 @@
         "similarity": 0.125,
         "title": "[Capture P0][REPAIR] Fence already-terminal mirror presentation by phase"
       },
-      "3297": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-application-delivery-occurrence-custody",
-        "pr": 3297,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.128,
-        "title": "[Capture P0][EXPECTED-RED] Seal application-delivery occurrence with chronology"
-      },
       "3302": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:36:52Z",
+    "liveRefreshAt": "2026-08-14T09:39:38Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 170,
+  "revision": 171,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:39:19Z",
+  "updatedAt": "2026-08-14T09:42:32Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:36:52Z",
+      "updatedAt": "2026-08-14T09:39:38Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
