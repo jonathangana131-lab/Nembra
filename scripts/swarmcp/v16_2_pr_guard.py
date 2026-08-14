@@ -4,6 +4,7 @@ import re
 from typing import Any, Mapping, Sequence
 
 from . import v16_1 as _v161
+from . import v16_1_pr_guard as _v161_guard
 from .v16_1 import PRAdmissionDecision, parse_swarm_pr_metadata
 
 V16_2_PR_METADATA_ENFORCEMENT_STARTED_AT = "2026-08-14T08:02:00Z"
@@ -38,10 +39,11 @@ def evaluate_pr_admission(pr: Mapping[str, Any], peers: Sequence[Mapping[str, An
     meta = parse_swarm_pr_metadata(pr)
     managed = any((meta["lane"], meta["worker"], meta["schema"], meta["protocol"]))
 
+    # V16.2 is additive. Do not reopen V16.1's post-activation unmanaged escape
+    # hatch during rollout; only PRs that were already compatible before V16.1
+    # may remain unmanaged.
     if not managed:
-        if _created_after_activation(pr):
-            return PRAdmissionDecision(False, "UPGRADE_METADATA", "PR was created after V16.2 activation and must use the swarm metadata contract")
-        return PRAdmissionDecision(True, "ALLOW_UNMANAGED", "pre-V16.2 unmanaged compatibility")
+        return _v161_guard.evaluate_pr_admission(pr, peers)
 
     if _created_after_activation(pr) and meta["protocol"] != V16_2_PROTOCOL:
         return PRAdmissionDecision(False, "UPGRADE_METADATA", "new swarm PRs must declare SWARM_PROTOCOL: 16.2")
