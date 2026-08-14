@@ -303,7 +303,6 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Every receipt is bound to this ledger issuer + exact token + unique one-shot delivery ID.
     /// Replays are rejected before payload count/latest chronology can move.
     public func recordApplicationUpdate(
-        isNonEmpty: Bool,
         receipt: TuyaReadOnlyApplicationReceipt,
         for token: TuyaReadOnlyConnectionToken
     ) throws {
@@ -312,10 +311,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
-        guard isNonEmpty else {
-            throw MutationError.emptyApplicationUpdate
-        }
 
+        // Receipt issuance already proved a non-empty trusted callback occurrence and sealed its
+        // chronology. Consumption cannot combine that event with a second caller-selected fact.
         try admitApplicationUpdate(at: now)
     }
 

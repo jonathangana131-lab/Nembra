@@ -61,6 +61,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
 
         #expect(receiver.contains("receipt: TuyaReadOnlyApplicationReceipt"))
         #expect(receiver.contains("receipt: receipt"))
+        #expect(!receiver.contains("isNonEmpty:"))
         #expect(!receiver.contains("captureApplicationReceipt("))
         #expect(!receiver.contains("applicationUpdateAdmissionsInFlight += 1"))
     }
@@ -102,6 +103,10 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(ledger.contains("self.receiptAuthority = ReceiptAuthority(nowUptimeNanoseconds: clock)"))
         #expect(ledger.contains("self.receiptAuthority = ReceiptAuthority(nowUptimeNanoseconds: nowUptimeNanoseconds)"))
         #expect(ledger.contains("public nonisolated func captureApplicationReceipt("))
+        #expect(ledger.contains("isNonEmpty: Bool"))
+        #expect(ledger.contains("guard isNonEmpty else { throw MutationError.emptyApplicationUpdate }"))
+        #expect(ledger.contains("public func recordApplicationUpdate(\n        receipt: TuyaReadOnlyApplicationReceipt,"))
+        #expect(!ledger.contains("public func recordApplicationUpdate(\n        isNonEmpty: Bool,\n        receipt: TuyaReadOnlyApplicationReceipt,"))
         #expect(ledger.contains("public nonisolated func captureLivenessReceipt("))
         #expect(ledger.contains("private let issuerID = UUID()"))
         #expect(ledger.contains("private var nextDeliverySequence: UInt64 = 0"))

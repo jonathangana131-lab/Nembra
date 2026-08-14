@@ -1483,6 +1483,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         }
                         self.applicationUpdateAdmissionTail = admissionTask
                     },
+                    sourceAuthorityFailure: { [weak self] in
+                        Task { @MainActor in
+                            guard let self else { return }
+                            await self.invalidateSourceAuthority(
+                                token: token,
+                                message: "SmartLife application callback source no longer matched the selected scooter. The generation was retired without admitting that payload.",
+                                kind: "sdk_application_callback_source_mismatch"
+                            )
+                        }
+                    },
                     success: { [weak self] in
                         Task { @MainActor in await self?.authenticated(token: token) }
                     },
@@ -1773,7 +1783,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         do {
             try await sessionLedger.recordApplicationUpdate(
-                isNonEmpty: !update.isEmpty,
                 receipt: receipt,
                 for: token
             )
@@ -2471,6 +2480,7 @@ private protocol OfficialTuyaDriver: AnyObject {
         uuid: String,
         productID: String,
         onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,
+        sourceAuthorityFailure: @escaping () -> Void,
         success: @escaping () -> Void,
         failure: @escaping () -> Void
     )
@@ -2677,13 +2687,16 @@ private final class OfficialTuyaMembershipProbe {
 @MainActor
 private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDeviceDelegate {
     private var device: ThingSmartDevice?
+    private var expectedDeviceID: String?
     private var onApplicationUpdate: (@MainActor ([String: String]) -> Void)?
+    private var onSourceAuthorityFailure: (() -> Void)?
 
     func connect(
         deviceID: String,
         uuid: String,
         productID: String,
         onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,
+        sourceAuthorityFailure: @escaping () -> Void,
         success: @escaping () -> Void,
         failure: @escaping () -> Void
     ) {
@@ -2691,7 +2704,9 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
             failure()
             return
         }
+        expectedDeviceID = deviceID
         self.onApplicationUpdate = onApplicationUpdate
+        onSourceAuthorityFailure = sourceAuthorityFailure
         device = ThingSmartDevice(deviceId: deviceID)
         device?.delegate = self
         ThingSmartBLEManager.sharedInstance().connectBLE(
@@ -2707,6 +2722,16 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
     }
 
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
+        guard let callbackDeviceID = device?.deviceModel.devId,
+              callbackDeviceID == expectedDeviceID else {
+            // Latch application forwarding closed synchronously at the SDK delegate boundary
+            // before controller retirement is scheduled; no mismatched payload may slip through.
+            onApplicationUpdate = nil
+            onSourceAuthorityFailure?()
+            onSourceAuthorityFailure = nil
+            expectedDeviceID = nil
+            return
+        }
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
         for (key, value) in Self.sortedApplicationEntries(dps) {

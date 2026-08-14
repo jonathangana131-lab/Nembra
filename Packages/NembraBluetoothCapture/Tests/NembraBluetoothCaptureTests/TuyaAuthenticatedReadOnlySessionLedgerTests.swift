@@ -417,7 +417,6 @@ private func advanceLedgerContinuously(
                 + 10_000
         )
         try await ledger.recordApplicationUpdate(
-            isNonEmpty: true,
             receipt: receipt,
             for: token
         )
@@ -436,10 +435,10 @@ private func advanceLedgerContinuously(
 
         clock.advance(to: 20)
         let receipt = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)
+        try await ledger.recordApplicationUpdate(receipt: receipt, for: token)
 
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationAdmissionInvalidOrConsumed) {
-            try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)
+            try await ledger.recordApplicationUpdate(receipt: receipt, for: token)
         }
         #expect((await ledger.currentPreflightSnapshot()).applicationPayloadCount == 1)
     }
@@ -505,7 +504,7 @@ private func advanceLedgerContinuously(
         let laterApplication = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
 
         // Deliberately execute the later actor mutation first to model actor scheduling inversion.
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: laterApplication, for: token)
+        try await ledger.recordApplicationUpdate(receipt: laterApplication, for: token)
         try await ledger.observeCurrentConnection(receipt: earlierLiveness, for: token)
 
         let snapshot = await ledger.currentPreflightSnapshot()
@@ -568,7 +567,7 @@ private func advanceLedgerContinuously(
         clock.advance(to: deadline)
         let receipt = try ledger.captureApplicationReceipt(isNonEmpty: true, for: token)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
-            try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)
+            try await ledger.recordApplicationUpdate(receipt: receipt, for: token)
         }
 
         let failed = await ledger.currentPreflightSnapshot()
