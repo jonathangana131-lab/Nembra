@@ -1,0 +1,38 @@
+name: Capture source-attribution sync-cut materializer
+
+on:
+  push:
+    branches:
+      - capture/application-delivery-cutoff-repair-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/application-delivery-cutoff-repair-sol-20260814
+          fetch-depth: 2
+          persist-credentials: true
+      - name: Close source authority synchronously before retirement task
+        env:
+          EXPECTED_PARENT: 4b176b69958d20b140910458c776e5aa8bbbb66f
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test -f scripts/ci/materialize_capture_source_attribution_sync_cut.py
+          python3 scripts/ci/materialize_capture_source_attribution_sync_cut.py
+          test ! -e scripts/ci/materialize_capture_source_attribution_sync_cut.py
+          test ! -e .github/workflows/capture-source-attribution-sync-cut-materializer.yml
+          test ! -e scripts/ci/materialize_capture_source_attribution_donor.py
+          test ! -e .github/workflows/capture-source-attribution-donor-materializer.yml
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add -A
+          git commit -m 'Capture V16.1: synchronously close mismatched SmartLife source authority'
+          git push origin HEAD:capture/application-delivery-cutoff-repair-sol-20260814
