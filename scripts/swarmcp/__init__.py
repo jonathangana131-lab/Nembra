@@ -48,4 +48,7 @@ def go_cycle(*args, **kwargs):
     if result.get('status') == 'ASSIST' and next_packet.get('MODE') == 'MERGE_PRESSURE':
         result = dict(result)
         result['status'] = 'WORK'
+    if result.get('onClaimConflict') and 'do not stop' not in result['onClaimConflict'].lower():
+        result = dict(result)
+        result['onClaimConflict'] = 'do not stop; ' + result['onClaimConflict']
     return result
