@@ -1441,12 +1441,38 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     uuid: self.tuyaUUID,
                     productID: self.productID,
                     onApplicationUpdate: { [weak self] update in
-                        guard let self, !update.isEmpty else { return }
-                        let applicationReceipt = TuyaReadOnlyApplicationReceipt.capture(for: token)
+                        guard let self,
+                              !update.isEmpty,
+                              self.currentConnectionToken == token,
+                              !self.acceptanceCutIsClosed else { return }
+
+                        let applicationReceipt: TuyaReadOnlyApplicationReceipt
+                        do {
+                            applicationReceipt = try self.sessionLedger.captureApplicationReceipt(
+                                isNonEmpty: true,
+                                for: token
+                            )
+                        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+                            return
+                        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+                            return
+                        } catch {
+                            Task { @MainActor [weak self] in
+                                await self?.invalidateInternalLifecycle(
+                                    token: token,
+                                    message: "Application callback admission failed closed before scheduler handoff: \(error.localizedDescription)",
+                                    kind: "application_delivery_admission_failed"
+                                )
+                            }
+                            return
+                        }
+
                         self.applicationUpdateAdmissionsInFlight += 1
                         let predecessor = self.applicationUpdateAdmissionTail
+                        let ledger = self.sessionLedger
                         let admissionTask = Task { @MainActor [weak self] in
                             _ = await predecessor?.value
+                            defer { ledger.releaseApplicationReceipt(applicationReceipt) }
                             guard let self else { return }
                             defer { self.applicationUpdateAdmissionsInFlight -= 1 }
                             await self.receivedApplicationUpdate(
@@ -1900,8 +1926,37 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     return
                 }
 
+                let livenessReceipt: TuyaReadOnlyLivenessReceipt
                 do {
-                    try await self.sessionLedger.observeCurrentConnection(for: token)
+                    livenessReceipt = try self.sessionLedger.captureLivenessReceipt(for: token)
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationAdmissionPending {
+                    try? await Task.sleep(for: .milliseconds(10))
+                    continue
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
+                    return
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+                    return
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "Liveness receipt issuance failed closed because monotonic chronology regressed.",
+                        kind: "liveness_receipt_clock_regressed"
+                    )
+                    return
+                } catch {
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "Liveness receipt issuance violated the current internal session lifecycle: \(error.localizedDescription)",
+                        kind: "liveness_receipt_admission_failed"
+                    )
+                    return
+                }
+
+                do {
+                    try await self.sessionLedger.observeCurrentConnection(
+                        receipt: livenessReceipt,
+                        for: token
+                    )
                     await self.refreshLedgerSnapshot()
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
                     await self.invalidateInternalLifecycle(
