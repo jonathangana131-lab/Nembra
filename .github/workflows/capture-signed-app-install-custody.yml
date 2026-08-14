@@ -10,6 +10,10 @@ on:
       - scripts/field/install_one_time_capture.command
       - scripts/ci/capture_signed_app_install_custody.py
       - scripts/ci/capture_signed_app_build_origin_custody.py
+      - scripts/ci/capture_selected_xcode_freeze.py
+      - scripts/ci/capture_selected_xcode_freeze_launcher.py
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
       - scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
       - scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
       - scripts/ci/tests/test_capture_signed_app_install_custody.py
@@ -48,13 +52,19 @@ jobs:
         run: |
           set -euo pipefail
           export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-capture-install-pycache"
+          bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -m py_compile \
             scripts/ci/capture_signed_app_install_custody.py \
             scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/capture_selected_xcode_freeze.py \
+            scripts/ci/capture_selected_xcode_freeze_launcher.py \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_signed_app_install_custody.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py \
             scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py \
             scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_device_runner_execution_subject.py
@@ -171,7 +181,10 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -m py_compile \
             scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
           sudo /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
@@ -202,7 +215,11 @@ jobs:
         run: |
           set -uo pipefail
           export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-real-xcode-origin-pycache"
-          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
           output_file="$RUNNER_TEMP/nembra-real-xcode-origin-output.txt"
           set +e
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_real_xcode_group_custody.py >"$output_file" 2>&1
