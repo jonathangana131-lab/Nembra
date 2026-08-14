@@ -1,0 +1,84 @@
+name: Materialize Capture delivery occurrence custody
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/materialize-capture-delivery-occurrence-custody.yml'
+      - 'scripts/ci/materialize_capture_delivery_occurrence_custody.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-capture-delivery-occurrence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXACT_PARENT: b0b57f3e16150032ba7cfd3b2af942596de45046
+      WORKFLOW_PATH: .github/workflows/materialize-capture-delivery-occurrence-custody.yml
+      SCRIPT_PATH: scripts/ci/materialize_capture_delivery_occurrence_custody.py
+    steps:
+      - name: Checkout immutable construction head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact accepted product parent and constructor-only delta
+        run: |
+          set -euo pipefail
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' "$WORKFLOW_PATH" "$SCRIPT_PATH" | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Collapse occurrence and chronology into one opaque delivery
+        run: |
+          set -euo pipefail
+          python3 -B "$SCRIPT_PATH"
+          rm "$WORKFLOW_PATH" "$SCRIPT_PATH"
+
+      - name: Verify bounded product delta and occurrence custody
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT"
+          git diff --name-only 29fb304613c142ba99e1259e9d612c1919309145 | LC_ALL=C sort > "$RUNNER_TEMP/final-actual"
+          printf '%s\n' \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAcceptedApplicationEvidenceSealSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationDeliveryCutoffSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptArbitrationSourceTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationReceiptAuthorityTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift \
+            | LC_ALL=C sort > "$RUNNER_TEMP/final-expected"
+          diff -u "$RUNNER_TEMP/final-expected" "$RUNNER_TEMP/final-actual"
+          test ! -e "$WORKFLOW_PATH"
+          test ! -e "$SCRIPT_PATH"
+          grep -Fq 'nonisolated public func captureApplicationDelivery' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'nonEmptyApplicationDeliveryOccurred: Bool' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'public func recordApplicationUpdate(' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          grep -Fq 'delivery: TuyaReadOnlyApplicationReceipt' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+          ! grep -A10 -F 'public func recordApplicationUpdate(' Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift | grep -Fq 'isNonEmpty: Bool'
+          grep -Fq 'captureApplicationDelivery(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(grep -Fc 'captureApplicationDelivery(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift)" -eq 1
+          grep -Fq 'recordApplicationUpdate(delivery: delivery, for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit product successor and retire constructor
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-delivery-occurrence-materializer'
+          git config user.email 'nembra-delivery-occurrence-materializer@users.noreply.github.com'
+          git add -A
+          git commit -m 'capture: seal application occurrence with delivery chronology'
+          git push origin "HEAD:$BRANCH"
