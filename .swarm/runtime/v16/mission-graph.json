@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 70,
+    "classifiedPRTotal": 69,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1594,17 +1594,6 @@
         "similarity": 0.248,
         "title": "[es80-dp-numeric] Evaluate explicit numeric hypotheses after marker pairing"
       },
-      "286": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 286,
-        "recommendedAction": "independent-review",
-        "similarity": 0.1,
-        "title": "[es80-tuya-offline] Recover packet-zero restarts on chronology parent"
-      },
       "288": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1867,7 +1856,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T11:01:00Z",
+    "liveRefreshAt": "2026-08-14T11:01:32Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5650,10 +5639,10 @@
       "userValue": 7
     }
   },
-  "revision": 189,
+  "revision": 190,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T11:01:11Z",
+  "updatedAt": "2026-08-14T11:01:43Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5729,7 +5718,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T11:01:00Z",
+      "updatedAt": "2026-08-14T11:01:32Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
