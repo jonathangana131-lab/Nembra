@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 288,
     "classifiedPRs": {
-      "2719": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2719,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.26,
-        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
-      },
       "2733": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2471,8 +2460,19 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3266,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.17,
+        "similarity": 0.453,
         "title": "[Capture P0][RED TEAM] Prove export local-BLE proof-state ambiguity"
+      },
+      "3267": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3267,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.494,
+        "title": "[Capture P0][TRUTH] Make exported local-BLE proof explicit"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T07:46:23Z",
+    "liveRefreshAt": "2026-08-14T07:49:31Z",
     "liveRefreshDuplicatesSuppressed": [
       3262
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 141,
+  "revision": 142,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T07:49:08Z",
+  "updatedAt": "2026-08-14T07:52:08Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T07:46:23Z",
+      "updatedAt": "2026-08-14T07:49:31Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
