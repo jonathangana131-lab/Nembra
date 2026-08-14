@@ -4,10 +4,10 @@
 SOURCE BYTES ARE NOT PRIVILEGED AUTHORITY MERELY BECAUSE THEY LIVE IN GIT.
 
 This program becomes an authority boundary only after a human administrator installs
-reviewed bytes at the canonical root-owned broker path and separately installs a
-root-owned policy at POLICY_PATH. The field checkout cannot select a policy path,
-authorize a source SHA, authorize a root subject, select the root entry subject, install
-this broker, or spend sudo from this program.
+reviewed bytes at the compiled canonical broker path and separately installs a root-owned
+policy at POLICY_PATH. The field checkout cannot select either path, authorize a source
+SHA, authorize a root subject, select the root entry subject, install this broker, or
+spend sudo from this program.
 
 The broker authenticates the COMPLETE privileged Python subject bundle against the
 independently installed policy before executing the one policy-selected entry subject.
@@ -37,6 +37,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 
+CANONICAL_BROKER_PATH = Path("/Library/PrivilegedHelperTools/com.nembra.capture-root-broker")
 POLICY_PATH = Path("/Library/NembraCaptureAuthority/v1/policy.json")
 POLICY_ROOT = Path("/Library/NembraCaptureAuthority/v1")
 POLICY_SCHEMA = 1
@@ -127,6 +128,28 @@ def _validate_directory_stat(info: os.stat_result, label: str) -> None:
     _require(stat.S_ISDIR(info.st_mode), f"{label} is not a directory")
     _require(info.st_uid == 0 and info.st_gid == 0, f"{label} is not root:wheel owned")
     _require((stat.S_IMODE(info.st_mode) & 0o022) == 0, f"{label} is group/world writable")
+
+
+def _validate_broker_stat(info: os.stat_result) -> None:
+    _require(stat.S_ISREG(info.st_mode), "installed broker is not one regular file")
+    _require(info.st_uid == 0 and info.st_gid == 0, "installed broker is not root:wheel owned")
+    _require(stat.S_IMODE(info.st_mode) == 0o555, "installed broker mode must be exactly 0555")
+
+
+def _validate_installed_broker() -> None:
+    invoked_path = Path(os.path.abspath(__file__))
+    _require(invoked_path == CANONICAL_BROKER_PATH, "broker is not executing from the canonical installed path")
+    for path in (Path("/Library"), CANONICAL_BROKER_PATH.parent):
+        try:
+            info = os.lstat(path)
+        except OSError as error:
+            raise BrokerError(f"trusted broker directory is unavailable: {path}") from error
+        _validate_directory_stat(info, str(path))
+    try:
+        broker_info = os.lstat(CANONICAL_BROKER_PATH)
+    except OSError as error:
+        raise BrokerError("canonical installed broker is unavailable") from error
+    _validate_broker_stat(broker_info)
 
 
 def _validate_policy_stat(info: os.stat_result) -> None:
@@ -285,6 +308,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _require(sys.flags.isolated == 1, "privileged broker requires isolated Python (-I)")
         _require(sys.platform == "darwin", "privileged broker requires macOS")
         _require(os.geteuid() == 0 and os.getuid() == 0, "privileged broker requires real/effective uid 0")
+        _validate_installed_broker()
         args = _parse(sys.argv[1:] if argv is None else argv)
         policy = _load_installed_policy()
         approved_subjects = _parse_and_authorize_bundle(policy, _read_bundle_stdin())
