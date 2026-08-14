@@ -356,11 +356,11 @@ def root_main() -> dict[str, object]:
     os.chown(root_dir, 0, 0)
     os.chmod(root_dir, 0o755)
     rule_path = SUDOERS_DIR / f"nembra-trusted-bootstrap-hardening-{numeric_id}"
-    identity_created = False
+    identity_materialization_attempted = False
 
     try:
+        identity_materialization_attempted = True
         create_identity(user, numeric_id)
-        identity_created = True
         launcher, invocation_log, _body, digest = write_root_subject(root_dir)
         install_argument_free_sudoers_rule(user, launcher, digest, rule_path)
 
@@ -392,7 +392,7 @@ def root_main() -> dict[str, object]:
     finally:
         if rule_path.exists() or rule_path.is_symlink():
             rule_path.unlink()
-        if identity_created:
+        if identity_materialization_attempted:
             delete_identity_after_process_retirement(user, numeric_id)
             evidence["numericUidProcessesRetiredBeforeDeletion"] = True
             evidence["numericUidProcessFreeAfterDeletion"] = True
