@@ -2127,6 +2127,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
+        let presentationOwnerRequestID = officialConnectionRequestID
         watchdog?.cancel()
         watchdog = nil
         currentConnectionToken = nil
@@ -2134,6 +2135,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
+        guard officialConnectionRequestID == presentationOwnerRequestID,
+              phase == .observing else { return }
         phase = .failed
         self.message = message
         log(kind, ["generation": String(token.diagnosticGeneration)])
@@ -2149,6 +2152,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
+        let presentationOwnerRequestID = officialConnectionRequestID
         watchdog?.cancel()
         watchdog = nil
         currentConnectionToken = nil
@@ -2158,6 +2162,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
+        guard officialConnectionRequestID == presentationOwnerRequestID,
+              phase == .observing else { return }
         phase = .failed
         self.message = message
         log(kind, ["generation": String(token.diagnosticGeneration)])
