@@ -1118,7 +1118,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.057,
+        "similarity": 0.053,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3317": {
@@ -1168,19 +1168,13 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [
-      {
-        "from": "eb4034dc2961cdb496cffb7a95f05c77c341c2a2",
-        "to": "4c394b27bf61cecccc656ad55444c006efdc2726",
-        "workItemId": "live-pr-3142"
-      }
-    ],
+    "livePRHeadUpdates": [],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:05:15Z",
+    "liveRefreshAt": "2026-08-14T23:05:30Z",
     "liveRefreshDuplicatesSuppressed": [
       3318
     ],
@@ -4965,10 +4959,10 @@
       "userValue": 7
     }
   },
-  "revision": 248,
+  "revision": 249,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:05:15Z",
+  "updatedAt": "2026-08-14T23:05:30Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5044,7 +5038,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:05:15Z",
+      "updatedAt": "2026-08-14T23:05:30Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
