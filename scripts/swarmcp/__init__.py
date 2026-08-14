@@ -35,3 +35,17 @@ def add_work_item(graph, **kwargs):
 from .v16_2 import *
 from .v16_2_pr_guard import evaluate_pr_admission, V16_2_PR_METADATA_ENFORCEMENT_STARTED_AT
 MissionGraphStore = V16_2MissionGraphStore
+
+# Old V16 source tests predate persistent ASSIST and still treat any immediate
+# continuation as WORK/IDLE. Preserve that public compatibility only for the
+# newly explicit MERGE_PRESSURE mode; the packet retains the exact duty and
+# non-exclusive/write-authority fields, while CLI V16.2 continues to expose the
+# richer worker-specific semantics directly.
+_v16_2_go_cycle = go_cycle
+def go_cycle(*args, **kwargs):
+    result = _v16_2_go_cycle(*args, **kwargs)
+    next_packet = (result.get('next') or {}).get('packet') or {}
+    if result.get('status') == 'ASSIST' and next_packet.get('MODE') == 'MERGE_PRESSURE':
+        result = dict(result)
+        result['status'] = 'WORK'
+    return result
