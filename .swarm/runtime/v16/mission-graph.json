@@ -2350,7 +2350,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.194,
+        "similarity": 0.1,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3253": {
@@ -2361,7 +2361,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3253,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.315,
+        "similarity": 0.307,
         "title": "[Capture P0][VALIDATION] Prove restricted Apple-signing bootstrap boundary"
       },
       "3262": {
@@ -2372,7 +2372,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3262,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.303,
+        "similarity": 0.307,
         "title": "[Capture P0][VALIDATION] Harden trusted Apple-signing bootstrap boundary"
       },
       "3265": {
@@ -2383,7 +2383,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3265,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.36,
+        "similarity": 0.436,
         "title": "[Capture P0][VISUAL] Harden standalone iPhone 12 evidence instrument"
       },
       "3268": {
@@ -2427,19 +2427,8 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3272,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.364,
-        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current 34d438f"
-      },
-      "3274": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3274,
-        "recommendedAction": "independent-review",
-        "similarity": 0.18,
-        "title": "[Capture P0][INTEGRATE] Close schema v11 provenance contract coverage"
+        "similarity": 0.434,
+        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current 8399b81"
       },
       "3275": {
         "classification": "validation",
@@ -2449,7 +2438,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3275,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.335,
+        "similarity": 0.33,
         "title": "[Capture P0][RED TEAM] Reject partial bootstrap principal residue"
       },
       "3276": {
@@ -2471,8 +2460,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3278,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.339,
+        "similarity": 0.277,
         "title": "[Capture P0][RED TEAM] Prove signing bootstrap GID occupancy gap"
+      },
+      "3280": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-horizon-post-await-presentation-owner-regression",
+        "pr": 3280,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.137,
+        "title": "[Capture P0][EXPECTED-RED] Preserve horizon mirror presentation owner"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:31:15Z",
+    "liveRefreshAt": "2026-08-14T08:34:28Z",
     "liveRefreshDuplicatesSuppressed": [
       3278
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 150,
+  "revision": 151,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:34:04Z",
+  "updatedAt": "2026-08-14T08:37:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:31:15Z",
+      "updatedAt": "2026-08-14T08:34:28Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
