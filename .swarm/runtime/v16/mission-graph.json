@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 1,
+    "classifiedPRTotal": 3,
     "classifiedPRs": {
+      "2507": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2507,
+        "recommendedAction": "independent-review",
+        "similarity": 0.126,
+        "title": "[Rides V14] Pin route map render projection churn"
+      },
       "3142": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1074,8 +1085,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.0,
+        "similarity": 0.06,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
+      },
+      "3309": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3309,
+        "recommendedAction": "independent-review",
+        "similarity": 0.124,
+        "title": "[Rides V14][sync] Reconcile route-render closure with current main"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1108,7 +1130,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T16:04:07Z",
+    "liveRefreshAt": "2026-08-14T17:04:05Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4891,10 +4913,10 @@
       "userValue": 7
     }
   },
-  "revision": 213,
+  "revision": 214,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T16:04:08Z",
+  "updatedAt": "2026-08-14T17:04:05Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -4970,7 +4992,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T16:04:07Z",
+      "updatedAt": "2026-08-14T17:04:05Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
