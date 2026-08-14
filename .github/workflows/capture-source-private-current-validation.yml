@@ -1,0 +1,224 @@
+name: Capture Accepted Source + Private Input Current Validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-source-private-current-validation.yml
+      - scripts/ci/tests/test_capture_build_source_root_snapshot.py
+      - scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-source-private-current-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: cd8a398f54d70c866e74091b04df9bc9f9eefa55
+  SOURCE_TEST_BLOB: e7c247248541b84775a225547396e64e32ae9af4
+  PRIVATE_TEST_BLOB: b100594e3ef3cad5b3860b1b48409d14906d91c8
+  ACCEPTED_VNODE_HEAD: e80f464bc13f17582983346bbf86287b60d9d50a
+
+jobs:
+  portable-contract:
+    name: Bind current validation scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require exact additive current-carrier child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          expected=$'.github/workflows/capture-source-private-current-validation.yml\nscripts/ci/tests/test_capture_build_source_root_snapshot.py\nscripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py'
+          test "$actual" = "$expected"
+          test "$(git hash-object scripts/ci/tests/test_capture_build_source_root_snapshot.py)" = "$SOURCE_TEST_BLOB"
+          test "$(git hash-object scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py)" = "$PRIVATE_TEST_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check
+
+      - name: Compile and pin truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/tests/test_capture_build_source_root_snapshot.py \
+            scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('scripts/ci/tests/test_capture_build_source_root_snapshot.py').read_text(encoding='utf-8')
+          private=Path('scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py').read_text(encoding='utf-8')
+          for marker in (
+              'field replacement did not change the live accepted-source fingerprint',
+              'accepted snapshot changed after live field-source replacement',
+              'dedicated build identity retained write authority over accepted source snapshot',
+              'physicalAuthorityCreated": False',
+          ):
+              assert marker in source, marker
+          for marker in (
+              'pre-lease private read',
+              'KQ_NOTE_ATTRIB',
+              'post-revoke private read',
+              'exactAclListingRestored',
+              'physicalTuyaSecretsUsed": False',
+          ):
+              assert marker in private, marker
+          assert 'NEMBRA_TUYA_APP_KEY' not in private
+          assert 'NEMBRA_TUYA_APP_SECRET' not in private
+          PY
+
+  real-macos-current-custody:
+    name: Re-prove source + private input custody with accepted retirement candidate
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current carrier and accepted witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git hash-object scripts/ci/tests/test_capture_build_source_root_snapshot.py)" = "$SOURCE_TEST_BLOB"
+          test "$(git hash-object scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py)" = "$PRIVATE_TEST_BLOB"
+          git fetch --no-tags origin '+refs/pull/2867/head:refs/remotes/origin/nembra-accepted-vnode-2867'
+          test "$(git rev-parse refs/remotes/origin/nembra-accepted-vnode-2867)" = "$ACCEPTED_VNODE_HEAD"
+          accepted_dir="$RUNNER_TEMP/nembra-accepted-vnode"
+          rm -rf "$accepted_dir"
+          mkdir -m 700 "$accepted_dir"
+          blob="$(git rev-parse "$ACCEPTED_VNODE_HEAD:Scripts/capture_tuya_private_input_build_guard.py")"
+          git cat-file blob "$blob" > "$accepted_dir/capture_tuya_private_input_build_guard.py"
+          test "$(git hash-object "$accepted_dir/capture_tuya_private_input_build_guard.py")" = "$blob"
+          grep -Fq '"KQ_NOTE_ATTRIB"' "$accepted_dir/capture_tuya_private_input_build_guard.py"
+          grep -Fq 'select.KQ_NOTE_ATTRIB' "$accepted_dir/capture_tuya_private_input_build_guard.py"
+          printf 'ACCEPTED_VNODE_GUARD=%s\n' "$accepted_dir/capture_tuya_private_input_build_guard.py" >> "$GITHUB_ENV"
+
+      - name: Materialize accepted post-DS retirement candidate outside checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_helper=scripts/ci/capture_signed_app_build_origin_custody.py
+          candidate="$RUNNER_TEMP/capture_signed_app_build_origin_custody.post-ds.py"
+          cp "$source_helper" "$candidate"
+          CANDIDATE="$candidate" /usr/bin/python3 -B -I - <<'PY'
+          import os
+          from pathlib import Path
+          path=Path(os.environ['CANDIDATE'])
+          source=path.read_text(encoding='utf-8')
+
+          start=source.index('def _assert_local_build_identity_retired(')
+          end=source.index('def _remove_local_build_identity(', start)
+          replacement='''def _direct_local_identity_record_exists(kind: str, name: str) -> bool:\n    completed = subprocess.run(\n        ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],\n        stdin=subprocess.DEVNULL,\n        stdout=subprocess.PIPE,\n        stderr=subprocess.PIPE,\n        text=True,\n        check=False,\n    )\n    detail = ((completed.stdout or "") + "\\n" + (completed.stderr or "")).strip()\n    if completed.returncode == 0:\n        return True\n    if "eDSRecordNotFound" in detail or "-14136" in detail:\n        return False\n    raise BuildOriginCustodyError(\n        f"could not classify direct Directory Services {kind} record: "\n        f"rc={completed.returncode} detail={detail[-800:]!r}"\n    )\n\n\ndef _assert_local_build_identity_retired(name: str, uid: int, *, timeout: float = 6.0) -> None:\n    if uid <= 0:\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    deadline = time.monotonic() + timeout\n    latest_live: tuple[int, ...] = ()\n    latest_zombies: tuple[int, ...] = ()\n    latest_user_record = True\n    latest_group_record = True\n    while True:\n        latest_live, latest_zombies = _process_state_for_uid(uid)\n        latest_user_record = _direct_local_identity_record_exists("Users", name)\n        latest_group_record = _direct_local_identity_record_exists("Groups", name)\n        if not latest_live and not latest_zombies and not latest_user_record and not latest_group_record:\n            return\n        if time.monotonic() >= deadline:\n            break\n        subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)\n        time.sleep(0.05)\n    raise BuildOriginCustodyError(\n        "ephemeral build destructive authority survived retirement: "\n        f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)} "\n        f"user_record={latest_user_record} group_record={latest_group_record}"\n    )\n\n\n'''
+          source=source[:start]+replacement+source[end:]
+
+          start=source.index('def _remove_local_build_identity(')
+          end=source.index('def _create_local_build_identity(', start)
+          replacement='''def _remove_local_build_identity(name: str, uid: int | None, *, require_absent: bool = False) -> None:\n    if sys.platform != "darwin":\n        return\n    if require_absent and (uid is None or uid <= 0):\n        raise BuildOriginCustodyError("cannot verify retirement for a missing build UID")\n    if uid is not None and uid > 0:\n        killed = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,\n        )\n        if require_absent and killed.returncode not in (0, 1):\n            raise BuildOriginCustodyError(f"could not request initial build-principal process retirement: pkill exit {killed.returncode}")\n    subprocess.run(["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)\n    subprocess.run(["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)\n    subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)\n    if require_absent:\n        final_kill = subprocess.run(\n            ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],\n            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,\n        )\n        if final_kill.returncode not in (0, 1):\n            raise BuildOriginCustodyError(f"could not request final build-principal process retirement: pkill exit {final_kill.returncode}")\n        _assert_local_build_identity_retired(name, uid)\n\n\n'''
+          source=source[:start]+replacement+source[end:]
+          compile(source, str(path), 'exec', dont_inherit=True)
+          path.write_text(source,encoding='utf-8')
+          PY
+          /usr/bin/python3 -B -m py_compile "$candidate"
+          grep -Fq 'def _direct_local_identity_record_exists' "$candidate"
+          grep -Fq 'final_kill = subprocess.run(' "$candidate"
+          grep -Fq 'if candidate <= 0 or _id_in_use(candidate):' "$candidate"
+          printf 'RETIREMENT_CANDIDATE=%s\n' "$candidate" >> "$GITHUB_ENV"
+          shasum -a 256 "$candidate" | tee "$RUNNER_TEMP/retirement-candidate.sha256"
+
+      - name: Prove accepted-source root snapshot on current carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          field_user="$(/usr/bin/id -un)"
+          evidence="$RUNNER_TEMP/current-source-snapshot.json"
+          diagnostic="$RUNNER_TEMP/current-source-snapshot.stderr.log"
+          : > "$diagnostic"
+          /usr/bin/sudo /usr/bin/python3 -I \
+            scripts/ci/tests/test_capture_build_source_root_snapshot.py \
+            --field-user "$field_user" \
+            --production-helper "$RETIREMENT_CANDIDATE" \
+            --production-parent "$EXACT_PARENT" \
+            2> >(/usr/bin/tee "$diagnostic" >&2) \
+            | /usr/bin/tee "$evidence"
+          /usr/bin/python3 - "$evidence" "$EXACT_PARENT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert p['schema'] == 1 and p['productionParent'] == sys.argv[2]
+          assert p['fieldSourceReplacementSucceeded'] is True
+          assert p['fieldSnapshotAppendDenied'] is True
+          assert p['fieldSnapshotRenameDenied'] is True
+          assert p['dedicatedConsumerReadAcceptedSnapshot'] is True
+          assert p['dedicatedConsumerReadInternalSymlink'] is True
+          assert p['dedicatedSnapshotWriteDenied'] is True
+          assert p['snapshotRootOwnedReadOnly'] is True
+          assert p['privateTuyaInputsUsed'] is False
+          assert p['physicalAuthorityCreated'] is False
+          PY
+          shasum -a 256 "$evidence" > "$RUNNER_TEMP/current-source-snapshot.sha256"
+
+      - name: Prove reversible private-Tuya read lease on current carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          field_user="$(/usr/bin/id -un)"
+          evidence="$RUNNER_TEMP/current-private-read-lease.json"
+          diagnostic="$RUNNER_TEMP/current-private-read-lease.stderr.log"
+          : > "$diagnostic"
+          /usr/bin/sudo /usr/bin/python3 -I \
+            scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py \
+            --field-user "$field_user" \
+            --production-helper "$RETIREMENT_CANDIDATE" \
+            --accepted-attrib-guard "$ACCEPTED_VNODE_GUARD" \
+            --accepted-vnode-head "$ACCEPTED_VNODE_HEAD" \
+            2> >(/usr/bin/tee "$diagnostic" >&2) \
+            | /usr/bin/tee "$evidence"
+          /usr/bin/python3 - "$evidence" "$ACCEPTED_VNODE_HEAD" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert p['schema'] == 1 and p['acceptedVnodeHead'] == sys.argv[2]
+          assert p['preLeaseReadDenied'] is True
+          assert p['leaseReadSucceeded'] is True
+          assert p['internalSymlinkReadSucceeded'] is True
+          assert p['deniedMutations'] == ['append','create','unlink','rename','chmod']
+          assert p['attribMutationObserved'] is True
+          assert p['postRevokeReadDenied'] is True
+          assert p['exactAclListingRestored'] is True
+          assert p['physicalTuyaSecretsUsed'] is False
+          assert p['xcodeUsed'] is False and p['deviceUsed'] is False
+          PY
+          shasum -a 256 "$evidence" > "$RUNNER_TEMP/current-private-read-lease.sha256"
+
+      - name: Retain sanitized current-carrier authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-source-private-current-authority-evidence
+          path: |
+            ${{ runner.temp }}/retirement-candidate.sha256
+            ${{ runner.temp }}/current-source-snapshot.json
+            ${{ runner.temp }}/current-source-snapshot.sha256
+            ${{ runner.temp }}/current-source-snapshot.stderr.log
+            ${{ runner.temp }}/current-private-read-lease.json
+            ${{ runner.temp }}/current-private-read-lease.sha256
+            ${{ runner.temp }}/current-private-read-lease.stderr.log
+          if-no-files-found: warn
+          retention-days: 7
