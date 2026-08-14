@@ -1,5 +1,6 @@
 name: Capture Current Private Tuya Read Lease Revalidation
 
+# Exact-parent validation only; this workflow creates no product or physical authority.
 on:
   pull_request:
     paths:
