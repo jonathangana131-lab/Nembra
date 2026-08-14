@@ -1,0 +1,56 @@
+name: Reanchor Capture visual evidence instrument
+
+on:
+  push:
+    branches:
+      - validation/v161-capture-standalone-visual-reanchor-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.event.head_commit.message == 'GO reanchor Capture visual evidence instrument'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact canonical parent and copy validation-only instrument
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical='1b3da19408af926bfd10101e38974103a05fb0fb'
+          source='4da5c8493144baa1909a476b45599747d5a8fb17'
+          test "$(git rev-parse HEAD^)" = "$canonical"
+          paths=(
+            '.github/workflows/capture-standalone-visual-evidence.yml'
+            'scripts/ci/capture_standalone_visual_evidence.py'
+            'scripts/ci/capture_visual_png_content_guard.py'
+            'scripts/ci/tests/test_capture_standalone_visual_evidence.py'
+            'scripts/ci/tests/test_capture_visual_png_content_guard.py'
+          )
+          for path in "${paths[@]}"; do
+            mkdir -p "$(dirname "$path")"
+            git show "$source:$path" > "$path"
+          done
+          rm .github/workflows/capture-visual-reanchor-once.yml
+
+          /usr/bin/python3 -m py_compile scripts/ci/capture_standalone_visual_evidence.py scripts/ci/capture_visual_png_content_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+
+          git config user.name nembra-go-worker
+          git config user.email actions@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' "${paths[@]}" | sort)"
+          test "$changed" = "$expected"
+          git commit -m 'Capture V16.1: reanchor exact iPhone 12 visual evidence instrument'
+          git fetch origin validation/v161-capture-standalone-visual-reanchor-gpt56
+          test "$(git rev-parse origin/validation/v161-capture-standalone-visual-reanchor-gpt56)" = "$GITHUB_SHA"
+          git push origin HEAD:validation/v161-capture-standalone-visual-reanchor-gpt56
