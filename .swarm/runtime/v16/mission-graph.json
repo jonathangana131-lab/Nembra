@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 13,
+    "classifiedPRTotal": 12,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1143,17 +1143,6 @@
         "similarity": 0.318,
         "title": "[Capture P0][VALIDATION] Attest former-build mutation authority"
       },
-      "3326": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3326,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.399,
-        "title": "[Capture P0][VISUAL RECOVERY] Re-anchor iPhone 12 evidence to ba615 exact product"
-      },
       "3329": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1173,7 +1162,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3331,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.392,
+        "similarity": 0.367,
         "title": "[Capture P0][VALIDATION] Reject blank light visual evidence on ba615 recovery"
       },
       "3332": {
@@ -1206,7 +1195,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.401,
+        "similarity": 0.376,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       }
     },
@@ -1240,7 +1229,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:59:35Z",
+    "liveRefreshAt": "2026-08-14T23:59:47Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -5025,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 331,
+  "revision": 332,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:59:35Z",
+  "updatedAt": "2026-08-14T23:59:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5104,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:59:35Z",
+      "updatedAt": "2026-08-14T23:59:47Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
