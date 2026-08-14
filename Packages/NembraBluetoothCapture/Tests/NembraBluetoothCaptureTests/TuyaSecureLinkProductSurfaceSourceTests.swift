@@ -75,7 +75,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         let body = String(surface)
 
         #expect(body.contains("dynamicTypeSize.isAccessibilitySize"))
-        #expect(body.contains("Step \(currentStageIndex + 1) of 4"))
+        #expect(body.contains(#"Step \(currentStageIndex + 1) of 4"#))
         #expect(body.contains("accessibilityHint"))
         #expect(body.contains("accessibilityLabel"))
     }
