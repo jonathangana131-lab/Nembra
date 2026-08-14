@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 299,
+    "classifiedPRTotal": 300,
     "classifiedPRs": {
-      "2794": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2794,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.425,
-        "title": "[Capture P0][SECURITY] Bind private review witness to external HMAC authority"
-      },
       "2795": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2394,7 +2383,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3284,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.312,
+        "similarity": 0.347,
         "title": "[Capture P0][RED TEAM] Prove candidate-controlled signing root executor"
       },
       "3285": {
@@ -2405,7 +2394,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3285,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.321,
+        "similarity": 0.361,
         "title": "[Capture P0][RED TEAM] Re-anchor signing bootstrap GID occupancy on bf8"
       },
       "3286": {
@@ -2452,6 +2441,17 @@
         "similarity": 0.125,
         "title": "[Capture P0][REPAIR] Fence already-terminal mirror presentation by phase"
       },
+      "3295": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-smartlife-callback-authority",
+        "pr": 3295,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.132,
+        "title": "[Capture P0][REPAIR] Converge SmartLife callback source + delivery chronology"
+      },
       "3297": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2463,16 +2463,16 @@
         "similarity": 0.128,
         "title": "[Capture P0][EXPECTED-RED] Seal application-delivery occurrence with chronology"
       },
-      "3301": {
-        "classification": "canonical-candidate",
+      "3302": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-smartlife-callback-authority",
-        "pr": 3301,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.113,
-        "title": "[Capture P0][REPAIR] Seal exact SmartLife callback authority"
+        "lane": "capture-signed-install-custody",
+        "pr": 3302,
+        "recommendedAction": "independent-review",
+        "similarity": 0.358,
+        "title": "[Capture P0][DIAGNOSTIC] Prove signing principal source gap without root"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:18:13Z",
+    "liveRefreshAt": "2026-08-14T09:20:39Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 164,
+  "revision": 165,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:20:23Z",
+  "updatedAt": "2026-08-14T09:23:36Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:18:13Z",
+      "updatedAt": "2026-08-14T09:20:39Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
