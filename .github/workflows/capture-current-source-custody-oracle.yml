@@ -1,0 +1,46 @@
+name: Capture Current Source Custody Oracle
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_current_source_custody_oracle.py
+      - .github/workflows/capture-current-source-custody-oracle.yml
+      - scripts/ci/capture_signed_app_build_origin_custody.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact validation scope
+        shell: bash
+        env:
+          EXACT_PARENT: 3568250ee02556185610dd895e3f6d1c8f28dd33
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' .github/workflows/capture-current-source-custody-oracle.yml scripts/ci/tests/test_capture_current_source_custody_oracle.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          python3 -m py_compile scripts/ci/tests/test_capture_current_source_custody_oracle.py
+          git diff --check
+      - name: Prove current mutable-checkout source gap remains visible
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(python3 -I scripts/ci/tests/test_capture_current_source_custody_oracle.py 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -ne 0
+          grep -F "EXPECTED RED:" <<<"$output"
