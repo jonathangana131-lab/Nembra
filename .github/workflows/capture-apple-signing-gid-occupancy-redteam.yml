@@ -1,0 +1,58 @@
+name: Capture Apple signing GID occupancy red-team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_gid_occupancy.py
+      - .github/workflows/capture-apple-signing-gid-occupancy-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-apple-signing-gid-occupancy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gid-occupancy-redteam:
+    name: Prove UID/GID freshness covers GID authority
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact parent and additive adversary
+        shell: bash
+        env:
+          EXACT_PARENT: bf8fd13b0bab33365a306b3fb39988e2dee0f759
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-apple-signing-gid-occupancy-redteam.yml \
+            scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_gid_occupancy.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; compile(Path("scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py").read_text(encoding="utf-8"), "<hardening-target>", "exec", dont_inherit=True); compile(Path("scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_gid_occupancy.py").read_text(encoding="utf-8"), "<gid-redteam>", "exec", dont_inherit=True)'
+
+      - name: Execute expected-red GID occupancy adversary
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_gid_occupancy.py
+
+      - name: Preserve physical boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'GID occupancy validation only: no signing identity, xcodebuild, app install, Bluetooth/device access, or physical authority.'
