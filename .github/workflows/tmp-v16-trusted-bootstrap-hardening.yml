@@ -1,0 +1,152 @@
+name: Temporary V16 trusted bootstrap hardening
+
+on:
+  push:
+    branches:
+      - repair/v16-apple-signing-trusted-bootstrap-hardening-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.event.head_commit.message == 'GO harden trusted bootstrap witness'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v16-apple-signing-trusted-bootstrap-hardening-sol-20260814
+          fetch-depth: 0
+
+      - name: Apply red-team hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "f8e10cf022191bc999c4b4dfefa3f29aa903cda5"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py')
+          source = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              source = source.replace(old, new, 1)
+
+          old_choose = '''def choose_numeric_identity() -> int:\n    seed = 600_000 + (os.getpid() % 20_000)\n    for candidate in range(seed, seed + 10_000):\n        try:\n            pwd.getpwuid(candidate)\n            continue\n        except KeyError:\n            pass\n        try:\n            grp.getgrgid(candidate)\n            continue\n        except KeyError:\n            return candidate\n    raise ValidationError("could not find a fresh synthetic UID/GID")\n\n\n'''
+          new_choose = '''def local_directory_numeric_ids(kind: str, attribute: str) -> set[int]:\n    result = run(["/usr/bin/dscl", ".", "-list", f"/{kind}", attribute], check=True)\n    values: set[int] = set()\n    for raw_line in result.stdout.splitlines():\n        line = raw_line.strip()\n        if not line:\n            continue\n        parts = line.rsplit(None, 1)\n        if len(parts) != 2:\n            raise ValidationError(f"Directory Services {kind}/{attribute} inventory is malformed: {raw_line!r}")\n        try:\n            value = int(parts[1], 10)\n        except ValueError as error:\n            raise ValidationError(f"Directory Services {kind}/{attribute} numeric value is malformed: {raw_line!r}") from error\n        if value < 0:\n            raise ValidationError(f"Directory Services {kind}/{attribute} contains a negative identifier")\n        values.add(value)\n    return values\n\n\ndef process_numeric_ids() -> tuple[set[int], set[int]]:\n    result = run(["/bin/ps", "-axo", "uid=,gid=,pid=,stat="], check=True)\n    uids: set[int] = set()\n    gids: set[int] = set()\n    for raw_line in result.stdout.splitlines():\n        line = raw_line.strip()\n        if not line:\n            continue\n        parts = line.split(None, 3)\n        if len(parts) != 4:\n            raise ValidationError(f"process credential inventory is malformed: {raw_line!r}")\n        try:\n            uid = int(parts[0], 10)\n            gid = int(parts[1], 10)\n            pid = int(parts[2], 10)\n        except ValueError as error:\n            raise ValidationError(f"process credential inventory is non-numeric: {raw_line!r}") from error\n        if uid < 0 or gid < 0 or pid <= 0 or not parts[3]:\n            raise ValidationError(f"process credential inventory contains an invalid row: {raw_line!r}")\n        uids.add(uid)\n        gids.add(gid)\n    return uids, gids\n\n\ndef numeric_principal_is_vacant(numeric_id: int) -> bool:\n    user_ids = local_directory_numeric_ids("Users", "UniqueID")\n    group_ids = local_directory_numeric_ids("Groups", "PrimaryGroupID")\n    process_uids, process_gids = process_numeric_ids()\n    return (\n        numeric_id not in user_ids\n        and numeric_id not in group_ids\n        and numeric_id not in process_uids\n        and numeric_id not in process_gids\n    )\n\n\ndef choose_numeric_identity() -> int:\n    seed = 600_000 + (os.getpid() % 20_000)\n    for candidate in range(seed, seed + 10_000):\n        try:\n            pwd.getpwuid(candidate)\n            continue\n        except KeyError:\n            pass\n        try:\n            grp.getgrgid(candidate)\n            continue\n        except KeyError:\n            pass\n        if numeric_principal_is_vacant(candidate):\n            return candidate\n    raise ValidationError("could not find a process- and Directory-Services-vacant synthetic UID/GID")\n\n\n'''
+          replace_once(old_choose, new_choose, 'numeric principal admission')
+
+          old_delete = '''def delete_identity(name: str) -> None:\n    for kind in ("Users", "Groups"):\n        if ds_record_exists(kind, name):\n            result = run(["/usr/bin/dscl", ".", "-delete", f"/{kind}/{name}"])\n            if result.returncode != 0:\n                raise ValidationError(f"failed to delete synthetic {kind}/{name}: {result.stderr[-800:]!r}")\n    run(["/usr/bin/dscacheutil", "-flushcache"])\n    require(not ds_record_exists("Users", name), "synthetic field user survived cleanup")\n    require(not ds_record_exists("Groups", name), "synthetic field group survived cleanup")\n\n\n'''
+          new_delete = '''def retire_numeric_process_authority(numeric_id: int) -> None:\n    result = run(["/usr/bin/pkill", "-KILL", "-U", str(numeric_id)])\n    if result.returncode not in (0, 1):\n        raise ValidationError(f"could not retire synthetic UID processes: {result.stderr[-800:]!r}")\n    for _ in range(40):\n        process_uids, process_gids = process_numeric_ids()\n        if numeric_id not in process_uids and numeric_id not in process_gids:\n            return\n        run(["/bin/sleep", "0.05"], check=True)\n    raise ValidationError("synthetic numeric principal still owns a live/zombie process credential after bounded retirement")\n\n\ndef delete_identity(name: str, numeric_id: int) -> None:\n    retire_numeric_process_authority(numeric_id)\n    process_uids, process_gids = process_numeric_ids()\n    require(numeric_id not in process_uids and numeric_id not in process_gids, "synthetic numeric principal was not quiescent before Directory Services deletion")\n    for kind in ("Users", "Groups"):\n        if ds_record_exists(kind, name):\n            result = run(["/usr/bin/dscl", ".", "-delete", f"/{kind}/{name}"])\n            if result.returncode != 0:\n                raise ValidationError(f"failed to delete synthetic {kind}/{name}: {result.stderr[-800:]!r}")\n    run(["/usr/bin/dscacheutil", "-flushcache"], check=True)\n    require(not ds_record_exists("Users", name), "synthetic field user survived cleanup")\n    require(not ds_record_exists("Groups", name), "synthetic field group survived cleanup")\n    process_uids, process_gids = process_numeric_ids()\n    require(numeric_id not in process_uids and numeric_id not in process_gids, "synthetic numeric principal regained process authority after Directory Services deletion")\n\n\n'''
+          replace_once(old_delete, new_delete, 'numeric principal retirement')
+
+          replace_once(
+              '        f"{user} ALL = (root) NOPASSWD: sha256:{digest} {launcher}\\n"\n',
+              '        f\'{user} ALL = (root) NOPASSWD: sha256:{digest} {launcher} ""\\n\'\n',
+              'sudoers no-argv grammar',
+          )
+
+          replace_once(
+              'def root_main(output: Path) -> int:\n',
+              'def root_main() -> int:\n',
+              'root output parameter removal',
+          )
+
+          replace_once(
+              '    try:\n        create_identity(user, numeric_id)\n',
+              '    try:\n        require(numeric_principal_is_vacant(numeric_id), "synthetic numeric principal lost vacancy before creation")\n        evidence["numericPrincipalVacancyProven"] = True\n        create_identity(user, numeric_id)\n',
+              'pre-create vacancy reproof',
+          )
+
+          trusted_anchor = '''        evidence["digestPinnedLauncherAdmitted"] = True\n\n        generic_out_path = caller_dir / "generic.out"\n'''
+          trusted_replacement = '''        evidence["digestPinnedLauncherAdmitted"] = True\n\n        argv_attack = as_user(user, f"/usr/bin/sudo -n {quoted(launcher)} attacker-arg")\n        argv_detail = (argv_attack.stdout or "") + "\\n" + (argv_attack.stderr or "")\n        require(argv_attack.returncode != 0, "sudoers policy admitted attacker-controlled argv for the trusted launcher")\n        require("NEMBRA_TRUSTED_BOOTSTRAP_ROOT_UID=0" not in argv_detail, "attacker argv reached the privileged launcher body")\n        evidence["attackerArgvRejectedByPolicy"] = True\n\n        generic_out_path = caller_dir / "generic.out"\n'''
+          replace_once(trusted_anchor, trusted_replacement, 'argv attack')
+
+          old_terminal = '''        output.parent.mkdir(parents=True, exist_ok=True)\n        output.write_text(json.dumps(evidence, sort_keys=True) + "\\n", encoding="utf-8")\n        print(MARKER + json.dumps(evidence, sort_keys=True))\n        print("TRUSTED_BOOTSTRAP_BOUNDARY_ACCEPTED validationOnly=true physicalAuthorityCreated=false")\n        return 0\n    finally:\n        try:\n            if rule_path.exists() or rule_path.is_symlink():\n                rule_path.unlink()\n        finally:\n            try:\n                delete_identity(user)\n            finally:\n                shutil.rmtree(root_dir, ignore_errors=True)\n'''
+          new_terminal = '''    finally:\n        try:\n            if rule_path.exists() or rule_path.is_symlink():\n                rule_path.unlink()\n        finally:\n            try:\n                delete_identity(user, numeric_id)\n            finally:\n                shutil.rmtree(root_dir, ignore_errors=True)\n\n    evidence["numericPrincipalRetired"] = True\n    print(MARKER + json.dumps(evidence, sort_keys=True))\n    print("TRUSTED_BOOTSTRAP_BOUNDARY_ACCEPTED validationOnly=true physicalAuthorityCreated=false")\n    return 0\n'''
+          replace_once(old_terminal, new_terminal, 'cleanup-before-evidence publication')
+
+          old_main = '''    parser = argparse.ArgumentParser()\n    parser.add_argument("--output", type=Path, required=True)\n    parser.add_argument("--root-child", action="store_true")\n    args = parser.parse_args()\n    output = args.output.resolve()\n\n    if args.root_child:\n        return root_main(output)\n\n    require(sys.platform == "darwin", "trusted-bootstrap witness requires macOS")\n    require(os.geteuid() != 0, "outer validation phase must begin as the ordinary runner identity")\n    result = run(\n        [\n            "/usr/bin/sudo",\n            "-n",\n            "/usr/bin/python3",\n            "-B",\n            "-I",\n            str(Path(__file__).resolve()),\n            "--output",\n            str(output),\n            "--root-child",\n        ]\n    )\n    sys.stdout.write(result.stdout)\n    sys.stderr.write(result.stderr)\n    require(result.returncode == 0, "root validation phase failed")\n    require(output.is_file(), "trusted-bootstrap evidence file was not produced")\n    payload = json.loads(output.read_text(encoding="utf-8"))\n'''
+          new_main = '''    parser = argparse.ArgumentParser()\n    parser.add_argument("--output", type=Path)\n    parser.add_argument("--root-child", action="store_true")\n    args = parser.parse_args()\n\n    if args.root_child:\n        require(args.output is None, "privileged root phase rejects caller-selected output paths")\n        return root_main()\n\n    require(args.output is not None, "outer validation phase requires --output")\n    output = Path(os.path.abspath(args.output))\n    require(sys.platform == "darwin", "trusted-bootstrap witness requires macOS")\n    require(os.geteuid() != 0, "outer validation phase must begin as the ordinary runner identity")\n    require(not output.exists() and not output.is_symlink(), "trusted-bootstrap evidence output must not pre-exist")\n\n    privileged_output_attack = Path(tempfile.gettempdir()) / f"nembra-root-output-attack-{os.getpid()}"\n    if privileged_output_attack.exists() or privileged_output_attack.is_symlink():\n        privileged_output_attack.unlink()\n    output_attack = run(\n        [\n            "/usr/bin/sudo",\n            "-n",\n            "/usr/bin/python3",\n            "-B",\n            "-I",\n            str(Path(__file__).resolve()),\n            "--root-child",\n            "--output",\n            str(privileged_output_attack),\n        ]\n    )\n    require(output_attack.returncode != 0, "privileged root phase accepted caller-selected output authority")\n    require(not privileged_output_attack.exists() and not privileged_output_attack.is_symlink(), "rejected privileged output argument still created a root-selected path")\n\n    result = run(\n        [\n            "/usr/bin/sudo",\n            "-n",\n            "/usr/bin/python3",\n            "-B",\n            "-I",\n            str(Path(__file__).resolve()),\n            "--root-child",\n        ]\n    )\n    sys.stdout.write(result.stdout)\n    sys.stderr.write(result.stderr)\n    require(result.returncode == 0, "root validation phase failed")\n    marker_lines = [line[len(MARKER):] for line in result.stdout.splitlines() if line.startswith(MARKER)]\n    require(len(marker_lines) == 1, "root validation phase did not emit exactly one structured marker")\n    payload = json.loads(marker_lines[0])\n    payload["rootChildCallerOutputDenied"] = True\n    output.parent.mkdir(parents=True, exist_ok=True)\n    fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)\n    try:\n        with os.fdopen(fd, "w", encoding="utf-8", closefd=False) as handle:\n            handle.write(json.dumps(payload, sort_keys=True) + "\\n")\n            handle.flush()\n            os.fsync(handle.fileno())\n    finally:\n        os.close(fd)\n'''
+          replace_once(old_main, new_main, 'outer-owned evidence publication')
+
+          replace_once(
+              '        "digestPinnedLauncherAdmitted",\n        "mutableWrapperArbitraryRootDenied",\n',
+              '        "digestPinnedLauncherAdmitted",\n        "attackerArgvRejectedByPolicy",\n        "numericPrincipalVacancyProven",\n        "numericPrincipalRetired",\n        "rootChildCallerOutputDenied",\n        "mutableWrapperArbitraryRootDenied",\n',
+              'required hardening invariants',
+          )
+
+          path.write_text(source, encoding='utf-8')
+
+          gate = Path('.github/workflows/capture-apple-signing-preflight-redaction.yml')
+          workflow = gate.read_text(encoding='utf-8')
+          branch_anchor = '      - repair/v14-apple-signing-preflight-redaction-sol-20260812\n'
+          if 'repair/v16-apple-signing-trusted-bootstrap-hardening-sol-20260814' not in workflow:
+              if workflow.count(branch_anchor) != 1:
+                  raise SystemExit('push-branch anchor mismatch')
+              workflow = workflow.replace(
+                  branch_anchor,
+                  branch_anchor + '      - repair/v16-apple-signing-trusted-bootstrap-hardening-sol-20260814\n',
+                  1,
+              )
+          workflow = workflow.replace(
+              '              "digestPinnedLauncherAdmitted",\n              "mutableWrapperArbitraryRootDenied",\n',
+              '              "digestPinnedLauncherAdmitted",\n              "attackerArgvRejectedByPolicy",\n              "numericPrincipalVacancyProven",\n              "numericPrincipalRetired",\n              "rootChildCallerOutputDenied",\n              "mutableWrapperArbitraryRootDenied",\n',
+              1,
+          )
+          gate.write_text(workflow, encoding='utf-8')
+          PY
+
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; source=Path("scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py").read_text(encoding="utf-8"); compile(source, "<trusted-bootstrap>", "exec", dont_inherit=True)'
+          git diff --check
+
+      - name: Execute hardened macOS witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/nembra-trusted-bootstrap-hardening.json"
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py --output "$evidence"
+          /usr/bin/python3 -B -I - "$evidence" <<'PY'
+          import json, sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          required = (
+              'genericNoninteractiveSudoDenied',
+              'digestPinnedLauncherAdmitted',
+              'attackerArgvRejectedByPolicy',
+              'numericPrincipalVacancyProven',
+              'numericPrincipalRetired',
+              'rootChildCallerOutputDenied',
+              'mutableWrapperArbitraryRootDenied',
+              'mutableWrapperCanOnlyReachNarrowLauncher',
+              'digestMismatchRejected',
+              'exactLauncherRestorationAdmitted',
+              'fieldLauncherMutationDenied',
+              'fieldLauncherReplacementDenied',
+          )
+          missing = [key for key in required if record.get(key) is not True]
+          if missing:
+              raise SystemExit(f'missing hardened invariants: {missing}')
+          if record.get('physicalAuthorityCreated') is not False:
+              raise SystemExit('validation created physical authority')
+          print('TRUSTED_BOOTSTRAP_HARDENING_GREEN physicalAuthorityCreated=false')
+          PY
+
+      - name: Publish clean hardening checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/tmp-v16-trusted-bootstrap-hardening.yml
+          git diff --check
+          git diff --name-only f8e10cf022191bc999c4b4dfefa3f29aa903cda5...HEAD >/dev/null
+          git config user.name 'nembra-sol-worker'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py .github/workflows/capture-apple-signing-preflight-redaction.yml .github/workflows/tmp-v16-trusted-bootstrap-hardening.yml
+          git commit -m 'Harden trusted Apple-signing bootstrap witness'
+          test "$(git diff --name-only f8e10cf022191bc999c4b4dfefa3f29aa903cda5...HEAD | LC_ALL=C sort)" = "$(printf '%s\n' .github/workflows/capture-apple-signing-preflight-redaction.yml scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py | LC_ALL=C sort)"
+          git push origin HEAD:repair/v16-apple-signing-trusted-bootstrap-hardening-sol-20260814
