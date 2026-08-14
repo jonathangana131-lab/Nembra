@@ -1179,19 +1179,13 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [
-      {
-        "from": "c3273e2a1d82464906930eed4a3045b64acaf24a",
-        "to": "fe41d65e1db2652a1174a02abfc6799cca46ec51",
-        "workItemId": "live-pr-3142"
-      }
-    ],
+    "livePRHeadUpdates": [],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:41:40Z",
+    "liveRefreshAt": "2026-08-14T23:44:58Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4976,10 +4970,10 @@
       "userValue": 7
     }
   },
-  "revision": 314,
+  "revision": 315,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:41:41Z",
+  "updatedAt": "2026-08-14T23:44:58Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5055,7 +5049,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:41:40Z",
+      "updatedAt": "2026-08-14T23:44:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
