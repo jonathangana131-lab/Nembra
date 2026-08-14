@@ -1,0 +1,92 @@
+name: Capture provenance continuation oracle repair
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'GO repair Capture provenance continuation oracle'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact repair head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Repair only over-escaped continuation locators
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-field-build-provenance.yml')
+          text = path.read_text()
+          lines = text.splitlines(keepends=True)
+          prefixes = (
+              '          guard_line="$(grep -nF \'/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" ',
+              '          build_line="$(grep -nF -- \'-- xcodebuild ',
+          )
+          old_segment = "\\\\' \"$installer\""
+          new_segment = "\\' \"$installer\""
+
+          changed = 0
+          for prefix in prefixes:
+              matches = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+              if len(matches) != 1:
+                  raise SystemExit(f'expected exactly one locator for {prefix!r}, got {len(matches)}')
+              i = matches[0]
+              if lines[i].count(old_segment) != 1:
+                  raise SystemExit(f'locator is not in the exact over-escaped state: {lines[i]!r}')
+              lines[i] = lines[i].replace(old_segment, new_segment, 1)
+              changed += 1
+
+          if changed != 2:
+              raise SystemExit(f'expected exactly two repairs, got {changed}')
+          path.write_text(''.join(lines))
+          PY
+
+          git diff --check
+          test "$(git diff --numstat -- .github/workflows/capture-field-build-provenance.yml)" = $'2\t2\t.github/workflows/capture-field-build-provenance.yml'
+
+      - name: Prove corrected locators against accepted installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          installer='scripts/field/install_one_time_capture.command'
+          bash -n "$installer"
+          first_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '1s/:.*//p')"
+          guard_line="$(grep -nF '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \' "$installer" | sed -n '1s/:.*//p')"
+          build_line="$(grep -nF -- '-- xcodebuild \' "$installer" | sed -n '1s/:.*//p')"
+          second_private_verify_line="$(grep -n '^verify_private_tuya_inputs$' "$installer" | sed -n '2s/:.*//p')"
+          test -n "$first_private_verify_line" && test -n "$guard_line" && test -n "$build_line" && test -n "$second_private_verify_line"
+          test "$first_private_verify_line" -lt "$guard_line"
+          test "$guard_line" -lt "$build_line"
+          test "$build_line" -lt "$second_private_verify_line"
+
+      - name: Publish coherent repair and remove one-shot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-provenance-continuation-oracle-repair.yml
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          expected=$'.github/workflows/capture-field-build-provenance.yml\n.github/workflows/capture-provenance-continuation-oracle-repair.yml'
+          test "$changed" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/capture-field-build-provenance.yml
+          git commit -m 'Capture: fix provenance continuation locators'
+          git push origin HEAD:capture/one-time-ble-dump-gpt56
