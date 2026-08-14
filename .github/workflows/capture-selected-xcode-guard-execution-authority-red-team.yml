@@ -1,0 +1,45 @@
+name: Capture Selected-Xcode Guard Execution Authority Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_selected_xcode_guard_execution_authority.py
+      - .github/workflows/capture-selected-xcode-guard-execution-authority-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-accepted-helper-execution:
+    name: Reject mutable private guard/provenance execution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact selected-Xcode guard-execution source: %s\n' "$actual"
+
+      - name: Require exact accepted guard and provenance execution subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-guard-exec-red-team-pycache"
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_selected_xcode_guard_execution_authority.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_guard_execution_authority.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
