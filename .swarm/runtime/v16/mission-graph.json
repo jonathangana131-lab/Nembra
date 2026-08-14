@@ -1064,8 +1064,250 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 268,
+    "classifiedPRTotal": 231,
     "classifiedPRs": {
+      "1117": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1117,
+        "recommendedAction": "independent-review",
+        "similarity": 0.31,
+        "title": "[POST-CAPTURE HARDENING] Pin exact signed-field release-source custody"
+      },
+      "1166": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1166,
+        "recommendedAction": "independent-review",
+        "similarity": 0.203,
+        "title": "[POST-CAPTURE HARDENING] Converge offline report input/output custody"
+      },
+      "1171": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1171,
+        "recommendedAction": "independent-review",
+        "similarity": 0.203,
+        "title": "[POST-CAPTURE HARDENING] Make receipt-bound report publication the public API boundary"
+      },
+      "1173": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1173,
+        "recommendedAction": "independent-review",
+        "similarity": 0.313,
+        "title": "[POST-CAPTURE HARDENING] Pin selected Xcode developer-directory custody"
+      },
+      "1174": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1174,
+        "recommendedAction": "independent-review",
+        "similarity": 0.357,
+        "title": "[POST-CAPTURE HARDENING] Pin signed-evidence output-parent custody"
+      },
+      "1176": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1176,
+        "recommendedAction": "independent-review",
+        "similarity": 0.399,
+        "title": "[POST-CAPTURE HARDENING] Gate signed-evidence parent-custody regression"
+      },
+      "1178": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1178,
+        "recommendedAction": "independent-review",
+        "similarity": 0.404,
+        "title": "[POST-CAPTURE HARDENING] Carry signed-field custody into exact-head Xcode acceptance"
+      },
+      "1180": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1180,
+        "recommendedAction": "independent-review",
+        "similarity": 0.338,
+        "title": "[POST-CAPTURE HARDENING] Bind complete signed-field evidence set with one manifest"
+      },
+      "1192": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1192,
+        "recommendedAction": "independent-review",
+        "similarity": 0.216,
+        "title": "[POST-CAPTURE hardening] Reject duplicate final Share JSON authority keys"
+      },
+      "1410": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1410,
+        "recommendedAction": "independent-review",
+        "similarity": 0.18,
+        "title": "[V14 adaptive recovery] Re-anchor monotonic ride-duration history attachment"
+      },
+      "1421": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "c28f37c3c4747d3d768b50c3a2e76770b2da02df",
+        "lane": "",
+        "pr": 1421,
+        "recommendedAction": "independent-review",
+        "similarity": 0.175,
+        "title": "[V14][Battery/Range] Restore receipt-bound learned-range authority"
+      },
+      "1426": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1426,
+        "recommendedAction": "independent-review",
+        "similarity": 0.182,
+        "title": "[V14][Battery/Range] Recover receipt-bound primary range presentation"
+      },
+      "1463": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "350c7804f385745189604592d529e746b9043044",
+        "lane": "",
+        "pr": 1463,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.171,
+        "title": "[V14][Battery/Range] Bridge accepted battery chronology to range candidates (r3)"
+      },
+      "1474": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1474,
+        "recommendedAction": "independent-review",
+        "similarity": 0.154,
+        "title": "[V14][Rides] Seal completed-duration import authority"
+      },
+      "1513": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1513,
+        "recommendedAction": "independent-review",
+        "similarity": 0.146,
+        "title": "[V14][Battery/Range] Make live currentness owner-bound"
+      },
+      "1514": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1514,
+        "recommendedAction": "independent-review",
+        "similarity": 0.196,
+        "title": "[V14][Rides] Persist duration archives without reminting authority"
+      },
+      "1521": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1521,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.173,
+        "title": "[validation-only] Guard Capture against Dynamic Type scale caps"
+      },
+      "1684": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1684,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.337,
+        "title": "[VALIDATION ONLY][V14][Battery/Range] Re-run repaired NembraCore package gate"
+      },
+      "1686": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 1686,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.336,
+        "title": "[VALIDATION ONLY][V14][Rides] Run exact completed-subject NembraCore gate"
+      },
+      "1897": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "e84a03e3cd57824c445aac9b4ea777e6105df5cd",
+        "lane": "",
+        "pr": 1897,
+        "recommendedAction": "independent-review",
+        "similarity": 0.268,
+        "title": "[POST-CAPTURE HARDENING] Isolate signed-field release authority"
+      },
+      "1995": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "c5cb2e16374108a070cb292fddeaa39e7cfd82f7",
+        "lane": "",
+        "pr": 1995,
+        "recommendedAction": "independent-review",
+        "similarity": 0.138,
+        "title": "[Dashboard V14] Compose receipt-fenced Energy Rail on current main"
+      },
+      "2030": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2030,
+        "recommendedAction": "independent-review",
+        "similarity": 0.161,
+        "title": "[Capture P0] Lock private Tuya launch-secret custody regression"
+      },
       "2054": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1580,7 +1822,7 @@
         "lane": "navigation-app-visible",
         "pr": 2865,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.18,
+        "similarity": 0.138,
         "title": "[Navigation V15][Repair] Use native MapKit XCUI locator"
       },
       "2868": {
@@ -1899,7 +2141,7 @@
         "lane": "capture-field-xcode-environment-authority",
         "pr": 2917,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.44,
+        "similarity": 0.223,
         "title": "[Capture P0][RED TEAM] Close residual caller Xcode build environment"
       },
       "2920": {
@@ -1954,7 +2196,7 @@
         "lane": "capture-build-authority-validation",
         "pr": 2926,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.302,
+        "similarity": 0.262,
         "title": "[Capture P0][QA] Replay corrected SwiftPM pre-arm witness on #2924"
       },
       "2929": {
@@ -1965,7 +2207,7 @@
         "lane": "navigation-app-visible",
         "pr": 2929,
         "recommendedAction": "independent-review",
-        "similarity": 0.313,
+        "similarity": 0.204,
         "title": "[Navigation V14][Tests] Recover accessibility contracts onto current runtime head"
       },
       "2933": {
@@ -1976,7 +2218,7 @@
         "lane": "capture-build-authority",
         "pr": 2933,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.521,
+        "similarity": 0.482,
         "title": "[Capture P0][SECURITY] Verify accepted Git payload bytes before execution"
       },
       "2936": {
@@ -1989,17 +2231,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.292,
         "title": "[Capture P0][TESTS][EXPECTED RED] Descriptor ancestry namespace race"
-      },
-      "2937": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2937,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.515,
-        "title": "[Capture P0][SECURITY] Re-hash accepted Git payload before execution"
       },
       "2938": {
         "classification": "requires-review",
@@ -2023,28 +2254,6 @@
         "similarity": 0.533,
         "title": "[Capture P0][RED TEAM] Custody the system-selected Xcode field toolchain"
       },
-      "2940": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "005b7c4aaf27fabb442a65599b4538ebcc09ae27",
-        "lane": "",
-        "pr": 2940,
-        "recommendedAction": "independent-review",
-        "similarity": 0.145,
-        "title": "[Capture P0][AX LARGE TYPE] Close action-first root at exact head"
-      },
-      "2941": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2941,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.435,
-        "title": "[Capture P0][BUILD] Fence inherited DEVELOPER_DIR before field tool resolution"
-      },
       "2942": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2067,83 +2276,6 @@
         "similarity": 0.483,
         "title": "[Capture P0][RED TEAM] Root Git execution lookup in accepted commit bytes"
       },
-      "2947": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "navigation-app-visible",
-        "pr": 2947,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.312,
-        "title": "[Navigation V14][Product] Close premium empty state and safe landscape entry"
-      },
-      "2949": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2949,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.337,
-        "title": "[Capture P0][BUILD] Close residual xcodebuild child environment"
-      },
-      "2952": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "874ae4c6e951d370b96c020b4f08c96586a8923c",
-        "lane": "capture-build-authority-validation",
-        "pr": 2952,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.247,
-        "title": "[Capture P0][QA] Validate #2933 materializer without stale blob rewrite"
-      },
-      "2954": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-field-xcode-environment-authority",
-        "pr": 2954,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.42,
-        "title": "[Capture P0][RED TEAM] Fence caller xcrun SDK/toolchain selectors"
-      },
-      "2956": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "a3f2bd02e6921b82fbc806ee77bc7d27f4749f96",
-        "lane": "dashboard-live-cockpit",
-        "pr": 2956,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.126,
-        "title": "[P1 Dashboard][REPAIR] Align sealed Energy Rail runtime module identity"
-      },
-      "2959": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "navigation-app-visible",
-        "pr": 2959,
-        "recommendedAction": "independent-review",
-        "similarity": 0.169,
-        "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
-      },
-      "2962": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority-validation",
-        "pr": 2962,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.294,
-        "title": "[Capture P0][QA] Re-anchor verified Git payload repair on #2937"
-      },
       "2963": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -2154,17 +2286,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.379,
         "title": "[Dashboard V15][QA] Capture real dark landscape cockpit evidence"
-      },
-      "2965": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2965,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.262,
-        "title": "[Capture P0][BUILD] Custody system-selected Xcode field toolchain"
       },
       "2968": {
         "classification": "canonical-candidate",
@@ -2177,149 +2298,6 @@
         "similarity": 0.301,
         "title": "[Capture P0][BUILD] Converge field execution and pre-arm authority"
       },
-      "2969": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2969,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.314,
-        "title": "[Capture P0][RED TEAM] Require exact selected Xcode tool-file custody"
-      },
-      "2971": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 2971,
-        "recommendedAction": "independent-review",
-        "similarity": 0.322,
-        "title": "[Dashboard V15][AX5] Recompose accessibility landscape cockpit"
-      },
-      "2979": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2979,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.157,
-        "title": "[P0 Capture][visual] Tighten first fold; fail closed blank evidence"
-      },
-      "2980": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 2980,
-        "recommendedAction": "independent-review",
-        "similarity": 0.347,
-        "title": "[Dashboard V15][PERF] Recover sustained cockpit metrics on current lineage"
-      },
-      "2981": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 2981,
-        "recommendedAction": "independent-review",
-        "similarity": 0.3,
-        "title": "[Dashboard V15][AX5] Preserve status legibility and stopped controls"
-      },
-      "2982": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2982,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.412,
-        "title": "[Capture P0][BUILD] Bind exact selected Xcode tool-file custody"
-      },
-      "2988": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2988,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.419,
-        "title": "[Capture P0][SECURITY] Custody exact selected Xcode tool files"
-      },
-      "2989": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2989,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.323,
-        "title": "[Capture P0][RED TEAM] Expose selected Xcode tool ACL mutation authority"
-      },
-      "2991": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 2991,
-        "recommendedAction": "independent-review",
-        "similarity": 0.241,
-        "title": "[Dashboard V15][AX5] Separate Energy Rail from power status"
-      },
-      "3006": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3006,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.36,
-        "title": "[Capture P0][RED TEAM] Replay selected-tool ACL authority on current build head"
-      },
-      "3008": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3008,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.323,
-        "title": "[Capture P0][BUILD] Cleanly converge selected-Xcode provenance contract"
-      },
-      "3016": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "a2f67790ac10376016d5c5b5e6280201e9fcc816",
-        "lane": "capture-build-authority",
-        "pr": 3016,
-        "recommendedAction": "independent-review",
-        "similarity": 0.309,
-        "title": "[Capture P0][TESTS] Converge Field verified-Git source contract"
-      },
-      "3028": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3028,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.405,
-        "title": "[Capture P0][RED TEAM] Reject selected-tool ACL mutation and replacement authority"
-      },
       "3053": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2331,83 +2309,6 @@
         "similarity": 0.148,
         "title": "[Home V15] Preserve recovery progress state titles"
       },
-      "3058": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "92512a5c90be846ddab3521015a26419a8498865",
-        "lane": "rides-distance-history-authority",
-        "pr": 3058,
-        "recommendedAction": "independent-review",
-        "similarity": 0.264,
-        "title": "[Rides P3] Reconcile selected-distance truth onto current main"
-      },
-      "3061": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3061,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.398,
-        "title": "[Capture P0][TEST] Repair selected-Xcode ACL diagnostic scope"
-      },
-      "3067": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "488f0e8480e7187fda312c6b6dcb0c1e0b6d3d13",
-        "lane": "rides-duration-authority-persistence",
-        "pr": 3067,
-        "recommendedAction": "independent-review",
-        "similarity": 0.169,
-        "title": "[Rides P3] Seal duration producer authority on current main"
-      },
-      "3072": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3072,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.392,
-        "title": "[Capture P0][SECURITY] Reject selected-Xcode extended ACL authority"
-      },
-      "3088": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "31cca94cf3e5fb14fb95aa7a3399eaf1176c40e4",
-        "lane": "capture-build-authority",
-        "pr": 3088,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.269,
-        "title": "[Capture P0][INTEGRATION] Align Field provenance with selected Xcode tools"
-      },
-      "3117": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 3117,
-        "recommendedAction": "independent-review",
-        "similarity": 0.227,
-        "title": "[Dashboard V15][AX5] Preserve full connection wording"
-      },
-      "3118": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 3118,
-        "recommendedAction": "independent-review",
-        "similarity": 0.343,
-        "title": "[Dashboard V15][PERF] Refresh retarget witness and finite metric evidence"
-      },
       "3142": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2416,63 +2317,162 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.233,
+        "similarity": 0.122,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
-      "3152": {
+      "388": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3152,
+        "lane": "",
+        "pr": 388,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.188,
-        "title": "[Capture P0][VALIDATION] Prove Apple Development signing under field UID capability"
+        "similarity": 0.322,
+        "title": "[es80 live horizon] Compose accepted horizon authority onto current runtime"
       },
-      "3169": {
+      "391": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 391,
+        "recommendedAction": "independent-review",
+        "similarity": 0.192,
+        "title": "[es80 power cycle] Re-anchor accepted four-window producer onto current runtime"
+      },
+      "397": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 397,
+        "recommendedAction": "independent-review",
+        "similarity": 0.234,
+        "title": "[ride observed max stats] Keep selected-period max speed quality-bound"
+      },
+      "412": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 412,
+        "recommendedAction": "independent-review",
+        "similarity": 0.146,
+        "title": "[observed peak history] Persist revalidatable peak-quality evidence"
+      },
+      "417": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3169,
+        "lane": "",
+        "pr": 417,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.332,
-        "title": "[Capture P0][VALIDATION] Prove dedicated build principal retirement"
+        "similarity": 0.206,
+        "title": "[recover vehicle controls] Re-anchor premium confirmed-control surface"
       },
-      "3178": {
-        "classification": "canonical-candidate",
+      "422": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "8087bac82cc33888df22d15a34da8cf96e72269f",
-        "lane": "capture-build-authority",
-        "pr": 3178,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.212,
-        "title": "[Capture P0][BUILD] Materialize selected-Xcode freeze custodian"
+        "headSHA": "",
+        "lane": "",
+        "pr": 422,
+        "recommendedAction": "independent-review",
+        "similarity": 0.124,
+        "title": "[ride speed stats composite] Bind average and max to one ride scope"
       },
-      "3180": {
+      "423": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 423,
+        "recommendedAction": "independent-review",
+        "similarity": 0.124,
+        "title": "[es80 boundary transaction] Seal decision to queue transaction"
+      },
+      "424": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3180,
+        "lane": "",
+        "pr": 424,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.32,
-        "title": "[Capture P0][VALIDATION] Prove partial build-principal cleanup gap"
+        "similarity": 0.206,
+        "title": "[validation-only] Capture recovered Vehicle Controls runtime states"
       },
-      "3184": {
-        "classification": "validation",
+      "438": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "77df3f319b08a55c9aa55e751e282ebb1353646e",
-        "lane": "capture-signed-install-custody",
-        "pr": 3184,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.229,
-        "title": "[Capture P0][VALIDATION] Reap direct child before final principal retirement"
+        "headSHA": "",
+        "lane": "",
+        "pr": 438,
+        "recommendedAction": "independent-review",
+        "similarity": 0.185,
+        "title": "[recover ride-distance] Preserve selected coverage and seal record bridge"
+      },
+      "443": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 443,
+        "recommendedAction": "independent-review",
+        "similarity": 0.168,
+        "title": "[ride-distance history] Bind reconciliation inputs to immutable history"
+      },
+      "444": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 444,
+        "recommendedAction": "independent-review",
+        "similarity": 0.224,
+        "title": "[speed-currentness recovery] Complete Simulator source-owned live speed truth"
+      },
+      "461": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 461,
+        "recommendedAction": "independent-review",
+        "similarity": 0.165,
+        "title": "[CI review only] ride-distance sealed coordinator exact product v6"
+      },
+      "463": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 463,
+        "recommendedAction": "independent-review",
+        "similarity": 0.173,
+        "title": "[app icon] Ship production Nembra identity"
+      },
+      "464": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 464,
+        "recommendedAction": "independent-review",
+        "similarity": 0.128,
+        "title": "[recover ride lifecycle] Keep task cancellation non-failure"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,10 +2505,8 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:47:50Z",
-    "liveRefreshDuplicatesSuppressed": [
-      3184
-    ],
+    "liveRefreshAt": "2026-08-14T10:50:33Z",
+    "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
       3142
@@ -6290,10 +6288,10 @@
       "userValue": 7
     }
   },
-  "revision": 178,
+  "revision": 179,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:50:15Z",
+  "updatedAt": "2026-08-14T10:52:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6367,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:47:50Z",
+      "updatedAt": "2026-08-14T10:50:33Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
