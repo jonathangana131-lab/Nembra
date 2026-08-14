@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 83,
+    "classifiedPRTotal": 70,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1261,7 +1261,7 @@
         "lane": "",
         "pr": 164,
         "recommendedAction": "independent-review",
-        "similarity": 0.083,
+        "similarity": 0.08,
         "title": "[es80] Keep solicited services out of transport candidates"
       },
       "165": {
@@ -1283,7 +1283,7 @@
         "lane": "",
         "pr": 166,
         "recommendedAction": "independent-review",
-        "similarity": 0.184,
+        "similarity": 0.098,
         "title": "[simulator-truth] Separate synthetic QA from physical scooter profiles"
       },
       "170": {
@@ -1316,7 +1316,7 @@
         "lane": "",
         "pr": 200,
         "recommendedAction": "independent-review",
-        "similarity": 0.146,
+        "similarity": 0.141,
         "title": "[navigation-arrival] Require sustained truthful destination evidence"
       },
       "204": {
@@ -1426,7 +1426,7 @@
         "lane": "",
         "pr": 242,
         "recommendedAction": "independent-review",
-        "similarity": 0.208,
+        "similarity": 0.183,
         "title": "[home-truth] Fail closed on ambiguous feedback and lock evidence"
       },
       "244": {
@@ -1481,7 +1481,7 @@
         "lane": "",
         "pr": 250,
         "recommendedAction": "independent-review",
-        "similarity": 0.175,
+        "similarity": 0.148,
         "title": "[navigation-arrival] Recover sustained destination evidence"
       },
       "251": {
@@ -1492,7 +1492,7 @@
         "lane": "",
         "pr": 251,
         "recommendedAction": "independent-review",
-        "similarity": 0.294,
+        "similarity": 0.062,
         "title": "[navigation] Make route request identity collision-resistant"
       },
       "257": {
@@ -1547,7 +1547,7 @@
         "lane": "",
         "pr": 273,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.207,
+        "similarity": 0.143,
         "title": "[recover-es80-passive-capture-qa] Close passive capture integrity gaps"
       },
       "274": {
@@ -1635,63 +1635,8 @@
         "lane": "",
         "pr": 293,
         "recommendedAction": "independent-review",
-        "similarity": 0.177,
+        "similarity": 0.095,
         "title": "[speed-currentness recovery] Project source-owned live speed truth"
-      },
-      "295": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 295,
-        "recommendedAction": "independent-review",
-        "similarity": 0.235,
-        "title": "[recover-es80-tuya-dp] Reconcile DP candidate parser on current main"
-      },
-      "297": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 297,
-        "recommendedAction": "independent-review",
-        "similarity": 0.137,
-        "title": "[recover-es80-passive-capture-final] Gate latest passive capture truth"
-      },
-      "301": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 301,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.138,
-        "title": "[es80-offline-report] Turn capture artifacts into framing reports"
-      },
-      "302": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 302,
-        "recommendedAction": "independent-review",
-        "similarity": 0.112,
-        "title": "[propulsion-envelope-persistence] Make learned power calibration durable"
-      },
-      "303": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 303,
-        "recommendedAction": "independent-review",
-        "similarity": 0.229,
-        "title": "[recover-es80-research-capture-app] Restore exact-head Xcode acceptance"
       },
       "304": {
         "classification": "requires-review",
@@ -1701,19 +1646,8 @@
         "lane": "",
         "pr": 304,
         "recommendedAction": "independent-review",
-        "similarity": 0.23,
+        "similarity": 0.127,
         "title": "[recover-home-ride-summary] Restore compact completed-ride truth on current main"
-      },
-      "309": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 309,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.272,
-        "title": "[recover-navigation] Make route request identity collision-resistant"
       },
       "3142": {
         "classification": "canonical-candidate",
@@ -1726,17 +1660,6 @@
         "similarity": 0.069,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
-      "316": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 316,
-        "recommendedAction": "independent-review",
-        "similarity": 0.187,
-        "title": "[simulator-truth] Recover synthetic QA profile on V13 main"
-      },
       "34": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1747,72 +1670,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.426,
         "title": "[battery-evidence-domain] Separate measured, observed, estimated, and display battery truth"
-      },
-      "347": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 347,
-        "recommendedAction": "independent-review",
-        "similarity": 0.193,
-        "title": "[es80-stationary-capture-manifest] Bind physical setup to exact capture bytes"
-      },
-      "349": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 349,
-        "recommendedAction": "independent-review",
-        "similarity": 0.166,
-        "title": "[navigation-arrival] Recover sustained arrival on opaque selection identity"
-      },
-      "352": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 352,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.105,
-        "title": "[propulsion accessibility identity] Bind assistive truth to vehicle scope"
-      },
-      "356": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 356,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.204,
-        "title": "[es80 home hero] Integrate primary vehicle artwork into Home"
-      },
-      "361": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 361,
-        "recommendedAction": "independent-review",
-        "similarity": 0.192,
-        "title": "[es80 observation windows] Isolate repeated power-cycle scans by manager epoch"
-      },
-      "363": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 363,
-        "recommendedAction": "independent-review",
-        "similarity": 0.203,
-        "title": "[es80 capture] Preserve immutable observation horizon evidence"
       },
       "38": {
         "classification": "requires-review",
@@ -1910,7 +1767,7 @@
         "lane": "",
         "pr": 70,
         "recommendedAction": "independent-review",
-        "similarity": 0.136,
+        "similarity": 0.123,
         "title": "[home-vehicle-status-field] Unify truthful Home connection status"
       },
       "75": {
@@ -2010,7 +1867,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T11:00:14Z",
+    "liveRefreshAt": "2026-08-14T11:01:00Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5793,10 +5650,10 @@
       "userValue": 7
     }
   },
-  "revision": 188,
+  "revision": 189,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T11:00:28Z",
+  "updatedAt": "2026-08-14T11:01:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5872,7 +5729,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T11:00:14Z",
+      "updatedAt": "2026-08-14T11:01:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
