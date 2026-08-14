@@ -21,7 +21,7 @@ jobs:
           persist-credentials: true
       - name: Close source authority synchronously before retirement task
         env:
-          EXPECTED_PARENT: 4b176b69958d20b140910458c776e5aa8bbbb66f
+          EXPECTED_PARENT: 8894077b25c77ea40debc15019427e01bd6bbfb3
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
