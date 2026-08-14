@@ -44,10 +44,15 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             in: admission,
             after: inFlight
         )
-        let release = try deliveryCutoffRequiredOffset(
-            "defer { self.applicationUpdateAdmissionsInFlight -= 1 }",
+        let deferFence = try deliveryCutoffRequiredOffset(
+            "defer {",
             in: admission,
             after: asyncHop
+        )
+        let release = try deliveryCutoffRequiredOffset(
+            "applicationUpdateAdmissionsInFlight -= 1",
+            in: admission,
+            after: deferFence
         )
         let receiverCall = try deliveryCutoffRequiredOffset(
             "receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)",
@@ -57,7 +62,8 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
 
         #expect(receipt < inFlight)
         #expect(inFlight < asyncHop)
-        #expect(asyncHop < release)
+        #expect(asyncHop < deferFence)
+        #expect(deferFence < release)
         #expect(release < receiverCall)
 
         // The shipping app must have exactly one delivery-receipt minting call and it must be in
@@ -113,6 +119,8 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
 
         #expect(ledger.contains("applicationReceiptIssuerID"))
         #expect(ledger.contains("consumedApplicationDeliveryIDs"))
+        #expect(ledger.contains("nonisolated func captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken)"),
+                Comment(rawValue: "Receipt capture must be synchronous at SDK delivery; an actor hop before timestamping recreates scheduler-defined chronology."))
 
         let capture = String(try deliveryCutoffSection(
             in: ledger,
@@ -122,8 +130,8 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
         #expect(capture.contains("DispatchTime.now().uptimeNanoseconds"))
         #expect(capture.contains("issuerID: applicationReceiptIssuerID"))
         #expect(capture.contains("deliveryID: UUID()"))
-        #expect(!capture.contains("receivedAtUptimeNanoseconds:"),
-                Comment(rawValue: "The public capture signature must not accept caller-selected receipt time."))
+        #expect(!ledger.contains("captureApplicationReceipt(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:"),
+                Comment(rawValue: "The public capture API must not accept caller-selected receipt time."))
 
         let record = String(try deliveryCutoffSection(
             in: ledger,
