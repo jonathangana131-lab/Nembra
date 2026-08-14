@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 4,
+    "classifiedPRTotal": 5,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1109,6 +1109,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.08,
         "title": "[QA V14] Isolate landscape launch metric from residual Dashboard animation"
+      },
+      "3314": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3314,
+        "recommendedAction": "independent-review",
+        "similarity": 0.073,
+        "title": "Mount truthful Energy Rail in Dashboard"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1141,7 +1152,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T22:58:58Z",
+    "liveRefreshAt": "2026-08-14T22:59:24Z",
     "liveRefreshDuplicatesSuppressed": [
       3312
     ],
@@ -4926,10 +4937,10 @@
       "userValue": 7
     }
   },
-  "revision": 229,
+  "revision": 230,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T22:58:58Z",
+  "updatedAt": "2026-08-14T22:59:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5005,7 +5016,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T22:58:58Z",
+      "updatedAt": "2026-08-14T22:59:24Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
