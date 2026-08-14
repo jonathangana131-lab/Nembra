@@ -423,9 +423,19 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         for token: TuyaReadOnlyConnectionToken
     ) throws {
         try requireCurrent(token)
-        guard !receiptAuthority.hasPendingApplicationReceipt(for: token) else {
+
+        // Atomically reject an already-delivered application callback and close all future receipt
+        // issuance before sampling any later actor-time boundary. This removes the check-then-retire
+        // race between nonisolated callback admission and immutable acceptance.
+        switch receiptAuthority.beginSeal(for: token) {
+        case .admitted:
+            break
+        case .applicationReceiptPending:
             throw MutationError.applicationAdmissionPending
+        case .invalidToken:
+            throw MutationError.observationAdmissionInvalidOrConsumed
         }
+
         let now = try nextMonotonicObservation()
         try requireContinuousAuthenticatedObservation(at: now)
         let snapshot = makeSnapshot()
@@ -598,10 +608,27 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             pendingApplicationSequences.remove(at: index)
         }
 
-        func hasPendingApplicationReceipt(for token: TuyaReadOnlyConnectionToken) -> Bool {
+        enum SealAdmissionResult {
+            case admitted
+            case applicationReceiptPending
+            case invalidToken
+        }
+
+        /// Atomically admits immutable acceptance. No application delivery may already be pending,
+        /// and successful admission simultaneously closes future receipt issuance for this exact
+        /// generation before any later seal-time clock sample can overtake callback chronology.
+        func beginSeal(for token: TuyaReadOnlyConnectionToken) -> SealAdmissionResult {
             lock.lock()
             defer { lock.unlock() }
-            return activeToken == token && !pendingApplicationSequences.isEmpty
+            guard activeToken == token else { return .invalidToken }
+            guard pendingApplicationSequences.isEmpty else {
+                return .applicationReceiptPending
+            }
+            activeToken = nil
+            lastIssuedUptimeNanoseconds = nil
+            pendingApplicationSequences.removeAll(keepingCapacity: false)
+            pendingLivenessSequences.removeAll(keepingCapacity: false)
+            return .admitted
         }
 
         func consumeApplicationReceipt(

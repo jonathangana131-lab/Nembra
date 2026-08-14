@@ -117,9 +117,18 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(ledger.contains("pendingApplicationSequences.removeFirst()"))
         #expect(ledger.contains("guard pendingApplicationSequences.isEmpty else"))
         #expect(ledger.contains("throw MutationError.applicationAdmissionPending"))
-        #expect(ledger.contains("guard !receiptAuthority.hasPendingApplicationReceipt(for: token) else"))
+        #expect(ledger.contains("func beginSeal(for token: TuyaReadOnlyConnectionToken) -> SealAdmissionResult"))
+        #expect(ledger.contains("receiptAuthority.beginSeal(for: token)"))
+        #expect(!ledger.contains("hasPendingApplicationReceipt(for token:"))
         #expect(ledger.contains("throw MutationError.observationAdmissionInvalidOrConsumed"))
         #expect(!ledger.contains("public func observeCurrentConnection(for token:"))
+
+        let sealStart = try #require(ledger.range(of: "public func sealAcceptedObservation("))
+        let sealEnd = try #require(ledger.range(of: "public func endConnection(", range: sealStart.upperBound..<ledger.endIndex))
+        let seal = String(ledger[sealStart.lowerBound..<sealEnd.lowerBound])
+        let atomicCut = try #require(seal.range(of: "receiptAuthority.beginSeal(for: token)"))
+        let sealClock = try #require(seal.range(of: "let now = try nextMonotonicObservation()"))
+        #expect(atomicCut.lowerBound < sealClock.lowerBound)
     }
 
     @Test("accepted export consumes the frozen whole envelope instead of mutable controller state")
