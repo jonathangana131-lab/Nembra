@@ -1070,11 +1070,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
+        "headSHA": "8023e8e836bdbaa6956444e9ff3bd7c459cc9ba1",
+        "lane": "rides-route-render-performance",
         "pr": 2507,
         "recommendedAction": "independent-review",
-        "similarity": 0.075,
+        "similarity": 0.0,
         "title": "[Rides V14] Pin route map render projection churn"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "shared-xcode-launch-metric",
         "pr": 3313,
         "recommendedAction": "independent-review",
-        "similarity": 0.077,
+        "similarity": 0.0,
         "title": "[QA V14] Isolate landscape launch metric from residual Dashboard animation"
       },
       "3314": {
@@ -1107,7 +1107,7 @@
         "lane": "dashboard-energy-rail-app-visible",
         "pr": 3314,
         "recommendedAction": "independent-review",
-        "similarity": 0.054,
+        "similarity": 0.0,
         "title": "Mount truthful Energy Rail in Dashboard"
       },
       "3316": {
@@ -1118,7 +1118,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.053,
+        "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3317": {
@@ -1174,7 +1174,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:05:43Z",
+    "liveRefreshAt": "2026-08-14T23:06:24Z",
     "liveRefreshDuplicatesSuppressed": [
       3318
     ],
@@ -4959,10 +4959,10 @@
       "userValue": 7
     }
   },
-  "revision": 250,
+  "revision": 251,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:05:43Z",
+  "updatedAt": "2026-08-14T23:06:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5038,7 +5038,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:05:43Z",
+      "updatedAt": "2026-08-14T23:06:24Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
