@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 17,
+    "classifiedPRTotal": 14,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1129,7 +1129,7 @@
         "lane": "",
         "pr": 304,
         "recommendedAction": "independent-review",
-        "similarity": 0.127,
+        "similarity": 0.116,
         "title": "[recover-home-ride-summary] Restore compact completed-ride truth on current main"
       },
       "3142": {
@@ -1162,7 +1162,7 @@
         "lane": "",
         "pr": 38,
         "recommendedAction": "independent-review",
-        "similarity": 0.167,
+        "similarity": 0.113,
         "title": "[battery-range-evidence-bridge] Gate adaptive range on verified battery truth"
       },
       "40": {
@@ -1184,7 +1184,7 @@
         "lane": "",
         "pr": 48,
         "recommendedAction": "independent-review",
-        "similarity": 0.68,
+        "similarity": 0.625,
         "title": "[battery-evidence-snapshot] Prevent stale/fresh battery field mixing"
       },
       "50": {
@@ -1209,39 +1209,6 @@
         "similarity": 0.705,
         "title": "[battery-evidence-availability] Keep battery freshness evidence-driven"
       },
-      "52": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 52,
-        "recommendedAction": "independent-review",
-        "similarity": 0.637,
-        "title": "[battery-evidence-live-truth] Require fresh and verified for live battery data"
-      },
-      "54": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "76880f826604e941cd4d75d09edf2619fd774d26",
-        "lane": "",
-        "pr": 54,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.181,
-        "title": "[adaptive-range-window-assembly][integration] Assemble truthful learning windows"
-      },
-      "56": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 56,
-        "recommendedAction": "independent-review",
-        "similarity": 0.582,
-        "title": "[battery-electrical-coherence] Gate voltage/current pairing on verified timing"
-      },
       "83": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1250,7 +1217,7 @@
         "lane": "",
         "pr": 83,
         "recommendedAction": "independent-review",
-        "similarity": 0.178,
+        "similarity": 0.094,
         "title": "[adaptive-range-primary-presentation-policy] Gate primary range on trustworthy evidence"
       }
     },
@@ -1284,7 +1251,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T11:04:05Z",
+    "liveRefreshAt": "2026-08-14T11:04:23Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5067,10 +5034,10 @@
       "userValue": 7
     }
   },
-  "revision": 197,
+  "revision": 198,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T11:04:05Z",
+  "updatedAt": "2026-08-14T11:04:23Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5146,7 +5113,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T11:04:05Z",
+      "updatedAt": "2026-08-14T11:04:23Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
