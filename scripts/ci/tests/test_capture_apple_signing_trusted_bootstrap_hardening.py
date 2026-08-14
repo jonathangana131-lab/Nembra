@@ -197,10 +197,20 @@ def create_identity(name: str, numeric_id: int) -> None:
         ["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "NFSHomeDirectory", "/var/empty"],
         ["/usr/bin/dscl", ".", "-create", f"/Users/{name}", "UserShell", "/bin/sh"],
     ]
-    for command in commands:
-        run(command, check=True)
-    require(ds_record_exists("Users", name), "synthetic field user was not materialized")
-    require(ds_record_exists("Groups", name), "synthetic field group was not materialized")
+    mutation_attempted = False
+    try:
+        for command in commands:
+            mutation_attempted = True
+            run(command, check=True)
+        require(ds_record_exists("Users", name), "synthetic field user was not materialized")
+        require(ds_record_exists("Groups", name), "synthetic field group was not materialized")
+    except Exception:
+        if mutation_attempted:
+            # Once this unique synthetic principal namespace has entered a mutating DS operation,
+            # cleanup authority belongs to this attempt even when materialization fails midway.
+            # A cleanup failure is intentionally authoritative and may replace the original error.
+            delete_identity_after_process_retirement(name, numeric_id)
+        raise
 
 
 def delete_identity_after_process_retirement(name: str, numeric_id: int) -> None:

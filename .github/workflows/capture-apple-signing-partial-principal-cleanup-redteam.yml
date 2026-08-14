@@ -3,7 +3,7 @@ name: Capture Apple signing partial-principal cleanup red team
 on:
   pull_request:
     paths:
-      - scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py
+      - scripts/ci/tests/test_capture_apple_signing_partial-principal-cleanup-redteam.py
       - .github/workflows/capture-apple-signing-partial-principal-cleanup-redteam.yml
   workflow_dispatch:
 
@@ -25,7 +25,7 @@ jobs:
       - name: Bind exact validation parent and diagnostic scope
         shell: bash
         env:
-          EXACT_PARENT: 963967e1986ae60f6414b351571d7ea0af3c5121
+          EXACT_PARENT: bf8fd13b0bab33365a306b3fb39988e2dee0f759
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
