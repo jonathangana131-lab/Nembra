@@ -28,13 +28,13 @@
   "legacyPRCompatibility": "shadow-warn",
   "v16": {
     "enabled": true,
-    "policyVersion": "16.1",
+    "policyVersion": "16.2",
     "graphPath": ".swarm/runtime/v16/mission-graph.json",
     "defaultWorkers": 30,
     "roleTargets": {
-      "builder": 0.6,
+      "builder": 0.45,
       "reviewer": 0.2,
-      "integrator": 0.2
+      "integrator": 0.35
     },
     "semanticDuplicateThreshold": 0.58,
     "solutionTournamentMaxCandidates": 2,
@@ -50,7 +50,17 @@
       "maxOpenNoncanonicalPRsPerLane": 6,
       "lowProgressAttemptsBeforeFreeze": 3,
       "automaticPRAdmission": true,
-      "newSwarmPRProtocol": "16.1"
+      "newSwarmPRProtocol": "16.2"
+    },
+    "integrationThroughput": {
+      "automaticMergePressure": true,
+      "integrationBeforeCapacityMining": true,
+      "canonicalAbsorptionRequired": true,
+      "maxOpenChildrenPerParent": 2,
+      "maxOpenIntegrationChildrenPerParent": 1,
+      "reviewAgePressureSeconds": 600,
+      "producerSchemaFence": true,
+      "mergePressureMayBypassTruthGates": false
     },
     "physicalSafety": {
       "schedulerMayPromotePhysicalGo": false,
