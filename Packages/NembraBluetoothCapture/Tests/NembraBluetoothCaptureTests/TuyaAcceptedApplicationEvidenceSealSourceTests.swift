@@ -26,43 +26,61 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
         #expect(!body.contains("self.sealedAcceptedEventPrefix = self.events"))
     }
 
-    @Test("application callbacks cannot cross the acceptance cut and in-flight admissions remain owned until async ledger work finishes")
-    func applicationAdmissionIsQuiescedBeforeSeal() throws {
+    @Test("SDK application callback enters admission synchronously before any new MainActor task can reorder it")
+    func sdkCallbackAdmissionPrecedesAsyncScheduling() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let receive = try section(in: app, from: "private func receivedApplicationUpdate", to: "private func startWatchdog")
-        let body = String(receive)
+        guard let connect = app.range(of: "newDriver.connect("),
+              let callback = app.range(of: "onApplicationUpdate:", range: connect.lowerBound..<app.endIndex),
+              let success = app.range(of: "success:", range: callback.upperBound..<app.endIndex) else {
+            Issue.record("Could not isolate the official Tuya application callback closure.")
+            throw SourceContractError.sectionMissing
+        }
+        let body = String(app[callback.lowerBound..<success.lowerBound])
+
+        #expect(body.contains("admitApplicationUpdateCallback(update, token: token)"),
+                Comment(rawValue: "A callback already delivered by the official SDK must synchronously cross Nembra's admission boundary before control returns to the MainActor scheduler."))
+        #expect(!body.contains("Task { @MainActor"),
+                Comment(rawValue: "Spawning a new task before admission lets the watchdog overtake an already-delivered callback at the package-owned 60-second horizon."))
+    }
+
+    @Test("application admission owns the in-flight drain before asynchronous ledger work begins")
+    func applicationAdmissionIsOwnedBeforeAsyncLedgerWork() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let admission = try section(in: app, from: "private func admitApplicationUpdateCallback", to: "private func receivedApplicationUpdate")
+        let body = String(admission)
 
         guard let cutGuard = body.range(of: "guard !acceptanceCutIsClosed"),
               let increment = body.range(of: "applicationUpdateAdmissionsInFlight += 1", range: cutGuard.upperBound..<body.endIndex),
-              let decrement = body.range(of: "defer { applicationUpdateAdmissionsInFlight -= 1 }", range: increment.upperBound..<body.endIndex),
-              let mutation = body.range(of: "try await sessionLedger.recordApplicationUpdate", range: decrement.upperBound..<body.endIndex) else {
-            Issue.record("Application evidence admission must be cut-gated and tracked across its async package mutation.")
+              let task = body.range(of: "Task { @MainActor", range: increment.upperBound..<body.endIndex),
+              let decrement = body.range(of: "applicationUpdateAdmissionsInFlight -= 1", range: task.upperBound..<body.endIndex),
+              let receiver = body.range(of: "receivedApplicationUpdate(update, token: token)", range: task.upperBound..<body.endIndex) else {
+            Issue.record("Application callback admission must synchronously own the drain before scheduling its asynchronous package mutation.")
             throw SourceContractError.sectionMissing
         }
 
         #expect(cutGuard.lowerBound < increment.lowerBound)
-        #expect(increment.lowerBound < decrement.lowerBound)
-        #expect(decrement.lowerBound < mutation.lowerBound)
-        #expect(body.contains("application_update_after_acceptance_cut_ignored"))
+        #expect(increment.lowerBound < task.lowerBound)
+        #expect(task.lowerBound < receiver.lowerBound)
+        #expect(task.lowerBound < decrement.lowerBound)
     }
 
-    @Test("no-application timeout cannot retire a generation while an application admission is still in flight")
-    func timeoutWaitsForApplicationAdmissionQuiescence() throws {
+    @Test("package-owned horizon poll cannot overtake an already-admitted application callback")
+    func packageHorizonWaitsForApplicationAdmissionDrain() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = try section(in: app, from: "private func startWatchdog", to: "private func recordObservedTransportLoss")
         let body = String(watchdog)
 
-        guard let timeoutGate = body.range(of: "if self.applicationUpdateAdmissionsInFlight == 0,"),
-              let ageGate = body.range(of: "(self.canonicalObservedAgeSeconds ?? 0) > 60", range: timeoutGate.upperBound..<body.endIndex),
-              let noApplication = body.range(of: "self.applicationUpdateCount == 0", range: ageGate.upperBound..<body.endIndex),
-              let terminal = body.range(of: "try await sessionLedger.markApplicationObservationTimedOut", range: noApplication.upperBound..<body.endIndex) else {
-            Issue.record("The no-application terminal must require zero in-flight application admissions before it can retire the generation.")
+        guard let drainGate = body.range(of: "applicationUpdateAdmissionsInFlight > 0"),
+              let packagePoll = body.range(of: "try await self.sessionLedger.observeCurrentConnection(for: token)") else {
+            Issue.record("The package-owned horizon poll must defer while a synchronously admitted SDK application callback is still draining.")
             throw SourceContractError.sectionMissing
         }
 
-        #expect(timeoutGate.lowerBound < ageGate.lowerBound)
-        #expect(ageGate.lowerBound < noApplication.lowerBound)
-        #expect(noApplication.lowerBound < terminal.lowerBound)
+        #expect(drainGate.lowerBound < packagePoll.lowerBound)
+        #expect(body.contains("catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached"))
+        #expect(body.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
+        #expect(!body.contains("markApplicationObservationTimedOut"),
+                Comment(rawValue: "The app must not recreate a second timeout terminal now that the package owns the bounded incomplete-observation horizon."))
     }
 
     @Test("accepted export consumes the frozen whole envelope instead of reconstructing from mutable controller state")
