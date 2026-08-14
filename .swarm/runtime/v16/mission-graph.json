@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.192,
+        "similarity": 0.183,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3314": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3322,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.308,
+        "similarity": 0.266,
         "title": "[Capture P0][SECURITY] Add trusted owner-gated Xcode custody command"
       },
       "3323": {
@@ -1196,7 +1196,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:21:24Z",
+    "liveRefreshAt": "2026-08-14T23:22:26Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4981,10 +4981,10 @@
       "userValue": 7
     }
   },
-  "revision": 295,
+  "revision": 296,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:21:24Z",
+  "updatedAt": "2026-08-14T23:22:26Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5060,7 +5060,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:21:24Z",
+      "updatedAt": "2026-08-14T23:22:26Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
