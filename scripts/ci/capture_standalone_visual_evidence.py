@@ -45,6 +45,19 @@ def load_guard():
     return module, path
 
 
+def retain_simctl_help(topic: str, output: Path) -> None:
+    probe = subprocess.run(
+        ["xcrun", "simctl", "help", topic],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    text = probe.stdout + probe.stderr
+    if not text.strip():
+        raise RuntimeError(f"simctl help {topic} returned no capability text")
+    output.write_text(text, encoding="utf-8")
+
+
 def exact_runtime() -> str:
     payload = json.loads(run("xcrun", "simctl", "list", "runtimes", "-j", capture=True).stdout)
     choices = [
@@ -102,6 +115,10 @@ def capture_ready(guard, udid: str, pid: int, output: Path, label: str, log_path
     raise RuntimeError(f"{label}: no non-trivial rendered screenshot within bounded attempts")
 
 
+def terminate(udid: str) -> None:
+    subprocess.run(["xcrun", "simctl", "terminate", udid, BUNDLE_ID], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def main() -> int:
     if platform.system() != "Darwin" or shutil.which("xcrun") is None:
         raise RuntimeError("visual evidence requires macOS/CoreSimulator")
@@ -131,6 +148,10 @@ def main() -> int:
         raise RuntimeError(f"refusing prior evidence directory: {ARTIFACTS}")
     (ARTIFACTS / "screenshots").mkdir(parents=True)
     (ARTIFACTS / "logs").mkdir()
+    ui_help = ARTIFACTS / "logs/simctl-ui-help.txt"
+    io_help = ARTIFACTS / "logs/simctl-io-help.txt"
+    retain_simctl_help("ui", ui_help)
+    retain_simctl_help("io", io_help)
     runtime = exact_runtime()
     device_type = exact_device_type()
     sim_name = f"Nembra Capture Visual {os.environ.get('GITHUB_RUN_ID', 'local')}-{os.environ.get('GITHUB_RUN_ATTEMPT', '0')}"
@@ -140,17 +161,27 @@ def main() -> int:
         run("xcrun", "simctl", "bootstatus", udid, "-b")
         run("xcrun", "simctl", "install", udid, str(APP_PATH))
         subprocess.run(["xcrun", "simctl", "status_bar", udid, "override", "--time", "9:41", "--batteryState", "charged", "--batteryLevel", "82", "--wifiBars", "3", "--cellularMode", "active", "--cellularBars", "4"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
         run("xcrun", "simctl", "ui", udid, "appearance", "dark")
         standard = ARTIFACTS / "screenshots/standalone-unprovisioned-dark-iphone12.png"
         pid = launch(udid)
-        capture_ready(guard, udid, pid, standard, "standard", ARTIFACTS / "logs/screenshot-readiness.jsonl")
+        capture_ready(guard, udid, pid, standard, "dark-standard", ARTIFACTS / "logs/screenshot-readiness.jsonl")
+
+        run("xcrun", "simctl", "ui", udid, "appearance", "light")
+        terminate(udid)
+        light = ARTIFACTS / "screenshots/standalone-unprovisioned-light-iphone12.png"
+        pid = launch(udid)
+        capture_ready(guard, udid, pid, light, "light-standard", ARTIFACTS / "logs/screenshot-readiness.jsonl")
+
+        run("xcrun", "simctl", "ui", udid, "appearance", "dark")
         run("xcrun", "simctl", "ui", udid, "content_size", "accessibility-extra-extra-extra-large")
-        subprocess.run(["xcrun", "simctl", "terminate", udid, BUNDLE_ID], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        terminate(udid)
         ax5 = ARTIFACTS / "screenshots/standalone-unprovisioned-dark-iphone12-ax5.png"
         pid = launch(udid)
-        capture_ready(guard, udid, pid, ax5, "accessibility-xxxl", ARTIFACTS / "logs/screenshot-readiness.jsonl")
+        capture_ready(guard, udid, pid, ax5, "dark-accessibility-xxxl", ARTIFACTS / "logs/screenshot-readiness.jsonl")
+
         record = {
-            "schemaVersion": 7,
+            "schemaVersion": 8,
             "authority": "standalone-capture-simulator-presentation-only",
             "buildIdentifier": build_id,
             "sourceCommitSHA": source_sha,
@@ -166,17 +197,20 @@ def main() -> int:
             "screenshotRenderedContentReadinessVerified": True,
             "screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v1",
             "screenshotRenderedContentGuardSHA256": sha256(guard_path),
+            "simctlUIHelpSHA256": sha256(ui_help),
+            "simctlIOHelpSHA256": sha256(io_help),
             "physicalAuthorityCreated": False,
             "protocolAuthorityCreated": False,
             "screenshots": [
                 {"state": "unprovisioned-dark-standard", "relativePath": str(standard.relative_to(ARTIFACTS)), "sha256": sha256(standard)},
+                {"state": "unprovisioned-light-standard", "relativePath": str(light.relative_to(ARTIFACTS)), "sha256": sha256(light)},
                 {"state": "unprovisioned-dark-accessibility-xxxl", "relativePath": str(ax5.relative_to(ARTIFACTS)), "sha256": sha256(ax5)},
             ],
             "infoPlistSHA256": sha256(info_path),
         }
         (ARTIFACTS / "NembraCaptureStandaloneVisualEvidence.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     finally:
-        subprocess.run(["xcrun", "simctl", "terminate", udid, BUNDLE_ID], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        terminate(udid)
         subprocess.run(["xcrun", "simctl", "shutdown", udid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["xcrun", "simctl", "delete", udid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return 0

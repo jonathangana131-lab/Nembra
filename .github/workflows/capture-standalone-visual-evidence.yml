@@ -79,7 +79,7 @@ jobs:
           import json, re, sys
           with open(sys.argv[1], encoding='utf-8') as handle:
               r = json.load(handle)
-          assert r['schemaVersion'] == 7
+          assert r['schemaVersion'] == 8
           assert r['sourceCommitSHA'] == sys.argv[2]
           assert r['baselineDevice'] == 'iPhone 12' and r['baselineOS'] == 'iOS 27'
           assert r['procedureIdentifier'] == 'ES80-AUTHENTICATED-STATIONARY-v1'
@@ -89,9 +89,15 @@ jobs:
           assert r['screenshotRenderedContentReadinessVerified'] is True
           assert r['screenshotRenderedContentGuard'] == 'capture_visual_png_content_guard.py/v1'
           assert re.fullmatch(r'[0-9a-f]{64}', r['screenshotRenderedContentGuardSHA256'])
+          assert re.fullmatch(r'[0-9a-f]{64}', r['simctlUIHelpSHA256'])
+          assert re.fullmatch(r'[0-9a-f]{64}', r['simctlIOHelpSHA256'])
           assert r['physicalAuthorityCreated'] is False
           assert r['protocolAuthorityCreated'] is False
-          assert {x['state'] for x in r['screenshots']} == {'unprovisioned-dark-standard', 'unprovisioned-dark-accessibility-xxxl'}
+          assert {x['state'] for x in r['screenshots']} == {
+              'unprovisioned-dark-standard',
+              'unprovisioned-light-standard',
+              'unprovisioned-dark-accessibility-xxxl',
+          }
           PY
 
       - name: Upload evidence
