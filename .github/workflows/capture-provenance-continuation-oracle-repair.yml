@@ -76,17 +76,16 @@ jobs:
           test "$guard_line" -lt "$build_line"
           test "$build_line" -lt "$second_private_verify_line"
 
-      - name: Publish coherent repair and remove one-shot
+      - name: Retain proven repaired provenance workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: repaired-capture-provenance-${{ github.sha }}
+          path: .github/workflows/capture-field-build-provenance.yml
+          if-no-files-found: error
+
+      - name: Preserve connector-publication boundary
         shell: bash
         run: |
           set -euo pipefail
-          git rm .github/workflows/capture-provenance-continuation-oracle-repair.yml
-          git diff --check
-          changed="$( { git diff --name-only; git diff --cached --name-only; } | sort -u )"
-          expected=$'.github/workflows/capture-field-build-provenance.yml\n.github/workflows/capture-provenance-continuation-oracle-repair.yml'
-          test "$changed" = "$expected"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/capture-field-build-provenance.yml
-          git commit -m 'Capture: fix provenance continuation locators'
-          git push origin HEAD:capture/one-time-ble-dump-gpt56
+          echo 'Repaired workflow retained for connector-side publication; GITHUB_TOKEN does not publish workflow-file mutations.'
+          exit 1
