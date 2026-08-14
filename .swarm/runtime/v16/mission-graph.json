@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 286,
+    "classifiedPRTotal": 287,
     "classifiedPRs": {
-      "2711": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2711,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.221,
-        "title": "[Capture P0][RED TEAM] Bind checkout root before trusting private writer path"
-      },
       "2719": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -2473,6 +2462,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.182,
         "title": "[Home V15][QA] Require exact Accessibility XXXL closure witness"
+      },
+      "3269": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "swarm-control-plane-v16-2-rollout",
+        "pr": 3269,
+        "recommendedAction": "independent-review",
+        "similarity": 0.09,
+        "title": "[Swarm V16.2] Convert burst output into canonical integration"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:03:31Z",
+    "liveRefreshAt": "2026-08-14T08:15:15Z",
     "liveRefreshDuplicatesSuppressed": [
       3262
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 145,
+  "revision": 146,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:06:13Z",
+  "updatedAt": "2026-08-14T08:18:00Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:03:31Z",
+      "updatedAt": "2026-08-14T08:15:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
