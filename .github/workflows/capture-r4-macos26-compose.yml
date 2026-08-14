@@ -1,4 +1,4 @@
-name: Compose Capture truth on macOS latest
+name: Compose Capture truth on macOS 15
 
 on:
   push:
@@ -10,8 +10,8 @@ permissions:
 
 jobs:
   compose:
-    if: github.event.head_commit.message == 'GO compose Capture truth on macOS latest'
-    runs-on: macos-latest
+    if: github.event.head_commit.message == 'GO compose Capture truth on macOS 15'
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -19,11 +19,12 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Record Apple toolchain
+      - name: Select and record Apple toolchain
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          sudo xcode-select -s /Applications/Xcode_26.3.app
           sw_vers
           xcodebuild -version
           swift --version
