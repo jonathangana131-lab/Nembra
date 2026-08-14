@@ -1,0 +1,215 @@
+name: Capture APFS Backing File Custody Validation
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-apfs-backing-file-custody-sol-20260814
+    paths:
+      - .github/workflows/capture-apfs-backing-file-custody-validation.yml
+  pull_request:
+    paths:
+      - .github/workflows/capture-apfs-backing-file-custody-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backing-file-custody:
+    name: Probe APFS backing-file authority on real macOS
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind validation to exact production parent and one path
+        shell: bash
+        env:
+          EXACT_PARENT: cd8a398f54d70c866e74091b04df9bc9f9eefa55
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual="$RUNNER_TEMP/nembra-backing-paths.txt"
+          expected="$RUNNER_TEMP/nembra-backing-expected.txt"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$actual"
+          printf '%s\n' '.github/workflows/capture-apfs-backing-file-custody-validation.yml' > "$expected"
+          diff -u "$expected" "$actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Probe root-created sparse-image modes and write authority
+        shell: bash
+        run: |
+          set -uo pipefail
+          probe="$RUNNER_TEMP/nembra_apfs_backing_probe.py"
+          evidence="$RUNNER_TEMP/nembra-apfs-backing-custody.json"
+          cat > "$probe" <<'PY'
+          from __future__ import annotations
+          import grp
+          import json
+          import os
+          from pathlib import Path
+          import pwd
+          import shutil
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+
+          PARENT = "cd8a398f54d70c866e74091b04df9bc9f9eefa55"
+          UMASKS = (0o077, 0o022, 0o000)
+          CHILD = r'''
+          import json, os, sys
+          payload = {"uid": os.getuid(), "euid": os.geteuid(), "gid": os.getgid(), "egid": os.getegid(), "groups": sorted(set(os.getgroups()))}
+          try:
+              fd = os.open(sys.argv[1], os.O_WRONLY | os.O_APPEND)
+          except OSError as error:
+              payload.update({"writeResult": "denied", "errno": error.errno})
+          else:
+              try:
+                  os.write(fd, b"NEMBRA_BACKING_AUTHORITY_PROBE\n")
+                  os.fsync(fd)
+                  payload.update({"writeResult": "wrote", "errno": None})
+              finally:
+                  os.close(fd)
+          print(json.dumps(payload, sort_keys=True))
+          '''
+
+          def unused_id() -> int:
+              ps = subprocess.run(["/bin/ps", "-axo", "uid="], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+              if ps.returncode != 0:
+                  raise RuntimeError(f"ps failed: {ps.stderr.strip()}")
+              occupied = set()
+              for raw in ps.stdout.splitlines():
+                  token = raw.strip()
+                  if not token.isdecimal():
+                      raise RuntimeError(f"malformed UID inventory: {raw!r}")
+                  occupied.add(int(token))
+              for candidate in range(53000, 60000):
+                  try:
+                      pwd.getpwuid(candidate)
+                  except KeyError:
+                      pass
+                  else:
+                      continue
+                  try:
+                      grp.getgrgid(candidate)
+                  except KeyError:
+                      pass
+                  else:
+                      continue
+                  if candidate not in occupied:
+                      return candidate
+              raise RuntimeError("no unused numeric identity")
+
+          def main() -> int:
+              if sys.platform != "darwin" or os.geteuid() != 0:
+                  raise RuntimeError("probe requires root on real macOS")
+              output = Path(sys.argv[1])
+              build_id = unused_id()
+              workspace = Path(tempfile.mkdtemp(prefix="nembra-apfs-backing.", dir="/private/tmp"))
+              os.chown(workspace, 0, build_id)
+              os.chmod(workspace, 0o710)
+              cases = []
+              original_umask = os.umask(0o077)
+              try:
+                  for requested in UMASKS:
+                      image = workspace / f"compiler-output-{requested:03o}.sparseimage"
+                      os.umask(requested)
+                      created = subprocess.run([
+                          "/usr/bin/hdiutil", "create", "-quiet", "-size", "128m", "-type", "SPARSE", "-fs", "APFS", "-volname", "NembraBackingProbe", str(image)
+                      ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+                      if created.returncode != 0:
+                          raise RuntimeError(f"hdiutil create failed for umask {requested:03o}: {created.stderr.strip()}")
+                      metadata = os.lstat(image)
+                      if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                          raise RuntimeError("backing subject is not one real regular file")
+                      before = metadata.st_size
+                      acl = subprocess.run(["/bin/ls", "-lde", str(image)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+                      if acl.returncode != 0:
+                          raise RuntimeError(f"ACL inspection failed: {acl.stderr.strip()}")
+                      attack = subprocess.run([
+                          sys.executable, "-B", "-I", "-c", CHILD, str(image)
+                      ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False, user=build_id, group=build_id, extra_groups=[])
+                      if attack.returncode != 0:
+                          raise RuntimeError(f"write probe failed to execute: rc={attack.returncode} stderr={attack.stderr.strip()}")
+                      child = json.loads(attack.stdout.strip())
+                      cases.append({
+                          "requestedUmask": f"{requested:03o}",
+                          "ownerUID": metadata.st_uid,
+                          "groupGID": metadata.st_gid,
+                          "mode": f"{stat.S_IMODE(metadata.st_mode):04o}",
+                          "aclListing": acl.stdout.strip(),
+                          "sizeBefore": before,
+                          "sizeAfter": os.lstat(image).st_size,
+                          "child": child,
+                      })
+              finally:
+                  os.umask(original_umask)
+                  shutil.rmtree(workspace, ignore_errors=True)
+              wrote = any(case["child"]["writeResult"] == "wrote" for case in cases)
+              payload = {
+                  "schemaVersion": 1,
+                  "exactProductionParent": PARENT,
+                  "syntheticBuildUIDGID": build_id,
+                  "workspaceOwnerUID": 0,
+                  "workspaceGroupGID": build_id,
+                  "workspaceMode": "0710",
+                  "cases": cases,
+                  "observedBackingWriteAuthority": wrote,
+                  "productionBytesChanged": False,
+                  "productionAcceptanceClaimed": False,
+                  "physicalAuthorityCreated": False,
+              }
+              output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("NEMBRA_APFS_BACKING_CUSTODY_JSON=" + json.dumps(payload, sort_keys=True))
+              return 42 if wrote else 0
+
+          raise SystemExit(main())
+          PY
+          /usr/bin/python3 -m py_compile "$probe"
+          set +e
+          /usr/bin/sudo /usr/bin/python3 -B -I "$probe" "$evidence"
+          rc=$?
+          set -e
+          test -f "$evidence"
+          cat "$evidence"
+          exit "$rc"
+
+      - name: Retain APFS backing-file evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-apfs-backing-file-custody-${{ github.run_id }}
+          path: ${{ runner.temp }}/nembra-apfs-backing-custody.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Require validation-only truth boundary and clean checkout
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/nembra-apfs-backing-custody.json"
+          if [[ -f "$evidence" ]]; then
+            /usr/bin/python3 - "$evidence" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert payload["schemaVersion"] == 1
+          assert payload["exactProductionParent"] == "cd8a398f54d70c866e74091b04df9bc9f9eefa55"
+          assert payload["productionBytesChanged"] is False
+          assert payload["productionAcceptanceClaimed"] is False
+          assert payload["physicalAuthorityCreated"] is False
+          assert len(payload["cases"]) == 3
+          PY
+          fi
+          git diff --check cd8a398f54d70c866e74091b04df9bc9f9eefa55 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
