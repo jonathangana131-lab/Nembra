@@ -41,8 +41,8 @@ struct TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration {
         #expect(!authenticatedFlow.contains(
             "Waiting for a genuine application update and the canonical 45-second horizon"
         ))
-        #expect(authenticatedFlow.contains("repeated"))
-        #expect(authenticatedFlow.contains("application"))
+        #expect(authenticatedFlow.contains("repeated same-generation scooter data"))
+        #expect(authenticatedFlow.contains("startup rejection window"))
         #expect(authenticatedFlow.contains("45-second"))
     }
 
