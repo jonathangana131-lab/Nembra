@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.182,
+        "similarity": 0.179,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3314": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3325,
         "recommendedAction": "independent-review",
-        "similarity": 0.323,
+        "similarity": 0.264,
         "title": "[Capture P0][ORACLE] Align install-custody regression with selected-Xcode ABI"
       },
       "3326": {
@@ -1162,7 +1162,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3326,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.296,
+        "similarity": 0.398,
         "title": "[Capture P0][VISUAL RECOVERY] Re-anchor iPhone 12 evidence to ba615 exact product"
       },
       "3327": {
@@ -1173,7 +1173,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3327,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.502,
+        "similarity": 0.488,
         "title": "[Capture P0][VALIDATION] Reject blank light visual evidence"
       },
       "3328": {
@@ -1184,19 +1184,19 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3328,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.53,
+        "similarity": 0.545,
         "title": "[Capture P0][VISUAL][VALIDATION] Reject blank light Capture evidence"
       },
-      "3330": {
-        "classification": "canonical-candidate",
+      "3331": {
+        "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3330,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.327,
-        "title": "[Capture P0][SECURITY] Restore scoped private build read lease"
+        "headSHA": "78e57b657a0589e5fad033b88a10d8fdc8a1f98c",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3331,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.458,
+        "title": "[Capture P0][VALIDATION] Reject blank light visual evidence on ba615 recovery"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1229,7 +1229,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:56:51Z",
+    "liveRefreshAt": "2026-08-14T23:57:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -5014,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 325,
+  "revision": 326,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:56:52Z",
+  "updatedAt": "2026-08-14T23:57:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5093,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:56:51Z",
+      "updatedAt": "2026-08-14T23:57:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
