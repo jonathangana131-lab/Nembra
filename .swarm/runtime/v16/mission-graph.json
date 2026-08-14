@@ -1064,63 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 9,
+    "classifiedPRTotal": 2,
     "classifiedPRs": {
-      "10": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 10,
-        "recommendedAction": "independent-review",
-        "similarity": 0.124,
-        "title": "[adaptive-range-core] Add truthful learned battery range model"
-      },
-      "13": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "3f49dae3d77e01d63845dbd78d7ba24e506e1294",
-        "lane": "",
-        "pr": 13,
-        "recommendedAction": "independent-review",
-        "similarity": 0.101,
-        "title": "[ride-location-lifecycle] Route Simulator location through real ride lifecycle"
-      },
-      "16": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 16,
-        "recommendedAction": "independent-review",
-        "similarity": 0.119,
-        "title": "[adaptive-range-persistence] Version and validate learned range storage"
-      },
-      "21": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "3f5d58ef89e024306e4189a522d96af76cd826f0",
-        "lane": "",
-        "pr": 21,
-        "recommendedAction": "independent-review",
-        "similarity": 0.109,
-        "title": "[ride-provenance] Persist truthful transport-gap evidence"
-      },
-      "28": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 28,
-        "recommendedAction": "independent-review",
-        "similarity": 0.106,
-        "title": "[ride-provenance recovery] Restore Xcode target visibility"
-      },
       "304": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1129,7 +1074,7 @@
         "lane": "",
         "pr": 304,
         "recommendedAction": "independent-review",
-        "similarity": 0.097,
+        "similarity": 0.051,
         "title": "[recover-home-ride-summary] Restore compact completed-ride truth on current main"
       },
       "3142": {
@@ -1142,28 +1087,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.052,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
-      },
-      "38": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 38,
-        "recommendedAction": "independent-review",
-        "similarity": 0.099,
-        "title": "[battery-range-evidence-bridge] Gate adaptive range on verified battery truth"
-      },
-      "48": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 48,
-        "recommendedAction": "independent-review",
-        "similarity": 0.099,
-        "title": "[battery-evidence-snapshot] Prevent stale/fresh battery field mixing"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1196,7 +1119,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T11:04:39Z",
+    "liveRefreshAt": "2026-08-14T11:04:58Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4979,10 +4902,10 @@
       "userValue": 7
     }
   },
-  "revision": 199,
+  "revision": 200,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T11:04:40Z",
+  "updatedAt": "2026-08-14T11:04:58Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5058,7 +4981,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T11:04:39Z",
+      "updatedAt": "2026-08-14T11:04:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
