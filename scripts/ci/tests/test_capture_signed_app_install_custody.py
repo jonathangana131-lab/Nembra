@@ -85,12 +85,16 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         self.assertLess(indexes["codesign"], indexes["install"])
 
         self.assertIn('DERIVED_PLACEHOLDER="__NEMBRA_PROTECTED_DERIVED__"', source)
-        self.assertIn('--install-custody-helper-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"', source)
+        self.assertIn('--build-origin-base64 "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64"', source)
+        self.assertIn('--build-origin-blob "$BUILD_ORIGIN_CUSTODY_HELPER_BLOB"', source)
+        self.assertIn('--install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"', source)
+        self.assertIn('--install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"', source)
+        self.assertNotIn('--install-custody-helper-base64', source)
         self.assertIn('[[ "$VERIFIED_STAGE_TREE_SHA256" == "$STAGED_APP_TREE_SHA256" ]]', source)
         self.assertIn('APP_INSTALL_STAGE_ROOT=""', source)
         self.assertIn('cleanup_install_subject()', source)
         self.assertIn('/usr/bin/sudo -n /bin/rm -rf -- "$APP_INSTALL_STAGE_ROOT"', source)
-        self.assertIn('Noninteractive sudo authority remained after build-origin custody', source)
+        self.assertIn('Noninteractive sudo authority remained after selected-Xcode/build-origin custody', source)
 
         self.assertNotIn('APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"', source)
         self.assertNotIn('SOURCE_APP_TREE_SHA256=', source)
