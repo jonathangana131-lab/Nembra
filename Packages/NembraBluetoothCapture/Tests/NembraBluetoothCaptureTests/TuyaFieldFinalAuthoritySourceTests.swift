@@ -91,7 +91,10 @@ struct TuyaFieldFinalAuthoritySourceTests {
     @Test("SDK application observations are structured truth, not fabricated raw transport bytes")
     func applicationEvidenceDoesNotPretendToBeFD50Bytes() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        #expect(source.contains("recordApplicationUpdate(isNonEmpty:"))
+        #expect(source.contains("sessionLedger.captureApplicationDelivery("))
+        #expect(source.contains("sessionLedger.recordApplicationUpdate("))
+        #expect(source.contains("receipt: receipt"))
+        #expect(!source.contains("recordApplicationUpdate(isNonEmpty:"))
         #expect(!source.contains("recordApplicationPayload("))
         #expect(source.contains("rawFD50BytesCaptured: false"))
         #expect(source.contains("dpQueriesSent: false"))
