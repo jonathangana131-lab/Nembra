@@ -1,0 +1,43 @@
+name: Capture exact-ledger receipt materializer
+
+on:
+  push:
+    branches:
+      - capture/application-delivery-cutoff-repair-sol-20260814
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-exact-ledger-receipt-materializer
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/application-delivery-cutoff-repair-sol-20260814
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Materialize exact-ledger one-shot receipts
+        env:
+          EXPECTED_PARENT: 212010a88a75bd60af2acc045232d6611728b789
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/capture-exact-ledger-receipt-materializer.yml'
+          test -f scripts/ci/materialize_capture_exact_ledger_receipts.py
+          python3 scripts/ci/materialize_capture_exact_ledger_receipts.py
+          test ! -e scripts/ci/materialize_capture_exact_ledger_receipts.py
+          test ! -e .github/workflows/capture-exact-ledger-receipt-materializer.yml
+
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add -A
+          git commit -m 'Capture V16.1: bind callback chronology to exact ledger receipts'
+          git push origin HEAD:capture/application-delivery-cutoff-repair-sol-20260814
