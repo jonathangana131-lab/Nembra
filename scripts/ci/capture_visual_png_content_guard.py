@@ -22,6 +22,10 @@ CONTENT_FRACTION_DENOMINATOR = 500
 MIN_CONTENT_PIXELS = 1_024
 VERTICAL_BANDS = 4
 MIN_ACTIVE_BANDS = 2
+DARK_SURFACE_MAX_CHANNEL = 64
+BRIGHT_SURFACE_MIN_CHANNEL = 160
+CONTRAST_FRACTION_DENOMINATOR = 500
+MIN_CONTRAST_PIXELS = 1_024
 
 
 class PNGGuardError(ValueError):
@@ -112,6 +116,8 @@ def inspect_rendered_content(path: Path) -> dict[str, object]:
     previous = bytearray(stride)
     cursor = 0
     non_dark_pixels = 0
+    dark_surface_pixels = 0
+    bright_surface_pixels = 0
     band_counts = [0] * VERTICAL_BANDS
     for y in range(height):
         filter_type = raw[cursor]
@@ -139,16 +145,29 @@ def inspect_rendered_content(path: Path) -> dict[str, object]:
         if y >= app_y_start:
             band = min(VERTICAL_BANDS - 1, ((y - app_y_start) * VERTICAL_BANDS) // app_rows)
             for x in range(0, stride, bytes_per_pixel):
-                if max(reconstructed[x], reconstructed[x + 1], reconstructed[x + 2]) > DARK_CHANNEL_THRESHOLD:
+                red = reconstructed[x]
+                green = reconstructed[x + 1]
+                blue = reconstructed[x + 2]
+                if max(red, green, blue) > DARK_CHANNEL_THRESHOLD:
                     non_dark_pixels += 1
                     band_counts[band] += 1
+                if max(red, green, blue) <= DARK_SURFACE_MAX_CHANNEL:
+                    dark_surface_pixels += 1
+                if min(red, green, blue) >= BRIGHT_SURFACE_MIN_CHANNEL:
+                    bright_surface_pixels += 1
         previous = reconstructed
     app_pixels = width * app_rows
     required_pixels = max(MIN_CONTENT_PIXELS, app_pixels // CONTENT_FRACTION_DENOMINATOR)
+    required_contrast_pixels = max(MIN_CONTRAST_PIXELS, app_pixels // CONTRAST_FRACTION_DENOMINATOR)
     band_pixels = width * max(1, app_rows // VERTICAL_BANDS)
     required_band_pixels = max(64, band_pixels // 5_000)
     active_bands = sum(count >= required_band_pixels for count in band_counts)
-    ready = non_dark_pixels >= required_pixels and active_bands >= MIN_ACTIVE_BANDS
+    ready = (
+        non_dark_pixels >= required_pixels
+        and active_bands >= MIN_ACTIVE_BANDS
+        and dark_surface_pixels >= required_contrast_pixels
+        and bright_surface_pixels >= required_contrast_pixels
+    )
     return {
         "width": width,
         "height": height,
@@ -158,6 +177,9 @@ def inspect_rendered_content(path: Path) -> dict[str, object]:
         "activeVerticalBands": active_bands,
         "requiredActiveVerticalBands": MIN_ACTIVE_BANDS,
         "bandNonDarkPixels": band_counts,
+        "darkSurfacePixels": dark_surface_pixels,
+        "brightSurfacePixels": bright_surface_pixels,
+        "requiredContrastPixels": required_contrast_pixels,
         "ready": ready,
     }
 
