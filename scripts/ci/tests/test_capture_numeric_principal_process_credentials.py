@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """Validation-only Darwin process-credential inventory for numeric UID/GID reuse.
 
-This witness is intentionally read-only. It takes a KERN_PROC_ALL / struct
-kinfo_proc snapshot for PID + advisory-group inventory and combines it with
-proc_pidinfo(PROC_PIDTBSDINFO) for each still-live process's effective/real/saved
-UID and GID slots. It creates no Directory Services records, uses no sudo, and
-changes no process identity.
+This witness is intentionally read-only. It combines:
+- KERN_PROC_ALL / struct kinfo_proc for PID + supplementary/advisory groups; and
+- the system ps credential columns for effective/real/saved UID and GID slots.
+
+The hybrid avoids proc_pidinfo(PROC_PIDTBSDINFO), which current macOS may deny
+with EPERM for protected live processes when the witness is intentionally
+unprivileged. Persistent PID-set disagreement between the two independent
+snapshots fails closed; only a PID proven gone by ESRCH may be ignored.
+
+No Directory Services records are created, sudo is never used, and no process
+identity is changed.
 """
 from __future__ import annotations
 
+import errno
 import grp
 import json
 import os
@@ -25,7 +32,7 @@ class ValidationError(RuntimeError):
 
 MARKER = "NEMBRA_NUMERIC_PROCESS_CREDENTIAL_JSON="
 MATCH_MARKER = "NEMBRA_PROCESS_CREDENTIAL_MATCH="
-SELF_MARKER = "NEMBRA_PROCESS_CREDENTIAL_SELF_PID="
+KERN_PID_MARKER = "NEMBRA_KERN_PROC_PID="
 
 RUID = 1 << 0
 EUID = 1 << 1
@@ -39,22 +46,13 @@ C_SOURCE = r'''
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
-#include <libproc.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-#define RUID_BIT (1u << 0)
-#define EUID_BIT (1u << 1)
-#define SVUID_BIT (1u << 2)
-#define RGID_BIT (1u << 3)
-#define EGID_BIT (1u << 4)
-#define SVGID_BIT (1u << 5)
 #define GROUP_LIST_BIT (1u << 6)
 
 static void die(const char *message) {
@@ -99,72 +97,6 @@ static struct kinfo_proc *snapshot_processes(size_t *count_out) {
     exit(70);
 }
 
-/*
- * Return 1 with a complete current BSD credential scalar record, or 0 only
- * when the PID from the KERN_PROC_ALL snapshot has demonstrably exited.
- * Any still-existing PID whose BSD record cannot be classified is fatal.
- */
-static int current_bsd_info(pid_t pid, struct proc_bsdinfo *info_out) {
-    memset(info_out, 0, sizeof(*info_out));
-    errno = 0;
-    int bytes = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, info_out, (int)sizeof(*info_out));
-    if (bytes == (int)sizeof(*info_out)) {
-        if ((pid_t)info_out->pbi_pid != pid) {
-            fprintf(stderr, "credential inventory error: proc_pidinfo PID mismatch expected=%d observed=%u\n",
-                    pid, info_out->pbi_pid);
-            exit(70);
-        }
-        return 1;
-    }
-    if (bytes != 0) {
-        fprintf(stderr, "credential inventory error: proc_pidinfo partial record pid=%d bytes=%d expected=%zu\n",
-                pid, bytes, sizeof(*info_out));
-        exit(70);
-    }
-
-    int info_errno = errno;
-    errno = 0;
-    if (kill(pid, 0) == -1 && errno == ESRCH) {
-        return 0;
-    }
-    int probe_errno = errno;
-    fprintf(stderr,
-            "credential inventory error: live pid=%d has unclassifiable PROC_PIDTBSDINFO errno=%d probe_errno=%d\n",
-            pid, info_errno, probe_errno);
-    exit(70);
-}
-
-static int match_slots(const struct kinfo_proc *entry, uint32_t candidate, unsigned int *slots_out) {
-    const struct _ucred *ucred = &entry->kp_eproc.e_ucred;
-    pid_t pid = entry->kp_proc.p_pid;
-    if (ucred->cr_ngroups <= 0 || ucred->cr_ngroups > NGROUPS) {
-        fprintf(stderr, "credential inventory error: pid=%d has invalid group count=%d\n",
-                pid, (int)ucred->cr_ngroups);
-        exit(70);
-    }
-
-    struct proc_bsdinfo bsd;
-    if (!current_bsd_info(pid, &bsd)) {
-        return 0;
-    }
-
-    unsigned int slots = 0;
-    if ((uint32_t)bsd.pbi_ruid == candidate) slots |= RUID_BIT;
-    if ((uint32_t)bsd.pbi_uid == candidate) slots |= EUID_BIT;
-    if ((uint32_t)bsd.pbi_svuid == candidate) slots |= SVUID_BIT;
-    if ((uint32_t)bsd.pbi_rgid == candidate) slots |= RGID_BIT;
-    if ((uint32_t)bsd.pbi_gid == candidate) slots |= EGID_BIT;
-    if ((uint32_t)bsd.pbi_svgid == candidate) slots |= SVGID_BIT;
-    for (int index = 0; index < ucred->cr_ngroups; ++index) {
-        if ((uint32_t)ucred->cr_groups[index] == candidate) {
-            slots |= GROUP_LIST_BIT;
-            break;
-        }
-    }
-    *slots_out = slots;
-    return 1;
-}
-
 int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "usage: %s NUMERIC_ID\n", argv[0]);
@@ -185,20 +117,27 @@ int main(int argc, char **argv) {
 
     size_t count = 0;
     struct kinfo_proc *entries = snapshot_processes(&count);
-    printf("NEMBRA_PROCESS_CREDENTIAL_SELF_PID=%d\n", getpid());
     for (size_t index = 0; index < count; ++index) {
         const struct kinfo_proc *entry = &entries[index];
-        if (entry->kp_proc.p_pid <= 0) {
+        const struct _ucred *ucred = &entry->kp_eproc.e_ucred;
+        pid_t pid = entry->kp_proc.p_pid;
+        if (pid <= 0) {
             free(entries);
             fprintf(stderr, "credential inventory error: invalid pid in KERN_PROC_ALL\n");
             return 70;
         }
-        unsigned int slots = 0;
-        if (!match_slots(entry, candidate, &slots)) {
-            continue;
+        if (ucred->cr_ngroups <= 0 || ucred->cr_ngroups > NGROUPS) {
+            free(entries);
+            fprintf(stderr, "credential inventory error: pid=%d has invalid group count=%d\n",
+                    pid, (int)ucred->cr_ngroups);
+            return 70;
         }
-        if (slots != 0) {
-            printf("NEMBRA_PROCESS_CREDENTIAL_MATCH=%d,%u\n", entry->kp_proc.p_pid, slots);
+        printf("NEMBRA_KERN_PROC_PID=%d\n", pid);
+        for (int group_index = 0; group_index < ucred->cr_ngroups; ++group_index) {
+            if ((uint32_t)ucred->cr_groups[group_index] == candidate) {
+                printf("NEMBRA_PROCESS_CREDENTIAL_MATCH=%d,%u\n", pid, GROUP_LIST_BIT);
+                break;
+            }
         }
     }
     free(entries);
@@ -224,9 +163,9 @@ def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
     )
 
 
-def compile_scanner(directory: Path) -> Path:
-    source = directory / "nembra_process_credential_inventory.c"
-    binary = directory / "nembra_process_credential_inventory"
+def compile_group_scanner(directory: Path) -> Path:
+    source = directory / "nembra_process_group_inventory.c"
+    binary = directory / "nembra_process_group_inventory"
     source.write_text(C_SOURCE, encoding="utf-8")
     completed = run([
         "/usr/bin/clang",
@@ -236,42 +175,134 @@ def compile_scanner(directory: Path) -> Path:
         "-Wextra",
         "-Werror",
         str(source),
-        "-lproc",
         "-o",
         str(binary),
     ])
     require(
         completed.returncode == 0,
-        "could not compile Darwin process-credential scanner: "
+        "could not compile Darwin process-group scanner: "
         + ((completed.stdout or "") + "\n" + (completed.stderr or ""))[-2000:],
     )
     return binary
 
 
-def scan(binary: Path, candidate: int) -> tuple[int, dict[int, int]]:
+def kernel_group_snapshot(binary: Path, candidate: int) -> tuple[set[int], dict[int, int]]:
     completed = run([str(binary), str(candidate)])
     require(
         completed.returncode == 0,
-        f"process-credential scan failed for {candidate}: "
+        f"KERN_PROC_ALL supplementary-group scan failed for {candidate}: "
         + ((completed.stdout or "") + "\n" + (completed.stderr or ""))[-2000:],
     )
-    self_pid: int | None = None
+    pids: set[int] = set()
     matches: dict[int, int] = {}
     for raw_line in completed.stdout.splitlines():
-        if raw_line.startswith(SELF_MARKER):
-            require(self_pid is None, "scanner emitted duplicate self PID")
-            self_pid = int(raw_line[len(SELF_MARKER):], 10)
+        if raw_line.startswith(KERN_PID_MARKER):
+            pid = int(raw_line[len(KERN_PID_MARKER):], 10)
+            require(pid > 0, f"kernel scanner emitted invalid pid: {raw_line!r}")
+            require(pid not in pids, f"kernel scanner emitted duplicate pid: {pid}")
+            pids.add(pid)
         elif raw_line.startswith(MATCH_MARKER):
             fields = raw_line[len(MATCH_MARKER):].split(",")
-            require(len(fields) == 2, f"scanner emitted malformed match line: {raw_line!r}")
+            require(len(fields) == 2, f"kernel scanner emitted malformed match: {raw_line!r}")
             pid = int(fields[0], 10)
             slots = int(fields[1], 10)
-            require(pid > 0 and slots > 0, f"scanner emitted invalid match line: {raw_line!r}")
+            require(pid > 0 and slots == GROUP_LIST, f"kernel scanner emitted invalid group match: {raw_line!r}")
             matches[pid] = matches.get(pid, 0) | slots
         elif raw_line.strip():
-            raise ValidationError(f"scanner emitted unknown stdout: {raw_line!r}")
-    require(self_pid is not None and self_pid > 0, "scanner emitted no self PID")
-    return self_pid, matches
+            raise ValidationError(f"kernel scanner emitted unknown stdout: {raw_line!r}")
+    require(pids, "KERN_PROC_ALL scanner emitted no process IDs")
+    require(set(matches).issubset(pids), "KERN_PROC_ALL match appeared without its PID record")
+    return pids, matches
+
+
+def ps_scalar_snapshot(candidate: int) -> tuple[set[int], dict[int, int]]:
+    ps = Path("/bin/ps")
+    require(ps.is_file(), "system /bin/ps is unavailable")
+    completed = run([
+        str(ps),
+        "-A",
+        "-o", "pid=",
+        "-o", "uid=",
+        "-o", "ruid=",
+        "-o", "svuid=",
+        "-o", "gid=",
+        "-o", "rgid=",
+        "-o", "svgid=",
+    ], env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C", "LANG": "C"})
+    require(
+        completed.returncode == 0,
+        "system ps credential snapshot failed: "
+        + ((completed.stdout or "") + "\n" + (completed.stderr or ""))[-2000:],
+    )
+    pids: set[int] = set()
+    matches: dict[int, int] = {}
+    for raw_line in completed.stdout.splitlines():
+        fields = raw_line.split()
+        require(len(fields) == 7, f"ps emitted malformed credential row: {raw_line!r}")
+        values = [int(field, 10) for field in fields]
+        pid, euid, ruid, svuid, egid, rgid, svgid = values
+        require(pid > 0, f"ps emitted invalid pid: {raw_line!r}")
+        require(pid not in pids, f"ps emitted duplicate pid: {pid}")
+        pids.add(pid)
+        slots = 0
+        if ruid == candidate:
+            slots |= RUID
+        if euid == candidate:
+            slots |= EUID
+        if svuid == candidate:
+            slots |= SVUID
+        if rgid == candidate:
+            slots |= RGID
+        if egid == candidate:
+            slots |= EGID
+        if svgid == candidate:
+            slots |= SVGID
+        if slots:
+            matches[pid] = slots
+    require(pids, "system ps emitted no process IDs")
+    return pids, matches
+
+
+def pid_still_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as error:
+        if error.errno == errno.ESRCH:
+            return False
+        if error.errno == errno.EPERM:
+            return True
+        raise ValidationError(f"kill(0) process-existence probe failed pid={pid} errno={error.errno}") from error
+    return True
+
+
+def scan(binary: Path, candidate: int) -> tuple[int, dict[int, int]]:
+    witness_pid = os.getpid()
+    for attempt in range(8):
+        kernel_pids, group_matches = kernel_group_snapshot(binary, candidate)
+        ps_pids, scalar_matches = ps_scalar_snapshot(candidate)
+
+        persistent_kernel_only = sorted(pid for pid in kernel_pids - ps_pids if pid_still_exists(pid))
+        persistent_ps_only = sorted(pid for pid in ps_pids - kernel_pids if pid_still_exists(pid))
+        if persistent_kernel_only or persistent_ps_only:
+            if attempt == 7:
+                raise ValidationError(
+                    "KERN_PROC_ALL/ps PID sets did not converge for still-live processes: "
+                    f"kernel_only={persistent_kernel_only[:24]} ps_only={persistent_ps_only[:24]}"
+                )
+            continue
+
+        require(witness_pid in kernel_pids, "witness PID was absent from KERN_PROC_ALL snapshot")
+        require(witness_pid in ps_pids, "witness PID was absent from ps credential snapshot")
+
+        matches = dict(group_matches)
+        for pid, slots in scalar_matches.items():
+            matches[pid] = matches.get(pid, 0) | slots
+        return witness_pid, matches
+    raise ValidationError("KERN_PROC_ALL/ps credential snapshots did not converge")
 
 
 def require_self_slots(binary: Path, candidate: int, required_slots: int, label: str) -> None:
@@ -326,7 +357,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="nembra-process-credential-inventory.") as raw_dir:
         directory = Path(raw_dir)
-        binary = compile_scanner(directory)
+        binary = compile_group_scanner(directory)
 
         require_self_slots(binary, uid, RUID | EUID | SVUID, "real/effective/saved UID")
         require_self_slots(binary, gid, RGID | EGID | SVGID | GROUP_LIST, "real/effective/saved primary GID")
@@ -344,7 +375,7 @@ def main() -> int:
         require(not free_matches, "chosen process-free numeric principal became occupied before evidence freeze")
 
         payload = {
-            "schema": 2,
+            "schema": 3,
             "uidSlotsObserved": True,
             "primaryGIDSlotsObserved": True,
             "supplementaryGroupOnlyCollisionObserved": True,
@@ -352,7 +383,9 @@ def main() -> int:
             "processFreeCandidateObserved": free_candidate,
             "processFreeCandidateMatchCount": len(free_matches),
             "usedKernProcAllKinfoProc": True,
-            "usedProcPidTBSDInfo": True,
+            "usedSystemPSCredentialScalars": True,
+            "usedProcPidTBSDInfo": False,
+            "persistentPIDSetsReconciled": True,
             "vanishedPIDsAreOnlySkippableAfterESRCH": True,
             "directoryServicesMutated": False,
             "sudoUsed": False,
