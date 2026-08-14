@@ -33,11 +33,34 @@ extension TuyaSecureLinkProductSurfaceSourceTests {
             to: "    // Assign collision suffixes"
         ))
 
-        #expect(protocolBody.contains("sourceAuthorityFailure: @escaping () -> Void"))
+        #expect(protocolBody.contains("sourceAuthorityFailure: @escaping @MainActor () -> Void"))
         #expect(connectCall.contains("sourceAuthorityFailure:"))
-        #expect(connectCall.contains("invalidateSourceAuthority("))
+        let synchronousCut = try applicationSourceAttributionRequiredRange(
+            "acceptanceCutIsClosed = true",
+            in: connectCall
+        )
+        let watchdogCancel = try applicationSourceAttributionRequiredRange(
+            "watchdog?.cancel()",
+            in: connectCall
+        )
+        let failedPhase = try applicationSourceAttributionRequiredRange(
+            "phase = .failed",
+            in: connectCall
+        )
+        let retirementTask = try applicationSourceAttributionRequiredRange(
+            "Task { @MainActor [weak self] in",
+            in: connectCall
+        )
+        let retirement = try applicationSourceAttributionRequiredRange(
+            "invalidateSourceAuthority(",
+            in: connectCall
+        )
+        #expect(synchronousCut.lowerBound < watchdogCancel.lowerBound)
+        #expect(watchdogCancel.lowerBound < failedPhase.lowerBound)
+        #expect(failedPhase.lowerBound < retirementTask.lowerBound)
+        #expect(retirementTask.lowerBound < retirement.lowerBound)
         #expect(driverBody.contains("private var expectedDeviceID: String?"))
-        #expect(driverBody.contains("private var onSourceAuthorityFailure: (() -> Void)?"))
+        #expect(driverBody.contains("private var onSourceAuthorityFailure: (@MainActor () -> Void)?"))
         #expect(driverConnect.contains("expectedDeviceID = deviceID"))
         #expect(driverConnect.contains("onSourceAuthorityFailure = sourceAuthorityFailure"))
 
@@ -63,8 +86,15 @@ extension TuyaSecureLinkProductSurfaceSourceTests {
         #expect(payloadGuard.lowerBound < forward.lowerBound)
 
         let failureFence = String(callback[..<payloadGuard.lowerBound])
-        #expect(failureFence.contains("onApplicationUpdate = nil"))
-        #expect(failureFence.contains("onSourceAuthorityFailure?()"))
+        let forwardingCut = try applicationSourceAttributionRequiredRange(
+            "onApplicationUpdate = nil",
+            in: failureFence
+        )
+        let failureCallback = try applicationSourceAttributionRequiredRange(
+            "onSourceAuthorityFailure?()",
+            in: failureFence
+        )
+        #expect(forwardingCut.lowerBound < failureCallback.lowerBound)
         #expect(!callback.contains("publishDps"))
         #expect(!callback.contains("writeValue"))
     }
