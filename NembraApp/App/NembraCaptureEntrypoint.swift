@@ -597,6 +597,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var events: [Event] = []
     private var captureAttemptEventStartIndex = 0
     private var applicationUpdateAdmissionsInFlight = 0
+    private var applicationUpdateAdmissionTail: Task<Void, Never>?
     private var acceptanceCutIsClosed = false
     private var sealedAcceptedEventPrefix: [Event]?
     private var sealedAcceptedExport: Export?
@@ -1440,9 +1441,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     uuid: self.tuyaUUID,
                     productID: self.productID,
                     onApplicationUpdate: { [weak self] update in
-                        Task { @MainActor in
-                            await self?.receivedApplicationUpdate(update, token: token)
+                        guard let self, !update.isEmpty else { return }
+                        let applicationReceipt = TuyaReadOnlyApplicationReceipt.capture(for: token)
+                        self.applicationUpdateAdmissionsInFlight += 1
+                        let predecessor = self.applicationUpdateAdmissionTail
+                        let admissionTask = Task { @MainActor [weak self] in
+                            _ = await predecessor?.value
+                            guard let self else { return }
+                            defer { self.applicationUpdateAdmissionsInFlight -= 1 }
+                            await self.receivedApplicationUpdate(
+                                update,
+                                receipt: applicationReceipt,
+                                token: token
+                            )
                         }
+                        self.applicationUpdateAdmissionTail = admissionTask
                     },
                     success: { [weak self] in
                         Task { @MainActor in await self?.authenticated(token: token) }
@@ -1680,6 +1693,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func receivedApplicationUpdate(
         _ update: [String: String],
+        receipt: TuyaReadOnlyApplicationReceipt,
         token: TuyaReadOnlyConnectionToken
     ) async {
         guard !update.isEmpty else { return }
@@ -1716,9 +1730,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        applicationUpdateAdmissionsInFlight += 1
-        defer { applicationUpdateAdmissionsInFlight -= 1 }
-
+        // The synchronous SDK callback already owns the controller-lifetime admission drain.
         // Snapshot the exact account identity while the admission checks above are still
         // synchronously true. The actor hops below may interleave foreground/account teardown;
         // export custody must never re-read mutable membership state after that suspension.
@@ -1734,7 +1746,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)
 
         do {
-            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+            try await sessionLedger.recordApplicationUpdate(
+                isNonEmpty: !update.isEmpty,
+                receipt: receipt,
+                for: token
+            )
             await refreshLedgerSnapshot()
 
             // The ledger hops above may interleave account/view lifecycle changes. Revalidate
@@ -1837,6 +1853,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
                       self.currentConnectionToken == token,
                       self.secureSessionEstablished,
                       let driver = self.driver else { return }
+
+                // A callback already delivered by SmartLife owns an opaque package receipt and
+                // must enter the ledger before the watchdog is allowed to cross the 60 s cutoff.
+                // Do not reset `previousPollUptime`: a stalled drain still invalidates continuity.
+                guard self.applicationUpdateAdmissionsInFlight == 0 else {
+                    try? await Task.sleep(for: .milliseconds(10))
+                    continue
+                }
 
                 let now = DispatchTime.now().uptimeNanoseconds
                 guard now >= previousPollUptime else {
@@ -2387,7 +2411,7 @@ private protocol OfficialTuyaDriver: AnyObject {
         deviceID: String,
         uuid: String,
         productID: String,
-        onApplicationUpdate: @escaping ([String: String]) -> Void,
+        onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,
         success: @escaping () -> Void,
         failure: @escaping () -> Void
     )
@@ -2594,13 +2618,13 @@ private final class OfficialTuyaMembershipProbe {
 @MainActor
 private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDeviceDelegate {
     private var device: ThingSmartDevice?
-    private var onApplicationUpdate: (([String: String]) -> Void)?
+    private var onApplicationUpdate: (@MainActor ([String: String]) -> Void)?
 
     func connect(
         deviceID: String,
         uuid: String,
         productID: String,
-        onApplicationUpdate: @escaping ([String: String]) -> Void,
+        onApplicationUpdate: @escaping @MainActor ([String: String]) -> Void,
         success: @escaping () -> Void,
         failure: @escaping () -> Void
     ) {

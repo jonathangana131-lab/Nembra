@@ -16,6 +16,38 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
     }
 }
 
+/// Opaque monotonic receipt minted at the exact synchronous application-callback delivery edge.
+/// The caller can ask the package to capture "now" for an existing connection token, but cannot
+/// choose the scalar timestamp carried by a production receipt. This lets later actor admission
+/// preserve delivery chronology without turning a caller-selected number into evidence.
+public struct TuyaReadOnlyApplicationReceipt: Sendable {
+    fileprivate let token: TuyaReadOnlyConnectionToken
+    fileprivate let receivedAtUptimeNanoseconds: UInt64
+
+    public static func capture(for token: TuyaReadOnlyConnectionToken) -> Self {
+        Self(
+            token: token,
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        )
+    }
+
+    fileprivate init(
+        token: TuyaReadOnlyConnectionToken,
+        receivedAtUptimeNanoseconds: UInt64
+    ) {
+        self.token = token
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+    }
+
+    /// Package-internal deterministic clock injection used only by tests.
+    static func testingCapture(
+        for token: TuyaReadOnlyConnectionToken,
+        receivedAtUptimeNanoseconds: UInt64
+    ) -> Self {
+        Self(token: token, receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds)
+    }
+}
+
 /// Owns the non-secret chronology consumed by `TuyaAuthenticatedReadOnlyPreflight`.
 ///
 /// The official Tuya adapter reports lifecycle events here rather than assembling preflight
@@ -224,9 +256,13 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// the same expired generation.
     public func recordApplicationUpdate(
         isNonEmpty: Bool,
+        receipt: TuyaReadOnlyApplicationReceipt,
         for token: TuyaReadOnlyConnectionToken
     ) throws {
         try requireCurrent(token)
+        guard receipt.token == token else {
+            throw MutationError.staleConnection
+        }
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
@@ -234,7 +270,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.emptyApplicationUpdate
         }
 
-        let now = try nextMonotonicObservation()
+        let now = receipt.receivedAtUptimeNanoseconds
         try requireContinuousAuthenticatedObservation(at: now)
         try requireIncompleteObservationHorizonOpen(at: now)
         guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
@@ -268,6 +304,37 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         let now = try nextMonotonicObservation()
         try requireContinuousAuthenticatedObservation(at: now)
         try requireIncompleteObservationHorizonOpen(at: now)
+        latestObservedUptimeNanoseconds = now
+    }
+
+    /// Package-internal compatibility path for existing deterministic fake-clock tests.
+    /// Shipping app code cannot call this overload; production application evidence must carry an
+    /// opaque synchronous `TuyaReadOnlyApplicationReceipt`.
+    func recordApplicationUpdate(
+        isNonEmpty: Bool,
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+        guard isNonEmpty else {
+            throw MutationError.emptyApplicationUpdate
+        }
+
+        let now = try nextMonotonicObservation()
+        try requireContinuousAuthenticatedObservation(at: now)
+        try requireIncompleteObservationHorizonOpen(at: now)
+        guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
+              now >= authenticatedAt else {
+            throw MutationError.monotonicClockRegressed
+        }
+        guard applicationPayloadCount < Int.max else {
+            throw MutationError.applicationPayloadCountExhausted
+        }
+
+        applicationPayloadCount += 1
+        latestApplicationPayloadUptimeNanoseconds = now
         latestObservedUptimeNanoseconds = now
     }
 
