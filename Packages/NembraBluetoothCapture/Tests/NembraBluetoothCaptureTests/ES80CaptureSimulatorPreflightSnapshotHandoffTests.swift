@@ -43,13 +43,27 @@ struct ES80CaptureSimulatorPreflightSnapshotHandoffTests {
         #expect(source.contains("targetCorrelationOperatorConfirmed = true"))
     }
 
-    @Test("canonical acceptance comes from authenticated ledger evidence and an immutable seal")
+    @Test("canonical acceptance comes from package-owned authenticated receipts and an immutable seal")
     func acceptedCaptureCannotBeMintedFromSyntheticSnapshotState() throws {
         let source = try Self.captureEntrypointSource()
 
         #expect(source.contains("TuyaAuthenticatedReadOnlyPreflight.verdict(for: ledgerSnapshot)"))
-        #expect(source.contains("try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)"))
-        #expect(source.contains("try await self.sessionLedger.observeCurrentConnection(for: token)"))
+
+        // Simulator fixture state must never substitute for the real callback edge. Application
+        // occurrence/chronology is admitted synchronously by the exact ledger, then the async
+        // receiver consumes that opaque receipt without re-supplying an `isNonEmpty` truth bit.
+        #expect(source.contains("self.sessionLedger.captureApplicationDelivery("))
+        #expect(source.contains("receipt: applicationReceipt"))
+        #expect(source.contains("try await sessionLedger.recordApplicationUpdate("))
+        #expect(source.contains("receipt: receipt"))
+        #expect(!source.contains("recordApplicationUpdate(isNonEmpty:"))
+
+        // Watchdog liveness uses the same package-owned receipt authority rather than actor-entry
+        // time, while immutable acceptance remains downstream of the canonical package seal.
+        #expect(source.contains("captureLivenessReceipt(for: token)"))
+        #expect(source.contains("self.sessionLedger.observeCurrentConnection("))
+        #expect(source.contains("receipt: livenessReceipt"))
+        #expect(!source.contains("sessionLedger.observeCurrentConnection(for: token)"))
         #expect(source.contains("try await sessionLedger.sealAcceptedObservation(for: token)"))
         #expect(source.contains("self.sealedAcceptedExport = self.makeExport("))
         #expect(source.contains("self.phase = .accepted"))
