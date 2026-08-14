@@ -45,7 +45,7 @@ extension TuyaSecureLinkProductSurfaceSourceTests {
 
         // Bind callback admission to the exact Tuya device ID selected for this connection.
         #expect(driverBody.contains("private var expectedDeviceID: String?"))
-        #expect(driverBody.contains("private var onSourceAuthorityFailure: (() -> Void)?"))
+        #expect(driverBody.contains("private var onSourceAuthorityFailure: (@MainActor () -> Void)?"))
         #expect(driverConnect.contains("expectedDeviceID = deviceID"))
         #expect(driverConnect.contains("onSourceAuthorityFailure = sourceAuthorityFailure"))
 
