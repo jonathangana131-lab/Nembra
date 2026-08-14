@@ -863,6 +863,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         return Double(latest - start) / 1_000_000_000
     }
 
+    var applicationEvidenceSurvivedHistoricalWindow: Bool {
+        guard let authenticatedAt = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+              let latestPayload = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,
+              latestPayload >= authenticatedAt else { return false }
+        return latestPayload - authenticatedAt >= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+    }
+
     var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {
         TuyaAuthenticatedReadOnlyPreflight.verdict(for: ledgerSnapshot)
     }
@@ -1554,7 +1561,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     }
 
                     phase = .observing
-                    message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
+                    message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for repeated same-generation scooter data, including data that stays live beyond the startup rejection window, plus the canonical 45-second observation horizon…"
                     log("sdk_local_ble_authenticated", [
                         "generation": String(token.diagnosticGeneration),
                         "localBLEOnline": "true"
@@ -1755,7 +1762,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 message: "Application receipt crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
                 kind: "application_observation_continuity_invalidated"
             )
-        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+        } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
+            await mirrorAlreadyTerminalIncompleteObservationHorizon(
+                token: token,
+                message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
+                kind: "application_authenticated_incomplete_readiness_horizon_reached"
+            )
+                  } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
             log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
             log("retired_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
@@ -1871,7 +1884,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         kind: "session_liveness_continuity_invalidated"
                     )
                     return
-                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
+                    await self.mirrorAlreadyTerminalIncompleteObservationHorizon(
+                        token: token,
+                        message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
+                        kind: "session_authenticated_incomplete_readiness_horizon_reached"
+                    )
+                    return
+                          } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
                     self.log("stale_watchdog_generation_retired", ["generation": String(token.diagnosticGeneration)])
                     return
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection {
@@ -2012,45 +2032,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     break
                 }
 
-                if self.applicationUpdateAdmissionsInFlight == 0,
-                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
-                   self.applicationUpdateCount == 0 {
-                    do {
-                        try await sessionLedger.markApplicationObservationTimedOut(for: token)
-                    guard self.currentConnectionToken == token,
-                          self.phase == .observing else {
-                        self.log("stale_application_timeout_completion_ignored", [
-                            "generation": String(token.diagnosticGeneration),
-                            "phase": self.phase.rawValue
-                        ])
-                        return
-                    }
-                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
-                        await self.invalidateInternalLifecycle(
-                            token: token,
-                            message: "The application-observation deadline encountered a monotonic-clock regression.",
-                            kind: "application_timeout_clock_regressed"
-                        )
-                        return
-                    } catch {
-                        await self.invalidateInternalLifecycle(
-                            token: token,
-                            message: "The application-observation terminal could not complete safely: \(error.localizedDescription)",
-                            kind: "application_timeout_lifecycle_rejected"
-                        )
-                        return
-                    }
-                    self.currentConnectionToken = nil
-                    self.localBLESettlementToken = nil
-                    self.sdkLocalBLEOnline = false
-                    self.driver = nil
-                    await self.refreshLedgerSnapshot()
-                    self.phase = .failed
-                    self.message = "Authenticated session produced no application update before the observation deadline. Export diagnostics; relaunch Capture before any new stationary read-only attempt."
-                    self.log("authenticated_application_timeout", ["generation": String(token.diagnosticGeneration)])
-                    return
-                }
-
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -2141,6 +2122,30 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog = nil
         currentConnectionToken = nil
         localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+        phase = .failed
+        self.message = message
+        log(kind, ["generation": String(token.diagnosticGeneration)])
+    }
+
+    /// Mirrors the bounded incomplete-readiness terminal already committed atomically by the
+    /// package mutation that threw `incompleteObservationHorizonReached`. The package has already
+    /// revoked callback authority, so this helper performs app-local cleanup only and never issues
+    /// another ledger mutation, liveness receipt, transport-loss inference, or disconnect claim.
+    private func mirrorAlreadyTerminalIncompleteObservationHorizon(
+        token: TuyaReadOnlyConnectionToken,
+        message: String,
+        kind: String
+    ) async {
+        guard currentConnectionToken == token else { return }
+        watchdog?.cancel()
+        watchdog = nil
+        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        // Clear current local-BLE proof only. In product copy/export semantics false means
+        // “Not proven”; this does not create an observed transport-loss receipt.
         sdkLocalBLEOnline = false
         driver = nil
         await refreshLedgerSnapshot()
@@ -3478,7 +3483,8 @@ private struct SecureLinkView: View {
                             .accessibilityLabel("Read-only observation progress")
                             .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
                         requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
-                        requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)
+                        requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)
+                    requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)
                     }
                 }
             }
