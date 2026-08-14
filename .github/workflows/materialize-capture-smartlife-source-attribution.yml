@@ -1,0 +1,208 @@
+name: Materialize Capture SmartLife source attribution repair
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    paths:
+      - '.github/workflows/materialize-capture-smartlife-source-attribution.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXACT_PARENT: bc0cfb05737c80f1e6ca4a115bac107efc27c72f
+      ORACLE_COMMIT: c30d318b65d07a0bced30ca14c1cbb4178967a6c
+      ORACLE_PATH: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaSmartLifeApplicationSourceAttributionSourceTests.swift
+      WORKFLOW_PATH: .github/workflows/materialize-capture-smartlife-source-attribution.yml
+    steps:
+      - name: Checkout immutable child head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact parent and one-shot input
+        run: |
+          set -euo pipefail
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' "$WORKFLOW_PATH" | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Materialize exact product repair and reviewed oracle
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$ORACLE_COMMIT"
+          git show "$ORACLE_COMMIT:$ORACLE_PATH" > "$RUNNER_TEMP/oracle.swift"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one source match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+          '''    func connect(
+                  deviceID: String,
+                  uuid: String,
+                  productID: String,
+                  onApplicationUpdate: @escaping ([String: String]) -> Void,
+                  success: @escaping () -> Void,
+                  failure: @escaping () -> Void
+              )
+          ''',
+          '''    func connect(
+                  deviceID: String,
+                  uuid: String,
+                  productID: String,
+                  onApplicationUpdate: @escaping ([String: String]) -> Void,
+                  sourceAuthorityFailure: @escaping () -> Void,
+                  success: @escaping () -> Void,
+                  failure: @escaping () -> Void
+              )
+          ''',
+          'driver protocol'
+          )
+
+          replace_once(
+          '''                    onApplicationUpdate: { [weak self] update in
+                              Task { @MainActor in
+                                  await self?.receivedApplicationUpdate(update, token: token)
+                              }
+                          },
+                          success: { [weak self] in
+          ''',
+          '''                    onApplicationUpdate: { [weak self] update in
+                              Task { @MainActor in
+                                  await self?.receivedApplicationUpdate(update, token: token)
+                              }
+                          },
+                          sourceAuthorityFailure: { [weak self] in
+                              Task { @MainActor in
+                                  guard let self else { return }
+                                  await self.invalidateSourceAuthority(
+                                      token: token,
+                                      message: "SmartLife application callback source no longer matched the selected scooter. The generation was retired without admitting that payload.",
+                                      kind: "sdk_application_callback_source_mismatch"
+                                  )
+                              }
+                          },
+                          success: { [weak self] in
+          ''',
+          'controller connect call'
+          )
+
+          replace_once(
+          '''private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDeviceDelegate {
+              private var device: ThingSmartDevice?
+              private var onApplicationUpdate: (([String: String]) -> Void)?
+          ''',
+          '''private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDeviceDelegate {
+              private var device: ThingSmartDevice?
+              private var expectedDeviceID: String?
+              private var onApplicationUpdate: (([String: String]) -> Void)?
+              private var onSourceAuthorityFailure: (() -> Void)?
+          ''',
+          'driver state'
+          )
+
+          replace_once(
+          '''    func connect(
+                  deviceID: String,
+                  uuid: String,
+                  productID: String,
+                  onApplicationUpdate: @escaping ([String: String]) -> Void,
+                  success: @escaping () -> Void,
+                  failure: @escaping () -> Void
+              ) {
+                  guard OfficialTuyaFactory.bootstrap() else {
+                      failure()
+                      return
+                  }
+                  self.onApplicationUpdate = onApplicationUpdate
+                  device = ThingSmartDevice(deviceId: deviceID)
+          ''',
+          '''    func connect(
+                  deviceID: String,
+                  uuid: String,
+                  productID: String,
+                  onApplicationUpdate: @escaping ([String: String]) -> Void,
+                  sourceAuthorityFailure: @escaping () -> Void,
+                  success: @escaping () -> Void,
+                  failure: @escaping () -> Void
+              ) {
+                  guard OfficialTuyaFactory.bootstrap() else {
+                      failure()
+                      return
+                  }
+                  expectedDeviceID = deviceID
+                  self.onApplicationUpdate = onApplicationUpdate
+                  onSourceAuthorityFailure = sourceAuthorityFailure
+                  device = ThingSmartDevice(deviceId: deviceID)
+          ''',
+          'driver connect implementation'
+          )
+
+          replace_once(
+          '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
+                  guard let dps, !dps.isEmpty else { return }
+          ''',
+          '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
+                  guard let callbackDeviceID = device?.deviceModel.devId,
+                        callbackDeviceID == expectedDeviceID else {
+                      // Latch application forwarding closed synchronously at the SDK delegate
+                      // boundary before the async controller retirement can be scheduled.
+                      onApplicationUpdate = nil
+                      onSourceAuthorityFailure?()
+                      onSourceAuthorityFailure = nil
+                      expectedDeviceID = nil
+                      return
+                  }
+                  guard let dps, !dps.isEmpty else { return }
+          ''',
+          'delegate source fence'
+          )
+
+          path.write_text(text)
+          PY
+          mkdir -p "$(dirname "$ORACLE_PATH")"
+          cp "$RUNNER_TEMP/oracle.swift" "$ORACLE_PATH"
+          rm "$WORKFLOW_PATH"
+
+      - name: Verify final two-path product delta
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort > "$RUNNER_TEMP/final-actual"
+          printf '%s\n' \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            "$ORACLE_PATH" \
+            | LC_ALL=C sort > "$RUNNER_TEMP/final-expected"
+          diff -u "$RUNNER_TEMP/final-expected" "$RUNNER_TEMP/final-actual"
+          grep -Fq 'device?.deviceModel.devId' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'sourceAuthorityFailure:' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'onApplicationUpdate = nil' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'invalidateSourceAuthority(' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Commit materialized repair and retire materializer
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-source-attribution-materializer'
+          git config user.email 'nembra-source-attribution-materializer@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift "$ORACLE_PATH" "$WORKFLOW_PATH"
+          git commit -m 'capture: bind SmartLife application updates to selected device'
+          git push origin "HEAD:$BRANCH"
