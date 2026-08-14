@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 231,
+    "classifiedPRTotal": 194,
     "classifiedPRs": {
       "1117": {
         "classification": "requires-review",
@@ -1220,6 +1220,17 @@
         "similarity": 0.154,
         "title": "[V14][Rides] Seal completed-duration import authority"
       },
+      "1494": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "8e832269efc6fd1766d83b1acc02cf4fe5b67ca7",
+        "lane": "",
+        "pr": 1494,
+        "recommendedAction": "independent-review",
+        "similarity": 0.18,
+        "title": "[V14 CI] Stop blanket full-Xcode feature push runs"
+      },
       "1513": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1316,7 +1327,7 @@
         "lane": "",
         "pr": 2054,
         "recommendedAction": "independent-review",
-        "similarity": 0.156,
+        "similarity": 0.155,
         "title": "[Dashboard V14] Capture real AX5 landscape cockpit evidence"
       },
       "2166": {
@@ -1426,7 +1437,7 @@
         "lane": "",
         "pr": 2515,
         "recommendedAction": "independent-review",
-        "similarity": 0.167,
+        "similarity": 0.16,
         "title": "fix(capture): bind provenance gate to quoted build-setting argv"
       },
       "2596": {
@@ -1591,7 +1602,7 @@
         "lane": "",
         "pr": 2767,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.228,
+        "similarity": 0.225,
         "title": "[Capture P0][RED TEAM] Bind sealed staging payload bytes"
       },
       "2775": {
@@ -1668,7 +1679,7 @@
         "lane": "",
         "pr": 2795,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.245,
+        "similarity": 0.216,
         "title": "[Capture P0][RED TEAM] Exact-current opaque helper execution"
       },
       "2798": {
@@ -1756,7 +1767,7 @@
         "lane": "navigation-app-visible",
         "pr": 2831,
         "recommendedAction": "independent-review",
-        "similarity": 0.199,
+        "similarity": 0.14,
         "title": "[Navigation V15] Recover app-visible accessibility surface on current main"
       },
       "2842": {
@@ -1833,7 +1844,7 @@
         "lane": "",
         "pr": 2868,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.309,
+        "similarity": 0.253,
         "title": "[Capture P0][RED TEAM] Reject private identity destination-name re-resolution"
       },
       "2869": {
@@ -1844,7 +1855,7 @@
         "lane": "",
         "pr": 2869,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.29,
+        "similarity": 0.259,
         "title": "[Capture P0][RED TEAM] Bind field installer Git authority to executed checkout"
       },
       "2870": {
@@ -1855,7 +1866,7 @@
         "lane": "",
         "pr": 2870,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.316,
+        "similarity": 0.233,
         "title": "[Capture P0][RED TEAM] Expose hard-exit private identity stage residue"
       },
       "2871": {
@@ -1891,423 +1902,126 @@
         "similarity": 0.3,
         "title": "[Capture P0][PHYSICAL GO] Recover current private-review Final-GO authority"
       },
-      "2875": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "5c6533207d9d67cd2469fd7a90c944ab7bae05aa",
-        "lane": "",
-        "pr": 2875,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.311,
-        "title": "[Capture P0][RED TEAM] Reject info-exclude hidden field build sources"
-      },
-      "2876": {
-        "classification": "canonical-candidate",
+      "289": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 2876,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.299,
-        "title": "[Capture P0][SECURITY] Bind field installer Git authority to executed source"
+        "pr": 289,
+        "recommendedAction": "independent-review",
+        "similarity": 0.269,
+        "title": "[es80-dp-electrical] Correlate explicit voltage/current/power hypotheses"
       },
-      "2877": {
+      "293": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 293,
+        "recommendedAction": "independent-review",
+        "similarity": 0.223,
+        "title": "[speed-currentness recovery] Project source-owned live speed truth"
+      },
+      "295": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 295,
+        "recommendedAction": "independent-review",
+        "similarity": 0.235,
+        "title": "[recover-es80-tuya-dp] Reconcile DP candidate parser on current main"
+      },
+      "297": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 297,
+        "recommendedAction": "independent-review",
+        "similarity": 0.153,
+        "title": "[recover-es80-passive-capture-final] Gate latest passive capture truth"
+      },
+      "300": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 300,
+        "recommendedAction": "independent-review",
+        "similarity": 0.184,
+        "title": "[ride-history-duration] Attach monotonic duration to completed history"
+      },
+      "301": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 2877,
+        "pr": 301,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.308,
-        "title": "[Capture P0][RED TEAM] Reject final private identity name swap on #2874"
+        "similarity": 0.151,
+        "title": "[es80-offline-report] Turn capture artifacts into framing reports"
       },
-      "2878": {
-        "classification": "validation",
+      "302": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 2878,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.338,
-        "title": "[Capture P0][RED TEAM] Bind tracked source through field compiler window"
+        "pr": 302,
+        "recommendedAction": "independent-review",
+        "similarity": 0.129,
+        "title": "[propulsion-envelope-persistence] Make learned power calibration durable"
       },
-      "2879": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-identity-crash-residue-redteam",
-        "pr": 2879,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.335,
-        "title": "[Capture P0][RED TEAM] Re-anchor private identity crash residue on current publication custody"
-      },
-      "2882": {
-        "classification": "validation",
+      "303": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 2882,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.367,
-        "title": "[Capture P0][QA] Align provenance gate with accepted-source bootstrap"
+        "pr": 303,
+        "recommendedAction": "independent-review",
+        "similarity": 0.229,
+        "title": "[recover-es80-research-capture-app] Restore exact-head Xcode acceptance"
       },
-      "2883": {
+      "304": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 304,
+        "recommendedAction": "independent-review",
+        "similarity": 0.23,
+        "title": "[recover-home-ride-summary] Restore compact completed-ride truth on current main"
+      },
+      "307": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 307,
+        "recommendedAction": "independent-review",
+        "similarity": 0.219,
+        "title": "[recover-es80-correlation] Reconcile repeated markers onto hardened capture runtime"
+      },
+      "309": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 2883,
+        "pr": 309,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.335,
-        "title": "[Capture P0][QA] Replay info-exclude injection on current #2876"
-      },
-      "2886": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2886,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.298,
-        "title": "[Capture P0][RED TEAM] Bind private field runner execution to accepted Git bytes"
-      },
-      "2889": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2889,
-        "recommendedAction": "independent-review",
-        "similarity": 0.304,
-        "title": "[Capture P0][TEST] Validate Final-GO candidate worktree binding"
-      },
-      "2890": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2890,
-        "recommendedAction": "independent-review",
-        "similarity": 0.304,
-        "title": "[Capture P0][PHYSICAL GO] Bind R4 candidate Git to physical worktree"
-      },
-      "2892": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2892,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.369,
-        "title": "[Capture P0][QA] Align Field acceptance with exact Git source authority"
-      },
-      "2896": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2896,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.338,
-        "title": "[Capture P0][QA] Validate #2890 physical worktree binding"
-      },
-      "2897": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2897,
-        "recommendedAction": "independent-review",
-        "similarity": 0.344,
-        "title": "[Capture P0][TEST] Align field source contracts with Git-object authority"
-      },
-      "2898": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2898,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.347,
-        "title": "[Capture P0][SECURITY] Execute private device reader from accepted Git bytes"
-      },
-      "2903": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 2903,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.409,
-        "title": "[Capture P0][RED TEAM] Require raw physical tree authority in Final GO"
-      },
-      "2905": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority-validation",
-        "pr": 2905,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.27,
-        "title": "[Capture P0][QA] Replay #2886 on accepted-byte runner repair"
-      },
-      "2907": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2907,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.345,
-        "title": "[Capture P0][BUILD] Converge field authority and close tracked compiler window"
-      },
-      "2908": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-field-tracked-source-window",
-        "pr": 2908,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.278,
-        "title": "[Capture P0][SECURITY] Guard tracked source through field xcodebuild"
-      },
-      "2909": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2909,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.313,
-        "title": "[Capture P0][SECURITY] Hold accepted source through field compiler window"
-      },
-      "2913": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2913,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.447,
-        "title": "[Capture P0][RED TEAM] Reject untracked source before vnode arming"
-      },
-      "2915": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2915,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.529,
-        "title": "[Capture P0][RED TEAM] Fence caller DEVELOPER_DIR from field Xcode"
-      },
-      "2916": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 2916,
-        "recommendedAction": "independent-review",
-        "similarity": 0.36,
-        "title": "[Capture P0][TESTS] Revalidate index-metadata authority on selected Final-GO"
-      },
-      "2917": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-field-xcode-environment-authority",
-        "pr": 2917,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.223,
-        "title": "[Capture P0][RED TEAM] Close residual caller Xcode build environment"
-      },
-      "2920": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 2920,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.467,
-        "title": "[Capture P0][RED TEAM] Require current vnode gate in Final-GO"
-      },
-      "2922": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2922,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.478,
-        "title": "[Capture P0][RED TEAM] Bind field Git execution bytes to accepted blob identity"
-      },
-      "2924": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2924,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.402,
-        "title": "[Capture P0][SECURITY] Close untracked pre-arm compiler admission window"
-      },
-      "2925": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 2925,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.453,
-        "title": "[Capture P0][RED TEAM] Bind Final-GO physical reads to admitted inode"
-      },
-      "2926": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority-validation",
-        "pr": 2926,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.262,
-        "title": "[Capture P0][QA] Replay corrected SwiftPM pre-arm witness on #2924"
-      },
-      "2929": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "navigation-app-visible",
-        "pr": 2929,
-        "recommendedAction": "independent-review",
-        "similarity": 0.204,
-        "title": "[Navigation V14][Tests] Recover accessibility contracts onto current runtime head"
-      },
-      "2933": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2933,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.482,
-        "title": "[Capture P0][SECURITY] Verify accepted Git payload bytes before execution"
-      },
-      "2936": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 2936,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.292,
-        "title": "[Capture P0][TESTS][EXPECTED RED] Descriptor ancestry namespace race"
-      },
-      "2938": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2938,
-        "recommendedAction": "independent-review",
-        "similarity": 0.343,
-        "title": "[Capture P0][PHYSICAL GO] Seal Final-GO current vnode and descriptor custody"
-      },
-      "2939": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2939,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.533,
-        "title": "[Capture P0][RED TEAM] Custody the system-selected Xcode field toolchain"
-      },
-      "2942": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 2942,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.379,
-        "title": "[Dashboard V15][QA] Fail closed on Dynamic Type reset"
-      },
-      "2946": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2946,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.483,
-        "title": "[Capture P0][RED TEAM] Root Git execution lookup in accepted commit bytes"
-      },
-      "2963": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-live-cockpit",
-        "pr": 2963,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.379,
-        "title": "[Dashboard V15][QA] Capture real dark landscape cockpit evidence"
-      },
-      "2968": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 2968,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.301,
-        "title": "[Capture P0][BUILD] Converge field execution and pre-arm authority"
-      },
-      "3053": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "10bc0d2eba598c0e97ee5e0a930289a8de45e69e",
-        "lane": "home-accessibility-product",
-        "pr": 3053,
-        "recommendedAction": "independent-review",
-        "similarity": 0.148,
-        "title": "[Home V15] Preserve recovery progress state titles"
+        "similarity": 0.272,
+        "title": "[recover-navigation] Make route request identity collision-resistant"
       },
       "3142": {
         "classification": "canonical-candidate",
@@ -2319,6 +2033,292 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.122,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
+      },
+      "316": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 316,
+        "recommendedAction": "independent-review",
+        "similarity": 0.187,
+        "title": "[simulator-truth] Recover synthetic QA profile on V13 main"
+      },
+      "327": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 327,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.173,
+        "title": "[navigation] Recover MapKit adapter onto V13 main"
+      },
+      "328": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 328,
+        "recommendedAction": "independent-review",
+        "similarity": 0.206,
+        "title": "[es80-capture-readiness] Gate passive artifacts for offline correlation"
+      },
+      "333": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 333,
+        "recommendedAction": "independent-review",
+        "similarity": 0.114,
+        "title": "[propulsion source identity] Fence foreign lifecycle callbacks"
+      },
+      "334": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 334,
+        "recommendedAction": "independent-review",
+        "similarity": 0.251,
+        "title": "[es80-capture-comparison-truth] Preserve controlled-comparison provenance"
+      },
+      "336": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 336,
+        "recommendedAction": "independent-review",
+        "similarity": 0.116,
+        "title": "[propulsion semantics] Fence verified near-max wording"
+      },
+      "342": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 342,
+        "recommendedAction": "independent-review",
+        "similarity": 0.103,
+        "title": "[ride peak provenance] Seal verified checkpoint restore"
+      },
+      "347": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 347,
+        "recommendedAction": "independent-review",
+        "similarity": 0.209,
+        "title": "[es80-stationary-capture-manifest] Bind physical setup to exact capture bytes"
+      },
+      "349": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 349,
+        "recommendedAction": "independent-review",
+        "similarity": 0.166,
+        "title": "[navigation-arrival] Recover sustained arrival on opaque selection identity"
+      },
+      "352": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 352,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.105,
+        "title": "[propulsion accessibility identity] Bind assistive truth to vehicle scope"
+      },
+      "353": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 353,
+        "recommendedAction": "independent-review",
+        "similarity": 0.209,
+        "title": "[recover es80 passive capture] Compose current-main parent for truth closure"
+      },
+      "356": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 356,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.204,
+        "title": "[es80 home hero] Integrate primary vehicle artwork into Home"
+      },
+      "357": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 357,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.196,
+        "title": "[validation-only] Capture ES80 Home hero on truthful ordinary launch"
+      },
+      "358": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 358,
+        "recommendedAction": "independent-review",
+        "similarity": 0.28,
+        "title": "[es80 target correlation] Fail closed on physical power-cycle candidate delta"
+      },
+      "361": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 361,
+        "recommendedAction": "independent-review",
+        "similarity": 0.271,
+        "title": "[es80 observation windows] Isolate repeated power-cycle scans by manager epoch"
+      },
+      "363": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 363,
+        "recommendedAction": "independent-review",
+        "similarity": 0.205,
+        "title": "[es80 capture] Preserve immutable observation horizon evidence"
+      },
+      "364": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 364,
+        "recommendedAction": "independent-review",
+        "similarity": 0.239,
+        "title": "[es80 capture] Gate post-ready duration from immutable evidence"
+      },
+      "366": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 366,
+        "recommendedAction": "independent-review",
+        "similarity": 0.118,
+        "title": "[live-distance cockpit] Preserve observed trip-distance truth"
+      },
+      "367": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 367,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.293,
+        "title": "[recover es80 comparison truth] Seal canonical controlled comparison"
+      },
+      "370": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 370,
+        "recommendedAction": "independent-review",
+        "similarity": 0.212,
+        "title": "[recover es80 passive lifecycle] Reject markers during terminal quarantine"
+      },
+      "372": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 372,
+        "recommendedAction": "independent-review",
+        "similarity": 0.248,
+        "title": "[recover es80 observation duration] Bind assessment to exact capture"
+      },
+      "375": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 375,
+        "recommendedAction": "independent-review",
+        "similarity": 0.256,
+        "title": "[recover es80 horizon clock] Seal boundary timestamp authority"
+      },
+      "379": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 379,
+        "recommendedAction": "independent-review",
+        "similarity": 0.195,
+        "title": "[es80 observation horizon] Compose clock authority and duration provenance"
+      },
+      "380": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 380,
+        "recommendedAction": "independent-review",
+        "similarity": 0.284,
+        "title": "[recover es80 comparison] Reject same-session direct metrics"
+      },
+      "385": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 385,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.303,
+        "title": "[es80 live boundary ordering] Gate ready/horizon queue cutoffs"
+      },
+      "386": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 386,
+        "recommendedAction": "independent-review",
+        "similarity": 0.157,
+        "title": "[recover es80 offline] Bound capture artifact ingress before decode"
       },
       "388": {
         "classification": "validation",
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:50:33Z",
+    "liveRefreshAt": "2026-08-14T10:52:42Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6288,10 +6288,10 @@
       "userValue": 7
     }
   },
-  "revision": 179,
+  "revision": 180,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:52:25Z",
+  "updatedAt": "2026-08-14T10:54:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6367,7 +6367,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:50:33Z",
+      "updatedAt": "2026-08-14T10:52:42Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
