@@ -59,11 +59,14 @@ jobs:
         run: |
           set -euo pipefail
           broker='scripts/field/nembra_capture_root_broker.py'
+          grep -Fq 'CANONICAL_BROKER_PATH = Path("/Library/PrivilegedHelperTools/com.nembra.capture-root-broker")' "$broker"
           grep -Fq 'POLICY_PATH = Path("/Library/NembraCaptureAuthority/v1/policy.json")' "$broker"
           grep -Fq 'sys.flags.isolated == 1' "$broker"
+          grep -Fq '_validate_installed_broker()' "$broker"
           grep -Fq 'NEMBRA_APPROVED_ROOT_SUBJECTS' "$broker"
           grep -Fq 'set(encoded_subjects) == set(policy_subjects)' "$broker"
           grep -Fq 'os.O_NOFOLLOW' "$broker"
+          grep -Fq 'stat.S_IMODE(info.st_mode) == 0o555' "$broker"
           grep -Fq 'stat.S_IMODE(info.st_mode) == 0o444' "$broker"
           grep -Fq 'info.st_uid == 0 and info.st_gid == 0' "$broker"
 
