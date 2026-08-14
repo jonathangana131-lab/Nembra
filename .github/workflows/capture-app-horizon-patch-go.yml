@@ -1,6 +1,7 @@
 name: Capture app truth one-shot repair
 # One-shot execution marker; this workflow deletes itself before publishing the coherent repair.
 # Triggered only by the exact reviewed GO commit message below.
+# Re-dispatched after exact-head isolation of the missing app horizon catch.
 
 on:
   push:
