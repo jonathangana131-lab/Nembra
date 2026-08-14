@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 194,
+    "classifiedPRTotal": 173,
     "classifiedPRs": {
       "1117": {
         "classification": "requires-review",
@@ -1338,7 +1338,7 @@
         "lane": "",
         "pr": 2166,
         "recommendedAction": "independent-review",
-        "similarity": 0.141,
+        "similarity": 0.127,
         "title": "[Capture P0][RESEARCH] Pin Tuya iOS structured-vs-raw evidence boundary"
       },
       "2211": {
@@ -1360,7 +1360,7 @@
         "lane": "",
         "pr": 2222,
         "recommendedAction": "independent-review",
-        "similarity": 0.284,
+        "similarity": 0.164,
         "title": "[Battery/Range V14] Restore Simulator display-only battery surface"
       },
       "2232": {
@@ -1385,6 +1385,39 @@
         "similarity": 0.108,
         "title": "[Provenance V14] Classify C7D09A22 odometer continuity sources"
       },
+      "230": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 230,
+        "recommendedAction": "independent-review",
+        "similarity": 0.207,
+        "title": "[battery-receipt recovery] Consume rejected callback chronology"
+      },
+      "238": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "6846a5308efeb327c95ca2d25afc085375f00591",
+        "lane": "",
+        "pr": 238,
+        "recommendedAction": "independent-review",
+        "similarity": 0.299,
+        "title": "[es80-tuya-dp] Parse generic DP candidates without inventing ES80 semantics"
+      },
+      "239": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 239,
+        "recommendedAction": "independent-review",
+        "similarity": 0.199,
+        "title": "[es80-passive-capture recovery] Close ambiguous acquisition restart"
+      },
       "2400": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1395,6 +1428,28 @@
         "recommendedAction": "independent-review",
         "similarity": 0.176,
         "title": "[Home V14] Reflow status metrics for Accessibility Dynamic Type"
+      },
+      "241": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 241,
+        "recommendedAction": "independent-review",
+        "similarity": 0.199,
+        "title": "[es80-correlation] Rank repeated stock-app marker evidence"
+      },
+      "242": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 242,
+        "recommendedAction": "independent-review",
+        "similarity": 0.208,
+        "title": "[home-truth] Fail closed on ambiguous feedback and lock evidence"
       },
       "2428": {
         "classification": "requires-review",
@@ -1407,6 +1462,61 @@
         "similarity": 0.179,
         "title": "[Dashboard V14][A11Y] Announce live low battery to VoiceOver"
       },
+      "244": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 244,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.118,
+        "title": "[propulsion-envelope-persistence] Retain calibration without reopening authority"
+      },
+      "246": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "8916ac3b5cb15c1875bac24b0766d297481dd4c8",
+        "lane": "",
+        "pr": 246,
+        "recommendedAction": "independent-review",
+        "similarity": 0.211,
+        "title": "[battery-receipt final recovery] Restore immutable battery callback truth on current main"
+      },
+      "247": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 247,
+        "recommendedAction": "independent-review",
+        "similarity": 0.214,
+        "title": "[vehicle-controls] Replace settings Form with premium confirmed-control surface"
+      },
+      "248": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 248,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.205,
+        "title": "[validation-only] Capture Vehicle Controls runtime states"
+      },
+      "250": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 250,
+        "recommendedAction": "independent-review",
+        "similarity": 0.175,
+        "title": "[navigation-arrival] Recover sustained destination evidence"
+      },
       "2507": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1415,7 +1525,7 @@
         "lane": "",
         "pr": 2507,
         "recommendedAction": "independent-review",
-        "similarity": 0.171,
+        "similarity": 0.162,
         "title": "[Rides V14] Pin route map render projection churn"
       },
       "2509": {
@@ -1429,6 +1539,17 @@
         "similarity": 0.156,
         "title": "[Navigation V14] Close truthful Navigation launch accessibility"
       },
+      "251": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "1690781ce78822af60e8c01ab9ade635118c4d69",
+        "lane": "",
+        "pr": 251,
+        "recommendedAction": "independent-review",
+        "similarity": 0.294,
+        "title": "[navigation] Make route request identity collision-resistant"
+      },
       "2515": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1440,6 +1561,17 @@
         "similarity": 0.16,
         "title": "fix(capture): bind provenance gate to quoted build-setting argv"
       },
+      "257": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "137783a0d83bd70f8ef8d04da3f18abf955de8f3",
+        "lane": "",
+        "pr": 257,
+        "recommendedAction": "independent-review",
+        "similarity": 0.17,
+        "title": "[adaptive-range authority recovery] Bind range to sealed battery receipts"
+      },
       "2596": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1450,6 +1582,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.158,
         "title": "[Vehicle Controls] Reconcile premium surface on current main"
+      },
+      "262": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 262,
+        "recommendedAction": "independent-review",
+        "similarity": 0.307,
+        "title": "[es80-tuya-dp-correlation] Rank opaque DP candidates against stock-app markers"
       },
       "2637": {
         "classification": "requires-review",
@@ -1472,6 +1615,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.224,
         "title": "[Capture P0][PHYSICAL GO] Add authenticated stationary Final GO issuer"
+      },
+      "267": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 267,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.21,
+        "title": "[product-identity] Ship Nembra app icon"
       },
       "2679": {
         "classification": "validation",
@@ -1506,6 +1660,17 @@
         "similarity": 0.357,
         "title": "[Capture P0][RED TEAM] Pin signed app install subject"
       },
+      "269": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 269,
+        "recommendedAction": "independent-review",
+        "similarity": 0.118,
+        "title": "[speed-format] Fail closed when speed text is unrepresentable"
+      },
       "2709": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1539,6 +1704,17 @@
         "similarity": 0.26,
         "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
       },
+      "273": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 273,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.143,
+        "title": "[recover-es80-passive-capture-qa] Close passive capture integrity gaps"
+      },
       "2733": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1560,6 +1736,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.365,
         "title": "[Capture P0][RED TEAM] Break private identity publication custody"
+      },
+      "274": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 274,
+        "recommendedAction": "independent-review",
+        "similarity": 0.106,
+        "title": "[acceleration] Own generation-scoped measurement attempts"
       },
       "2741": {
         "classification": "validation",
@@ -1594,6 +1781,17 @@
         "similarity": 0.378,
         "title": "[Capture P0][REPAIR] Close private identity publication races"
       },
+      "276": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 276,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.271,
+        "title": "[es80-dp-cross-session] Preserve independent-session consistency evidence"
+      },
       "2767": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1602,7 +1800,7 @@
         "lane": "",
         "pr": 2767,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.225,
+        "similarity": 0.209,
         "title": "[Capture P0][RED TEAM] Bind sealed staging payload bytes"
       },
       "2775": {
@@ -1613,7 +1811,7 @@
         "lane": "",
         "pr": 2775,
         "recommendedAction": "independent-review",
-        "similarity": 0.216,
+        "similarity": 0.215,
         "title": "[Capture P0][PHYSICAL GO] Pin generated build authority onto current Final GO modules"
       },
       "2779": {
@@ -1624,96 +1822,19 @@
         "lane": "",
         "pr": 2779,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.332,
+        "similarity": 0.231,
         "title": "[Capture P0][SECURITY] Bind reviewed private Tuya generation before field build"
       },
-      "2783": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2783,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.447,
-        "title": "[Capture P0][SECURITY] Bind private Tuya generation to opaque owner review"
-      },
-      "2789": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2789,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.206,
-        "title": "[Capture P0][REPAIR] Pin private-device runner execution bytes"
-      },
-      "2791": {
+      "280": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 2791,
+        "pr": 280,
         "recommendedAction": "independent-review",
-        "similarity": 0.288,
-        "title": "[Capture P0][PHYSICAL GO] Carry reviewed private Tuya authority into Final GO"
-      },
-      "2794": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2794,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.425,
-        "title": "[Capture P0][SECURITY] Bind private review witness to external HMAC authority"
-      },
-      "2795": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2795,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.216,
-        "title": "[Capture P0][RED TEAM] Exact-current opaque helper execution"
-      },
-      "2798": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2798,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.298,
-        "title": "[Capture P0][RED TEAM] Pin private-review parent module execution"
-      },
-      "2805": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2805,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.399,
-        "title": "[Capture P0][SECURITY] Pin private-review verifier execution subject"
-      },
-      "2815": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c3798e8abd12fc721daa227bd4ca791e8e42d81d",
-        "lane": "",
-        "pr": 2815,
-        "recommendedAction": "independent-review",
-        "similarity": 0.28,
-        "title": "[Battery/Range V15] Recover Simulator display authority on current main"
+        "similarity": 0.248,
+        "title": "[es80-dp-numeric] Evaluate explicit numeric hypotheses after marker pairing"
       },
       "2817": {
         "classification": "superseded",
@@ -1745,7 +1866,7 @@
         "lane": "",
         "pr": 2825,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.378,
+        "similarity": 0.228,
         "title": "[Capture P0][SECURITY][SUCCESSOR] Close complete authority helper execution chain"
       },
       "2829": {
@@ -1759,82 +1880,16 @@
         "similarity": 0.233,
         "title": "[Capture P0][QA] Align Field Build Provenance with accepted helper execution custody"
       },
-      "2831": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "navigation-app-visible",
-        "pr": 2831,
-        "recommendedAction": "independent-review",
-        "similarity": 0.14,
-        "title": "[Navigation V15] Recover app-visible accessibility surface on current main"
-      },
-      "2842": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "home-accessibility-product",
-        "pr": 2842,
-        "recommendedAction": "independent-review",
-        "similarity": 0.181,
-        "title": "[Home V15] Recover truthful large-text product surface on current main"
-      },
-      "2844": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2844,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.189,
-        "title": "[Capture P0][SECURITY] Fail closed before authority-helper exception matching"
-      },
-      "2846": {
+      "286": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 2846,
+        "pr": 286,
         "recommendedAction": "independent-review",
-        "similarity": 0.248,
-        "title": "[Capture P0][CI] Execute accepted-source path contract by file"
-      },
-      "2849": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2849,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.285,
-        "title": "[Capture P0][QA] Close accepted-source Field gate negatives on current vnode successor"
-      },
-      "2858": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2858,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.216,
-        "title": "[Capture P0][SECURITY] Recover private identity publication inode custody"
-      },
-      "2865": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "navigation-app-visible",
-        "pr": 2865,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.138,
-        "title": "[Navigation V15][Repair] Use native MapKit XCUI locator"
+        "similarity": 0.1,
+        "title": "[es80-tuya-offline] Recover packet-zero restarts on chronology parent"
       },
       "2868": {
         "classification": "validation",
@@ -1844,63 +1899,19 @@
         "lane": "",
         "pr": 2868,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.253,
+        "similarity": 0.233,
         "title": "[Capture P0][RED TEAM] Reject private identity destination-name re-resolution"
       },
-      "2869": {
+      "288": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 2869,
+        "pr": 288,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.259,
-        "title": "[Capture P0][RED TEAM] Bind field installer Git authority to executed checkout"
-      },
-      "2870": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2870,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.233,
-        "title": "[Capture P0][RED TEAM] Expose hard-exit private identity stage residue"
-      },
-      "2871": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2871,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.179,
-        "title": "[Capture P0][SECURITY] Make signed-helper Git custody replacement-blind"
-      },
-      "2872": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2872,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.281,
-        "title": "[Capture P0][SECURITY] Bind private identity publication bytes"
-      },
-      "2873": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2873,
-        "recommendedAction": "independent-review",
-        "similarity": 0.3,
-        "title": "[Capture P0][PHYSICAL GO] Recover current private-review Final-GO authority"
+        "similarity": 0.212,
+        "title": "[validation-only] Capture Nembra app icon on SpringBoard"
       },
       "289": {
         "classification": "requires-review",
@@ -1979,17 +1990,6 @@
         "similarity": 0.129,
         "title": "[propulsion-envelope-persistence] Make learned power calibration durable"
       },
-      "303": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 303,
-        "recommendedAction": "independent-review",
-        "similarity": 0.229,
-        "title": "[recover-es80-research-capture-app] Restore exact-head Xcode acceptance"
-      },
       "304": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2031,7 +2031,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.122,
+        "similarity": 0.121,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "316": {
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T10:52:42Z",
+    "liveRefreshAt": "2026-08-14T10:54:20Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6288,10 +6288,10 @@
       "userValue": 7
     }
   },
-  "revision": 180,
+  "revision": 181,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T10:54:03Z",
+  "updatedAt": "2026-08-14T10:55:14Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6367,7 +6367,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T10:52:42Z",
+      "updatedAt": "2026-08-14T10:54:20Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
