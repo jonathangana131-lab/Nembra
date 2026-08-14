@@ -24,11 +24,11 @@ The physical scooter exposed the modern Tuya FD50 GATT family:
 - CCCD: `2902`
 - power-on advertisement manufacturer data begins with Tuya company identifier `0x07D0`
 
-These are now physical ES80 transport facts, not merely generic Tuya candidates.
+These are physical ES80 transport facts, not merely generic Tuya candidates.
 
 ## What this capture does NOT authorize
 
-Because the capture received zero application characteristic payloads, it does not establish any ES80 DP ID, type, scale, signedness, cadence, or command acknowledgement semantics. The following remain unknown until authenticated physical payload evidence exists:
+Because the capture received zero application characteristic payloads, it does not establish any ES80 DP ID, type, scale, signedness, cadence, or command acknowledgement semantics. The following remain unknown until later accepted physical evidence establishes them:
 
 - speed
 - battery percentage or charging state
@@ -57,21 +57,24 @@ This is **user-recorded history**, not Bluetooth evidence. Nembra must keep it s
 
 ## Connection interpretation
 
-The physical connection ended repeatedly at a highly stable approximately-30-second cadence while notification subscription succeeded but no application payload arrived. This strongly indicates that the next experiment should focus on establishing a legitimate authenticated Tuya application session rather than repeating the entire outdoor calibration.
+The physical connection ended repeatedly at a highly stable approximately-30-second cadence while notification subscription succeeded but no application payload arrived. This strongly indicates that subsequent research should focus on a legitimate authenticated Tuya application session rather than repeating the entire outdoor calibration.
 
-Authentication success is not yet physical fact and must be demonstrated in a subsequent capture.
+Authentication success is not a fact earned by C7D09A22. It requires a later accepted physical capture.
 
-## P0 next physical gate
+## Historical next-gate note — superseded for execution
 
-The next test is deliberately smaller than another outdoor calibration:
+Earlier revisions of this file proposed a one-payload / 45-second authenticated follow-up. That recipe is **SUPERSEDED / NON-AUTHORITATIVE FOR EXECUTION** and cannot authorize a new physical session.
 
-1. Establish a legitimate authenticated Tuya session without unbinding or resetting the scooter.
-2. Keep the capture observational; do not perform unknown scooter-control actions.
-3. Require at least one real, non-empty application notification payload.
-4. Require the connection to remain alive beyond the previous rejection window; target at least 45 seconds.
-5. Only after that gate passes, map stationary telemetry first: idle, battery reference, modes, light, brake, and optional charger transition.
-6. Repeat moving/GPS scenarios only after real device payloads exist to correlate.
+The single current next-physical-procedure authority is:
+
+`docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
+
+Procedure: `ES80-AUTHENTICATED-STATIONARY-v1`.
+
+The current procedure requires the stricter package contract, including repeated application evidence, post-auth payload survival, accepted continuity, bounded retirement, source attribution, chronology custody, exact build/install authority, and an explicit repository GO record. This historical truth file must never be used to weaken those requirements.
+
+The raw-vs-structured boundary remains durable: structured SmartLife SDK `dpsUpdate` observations are application-level evidence and must not be relabeled as byte-exact FD50/ATT notification evidence or telemetry semantics.
 
 ## Product truth rule
 
-`PhysicalCaptureTransportEvidence.c7d09a22` is the code-level transport ledger. `OdometerContinuityReference.physicalCaptureC7D09A22Reference(...)` is the separate user-history ledger. Neither type may mint physical telemetry without new authenticated payload evidence.
+`PhysicalCaptureTransportEvidence.c7d09a22` is the code-level transport ledger. `OdometerContinuityReference.physicalCaptureC7D09A22Reference(...)` is the separate user-history ledger. Neither type may mint physical telemetry without new accepted physical evidence.
