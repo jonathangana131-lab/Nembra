@@ -35,6 +35,10 @@ on:
       - scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
       - scripts/ci/capture_signed_app_build_origin_custody.py
       - scripts/ci/capture_signed_app_install_custody.py
+      - scripts/ci/capture_selected_xcode_freeze.py
+      - scripts/ci/capture_selected_xcode_freeze_launcher.py
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
       - scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
       - scripts/ci/tests/test_capture_signed_app_install_custody.py
       - scripts/ci/tests/test_tuya_account_transport_source.py
@@ -90,7 +94,13 @@ jobs:
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
           /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_evidence.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
-          /usr/bin/python3 -m py_compile scripts/ci/capture_signed_app_build_origin_custody.py
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/capture_selected_xcode_freeze.py \
+            scripts/ci/capture_selected_xcode_freeze_launcher.py \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_install_custody.py
           bash -n scripts/field/install_one_time_capture.command
@@ -111,6 +121,9 @@ jobs:
           signed_field_inspector='scripts/ci/es80_signed_field_artifact_evidence.py'
           build_origin_custody='scripts/ci/capture_signed_app_build_origin_custody.py'
           signed_install_custody='scripts/ci/capture_signed_app_install_custody.py'
+          selected_xcode_freeze='scripts/ci/capture_selected_xcode_freeze.py'
+          selected_xcode_launcher='scripts/ci/capture_selected_xcode_freeze_launcher.py'
+          selected_xcode_orchestrator='scripts/ci/capture_selected_xcode_build_orchestrator.py'
           private_identity_provisioner='Scripts/provision_capture_tuya_identity.sh'
           ignore='.gitignore'
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
@@ -119,6 +132,9 @@ jobs:
           test -f "$private_device_runner"
           test -f "$signed_field_inspector"
           test -f "$private_identity_provisioner"
+          test -f "$selected_xcode_freeze"
+          test -f "$selected_xcode_launcher"
+          test -f "$selected_xcode_orchestrator"
           grep -Fq 'RECIPE_ID = "ES80-FINGERPRINT-v1"' "$signed_field_inspector"
           grep -Fq 'INSPECTION_AUTHORITY_LABEL = "signed-field-artifact-inspection-not-field-authorization"' "$signed_field_inspector"
           grep -Fq 'NEMBRA_TUYA_RUNTIME_DIR' "$private_identity_provisioner"
@@ -215,19 +231,42 @@ jobs:
           grep -Fq 'BUILD_ORIGIN_CUSTODY_HELPER_PATH="scripts/ci/capture_signed_app_build_origin_custody.py"' "$installer"
           grep -Fq 'BUILD_ORIGIN_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse' "$installer"
           grep -Fq 'SIGNED_APP_CUSTODY_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse' "$installer"
+          grep -Fq 'SELECTED_XCODE_FREEZE_HELPER_PATH="scripts/ci/capture_selected_xcode_freeze.py"' "$installer"
+          grep -Fq 'SELECTED_XCODE_FREEZE_LAUNCHER_PATH="scripts/ci/capture_selected_xcode_freeze_launcher.py"' "$installer"
+          grep -Fq 'SELECTED_XCODE_BUILD_ORCHESTRATOR_PATH="scripts/ci/capture_selected_xcode_build_orchestrator.py"' "$installer"
+          grep -Fq 'SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse' "$installer"
           grep -Fq 'DERIVED_PLACEHOLDER="__NEMBRA_PROTECTED_DERIVED__"' "$installer"
           grep -Fq '/usr/bin/sudo /usr/bin/python3 -I -c' "$installer"
-          grep -Fq -- '--install-custody-helper-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"' "$installer"
+          grep -Fq -- '--field-pid "$$"' "$installer"
+          grep -Fq -- '--source-sha "$SOURCE_SHA"' "$installer"
+          grep -Fq -- '--freeze-launcher-base64 "$SELECTED_XCODE_FREEZE_LAUNCHER_BASE64"' "$installer"
+          grep -Fq -- '--freeze-launcher-blob "$SELECTED_XCODE_FREEZE_LAUNCHER_BLOB"' "$installer"
+          grep -Fq -- '--freeze-helper-base64 "$SELECTED_XCODE_FREEZE_HELPER_BASE64"' "$installer"
+          grep -Fq -- '--freeze-helper-blob "$SELECTED_XCODE_FREEZE_HELPER_BLOB"' "$installer"
+          grep -Fq -- '--build-origin-base64 "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64"' "$installer"
+          grep -Fq -- '--build-origin-blob "$BUILD_ORIGIN_CUSTODY_HELPER_BLOB"' "$installer"
+          grep -Fq -- '--install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"' "$installer"
+          grep -Fq -- '--install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"' "$installer"
+          grep -Fq '/usr/bin/sudo -n -l' "$installer"
           grep -Fq -- '-derivedDataPath "$DERIVED_PLACEHOLDER"' "$installer"
           grep -Fq 'APP_INSTALL_STAGE_ROOT="${BUILD_ORIGIN_CUSTODY_RESULT%%' "$installer"
           grep -Fq 'STAGED_APP_TREE_SHA256="${BUILD_ORIGIN_CUSTODY_RESULT#*' "$installer"
           grep -Fq 'APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"' "$installer"
           grep -Fq 'APP="$APP_INSTALL_STAGE"' "$installer"
           grep -Fq '/usr/bin/python3 -I - verify-stage' "$installer"
+          if grep -Fq 'sys.argv = ["<accepted-build-origin-custody>"]' "$installer"; then
+            echo 'ERROR: selected-Xcode composition may not fall back to direct build-origin execution.' >&2
+            exit 1
+          fi
           if grep -Fq 'APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"' "$installer"; then
             echo 'ERROR: field installer must never reacquire install authority from mutable DerivedData after xcodebuild.' >&2
             exit 1
           fi
+          grep -Fq 'def _replace_selected_xcode(' "$selected_xcode_orchestrator"
+          grep -Fq 'caller supplied DEVELOPER_DIR authority is forbidden' "$selected_xcode_orchestrator"
+          grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' "$selected_xcode_orchestrator"
+          grep -Fq 'run_custodied_build(' "$selected_xcode_orchestrator"
+          grep -Fq 'DEVELOPER_DIR={frozen_developer}' "$selected_xcode_orchestrator"
           grep -Fq 'def _invalidate_invoker_sudo(' "$build_origin_custody"
           grep -Fq 'build_uid = _choose_ephemeral_id()' "$build_origin_custody"
           grep -Fq 'build_gid = build_uid' "$build_origin_custody"
