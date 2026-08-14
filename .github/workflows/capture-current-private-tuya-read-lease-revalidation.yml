@@ -1,0 +1,124 @@
+name: Capture Current Private Tuya Read Lease Revalidation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-private-tuya-read-lease-revalidation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-real-acl:
+    name: Re-earn private Tuya read-only lease on current #3142
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      PRODUCTION_PARENT: eb4034dc2961cdb496cffb7a95f05c77c341c2a2
+      PRODUCTION_HELPER_BLOB: edae23c6f032622df67a1f26e2f5eac0635282e6
+      LEASE_WITNESS_HEAD: 79a3a7768776e28e2668d680fe0670f397eb34b5
+      LEASE_WITNESS_BLOB: b100594e3ef3cad5b3860b1b48409d14906d91c8
+      ATTRIB_HEAD: e80f464bc13f17582983346bbf86287b60d9d50a
+      ATTRIB_GUARD_BLOB: ff972675c5abdc8c7ea85e0402e2c75dd670138d
+      ATTRIB_PROVENANCE_BLOB: 66c21083dca625da11ad72bb6c652a09c2434ef6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact validation head and production parent
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base HEAD "$PRODUCTION_PARENT")" = "$PRODUCTION_PARENT"
+          test "$(git rev-parse "$PRODUCTION_PARENT:scripts/ci/capture_signed_app_build_origin_custody.py")" = "$PRODUCTION_HELPER_BLOB"
+          CHANGED="$(git diff --name-only "$PRODUCTION_PARENT...HEAD")"
+          test "$CHANGED" = ".github/workflows/capture-current-private-tuya-read-lease-revalidation.yml"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Recover immutable lease witness and vnode authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            '+refs/pull/3207/head:refs/remotes/origin/nembra-read-lease-3207' \
+            '+refs/pull/2867/head:refs/remotes/origin/nembra-vnode-2867'
+          test "$(git rev-parse refs/remotes/origin/nembra-read-lease-3207)" = "$LEASE_WITNESS_HEAD"
+          test "$(git rev-parse refs/remotes/origin/nembra-vnode-2867)" = "$ATTRIB_HEAD"
+
+          WITNESS="$RUNNER_TEMP/test_capture_private_tuya_build_uid_read_lease.py"
+          ACCEPTED_DIR="$RUNNER_TEMP/nembra-accepted-vnode"
+          rm -rf "$ACCEPTED_DIR"
+          mkdir -m 700 "$ACCEPTED_DIR"
+
+          test "$(git rev-parse "$LEASE_WITNESS_HEAD:scripts/ci/tests/test_capture_private_tuya_build_uid_read_lease.py")" = "$LEASE_WITNESS_BLOB"
+          git cat-file blob "$LEASE_WITNESS_BLOB" > "$WITNESS"
+          test "$(git hash-object "$WITNESS")" = "$LEASE_WITNESS_BLOB"
+
+          test "$(git rev-parse "$ATTRIB_HEAD:Scripts/capture_tuya_private_input_build_guard.py")" = "$ATTRIB_GUARD_BLOB"
+          test "$(git rev-parse "$ATTRIB_HEAD:Scripts/capture_tuya_private_input_provenance.py")" = "$ATTRIB_PROVENANCE_BLOB"
+          git cat-file blob "$ATTRIB_GUARD_BLOB" > "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          git cat-file blob "$ATTRIB_PROVENANCE_BLOB" > "$ACCEPTED_DIR/capture_tuya_private_input_provenance.py"
+          test "$(git hash-object "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py")" = "$ATTRIB_GUARD_BLOB"
+          test "$(git hash-object "$ACCEPTED_DIR/capture_tuya_private_input_provenance.py")" = "$ATTRIB_PROVENANCE_BLOB"
+          grep -Fq '"KQ_NOTE_ATTRIB"' "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          grep -Fq 'select.KQ_NOTE_ATTRIB' "$ACCEPTED_DIR/capture_tuya_private_input_build_guard.py"
+          printf 'LEASE_WITNESS=%s\nACCEPTED_VNODE_DIR=%s\n' "$WITNESS" "$ACCEPTED_DIR" >> "$GITHUB_ENV"
+
+      - name: Prove reversible read-only lease against current production helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIELD_USER="$(/usr/bin/id -un)"
+          EVIDENCE="$RUNNER_TEMP/current-private-tuya-read-lease.json"
+          DIAGNOSTIC="$RUNNER_TEMP/current-private-tuya-read-lease.stderr.log"
+          : > "$DIAGNOSTIC"
+
+          /usr/bin/sudo /usr/bin/python3 -I "$LEASE_WITNESS" \
+            --field-user "$FIELD_USER" \
+            --production-helper "$GITHUB_WORKSPACE/scripts/ci/capture_signed_app_build_origin_custody.py" \
+            --accepted-attrib-guard "$ACCEPTED_VNODE_DIR/capture_tuya_private_input_build_guard.py" \
+            --accepted-vnode-head "$ATTRIB_HEAD" \
+            2> >(/usr/bin/tee "$DIAGNOSTIC" >&2) \
+            | /usr/bin/tee "$EVIDENCE"
+
+          /usr/bin/python3 - "$EVIDENCE" "$ATTRIB_HEAD" "$PRODUCTION_PARENT" <<'PY'
+          import json, sys
+          from pathlib import Path
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert payload["schema"] == 1
+          assert payload["acceptedVnodeHead"] == sys.argv[2]
+          assert payload["preLeaseReadDenied"] is True
+          assert payload["leaseReadSucceeded"] is True
+          assert payload["internalSymlinkReadSucceeded"] is True
+          assert payload["deniedMutations"] == ["append", "create", "unlink", "rename", "chmod"]
+          assert payload["attribMutationObserved"] is True
+          assert payload["postRevokeReadDenied"] is True
+          assert payload["exactAclListingRestored"] is True
+          assert payload["physicalTuyaSecretsUsed"] is False
+          assert payload["xcodeUsed"] is False
+          assert payload["deviceUsed"] is False
+          payload["productionParent"] = sys.argv[3]
+          payload["productionBytesChanged"] = False
+          payload["physicalAuthorityCreated"] = False
+          Path(sys.argv[1]).write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          PY
+          shasum -a 256 "$EVIDENCE" | tee "$RUNNER_TEMP/current-private-tuya-read-lease.sha256"
+
+      - name: Upload sanitized validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-current-private-tuya-read-lease-evidence
+          path: |
+            ${{ runner.temp }}/current-private-tuya-read-lease.json
+            ${{ runner.temp }}/current-private-tuya-read-lease.sha256
+            ${{ runner.temp }}/current-private-tuya-read-lease.stderr.log
+          if-no-files-found: warn
+          retention-days: 7
