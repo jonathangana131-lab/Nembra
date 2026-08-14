@@ -1,0 +1,56 @@
+name: Capture Field Source Contract Diagnostic
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-source-contract:
+    name: Diagnose exact source-contract assertion
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Bind diagnostic to exact checked-out source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Extract accepted provenance source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/capture-field-build-provenance.yml').read_text()
+          begin = workflow.index('      - name: Verify source contract\n')
+          end = workflow.index('      - name: Build stamped standalone Simulator app\n', begin)
+          block = workflow[begin:end].splitlines()
+          run_index = next(i for i, line in enumerate(block) if line.strip() == 'run: |')
+          body = []
+          for line in block[run_index + 1:]:
+              if line.startswith('          '):
+                  body.append(line[10:])
+              else:
+                  body.append(line)
+          script = '#!/bin/bash\nset -Eeuo pipefail\ntrap '\''rc=$?; printf "SOURCE_CONTRACT_FAIL line=%s rc=%s command=%q\\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2; exit "$rc"'\'' ERR\n' + '\n'.join(body) + '\n'
+          Path('/tmp/nembra-source-contract-diagnostic.sh').write_text(script)
+          PY
+          chmod 700 /tmp/nembra-source-contract-diagnostic.sh
+
+      - name: Run source contract with exact failing command disclosure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -x /tmp/nembra-source-contract-diagnostic.sh
