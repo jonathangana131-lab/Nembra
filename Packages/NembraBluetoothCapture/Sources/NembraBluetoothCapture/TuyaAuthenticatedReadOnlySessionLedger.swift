@@ -16,6 +16,89 @@ public struct TuyaReadOnlyConnectionToken: Hashable, Sendable {
     }
 }
 
+/// Opaque application-delivery chronology issued by one exact ledger instance.
+///
+/// The shipping caller can retain this value long enough to cross an async admission hop, but it
+/// cannot construct one, read/rewrite its timestamp, choose the issuer, or choose the delivery ID.
+public struct TuyaReadOnlyApplicationReceipt: Sendable {
+    fileprivate let token: TuyaReadOnlyConnectionToken
+    fileprivate let issuerID: UUID
+    fileprivate let deliveryID: UUID
+    fileprivate let receivedAtUptimeNanoseconds: UInt64
+
+    fileprivate init(
+        token: TuyaReadOnlyConnectionToken,
+        issuerID: UUID,
+        deliveryID: UUID,
+        receivedAtUptimeNanoseconds: UInt64
+    ) {
+        self.token = token
+        self.issuerID = issuerID
+        self.deliveryID = deliveryID
+        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds
+    }
+}
+
+/// Synchronous arbitration between SDK callback delivery and watchdog liveness sampling.
+///
+/// Both paths sample the same ledger clock while holding this lock. If callback delivery wins, its
+/// receipt is registered pending before a queued watchdog can sample later liveness. If liveness
+/// wins, its sample necessarily precedes the subsequently issued receipt. Actor mutation still owns
+/// all accepted evidence; this object only establishes scheduler-independent ordering.
+private final class TuyaReadOnlyApplicationDeliveryArbiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pendingByDeliveryID: [UUID: TuyaReadOnlyConnectionToken] = [:]
+
+    func capture(
+        for token: TuyaReadOnlyConnectionToken,
+        issuerID: UUID,
+        nowUptimeNanoseconds: @Sendable () -> UInt64
+    ) -> TuyaReadOnlyApplicationReceipt {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let deliveryID = UUID()
+        let receipt = TuyaReadOnlyApplicationReceipt(
+            token: token,
+            issuerID: issuerID,
+            deliveryID: deliveryID,
+            receivedAtUptimeNanoseconds: nowUptimeNanoseconds()
+        )
+        pendingByDeliveryID[deliveryID] = token
+        return receipt
+    }
+
+    func consume(_ receipt: TuyaReadOnlyApplicationReceipt) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard pendingByDeliveryID[receipt.deliveryID] == receipt.token else {
+            return false
+        }
+        pendingByDeliveryID.removeValue(forKey: receipt.deliveryID)
+        return true
+    }
+
+    func livenessSampleIfUnblocked(
+        for token: TuyaReadOnlyConnectionToken,
+        nowUptimeNanoseconds: @Sendable () -> UInt64
+    ) -> UInt64? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !pendingByDeliveryID.values.contains(token) else {
+            return nil
+        }
+        return nowUptimeNanoseconds()
+    }
+
+    func reset() {
+        lock.lock()
+        pendingByDeliveryID.removeAll(keepingCapacity: true)
+        lock.unlock()
+    }
+}
+
 /// Owns the non-secret chronology consumed by `TuyaAuthenticatedReadOnlyPreflight`.
 ///
 /// The official Tuya adapter reports lifecycle events here rather than assembling preflight
@@ -36,6 +119,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         case invalidAuthenticationTransition
         case authenticationRequired
         case emptyApplicationUpdate
+        case invalidApplicationReceipt
+        case applicationDeliveryReceiptAlreadyConsumed
         case applicationPayloadCountExhausted
         case monotonicClockRegressed
         case connectionGenerationExhausted
@@ -54,7 +139,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         "Session authority was retired after an internal lifecycle or chronology failure."
 
     private let ledgerID: UUID
-    private let nowUptimeNanoseconds: @Sendable () -> UInt64
+    nonisolated private let applicationReceiptIssuerID: UUID
+    nonisolated private let applicationDeliveryArbiter: TuyaReadOnlyApplicationDeliveryArbiter
+    nonisolated private let injectedNowUptimeNanoseconds: (@Sendable () -> UInt64)?
 
     private var generation: UInt64 = 0
     private var currentToken: TuyaReadOnlyConnectionToken?
@@ -66,15 +153,35 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     private var latestObservedUptimeNanoseconds: UInt64?
     private var applicationPayloadCount = 0
     private var latestApplicationPayloadUptimeNanoseconds: UInt64?
+    private var consumedApplicationDeliveryIDs: Set<UUID> = []
 
     public init() {
         self.ledgerID = UUID()
-        self.nowUptimeNanoseconds = { DispatchTime.now().uptimeNanoseconds }
+        self.applicationReceiptIssuerID = UUID()
+        self.applicationDeliveryArbiter = TuyaReadOnlyApplicationDeliveryArbiter()
+        self.injectedNowUptimeNanoseconds = nil
     }
 
     init(nowUptimeNanoseconds: @escaping @Sendable () -> UInt64) {
         self.ledgerID = UUID()
-        self.nowUptimeNanoseconds = nowUptimeNanoseconds
+        self.applicationReceiptIssuerID = UUID()
+        self.applicationDeliveryArbiter = TuyaReadOnlyApplicationDeliveryArbiter()
+        self.injectedNowUptimeNanoseconds = nowUptimeNanoseconds
+    }
+
+    /// Synchronously timestamps trusted SDK callback delivery before any new task/actor hop.
+    /// The receipt is tied to this exact ledger instance and is registered pending under the same
+    /// lock used by watchdog liveness arbitration.
+    public nonisolated func captureApplicationReceipt(
+        for token: TuyaReadOnlyConnectionToken
+    ) -> TuyaReadOnlyApplicationReceipt {
+        applicationDeliveryArbiter.capture(
+            for: token,
+            issuerID: applicationReceiptIssuerID,
+            nowUptimeNanoseconds: { [injectedNowUptimeNanoseconds] in
+                injectedNowUptimeNanoseconds?() ?? DispatchTime.now().uptimeNanoseconds
+            }
+        )
     }
 
     @discardableResult
@@ -85,8 +192,10 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
 
         generation += 1
         let token = TuyaReadOnlyConnectionToken(ledgerID: ledgerID, generation: generation)
-        let now = nowUptimeNanoseconds()
+        let now = currentMonotonicUptimeNanoseconds()
 
+        applicationDeliveryArbiter.reset()
+        consumedApplicationDeliveryIDs.removeAll(keepingCapacity: true)
         currentToken = token
         authenticationState = .waitingForAuthentication
         authenticationMethod = nil
@@ -222,6 +331,9 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// Continuity and the incomplete-session deadline are checked before the update may advance
     /// accepted chronology. A deadline-crossing callback cannot become the evidence that rescues
     /// the same expired generation.
+    /// Compatibility admission for package callers that do not already own the synchronous SDK
+    /// callback boundary. It validates current/authenticated/non-empty authority before issuing a
+    /// same-ledger receipt, so rejected legacy calls cannot strand pending liveness arbitration.
     public func recordApplicationUpdate(
         isNonEmpty: Bool,
         for token: TuyaReadOnlyConnectionToken
@@ -234,7 +346,36 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             throw MutationError.emptyApplicationUpdate
         }
 
-        let now = try nextMonotonicObservation()
+        let receipt = captureApplicationReceipt(for: token)
+        try recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)
+    }
+
+    /// Records a non-empty application update using its exact ledger-issued delivery chronology.
+    /// A receipt can be consumed once only; token/issuer mismatch or replay cannot move readiness.
+    public func recordApplicationUpdate(
+        isNonEmpty: Bool,
+        receipt: TuyaReadOnlyApplicationReceipt,
+        for token: TuyaReadOnlyConnectionToken
+    ) throws {
+        try requireCurrent(token)
+        guard receipt.token == token,
+              receipt.issuerID == applicationReceiptIssuerID else {
+            throw MutationError.invalidApplicationReceipt
+        }
+        guard case .authenticated = authenticationState else {
+            throw MutationError.authenticationRequired
+        }
+        guard isNonEmpty else {
+            throw MutationError.emptyApplicationUpdate
+        }
+        guard consumedApplicationDeliveryIDs.insert(receipt.deliveryID).inserted else {
+            throw MutationError.applicationDeliveryReceiptAlreadyConsumed
+        }
+        guard applicationDeliveryArbiter.consume(receipt) else {
+            throw MutationError.invalidApplicationReceipt
+        }
+
+        let now = receipt.receivedAtUptimeNanoseconds
         try requireContinuousAuthenticatedObservation(at: now)
         try requireIncompleteObservationHorizonOpen(at: now)
         guard let authenticatedAt = authenticatedAtUptimeNanoseconds,
@@ -265,7 +406,18 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         guard case .authenticated = authenticationState else {
             throw MutationError.authenticationRequired
         }
-        let now = try nextMonotonicObservation()
+
+        // Sampling is serialized with synchronous callback delivery. A receipt already pending for
+        // this exact token wins chronology and makes this watchdog mutation yield without inventing
+        // a later liveness instant.
+        guard let now = applicationDeliveryArbiter.livenessSampleIfUnblocked(
+            for: token,
+            nowUptimeNanoseconds: { [injectedNowUptimeNanoseconds] in
+                injectedNowUptimeNanoseconds?() ?? DispatchTime.now().uptimeNanoseconds
+            }
+        ) else {
+            return
+        }
         try requireContinuousAuthenticatedObservation(at: now)
         try requireIncompleteObservationHorizonOpen(at: now)
         latestObservedUptimeNanoseconds = now
@@ -361,8 +513,12 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
     }
 
+    nonisolated private func currentMonotonicUptimeNanoseconds() -> UInt64 {
+        injectedNowUptimeNanoseconds?() ?? DispatchTime.now().uptimeNanoseconds
+    }
+
     private func nextMonotonicObservation() throws -> UInt64 {
-        let now = nowUptimeNanoseconds()
+        let now = currentMonotonicUptimeNanoseconds()
         if let latestObservedUptimeNanoseconds,
            now < latestObservedUptimeNanoseconds {
             throw MutationError.monotonicClockRegressed
