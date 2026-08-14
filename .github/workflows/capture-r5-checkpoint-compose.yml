@@ -1,0 +1,98 @@
+name: Checkpoint Capture app truth composition
+
+on:
+  push:
+    branches:
+      - capture/current-main-tuya-readonly-convergence-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  checkpoint:
+    if: github.event.head_commit.message == 'GO checkpoint Capture app truth composition'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Compose reviewed product and truth-test delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/capture-app-truth-repair-r2.yml').read_text()
+          compose = source.index('      - name: Compose canonical Capture app truth\n')
+          truth = source.index('      - name: Run focused truth contracts\n', compose)
+          chunk = source[compose:truth]
+          marker = '        run: |\n'
+          if chunk.count(marker) != 1:
+              raise SystemExit(f'compose run marker count: {chunk.count(marker)}')
+          body = chunk.split(marker, 1)[1]
+          lines = []
+          for line in body.splitlines():
+              if line.startswith('          '): lines.append(line[10:])
+              elif line.strip() == '': lines.append('')
+              else: raise SystemExit(f'unexpected compose indentation: {line!r}')
+          Path('/tmp/nembra-compose-r2.sh').write_text('\n'.join(lines) + '\n')
+          PY
+          bash /tmp/nembra-compose-r2.sh
+
+      - name: Enforce static truth invariants before checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift').read_text()
+          required = [
+              'Repeated scooter data',
+              'Scooter data stayed live',
+              'applicationEvidenceSurvivedHistoricalWindow',
+              'minimumAuthenticatedApplicationPayloadCount',
+              'minimumPostAuthenticationPayloadSurvivalNanoseconds',
+              'mirrorAlreadyTerminalIncompleteObservationHorizon',
+              'application_authenticated_incomplete_readiness_horizon_reached',
+              'session_authenticated_incomplete_readiness_horizon_reached',
+          ]
+          for token in required:
+              if token not in app:
+                  raise SystemExit(f'missing required app truth token: {token}')
+          if 'Waiting for a genuine application update and the canonical 45-second horizon' in app:
+              raise SystemExit('stale singular application-evidence copy remains')
+          if 'test.applicationUpdateCount > 0' in app:
+              raise SystemExit('stale one-callback checklist predicate remains')
+          if 'sessionLedger.markApplicationObservationTimedOut(for: token)' in app:
+              raise SystemExit('obsolete app-owned incomplete-horizon terminal remains')
+          if app.count('MutationError.incompleteObservationHorizonReached') < 2:
+              raise SystemExit('receipt/watchdog semantic terminal catches are incomplete')
+          for path in [
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift',
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationSemanticTerminalTests.swift',
+          ]:
+              if not Path(path).is_file() or Path(path).stat().st_size == 0:
+                  raise SystemExit(f'missing composed truth test: {path}')
+          PY
+          git diff --check -- NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationSemanticTerminalTests.swift
+
+      - name: Publish unaccepted checkpoint only if head is still current
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='capture/current-main-tuya-readonly-convergence-gpt56'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git config user.name nembra-go-worker
+          git config user.email actions@users.noreply.github.com
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaIncompleteObservationSemanticTerminalTests.swift
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'No product delta to checkpoint'; exit 1; }
+          git commit -m 'Capture V16.1: compose app truth checkpoint'
+          git push origin HEAD:"$branch"
