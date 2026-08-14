@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 31,
+    "classifiedPRTotal": 21,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1077,39 +1077,6 @@
         "similarity": 0.124,
         "title": "[adaptive-range-core] Add truthful learned battery range model"
       },
-      "105": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "ef28f5030383f1861c2fd977eea14f1faa473928",
-        "lane": "",
-        "pr": 105,
-        "recommendedAction": "independent-review",
-        "similarity": 0.162,
-        "title": "[recover-ride-provenance] Reject null v2 transport provenance"
-      },
-      "109": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 109,
-        "recommendedAction": "independent-review",
-        "similarity": 0.212,
-        "title": "[recover-ride-location-lifecycle-v7] Harden route/GPS completion truth"
-      },
-      "120": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 120,
-        "recommendedAction": "independent-review",
-        "similarity": 0.164,
-        "title": "[battery-evidence-domain] Recover sealed battery truth on v9 main"
-      },
       "13": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1118,30 +1085,8 @@
         "lane": "",
         "pr": 13,
         "recommendedAction": "independent-review",
-        "similarity": 0.129,
+        "similarity": 0.107,
         "title": "[ride-location-lifecycle] Route Simulator location through real ride lifecycle"
-      },
-      "130": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 130,
-        "recommendedAction": "independent-review",
-        "similarity": 0.157,
-        "title": "[recover-home-vehicle-status-field] Reconcile truthful Home status on v9 main"
-      },
-      "148": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 148,
-        "recommendedAction": "independent-review",
-        "similarity": 0.108,
-        "title": "[TRAIN CI-SECURITY-01] Trusted exact-head self-hosted admission"
       },
       "16": {
         "classification": "requires-review",
@@ -1153,39 +1098,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.186,
         "title": "[adaptive-range-persistence] Version and validate learned range storage"
-      },
-      "164": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 164,
-        "recommendedAction": "independent-review",
-        "similarity": 0.07,
-        "title": "[es80] Keep solicited services out of transport candidates"
-      },
-      "184": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 184,
-        "recommendedAction": "independent-review",
-        "similarity": 0.194,
-        "title": "[navigation] Recover deterministic MapKit adapter"
-      },
-      "200": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 200,
-        "recommendedAction": "independent-review",
-        "similarity": 0.072,
-        "title": "[navigation-arrival] Require sustained truthful destination evidence"
       },
       "21": {
         "classification": "requires-review",
@@ -1349,7 +1261,7 @@
         "lane": "",
         "pr": 75,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.11,
+        "similarity": 0.098,
         "title": "[ride-history-accessibility][integration] Remove duplicate completed-row announcement"
       },
       "77": {
@@ -1360,7 +1272,7 @@
         "lane": "",
         "pr": 77,
         "recommendedAction": "independent-review",
-        "similarity": 0.193,
+        "similarity": 0.113,
         "title": "[mapkit-navigation-adapter] Add deterministic Apple directions bridge"
       },
       "83": {
@@ -1384,28 +1296,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.092,
         "title": "[visual-capture-matrix] Preserve missing portrait QA states"
-      },
-      "90": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c605e6a8808598956b923e27e591342fdf848596",
-        "lane": "",
-        "pr": 90,
-        "recommendedAction": "independent-review",
-        "similarity": 0.18,
-        "title": "[ci-exact-head-stale-event-guard] Reject delayed stale PR events"
-      },
-      "95": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 95,
-        "recommendedAction": "independent-review",
-        "similarity": 0.175,
-        "title": "[rolling-number-performance] Recover hardening onto current main"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1438,7 +1328,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T11:03:29Z",
+    "liveRefreshAt": "2026-08-14T11:03:48Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5221,10 +5111,10 @@
       "userValue": 7
     }
   },
-  "revision": 195,
+  "revision": 196,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T11:03:31Z",
+  "updatedAt": "2026-08-14T11:03:49Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5300,7 +5190,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T11:03:29Z",
+      "updatedAt": "2026-08-14T11:03:48Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
