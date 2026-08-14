@@ -60,34 +60,53 @@ def require(condition: bool, message: str) -> None:
         raise ValidationError(message)
 
 
-def numeric_uid_processes(numeric_id: int) -> list[tuple[int, str]]:
-    """Return every process (including zombies) whose real UID equals numeric_id.
+def numeric_uid_processes(numeric_id: int) -> list[tuple[int, str, int, int]]:
+    """Return processes (including zombies) whose real or effective UID equals numeric_id.
 
     Any ps execution or parse ambiguity is infrastructure RED. Treating an unreadable process
     inventory as empty would recreate the authority hole this witness exists to close.
     """
 
-    result = run(["/bin/ps", "-axo", "uid=,pid=,stat="])
+    result = run(["/bin/ps", "-axo", "ruid=,uid=,pid=,stat="])
     require(result.returncode == 0, f"process inventory failed: {result.stderr[-800:]!r}")
-    matches: list[tuple[int, str]] = []
+    matches: list[tuple[int, str, int, int]] = []
     for line_number, raw_line in enumerate(result.stdout.splitlines(), start=1):
         line = raw_line.strip()
         if not line:
             continue
         fields = line.split()
-        require(len(fields) == 3, f"unclassifiable process inventory line {line_number}: {raw_line!r}")
-        uid_text, pid_text, state = fields
+        require(len(fields) == 4, f"unclassifiable process inventory line {line_number}: {raw_line!r}")
+        ruid_text, euid_text, pid_text, state = fields
         try:
-            uid = int(uid_text, 10)
+            ruid = int(ruid_text, 10)
+            euid = int(euid_text, 10)
             pid = int(pid_text, 10)
         except ValueError as error:
             raise ValidationError(
                 f"unclassifiable process inventory identifiers at line {line_number}: {raw_line!r}"
             ) from error
-        require(uid >= 0 and pid > 0 and bool(state), f"invalid process inventory line {line_number}: {raw_line!r}")
-        if uid == numeric_id:
-            matches.append((pid, state))
+        require(ruid >= 0 and euid >= 0 and pid > 0 and bool(state), f"invalid process inventory line {line_number}: {raw_line!r}")
+        if ruid == numeric_id or euid == numeric_id:
+            matches.append((pid, state, ruid, euid))
     return matches
+
+
+def direct_ds_numeric_ids(kind: str, attribute: str) -> set[int]:
+    listing = run(["/usr/bin/dscl", ".", "-list", f"/{kind}", attribute], check=True)
+    ids: set[int] = set()
+    for line_number, raw_line in enumerate(listing.stdout.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        fields = line.split()
+        require(len(fields) == 2, f"unclassifiable Directory Services {kind} line {line_number}: {raw_line!r}")
+        try:
+            ids.add(int(fields[1], 10))
+        except ValueError as error:
+            raise ValidationError(
+                f"unclassifiable Directory Services numeric id at {kind} line {line_number}: {raw_line!r}"
+            ) from error
+    return ids
 
 
 def identity_records_are_free(numeric_id: int) -> bool:
@@ -100,7 +119,12 @@ def identity_records_are_free(numeric_id: int) -> bool:
         grp.getgrgid(numeric_id)
         return False
     except KeyError:
-        return True
+        pass
+    if numeric_id in direct_ds_numeric_ids("Users", "UniqueID"):
+        return False
+    if numeric_id in direct_ds_numeric_ids("Groups", "PrimaryGroupID"):
+        return False
+    return True
 
 
 def numeric_identity_is_fresh(numeric_id: int) -> bool:
@@ -120,9 +144,11 @@ def require_no_numeric_uid_processes(numeric_id: int, phase: str) -> None:
     require(not occupants, f"numeric UID {numeric_id} is process-occupied during {phase}: {occupants!r}")
 
 
-def wait_for_numeric_uid_processes(numeric_id: int, *, present: bool, timeout_seconds: float) -> list[tuple[int, str]]:
+def wait_for_numeric_uid_processes(
+    numeric_id: int, *, present: bool, timeout_seconds: float
+) -> list[tuple[int, str, int, int]]:
     deadline = time.monotonic() + timeout_seconds
-    last: list[tuple[int, str]] = []
+    last: list[tuple[int, str, int, int]] = []
     while True:
         last = numeric_uid_processes(numeric_id)
         if bool(last) is present:
@@ -136,8 +162,12 @@ def wait_for_numeric_uid_processes(numeric_id: int, *, present: bool, timeout_se
 
 
 def retire_numeric_uid_processes(numeric_id: int) -> None:
-    result = run(["/usr/bin/pkill", "-KILL", "-U", str(numeric_id)])
-    require(result.returncode in (0, 1), f"pkill could not retire numeric UID {numeric_id}: {result.stderr[-800:]!r}")
+    for selector in ("-U", "-u"):
+        result = run(["/usr/bin/pkill", "-KILL", selector, str(numeric_id)])
+        require(
+            result.returncode in (0, 1),
+            f"pkill {selector} could not retire numeric UID {numeric_id}: {result.stderr[-800:]!r}",
+        )
     wait_for_numeric_uid_processes(numeric_id, present=False, timeout_seconds=10.0)
 
 
@@ -292,7 +322,7 @@ def quoted(path: Path) -> str:
     return "'" + str(path).replace("'", "'\\''") + "'"
 
 
-def root_main(output: Path) -> int:
+def root_main() -> dict[str, object]:
     require(sys.platform == "darwin", "trusted-bootstrap hardening witness requires macOS")
     require(os.geteuid() == 0, "trusted-bootstrap hardening root phase requires uid 0")
     require(Path("/usr/bin/sudo").exists() and Path("/usr/sbin/visudo").exists(), "sudo/visudo unavailable")
@@ -368,43 +398,10 @@ def root_main(output: Path) -> int:
             evidence["numericUidProcessFreeAfterDeletion"] = True
         shutil.rmtree(root_dir, ignore_errors=True)
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(evidence, sort_keys=True) + "\n", encoding="utf-8")
-    print(MARKER + json.dumps(evidence, sort_keys=True))
-    print("TRUSTED_BOOTSTRAP_HARDENING_ACCEPTED validationOnly=true physicalAuthorityCreated=false")
-    return 0
+    return evidence
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--root-child", action="store_true")
-    args = parser.parse_args()
-    output = args.output.resolve()
-
-    if args.root_child:
-        return root_main(output)
-
-    require(sys.platform == "darwin", "trusted-bootstrap hardening witness requires macOS")
-    require(os.geteuid() != 0, "outer validation phase must begin as the ordinary runner identity")
-    result = run(
-        [
-            "/usr/bin/sudo",
-            "-n",
-            "/usr/bin/python3",
-            "-B",
-            "-I",
-            str(Path(__file__).resolve()),
-            "--output",
-            str(output),
-            "--root-child",
-        ]
-    )
-    sys.stdout.write(result.stdout)
-    sys.stderr.write(result.stderr)
-    require(result.returncode == 0, "root trusted-bootstrap hardening phase failed")
-    require(output.is_file(), "trusted-bootstrap hardening evidence file was not produced")
-    payload = json.loads(output.read_text(encoding="utf-8"))
+def validate_payload(payload: dict[str, object]) -> None:
     required_true = (
         "orphanedNumericUidProcessRejected",
         "freshNumericUidProcessFreeBeforeCreation",
@@ -420,6 +417,52 @@ def main() -> int:
     require(payload.get("signingIdentityQueried") is False, "validation unexpectedly queried signing identity")
     require(payload.get("xcodebuildExecuted") is False, "validation unexpectedly ran xcodebuild")
     require(payload.get("deviceOrBluetoothExecuted") is False, "validation unexpectedly touched device/Bluetooth")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--root-child", action="store_true")
+    args = parser.parse_args()
+
+    if args.root_child:
+        require(args.output is None, "root child must not accept a caller-selected output path")
+        payload = root_main()
+        validate_payload(payload)
+        print(MARKER + json.dumps(payload, sort_keys=True))
+        print("TRUSTED_BOOTSTRAP_HARDENING_ACCEPTED validationOnly=true physicalAuthorityCreated=false")
+        return 0
+
+    require(sys.platform == "darwin", "trusted-bootstrap hardening witness requires macOS")
+    require(os.geteuid() != 0, "outer validation phase must begin as the ordinary runner identity")
+    require(args.output is not None, "ordinary validation phase requires --output")
+    output = args.output.resolve()
+    result = run(
+        [
+            "/usr/bin/sudo",
+            "-n",
+            "/usr/bin/python3",
+            "-B",
+            "-I",
+            str(Path(__file__).resolve()),
+            "--root-child",
+        ]
+    )
+    sys.stderr.write(result.stderr)
+    require(result.returncode == 0, "root trusted-bootstrap hardening phase failed")
+    marker_lines = [line for line in result.stdout.splitlines() if line.startswith(MARKER)]
+    require(len(marker_lines) == 1, f"expected exactly one trusted-bootstrap hardening marker, got {len(marker_lines)}")
+    payload = json.loads(marker_lines[0][len(MARKER):])
+    require(isinstance(payload, dict), "trusted-bootstrap hardening marker payload is not an object")
+    validate_payload(payload)
+
+    # The evidence file is emitted only after privilege returns to the ordinary runner. The root
+    # child never receives this caller-selected path, so this convenience output cannot become a
+    # caller-constructible privileged file-write capability.
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    print(MARKER + json.dumps(payload, sort_keys=True))
+    print("TRUSTED_BOOTSTRAP_HARDENING_ACCEPTED validationOnly=true physicalAuthorityCreated=false")
     return 0
 
 
