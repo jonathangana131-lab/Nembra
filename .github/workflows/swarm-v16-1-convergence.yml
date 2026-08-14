@@ -1,0 +1,155 @@
+name: Swarm V16.1 Convergence Readiness
+
+on:
+  pull_request:
+    paths:
+      - '.swarm/config.json'
+      - 'SWARM_GO.md'
+      - 'docs/SWARM_V16_1_CONVERGENCE.md'
+      - 'docs/SWARM_FOUNDRY_V17.md'
+      - 'scripts/swarmcp/**'
+      - 'scripts/swarm_v16_1_pr_admission.py'
+      - 'scripts/ci/tests/test_swarm_v16_mission_graph.py'
+      - 'scripts/ci/tests/test_swarm_v16_1_convergence.py'
+      - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
+      - 'scripts/ci/tests/test_swarm_foundry_v17.py'
+      - '.github/workflows/swarm-v16-1-*.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.swarm/config.json'
+      - 'SWARM_GO.md'
+      - 'docs/SWARM_V16_1_CONVERGENCE.md'
+      - 'docs/SWARM_FOUNDRY_V17.md'
+      - 'scripts/swarmcp/**'
+      - 'scripts/swarm_v16_1_pr_admission.py'
+      - 'scripts/ci/tests/test_swarm_v16_mission_graph.py'
+      - 'scripts/ci/tests/test_swarm_v16_1_convergence.py'
+      - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
+      - 'scripts/ci/tests/test_swarm_foundry_v17.py'
+      - '.github/workflows/swarm-v16-1-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  V16_1_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+concurrency:
+  group: swarm-v16-1-readiness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # On pull_request, GitHub's default checkout is a synthetic merge commit.
+      # V16.1 acceptance is candidate-head authority, so checkout the immutable
+      # PR head explicitly. Push runs use github.sha.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.V16_1_CANDIDATE_SHA }}
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Bind literal candidate head
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$V16_1_CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$V16_1_CANDIDATE_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile V16.1 control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/swarm_control.py \
+            scripts/swarm_v16_1_pr_admission.py \
+            scripts/swarmcp/*.py \
+            scripts/ci/tests/test_swarm_v16_mission_graph.py \
+            scripts/ci/tests/test_swarm_v16_1_convergence.py \
+            scripts/ci/tests/test_swarm_v16_1_rollout.py \
+            scripts/ci/tests/test_swarm_foundry_v17.py
+
+      - name: Validate policy config
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          cfg=json.load(open('.swarm/config.json'))
+          v=cfg['v16']
+          assert v['enabled'] is True
+          assert v['policyVersion']=='16.1'
+          assert v['solutionTournamentMaxCandidates']==2
+          c=v['convergence']
+          assert c['oneBuilderBranchPerBlocker'] is True
+          assert c['joinBeforeSuccessor'] is True
+          assert c['maxDistinctAttemptBranchesPerBlocker']==2
+          assert c['lowProgressAttemptsBeforeFreeze']==2
+          assert c['automaticPRAdmission'] is True
+          f=cfg['foundryV17']
+          assert f['enabled'] is True
+          assert f['policyVersion']=='17.0'
+          assert f['chatCapacityCeiling']==20
+          assert f['maxOpenProductPRs']==18
+          assert f['maxOpenBranches']==24
+          assert f['claimsRemainAuthoritative'] is True
+          assert f['activationDeletesBranches'] is False
+          PY
+
+      - name: Run retained V16 mission-graph suite
+        shell: bash
+        run: python3 scripts/ci/tests/test_swarm_v16_mission_graph.py
+
+      - name: Run V16.1 convergence suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_swarm_v16_1_convergence.py
+          python3 scripts/ci/tests/test_swarm_v16_1_rollout.py
+
+      - name: Run neighboring V16 operations and activation regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_swarm_v16_ops.py
+          python3 scripts/ci/tests/test_swarm_v16_activation_scale.py
+          python3 scripts/ci/tests/test_swarm_v16_live_refresh_workflow.py
+
+      - name: Run V17 congestion policy
+        shell: bash
+        run: python3 scripts/ci/tests/test_swarm_foundry_v17.py
+
+      - name: Re-run both adversarial swarm simulations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt, json, sys
+          sys.path.insert(0,'scripts')
+          import swarm_control as sc
+          now=dt.datetime(2026,8,13,9,30,tzinfo=dt.timezone.utc)
+          old=sc.run_v16_adversarial_simulation(30,now)
+          new=sc.run_v16_1_adversarial_simulation(30,now)
+          print(json.dumps({'v16':old,'v16_1':new},indent=2,sort_keys=True))
+          assert old['passed']
+          assert new['passed']
+          PY
+
+      - name: Prove no physical authority changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          cfg=json.load(open('.swarm/config.json'))
+          assert cfg['physicalSafety']['schedulerMayPromotePhysicalGo'] is False
+          assert cfg['v16']['physicalSafety']['schedulerMayPromotePhysicalGo'] is False
+          assert cfg['v16']['physicalSafety']['commandsRequirePhysicalMapping'] is True
+          PY

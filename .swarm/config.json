@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "kind": "swarm-config",
+  "stateBranch": "swarm-state",
+  "rolloutMode": "enforcement",
+  "wipLimits": {
+    "maxPrimaryLanes": 6,
+    "maxPrimaryPerEpic": 2,
+    "reviewBacklogThreshold": 4,
+    "integrationBacklogThreshold": 3
+  },
+  "resourceOrder": [
+    "PROJECT_STATE_WRITER",
+    "HIGH_CONTENTION_FILE",
+    "XCODE_BUILD",
+    "IOS_SIMULATOR",
+    "IOS_DEVICE",
+    "SIGNING",
+    "RELEASE_INTEGRATION",
+    "BLUETOOTH_CAPTURE",
+    "PHYSICAL_SCOOTER"
+  ],
+  "physicalSafety": {
+    "schedulerMayPromotePhysicalGo": false,
+    "simulatorEvidenceIsPhysicalEvidence": false,
+    "unknownTelemetryMayBeFabricated": false
+  },
+  "legacyPRCompatibility": "shadow-warn",
+  "v16": {
+    "enabled": true,
+    "policyVersion": "16.1",
+    "graphPath": ".swarm/runtime/v16/mission-graph.json",
+    "defaultWorkers": 20,
+    "roleTargets": {
+      "builder": 0.4,
+      "reviewer": 0.3,
+      "integrator": 0.3
+    },
+    "semanticDuplicateThreshold": 0.58,
+    "solutionTournamentMaxCandidates": 2,
+    "missionPacketMemoryLimit": 12,
+    "integrationWorlds": ["MAIN", "NEXT", "FRONTIER", "EXPERIMENTAL"],
+    "truthClasses": ["SIMULATED", "ESTIMATED", "OBSERVED", "AUTHENTICATED", "PHYSICALLY_MAPPED", "COMMAND_VERIFIED"],
+    "destructiveMigrationActionsAllowed": false,
+    "convergence": {
+      "oneBuilderBranchPerBlocker": true,
+      "claimBeforeBranch": true,
+      "joinBeforeSuccessor": true,
+      "maxDistinctAttemptBranchesPerBlocker": 2,
+      "maxOpenNoncanonicalPRsPerLane": 2,
+      "lowProgressAttemptsBeforeFreeze": 2,
+      "automaticPRAdmission": true,
+      "newSwarmPRProtocol": "16.1"
+    },
+    "physicalSafety": {
+      "schedulerMayPromotePhysicalGo": false,
+      "authenticatedEvidenceIsPhysicalEvidence": false,
+      "simulatorEvidenceIsPhysicalEvidence": false,
+      "commandsRequirePhysicalMapping": true
+    }
+  },
+  "foundryV17": {
+    "enabled": true,
+    "policyVersion": "17.0",
+    "chatCapacityCeiling": 20,
+    "maxOpenProductPRs": 18,
+    "maxOpenBranches": 24,
+    "reviewBacklogSoftLimit": 4,
+    "integrationBacklogSoftLimit": 3,
+    "retirementWorkers": 4,
+    "verificationWorkers": 2,
+    "redMainEmergencyBuilders": 1,
+    "claimsRemainAuthoritative": true,
+    "activationDeletesBranches": false
+  }
+}

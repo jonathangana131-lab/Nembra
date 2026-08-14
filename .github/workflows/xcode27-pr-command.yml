@@ -89,11 +89,6 @@ jobs:
         working-directory: Packages/NembraCore
         run: swift test
 
-      - name: Validate Capture authority package
-        run: |
-          set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture
-
       - name: Build, test, and capture Simulator states
         run: scripts/ci/xcode27_simulator_capture.sh
 

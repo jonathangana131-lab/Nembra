@@ -1,0 +1,1981 @@
+@preconcurrency import CoreBluetooth
+import CoreTransferable
+import Dispatch
+import Foundation
+import NembraBluetoothCapture
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+
+/// Presentation-only polling for the non-observable package coordinator.
+///
+/// Capture authority and all evidence clocks remain package-owned. The shell polls often enough
+/// to keep state changes subsecond while avoiding four full hierarchy evaluations per second for
+/// integer-second guidance that is never evidence.
+enum ES80CaptureRefreshPolicy {
+    static let statusPollInterval: TimeInterval = 0.5
+}
+
+/// Exact verified Share bytes are the transfer authority. The system may materialize these bytes
+/// for a destination, but Nembra never reopens a mutable pathname after integrity verification.
+private struct VerifiedFinalShareTransfer: Transferable {
+    let data: Data
+    let filename: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .json) { transfer in
+            transfer.data
+        }
+        .suggestedFileName { transfer in
+            transfer.filename
+        }
+    }
+}
+
+/// Product-facing Nembra Capture shell for ES80 Experiment One.
+///
+/// One package-owned coordinator now carries the complete software provenance life from
+/// OFF1 -> ON1 -> OFF2 -> ON2 through explicit correlated-target confirmation, fresh
+/// post-admission rediscovery, passive acquisition, Ready, monotonic Horizon, and immutable
+/// finalized JSON. SwiftUI never constructs a second correlation producer, never selects an
+/// authoritative UUID, and never receives the sealed admission or mutable recorder.
+///
+/// A repeated full CoreBluetooth UUID remains correlated Bluetooth-target evidence only. It is
+/// not permanent hardware authentication, RF emission-time proof, protocol semantics, or telemetry.
+@MainActor
+struct ES80CaptureShellView: View {
+    private enum Phase: Equatable {
+        case physicalProcedureLocked
+        case bluetoothUnavailable(String)
+        case correlationReady(PassiveBluetoothPowerCycleObservationPhase)
+        case correlationStarting(PassiveBluetoothPowerCycleObservationPhase)
+        case correlationObserving(PassiveBluetoothPowerCycleObservationPhase)
+        case correlationFailed(String)
+        case noRepeatableTarget
+        case ambiguousTargets(Int)
+        case correlatedTarget
+        case rediscoveringTarget
+        case targetReacquired
+        case connecting
+        case acquiring
+        case observing
+        case readyToSeal
+        case finalizing
+        case complete
+        case failed(String)
+    }
+
+    private static let requiredCorrelationWindowDuration: TimeInterval = 10
+    private static let requiredCorrelationWindowNanoseconds: UInt64 = 10_000_000_000
+    private static let requiredObservationGuidanceNanoseconds: UInt64 = 60_000_000_000
+
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var accessibilityDifferentiateWithoutColor
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    @State private var coordinator: PassiveBluetoothExperimentOneCoordinator
+    @State private var observedScanBeganAtUptimeNanoseconds: UInt64?
+    @State private var observationReadyBeganAtUptimeNanoseconds: UInt64?
+    @State private var captureConnectionAttempted = false
+    @State private var finalizationInFlight = false
+    @State private var diagnosticMessage: String?
+    @State private var localFailureMessage: String?
+    @State private var didPresentAnalysisReadySemantics = false
+    @State private var successHapticTick = 0
+    @State private var warningHapticTick = 0
+    @State private var finalShareData: Data?
+    @State private var finalShareFilename: String?
+    @State private var finalShareIntegrityReport: PassiveBluetoothExperimentOneFinalShareIntegrityReport?
+    @State private var sharePreparationWarning: String?
+    @State private var declaredStationarySetup: PassiveBluetoothStationaryCaptureSetup?
+    @State private var showingDetails = false
+
+    private let onFreshExperimentRequested: () throws -> PassiveBluetoothExperimentOneCoordinator
+#if DEBUG && targetEnvironment(simulator)
+    private let simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot?
+#endif
+
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        onFreshExperimentRequested: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator
+    ) {
+        _coordinator = State(initialValue: coordinator)
+        self.onFreshExperimentRequested = onFreshExperimentRequested
+#if DEBUG && targetEnvironment(simulator)
+        simulatorQASnapshot = nil
+#endif
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    init(
+        coordinator: PassiveBluetoothExperimentOneCoordinator,
+        simulatorQASnapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot,
+        onFreshExperimentRequested: @escaping () throws -> PassiveBluetoothExperimentOneCoordinator
+    ) {
+        _coordinator = State(initialValue: coordinator)
+        self.onFreshExperimentRequested = onFreshExperimentRequested
+        self.simulatorQASnapshot = simulatorQASnapshot
+    }
+#endif
+
+    var body: some View {
+        TimelineView(.periodic(
+            from: .now,
+            by: ES80CaptureRefreshPolicy.statusPollInterval
+        )) { _ in
+            let status = coordinator.status
+            let currentPhase = phase(status: status)
+            let now = DispatchTime.now().uptimeNanoseconds
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: captureVerticalSpacing) {
+                    hero(for: currentPhase)
+#if DEBUG && targetEnvironment(simulator)
+                    if let simulatorQASnapshot {
+                        simulatorQABadge(simulatorQASnapshot)
+                    }
+#endif
+                    if dynamicTypeSize.isAccessibilitySize {
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                    } else {
+                        passiveSafetyPanel
+                        progressRail(status: status)
+                        primaryContent(
+                            for: currentPhase,
+                            status: status,
+                            nowUptimeNanoseconds: now
+                        )
+                    }
+
+                    if let diagnosticMessage {
+                        diagnosticBanner(diagnosticMessage)
+                    }
+                }
+                .frame(maxWidth: 660)
+                .padding(.horizontal, 22)
+                .padding(.top, captureTopPadding)
+                .padding(.bottom, captureBottomPadding)
+                .frame(maxWidth: .infinity)
+            }
+            .accessibilityIdentifier("es80.capture.scroll")
+            .background(Color.black.ignoresSafeArea())
+            .onAppear {
+                synchronizeIdleTimer(for: currentPhase)
+                synchronizeObservedScanClock(isScanning: status.powerCycleProgress?.isScanning == true)
+                synchronizeObservationReadyClock(isReady: presentationObservationReady(status: status))
+            }
+            .onChange(of: currentPhase) { _, newPhase in
+                synchronizeIdleTimer(for: newPhase)
+                handleSemanticPhaseTransition(newPhase)
+                announceAccessibilityStatus(newPhase)
+            }
+            .onChange(of: diagnosticMessage) { _, message in
+                announceAccessibilityAlert(message)
+            }
+            .onChange(of: sharePreparationWarning) { _, message in
+                announceAccessibilityAlert(message)
+            }
+            .onChange(of: presentationAnalysisReady) { _, isReady in
+                guard isReady, currentPhase == .complete else { return }
+                presentAnalysisReadySemanticsIfNeeded()
+            }
+            .onChange(of: status.powerCycleProgress?.isScanning == true) { _, isScanning in
+                synchronizeObservedScanClock(isScanning: isScanning)
+            }
+            .onChange(of: presentationObservationReady(status: status)) { _, isReady in
+                synchronizeObservationReadyClock(isReady: isReady)
+            }
+        }
+        .navigationTitle("Nembra Capture")
+        .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .onChange(of: scenePhase) { _, newScenePhase in
+            handleScenePhaseChange(newScenePhase)
+        }
+        .sheet(isPresented: $showingDetails) {
+            captureDetailsSheet
+        }
+        .accessibilityIdentifier("es80.capture-shell")
+        .sensoryFeedback(.success, trigger: successHapticTick)
+        .sensoryFeedback(.warning, trigger: warningHapticTick)
+    }
+
+    private var captureVerticalSpacing: CGFloat {
+        if verticalSizeClass == .compact { return 16 }
+        return dynamicTypeSize.isAccessibilitySize ? 10 : 24
+    }
+
+    private var captureTopPadding: CGFloat {
+        if verticalSizeClass == .compact { return 10 }
+        return dynamicTypeSize.isAccessibilitySize ? 8 : 18
+    }
+
+    private var captureBottomPadding: CGFloat { verticalSizeClass == .compact ? 20 : 42 }
+
+    @ViewBuilder
+    private func hero(for phase: Phase) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("NEMBRA CAPTURE")
+                    .font(.caption.monospaced().weight(.bold))
+                    .tracking(1.4)
+                    .foregroundStyle(.secondary)
+
+                Text(heroTitle(for: phase))
+                    .font(.system(.title2, design: .rounded, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Image(systemName: statusSymbol(for: phase))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(statusColor(for: phase))
+                        .accessibilityHidden(true)
+
+                    Text(statusTitle(for: phase))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text("PASSIVE / READ ONLY")
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .fill(.white.opacity(0.08))
+                            .frame(width: 52, height: 52)
+
+                        Image(systemName: "wave.3.right.circle.fill")
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NEMBRA CAPTURE")
+                            .font(.caption.monospaced().weight(.bold))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+
+                        Text(heroTitle(for: phase))
+                            .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 10) {
+                    Image(systemName: statusSymbol(for: phase))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(statusColor(for: phase))
+                        .accessibilityHidden(true)
+
+                    Text(statusTitle(for: phase))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+
+                    Spacer(minLength: 8)
+
+                    Text("PASSIVE / READ ONLY")
+                        .font(.caption2.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    private func simulatorQABadge(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 9) {
+            Image(systemName: "hammer.fill")
+                .accessibilityHidden(true)
+            Text(
+                dynamicTypeSize.isAccessibilitySize
+                    ? "SIMULATOR QA · SYNTHETIC"
+                    : "\(snapshot.evidenceLabel) · SYNTHETIC SOFTWARE STATE"
+            )
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption.monospaced().weight(.bold))
+        .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            .orange.opacity(0.10),
+            in: RoundedRectangle(
+                cornerRadius: dynamicTypeSize.isAccessibilitySize ? 14 : 999,
+                style: .continuous
+            )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            snapshot.accessibilitySummary
+                + " No Bluetooth transport or capture evidence is created by this presentation fixture."
+        )
+        .accessibilityIdentifier("es80.capture.simulator-qa")
+    }
+#endif
+
+    private var passiveSafetyPanel: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("One continuous capture")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+
+                Text("Nembra keeps signal matching and read-only capture in one continuous run. It never sends scooter commands and never chooses a signal from its name, signal strength, or service hints.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("es80.capture.single-authority")
+    }
+
+    private func progressRail(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> some View {
+        let completed = presentationCompletedWindows(status: status)
+        let current = presentationCurrentWindow(status: status)
+        let labels = ["OFF 1", "ON 1", "OFF 2", "ON 2", "READY", "SEAL"]
+
+        return VStack(alignment: .leading, spacing: 10) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CAPTURE PROGRESS")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(progressStage(status: status, completedWindows: completed))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2),
+                    spacing: 12
+                ) {
+                    ForEach(0..<6, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 6) {
+                            progressSegment(
+                                index: index,
+                                completedWindows: completed,
+                                currentWindow: current,
+                                status: status
+                            )
+                            Text(labels[index])
+                                .font(.caption2.monospaced().weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    Text("CAPTURE PROGRESS")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(progressStage(status: status, completedWindows: completed))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 6) {
+                    ForEach(0..<6, id: \.self) { index in
+                        progressSegment(
+                            index: index,
+                            completedWindows: completed,
+                            currentWindow: current,
+                            status: status
+                        )
+                    }
+                }
+
+                HStack {
+                    Text("OFF 1")
+                    Spacer()
+                    Text("ON 1")
+                    Spacer()
+                    Text("OFF 2")
+                    Spacer()
+                    Text("ON 2")
+                    Spacer()
+                    Text("READY")
+                    Spacer()
+                    Text("SEAL")
+                }
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            progressAccessibilityLabel(
+                status: status,
+                completedWindows: completed,
+                analysisReady: presentationAnalysisReady
+            )
+        )
+        .accessibilityIdentifier("es80.capture.experiment-progress")
+    }
+
+    @ViewBuilder
+    private func primaryContent(
+        for phase: Phase,
+        status: PassiveBluetoothExperimentOneCoordinator.Status,
+        nowUptimeNanoseconds: UInt64
+    ) -> some View {
+        switch phase {
+        case .physicalProcedureLocked:
+            statePanel(
+                eyebrow: "CAPTURE LOCKED",
+                title: "This build is not ready for a field capture",
+                message: "Field capture is locked for this build. OFF / ON checks, connection, capture, and sealing stay unavailable until this exact build is authorized.",
+                symbol: "lock.shield.fill"
+            )
+
+        case let .bluetoothUnavailable(message):
+            statePanel(
+                eyebrow: "PREFLIGHT",
+                title: "Bluetooth is not ready",
+                message: message,
+                symbol: "antenna.radiowaves.left.and.right.slash"
+            )
+            primaryButton(
+                "Begin OFF 1 check",
+                systemImage: "power",
+                disabled: true,
+                identifier: "es80.capture.begin-window"
+            ) {}
+
+        case let .correlationReady(window):
+            if window == .firstPoweredOff, declaredStationarySetup == nil {
+                statePanel(
+                    eyebrow: "PREFLIGHT / DECLARATION",
+                    title: "Confirm stationary setup",
+                    message: "Before OFF 1, unplug the scooter charger, keep Nembra foregrounded with the screen unlocked, and keep the stock scooter app closed. Confirm only when those are your declared setup conditions for this capture.",
+                    symbol: "checkmark.shield"
+                )
+                primaryButton(
+                    "Confirm setup",
+                    systemImage: "checkmark.circle.fill",
+                    identifier: "es80.capture.confirm-setup"
+                ) {
+                    declaredStationarySetup = PassiveBluetoothStationaryCaptureSetup(
+                        chargerState: .disconnected,
+                        executionContext: .foregroundUnlockedScreenOn,
+                        stockAppReferenceSetup: .none
+                    )
+                }
+                guidanceFootnote("This records what you confirmed. Nembra cannot independently verify that the condition stayed true for the whole Capture.")
+            } else {
+                correlationReadyPanel(window)
+                primaryButton(
+                    "Begin \(phaseShortName(window)) check",
+                    systemImage: window.operatorExpectedPowerOn ? "power.circle.fill" : "power.circle",
+                    identifier: "es80.capture.begin-window"
+                ) {
+                    beginCorrelationWindow()
+                }
+            }
+
+        case let .correlationStarting(window):
+            statePanel(
+                eyebrow: "\(phaseShortName(window)) / STARTING",
+                title: "Starting the Bluetooth check",
+                message: "Nembra is waiting for Bluetooth scanning to begin. This check has not started yet.",
+                symbol: "dot.radiowaves.left.and.right"
+            )
+            reduceMotionActivityIndicator
+
+        case let .correlationObserving(window):
+            correlationObservingPanel(
+                window,
+                nowUptimeNanoseconds: nowUptimeNanoseconds
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(phaseShortName(window)) observation")
+            .accessibilityValue(
+                window.operatorExpectedPowerOn
+                    ? "Keep the scooter on"
+                    : "Keep the scooter off"
+            )
+            .accessibilityHint("Nembra is recording this Bluetooth check.")
+
+            let remaining = correlationGuidanceRemainingSeconds(
+                nowUptimeNanoseconds: nowUptimeNanoseconds
+            )
+            primaryButton(
+                remaining == 0 ? "Complete \(phaseShortName(window)) check" : "Hold state — \(remaining)s",
+                systemImage: remaining == 0 ? "checkmark.circle.fill" : "timer",
+                disabled: remaining != 0,
+                identifier: "es80.capture.complete-window"
+            ) {
+                completeCorrelationWindow()
+            }
+            .accessibilityLabel("\(phaseShortName(window)) check timer")
+            .accessibilityValue(
+                remaining == 0
+                    ? "Display guidance complete; ready to finish this check"
+                    : "\(remaining) seconds of display guidance remaining"
+            )
+            .accessibilityHint("This timer is guidance only. Nembra verifies the required observation before accepting this check.")
+
+            guidanceFootnote("This countdown is guidance only. Nembra accepts the check only after the required observation time is recorded; finishing early cannot create a valid result.")
+
+        case let .correlationFailed(message):
+            statePanel(
+                eyebrow: "SIGNAL CHECK STOPPED",
+                title: "Restart from OFF 1",
+                message: message,
+                symbol: "arrow.counterclockwise.circle"
+            )
+            primaryButton(
+                "Start a fresh capture",
+                systemImage: "arrow.counterclockwise",
+                identifier: "es80.capture.restart-correlation"
+            ) {
+                restartExperiment()
+            }
+
+        case .noRepeatableTarget:
+            statePanel(
+                eyebrow: "NO UNIQUE SIGNAL",
+                title: "No scooter signal repeated twice",
+                message: "No single Bluetooth signal disappeared in both OFF checks and returned in both ON checks. Nembra will not guess from name, signal strength, service hints, or short IDs.",
+                symbol: "questionmark.circle"
+            )
+            primaryButton(
+                "Repeat all four checks",
+                systemImage: "arrow.counterclockwise",
+                identifier: "es80.capture.restart-correlation"
+            ) {
+                restartExperiment()
+            }
+
+        case let .ambiguousTargets(count):
+            statePanel(
+                eyebrow: "MULTIPLE MATCHES",
+                title: "\(count) signals followed the same pattern",
+                message: "More than one Bluetooth signal followed the same OFF / ON pattern. Nembra will not guess which one is the scooter from name, signal strength, services, or a short ID.",
+                symbol: "point.3.filled.connected.trianglepath.dotted"
+            )
+            primaryButton(
+                "Repeat all four checks",
+                systemImage: "arrow.counterclockwise",
+                identifier: "es80.capture.restart-correlation"
+            ) {
+                restartExperiment()
+            }
+
+        case .correlatedTarget:
+            statePanel(
+                eyebrow: "SCOOTER SIGNAL FOUND",
+                title: "One signal matched twice",
+                message: "One Bluetooth signal appeared in both ON checks and disappeared in both OFF checks. Treat it only as the matched scooter signal for this Capture, not permanent scooter identity.",
+                symbol: "checkmark.circle"
+            )
+            primaryButton(
+                "Confirm scooter signal",
+                systemImage: "checkmark.shield",
+                identifier: "es80.capture.confirm-correlated-target"
+            ) {
+                confirmCorrelatedTarget()
+            }
+
+        case .rediscoveringTarget:
+            statePanel(
+                eyebrow: "SIGNAL CONFIRMED",
+                title: "Checking the same signal again",
+                message: "Nembra is checking for the same Bluetooth signal again. Keep the scooter ON after the final check.",
+                symbol: "scope"
+            )
+            reduceMotionActivityIndicator
+            secondaryButton(
+                "Restart signal check",
+                systemImage: "arrow.clockwise",
+                identifier: "es80.capture.restart-rediscovery"
+            ) {
+                restartRediscovery()
+            }
+
+        case .targetReacquired:
+            statePanel(
+                eyebrow: "MATCHED SIGNAL",
+                title: "Same signal found again",
+                message: "The same Bluetooth signal appeared again after confirmation. This match applies only to this Capture and does not permanently identify the scooter.",
+                symbol: "checkmark.circle"
+            )
+            primaryButton(
+                "Begin read-only observation",
+                systemImage: "wave.3.right",
+                identifier: "es80.capture.connect-prepared-target"
+            ) {
+                connectPreparedCapture()
+            }
+
+        case .connecting:
+            statePanel(
+                eyebrow: "READ-ONLY CONNECTION",
+                title: "Opening the matched signal",
+                message: "Nembra is connecting only to the matched scooter signal. This Capture remains read only and sends no scooter commands.",
+                symbol: "link"
+            )
+            reduceMotionActivityIndicator
+
+        case .acquiring:
+            statePanel(
+                eyebrow: "READ-ONLY DISCOVERY",
+                title: "Learning what is available",
+                message: "Nembra is learning what the matched signal exposes over Bluetooth. Observation starts only after this read-only discovery is complete.",
+                symbol: "waveform.path.ecg.rectangle"
+            )
+            reduceMotionActivityIndicator
+
+        case .observing:
+            let remaining = observationGuidanceRemainingSeconds(
+                nowUptimeNanoseconds: nowUptimeNanoseconds
+            )
+            statePanel(
+                eyebrow: "OBSERVATION READY",
+                title: remaining == 0 ? "Waiting for seal readiness" : "Hold observation — \(remaining)s",
+                message: "Passive discovery is complete. Keep Nembra foregrounded and the scooter stationary while the required observation period finishes. The displayed timer is guidance only.",
+                symbol: "timer"
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Observation ready")
+            .accessibilityValue(
+                remaining == 0
+                    ? "Display guidance complete; waiting for seal readiness"
+                    : "\(remaining) seconds of display guidance remaining"
+            )
+            .accessibilityHint("Keep Nembra foregrounded and the scooter stationary.")
+            observationHealthStrip(status: status)
+            let canFinalize = presentationCanFinalizeObservationHorizon(status: status)
+            primaryButton(
+                canFinalize ? "Seal Capture" : "Observation in progress",
+                systemImage: canFinalize ? "checkmark.seal.fill" : "timer",
+                disabled: !canFinalize,
+                identifier: "es80.capture.finish"
+            ) {
+                finalizeCapture()
+            }
+            .accessibilityLabel("Seal Capture")
+            .accessibilityValue(
+                canFinalize
+                    ? "Ready"
+                    : "Unavailable; waiting for the required observation period"
+            )
+            .accessibilityHint("Available only after Nembra verifies the required observation time.")
+
+        case .readyToSeal:
+            statePanel(
+                eyebrow: "READY TO SEAL",
+                title: "Capture can be sealed",
+                message: "Passive discovery and the required observation period are complete. Finishing now seals one final capture from this same run.",
+                symbol: "checkmark.seal"
+            )
+            observationHealthStrip(status: status)
+            primaryButton(
+                "Seal Capture",
+                systemImage: "checkmark.seal.fill",
+                identifier: "es80.capture.finish"
+            ) {
+                finalizeCapture()
+            }
+
+        case .finalizing:
+            statePanel(
+                eyebrow: "SEALING",
+                title: "Securing capture",
+                message: "Nembra is finishing the accepted observations, checking Capture integrity, and preparing the Capture to share. Keep Nembra open until sealing finishes.",
+                symbol: "lock.doc"
+            )
+            reduceMotionActivityIndicator
+
+        case .complete:
+            completionPanel
+#if DEBUG && targetEnvironment(simulator)
+            if let simulatorQASnapshot {
+                simulatorCompletionPrimaryAction(simulatorQASnapshot)
+            } else {
+                finalSharePrimaryAction
+            }
+#else
+            finalSharePrimaryAction
+#endif
+            if let sharePreparationWarning {
+                diagnosticBanner(sharePreparationWarning)
+            }
+            secondaryButton(
+                "View Details",
+                systemImage: "doc.text.magnifyingglass",
+                identifier: "es80.capture.view-details"
+            ) {
+                showingDetails = true
+            }
+
+        case let .failed(message):
+            statePanel(
+                eyebrow: "CAPTURE STOPPED",
+                title: "Capture stopped safely",
+                message: message,
+                symbol: "exclamationmark.triangle"
+            )
+            primaryButton(
+                "Start a fresh capture",
+                systemImage: "arrow.counterclockwise",
+                identifier: "es80.capture.restart-experiment"
+            ) {
+                restartExperiment()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var finalSharePrimaryAction: some View {
+        if let finalShareTransfer {
+            ShareLink(
+                item: finalShareTransfer,
+                preview: SharePreview(finalShareTransfer.filename)
+            ) {
+                Label("Share Capture", systemImage: "square.and.arrow.up")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 56)
+                    .foregroundStyle(.black)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("es80.capture.share")
+        } else if coordinator.finalizedArtifact != nil {
+            primaryButton(
+                finalShareIntegrityReport == nil ? "Verify Capture file" : "Retry Share file",
+                systemImage: "arrow.clockwise",
+                identifier: "es80.capture.prepare-share"
+            ) {
+                prepareFinalShareForAnalysisAndSharing()
+            }
+        } else {
+            primaryButton(
+                "Share unavailable",
+                systemImage: "exclamationmark.triangle",
+                disabled: true,
+                identifier: "es80.capture.share-unavailable"
+            ) {}
+        }
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    @ViewBuilder
+    private func simulatorCompletionPrimaryAction(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        if snapshot.artifactState == .shareRetry {
+            primaryButton(
+                "Retry Share file",
+                systemImage: "arrow.clockwise",
+                identifier: "es80.capture.prepare-share"
+            ) {}
+        } else {
+            primaryButton(
+                "Share Capture",
+                systemImage: "square.and.arrow.up",
+                identifier: "es80.capture.share"
+            ) {}
+        }
+    }
+#endif
+
+    private func correlationReadyPanel(_ window: PassiveBluetoothPowerCycleObservationPhase) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("\(phaseShortName(window)) / READY")
+                .font(.caption.monospaced().weight(.bold))
+                .foregroundStyle(.secondary)
+
+            Text(window.operatorExpectedPowerOn ? "Scooter ON" : "Scooter OFF")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text(window.operatorExpectedPowerOn
+                 ? "Set the scooter to ON, keep the stock app closed, then begin this Bluetooth check."
+                 : "Set the scooter fully OFF, keep the stock app closed, then begin this Bluetooth check.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func correlationObservingPanel(
+        _ window: PassiveBluetoothPowerCycleObservationPhase,
+        nowUptimeNanoseconds: UInt64
+    ) -> some View {
+        let remaining = correlationGuidanceRemainingSeconds(nowUptimeNanoseconds: nowUptimeNanoseconds)
+
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(phaseShortName(window)) / LIVE")
+                    .font(.caption.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(remaining == 0 ? "READY" : "\(remaining)s")
+                    .font(.title3.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+
+            Text(window.operatorExpectedPowerOn ? "Keep the scooter ON." : "Keep the scooter OFF.")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Text("Nembra is recording nearby Bluetooth signals for this check. Keep the phone nearby and Nembra open; do not open the stock scooter app during these four checks.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func observationHealthStrip(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> some View {
+        let connection = presentationConnection(status: status)
+        let observationReady = presentationObservationReady(status: status)
+        let horizonReady = presentationCanFinalizeObservationHorizon(status: status)
+
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    healthItem("SIGNAL", value: connection == .connected ? "MATCHED" : "WAIT")
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                    Divider().overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+                }
+            } else {
+                HStack(spacing: 12) {
+                    healthItem("SIGNAL", value: connection == .connected ? "MATCHED" : "WAIT")
+                    Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                    healthItem("DISCOVERY", value: observationReady ? "READY" : "WAIT")
+                    Divider().frame(height: 28).overlay(.white.opacity(0.12))
+                    healthItem("SEAL", value: horizonReady ? "READY" : "HOLD")
+                }
+            }
+        }
+        .padding(14)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "Capture health. Signal \(connection == .connected ? "matched" : "waiting"). Discovery \(observationReady ? "ready" : "waiting"). Seal \(horizonReady ? "ready" : "waiting")."
+        )
+        .accessibilityIdentifier("es80.capture.health")
+    }
+
+    private var completionPanel: some View {
+        let analysisReady = presentationAnalysisReady
+        return VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 8 : 16) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                        .font(.caption.monospaced().weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(analysisReady ? .white : .white.opacity(0.12))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: analysisReady ? "checkmark" : "lock.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(analysisReady ? .black : .white)
+                    }
+                    .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(analysisReady ? "CAPTURE COMPLETE" : "CAPTURE SEALED")
+                            .font(.caption.monospaced().weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(analysisReady ? "Ready for analysis" : "Integrity check required")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+
+            completionDescription
+
+            if coordinator.status.finalizationCleanup == .failed {
+                Text("The Capture is sealed, but Bluetooth cleanup did not finish. Keep this Capture and restart Nembra before starting another one.")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(dynamicTypeSize.isAccessibilitySize ? 12 : 18)
+        .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(analysisReady ? "Ready for analysis" : "Capture sealed, integrity check required")
+        .accessibilityIdentifier("es80.capture.complete")
+    }
+
+    @ViewBuilder
+    private var completionDescription: some View {
+#if DEBUG && targetEnvironment(simulator)
+        if simulatorQASnapshot != nil {
+            if dynamicTypeSize.isAccessibilitySize {
+                Text("Synthetic QA only. No physical capture artifact was created.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+            } else {
+                Text("Synthetic Simulator QA presentation only. No capture artifact bytes were created, and no physical, RF, protocol, telemetry, or command evidence is claimed.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            verifiedCompletionDescription
+        }
+#else
+        verifiedCompletionDescription
+#endif
+    }
+
+    @ViewBuilder
+    private var verifiedCompletionDescription: some View {
+        if let report = finalShareIntegrityReport {
+            Text("The exact \(report.finalShareByteCount.formatted())-byte Capture passed every required file-integrity check and is ready to share for analysis. Nembra has not identified scooter data fields from this file yet.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let artifact = coordinator.finalizedArtifact {
+            Text("\(artifact.captureJSON.count.formatted()) Capture bytes are sealed. Nembra still needs to verify the final Share file before this run is ready for analysis.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var captureDetailsSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Experiment One")
+                        .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+#if DEBUG && targetEnvironment(simulator)
+                    if let simulatorQASnapshot {
+                        simulatorCaptureDetails(simulatorQASnapshot)
+                    } else {
+                        captureArtifactDetails
+                    }
+#else
+                    captureArtifactDetails
+#endif
+
+                    Divider()
+
+                    Text("Truth boundary")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("This artifact is passive software evidence. File and build hashes are software provenance, not independent field authorization. CoreBluetooth correlation uses full peripheral identity, but it does not authenticate the physical ES80. This screen does not assign GATT, Tuya/DP, battery, current, power, speed, regen, or command semantics.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(22)
+                .frame(maxWidth: 660, alignment: .leading)
+            }
+            .navigationTitle("Capture Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showingDetails = false }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var captureArtifactDetails: some View {
+        detailRow("Correlation", value: correlationDetailValue)
+        detailRow("Cleanup", value: finalizationCleanupDetailValue)
+
+        if let report = finalShareIntegrityReport {
+            detailRow("Analysis readiness", value: "Ready")
+            detailRow("Recipe", value: report.experimentRecipeID.rawValue)
+            detailRow("Procedure", value: report.procedureVersion)
+            detailRow("Final Share bytes", value: report.finalShareByteCount.formatted())
+            digestDetailRow("Final Share SHA-256", value: report.finalShareSHA256)
+            digestDetailRow("Software Export SHA-256", value: report.softwareExport.envelopeSHA256)
+            digestDetailRow("Capture SHA-256", value: report.softwareExport.capture.sha256)
+            detailRow("Capture session", value: report.softwareExport.capture.captureSessionID.uuidString)
+            detailRow("Recorded events", value: report.softwareExport.capture.recordCount.formatted())
+            detailRow("Raw value events", value: report.softwareExport.capture.rawValueRecordCount.formatted())
+            detailRow("Build", value: report.softwareExport.buildIdentifier)
+            detailRow("Build instance", value: report.buildInstanceID)
+            detailRow("Source commit", value: report.softwareExport.sourceCommitSHA)
+            digestDetailRow("Runtime executable SHA-256", value: report.softwareExport.executableSHA256)
+        } else if let artifact = coordinator.finalizedArtifact {
+            detailRow("Analysis readiness", value: "Not yet verified")
+            detailRow("Capture bytes", value: artifact.captureJSON.count.formatted())
+            detailRow("Observation windows", value: artifact.powerCycleResult.windows.count.formatted())
+        }
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    @ViewBuilder
+    private func simulatorCaptureDetails(
+        _ snapshot: PassiveBluetoothExperimentOneSimulatorQAFixture.Snapshot
+    ) -> some View {
+        Text("SIMULATOR QA / SYNTHETIC SOFTWARE STATE")
+            .font(.caption.monospaced().weight(.bold))
+            .foregroundStyle(.orange)
+            .accessibilityIdentifier("es80.capture.details.simulator-qa")
+        detailRow("Scenario", value: snapshot.title)
+        detailRow("Recipe", value: snapshot.recipeID.rawValue)
+        detailRow("Physical procedure", value: "Locked")
+        detailRow("Bluetooth transport", value: "Not used")
+        detailRow("Capture artifact", value: "Not created")
+        Text("These details describe presentation QA only. They do not read, summarize, or imply a live coordinator evidence state.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+#endif
+
+    private func phase(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Phase {
+        if let localFailureMessage {
+            return .failed(localFailureMessage)
+        }
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQAPhase(simulatorQASnapshot.scenario)
+        }
+#endif
+        guard status.physicalProcedurePermitted else {
+            return .physicalProcedureLocked
+        }
+        if status.foregroundIntegrityLost {
+            return .failed("Nembra left the foreground after capture began. This run can no longer continue; start a fresh capture.")
+        }
+        if finalizationInFlight {
+            return .finalizing
+        }
+        if status.artifactFinalized || coordinator.finalizedArtifact != nil {
+            return .complete
+        }
+
+        switch status.connection {
+        case .connecting:
+            return .connecting
+        case .connected:
+            if status.canFinalizeObservationHorizon {
+                return .readyToSeal
+            }
+            if status.observationReady {
+                return .observing
+            }
+            return .acquiring
+        case .idle:
+            if captureConnectionAttempted && !status.hasPreparedCaptureAdmission {
+                return .failed("The passive Bluetooth connection ended before capture could be sealed. Start a fresh capture.")
+            }
+        case .unavailable:
+            return .bluetoothUnavailable("Bluetooth capture is unavailable for this run.")
+        }
+
+        if status.hasPreparedCaptureAdmission {
+            return status.isCorrelatedTargetRediscovered ? .targetReacquired : .rediscoveringTarget
+        }
+
+        switch status.correlation {
+        case .invalidEvidence:
+            return .correlationFailed("The four Bluetooth checks did not preserve the required OFF 1, ON 1, OFF 2, ON 2 order. Start again from OFF 1.")
+        case .noRepeatableCandidate:
+            return .noRepeatableTarget
+        case let .ambiguousRepeatableCandidates(count):
+            return .ambiguousTargets(count)
+        case .singleRepeatableCandidate:
+            return .correlatedTarget
+        case .incomplete:
+            break
+        }
+
+        if status.bluetoothState != .poweredOn {
+            return .bluetoothUnavailable(bluetoothUnavailableMessage(status.bluetoothState))
+        }
+        guard let progress = status.powerCycleProgress else {
+            return .correlationFailed("The OFF / ON setup is unavailable for this run. Start a fresh capture.")
+        }
+        if progress.isSeriesInvalidated {
+            return .correlationFailed("Bluetooth scanning or a foreground interruption invalidated this OFF / ON series. Start a fresh capture.")
+        }
+        if progress.isScanning {
+            return .correlationObserving(progress.phase)
+        }
+        if progress.isAwaitingBluetoothPower || progress.isAwaitingScanReadiness {
+            return .correlationStarting(progress.phase)
+        }
+        return .correlationReady(progress.phase)
+    }
+
+#if DEBUG && targetEnvironment(simulator)
+    private func simulatorQAPhase(
+        _ scenario: PassiveBluetoothExperimentOneSimulatorQAFixture.Scenario
+    ) -> Phase {
+        switch scenario {
+        case .stationaryPreflight, .firstPoweredOff:
+            return .correlationReady(.firstPoweredOff)
+        case .firstPoweredOn:
+            return .correlationReady(.firstPoweredOn)
+        case .secondPoweredOff:
+            return .correlationReady(.secondPoweredOff)
+        case .secondPoweredOn, .targetConfirmation:
+            return .correlatedTarget
+        case .passiveDiscovery:
+            return .connecting
+        case .observationReady, .captureInProgress:
+            return .observing
+        case .observationHorizonReady:
+            return .readyToSeal
+        case .horizonSealed:
+            return .finalizing
+        case .captureComplete, .shareRetry:
+            return .complete
+        case .foregroundInterrupted:
+            return .failed("Simulator QA interruption fixture. This synthetic state represents a foreground-interrupted capture; it is not physical evidence.")
+        }
+    }
+#endif
+
+    private var finalShareTransfer: VerifiedFinalShareTransfer? {
+        guard let data = finalShareData,
+              let filename = finalShareFilename,
+              finalShareIntegrityReport != nil else {
+            return nil
+        }
+        return VerifiedFinalShareTransfer(data: data, filename: filename)
+    }
+
+    private var presentationAnalysisReady: Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                || simulatorQASnapshot.artifactState == .shareRetry
+        }
+#endif
+        return finalShareIntegrityReport != nil
+    }
+
+    private func presentationCompletedWindows(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Int {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            switch simulatorQASnapshot.scenario {
+            case .stationaryPreflight, .firstPoweredOff: return 0
+            case .firstPoweredOn: return 1
+            case .secondPoweredOff: return 2
+            default: return 4
+            }
+        }
+#endif
+        return status.powerCycleProgress?.completedWindowCount
+            ?? coordinator.powerCycleResult?.windows.count
+            ?? 0
+    }
+
+    private func presentationCurrentWindow(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Int? {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            switch simulatorQASnapshot.scenario {
+            case .stationaryPreflight, .firstPoweredOff:
+                return PassiveBluetoothPowerCycleObservationPhase.firstPoweredOff.rawValue
+            case .firstPoweredOn:
+                return PassiveBluetoothPowerCycleObservationPhase.firstPoweredOn.rawValue
+            case .secondPoweredOff:
+                return PassiveBluetoothPowerCycleObservationPhase.secondPoweredOff.rawValue
+            default:
+                return nil
+            }
+        }
+#endif
+        return status.powerCycleProgress?.phase.rawValue
+    }
+
+    private func presentationObservationReady(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.observationReady }
+#endif
+        return status.observationReady
+    }
+
+    private func presentationCanFinalizeObservationHorizon(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.canFinalizeObservationHorizon }
+#endif
+        return status.canFinalizeObservationHorizon
+    }
+
+    private func presentationConnection(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> PassiveBluetoothExperimentOneCoordinator.ConnectionStatus {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.connection }
+#endif
+        return status.connection
+    }
+
+    private func presentationHasPreparedCaptureAdmission(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot { return simulatorQASnapshot.hasPreparedCaptureAdmission }
+#endif
+        return status.hasPreparedCaptureAdmission
+    }
+
+    private func presentationArtifactFinalized(
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Bool {
+#if DEBUG && targetEnvironment(simulator)
+        if let simulatorQASnapshot {
+            return simulatorQASnapshot.artifactState == .sealed
+                || simulatorQASnapshot.artifactState == .completeReadyForAnalysis
+                || simulatorQASnapshot.artifactState == .shareRetry
+        }
+#endif
+        return status.artifactFinalized
+    }
+
+    private func beginCorrelationWindow() {
+        diagnosticMessage = nil
+        do {
+            try coordinator.startCurrentPowerCycleWindow()
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func completeCorrelationWindow() {
+        diagnosticMessage = nil
+        do {
+            _ = try coordinator.finishCurrentPowerCycleWindow()
+            observedScanBeganAtUptimeNanoseconds = nil
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func confirmCorrelatedTarget() {
+        diagnosticMessage = nil
+        do {
+            try coordinator.confirmCorrelatedTargetAndBeginRediscovery()
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func restartRediscovery() {
+        diagnosticMessage = nil
+        do {
+            try coordinator.restartPreparedRediscovery()
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func connectPreparedCapture() {
+        diagnosticMessage = nil
+        do {
+            try coordinator.connectPreparedCapture()
+            captureConnectionAttempted = true
+        } catch {
+            diagnosticMessage = experimentErrorMessage(error)
+        }
+    }
+
+    private func finalizeCapture() {
+        guard !finalizationInFlight else { return }
+        diagnosticMessage = nil
+        sharePreparationWarning = nil
+        finalizationInFlight = true
+
+        Task {
+            do {
+                _ = try await coordinator.finalizeObservationHorizon()
+            } catch {
+                finalizationInFlight = false
+                localFailureMessage = "Capture sealing failed: \(experimentErrorMessage(error))"
+                return
+            }
+
+            // Horizon is already immutable here. Final-share verification and byte-backed transfer
+            // preparation are recoverable product layers and must never relabel seal truth.
+            finalizationInFlight = false
+            prepareFinalShareForAnalysisAndSharing()
+        }
+    }
+
+    private func prepareFinalShareForAnalysisAndSharing() {
+        guard coordinator.finalizedArtifact != nil else { return }
+        guard let setup = declaredStationarySetup else {
+            sharePreparationWarning = "Capture is sealed, but its setup confirmation is missing. Start a fresh capture instead of exporting incomplete setup information."
+            return
+        }
+
+        // A previously verified exact artifact remains the transfer authority. Retrying Share never
+        // reopens a pathname or silently mints new evidence bytes.
+        if finalShareData != nil,
+           finalShareIntegrityReport != nil,
+           finalShareFilename != nil {
+            sharePreparationWarning = nil
+            return
+        }
+
+        let artifact: PassiveBluetoothExperimentOneFinalShareArtifact
+        let report: PassiveBluetoothExperimentOneFinalShareIntegrityReport
+        do {
+            artifact = try coordinator.finalizedShareArtifactForCurrentApplication(setup: setup)
+            report = try PassiveBluetoothExperimentOneFinalShareIntegrity.inspect(artifact.json)
+        } catch {
+            finalShareData = nil
+            finalShareFilename = nil
+            finalShareIntegrityReport = nil
+            sharePreparationWarning = "Capture remains sealed, but Nembra could not verify the Share file for analysis: \(experimentErrorMessage(error))"
+            return
+        }
+
+        finalShareData = artifact.json
+        finalShareFilename = artifact.suggestedFilename
+        finalShareIntegrityReport = report
+        sharePreparationWarning = nil
+    }
+
+    private func restartExperiment() {
+        coordinator.abandonExperiment()
+        diagnosticMessage = nil
+        localFailureMessage = nil
+        captureConnectionAttempted = false
+        finalizationInFlight = false
+        finalShareData = nil
+        finalShareFilename = nil
+        finalShareIntegrityReport = nil
+        sharePreparationWarning = nil
+        didPresentAnalysisReadySemantics = false
+        declaredStationarySetup = nil
+        showingDetails = false
+        observedScanBeganAtUptimeNanoseconds = nil
+        observationReadyBeganAtUptimeNanoseconds = nil
+
+        do {
+            coordinator = try onFreshExperimentRequested()
+        } catch {
+            localFailureMessage = "Nembra could not start a fresh capture. Close and reopen Nembra, then try again."
+        }
+    }
+
+    private func handleScenePhaseChange(_ newScenePhase: ScenePhase) {
+        guard newScenePhase != .active else { return }
+        coordinator.invalidateForForegroundLoss()
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    private func synchronizeIdleTimer(for phase: Phase) {
+        switch phase {
+        case .correlationStarting,
+             .correlationObserving,
+             .rediscoveringTarget,
+             .targetReacquired,
+             .connecting,
+             .acquiring,
+             .observing,
+             .readyToSeal,
+             .finalizing:
+            UIApplication.shared.isIdleTimerDisabled = true
+        default:
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+    }
+
+    private func synchronizeObservedScanClock(isScanning: Bool) {
+        if isScanning {
+            if observedScanBeganAtUptimeNanoseconds == nil {
+                observedScanBeganAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+            }
+        } else {
+            observedScanBeganAtUptimeNanoseconds = nil
+        }
+    }
+
+    private func synchronizeObservationReadyClock(isReady: Bool) {
+        if isReady {
+            if observationReadyBeganAtUptimeNanoseconds == nil {
+                observationReadyBeganAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+            }
+        } else {
+            observationReadyBeganAtUptimeNanoseconds = nil
+        }
+    }
+
+    private func correlationGuidanceRemainingSeconds(nowUptimeNanoseconds: UInt64) -> Int {
+        guard let beganAt = observedScanBeganAtUptimeNanoseconds,
+              nowUptimeNanoseconds >= beganAt else {
+            return Int(Self.requiredCorrelationWindowDuration)
+        }
+        let elapsed = nowUptimeNanoseconds - beganAt
+        guard elapsed < Self.requiredCorrelationWindowNanoseconds else { return 0 }
+        let remaining = Self.requiredCorrelationWindowNanoseconds - elapsed
+        return Int((remaining + 999_999_999) / 1_000_000_000)
+    }
+
+    private func observationGuidanceRemainingSeconds(nowUptimeNanoseconds: UInt64) -> Int {
+        guard let beganAt = observationReadyBeganAtUptimeNanoseconds,
+              nowUptimeNanoseconds >= beganAt else {
+            return 60
+        }
+        let elapsed = nowUptimeNanoseconds - beganAt
+        guard elapsed < Self.requiredObservationGuidanceNanoseconds else { return 0 }
+        let remaining = Self.requiredObservationGuidanceNanoseconds - elapsed
+        return Int((remaining + 999_999_999) / 1_000_000_000)
+    }
+
+    private func experimentErrorMessage(_ error: Error) -> String {
+        if let error = error as? PassiveBluetoothExperimentOneCoordinator.CoordinatorError {
+            switch error {
+            case .physicalProcedureLocked:
+                return "Field capture is locked for this build."
+            case .foregroundIntegrityLost:
+                return "Nembra left the foreground after capture began. Start a fresh capture."
+            case .captureAdmissionAlreadyPrepared:
+                return "The matched scooter signal is already prepared. Continue the current signal check."
+            case .captureAdmissionNotPrepared:
+                return "No confirmed scooter signal is ready for this step."
+            case .correlationIncomplete:
+                return "Complete all four OFF / ON checks before confirming the scooter signal."
+            case .correlationEvidenceInvalid:
+                return "The four OFF / ON checks are invalid or out of order."
+            case .correlationNotUnique:
+                return "The four OFF / ON checks did not produce one unique scooter signal."
+            case .targetNotRediscovered:
+                return "The matched scooter signal has not appeared again yet. Keep the scooter ON and retry the signal check."
+            case .targetNotConnectable:
+                return "The matched scooter signal is visible but cannot accept a read-only Bluetooth connection."
+            case .controllerUnavailable:
+                return "Bluetooth capture is unavailable in this session."
+            case .observationNotReady:
+                return "The required observation time is not complete yet."
+            case .artifactAlreadyFinalized:
+                return "This capture is already sealed."
+            }
+        }
+
+        if let error = error as? PassiveBluetoothPowerCycleObservationSessionError {
+            switch error {
+            case .invalidMinimumWindowDuration:
+                return "This build has an invalid OFF / ON check duration. Capture cannot continue."
+            case .seriesComplete:
+                return "All four OFF / ON checks are already complete."
+            case .seriesInvalidated:
+                return "These OFF / ON checks were interrupted. Start a fresh capture."
+            case .windowAlreadyActive:
+                return "This OFF / ON check is already running."
+            case .windowNotActive:
+                return "No OFF / ON check is currently running."
+            case .bluetoothBecameUnavailable:
+                return "Bluetooth became unavailable during this check."
+            case .scanReadinessPending:
+                return "Bluetooth scanning is starting. Keep Nembra open until this check is ready."
+            case .scanReadinessTimedOut:
+                return "Bluetooth did not become ready in time. Keep Nembra open and try this check again."
+            case .scanBecameInactive:
+                return "Bluetooth scanning stopped during this check."
+            case .minimumWindowDurationNotReached:
+                return "This OFF / ON check has not recorded enough observation time yet."
+            case .nonMonotonicWindowClock:
+                return "Nembra could not verify the required timing for this check. Restart the four OFF / ON checks."
+            case .windowSequenceExhausted:
+                return "This OFF / ON sequence cannot continue. Start a fresh capture."
+            }
+        }
+
+        return "Capture stopped because an unexpected error occurred. Start a fresh capture."
+    }
+
+    private func bluetoothUnavailableMessage(_ state: CBManagerState?) -> String {
+        guard let state else {
+            return "Bluetooth capture is not available for this build."
+        }
+        switch state {
+        case .unknown:
+            return "Waiting for Bluetooth to become ready."
+        case .resetting:
+            return "Bluetooth is resetting. Keep Nembra open until the radio becomes ready."
+        case .unsupported:
+            return "This device cannot provide the Bluetooth access required for Capture."
+        case .unauthorized:
+            return "Bluetooth permission is unavailable. Allow Nembra to use Bluetooth before starting Capture."
+        case .poweredOff:
+            return "Turn Bluetooth on before beginning OFF 1. The scooter's OFF state and the phone's Bluetooth state are separate requirements."
+        case .poweredOn:
+            return "Bluetooth is ready."
+        @unknown default:
+            return "Bluetooth reported an unknown state. Capture remains unavailable."
+        }
+    }
+
+    private func statePanel(
+        eyebrow: String,
+        title: String,
+        message: String,
+        symbol: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(eyebrow)
+                    .font(.caption.monospaced().weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: symbol)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+
+            Text(title)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+
+            Text(message)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var captureSurfaceFill: Color {
+        if accessibilityReduceTransparency {
+            return .white.opacity(colorSchemeContrast == .increased ? 0.22 : 0.16)
+        }
+        return .white.opacity(colorSchemeContrast == .increased ? 0.11 : 0.055)
+    }
+
+    @ViewBuilder
+    private var reduceMotionActivityIndicator: some View {
+        if accessibilityReduceMotion {
+            Image(systemName: "ellipsis")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                .accessibilityHidden(true)
+        } else {
+            ProgressView()
+                .tint(.white)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func primaryButton(
+        _ title: String,
+        systemImage: String,
+        disabled: Bool = false,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 56)
+                .foregroundStyle(disabled ? Color.secondary : Color.black)
+                .background(
+                    disabled ? .white.opacity(0.08) : .white,
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func secondaryButton(
+        _ title: String,
+        systemImage: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 50)
+                .foregroundStyle(.white)
+                .background(captureSurfaceFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func diagnosticBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.circle")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Capture alert")
+        .accessibilityValue(message)
+    }
+
+    /// Automatic accessibility speech is event-driven and never runs from the 2 Hz display clock.
+    private func announceAccessibilityStatus(_ phase: Phase) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        let announcement: String?
+        switch phase {
+        case let .bluetoothUnavailable(message): announcement = "Bluetooth is not ready. \(message)"
+        case let .correlationFailed(message): announcement = "Capture stopped. \(message)"
+        case .noRepeatableTarget: announcement = "No unique scooter signal was found. Repeat the OFF / ON sequence."
+        case let .ambiguousTargets(count): announcement = "\(count) Bluetooth signals matched. Repeat the OFF / ON sequence."
+        case .readyToSeal: announcement = "Capture is ready to seal. Seal Capture is now available."
+        case .complete:
+            announcement = presentationAnalysisReady ? nil : "Capture sealed. Final artifact verification is still required."
+        case let .failed(message): announcement = "Capture stopped safely. \(message)"
+        default: announcement = nil
+        }
+        guard let announcement else { return }
+        UIAccessibility.post(notification: .announcement, argument: announcement)
+    }
+
+    private func announceAccessibilityAlert(_ message: String?) {
+        guard UIAccessibility.isVoiceOverRunning, let message, !message.isEmpty else { return }
+        UIAccessibility.post(notification: .announcement, argument: "Capture alert. \(message)")
+    }
+
+    private func handleSemanticPhaseTransition(_ phase: Phase) {
+        if phase != .complete {
+            didPresentAnalysisReadySemantics = false
+        }
+        if isBlockingHapticPhase(phase) {
+            warningHapticTick &+= 1
+        }
+        if phase == .complete {
+            presentAnalysisReadySemanticsIfNeeded()
+        }
+    }
+
+    private func presentAnalysisReadySemanticsIfNeeded() {
+        guard presentationAnalysisReady,
+              phase(status: coordinator.status) == .complete,
+              !didPresentAnalysisReadySemantics else { return }
+        didPresentAnalysisReadySemantics = true
+        successHapticTick &+= 1
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: "Capture complete. Ready for analysis and sharing."
+        )
+    }
+
+    private func isBlockingHapticPhase(_ phase: Phase) -> Bool {
+        switch phase {
+        case .bluetoothUnavailable, .correlationFailed, .noRepeatableTarget, .ambiguousTargets, .failed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func guidanceFootnote(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func healthItem(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.monospaced().weight(.bold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospaced().weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func detailRow(_ title: String, value: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.body.monospacedDigit().weight(.medium))
+                    .multilineTextAlignment(.leading)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text(title)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                Text(value)
+                    .font(.body.monospacedDigit().weight(.medium))
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func digestDetailRow(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.monospaced())
+                .foregroundStyle(.white)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func progressSegment(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: Int?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> some View {
+        Capsule(style: .continuous)
+            .fill(progressSegmentFill(
+                index: index,
+                completedWindows: completedWindows,
+                currentWindow: currentWindow,
+                status: status
+            ))
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(
+                        .white.opacity(accessibilityDifferentiateWithoutColor ? 0.82 : 0),
+                        lineWidth: progressSegmentStroke(
+                            index: index,
+                            completedWindows: completedWindows,
+                            currentWindow: currentWindow,
+                            status: status
+                        )
+                    )
+            }
+            .frame(height: 5)
+    }
+
+    private func progressSegmentStroke(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: Int?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> CGFloat {
+        guard accessibilityDifferentiateWithoutColor else { return 0 }
+        if index < 4 {
+            if currentWindow == index { return 2 }
+            return index < completedWindows ? 1 : 0
+        }
+        if index == 4 {
+            return presentationObservationReady(status: status) ? 1 : 0
+        }
+        return presentationArtifactFinalized(status: status) ? 1 : 0
+    }
+
+    private func progressSegmentFill(
+        index: Int,
+        completedWindows: Int,
+        currentWindow: Int?,
+        status: PassiveBluetoothExperimentOneCoordinator.Status
+    ) -> Color {
+        if index < 4 {
+            if index < completedWindows { return .white }
+            if currentWindow == index { return .white.opacity(0.42) }
+            return .white.opacity(0.12)
+        }
+        if index == 4 {
+            return presentationObservationReady(status: status) ? .white : .white.opacity(0.12)
+        }
+        return presentationArtifactFinalized(status: status) ? .white : .white.opacity(0.12)
+    }
+
+    private func progressStage(
+        status: PassiveBluetoothExperimentOneCoordinator.Status,
+        completedWindows: Int
+    ) -> String {
+        if presentationArtifactFinalized(status: status) { return "SEALED" }
+        if presentationCanFinalizeObservationHorizon(status: status) { return "SEAL READY" }
+        if presentationObservationReady(status: status) { return "OBSERVE" }
+        if presentationConnection(status: status) == .connected { return "DISCOVER" }
+        if presentationConnection(status: status) == .connecting { return "CONNECT" }
+        if presentationHasPreparedCaptureAdmission(status: status) { return "MATCH" }
+        return "\(min(completedWindows, 4)) / 4"
+    }
+
+    private func progressAccessibilityLabel(
+        status: PassiveBluetoothExperimentOneCoordinator.Status,
+        completedWindows: Int,
+        analysisReady: Bool
+    ) -> String {
+        if presentationArtifactFinalized(status: status) {
+            return analysisReady
+                ? "Capture progress, sealed and ready for analysis"
+                : "Capture progress, sealed; final file integrity not yet verified"
+        }
+        if presentationCanFinalizeObservationHorizon(status: status) {
+            return "Capture progress, required observation complete and ready to seal"
+        }
+        if presentationObservationReady(status: status) {
+            return "Capture progress, four OFF / ON checks complete and read-only observation ready"
+        }
+        return "Capture progress, \(min(completedWindows, 4)) of 4 OFF / ON checks complete"
+    }
+
+    private func phaseShortName(_ phase: PassiveBluetoothPowerCycleObservationPhase) -> String {
+        switch phase {
+        case .firstPoweredOff: return "OFF 1"
+        case .firstPoweredOn: return "ON 1"
+        case .secondPoweredOff: return "OFF 2"
+        case .secondPoweredOn: return "ON 2"
+        }
+    }
+
+    private var correlationDetailValue: String {
+        switch coordinator.status.correlation {
+        case .incomplete: return "Incomplete"
+        case .invalidEvidence: return "Invalid evidence"
+        case .noRepeatableCandidate: return "No repeatable target"
+        case let .ambiguousRepeatableCandidates(count): return "Ambiguous (\(count))"
+        case .singleRepeatableCandidate: return "One repeatable full UUID"
+        }
+    }
+
+    private var finalizationCleanupDetailValue: String {
+        switch coordinator.status.finalizationCleanup {
+        case .notAttempted: return "Not attempted"
+        case .complete: return "Complete"
+        case .failed: return "Recovery needed"
+        }
+    }
+
+    private func heroTitle(for phase: Phase) -> String {
+        switch phase {
+        case .complete: return "Capture sealed."
+        case .readyToSeal, .observing: return "Keep the capture steady."
+        case .acquiring, .connecting, .rediscoveringTarget, .targetReacquired: return "Confirm the scooter signal."
+        default: return "Find the scooter signal."
+        }
+    }
+
+    private func statusTitle(for phase: Phase) -> String {
+        switch phase {
+        case .physicalProcedureLocked: return "Capture locked"
+        case .bluetoothUnavailable: return "Preflight required"
+        case let .correlationReady(window): return "Ready for \(phaseShortName(window))"
+        case let .correlationStarting(window): return "Starting \(phaseShortName(window))"
+        case let .correlationObserving(window): return "Observing \(phaseShortName(window))"
+        case .correlationFailed, .failed: return "Capture stopped"
+        case .noRepeatableTarget: return "No unique signal"
+        case .ambiguousTargets: return "Multiple signal matches"
+        case .correlatedTarget: return "Scooter signal matched"
+        case .rediscoveringTarget: return "Checking signal again"
+        case .targetReacquired: return "Same signal found"
+        case .connecting: return "Opening read-only connection"
+        case .acquiring: return "Read-only discovery"
+        case .observing: return "Observation running"
+        case .readyToSeal: return "Ready to seal"
+        case .finalizing: return "Sealing capture"
+        case .complete: return presentationAnalysisReady ? "Capture complete" : "Capture sealed"
+        }
+    }
+
+    private func statusSymbol(for phase: Phase) -> String {
+        switch phase {
+        case .complete, .readyToSeal, .targetReacquired, .correlatedTarget:
+            return "checkmark.circle.fill"
+        case .physicalProcedureLocked, .correlationFailed, .failed, .noRepeatableTarget, .ambiguousTargets:
+            return "exclamationmark.circle.fill"
+        case .bluetoothUnavailable:
+            return "antenna.radiowaves.left.and.right.slash"
+        default:
+            return "circle.fill"
+        }
+    }
+
+    private func statusColor(for phase: Phase) -> Color {
+        switch phase {
+        case .complete, .readyToSeal, .targetReacquired, .correlatedTarget:
+            return .green
+        case .physicalProcedureLocked, .correlationFailed, .failed, .noRepeatableTarget, .ambiguousTargets:
+            return .orange
+        default:
+            return .secondary
+        }
+    }
+}
