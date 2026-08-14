@@ -605,11 +605,18 @@ extension TuyaAuthenticatedReadOnlySessionLedgerTests {
         clock.advance(to: 3_000)
         let pending = try ledger.captureApplicationDelivery(for: token)
 
+        // Deliberately delay actor seal execution beyond the continuity gap. Pending callback
+        // admission must win before seal samples that later actor-time or retires the generation.
+        clock.advance(to: 20_000_000_000)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationAdmissionPending) {
             try await ledger.sealAcceptedObservation(for: token)
         }
-        ledger.releaseApplicationReceipt(pending)
-        #expect((await ledger.currentPreflightSnapshot()).applicationPayloadCount == 0)
+
+        // A refused seal attempt must leave the one-shot callback receipt and generation usable.
+        try await ledger.recordApplicationUpdate(receipt: pending, for: token)
+        let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.applicationPayloadCount == 1)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 3_000)
     }
 
     @Test("package consumes application deliveries in issuance order before evidence mutation")
