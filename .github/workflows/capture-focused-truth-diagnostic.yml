@@ -3,71 +3,36 @@ name: Capture focused truth diagnostic
 on:
   push:
     branches:
-      - capture/current-main-tuya-readonly-convergence-gpt56
+      - capture/diag-test-compiler-gpt56
 
 permissions:
   contents: read
 
 jobs:
-  ledger:
-    if: github.event.head_commit.message == 'Diagnose Capture focused truth'
+  expose-test-target-failure:
+    if: github.event.head_commit.message == 'Diagnose Capture test-target compiler failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: TuyaAuthenticatedReadOnlySessionLedgerTests
+      - name: Run one focused truth filter and surface compiler diagnostics
         working-directory: Packages/NembraBluetoothCapture
-        run: swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests
+        shell: bash
+        run: |
+          set +e
+          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests > /tmp/capture-test.log 2>&1
+          status=$?
+          cat /tmp/capture-test.log
+          if [ "$status" -ne 0 ]; then
+            python3 - <<'PY'
+          from pathlib import Path
 
-  terminal-horizon:
-    if: github.event.head_commit.message == 'Diagnose Capture focused truth'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: TuyaAuthenticatedTerminalHorizonTests
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test --filter TuyaAuthenticatedTerminalHorizonTests
-
-  readonly-horizon:
-    if: github.event.head_commit.message == 'Diagnose Capture focused truth'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: TuyaAuthenticatedReadOnlyHorizonTests
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test --filter TuyaAuthenticatedReadOnlyHorizonTests
-
-  app-integration:
-    if: github.event.head_commit.message == 'Diagnose Capture focused truth'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test --filter TuyaAuthenticatedReadOnlyHorizonTestsAppIntegration
-
-  app-terminal:
-    if: github.event.head_commit.message == 'Diagnose Capture focused truth'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: TuyaAppIncompleteHorizonTerminalSourceTests
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
-
-  continuity-source:
-    if: github.event.head_commit.message == 'Diagnose Capture focused truth'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: TuyaAlreadyTerminalObservationContinuitySourceTests
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test --filter TuyaAlreadyTerminalObservationContinuitySourceTests
-
-  sharing-authority:
-    if: github.event.head_commit.message == 'Diagnose Capture focused truth'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: TuyaDeviceSharingAuthenticationAuthorityTests
-        working-directory: Packages/NembraBluetoothCapture
-        run: swift test --filter TuyaDeviceSharingAuthenticationAuthorityTests
+          lines = Path('/tmp/capture-test.log').read_text(errors='replace').splitlines()
+          diagnostics = [line.strip() for line in lines if 'error:' in line.lower() or 'fatal error:' in line.lower()]
+          if not diagnostics:
+              diagnostics = [line.strip() for line in lines[-30:] if line.strip()]
+          for line in diagnostics[:20]:
+              escaped = line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Capture Swift test failure::{escaped}')
+          PY
+          fi
+          exit "$status"
