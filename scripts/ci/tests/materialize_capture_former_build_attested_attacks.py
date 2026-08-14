@@ -19,54 +19,57 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
     return source.replace(old, new)
 
 
+def replace_attack_call(source: str, variable: str, target_fragment: str, label: str) -> str:
+    """Replace one subprocess attack while preserving its exact payload source line.
+
+    The canonical witness intentionally embeds shell strings whose escaping may change
+    without changing the authority question. Match the assignment boundary, preserve
+    the exact command line already present in the canonical witness, and replace only
+    the credential-launch mechanism.
+    """
+    marker = f"        {variable} = subprocess.run(\n"
+    if source.count(marker) != 1:
+        raise SystemExit(f"expected exactly one {label} assignment, found {source.count(marker)}")
+    start = source.index(marker)
+    end_marker = "        )\n"
+    end = source.find(end_marker, start + len(marker))
+    if end < 0:
+        raise SystemExit(f"could not find {label} call boundary")
+    end += len(end_marker)
+    block = source[start:end]
+    lines = block.splitlines(keepends=True)
+    if len(lines) < 3 or target_fragment not in lines[1]:
+        raise SystemExit(f"{label} payload line changed unexpectedly")
+    command_line = lines[1]
+    replacement = (
+        f"        {variable} = helper._run_exec_bound_build(\n"
+        + command_line
+        + "            name=build_name,\n"
+        + "            uid=build_uid,\n"
+        + "            gid=build_gid,\n"
+        + "            baseline_groups=build_directory_groups,\n"
+        + "            environment=build_environment,\n"
+        + "            cwd=source_root,\n"
+        + "        )\n"
+    )
+    return source[:start] + replacement + source[end:]
+
+
 def materialize() -> None:
     source = TEST_PATH.read_text(encoding="utf-8")
 
-    writable_old = '''        former_build_writable_attack = subprocess.run(
-            ["/bin/sh", "-c", 'printf X >> "$1"', "sh", str(product)],
-            env=build_environment,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-            **structured_credentials(build_uid, build_gid, []),
-        )
-'''
-    writable_new = '''        former_build_writable_attack = helper._run_exec_bound_build(
-            ["/bin/sh", "-c", 'printf X >> "$1"', "sh", str(product)],
-            name=build_name,
-            uid=build_uid,
-            gid=build_gid,
-            baseline_groups=build_directory_groups,
-            environment=build_environment,
-            cwd=source_root,
-        )
-'''
-    source = replace_once(source, writable_old, writable_new, "writable former-build attack")
-
-    readonly_old = '''        former_build_attack = subprocess.run(
-            ["/bin/sh", "-c", 'printf "BUILD_UID_AFTER_FREEZE\\n" >> "$1"', "sh", str(frozen)],
-            env=build_environment,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-            **structured_credentials(build_uid, build_gid, []),
-        )
-'''
-    readonly_new = '''        former_build_attack = helper._run_exec_bound_build(
-            ["/bin/sh", "-c", 'printf "BUILD_UID_AFTER_FREEZE\\n" >> "$1"', "sh", str(frozen)],
-            name=build_name,
-            uid=build_uid,
-            gid=build_gid,
-            baseline_groups=build_directory_groups,
-            environment=build_environment,
-            cwd=source_root,
-        )
-'''
-    source = replace_once(source, readonly_old, readonly_new, "readonly former-build attack")
+    source = replace_attack_call(
+        source,
+        "former_build_writable_attack",
+        "str(product)",
+        "writable former-build attack",
+    )
+    source = replace_attack_call(
+        source,
+        "former_build_attack",
+        "str(frozen)",
+        "readonly former-build attack",
+    )
 
     writable_evidence = '            "formerBuildWritablePathAttackReturnCode": former_build_writable_attack.returncode,\n'
     source = replace_once(
