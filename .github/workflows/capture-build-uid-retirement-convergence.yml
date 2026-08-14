@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/capture-build-uid-retirement-convergence.yml
       - scripts/ci/tests/test_capture_build_uid_retirement_convergence.py
+      - scripts/ci/tests/test_capture_numeric_principal_process_credentials.py
   workflow_dispatch:
 
 permissions:
@@ -39,7 +40,8 @@ jobs:
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-build-uid-retirement-convergence.yml \
-            scripts/ci/tests/test_capture_build_uid_retirement_convergence.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_build_uid_retirement_convergence.py \
+            scripts/ci/tests/test_capture_numeric_principal_process_credentials.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           git diff --check "$EXACT_PARENT"...HEAD
@@ -49,7 +51,9 @@ jobs:
         run: |
           set -euo pipefail
           export PYTHONDONTWRITEBYTECODE=1
-          /usr/bin/python3 -B -m py_compile scripts/ci/tests/test_capture_build_uid_retirement_convergence.py
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/tests/test_capture_build_uid_retirement_convergence.py \
+            scripts/ci/tests/test_capture_numeric_principal_process_credentials.py
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
           source = Path('scripts/ci/tests/test_capture_build_uid_retirement_convergence.py').read_text(encoding='utf-8')
@@ -85,6 +89,71 @@ jobs:
           for fragment in forbidden:
               if fragment in source:
                   raise SystemExit('retirement convergence crossed forbidden product/physical boundary: ' + fragment)
+
+          credentials = Path('scripts/ci/tests/test_capture_numeric_principal_process_credentials.py').read_text(encoding='utf-8')
+          credential_required = (
+              'KERN_PROC_ALL',
+              'struct kinfo_proc',
+              'e_pcred',
+              'e_ucred',
+              'p_ruid',
+              'p_svuid',
+              'p_rgid',
+              'p_svgid',
+              'cr_uid',
+              'cr_ngroups',
+              'cr_groups',
+              'supplementaryGroupOnlyCollisionObserved',
+              'directoryServicesMutated": False',
+              'sudoUsed": False',
+              'physicalAuthorityCreated": False',
+          )
+          missing = [fragment for fragment in credential_required if fragment not in credentials]
+          if missing:
+              raise SystemExit('missing full process-credential invariant(s): ' + repr(missing))
+          credential_forbidden = (
+              '/usr/bin/sudo',
+              '/usr/bin/dscl',
+              '/usr/bin/pkill',
+              '/bin/launchctl',
+              'NEMBRA_TUYA_APP_KEY',
+              'NEMBRA_TUYA_APP_SECRET',
+              'CBCentralManager',
+              'CoreBluetooth',
+              'devicectl',
+          )
+          for fragment in credential_forbidden:
+              if fragment in credentials:
+                  raise SystemExit('process-credential witness crossed read-only boundary: ' + fragment)
+          PY
+
+      - name: Prove full numeric process credential inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          OUT="$RUNNER_TEMP/capture-build-uid-retirement-convergence"
+          mkdir -p "$OUT"
+          chmod 700 "$OUT"
+          /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_numeric_principal_process_credentials.py \
+            | tee "$OUT/numeric-process-credential-inventory.log"
+          /usr/bin/python3 -B -I - "$OUT/numeric-process-credential-inventory.log" <<'PY'
+          import json,sys
+          from pathlib import Path
+          marker='NEMBRA_NUMERIC_PROCESS_CREDENTIAL_JSON='
+          lines=[line for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines() if line.startswith(marker)]
+          assert len(lines) == 1, lines
+          payload=json.loads(lines[0][len(marker):])
+          assert payload['schema'] == 1
+          assert payload['uidSlotsObserved'] is True
+          assert payload['primaryGIDSlotsObserved'] is True
+          assert payload['supplementaryGroupOnlyCollisionObserved'] is True
+          assert payload['processFreeCandidateMatchCount'] == 0
+          assert payload['usedKernProcAllKinfoProc'] is True
+          assert payload['directoryServicesMutated'] is False
+          assert payload['sudoUsed'] is False
+          assert payload['physicalAuthorityCreated'] is False
           PY
 
       - name: Execute lightweight + real-Xcode retirement oracles
@@ -95,7 +164,8 @@ jobs:
           set -euo pipefail
           test "$(uname -s)" = Darwin
           OUT="$RUNNER_TEMP/capture-build-uid-retirement-convergence"
-          mkdir -m 700 "$OUT"
+          mkdir -p "$OUT"
+          chmod 700 "$OUT"
           set +e
           /usr/bin/python3 -B -I \
             scripts/ci/tests/test_capture_build_uid_retirement_convergence.py \
@@ -137,7 +207,10 @@ jobs:
           set -euo pipefail
           git restore --source=HEAD --worktree -- scripts/ci/capture_signed_app_build_origin_custody.py
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-          expected="$(printf '%s\n' .github/workflows/capture-build-uid-retirement-convergence.yml scripts/ci/tests/test_capture_build_uid_retirement_convergence.py | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-build-uid-retirement-convergence.yml \
+            scripts/ci/tests/test_capture_build_uid_retirement_convergence.py \
+            scripts/ci/tests/test_capture_numeric_principal_process_credentials.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf '%s\n' 'VALIDATION ONLY. Production workspace bytes restored. PHYSICAL NO-GO.'
