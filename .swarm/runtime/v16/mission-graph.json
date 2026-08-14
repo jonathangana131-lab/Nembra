@@ -2416,7 +2416,7 @@
         "lane": "capture-application-delivery-cutoff",
         "pr": 3288,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.404,
+        "similarity": 0.137,
         "title": "[Capture P0][EXPECTED-RED] Preserve SmartLife callback delivery cutoff"
       },
       "3292": {
@@ -2424,11 +2424,11 @@
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-application-delivery-cutoff",
+        "lane": "capture-callback-authority-convergence",
         "pr": 3292,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.406,
-        "title": "[Capture P0][REPAIR] Preserve SmartLife application delivery cutoff"
+        "similarity": 0.104,
+        "title": "[Capture P0][REPAIR] Converge callback delivery, liveness, and exact SmartLife source authority"
       },
       "3293": {
         "classification": "canonical-candidate",
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T09:23:50Z",
+    "liveRefreshAt": "2026-08-14T09:27:12Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 166,
+  "revision": 167,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T09:26:49Z",
+  "updatedAt": "2026-08-14T09:30:01Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T09:23:50Z",
+      "updatedAt": "2026-08-14T09:27:12Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
