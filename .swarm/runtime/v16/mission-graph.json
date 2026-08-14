@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 4,
+    "classifiedPRTotal": 3,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.063,
+        "similarity": 0.06,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3310": {
@@ -1098,17 +1098,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.1,
         "title": "[Rides V14][RED] Pin Ride Window clearance from Navigation launcher"
-      },
-      "3311": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3311,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.078,
-        "title": "[Capture P0][VALIDATION] Rebase source snapshot witness on current production head"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1141,7 +1130,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T22:55:31Z",
+    "liveRefreshAt": "2026-08-14T22:55:45Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4924,10 +4913,10 @@
       "userValue": 7
     }
   },
-  "revision": 223,
+  "revision": 224,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T22:55:31Z",
+  "updatedAt": "2026-08-14T22:55:45Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5003,7 +4992,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T22:55:31Z",
+      "updatedAt": "2026-08-14T22:55:45Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
