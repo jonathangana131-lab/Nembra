@@ -1064,13 +1064,13 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 7,
+    "classifiedPRTotal": 8,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "8023e8e836bdbaa6956444e9ff3bd7c459cc9ba1",
+        "headSHA": "5372ccfb01e1625148430f1424855649ba47a2f8",
         "lane": "rides-route-render-performance",
         "pr": 2507,
         "recommendedAction": "independent-review",
@@ -1140,8 +1140,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3318,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.286,
+        "similarity": 0.335,
         "title": "[Capture P0][VALIDATION] Re-earn private Tuya read lease on current #3142"
+      },
+      "3320": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3320,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.312,
+        "title": "[Capture P0][VALIDATION] Prove full numeric-principal credential inventory"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1174,9 +1185,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:08:07Z",
+    "liveRefreshAt": "2026-08-14T23:08:43Z",
     "liveRefreshDuplicatesSuppressed": [
-      3318
+      3320
     ],
     "liveRefreshMainSHA": "4bc7d113308ba0fde066a87ad04c829470d95c5f",
     "liveRefreshSelectedCanonicalPRs": [
@@ -4959,10 +4970,10 @@
       "userValue": 7
     }
   },
-  "revision": 255,
+  "revision": 256,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:08:07Z",
+  "updatedAt": "2026-08-14T23:08:43Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5038,7 +5049,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:08:07Z",
+      "updatedAt": "2026-08-14T23:08:43Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
