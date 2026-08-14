@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 288,
+    "classifiedPRTotal": 287,
     "classifiedPRs": {
+      "2719": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2719,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.26,
+        "title": "[Capture P0][SECURITY] Bind private Tuya identity to admitted checkout root"
+      },
       "2733": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2462,17 +2473,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.303,
         "title": "[Capture P0][VALIDATION] Harden trusted Apple-signing bootstrap boundary"
-      },
-      "3263": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3263,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.296,
-        "title": "[Capture P0][VALIDATION] Exercise explicit app truth in standalone gate"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T07:26:10Z",
+    "liveRefreshAt": "2026-08-14T07:29:12Z",
     "liveRefreshDuplicatesSuppressed": [
       3262
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 135,
+  "revision": 136,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T07:28:49Z",
+  "updatedAt": "2026-08-14T07:31:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T07:26:10Z",
+      "updatedAt": "2026-08-14T07:29:12Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
