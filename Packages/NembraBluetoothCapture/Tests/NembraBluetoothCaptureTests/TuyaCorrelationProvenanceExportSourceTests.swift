@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture correlation provenance export")
 struct TuyaCorrelationProvenanceExportSourceTests {
-    @Test("final package-issued correlation evidence survives scanner retirement and enters schema v10 export")
+    @Test("final package-issued correlation evidence survives scanner retirement and enters current schema v11 export")
     func packageResultRemainsAuditableInExport() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
@@ -19,7 +19,8 @@ struct TuyaCorrelationProvenanceExportSourceTests {
         #expect(source.contains("targetCorrelationWindowCount: targetCorrelationWindowCount"))
         #expect(source.contains("targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed"))
         #expect(source.contains("targetCorrelationProvenance: correlationProvenance"))
-        #expect(source.contains("schemaVersion: 10"))
+        #expect(source.contains("schemaVersion: 11"))
+        #expect(!source.contains("schemaVersion: 10"))
 
         // Preserve the exact package-issued receipt boundaries and full candidate catalogs.
         #expect(source.contains("result.windows.map"))
