@@ -1753,19 +1753,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
                 token: token,
-                message: "Application receipt chronology failed closed because the monotonic clock regressed.",
+                message: "Scooter data timing became invalid, so this observation stopped safely. Relaunch Capture and start again from scooter OFF.",
                 kind: "application_receipt_clock_regressed"
             )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
             await mirrorAlreadyTerminalObservationContinuity(
                 token: token,
-                message: "Application receipt crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
+                message: "Scooter data arrived after this observation window was no longer valid. This does not prove Bluetooth disconnected. Relaunch Capture and start again from scooter OFF.",
                 kind: "application_observation_continuity_invalidated"
             )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
             await mirrorAlreadyTerminalIncompleteObservationHorizon(
                 token: token,
-                message: "Application receipt reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
+                message: "Scooter data did not become sufficient within 60 seconds. Keep the scooter stationary, relaunch Capture, and start again from scooter OFF.",
                 kind: "application_authenticated_incomplete_readiness_horizon_reached"
             )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
@@ -1775,7 +1775,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         } catch {
             await invalidateInternalLifecycle(
                 token: token,
-                message: "Application receipt violated the current internal session lifecycle: \(error.localizedDescription)",
+                message: "Scooter data could not be accepted into this observation. Relaunch Capture and start again from scooter OFF.",
                 kind: "application_update_lifecycle_rejected"
             )
         }
@@ -1873,21 +1873,21 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
                     await self.invalidateInternalLifecycle(
                         token: token,
-                        message: "Authenticated liveness chronology regressed. The exact generation was retired without another clock sample.",
+                        message: "Observation timing became invalid, so this capture stopped safely. Relaunch Capture and start again from scooter OFF.",
                         kind: "session_liveness_clock_regressed"
                     )
                     return
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated {
                     await self.mirrorAlreadyTerminalObservationContinuity(
                         token: token,
-                        message: "Authenticated-session liveness crossed the package-owned continuous-observation horizon. The package already retired this generation; no disconnect is claimed.",
+                        message: "Scooter data stopped satisfying the continuous observation window. This does not prove Bluetooth disconnected. Relaunch Capture and start again from scooter OFF.",
                         kind: "session_liveness_continuity_invalidated"
                     )
                     return
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
                     await self.mirrorAlreadyTerminalIncompleteObservationHorizon(
                         token: token,
-                        message: "Authenticated observation reached the 60-second incomplete-evidence horizon without earning canonical stationary-mapping readiness. Required repeated application evidence remained incomplete. The package already retired this exact generation without another liveness sample or a Bluetooth-disconnect claim. Relaunch Capture and start again from scooter OFF.",
+                        message: "Scooter data did not become sufficient within 60 seconds. Keep the scooter stationary, relaunch Capture, and start again from scooter OFF.",
                         kind: "session_authenticated_incomplete_readiness_horizon_reached"
                     )
                     return
@@ -1900,7 +1900,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 } catch {
                     await self.invalidateInternalLifecycle(
                         token: token,
-                        message: "Authenticated liveness violated the current internal session lifecycle: \(error.localizedDescription)",
+                        message: "This observation could not continue safely. Relaunch Capture and start again from scooter OFF.",
                         kind: "session_liveness_lifecycle_rejected"
                     )
                     return
