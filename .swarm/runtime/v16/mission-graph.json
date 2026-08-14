@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 9,
+    "classifiedPRTotal": 10,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1107,7 +1107,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.184,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3317": {
@@ -1164,6 +1164,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.0,
         "title": "[Capture P0][VISUAL] Re-anchor iPhone 12 evidence to d306 exact product"
+      },
+      "3324": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3324,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.206,
+        "title": "[Capture P0][VALIDATION] Repair receipt-era source-attribution oracle"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1190,19 +1201,13 @@
       "swarm-v16-max-enforcement"
     ],
     "livePRBranchMismatches": [],
-    "livePRHeadUpdates": [
-      {
-        "from": "bce7df7994cda0c43118995ec0b7a84e2bd78537",
-        "to": "9ee14559b591423abdfcf8539be10225add9f165",
-        "workItemId": "live-pr-3142"
-      }
-    ],
+    "livePRHeadUpdates": [],
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:14:43Z",
+    "liveRefreshAt": "2026-08-14T23:14:58Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4987,10 +4992,10 @@
       "userValue": 7
     }
   },
-  "revision": 274,
+  "revision": 275,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:14:43Z",
+  "updatedAt": "2026-08-14T23:14:58Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5066,7 +5071,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:14:43Z",
+      "updatedAt": "2026-08-14T23:14:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
