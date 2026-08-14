@@ -5,8 +5,8 @@ This witness is intentionally read-only. It combines:
 - KERN_PROC_ALL / struct kinfo_proc for PID + supplementary/advisory groups; and
 - the system ps credential columns for effective/real/saved UID and GID slots.
 
-The hybrid avoids proc_pidinfo(PROC_PIDTBSDINFO), which current macOS may deny
-with EPERM for protected live processes when the witness is intentionally
+The hybrid avoids the protected per-process BSD-info API, which current macOS
+may deny with EPERM for protected live processes when the witness is intentionally
 unprivileged. Persistent PID-set disagreement between the two independent
 snapshots fails closed; only a PID proven gone by ESRCH may be ignored.
 
