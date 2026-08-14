@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 286,
+    "classifiedPRTotal": 287,
     "classifiedPRs": {
-      "2711": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2711,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.221,
-        "title": "[Capture P0][RED TEAM] Bind checkout root before trusting private writer path"
-      },
       "2719": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -2460,7 +2449,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3253,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.283,
+        "similarity": 0.284,
         "title": "[Capture P0][VALIDATION] Prove restricted Apple-signing bootstrap boundary"
       },
       "3260": {
@@ -2473,6 +2462,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.19,
         "title": "[Capture P0][VISUAL VALIDATION] Restore fail-closed standalone iPhone 12 evidence"
+      },
+      "3262": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3262,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.293,
+        "title": "[Capture P0][VALIDATION] Harden trusted Apple-signing bootstrap boundary"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,9 +2505,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T07:14:14Z",
+    "liveRefreshAt": "2026-08-14T07:17:05Z",
     "liveRefreshDuplicatesSuppressed": [
-      3253
+      3262
     ],
     "liveRefreshMainSHA": "de37ee4769022d32765bf63340f8420ee7c0e04b",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 131,
+  "revision": 132,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T07:16:49Z",
+  "updatedAt": "2026-08-14T07:19:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T07:14:14Z",
+      "updatedAt": "2026-08-14T07:17:05Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
