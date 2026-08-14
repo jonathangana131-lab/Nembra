@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind temporary materializer to exact Capture carrier
+      - name: Bind structural materializer to exact Capture carrier
         shell: bash
         run: |
           set -euo pipefail
@@ -50,7 +50,7 @@ jobs:
           bash -n scripts/field/install_one_time_capture.command
           git diff --check
 
-      - name: Commit four-path production delta and retire materializer
+      - name: Commit three-path production delta and retire materializer
         shell: bash
         run: |
           set -euo pipefail
