@@ -1,0 +1,68 @@
+name: Capture Field Build Diagnostic
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    name: Retain stamped Simulator build diagnostic
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Bind exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Build stamped standalone Simulator app with retained log
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          sha="$(git rev-parse HEAD)"
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${sha:0:12}"
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          log="$RUNNER_TEMP/capture-field-build-${sha}.log"
+          set +e
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
+            build 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf 'log_path=%s\n' "$log" >> "$GITHUB_OUTPUT"
+          printf 'build_status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Upload stamped Simulator build diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-field-build-diagnostic-${{ github.sha }}
+          path: ${{ steps.build.outputs.log_path }}
+          if-no-files-found: error
+          retention-days: 7
