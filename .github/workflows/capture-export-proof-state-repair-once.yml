@@ -40,21 +40,25 @@ jobs:
                   raise SystemExit(f'{label}: expected one match, found {count}')
               s = s.replace(old, new, 1)
 
-          phase = '''    enum Phase: String, Codable {
-        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed
-    }
-
-'''
-          evidence = '''    enum LocalBLEEvidenceState: String, Codable {
-        /// The controller's latest retained direct official-SDK local-BLE sample was online.
-        /// Diagnostic exports do not promote this into an export-time currentness claim.
-        case observedOnlineAtLatestDirectSample = "observed-online-at-latest-direct-sample"
-        /// No current online proof is retained. This must never be interpreted as an observed
-        /// offline/disconnect fact; actual transport loss remains separate timestamped evidence.
-        case notProven = "not-proven"
-    }
-
-'''
+          phase = "\n".join([
+              "    enum Phase: String, Codable {",
+              "        case idle, baseline, powerOn, scanning, correlated, selected, authenticating, observing, accepted, failed",
+              "    }",
+              "",
+              "",
+          ])
+          evidence = "\n".join([
+              "    enum LocalBLEEvidenceState: String, Codable {",
+              "        /// The controller's latest retained direct official-SDK local-BLE sample was online.",
+              "        /// Diagnostic exports do not promote this into an export-time currentness claim.",
+              "        case observedOnlineAtLatestDirectSample = \"observed-online-at-latest-direct-sample\"",
+              "        /// No current online proof is retained. This must never be interpreted as an observed",
+              "        /// offline/disconnect fact; actual transport loss remains separate timestamped evidence.",
+              "        case notProven = \"not-proven\"",
+              "    }",
+              "",
+              "",
+          ])
           replace_one(phase, phase + evidence, 'local-BLE evidence enum insertion')
           replace_one(
               '        let sdkLocalBLEOnline: Bool\n',
@@ -67,7 +71,6 @@ jobs:
               '            sdkLocalBLEEvidenceState: sdkLocalBLEOnline ? .observedOnlineAtLatestDirectSample : .notProven,\n',
               'export proof-state mapping',
           )
-
           p.write_text(s)
           PY
 
