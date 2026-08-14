@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 291,
+    "classifiedPRTotal": 292,
     "classifiedPRs": {
-      "2754": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2754,
-        "recommendedAction": "independent-review",
-        "similarity": 0.359,
-        "title": "[Capture P0][FIELD] Protect exact signed app install subject"
-      },
       "2755": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2372,7 +2361,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.103,
+        "similarity": 0.143,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3253": {
@@ -2405,7 +2394,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3265,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.539,
+        "similarity": 0.375,
         "title": "[Capture P0][VISUAL] Re-anchor standalone iPhone 12 evidence on e295"
       },
       "3268": {
@@ -2430,17 +2419,6 @@
         "similarity": 0.09,
         "title": "[Swarm V16.2] Convert burst output into canonical integration"
       },
-      "3270": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3270,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.513,
-        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current 1b3da"
-      },
       "3271": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -2453,26 +2431,48 @@
         "title": "[Capture P0][AX] Re-anchor lock-banner hierarchy regression on e295"
       },
       "3272": {
-        "classification": "validation",
+        "classification": "superseded",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3272,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.496,
-        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current e295"
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.371,
+        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current 34d438f"
       },
-      "3273": {
+      "3274": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-export-ble-state-redteam",
-        "pr": 3273,
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3274,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.108,
-        "title": "Validate Capture export BLE currentness ambiguity"
+        "similarity": 0.144,
+        "title": "[Capture P0][VALIDATION] Close schema v11 provenance contract coverage"
+      },
+      "3275": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3275,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.216,
+        "title": "[Capture P0][RED TEAM] Reject partial bootstrap principal residue"
+      },
+      "3276": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-schema11-correlation-export-oracle",
+        "pr": 3276,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.137,
+        "title": "[Capture P0][VALIDATION] Gate schema-11 correlation export oracle"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,9 +2505,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:25:55Z",
+    "liveRefreshAt": "2026-08-14T08:28:14Z",
     "liveRefreshDuplicatesSuppressed": [
-      3262
+      3275
     ],
     "liveRefreshMainSHA": "de37ee4769022d32765bf63340f8420ee7c0e04b",
     "liveRefreshSelectedCanonicalPRs": [
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 148,
+  "revision": 149,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:27:58Z",
+  "updatedAt": "2026-08-14T08:30:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:25:55Z",
+      "updatedAt": "2026-08-14T08:28:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
