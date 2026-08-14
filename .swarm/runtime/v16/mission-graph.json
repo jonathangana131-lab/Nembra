@@ -1064,30 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 295,
+    "classifiedPRTotal": 297,
     "classifiedPRs": {
-      "2779": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2779,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.332,
-        "title": "[Capture P0][SECURITY] Bind reviewed private Tuya generation before field build"
-      },
-      "2783": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 2783,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.447,
-        "title": "[Capture P0][SECURITY] Bind private Tuya generation to opaque owner review"
-      },
       "2789": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -2321,13 +2299,13 @@
         "title": "[Capture P0][VALIDATION] Prove lingering build-UID launchd service registry is inert"
       },
       "3233": {
-        "classification": "requires-review",
+        "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
-        "recommendedAction": "independent-review",
+        "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.178,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
@@ -2352,17 +2330,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.307,
         "title": "[Capture P0][VALIDATION] Harden trusted Apple-signing bootstrap boundary"
-      },
-      "3265": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3265,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.434,
-        "title": "[Capture P0][VISUAL] Harden standalone iPhone 12 evidence instrument"
       },
       "3268": {
         "classification": "validation",
@@ -2394,8 +2361,8 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3272,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.451,
-        "title": "[Capture P0][VISUAL] Current bc0cfb0 schema-8 iPhone 12 evidence"
+        "similarity": 0.134,
+        "title": "[Capture P0][VISUAL] Current 29fb304 truthful schema-8 iPhone 12 evidence"
       },
       "3274": {
         "classification": "requires-review",
@@ -2416,7 +2383,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3275,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.331,
+        "similarity": 0.333,
         "title": "[Capture P0][RED TEAM] Reject partial bootstrap principal residue"
       },
       "3280": {
@@ -2424,11 +2391,11 @@
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-terminal-post-await-presentation-owner-regression",
+        "lane": "capture-terminal-presentation-owner-regression",
         "pr": 3280,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.151,
-        "title": "[Capture P0][EXPECTED-RED] Preserve horizon mirror presentation owner"
+        "similarity": 0.119,
+        "title": "[Capture P0][EXPECTED-RED] Preserve terminal mirror presentation owner"
       },
       "3283": {
         "classification": "validation",
@@ -2438,7 +2405,7 @@
         "lane": "capture-smartlife-application-source-attribution",
         "pr": 3283,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.121,
+        "similarity": 0.415,
         "title": "[Capture P0][EXPECTED-RED] Require exact SmartLife callback source attribution"
       },
       "3284": {
@@ -2460,7 +2427,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3285,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.32,
+        "similarity": 0.321,
         "title": "[Capture P0][RED TEAM] Re-anchor signing bootstrap GID occupancy on bf8"
       },
       "3286": {
@@ -2473,6 +2440,39 @@
         "recommendedAction": "independent-review",
         "similarity": 0.133,
         "title": "[Capture P0][NO-GO] Restore authenticated stationary field authority"
+      },
+      "3288": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-application-delivery-cutoff",
+        "pr": 3288,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.119,
+        "title": "[Capture P0][EXPECTED-RED] Preserve SmartLife callback delivery cutoff"
+      },
+      "3289": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-terminal-post-await-presentation-owner-repair",
+        "pr": 3289,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.115,
+        "title": "[Capture P0][REPAIR] Fence terminal mirror presentation ownership"
+      },
+      "3290": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-smartlife-application-source-attribution",
+        "pr": 3290,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.407,
+        "title": "[Capture P0][REPAIR] Bind SmartLife callbacks to selected device"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:40:38Z",
+    "liveRefreshAt": "2026-08-14T08:48:55Z",
     "liveRefreshDuplicatesSuppressed": [
       3285
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 153,
+  "revision": 154,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:43:27Z",
+  "updatedAt": "2026-08-14T08:51:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:40:38Z",
+      "updatedAt": "2026-08-14T08:48:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
