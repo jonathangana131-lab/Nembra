@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 43,
+    "classifiedPRTotal": 39,
     "classifiedPRs": {
       "10": {
         "classification": "requires-review",
@@ -1132,17 +1132,6 @@
         "similarity": 0.179,
         "title": "[recover-rolling-number-performance] Preserve reviewed hardening on V10 main"
       },
-      "129": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "3cf73cad44e7fb8b3a9090583b2d9c7f2a4679b7",
-        "lane": "",
-        "pr": 129,
-        "recommendedAction": "independent-review",
-        "similarity": 0.209,
-        "title": "[cell-ci-trusted-exact-head] Trusted exact-head admission — V11 TRAIN_READY source"
-      },
       "13": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1184,7 +1173,7 @@
         "lane": "",
         "pr": 148,
         "recommendedAction": "independent-review",
-        "similarity": 0.224,
+        "similarity": 0.108,
         "title": "[TRAIN CI-SECURITY-01] Trusted exact-head self-hosted admission"
       },
       "149": {
@@ -1197,17 +1186,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.119,
         "title": "[recover-ride-provenance-v10] Make checkpoint acknowledgement monotonic"
-      },
-      "155": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 155,
-        "recommendedAction": "independent-review",
-        "similarity": 0.097,
-        "title": "[battery-receipt] Give battery truth explicit callback identity"
       },
       "156": {
         "classification": "requires-review",
@@ -1230,28 +1208,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.186,
         "title": "[adaptive-range-persistence] Version and validate learned range storage"
-      },
-      "160": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 160,
-        "recommendedAction": "independent-review",
-        "similarity": 0.1,
-        "title": "[ride-durability] Fail closed on ambiguous checkpoint authority"
-      },
-      "161": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 161,
-        "recommendedAction": "independent-review",
-        "similarity": 0.124,
-        "title": "[home-dynamic-type] Make Home structurally accessible at large text sizes"
       },
       "164": {
         "classification": "requires-review",
@@ -1360,7 +1316,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.06,
+        "similarity": 0.059,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "34": {
@@ -1470,7 +1426,7 @@
         "lane": "",
         "pr": 70,
         "recommendedAction": "independent-review",
-        "similarity": 0.123,
+        "similarity": 0.103,
         "title": "[home-vehicle-status-field] Unify truthful Home connection status"
       },
       "75": {
@@ -1514,7 +1470,7 @@
         "lane": "",
         "pr": 84,
         "recommendedAction": "independent-review",
-        "similarity": 0.101,
+        "similarity": 0.092,
         "title": "[visual-capture-matrix] Preserve missing portrait QA states"
       },
       "90": {
@@ -1525,7 +1481,7 @@
         "lane": "",
         "pr": 90,
         "recommendedAction": "independent-review",
-        "similarity": 0.208,
+        "similarity": 0.18,
         "title": "[ci-exact-head-stale-event-guard] Reject delayed stale PR events"
       },
       "95": {
@@ -1570,7 +1526,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T11:02:47Z",
+    "liveRefreshAt": "2026-08-14T11:03:09Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "58feaa6723cea8b03868e88f68588b104b4401b7",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5353,10 +5309,10 @@
       "userValue": 7
     }
   },
-  "revision": 193,
+  "revision": 194,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T11:02:51Z",
+  "updatedAt": "2026-08-14T11:03:12Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5432,7 +5388,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T11:02:47Z",
+      "updatedAt": "2026-08-14T11:03:09Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
