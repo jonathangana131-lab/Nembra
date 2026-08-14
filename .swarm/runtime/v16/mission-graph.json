@@ -703,7 +703,7 @@
       "selectedAt": "2026-08-12T10:52:45Z",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "82fd801739875bafff1871eb079484f3d291c8b0",
+        "headSHA": "113586b11d3e89d55d20bcc9917dac889a077072",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
@@ -1192,8 +1192,8 @@
     "livePRBranchMismatches": [],
     "livePRHeadUpdates": [
       {
-        "from": "52892cf62791c3d5d38568ae838ede9eab071f01",
-        "to": "82fd801739875bafff1871eb079484f3d291c8b0",
+        "from": "82fd801739875bafff1871eb079484f3d291c8b0",
+        "to": "113586b11d3e89d55d20bcc9917dac889a077072",
         "workItemId": "live-pr-3142"
       }
     ],
@@ -1202,7 +1202,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:20:26Z",
+    "liveRefreshAt": "2026-08-14T23:20:47Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4987,10 +4987,10 @@
       "userValue": 7
     }
   },
-  "revision": 292,
+  "revision": 293,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:20:26Z",
+  "updatedAt": "2026-08-14T23:20:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5059,14 +5059,14 @@
       "similarityKey": "apfs before compiler-output compose composition. custody dedicated-build-uid-apfs-production-successor-unattested-groups-and-retirement dedicated-uid execution first flagship freeze helper includ install intended-device legacy-capture-signed-install-custody origin protect security signed-app snapshot through",
       "source": {
         "classification": "canonical-candidate",
-        "headSHA": "82fd801739875bafff1871eb079484f3d291c8b0",
+        "headSHA": "113586b11d3e89d55d20bcc9917dac889a077072",
         "pr": 3142,
         "selectionAuthority": "legacy-selected-production"
       },
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:20:26Z",
+      "updatedAt": "2026-08-14T23:20:47Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
