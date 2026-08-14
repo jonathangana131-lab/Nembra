@@ -29,11 +29,7 @@ struct HomeView: View {
             .padding(.top, 8)
             .padding(.bottom, 24)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear
-                .frame(height: dynamicTypeSize.isAccessibilitySize ? 100 : 76)
-                .accessibilityHidden(true)
-        }
+        .padding(.bottom, homeViewportBottomClearance)
         .background(Color(uiColor: .systemBackground))
         .navigationTitle("Nembra")
         .navigationBarTitleDisplayMode(.inline)
@@ -72,6 +68,10 @@ struct HomeView: View {
         } message: {
             Text("Nembra changes the lock state only after the scooter confirms the command.")
         }
+    }
+
+    private var homeViewportBottomClearance: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 100 : 76
     }
 
     private var errorPresented: Binding<Bool> {
