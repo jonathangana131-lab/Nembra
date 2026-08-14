@@ -1,0 +1,57 @@
+name: Capture Apple signing partial-principal cleanup repair
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py
+      - scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py
+      - .github/workflows/capture-apple-signing-partial-principal-cleanup-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  partial-principal-cleanup-repair:
+    name: Reclassify partial synthetic-principal cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact attacked parent and repair scope
+        shell: bash
+        env:
+          EXACT_PARENT: 963967e1986ae60f6414b351571d7ea0af3c5121
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-apple-signing-partial-principal-cleanup-repair.yml \
+            scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py \
+            scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; p=Path("scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py").read_text(encoding="utf-8"); compile(p, "<trusted-bootstrap-hardening>", "exec", dont_inherit=True)'
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; p=Path("scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py").read_text(encoding="utf-8"); compile(p, "<partial-principal-redteam>", "exec", dont_inherit=True)'
+
+      - name: Replay unchanged partial-principal adversary as green
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py
+
+      - name: Preserve validation-only authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eq 'codesign|xcodebuild|devicectl|simctl|CoreBluetooth|writeValue|publishDps' scripts/ci/tests/test_capture_apple_signing_partial_principal_cleanup_redteam.py
+          grep -Fq 'physicalAuthorityCreated' scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py
