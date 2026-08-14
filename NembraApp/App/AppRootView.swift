@@ -734,7 +734,8 @@ private struct RideHistoryDetailView: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.leading, 20)
+        .padding(.trailing, 72)
         .padding(.vertical, 16)
         .accessibilityElement(children: .combine)
     }
