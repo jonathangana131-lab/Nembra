@@ -1,0 +1,80 @@
+name: Capture Apple signing trusted-bootstrap hardening
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py
+      - .github/workflows/capture-apple-signing-trusted-bootstrap-hardening.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-apple-signing-trusted-bootstrap-hardening-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  trusted-bootstrap-hardening:
+    name: Prove argv + numeric-principal hardening
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact hardening successor delta
+        shell: bash
+        env:
+          EXACT_PARENT: f8e10cf022191bc999c4b4dfefa3f29aa903cda5
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-apple-signing-trusted-bootstrap-hardening.yml \
+            scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; source=Path("scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py").read_text(encoding="utf-8"); compile(source, "<capture-trusted-bootstrap-hardening>", "exec", dont_inherit=True)'
+
+      - name: Execute trusted-bootstrap hardening witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/nembra-trusted-bootstrap-hardening.json"
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_hardening.py --output "$evidence"
+          /usr/bin/python3 -B -I - "$evidence" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          required_true = (
+              "orphanedNumericUidProcessRejected",
+              "freshNumericUidProcessFreeBeforeCreation",
+              "genericNoninteractiveSudoDenied",
+              "explicitNoArgRuleAdmitted",
+              "attackerArgDeniedBeforeLauncherStart",
+              "numericUidProcessesRetiredBeforeDeletion",
+              "numericUidProcessFreeAfterDeletion",
+          )
+          if any(record.get(key) is not True for key in required_true):
+              raise SystemExit("trusted-bootstrap hardening witness lost a required invariant")
+          if record.get("physicalAuthorityCreated") is not False:
+              raise SystemExit("trusted-bootstrap hardening created physical authority")
+          if record.get("signingIdentityQueried") is not False:
+              raise SystemExit("trusted-bootstrap hardening queried a signing identity")
+          if record.get("xcodebuildExecuted") is not False:
+              raise SystemExit("trusted-bootstrap hardening executed xcodebuild")
+          if record.get("deviceOrBluetoothExecuted") is not False:
+              raise SystemExit("trusted-bootstrap hardening touched device/Bluetooth")
+          print("TRUSTED_BOOTSTRAP_HARDENING_GREEN physicalAuthorityCreated=false")
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
