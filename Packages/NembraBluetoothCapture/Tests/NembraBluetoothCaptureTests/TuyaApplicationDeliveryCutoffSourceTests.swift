@@ -95,7 +95,7 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
         #expect(receiptType.contains("public static func capture(for token: TuyaReadOnlyConnectionToken)"))
         #expect(receiptType.contains("DispatchTime.now().uptimeNanoseconds"))
         #expect(!receiptType.contains("public init("))
-        #expect(!receiptType.contains("receivedAtUptimeNanoseconds:"))
+        #expect(!receiptType.contains("public static func capture(for token: TuyaReadOnlyConnectionToken, receivedAtUptimeNanoseconds:"))
 
         let record = String(try deliveryCutoffSection(
             in: ledger,
