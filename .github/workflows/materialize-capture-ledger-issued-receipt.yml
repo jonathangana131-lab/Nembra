@@ -1,0 +1,375 @@
+name: Materialize Capture ledger-issued delivery receipt
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    paths:
+      - '.github/workflows/materialize-capture-ledger-issued-receipt.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXACT_PARENT: 29fb304613c142ba99e1259e9d612c1919309145
+      LEDGER_PATH: Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift
+      TEST_PATH: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaLedgerIssuedApplicationReceiptTests.swift
+      WORKFLOW_PATH: .github/workflows/materialize-capture-ledger-issued-receipt.yml
+      EXPECTED_LEDGER_BLOB: 0c63683d44f39429b4c145e6f3433bc5c4375173
+    steps:
+      - name: Checkout immutable child head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact parent and one-shot input
+        run: |
+          set -euo pipefail
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          test "$(git rev-parse "$EXACT_PARENT:$LEDGER_PATH")" = "$EXPECTED_LEDGER_BLOB"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' "$WORKFLOW_PATH" | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test ! -e "$TEST_PATH"
+
+      - name: Materialize ledger-issued receipt and package arbitration
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift')
+          text = path.read_text(encoding='utf-8')
+
+          actor_marker = '/// Owns the non-secret chronology consumed by `TuyaAuthenticatedReadOnlyPreflight`.\n'
+          if text.count(actor_marker) != 1:
+              raise SystemExit('actor insertion marker must match exactly once')
+          receipt_support = '''/// Opaque application-delivery chronology issued by one exact ledger instance.\n///\n/// The shipping caller can retain this value long enough to cross an async admission hop, but it\n/// cannot construct one, read/rewrite its timestamp, choose the issuer, or choose the delivery ID.\npublic struct TuyaReadOnlyApplicationReceipt: Sendable {\n    fileprivate let token: TuyaReadOnlyConnectionToken\n    fileprivate let issuerID: UUID\n    fileprivate let deliveryID: UUID\n    fileprivate let receivedAtUptimeNanoseconds: UInt64\n\n    fileprivate init(\n        token: TuyaReadOnlyConnectionToken,\n        issuerID: UUID,\n        deliveryID: UUID,\n        receivedAtUptimeNanoseconds: UInt64\n    ) {\n        self.token = token\n        self.issuerID = issuerID\n        self.deliveryID = deliveryID\n        self.receivedAtUptimeNanoseconds = receivedAtUptimeNanoseconds\n    }\n}\n\n/// Synchronous arbitration between SDK callback delivery and watchdog liveness sampling.\n///\n/// Both paths sample the same ledger clock while holding this lock. If callback delivery wins, its\n/// receipt is registered pending before a queued watchdog can sample later liveness. If liveness\n/// wins, its sample necessarily precedes the subsequently issued receipt. Actor mutation still owns\n/// all accepted evidence; this object only establishes scheduler-independent ordering.\nprivate final class TuyaReadOnlyApplicationDeliveryArbiter: @unchecked Sendable {\n    private let lock = NSLock()\n    private var pendingByDeliveryID: [UUID: TuyaReadOnlyConnectionToken] = [:]\n\n    func capture(\n        for token: TuyaReadOnlyConnectionToken,\n        issuerID: UUID,\n        nowUptimeNanoseconds: @Sendable () -> UInt64\n    ) -> TuyaReadOnlyApplicationReceipt {\n        lock.lock()\n        defer { lock.unlock() }\n\n        let deliveryID = UUID()\n        let receipt = TuyaReadOnlyApplicationReceipt(\n            token: token,\n            issuerID: issuerID,\n            deliveryID: deliveryID,\n            receivedAtUptimeNanoseconds: nowUptimeNanoseconds()\n        )\n        pendingByDeliveryID[deliveryID] = token\n        return receipt\n    }\n\n    func consume(_ receipt: TuyaReadOnlyApplicationReceipt) -> Bool {\n        lock.lock()\n        defer { lock.unlock() }\n\n        guard pendingByDeliveryID[receipt.deliveryID] == receipt.token else {\n            return false\n        }\n        pendingByDeliveryID.removeValue(forKey: receipt.deliveryID)\n        return true\n    }\n\n    func livenessSampleIfUnblocked(\n        for token: TuyaReadOnlyConnectionToken,\n        nowUptimeNanoseconds: @Sendable () -> UInt64\n    ) -> UInt64? {\n        lock.lock()\n        defer { lock.unlock() }\n\n        guard !pendingByDeliveryID.values.contains(token) else {\n            return nil\n        }\n        return nowUptimeNanoseconds()\n    }\n\n    func reset() {\n        lock.lock()\n        pendingByDeliveryID.removeAll(keepingCapacity: true)\n        lock.unlock()\n    }\n}\n\n'''
+          text = text.replace(actor_marker, receipt_support + actor_marker, 1)
+
+          error_old = '''        case emptyApplicationUpdate\n        case applicationPayloadCountExhausted\n'''
+          error_new = '''        case emptyApplicationUpdate\n        case invalidApplicationReceipt\n        case applicationDeliveryReceiptAlreadyConsumed\n        case applicationPayloadCountExhausted\n'''
+          if text.count(error_old) != 1:
+              raise SystemExit('mutation error marker drifted')
+          text = text.replace(error_old, error_new, 1)
+
+          state_old = '''    private let ledgerID: UUID\n    private let nowUptimeNanoseconds: @Sendable () -> UInt64\n\n    private var generation: UInt64 = 0\n    private var currentToken: TuyaReadOnlyConnectionToken?\n    private var authenticationState: TuyaAuthenticatedReadOnlyPreflightSnapshot.AuthenticationState =\n        .unavailable(reason: "No active Bluetooth connection.")\n    private var authenticationMethod: TuyaReadOnlyAuthenticationMethod?\n    private var connectionStartedAtUptimeNanoseconds: UInt64?\n    private var authenticatedAtUptimeNanoseconds: UInt64?\n    private var latestObservedUptimeNanoseconds: UInt64?\n    private var applicationPayloadCount = 0\n    private var latestApplicationPayloadUptimeNanoseconds: UInt64?\n\n    public init() {\n        self.ledgerID = UUID()\n        self.nowUptimeNanoseconds = { DispatchTime.now().uptimeNanoseconds }\n    }\n\n    init(nowUptimeNanoseconds: @escaping @Sendable () -> UInt64) {\n        self.ledgerID = UUID()\n        self.nowUptimeNanoseconds = nowUptimeNanoseconds\n    }\n'''
+          state_new = '''    private let ledgerID: UUID\n    nonisolated private let applicationReceiptIssuerID: UUID\n    nonisolated private let applicationDeliveryArbiter: TuyaReadOnlyApplicationDeliveryArbiter\n    nonisolated private let injectedNowUptimeNanoseconds: (@Sendable () -> UInt64)?\n\n    private var generation: UInt64 = 0\n    private var currentToken: TuyaReadOnlyConnectionToken?\n    private var authenticationState: TuyaAuthenticatedReadOnlyPreflightSnapshot.AuthenticationState =\n        .unavailable(reason: "No active Bluetooth connection.")\n    private var authenticationMethod: TuyaReadOnlyAuthenticationMethod?\n    private var connectionStartedAtUptimeNanoseconds: UInt64?\n    private var authenticatedAtUptimeNanoseconds: UInt64?\n    private var latestObservedUptimeNanoseconds: UInt64?\n    private var applicationPayloadCount = 0\n    private var latestApplicationPayloadUptimeNanoseconds: UInt64?\n    private var consumedApplicationDeliveryIDs: Set<UUID> = []\n\n    public init() {\n        self.ledgerID = UUID()\n        self.applicationReceiptIssuerID = UUID()\n        self.applicationDeliveryArbiter = TuyaReadOnlyApplicationDeliveryArbiter()\n        self.injectedNowUptimeNanoseconds = nil\n    }\n\n    init(nowUptimeNanoseconds: @escaping @Sendable () -> UInt64) {\n        self.ledgerID = UUID()\n        self.applicationReceiptIssuerID = UUID()\n        self.applicationDeliveryArbiter = TuyaReadOnlyApplicationDeliveryArbiter()\n        self.injectedNowUptimeNanoseconds = nowUptimeNanoseconds\n    }\n\n    /// Synchronously timestamps trusted SDK callback delivery before any new task/actor hop.\n    /// The receipt is tied to this exact ledger instance and is registered pending under the same\n    /// lock used by watchdog liveness arbitration.\n    public nonisolated func captureApplicationReceipt(\n        for token: TuyaReadOnlyConnectionToken\n    ) -> TuyaReadOnlyApplicationReceipt {\n        applicationDeliveryArbiter.capture(\n            for: token,\n            issuerID: applicationReceiptIssuerID,\n            nowUptimeNanoseconds: { [injectedNowUptimeNanoseconds] in\n                injectedNowUptimeNanoseconds?() ?? DispatchTime.now().uptimeNanoseconds\n            }\n        )\n    }\n'''
+          if text.count(state_old) != 1:
+              raise SystemExit('ledger state/init marker drifted')
+          text = text.replace(state_old, state_new, 1)
+
+          if text.count('        let now = nowUptimeNanoseconds()\n') != 2:
+              raise SystemExit('expected exactly beginConnection + nextMonotonic direct clock samples')
+          text = text.replace(
+              '        let now = nowUptimeNanoseconds()\n',
+              '        let now = currentMonotonicUptimeNanoseconds()\n'
+          )
+
+          begin_marker = '''        currentToken = token\n        authenticationState = .waitingForAuthentication\n'''
+          begin_new = '''        applicationDeliveryArbiter.reset()\n        consumedApplicationDeliveryIDs.removeAll(keepingCapacity: true)\n        currentToken = token\n        authenticationState = .waitingForAuthentication\n'''
+          if text.count(begin_marker) != 1:
+              raise SystemExit('beginConnection reset marker drifted')
+          text = text.replace(begin_marker, begin_new, 1)
+
+          record_start = text.find('    public func recordApplicationUpdate(\n')
+          observe_doc = '    /// Advances only the non-secret liveness observation for the current authenticated connection.\n'
+          record_end = text.find(observe_doc, record_start)
+          if record_start < 0 or record_end < 0:
+              raise SystemExit('application record section markers missing')
+          old_record = text[record_start:record_end]
+          if old_record.count('public func recordApplicationUpdate(') != 1:
+              raise SystemExit('legacy record mutation shape drifted')
+          for needle in [
+              'let now = try nextMonotonicObservation()',
+              'try requireContinuousAuthenticatedObservation(at: now)',
+              'try requireIncompleteObservationHorizonOpen(at: now)',
+              'applicationPayloadCount += 1',
+          ]:
+              if needle not in old_record:
+                  raise SystemExit(f'legacy record contract missing: {needle}')
+          new_record = '''    /// Compatibility admission for package callers that do not already own the synchronous SDK\n    /// callback boundary. It validates current/authenticated/non-empty authority before issuing a\n    /// same-ledger receipt, so rejected legacy calls cannot strand pending liveness arbitration.\n    public func recordApplicationUpdate(\n        isNonEmpty: Bool,\n        for token: TuyaReadOnlyConnectionToken\n    ) throws {\n        try requireCurrent(token)\n        guard case .authenticated = authenticationState else {\n            throw MutationError.authenticationRequired\n        }\n        guard isNonEmpty else {\n            throw MutationError.emptyApplicationUpdate\n        }\n\n        let receipt = captureApplicationReceipt(for: token)\n        try recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)\n    }\n\n    /// Records a non-empty application update using its exact ledger-issued delivery chronology.\n    /// A receipt can be consumed once only; token/issuer mismatch or replay cannot move readiness.\n    public func recordApplicationUpdate(\n        isNonEmpty: Bool,\n        receipt: TuyaReadOnlyApplicationReceipt,\n        for token: TuyaReadOnlyConnectionToken\n    ) throws {\n        try requireCurrent(token)\n        guard receipt.token == token,\n              receipt.issuerID == applicationReceiptIssuerID else {\n            throw MutationError.invalidApplicationReceipt\n        }\n        guard case .authenticated = authenticationState else {\n            throw MutationError.authenticationRequired\n        }\n        guard isNonEmpty else {\n            throw MutationError.emptyApplicationUpdate\n        }\n        guard consumedApplicationDeliveryIDs.insert(receipt.deliveryID).inserted else {\n            throw MutationError.applicationDeliveryReceiptAlreadyConsumed\n        }\n        guard applicationDeliveryArbiter.consume(receipt) else {\n            throw MutationError.invalidApplicationReceipt\n        }\n\n        let now = receipt.receivedAtUptimeNanoseconds\n        try requireContinuousAuthenticatedObservation(at: now)\n        try requireIncompleteObservationHorizonOpen(at: now)\n        guard let authenticatedAt = authenticatedAtUptimeNanoseconds,\n              now >= authenticatedAt else {\n            throw MutationError.monotonicClockRegressed\n        }\n        guard applicationPayloadCount < Int.max else {\n            throw MutationError.applicationPayloadCountExhausted\n        }\n\n        applicationPayloadCount += 1\n        latestApplicationPayloadUptimeNanoseconds = now\n        latestObservedUptimeNanoseconds = now\n    }\n\n'''
+          text = text[:record_start] + new_record + text[record_end:]
+
+          observe_old = '''    public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {\n        try requireCurrent(token)\n        guard case .authenticated = authenticationState else {\n            throw MutationError.authenticationRequired\n        }\n        let now = try nextMonotonicObservation()\n        try requireContinuousAuthenticatedObservation(at: now)\n        try requireIncompleteObservationHorizonOpen(at: now)\n        latestObservedUptimeNanoseconds = now\n    }\n'''
+          observe_new = '''    public func observeCurrentConnection(for token: TuyaReadOnlyConnectionToken) throws {\n        try requireCurrent(token)\n        guard case .authenticated = authenticationState else {\n            throw MutationError.authenticationRequired\n        }\n\n        // Sampling is serialized with synchronous callback delivery. A receipt already pending for\n        // this exact token wins chronology and makes this watchdog mutation yield without inventing\n        // a later liveness instant.\n        guard let now = applicationDeliveryArbiter.livenessSampleIfUnblocked(\n            for: token,\n            nowUptimeNanoseconds: { [injectedNowUptimeNanoseconds] in\n                injectedNowUptimeNanoseconds?() ?? DispatchTime.now().uptimeNanoseconds\n            }\n        ) else {\n            return\n        }\n        try requireContinuousAuthenticatedObservation(at: now)\n        try requireIncompleteObservationHorizonOpen(at: now)\n        latestObservedUptimeNanoseconds = now\n    }\n'''
+          if text.count(observe_old) != 1:
+              raise SystemExit('observeCurrentConnection shape drifted')
+          text = text.replace(observe_old, observe_new, 1)
+
+          next_marker = '    private func nextMonotonicObservation() throws -> UInt64 {\n'
+          helper = '''    nonisolated private func currentMonotonicUptimeNanoseconds() -> UInt64 {\n        injectedNowUptimeNanoseconds?() ?? DispatchTime.now().uptimeNanoseconds\n    }\n\n'''
+          if text.count(next_marker) != 1:
+              raise SystemExit('nextMonotonicObservation marker drifted')
+          text = text.replace(next_marker, helper + next_marker, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          cat > "$TEST_PATH" <<'SWIFT'
+          import Dispatch
+          import Foundation
+          import Testing
+          @testable import NembraBluetoothCapture
+
+          extension TuyaAuthenticatedReadOnlySessionLedgerTests {
+              @Test("pending delivery arbitrates ahead of delayed watchdog liveness")
+              func ledgerIssuedReceiptBlocksWatchdogOvertake() async throws {
+                  let clock = LedgerIssuedReceiptTestClock(1_000)
+                  let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+                  let token = try await ledger.beginConnection()
+                  try await ledger.markAuthenticationStarted(for: token)
+                  try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+
+                  let second: UInt64 = 1_000_000_000
+                  var offset: UInt64 = 5 * second
+                  while offset <= 55 * second {
+                      clock.advance(to: 1_000 + offset)
+                      try await ledger.observeCurrentConnection(for: token)
+                      offset += 5 * second
+                  }
+                  clock.advance(to: 1_000 + 59 * second)
+                  try await ledger.observeCurrentConnection(for: token)
+
+                  let receipt = ledger.captureApplicationReceipt(for: token)
+                  clock.advance(to: 1_000 + 65 * second)
+
+                  // This watchdog call is deliberately beyond both the incomplete-session horizon
+                  // and the continuity gap. Because delivery already won the package arbiter, it
+                  // must yield without sampling/mutating either boundary.
+                  try await ledger.observeCurrentConnection(for: token)
+                  let beforeAdmission = await ledger.currentPreflightSnapshot()
+                  #expect(beforeAdmission.applicationPayloadCount == 0)
+                  #expect(beforeAdmission.latestObservedUptimeNanoseconds == 1_000 + 59 * second)
+
+                  try await ledger.recordApplicationUpdate(
+                      isNonEmpty: true,
+                      receipt: receipt,
+                      for: token
+                  )
+                  let accepted = await ledger.currentPreflightSnapshot()
+                  #expect(accepted.applicationPayloadCount == 1)
+                  #expect(accepted.latestApplicationPayloadUptimeNanoseconds == 1_000 + 59 * second)
+                  #expect(accepted.latestObservedUptimeNanoseconds == 1_000 + 59 * second)
+              }
+
+              @Test("ledger receipt uses the injected monotonic authority domain")
+              func ledgerReceiptSharesInjectedMonotonicClock() async throws {
+                  let clock = LedgerIssuedReceiptTestClock(50_000)
+                  let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+                  let token = try await ledger.beginConnection()
+                  try await ledger.markAuthenticationStarted(for: token)
+                  try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+
+                  clock.advance(to: 77_777)
+                  let receipt = ledger.captureApplicationReceipt(for: token)
+                  try await ledger.recordApplicationUpdate(
+                      isNonEmpty: true,
+                      receipt: receipt,
+                      for: token
+                  )
+
+                  let snapshot = await ledger.currentPreflightSnapshot()
+                  #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 77_777)
+                  #expect(snapshot.latestObservedUptimeNanoseconds == 77_777)
+              }
+
+              @Test("one ledger-issued delivery receipt cannot be replayed into readiness count")
+              func ledgerReceiptIsOneShot() async throws {
+                  let clock = LedgerIssuedReceiptTestClock(1_000)
+                  let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+                  let token = try await ledger.beginConnection()
+                  try await ledger.markAuthenticationStarted(for: token)
+                  try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+
+                  let receipt = ledger.captureApplicationReceipt(for: token)
+                  try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)
+                  await #expect(
+                      throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationDeliveryReceiptAlreadyConsumed
+                  ) {
+                      try await ledger.recordApplicationUpdate(isNonEmpty: true, receipt: receipt, for: token)
+                  }
+
+                  let snapshot = await ledger.currentPreflightSnapshot()
+                  #expect(snapshot.applicationPayloadCount == 1)
+              }
+
+              @Test("receipt from another exact ledger cannot cross issuer and token authority")
+              func crossLedgerReceiptIsRejected() async throws {
+                  let first = TuyaAuthenticatedReadOnlySessionLedger()
+                  let second = TuyaAuthenticatedReadOnlySessionLedger()
+                  let firstToken = try await first.beginConnection()
+                  let secondToken = try await second.beginConnection()
+                  try await second.markAuthenticationStarted(for: secondToken)
+                  try await second.markAuthenticated(for: secondToken, method: .smartLifeAppSDK)
+
+                  let foreignReceipt = first.captureApplicationReceipt(for: firstToken)
+                  await #expect(
+                      throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.invalidApplicationReceipt
+                  ) {
+                      try await second.recordApplicationUpdate(
+                          isNonEmpty: true,
+                          receipt: foreignReceipt,
+                          for: secondToken
+                      )
+                  }
+
+                  let snapshot = await second.currentPreflightSnapshot()
+                  #expect(snapshot.applicationPayloadCount == 0)
+              }
+
+              @Test("post-cut ledger-issued receipt remains terminally rejected")
+              func postCutLedgerReceiptCannotRescueIncompleteGeneration() async throws {
+                  let clock = LedgerIssuedReceiptTestClock(1_000)
+                  let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+                  let token = try await ledger.beginConnection()
+                  try await ledger.markAuthenticationStarted(for: token)
+                  try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+
+                  let second: UInt64 = 1_000_000_000
+                  var offset: UInt64 = 5 * second
+                  while offset <= 55 * second {
+                      clock.advance(to: 1_000 + offset)
+                      try await ledger.observeCurrentConnection(for: token)
+                      offset += 5 * second
+                  }
+                  clock.advance(to: 1_000 + 59 * second)
+                  try await ledger.observeCurrentConnection(for: token)
+                  clock.advance(
+                      to: 1_000
+                          + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds
+                          + 1
+                  )
+                  let lateReceipt = ledger.captureApplicationReceipt(for: token)
+
+                  await #expect(
+                      throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached
+                  ) {
+                      try await ledger.recordApplicationUpdate(
+                          isNonEmpty: true,
+                          receipt: lateReceipt,
+                          for: token
+                      )
+                  }
+
+                  let terminal = await ledger.currentPreflightSnapshot()
+                  #expect(terminal.applicationPayloadCount == 0)
+                  if case .failed = terminal.authenticationState {
+                  } else {
+                      Issue.record("Post-cut receipt must retire the incomplete generation.")
+                  }
+              }
+
+              @Test("receipt source has no public constructor or static mint surface")
+              func ledgerReceiptSurfaceIsOpaqueAndLedgerIssued() throws {
+                  let source = try readLedgerIssuedReceiptRepositoryFile(
+                      "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaAuthenticatedReadOnlySessionLedger.swift"
+                  )
+                  let receipt = try ledgerIssuedReceiptSection(
+                      in: source,
+                      from: "public struct TuyaReadOnlyApplicationReceipt",
+                      to: "public actor TuyaAuthenticatedReadOnlySessionLedger"
+                  )
+                  let record = try ledgerIssuedReceiptSection(
+                      in: source,
+                      from: "public func recordApplicationUpdate(",
+                      to: "public func observeCurrentConnection("
+                  )
+
+                  #expect(receipt.contains("fileprivate let token: TuyaReadOnlyConnectionToken"))
+                  #expect(receipt.contains("fileprivate let issuerID: UUID"))
+                  #expect(receipt.contains("fileprivate let deliveryID: UUID"))
+                  #expect(receipt.contains("fileprivate let receivedAtUptimeNanoseconds: UInt64"))
+                  #expect(!receipt.contains("public init("))
+                  #expect(!receipt.contains("public static func capture"))
+                  #expect(source.contains("public nonisolated func captureApplicationReceipt("))
+                  #expect(source.contains("consumedApplicationDeliveryIDs.insert(receipt.deliveryID).inserted"))
+                  #expect(record.contains("receipt.issuerID == applicationReceiptIssuerID"))
+                  #expect(record.contains("let now = receipt.receivedAtUptimeNanoseconds"))
+                  #expect(!record.contains("receivedAtUptimeNanoseconds: UInt64"))
+                  #expect(!record.contains("let now = try nextMonotonicObservation()"))
+              }
+          }
+
+          private final class LedgerIssuedReceiptTestClock: @unchecked Sendable {
+              private let lock = NSLock()
+              private var value: UInt64
+
+              init(_ value: UInt64) {
+                  self.value = value
+              }
+
+              var now: @Sendable () -> UInt64 {
+                  { [self] in
+                      lock.lock()
+                      defer { lock.unlock() }
+                      return value
+                  }
+              }
+
+              func advance(to newValue: UInt64) {
+                  lock.lock()
+                  value = newValue
+                  lock.unlock()
+              }
+          }
+
+          private func ledgerIssuedReceiptSection(in source: String, from start: String, to end: String) throws -> String {
+              guard let a = source.range(of: start),
+                    let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
+                  Issue.record("Expected ledger-issued receipt source section missing: \(start) ... \(end)")
+                  throw LedgerIssuedReceiptSourceError.sectionMissing
+              }
+              return String(source[a.lowerBound..<b.lowerBound])
+          }
+
+          private func readLedgerIssuedReceiptRepositoryFile(_ relativePath: String) throws -> String {
+              let root = URL(fileURLWithPath: #filePath)
+                  .deletingLastPathComponent()
+                  .deletingLastPathComponent()
+                  .deletingLastPathComponent()
+                  .deletingLastPathComponent()
+                  .deletingLastPathComponent()
+              return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+          }
+
+          private enum LedgerIssuedReceiptSourceError: Error {
+              case sectionMissing
+          }
+          SWIFT
+
+          rm "$WORKFLOW_PATH"
+
+      - name: Verify final package-only delta
+        run: |
+          set -euo pipefail
+          git diff --check
+          git add -A "$LEDGER_PATH" "$TEST_PATH" "$WORKFLOW_PATH"
+          git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort > "$RUNNER_TEMP/final-actual"
+          printf '%s\n' "$LEDGER_PATH" "$TEST_PATH" | LC_ALL=C sort > "$RUNNER_TEMP/final-expected"
+          diff -u "$RUNNER_TEMP/final-expected" "$RUNNER_TEMP/final-actual"
+          git diff --cached --check "$EXACT_PARENT"
+          grep -Fq 'fileprivate let issuerID: UUID' "$LEDGER_PATH"
+          grep -Fq 'fileprivate let deliveryID: UUID' "$LEDGER_PATH"
+          grep -Fq 'public nonisolated func captureApplicationReceipt' "$LEDGER_PATH"
+          grep -Fq 'consumedApplicationDeliveryIDs.insert(receipt.deliveryID).inserted' "$LEDGER_PATH"
+          grep -Fq 'livenessSampleIfUnblocked' "$LEDGER_PATH"
+          grep -Fq 'ledgerIssuedReceiptBlocksWatchdogOvertake' "$TEST_PATH"
+          grep -Fq 'ledgerReceiptIsOneShot' "$TEST_PATH"
+          grep -Fq 'postCutLedgerReceiptCannotRescueIncompleteGeneration' "$TEST_PATH"
+
+      - name: Commit product primitive and retire materializer
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-ledger-receipt-materializer'
+          git config user.email 'nembra-ledger-receipt-materializer@users.noreply.github.com'
+          git commit -m 'capture: make application delivery chronology ledger-issued and one-shot'
+          git push origin "HEAD:$BRANCH"
