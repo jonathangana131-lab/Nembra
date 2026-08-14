@@ -1,0 +1,115 @@
+name: Temporary V16 trusted bootstrap hosted-macOS hardening
+
+on:
+  push:
+    branches:
+      - repair/v16-apple-signing-trusted-bootstrap-hardening-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.event.head_commit.message == 'GO harden trusted bootstrap on hosted macOS'
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Reuse reviewed hardening transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          exact_parent='f8e10cf022191bc999c4b4dfefa3f29aa903cda5'
+          git cat-file -e "${exact_parent}^{commit}"
+          test "$(git merge-base "$exact_parent" HEAD)" = "$exact_parent"
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/tmp-v16-trusted-bootstrap-hardening.yml').read_text(encoding='utf-8')
+          start = source.index('      - name: Apply red-team hardening\n')
+          end = source.index('      - name: Execute hardened macOS witness\n', start)
+          chunk = source[start:end]
+          marker = '        run: |\n'
+          if chunk.count(marker) != 1:
+              raise SystemExit(f'patch run marker count: {chunk.count(marker)}')
+          body = chunk.split(marker, 1)[1]
+          lines = []
+          for line in body.splitlines():
+              if line.startswith('          '):
+                  line = line[10:]
+              elif line.strip() == '':
+                  line = ''
+              else:
+                  raise SystemExit(f'unexpected patch indentation: {line!r}')
+              if 'git rev-parse HEAD^' in line:
+                  continue
+              lines.append(line)
+          Path('/tmp/nembra-bootstrap-hardening-transform.sh').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+          bash /tmp/nembra-bootstrap-hardening-transform.sh
+          /usr/bin/python3 -B -I -c 'from pathlib import Path; source=Path("scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py").read_text(encoding="utf-8"); compile(source, "<trusted-bootstrap>", "exec", dont_inherit=True)'
+          git diff --check
+
+      - name: Execute hardened root-boundary witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/nembra-trusted-bootstrap-hardening.json"
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py --output "$evidence"
+          /usr/bin/python3 -B -I - "$evidence" <<'PY'
+          import json, sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          required = (
+              'genericNoninteractiveSudoDenied',
+              'digestPinnedLauncherAdmitted',
+              'attackerArgvRejectedByPolicy',
+              'numericPrincipalVacancyProven',
+              'numericPrincipalRetired',
+              'rootChildCallerOutputDenied',
+              'mutableWrapperArbitraryRootDenied',
+              'mutableWrapperCanOnlyReachNarrowLauncher',
+              'digestMismatchRejected',
+              'exactLauncherRestorationAdmitted',
+              'fieldLauncherMutationDenied',
+              'fieldLauncherReplacementDenied',
+          )
+          missing = [key for key in required if record.get(key) is not True]
+          if missing:
+              raise SystemExit(f'missing hardened invariants: {missing}')
+          if record.get('physicalAuthorityCreated') is not False:
+              raise SystemExit('validation created physical authority')
+          if record.get('signingIdentityQueried') is not False:
+              raise SystemExit('validation queried signing identity')
+          if record.get('xcodebuildExecuted') is not False:
+              raise SystemExit('validation executed xcodebuild')
+          if record.get('deviceOrBluetoothExecuted') is not False:
+              raise SystemExit('validation touched device/Bluetooth')
+          print('TRUSTED_BOOTSTRAP_HARDENING_GREEN validationOnly=true physicalAuthorityCreated=false')
+          PY
+
+      - name: Publish only permanent hardening bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v16-apple-signing-trusted-bootstrap-hardening-sol-20260814'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          rm .github/workflows/tmp-v16-trusted-bootstrap-hardening.yml
+          rm .github/workflows/tmp-v16-trusted-bootstrap-hardening-hosted.yml
+          git diff --check
+          git config user.name nembra-go-worker
+          git config user.email actions@users.noreply.github.com
+          git add .github/workflows/capture-apple-signing-preflight-redaction.yml \
+            scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py \
+            .github/workflows/tmp-v16-trusted-bootstrap-hardening.yml \
+            .github/workflows/tmp-v16-trusted-bootstrap-hardening-hosted.yml
+          git diff --cached --check
+          git commit -m 'Harden trusted Apple-signing bootstrap witness'
+          actual="$(git diff --name-only f8e10cf022191bc999c4b4dfefa3f29aa903cda5...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' .github/workflows/capture-apple-signing-preflight-redaction.yml scripts/ci/tests/test_capture_apple_signing_trusted_bootstrap_boundary.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git push origin HEAD:"$branch"
