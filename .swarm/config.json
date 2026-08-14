@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "kind": "swarm-config",
   "stateBranch": "swarm-state",
-  "rolloutMode": "shadow",
+  "rolloutMode": "enforcement",
   "wipLimits": {
-    "maxPrimaryLanes": 8,
-    "maxPrimaryPerEpic": 3,
-    "reviewBacklogThreshold": 5,
-    "integrationBacklogThreshold": 4
+    "maxPrimaryLanes": 6,
+    "maxPrimaryPerEpic": 2,
+    "reviewBacklogThreshold": 4,
+    "integrationBacklogThreshold": 3
   },
   "resourceOrder": [
     "PROJECT_STATE_WRITER",
@@ -30,11 +30,11 @@
     "enabled": true,
     "policyVersion": "16.1",
     "graphPath": ".swarm/runtime/v16/mission-graph.json",
-    "defaultWorkers": 30,
+    "defaultWorkers": 20,
     "roleTargets": {
-      "builder": 0.6,
-      "reviewer": 0.2,
-      "integrator": 0.2
+      "builder": 0.4,
+      "reviewer": 0.3,
+      "integrator": 0.3
     },
     "semanticDuplicateThreshold": 0.58,
     "solutionTournamentMaxCandidates": 2,
@@ -47,8 +47,8 @@
       "claimBeforeBranch": true,
       "joinBeforeSuccessor": true,
       "maxDistinctAttemptBranchesPerBlocker": 2,
-      "maxOpenNoncanonicalPRsPerLane": 6,
-      "lowProgressAttemptsBeforeFreeze": 3,
+      "maxOpenNoncanonicalPRsPerLane": 2,
+      "lowProgressAttemptsBeforeFreeze": 2,
       "automaticPRAdmission": true,
       "newSwarmPRProtocol": "16.1"
     },
@@ -58,5 +58,19 @@
       "simulatorEvidenceIsPhysicalEvidence": false,
       "commandsRequirePhysicalMapping": true
     }
+  },
+  "foundryV17": {
+    "enabled": true,
+    "policyVersion": "17.0",
+    "chatCapacityCeiling": 20,
+    "maxOpenProductPRs": 18,
+    "maxOpenBranches": 24,
+    "reviewBacklogSoftLimit": 4,
+    "integrationBacklogSoftLimit": 3,
+    "retirementWorkers": 4,
+    "verificationWorkers": 2,
+    "redMainEmergencyBuilders": 1,
+    "claimsRemainAuthoritative": true,
+    "activationDeletesBranches": false
   }
 }

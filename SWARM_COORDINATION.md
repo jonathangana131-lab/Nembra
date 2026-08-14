@@ -6,8 +6,9 @@ V14’s useful principles—avoid duplicate work, reassign instead of polling sc
 
 Current operational sources of truth:
 
-1. `docs/SWARM_CONTROL_PLANE.md` — canonical V16 architecture, mission graph, migration, safety, recovery, integration, and operator commands.
-2. `SWARM_GO.md` — canonical fresh-worker `Go` loop.
-3. Current GitHub product/CI truth and V16 structured state.
+1. `docs/SWARM_FOUNDRY_V17.md` — active repository congestion, adaptive admission, and recoverable retirement law.
+2. `docs/SWARM_CONTROL_PLANE.md` — canonical V16 architecture, mission graph, migration, safety, recovery, integration, and operator commands.
+3. `SWARM_GO.md` — canonical fresh-worker `Go` loop.
+4. Current GitHub product/CI truth and V16 structured state.
 
 Do not route new work using V14 flat feature-gravity lists or branch/lane heuristics. During migration, legacy lane state may still be read as historical/compatibility input, but V16 objectives, blocker ownership, canonical branch selection, duplicate suppression, and Merge Train state organize new work.

@@ -6,11 +6,13 @@ on:
       - '.swarm/config.json'
       - 'SWARM_GO.md'
       - 'docs/SWARM_V16_1_CONVERGENCE.md'
+      - 'docs/SWARM_FOUNDRY_V17.md'
       - 'scripts/swarmcp/**'
       - 'scripts/swarm_v16_1_pr_admission.py'
       - 'scripts/ci/tests/test_swarm_v16_mission_graph.py'
       - 'scripts/ci/tests/test_swarm_v16_1_convergence.py'
       - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
+      - 'scripts/ci/tests/test_swarm_foundry_v17.py'
       - '.github/workflows/swarm-v16-1-*.yml'
   push:
     branches:
@@ -19,11 +21,13 @@ on:
       - '.swarm/config.json'
       - 'SWARM_GO.md'
       - 'docs/SWARM_V16_1_CONVERGENCE.md'
+      - 'docs/SWARM_FOUNDRY_V17.md'
       - 'scripts/swarmcp/**'
       - 'scripts/swarm_v16_1_pr_admission.py'
       - 'scripts/ci/tests/test_swarm_v16_mission_graph.py'
       - 'scripts/ci/tests/test_swarm_v16_1_convergence.py'
       - 'scripts/ci/tests/test_swarm_v16_1_rollout.py'
+      - 'scripts/ci/tests/test_swarm_foundry_v17.py'
       - '.github/workflows/swarm-v16-1-*.yml'
   workflow_dispatch:
 
@@ -69,7 +73,8 @@ jobs:
             scripts/swarmcp/*.py \
             scripts/ci/tests/test_swarm_v16_mission_graph.py \
             scripts/ci/tests/test_swarm_v16_1_convergence.py \
-            scripts/ci/tests/test_swarm_v16_1_rollout.py
+            scripts/ci/tests/test_swarm_v16_1_rollout.py \
+            scripts/ci/tests/test_swarm_foundry_v17.py
 
       - name: Validate policy config
         shell: bash
@@ -86,8 +91,16 @@ jobs:
           assert c['oneBuilderBranchPerBlocker'] is True
           assert c['joinBeforeSuccessor'] is True
           assert c['maxDistinctAttemptBranchesPerBlocker']==2
-          assert c['lowProgressAttemptsBeforeFreeze']==3
+          assert c['lowProgressAttemptsBeforeFreeze']==2
           assert c['automaticPRAdmission'] is True
+          f=cfg['foundryV17']
+          assert f['enabled'] is True
+          assert f['policyVersion']=='17.0'
+          assert f['chatCapacityCeiling']==20
+          assert f['maxOpenProductPRs']==18
+          assert f['maxOpenBranches']==24
+          assert f['claimsRemainAuthoritative'] is True
+          assert f['activationDeletesBranches'] is False
           PY
 
       - name: Run retained V16 mission-graph suite
@@ -108,6 +121,10 @@ jobs:
           python3 scripts/ci/tests/test_swarm_v16_ops.py
           python3 scripts/ci/tests/test_swarm_v16_activation_scale.py
           python3 scripts/ci/tests/test_swarm_v16_live_refresh_workflow.py
+
+      - name: Run V17 congestion policy
+        shell: bash
+        run: python3 scripts/ci/tests/test_swarm_foundry_v17.py
 
       - name: Re-run both adversarial swarm simulations
         shell: bash
