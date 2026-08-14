@@ -55,6 +55,20 @@ final class RideUITests: XCTestCase {
             row.waitForExistence(timeout: 8),
             "The explicit QA auto-completion must flow through RideEngine, durable history commit, and the real Rides surface."
         )
+
+        let rowValue = row.value as? String ?? ""
+        XCTAssertTrue(
+            row.label.localizedCaseInsensitiveContains("Ride on"),
+            "A completed ride row must expose one concise Nembra-owned ride identity."
+        )
+        XCTAssertFalse(
+            rowValue.localizedCaseInsensitiveContains("Completed ride"),
+            "A normal completed ride must not repeat its identity inside the accessibility value."
+        )
+        XCTAssertFalse(
+            rowValue.localizedCaseInsensitiveContains("recovered after relaunch"),
+            "The uninterrupted QA ride must not claim recovered continuity."
+        )
         keepScreenshot(named: "Completed Ride History")
 
         row.tap()
@@ -80,6 +94,24 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(
             routeMap.waitForExistence(timeout: 3),
             "The explicit QA route fixture must pass through RideRouteRecorder, exact durable route storage, and MapKit presentation."
+        )
+        XCTAssertEqual(
+            routeMap.label,
+            "Recorded ride route",
+            "The persisted route visualization must expose the Nembra-owned route identity instead of relying on MapKit internals."
+        )
+        let routeSemantics = routeMap.value as? String ?? ""
+        XCTAssertTrue(
+            routeSemantics.localizedCaseInsensitiveContains("Route coverage partial"),
+            "This fixture starts route recording after ride activation, so accessibility must preserve partial-coverage truth."
+        )
+        XCTAssertTrue(
+            routeSemantics.localizedCaseInsensitiveContains("4 recorded points"),
+            "Route accessibility must report the four points actually persisted by the explicit QA fixture."
+        )
+        XCTAssertTrue(
+            routeSemantics.localizedCaseInsensitiveContains("no known route gaps recorded"),
+            "Partial coverage without an explicit internal segment gap must not invent a known route gap."
         )
         XCTAssertFalse(
             app.descendants(matching: .any)["rides.route-unavailable"].exists,
