@@ -159,6 +159,22 @@ class CaptureRootBrokerPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(broker.BrokerError, "byte count is invalid"):
             broker._decode_subject_payload(oversized, name=ENTRY)
 
+    def test_canonical_broker_contract_requires_root_regular_0555(self) -> None:
+        self.assertEqual(
+            str(broker.CANONICAL_BROKER_PATH),
+            "/Library/PrivilegedHelperTools/com.nembra.capture-root-broker",
+        )
+        valid = mock.Mock(st_mode=stat.S_IFREG | 0o555, st_uid=0, st_gid=0)
+        broker._validate_broker_stat(valid)
+        for bad in (
+            mock.Mock(st_mode=stat.S_IFREG | 0o755, st_uid=0, st_gid=0),
+            mock.Mock(st_mode=stat.S_IFREG | 0o555, st_uid=501, st_gid=0),
+            mock.Mock(st_mode=stat.S_IFREG | 0o555, st_uid=0, st_gid=20),
+            mock.Mock(st_mode=stat.S_IFLNK | 0o555, st_uid=0, st_gid=0),
+        ):
+            with self.assertRaises(broker.BrokerError):
+                broker._validate_broker_stat(bad)
+
     def test_policy_file_contract_requires_root_regular_0444(self) -> None:
         valid = mock.Mock(st_mode=stat.S_IFREG | 0o444, st_uid=0, st_gid=0)
         broker._validate_policy_stat(valid)
@@ -171,12 +187,12 @@ class CaptureRootBrokerPolicyTests(unittest.TestCase):
             with self.assertRaises(broker.BrokerError):
                 broker._validate_policy_stat(bad)
 
-    def test_policy_directory_contract_rejects_field_writable_ancestry(self) -> None:
+    def test_trusted_directory_contract_rejects_field_writable_ancestry(self) -> None:
         valid = mock.Mock(st_mode=stat.S_IFDIR | 0o755, st_uid=0, st_gid=0)
-        broker._validate_directory_stat(valid, "policy root")
+        broker._validate_directory_stat(valid, "trusted root")
         writable = mock.Mock(st_mode=stat.S_IFDIR | 0o775, st_uid=0, st_gid=0)
         with self.assertRaisesRegex(broker.BrokerError, "group/world writable"):
-            broker._validate_directory_stat(writable, "policy root")
+            broker._validate_directory_stat(writable, "trusted root")
 
     def test_argument_transport_rejects_nul_and_excess(self) -> None:
         self.assertEqual(broker._validate_subject_arguments(["--mode", "field"]), ["--mode", "field"])
@@ -228,9 +244,10 @@ class CaptureRootBrokerPolicyTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             approved[ENTRY] = b"attacker"  # type: ignore[index]
 
-    def test_source_requires_isolated_python_and_has_no_self_install_or_product_operation(self) -> None:
+    def test_source_requires_isolated_canonical_execution_and_no_self_install_or_product_operation(self) -> None:
         source = BROKER_PATH.read_text(encoding="utf-8")
         self.assertIn("sys.flags.isolated == 1", source)
+        self.assertIn("_validate_installed_broker()", source)
         self.assertIn("NEMBRA_APPROVED_ROOT_SUBJECTS", source)
         self.assertIn("set(encoded_subjects) == set(policy_subjects)", source)
         forbidden = (
