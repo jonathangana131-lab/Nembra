@@ -1,0 +1,27 @@
+name: Capture Export BLE State Red-Team
+
+on:
+  pull_request:
+    branches:
+      - capture/current-main-tuya-readonly-convergence-gpt56
+    paths:
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - Tools/capture_export_ble_state_truth_check.py
+      - .github/workflows/capture-export-ble-state-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify-export-currentness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove the exact V16.1 machine-readable ambiguity still exists
+        run: python3 Tools/capture_export_ble_state_truth_check.py
+      - name: Preserve physical boundary
+        run: |
+          echo 'Validation-only expected finding. This workflow is not physical acceptance.'
+          echo 'PHYSICAL NO-GO remains in force.'
