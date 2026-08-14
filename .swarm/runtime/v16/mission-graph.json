@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 287,
+    "classifiedPRTotal": 286,
     "classifiedPRs": {
+      "2711": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 2711,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.221,
+        "title": "[Capture P0][RED TEAM] Bind checkout root before trusting private writer path"
+      },
       "2719": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -2462,17 +2473,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.19,
         "title": "[Capture P0][VISUAL VALIDATION] Restore fail-closed standalone iPhone 12 evidence"
-      },
-      "3261": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3261,
-        "recommendedAction": "independent-review",
-        "similarity": 0.092,
-        "title": "Retire incomplete Tuya horizon authority atomically"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T00:08:35Z",
+    "liveRefreshAt": "2026-08-14T00:59:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3253
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 116,
+  "revision": 117,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T00:11:09Z",
+  "updatedAt": "2026-08-14T01:02:30Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T00:08:35Z",
+      "updatedAt": "2026-08-14T00:59:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
