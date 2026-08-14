@@ -62,6 +62,12 @@ private final class TuyaApplicationDeliveryArbiter: @unchecked Sendable {
         case invalidToken
     }
 
+    enum SealAdmissionResult {
+        case admitted
+        case applicationReceiptPending
+        case invalidToken
+    }
+
     let applicationReceiptIssuerID: UUID
     private let lock = NSLock()
     private let nowUptimeNanoseconds: @Sendable () -> UInt64
@@ -156,11 +162,21 @@ private final class TuyaApplicationDeliveryArbiter: @unchecked Sendable {
         return .sampled(now)
     }
 
-    func hasPendingApplicationReceipt(for token: TuyaReadOnlyConnectionToken) -> Bool {
+    /// Atomically admits the immutable acceptance cut. A seal can proceed only when no
+    /// application delivery is already pending, and successful admission simultaneously revokes
+    /// all future synchronous receipt issuance for this generation before any seal-time clock
+    /// sample occurs. This closes the check-then-retire race against nonisolated receipt minting.
+    func beginSeal(for token: TuyaReadOnlyConnectionToken) -> SealAdmissionResult {
         lock.lock()
         defer { lock.unlock() }
-        guard activeToken == token else { return false }
-        return !pendingApplicationDeliveries.isEmpty
+        guard activeToken == token else { return .invalidToken }
+        guard pendingApplicationDeliveries.isEmpty else {
+            return .applicationReceiptPending
+        }
+        activeToken = nil
+        pendingApplicationDeliveries.removeAll(keepingCapacity: false)
+        consumedApplicationDeliveryIDs.removeAll(keepingCapacity: false)
+        return .admitted
     }
 }
 
@@ -510,16 +526,25 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         for token: TuyaReadOnlyConnectionToken
     ) throws {
         try requireCurrent(token)
+
+        // Receipt authority closes atomically before sampling any later actor-time boundary. An
+        // already-delivered application callback therefore wins as pending, while a callback that
+        // occurs after this cut can no longer mint evidence for the immutable accepted prefix.
+        switch applicationDeliveryArbiter.beginSeal(for: token) {
+        case .admitted:
+            break
+        case .applicationReceiptPending:
+            throw MutationError.applicationReceiptPending
+        case .invalidToken:
+            throw MutationError.invalidApplicationReceipt
+        }
+
         let now = try nextMonotonicObservation()
         try requireContinuousAuthenticatedObservation(at: now)
         let snapshot = makeSnapshot()
         guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping else {
             throw MutationError.preflightNotReady
         }
-        guard !applicationDeliveryArbiter.hasPendingApplicationReceipt(for: token) else {
-            throw MutationError.applicationReceiptPending
-        }
-        applicationDeliveryArbiter.retire(for: token)
         currentToken = nil
     }
 

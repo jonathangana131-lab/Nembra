@@ -26,6 +26,8 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
         #expect(arbiter.contains("consumedApplicationDeliveryIDs.insert(receipt.deliveryID).inserted"))
         #expect(arbiter.contains("guard pendingApplicationDeliveries.isEmpty else"))
         #expect(arbiter.contains("return .applicationReceiptPending"))
+        #expect(arbiter.contains("func beginSeal(for token: TuyaReadOnlyConnectionToken) -> SealAdmissionResult"))
+        #expect(arbiter.contains("activeToken = nil"))
         #expect(arbiter.contains("let now = nowUptimeNanoseconds()"))
 
         #expect(ledger.contains("private nonisolated let nowUptimeNanoseconds: @Sendable () -> UInt64"))
@@ -71,13 +73,23 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             "public func markSourceAuthorityInvalidated(",
             "public func markObservationContinuityInvalidated(",
             "public func markApplicationObservationTimedOut(",
-            "public func sealAcceptedObservation(",
             "public func endConnection("
         ] {
             let section = String(try receiptArbitrationFunctionBody(in: ledger, startingAt: start))
             #expect(section.contains("applicationDeliveryArbiter.retire(for: token)"),
-                    Comment(rawValue: "Every explicit current-token terminal/seal must synchronously retire pending receipt authority: \(start)"))
+                    Comment(rawValue: "Every explicit current-token terminal must synchronously retire pending receipt authority: \(start)"))
         }
+
+        let seal = String(try receiptArbitrationFunctionBody(
+            in: ledger,
+            startingAt: "public func sealAcceptedObservation("
+        ))
+        let atomicCut = try receiptArbitrationRequired("applicationDeliveryArbiter.beginSeal(for: token)", in: seal)
+        let sealClock = try receiptArbitrationRequired("let now = try nextMonotonicObservation()", in: seal)
+        #expect(atomicCut < sealClock,
+                Comment(rawValue: "Acceptance must atomically reject pending delivery and close future receipt issuance before any later seal-time clock sample."))
+        #expect(seal.contains("case .applicationReceiptPending"))
+        #expect(seal.contains("throw MutationError.applicationReceiptPending"))
 
         let incomplete = String(try receiptArbitrationSection(
             in: ledger,
@@ -91,6 +103,35 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
             startingAt: "private func requireContinuousAuthenticatedObservation"
         ))
         #expect(continuity.contains("applicationDeliveryArbiter.retire(for: currentToken)"))
+    }
+
+
+    @Test("seal refuses a pending delivered callback before sampling later actor time")
+    func pendingDeliveryWinsAtomicSealCut() async throws {
+        let clock = SealCutTestClock(1_000)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let token = try await ledger.beginConnection()
+        clock.advance(to: 1_500)
+        try await ledger.markAuthenticationStarted(for: token)
+        clock.advance(to: 2_000)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+
+        // This receipt is delivered well inside continuity. Actor seal execution is then delayed
+        // beyond the continuity gap. Correct arbitration returns pending without sampling that late
+        // clock or retiring the exact generation first.
+        clock.advance(to: 3_000)
+        let pending = try #require(ledger.captureApplicationDelivery(for: token))
+        clock.advance(to: 20_000_000_000)
+
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationReceiptPending) {
+            try await ledger.sealAcceptedObservation(for: token)
+        }
+
+        // The generation and one-shot receipt remain usable after the refused seal attempt.
+        try await ledger.recordApplicationUpdate(delivery: pending, for: token)
+        let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.applicationPayloadCount == 1)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 3_000)
     }
 
     private func receiptArbitrationFunctionBody(in source: String, startingAt start: String) throws -> Substring {
@@ -148,5 +189,25 @@ extension TuyaApplicationTimeoutPresentationRaceSourceTests {
     private enum ReceiptArbitrationSourceError: Error {
         case sectionMissing
         case requiredTokenMissing
+    }
+}
+
+
+private final class SealCutTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64
+
+    init(_ value: UInt64) { self.value = value }
+
+    func now() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func advance(to newValue: UInt64) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
     }
 }
