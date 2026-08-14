@@ -2350,7 +2350,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3233,
         "recommendedAction": "independent-review",
-        "similarity": 0.1,
+        "similarity": 0.178,
         "title": "Converge strict Tuya read-only physical preflight onto V16"
       },
       "3253": {
@@ -2383,7 +2383,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3265,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.436,
+        "similarity": 0.39,
         "title": "[Capture P0][VISUAL] Harden standalone iPhone 12 evidence instrument"
       },
       "3268": {
@@ -2408,17 +2408,6 @@
         "similarity": 0.09,
         "title": "[Swarm V16.2] Convert burst output into canonical integration"
       },
-      "3271": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-accessibility-visual-truth",
-        "pr": 3271,
-        "recommendedAction": "independent-review",
-        "similarity": 0.133,
-        "title": "[Capture P0][AX] Re-anchor lock-banner hierarchy regression on e295"
-      },
       "3272": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -2427,8 +2416,19 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3272,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.434,
-        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current 8399b81"
+        "similarity": 0.414,
+        "title": "[Capture P0][VISUAL] Re-anchor standalone evidence on current bc0cfb0"
+      },
+      "3274": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3274,
+        "recommendedAction": "independent-review",
+        "similarity": 0.181,
+        "title": "[Capture P0][INTEGRATE] Close schema v11 provenance contract coverage"
       },
       "3275": {
         "classification": "validation",
@@ -2440,17 +2440,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.33,
         "title": "[Capture P0][RED TEAM] Reject partial bootstrap principal residue"
-      },
-      "3276": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-schema11-correlation-export-oracle",
-        "pr": 3276,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.137,
-        "title": "[Capture P0][VALIDATION] Gate schema-11 correlation export oracle"
       },
       "3278": {
         "classification": "validation",
@@ -2468,11 +2457,22 @@
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-horizon-post-await-presentation-owner-regression",
+        "lane": "capture-terminal-post-await-presentation-owner-regression",
         "pr": 3280,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.137,
+        "similarity": 0.151,
         "title": "[Capture P0][EXPECTED-RED] Preserve horizon mirror presentation owner"
+      },
+      "3283": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-smartlife-application-source-attribution",
+        "pr": 3283,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.121,
+        "title": "[Capture P0][EXPECTED-RED] Require exact SmartLife callback source attribution"
       }
     },
     "classifiedPRsTruncated": true,
@@ -2505,7 +2505,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T08:34:28Z",
+    "liveRefreshAt": "2026-08-14T08:38:32Z",
     "liveRefreshDuplicatesSuppressed": [
       3278
     ],
@@ -6290,10 +6290,10 @@
       "userValue": 7
     }
   },
-  "revision": 151,
+  "revision": 152,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T08:37:11Z",
+  "updatedAt": "2026-08-14T08:40:04Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -6369,7 +6369,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T08:34:28Z",
+      "updatedAt": "2026-08-14T08:38:32Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
