@@ -299,13 +299,11 @@ private struct DashboardEnergyRailVisualState: Equatable {
     let currentness: DashboardEnergyRailCurrentness
     let acceptedWatts: Double?
     let railFraction: Double?
-    let peakMarkerFraction: Double?
 
     static let unavailable = DashboardEnergyRailVisualState(
         currentness: .unavailable,
         acceptedWatts: nil,
-        railFraction: nil,
-        peakMarkerFraction: nil
+        railFraction: nil
     )
 }
 
@@ -324,6 +322,9 @@ private final class DashboardEnergyRailModel {
     private enum Timing {
         static let riseNanoseconds: UInt64 = 220_000_000
         static let fallNanoseconds: UInt64 = 150_000_000
+        // NembraCore still owns accepted-peak bookkeeping internally. The first
+        // app-visible Energy Rail deliberately does not render a peak marker, so
+        // the Dashboard never mirrors or reschedules that optional peak authority.
         static let peakHoldNanoseconds: UInt64 = 2_000_000_000
         static let freshnessNanoseconds: UInt64 = 30_000_000_000
     }
@@ -344,7 +345,6 @@ private final class DashboardEnergyRailModel {
     @ObservationIgnored private var acceptedReceipt: Receipt?
     @ObservationIgnored private var rejectedCurrentReceipt = false
     @ObservationIgnored private var animationEndTask: Task<Void, Never>?
-    @ObservationIgnored private var peakExpiryTask: Task<Void, Never>?
     @ObservationIgnored private var freshnessTask: Task<Void, Never>?
 
     init() {
@@ -353,7 +353,6 @@ private final class DashboardEnergyRailModel {
 
     deinit {
         animationEndTask?.cancel()
-        peakExpiryTask?.cancel()
         freshnessTask?.cancel()
     }
 
@@ -457,8 +456,7 @@ private final class DashboardEnergyRailModel {
             return DashboardEnergyRailVisualState(
                 currentness: .retained,
                 acceptedWatts: accepted.watts,
-                railFraction: nil,
-                peakMarkerFraction: nil
+                railFraction: nil
             )
         }
 
@@ -483,8 +481,7 @@ private final class DashboardEnergyRailModel {
             return DashboardEnergyRailVisualState(
                 currentness: .retained,
                 acceptedWatts: accepted.watts,
-                railFraction: nil,
-                peakMarkerFraction: nil
+                railFraction: nil
             )
 
         case .live:
@@ -499,9 +496,6 @@ private final class DashboardEnergyRailModel {
             let railFraction = prefersReducedMotion
                 ? acceptedTargetFraction(accepted.watts, ceilingWatts: scale.ceilingWatts)
                 : sanitizedFraction(snapshot.visualPropulsionFraction)
-            let peakMarker = prefersReducedMotion
-                ? nil
-                : sanitizedFraction(snapshot.recentAcceptedPeakMarkerFraction)
 
             if railFraction != nil, snapshot.scaleOrigin != .simulator {
                 return .unavailable
@@ -510,8 +504,7 @@ private final class DashboardEnergyRailModel {
             return DashboardEnergyRailVisualState(
                 currentness: .live,
                 acceptedWatts: accepted.watts,
-                railFraction: railFraction,
-                peakMarkerFraction: railFraction == nil ? nil : peakMarker
+                railFraction: railFraction
             )
         }
     }
@@ -629,16 +622,6 @@ private final class DashboardEnergyRailModel {
 
         if let delay = delayFromReceipt(
             receipt,
-            offsetNanoseconds: Timing.peakHoldNanoseconds
-        ) {
-            peakExpiryTask = scheduleWake(afterNanoseconds: delay) { model in
-                model.peakExpiryTask = nil
-                model.revision &+= 1
-            }
-        }
-
-        if let delay = delayFromReceipt(
-            receipt,
             offsetNanoseconds: Timing.freshnessNanoseconds
         ) {
             freshnessTask = scheduleWake(afterNanoseconds: delay) { model in
@@ -680,10 +663,8 @@ private final class DashboardEnergyRailModel {
 
     private func cancelScheduledWakes() {
         animationEndTask?.cancel()
-        peakExpiryTask?.cancel()
         freshnessTask?.cancel()
         animationEndTask = nil
-        peakExpiryTask = nil
         freshnessTask = nil
         shouldTick = false
     }
@@ -773,7 +754,6 @@ private struct DashboardRollingPowerValueView: View {
 }
 
 private struct DashboardEnergyRailView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -796,7 +776,7 @@ private struct DashboardEnergyRailView: View {
     }
 
     private var railLayer: some View {
-        GeometryReader { proxy in
+        GeometryReader { _ in
             ZStack {
                 DashboardEnergyRailArc()
                     .stroke(
@@ -826,14 +806,6 @@ private struct DashboardEnergyRailView: View {
                                 lineCap: .round
                             )
                         )
-
-                    if !reduceMotion,
-                       let peakMarkerFraction = state.peakMarkerFraction {
-                        peakMarker(
-                            at: CGFloat(peakMarkerFraction),
-                            in: proxy.size
-                        )
-                    }
                 }
             }
         }
@@ -899,22 +871,6 @@ private struct DashboardEnergyRailView: View {
             guard let watts = state.acceptedWatts else { return "Unavailable" }
             return "\(Int(watts.rounded())) watts"
         }
-    }
-
-    @ViewBuilder
-    private func peakMarker(at fraction: CGFloat, in size: CGSize) -> some View {
-        let inverse = 1 - fraction
-        let baseline = size.height * 0.88
-        let controlY = size.height * 0.16
-        let y = inverse * inverse * baseline
-            + 2 * inverse * fraction * controlY
-            + fraction * fraction * baseline
-
-        Capsule(style: .continuous)
-            .fill(Color.primary)
-            .frame(width: 2, height: colorSchemeContrast == .increased ? 13 : 10)
-            .position(x: size.width * fraction, y: y)
-            .accessibilityHidden(true)
     }
 }
 
