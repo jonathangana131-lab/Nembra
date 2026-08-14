@@ -1440,8 +1440,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     uuid: self.tuyaUUID,
                     productID: self.productID,
                     onApplicationUpdate: { [weak self] update in
+                        self?.admitApplicationUpdateCallback(update, token: token)
+                    },
+                    sourceAuthorityFailure: { [weak self] in
                         Task { @MainActor in
-                            await self?.receivedApplicationUpdate(update, token: token)
+                            guard let self else { return }
+                            await self.invalidateSourceAuthority(
+                                token: token,
+                                message: "SmartLife application callback source no longer matched the selected scooter. The generation was retired without admitting that payload.",
+                                kind: "sdk_application_callback_source_mismatch"
+                            )
                         }
                     },
                     success: { [weak self] in
@@ -1678,8 +1686,63 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
+    private func admitApplicationUpdateCallback(
+        _ update: [String: String],
+        token: TuyaReadOnlyConnectionToken
+    ) {
+        guard !update.isEmpty else { return }
+        guard currentConnectionToken == token else {
+            log("stale_application_update_ignored", ["generation": String(token.diagnosticGeneration)])
+            return
+        }
+        guard phase == .observing else {
+            log("application_update_outside_observation_ignored", [
+                "generation": String(token.diagnosticGeneration),
+                "phase": phase.rawValue
+            ])
+            return
+        }
+        guard !acceptanceCutIsClosed else {
+            log("application_update_after_acceptance_cut_ignored", [
+                "generation": String(token.diagnosticGeneration)
+            ])
+            return
+        }
+        guard sdkAccountLoggedIn,
+              sdkDeviceMembershipVerified,
+              accountIdentityLeaseIsAuthorized,
+              let driver else {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.invalidateSourceAuthority(
+                    token: token,
+                    message: "SDK account/device source authority changed before callback receipt admission.",
+                    kind: "sdk_source_authority_changed_before_callback_receipt"
+                )
+            }
+            return
+        }
+        guard driver.isLocallyConnected(uuid: tuyaUUID) else {
+            Task { @MainActor [weak self] in
+                await self?.recordObservedTransportLoss(token: token)
+            }
+            return
+        }
+        guard let applicationReceipt = sessionLedger.captureApplicationReceipt(for: token) else {
+            log("application_receipt_authority_unavailable", ["generation": String(token.diagnosticGeneration)])
+            return
+        }
+
+        applicationUpdateAdmissionsInFlight += 1
+        Task { @MainActor [self] in
+            defer { applicationUpdateAdmissionsInFlight -= 1 }
+            await receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)
+        }
+    }
+
     private func receivedApplicationUpdate(
         _ update: [String: String],
+        receipt: TuyaReadOnlyApplicationReceipt,
         token: TuyaReadOnlyConnectionToken
     ) async {
         guard !update.isEmpty else { return }
@@ -1716,9 +1779,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        applicationUpdateAdmissionsInFlight += 1
-        defer { applicationUpdateAdmissionsInFlight -= 1 }
-
         // Snapshot the exact account identity while the admission checks above are still
         // synchronously true. The actor hops below may interleave foreground/account teardown;
         // export custody must never re-read mutable membership state after that suspension.
@@ -1734,7 +1794,18 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)
 
         do {
-            try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
+            var applicationReceiptRecorded = false
+            while !applicationReceiptRecorded {
+                do {
+                    try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, receipt: receipt, for: token)
+                    applicationReceiptRecorded = true
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationReceiptOrderPending {
+                    guard currentConnectionToken == token,
+                          phase == .observing,
+                          !acceptanceCutIsClosed else { return }
+                    await Task.yield()
+                }
+            }
             await refreshLedgerSnapshot()
 
             // The ledger hops above may interleave account/view lifecycle changes. Revalidate
@@ -1876,9 +1947,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     return
                 }
 
+                if self.applicationUpdateAdmissionsInFlight > 0 {
+                    try? await Task.sleep(for: .milliseconds(25))
+                    continue
+                }
+                guard self.applicationUpdateAdmissionsInFlight == 0 else {
+                    await self.invalidateInternalLifecycle(
+                        token: token,
+                        message: "Application callback admission drain became internally inconsistent.",
+                        kind: "application_admission_drain_invalid"
+                    )
+                    return
+                }
+
                 do {
                     try await self.sessionLedger.observeCurrentConnection(for: token)
                     await self.refreshLedgerSnapshot()
+                } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.applicationReceiptPending {
+                    try? await Task.sleep(for: .milliseconds(25))
+                    continue
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
                     await self.invalidateInternalLifecycle(
                         token: token,
@@ -2387,7 +2474,8 @@ private protocol OfficialTuyaDriver: AnyObject {
         deviceID: String,
         uuid: String,
         productID: String,
-        onApplicationUpdate: @escaping ([String: String]) -> Void,
+        onApplicationUpdate: @MainActor @escaping ([String: String]) -> Void,
+        sourceAuthorityFailure: @escaping () -> Void,
         success: @escaping () -> Void,
         failure: @escaping () -> Void
     )
@@ -2594,13 +2682,16 @@ private final class OfficialTuyaMembershipProbe {
 @MainActor
 private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDeviceDelegate {
     private var device: ThingSmartDevice?
-    private var onApplicationUpdate: (([String: String]) -> Void)?
+    private var expectedDeviceID: String?
+    private var onApplicationUpdate: (@MainActor ([String: String]) -> Void)?
+    private var onSourceAuthorityFailure: (() -> Void)?
 
     func connect(
         deviceID: String,
         uuid: String,
         productID: String,
-        onApplicationUpdate: @escaping ([String: String]) -> Void,
+        onApplicationUpdate: @MainActor @escaping ([String: String]) -> Void,
+        sourceAuthorityFailure: @escaping () -> Void,
         success: @escaping () -> Void,
         failure: @escaping () -> Void
     ) {
@@ -2608,7 +2699,9 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
             failure()
             return
         }
+        expectedDeviceID = deviceID
         self.onApplicationUpdate = onApplicationUpdate
+        onSourceAuthorityFailure = sourceAuthorityFailure
         device = ThingSmartDevice(deviceId: deviceID)
         device?.delegate = self
         ThingSmartBLEManager.sharedInstance().connectBLE(
@@ -2624,6 +2717,15 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
     }
 
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
+        guard let callbackDeviceID = device?.deviceModel.devId,
+              callbackDeviceID == expectedDeviceID else {
+            onApplicationUpdate = nil
+            self.device?.delegate = nil
+            onSourceAuthorityFailure?()
+            onSourceAuthorityFailure = nil
+            expectedDeviceID = nil
+            return
+        }
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
         for (key, value) in Self.sortedApplicationEntries(dps) {

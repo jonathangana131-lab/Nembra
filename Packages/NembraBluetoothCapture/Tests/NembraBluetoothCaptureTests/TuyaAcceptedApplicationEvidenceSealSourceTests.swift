@@ -53,7 +53,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
               let increment = body.range(of: "applicationUpdateAdmissionsInFlight += 1", range: cutGuard.upperBound..<body.endIndex),
               let task = body.range(of: "Task { @MainActor", range: increment.upperBound..<body.endIndex),
               let decrement = body.range(of: "applicationUpdateAdmissionsInFlight -= 1", range: task.upperBound..<body.endIndex),
-              let receiver = body.range(of: "receivedApplicationUpdate(update, token: token)", range: task.upperBound..<body.endIndex) else {
+              let receiver = body.range(of: "receivedApplicationUpdate(update, receipt: applicationReceipt, token: token)", range: task.upperBound..<body.endIndex) else {
             Issue.record("Application callback admission must synchronously own the drain before scheduling its asynchronous package mutation.")
             throw SourceContractError.sectionMissing
         }
