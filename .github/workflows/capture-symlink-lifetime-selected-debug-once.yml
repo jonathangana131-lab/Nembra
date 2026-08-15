@@ -1,0 +1,37 @@
+name: Capture Symlink Lifetime Selected Debug Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-read-lease-symlink-lifetime-sol-20260815
+    paths:
+      - .github/workflows/capture-symlink-lifetime-selected-debug-once.yml
+
+permissions:
+  contents: read
+
+env:
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  selected-detail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Surface selected-Xcode regression detail
+        shell: bash
+        run: |
+          set +e
+          output="$(/usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py 2>&1)"
+          status=$?
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            detail="$(printf '%s\n' "$output" | tail -n 24 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')"
+            echo "::error title=Selected-Xcode regression detail::$detail"
+            exit "$status"
+          fi
