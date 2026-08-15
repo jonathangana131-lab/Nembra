@@ -1294,7 +1294,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3351,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.355,
+        "similarity": 0.354,
         "title": "[Capture P0][RED TEAM] Re-anchor tracked-source compiler-window oracle to c8ccf"
       },
       "3352": {
@@ -1339,7 +1339,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:16:41Z",
+    "liveRefreshAt": "2026-08-15T00:16:59Z",
     "liveRefreshDuplicatesSuppressed": [
       3351
     ],
@@ -5124,10 +5124,10 @@
       "userValue": 7
     }
   },
-  "revision": 382,
+  "revision": 383,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:16:41Z",
+  "updatedAt": "2026-08-15T00:17:00Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5203,7 +5203,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:16:41Z",
+      "updatedAt": "2026-08-15T00:16:59Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
