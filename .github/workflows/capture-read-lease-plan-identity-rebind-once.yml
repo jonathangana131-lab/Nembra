@@ -1,0 +1,96 @@
+name: Capture Read Lease Plan Identity Rebind Once
+
+on:
+  push:
+    branches:
+      - hardening/v17-capture-read-lease-real-directory-continuity-sol-20260814
+    paths:
+      - .github/workflows/capture-read-lease-plan-identity-rebind-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-read-lease-plan-identity-rebind-once-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AUTHORING_PARENT: 1b31d21eb285cd654c7c7dbd3e5c5276eb0945aa
+  PRODUCT_PARENT: 092e109853eeb6cb3ade6c7a9d401c0f55598d99
+  MATERIALIZER: .github/workflows/capture-read-lease-plan-identity-materialize.yml
+  SELF: .github/workflows/capture-read-lease-plan-identity-rebind-once.yml
+  BRANCH: hardening/v17-capture-read-lease-real-directory-continuity-sol-20260814
+
+jobs:
+  rebind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind stale authoring state and latest product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git merge-base HEAD "$AUTHORING_PARENT")" = "$AUTHORING_PARENT"
+          changed="$(git diff --name-only "$AUTHORING_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$MATERIALIZER" "$SELF" | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git cat-file -e "$PRODUCT_PARENT^{commit}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Patch materializer anchors for current component-walk source
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          materializer = Path('.github/workflows/capture-read-lease-plan-identity-materialize.yml')
+          text = materializer.read_text(encoding='utf-8')
+          old_parent = 'EXACT_PARENT: 1b31d21eb285cd654c7c7dbd3e5c5276eb0945aa'
+          new_parent = 'EXACT_PARENT: 092e109853eeb6cb3ade6c7a9d401c0f55598d99'
+          if text.count(old_parent) != 1:
+              raise SystemExit('could not bind stale exact parent in materializer')
+          text = text.replace(old_parent, new_parent, 1)
+
+          old_marker = "          marker = '    _require_real_directory(repo, \"repository root\")\\n'\n"
+          new_marker = "          marker = '    _require_real_directory(repo, \"repository root\")\\n    if not subjects:\\n'\n"
+          if text.count(old_marker) != 1:
+              raise SystemExit('could not bind repository-root marker declaration')
+          text = text.replace(old_marker, new_marker, 1)
+
+          old_replacement = "              '    _record_planned_identity(identities, repo, repo_metadata)\\n',\n"
+          new_replacement = (
+              "              '    _record_planned_identity(identities, repo, repo_metadata)\\n'\n"
+              "              '    if not subjects:\\n',\n"
+          )
+          if text.count(old_replacement) != 1:
+              raise SystemExit('could not bind repository-root replacement declaration')
+          text = text.replace(old_replacement, new_replacement, 1)
+          materializer.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Rebase authoring materializer onto exact live component-walk head
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$MATERIALIZER" /tmp/capture-read-lease-plan-identity-materialize.yml
+          git checkout --detach "$PRODUCT_PARENT"
+          mkdir -p "$(dirname "$MATERIALIZER")"
+          cp /tmp/capture-read-lease-plan-identity-materialize.yml "$MATERIALIZER"
+          git add "$MATERIALIZER"
+          actual="$(git diff --cached --name-only)"
+          test "$actual" = "$MATERIALIZER"
+          git diff --cached --check
+          git config user.name 'nembra-swarm-plan-identity'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'ci(capture): rebind plan identity materializer to component-walk head'
+          git push --force-with-lease="refs/heads/$BRANCH:$GITHUB_SHA" origin "HEAD:refs/heads/$BRANCH"
