@@ -58,12 +58,12 @@ jobs:
           payload_lines = lines[start:end]
           payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in payload_lines) + '\n'
 
-          # The reviewed one-shot is stored inside a YAML block scalar. When its Python
-          # payload is extracted here, the block's ten-space YAML indentation has
-          # already been removed. The six template literals still carry a historical
-          # second indentation scrub that would corrupt nested Python indentation and
-          # make their exact source anchors impossible to match. Remove only those six
-          # known template-scrub suffixes before executing the otherwise reviewed bytes.
+          # The reviewed one-shot lives inside a YAML block scalar. Extraction above
+          # already removes that scalar's ten-space indentation. Inner template
+          # normalizers were authored for direct execution of the YAML payload and
+          # would therefore strip indentation a second time here. Neutralize only the
+          # exact reviewed normalizers; all generated code/workflow bytes otherwise
+          # remain the reviewed payload.
           template_scrub = '.replace("          ", "")'
           scrub_count = payload.count(template_scrub)
           if scrub_count != 6:
@@ -71,6 +71,15 @@ jobs:
                   f'reviewed materializer template-scrub count drifted: expected 6, found {scrub_count}'
               )
           payload = payload.replace(template_scrub, '')
+
+          regression_scrub = 'regression = "\\n".join(line[10:] if line.startswith("          ") else line for line in regression.splitlines()) + "\\n"'
+          workflow_scrub = 'permanent_workflow = "\\n".join(line[10:] if line.startswith("          ") else line for line in permanent_workflow.splitlines()) + "\\n"'
+          if payload.count(regression_scrub) != 1:
+              raise SystemExit('reviewed regression indentation normalizer drifted')
+          if payload.count(workflow_scrub) != 1:
+              raise SystemExit('reviewed workflow indentation normalizer drifted')
+          payload = payload.replace(regression_scrub, 'regression = regression', 1)
+          payload = payload.replace(workflow_scrub, 'permanent_workflow = permanent_workflow', 1)
 
           compile(payload, '<reviewed-shared-ancestor-materializer>', 'exec', dont_inherit=True)
           namespace = {'__name__': '__main__'}
