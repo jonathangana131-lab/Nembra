@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 41,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1429,17 +1429,6 @@
         "similarity": 0.335,
         "title": "[Capture P0][REPAIR] Hold shared generated selector ancestors"
       },
-      "3424": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3424,
-        "recommendedAction": "independent-review",
-        "similarity": 0.125,
-        "title": "[Battery/Range V15] Restore accepted authority and visual contracts on main"
-      },
       "3428": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1514,7 +1503,7 @@
         "lane": "",
         "pr": 3441,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.126,
+        "similarity": 0.076,
         "title": "[Battery/Range V15][QA] Re-prove current-main real surface"
       }
     },
@@ -1548,11 +1537,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T12:05:04Z",
+    "liveRefreshAt": "2026-08-15T13:05:03Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
-    "liveRefreshMainSHA": "b08f52c8aac7cbf753c3aaac55147303697ac32a",
+    "liveRefreshMainSHA": "fb0b755629e10cc72d9501a587625326b3d67f78",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -5333,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 646,
+  "revision": 647,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T12:05:06Z",
+  "updatedAt": "2026-08-15T13:05:04Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5412,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T12:05:04Z",
+      "updatedAt": "2026-08-15T13:05:03Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
