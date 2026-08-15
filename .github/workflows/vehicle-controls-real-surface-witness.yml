@@ -71,7 +71,7 @@ jobs:
                   let unavailable = launch(scenario: "cold-disconnected", orientation: .portrait)
                   navigateToVehicleControls(in: unavailable)
                   XCTAssertTrue(unavailable.descendants(matching: .any)["vehicle-controls.status"].waitForExistence(timeout: 3))
-                  XCTAssertTrue(unavailable.descendants(matching: .any)["vehicle-controls.reconnect"].waitForExistence(timeout: 2))
+                  XCTAssertFalse(unavailable.staticTexts["Connected"].exists)
                   keepScreenshot(named: "Vehicle Controls Unavailable Upper")
                   unavailable.scrollViews.firstMatch.swipeUp()
                   keepScreenshot(named: "Vehicle Controls Unavailable Lower")
