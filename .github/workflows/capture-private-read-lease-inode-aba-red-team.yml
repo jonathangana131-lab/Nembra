@@ -31,7 +31,7 @@ jobs:
           actual="$RUNNER_TEMP/actual"
           cat > "$expected" <<'EOF'
           .github/workflows/capture-private-read-lease-inode-aba-red-team.yml
-          scripts/ci/tests/test_capture_private_read_lease_inode_aba_red-team.py
+          scripts/ci/tests/test_capture_private_read_lease_inode_aba_red_team.py
           EOF
           git diff --name-only "$PARENT"...HEAD | LC_ALL=C sort > "$actual"
           diff -u "$expected" "$actual"
