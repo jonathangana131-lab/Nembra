@@ -1,0 +1,120 @@
+name: Capture Final Authority Exact Head
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - Scripts/capture_tuya_private_input_provenance.py
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/capture_signed_app_build_origin_custody.py
+      - scripts/ci/capture_signed_app_install_custody.py
+      - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+      - scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+      - scripts/ci/tests/test_capture_private_read_lease_rollback.py
+      - scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+      - scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+      - scripts/ci/tests/test_capture_private_provenance_export_custody.py
+      - Packages/NembraBluetoothCapture/**
+      - .github/workflows/capture-final-authority-exact-head.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  final-authority:
+    name: Prove final Capture authority on exact head
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind acceptance to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact final Capture authority source: %s\n' "$actual"
+          printf 'NEMBRA_FINAL_AUTHORITY_SOURCE_SHA=%s\n' "$actual" >> "$GITHUB_ENV"
+
+      - name: Run converged authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-final-authority-pycache"
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_provenance.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_frozen_device_tool_handoff.py \
+            scripts/ci/tests/test_capture_private_provenance_preacceptance.py \
+            scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+
+      - name: Run complete Capture package acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Build exact-head stamped standalone Simulator product
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="${NEMBRA_FINAL_AUTHORITY_SOURCE_SHA:?exact source not bound}"
+          lock_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          private_sha='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${sha:0:12}"
+          derived="$RUNNER_TEMP/NembraFinalAuthorityDerived"
+          rm -rf "$derived"
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$lock_sha" \
+            NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256="$private_sha" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
+            build
+
+          plist="$derived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist"
+          test -f "$plist"
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          test "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$lock_sha"
+          test "$(plutil -extract NembraCaptureTuyaPrivateInputProvenanceSHA256 raw -o - "$plist")" = "$private_sha"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
