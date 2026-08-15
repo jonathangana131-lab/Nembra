@@ -1,0 +1,238 @@
+name: Capture Private Read Lease Converge Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-private-read-lease-guard-compose-sol-20260814
+    paths:
+      - .github/workflows/capture-private-read-lease-converge-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind one-shot convergence input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "4da6534f9fde9aa84d6ffb16d0301cd69c375760"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-private-read-lease-converge-once.yml"
+
+      - name: Compose fail-closed rollback and exact private subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              source = path.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one exact patch anchor, found {count}")
+              path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          selected = Path("scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py")
+          rollback = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py")
+
+          old_grant = (
+              "                # Record ownership before mutation so every partial grant is reversible.\n"
+              "                self._opened.append(record)\n"
+              "                _chmod_acl(descriptor, \"+a\", acl)\n"
+              "                record[\"added\"] = True\n"
+              "                after = _acl_listing(descriptor)\n"
+          )
+          new_grant = (
+              "                # Record ownership before mutation so every partial grant is reversible.\n"
+              "                self._opened.append(record)\n"
+              "                try:\n"
+              "                    _chmod_acl(descriptor, \"+a\", acl)\n"
+              "                except Exception:\n"
+              "                    # A command-level failure does not prove the kernel left the ACL\n"
+              "                    # unchanged. Classify the pinned vnode before releasing custody.\n"
+              "                    # Changed or unclassifiable state is treated as possibly added so\n"
+              "                    # exact rollback must attempt removal and surface cleanup failure.\n"
+              "                    try:\n"
+              "                        after_failed = _acl_listing(descriptor)\n"
+              "                    except Exception:\n"
+              "                        record[\"added\"] = True\n"
+              "                    else:\n"
+              "                        record[\"added\"] = after_failed != before\n"
+              "                    raise\n"
+              "                record[\"added\"] = True\n"
+              "                after = _acl_listing(descriptor)\n"
+          )
+          replace_once(orchestrator, old_grant, new_grant)
+          replace_once(
+              orchestrator,
+              "def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Path]:\n",
+              "def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, ...]:\n",
+          )
+          replace_once(
+              orchestrator,
+              "    return repo / CANONICAL_SDK_RELATIVE, repo / CANONICAL_RUNTIME_RELATIVE\n",
+              "    return (\n"
+              "        expected[\"--security-podspec\"],\n"
+              "        expected[\"--security-build\"],\n"
+              "        expected[\"--identity-podspec\"],\n"
+              "        expected[\"--identity-sources\"],\n"
+              "    )\n",
+          )
+
+          old_assertion = (
+              "            self.assertEqual(\n"
+              "                helper._private_read_subjects(command, repo),\n"
+              "                (repo / \"LocalSecrets/TuyaSDK\", repo / \"LocalSecrets/TuyaRuntime\"),\n"
+              "            )\n"
+          )
+          new_assertion = (
+              "            self.assertEqual(\n"
+              "                helper._private_read_subjects(command, repo),\n"
+              "                (\n"
+              "                    repo / \"LocalSecrets/TuyaSDK/ThingSmartCryption.podspec\",\n"
+              "                    repo / \"LocalSecrets/TuyaSDK/Build\",\n"
+              "                    repo / \"LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec\",\n"
+              "                    repo / \"LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig\",\n"
+              "                ),\n"
+              "            )\n"
+          )
+          replace_once(selected, old_assertion, new_assertion)
+
+          replace_once(
+              rollback,
+              "class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):\n",
+              "class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):\n"
+              "    def _subject(self, temporary: str) -> tuple[Path, Path]:\n"
+              "        outer = Path(temporary)\n"
+              "        outer.chmod(0o711)\n"
+              "        repo = outer / \"repo\"\n"
+              "        repo.mkdir(mode=0o755)\n"
+              "        subject = repo / \"private.fixture\"\n"
+              "        subject.write_bytes(b\"fixture\\n\")\n"
+              "        return repo, subject\n\n",
+          )
+          old_setup = (
+              "            outer = Path(temporary)\n"
+              "            outer.chmod(0o711)\n"
+              "            repo = outer / \"repo\"\n"
+              "            repo.mkdir(mode=0o755)\n"
+              "            subject = repo / \"private.fixture\"\n"
+              "            subject.write_bytes(b\"fixture\\n\")\n\n"
+          )
+          replace_once(rollback, old_setup, "            repo, subject = self._subject(temporary)\n")
+
+          insertion = '''\
+    def test_chmod_failure_after_observable_mutation_still_revokes_the_exact_acl(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-lease-chmod-failure-") as temporary:
+            repo, subject = self._subject(temporary)
+            lease = helper._PrivateReadLease((subject,), repo)
+            mutations: list[tuple[str, str]] = []
+            listings = iter(("before", "after-plus-a", "before"))
+
+            def fake_listing(_descriptor: int) -> str:
+                return next(listings)
+
+            def fake_chmod(_descriptor: int, operation: str, acl: str) -> None:
+                mutations.append((operation, acl))
+                if operation == "+a":
+                    raise helper.SelectedXcodeBuildOrchestratorError(
+                        "simulated chmod failure after kernel mutation"
+                    )
+
+            with (
+                mock.patch.object(helper, "_acl_listing", side_effect=fake_listing),
+                mock.patch.object(helper, "_chmod_acl", side_effect=fake_chmod),
+                self.assertRaises(helper.SelectedXcodeBuildOrchestratorError),
+            ):
+                lease.grant("nembrabuildrollback")
+
+            self.assertEqual([operation for operation, _acl in mutations], ["+a", "-a"])
+            self.assertEqual(mutations[0][1], mutations[1][1])
+            self.assertEqual(lease._opened, [])
+            self.assertEqual(lease._principal, "")
+
+    def test_grant_surfaces_rollback_failure_instead_of_silently_forgetting_it(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-lease-rollback-failure-") as temporary:
+            repo, subject = self._subject(temporary)
+            lease = helper._PrivateReadLease((subject,), repo)
+            listings = iter(("before", "after-plus-a"))
+
+            def fake_listing(_descriptor: int) -> str:
+                return next(listings)
+
+            def fake_chmod(_descriptor: int, operation: str, _acl: str) -> None:
+                if operation == "+a":
+                    raise helper.SelectedXcodeBuildOrchestratorError(
+                        "simulated grant command failure"
+                    )
+                raise helper.SelectedXcodeBuildOrchestratorError(
+                    "simulated rollback command failure"
+                )
+
+            with (
+                mock.patch.object(helper, "_acl_listing", side_effect=fake_listing),
+                mock.patch.object(helper, "_chmod_acl", side_effect=fake_chmod),
+                self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "rollback",
+                ),
+            ):
+                lease.grant("nembrabuildrollback")
+
+'''
+          replace_once(rollback, "\n\nif __name__ == \"__main__\":\n", "\n" + insertion + "\nif __name__ == \"__main__\":\n")
+          PY
+
+      - name: Prove converged portable contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          git diff --check
+
+      - name: Self-delete and publish convergence
+        shell: bash
+        env:
+          BRANCH: repair/v17-capture-private-read-lease-guard-compose-sol-20260814
+          SELF: .github/workflows/capture-private-read-lease-converge-once.yml
+        run: |
+          set -euo pipefail
+          git rm "$SELF"
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            "$SELF" \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'capture: converge fail-closed least-authority private lease'
+          git push origin "HEAD:$BRANCH"
