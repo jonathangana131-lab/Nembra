@@ -68,12 +68,39 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
                 finally:
                     os.close(descriptor)
 
+    def test_real_directory_replacement_is_rejected_against_planned_identity(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-component-real-swap-") as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            legitimate = repo / "LocalSecrets/TuyaSDK/Build"
+            legitimate.mkdir(parents=True)
+            planned = helper._lease_paths((legitimate,), repo, include_signatures=True)
+            expected = next(
+                signature
+                for path, _host_only, signature in planned
+                if path == legitimate
+            )
+
+            sdk = repo / "LocalSecrets/TuyaSDK"
+            original = repo / "LocalSecrets/TuyaSDK.original"
+            sdk.rename(original)
+            replacement = repo / "LocalSecrets/TuyaSDK/Build"
+            replacement.mkdir(parents=True)
+            self.assertFalse(sdk.is_symlink())
+            self.assertFalse(replacement.is_symlink())
+            self.assertNotEqual(expected, helper._path_signature(replacement))
+
+            with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                helper._open_pinned_path(legitimate, True, expected)
+
     def test_source_uses_dirfd_component_walk_before_path_diagnostic(self) -> None:
         helper = load()
         source = inspect.getsource(helper._open_pinned_path)
         self.assertIn("dir_fd=current", source)
         self.assertIn("os.supports_dir_fd", source)
         self.assertIn("O_NOFOLLOW", source)
+        self.assertIn("expected_signature", source)
         self.assertNotIn("os.open(path,", source)
         self.assertLess(source.index("dir_fd=current"), source.index("_path_signature(path)"))
 
