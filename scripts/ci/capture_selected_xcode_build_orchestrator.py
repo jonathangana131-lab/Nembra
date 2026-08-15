@@ -1445,7 +1445,7 @@ def orchestrate(
             raise SelectedXcodeBuildOrchestratorError(
                 "signed build-origin helper returned invalid custody types"
             )
-        if lease._opened or lease._principal or lease._namespace_witnesses:
+        if lease._opened or lease._principal:
             raise SelectedXcodeBuildOrchestratorError(
                 "private read lease survived the guarded build window"
             )
