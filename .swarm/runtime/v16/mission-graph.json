@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 40,
+    "classifiedPRTotal": 43,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "navigation-app-visible",
         "pr": 2959,
         "recommendedAction": "independent-review",
-        "similarity": 0.068,
+        "similarity": 0.107,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.044,
+        "similarity": 0.096,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1437,7 +1437,7 @@
         "lane": "",
         "pr": 3424,
         "recommendedAction": "independent-review",
-        "similarity": 0.064,
+        "similarity": 0.074,
         "title": "[Battery/Range V15] Restore accepted authority and visual contracts on main"
       },
       "3426": {
@@ -1481,7 +1481,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3430,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.321,
+        "similarity": 0.357,
         "title": "[Capture P0][VALIDATION] Isolate macOS held-descriptor regression"
       },
       "3431": {
@@ -1492,7 +1492,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3431,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.328,
+        "similarity": 0.378,
         "title": "[Capture P0][RED TEAM] Surface macOS symlink-race oracle failure"
       },
       "3432": {
@@ -1505,6 +1505,39 @@
         "recommendedAction": "independent-review",
         "similarity": 0.178,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
+      },
+      "3433": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3433,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.262,
+        "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
+      },
+      "3434": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3434,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.362,
+        "title": "[Capture P0][REPAIR] Use real Darwin temp root for lease acceptance"
+      },
+      "3435": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3435,
+        "recommendedAction": "independent-review",
+        "similarity": 0.152,
+        "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1537,9 +1570,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:19:17Z",
+    "liveRefreshAt": "2026-08-15T11:19:36Z",
     "liveRefreshDuplicatesSuppressed": [
-      3420
+      3433
     ],
     "liveRefreshMainSHA": "b08f52c8aac7cbf753c3aaac55147303697ac32a",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5322,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 620,
+  "revision": 621,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:19:19Z",
+  "updatedAt": "2026-08-15T11:19:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:19:17Z",
+      "updatedAt": "2026-08-15T11:19:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
