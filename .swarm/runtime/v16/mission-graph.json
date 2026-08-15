@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 34,
+    "classifiedPRTotal": 35,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.166,
+        "similarity": 0.177,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
@@ -1382,7 +1382,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3371,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.313,
+        "similarity": 0.477,
         "title": "[Capture P0][AX RUNTIME] Re-anchor Standard + AX5 VoiceOver to 2b7d"
       },
       "3375": {
@@ -1404,7 +1404,7 @@
         "lane": "",
         "pr": 3379,
         "recommendedAction": "independent-review",
-        "similarity": 0.206,
+        "similarity": 0.244,
         "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       },
       "3380": {
@@ -1415,19 +1415,8 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.19,
+        "similarity": 0.283,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
-      },
-      "3381": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3381,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.296,
-        "title": "[Capture P0][SECURITY][VALIDATION][RECOVERY] Re-anchor real-directory lease swap oracle"
       },
       "3382": {
         "classification": "validation",
@@ -1439,6 +1428,28 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.436,
         "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
+      },
+      "3383": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3383,
+        "recommendedAction": "independent-review",
+        "similarity": 0.283,
+        "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
+      },
+      "3384": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-runtime-accessibility",
+        "pr": 3384,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.484,
+        "title": "[Capture P0][ACCESSIBILITY][VALIDATION] VoiceOver matrix on exact 2b7d product"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1471,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:03:05Z",
+    "liveRefreshAt": "2026-08-15T03:03:22Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5256,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 465,
+  "revision": 466,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:03:06Z",
+  "updatedAt": "2026-08-15T03:03:23Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5335,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:03:05Z",
+      "updatedAt": "2026-08-15T03:03:22Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
