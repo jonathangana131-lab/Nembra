@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 31,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1338,7 +1338,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3394,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.358,
+        "similarity": 0.353,
         "title": "[Capture P0][RED TEAM] Reject inode-reuse ABA in planned lease identity"
       },
       "3395": {
@@ -1374,17 +1374,6 @@
         "similarity": 0.354,
         "title": "[Capture P0][SECURITY][RECOVERY] Pre-scrub frozen tool exec on current carrier"
       },
-      "3403": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3403,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.364,
-        "title": "[Capture P0][SECURITY] Hold private lease descriptors from plan through grant"
-      },
       "3406": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1393,7 +1382,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3406,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.349,
+        "similarity": 0.336,
         "title": "[Capture P0][SECURITY][SERIAL] Hold private lease descriptors through planning"
       },
       "3407": {
@@ -1449,7 +1438,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:25:40Z",
+    "liveRefreshAt": "2026-08-15T03:25:59Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5234,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 533,
+  "revision": 534,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:25:40Z",
+  "updatedAt": "2026-08-15T03:26:00Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:25:40Z",
+      "updatedAt": "2026-08-15T03:25:59Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
