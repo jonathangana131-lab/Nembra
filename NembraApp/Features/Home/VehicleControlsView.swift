@@ -414,11 +414,16 @@ private struct BatteryRangeView: View {
             .padding(.top, 12)
             .safeAreaPadding(.bottom, 36)
         }
+        .padding(.bottom, persistentNavigationViewportClearance)
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Battery & Range")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .accessibilityIdentifier("battery-range.surface")
+    }
+
+    private var persistentNavigationViewportClearance: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 144 : 72
     }
 
     private var batteryHero: some View {
