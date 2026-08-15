@@ -1,0 +1,88 @@
+name: Capture Generated CaseFold Collision Materializer Once
+
+on:
+  push:
+    branches:
+      - fix/v17-capture-generated-casefold-collision-sol-20260814
+    paths:
+      - .github/workflows/capture-generated-casefold-collision-materialize-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Bind exact serial parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=29b9269860e58c852d187ba3695934e4c9519fac
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-generated-casefold-collision-materialize-once.yml"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize namespace-equivalent collision rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
+          text = helper.read_text(encoding="utf-8")
+
+          import_anchor = "import sys\nfrom typing import Iterable, Sequence\n"
+          import_replacement = "import sys\nimport unicodedata\nfrom typing import Iterable, Sequence\n"
+          if text.count(import_anchor) != 1:
+              raise SystemExit("expected one helper import anchor")
+          text = text.replace(import_anchor, import_replacement)
+
+          function_anchor = "    return relative\n\n\ndef _git_environment() -> dict[str, str]:\n"
+          function_replacement = '''    return relative\n\n\ndef _namespace_key(relative: Path) -> tuple[str, ...]:\n    """Conservative case-insensitive/canonical namespace identity for field macOS."""\n\n    _safe_relative(relative)\n    return tuple(unicodedata.normalize("NFD", part).casefold() for part in relative.parts)\n\n\ndef _namespace_paths_overlap(first: Path, second: Path) -> bool:\n    first_key = _namespace_key(first)\n    second_key = _namespace_key(second)\n    return (\n        first_key[: len(second_key)] == second_key\n        or second_key[: len(first_key)] == first_key\n    )\n\n\ndef _git_environment() -> dict[str, str]:\n'''
+          if text.count(function_anchor) != 1:
+              raise SystemExit("expected one namespace helper insertion anchor")
+          text = text.replace(function_anchor, function_replacement)
+
+          old_collision = '''    for subject in GENERATED_SUBJECTS:\n        if any(\n            path.parts[: len(subject.parts)] == subject.parts\n            or subject.parts[: len(path.parts)] == path.parts\n            for path in tracked\n        ):\n            raise AcceptedBuildInputSnapshotError(\n                f"generated build-input subject collides with accepted tracked source: {subject}"\n            )\n'''
+          new_collision = '''    for subject in GENERATED_SUBJECTS:\n        if any(_namespace_paths_overlap(path, subject) for path in tracked):\n            raise AcceptedBuildInputSnapshotError(\n                f"generated build-input subject collides with accepted tracked source: {subject}"\n            )\n'''
+          if text.count(old_collision) != 1:
+              raise SystemExit("expected one tracked/generated collision anchor")
+          helper.write_text(text.replace(old_collision, new_collision), encoding="utf-8")
+
+          tests = Path("scripts/ci/tests/test_capture_accepted_build_input_snapshot.py")
+          text = tests.read_text(encoding="utf-8")
+          marker = "    def test_tracked_ancestor_symlink_cannot_alias_generated_subject(self) -> None:\n"
+          if text.count(marker) != 1:
+              raise SystemExit("expected one exact-spelling ancestor regression anchor")
+          regression = '''    def test_casefolded_tracked_ancestor_cannot_alias_generated_subject(self) -> None:\n        with tempfile.TemporaryDirectory() as raw:\n            root = Path(raw) / "repo"\n            root.mkdir()\n            seed_repo(root)\n            os.symlink(".", root / "localsecrets")\n            git(root, "add", "localsecrets")\n            git(root, "commit", "-qm", "track case-fold generated ancestor alias")\n            source_sha = git(root, "rev-parse", "HEAD")\n            seed_generated(root)\n            accepted = snapshot.generated_manifest_sha256(root, source_sha)\n            destination = Path(raw) / "stage"\n            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):\n                snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)\n            self.assertFalse(destination.exists())\n            self.assertTrue(snapshot._namespace_paths_overlap(Path("localsecrets"), Path("LocalSecrets/TuyaSDK")))\n\n'''
+          tests.write_text(text.replace(marker, regression + marker), encoding="utf-8")
+          PY
+
+          rm .github/workflows/capture-generated-casefold-collision-materialize-once.yml
+          git diff --check
+          PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all | grep -E '__pycache__|\.pyc$' || true)"
+
+      - name: Commit exact hardening delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-generated-casefold-collision-materialize-once.yml' \
+            'scripts/ci/capture_accepted_build_input_snapshot.py' \
+            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name "nembra-capture-materializer"
+          git config user.email "capture-materializer@users.noreply.github.com"
+          git add -A
+          git commit -m "Reject case-fold aliases in accepted build inputs"
+          git push origin HEAD:fix/v17-capture-generated-casefold-collision-sol-20260814
