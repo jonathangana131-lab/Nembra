@@ -1,0 +1,330 @@
+name: Capture APFS Backing Seal + Mount Authority Validation
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-apfs-backing-seal-mount-authority-sol-20260814
+    paths:
+      - .github/workflows/capture-apfs-backing-seal-mount-authority-validation.yml
+  pull_request:
+    paths:
+      - .github/workflows/capture-apfs-backing-seal-mount-authority-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backing-seal:
+    name: Prove root-only backing file preserves build mount authority
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind validation to exact production parent and one path
+        shell: bash
+        env:
+          EXACT_PARENT: cd8a398f54d70c866e74091b04df9bc9f9eefa55
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual="$RUNNER_TEMP/nembra-backing-seal-paths.txt"
+          expected="$RUNNER_TEMP/nembra-backing-seal-expected.txt"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$actual"
+          printf '%s\n' '.github/workflows/capture-apfs-backing-seal-mount-authority-validation.yml' > "$expected"
+          diff -u "$expected" "$actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Probe hostile umask seal and mounted build authority
+        shell: bash
+        run: |
+          set -uo pipefail
+          probe="$RUNNER_TEMP/nembra_apfs_backing_seal_probe.py"
+          evidence="$RUNNER_TEMP/nembra-apfs-backing-seal.json"
+          cat > "$probe" <<'PY'
+          from __future__ import annotations
+          import errno
+          import grp
+          import json
+          import os
+          from pathlib import Path
+          import plistlib
+          import pwd
+          import shutil
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+
+          PARENT = "cd8a398f54d70c866e74091b04df9bc9f9eefa55"
+          MARKER = b"NEMBRA_MOUNT_AUTHORITY_OK\n"
+          CHILD = r'''
+          import json, os, sys
+          target, mode = sys.argv[1], sys.argv[2]
+          payload = {"uid": os.getuid(), "euid": os.geteuid(), "gid": os.getgid(), "egid": os.getegid()}
+          flags = os.O_WRONLY | (os.O_APPEND if mode == "append" else os.O_CREAT | os.O_EXCL)
+          try:
+              fd = os.open(target, flags, 0o600)
+          except OSError as error:
+              payload.update({"result": "denied", "errno": error.errno})
+          else:
+              try:
+                  os.write(fd, b"NEMBRA_MOUNT_AUTHORITY_OK\n")
+                  os.fsync(fd)
+                  payload.update({"result": "wrote", "errno": None})
+              finally:
+                  os.close(fd)
+          print(json.dumps(payload, sort_keys=True))
+          '''
+
+          def unused_id() -> int:
+              ps = subprocess.run(["/bin/ps", "-axo", "uid="], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+              if ps.returncode != 0:
+                  raise RuntimeError("could not inventory process UIDs")
+              occupied = {int(line.strip()) for line in ps.stdout.splitlines() if line.strip().isdecimal()}
+              for candidate in range(54000, 60000):
+                  try:
+                      pwd.getpwuid(candidate)
+                  except KeyError:
+                      pass
+                  else:
+                      continue
+                  try:
+                      grp.getgrgid(candidate)
+                  except KeyError:
+                      pass
+                  else:
+                      continue
+                  if candidate not in occupied:
+                      return candidate
+              raise RuntimeError("no unused numeric identity")
+
+          def child(uid: int, path: Path, mode: str) -> dict[str, object]:
+              run = subprocess.run(
+                  [sys.executable, "-B", "-I", "-c", CHILD, str(path), mode],
+                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                  text=True, check=False, user=uid, group=uid, extra_groups=[]
+              )
+              if run.returncode != 0:
+                  raise RuntimeError(f"child execution failed rc={run.returncode}: {run.stderr[-400:]}")
+              return json.loads(run.stdout.strip())
+
+          def attach(image: Path, mountpoint: Path) -> str:
+              run = subprocess.run(
+                  ["/usr/bin/hdiutil", "attach", "-plist", "-nobrowse", "-owners", "on",
+                   "-mountpoint", str(mountpoint), str(image)],
+                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
+              )
+              if run.returncode != 0:
+                  raise RuntimeError("hdiutil attach failed: " + run.stderr.decode(errors="replace")[-500:])
+              payload = plistlib.loads(run.stdout)
+              for entity in payload.get("system-entities", []):
+                  if entity.get("mount-point") == str(mountpoint) and entity.get("dev-entry"):
+                      return str(entity["dev-entry"])
+              raise RuntimeError("attach returned no exact mount device")
+
+          def detach(device: str) -> None:
+              run = subprocess.run(["/usr/bin/hdiutil", "detach", device],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, check=False)
+              if run.returncode != 0:
+                  raise RuntimeError("normal detach failed: " + run.stderr[-500:])
+
+          def meta(path: Path) -> dict[str, object]:
+              st = path.lstat()
+              acl = subprocess.run(["/bin/ls", "-lde", str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, check=False)
+              if acl.returncode != 0:
+                  raise RuntimeError("ACL inspection failed")
+              return {
+                  "uid": st.st_uid,
+                  "gid": st.st_gid,
+                  "mode": f"{stat.S_IMODE(st.st_mode):04o}",
+                  "regular": stat.S_ISREG(st.st_mode) and not stat.S_ISLNK(st.st_mode),
+                  "aclListing": acl.stdout.strip(),
+                  "size": st.st_size,
+              }
+
+          def write_evidence(output: Path, payload: dict[str, object]) -> None:
+              output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              os.chmod(output, 0o644)
+              print("NEMBRA_APFS_BACKING_SEAL_JSON=" + json.dumps(payload, sort_keys=True))
+
+          def main() -> int:
+              output = Path(sys.argv[1])
+              payload: dict[str, object] = {
+                  "schemaVersion": 1,
+                  "exactProductionParent": PARENT,
+                  "result": "probe-error",
+                  "stage": "preflight",
+                  "errorKind": None,
+                  "errorMessage": None,
+                  "syntheticBuildUIDGID": None,
+                  "preSeal": None,
+                  "sealed": None,
+                  "directWriteBeforeAttach": None,
+                  "mountedWrite": None,
+                  "directWriteWhileAttached": None,
+                  "postDetach": None,
+                  "directWriteAfterDetach": None,
+                  "normalDetachSucceeded": False,
+                  "productionBytesChanged": False,
+                  "productionAcceptanceClaimed": False,
+                  "physicalAuthorityCreated": False,
+              }
+              workspace = None
+              device = None
+              original_umask = None
+              try:
+                  if sys.platform != "darwin" or os.geteuid() != 0:
+                      raise RuntimeError("probe requires root on real macOS")
+                  uid = unused_id()
+                  payload["syntheticBuildUIDGID"] = uid
+                  workspace = Path(tempfile.mkdtemp(prefix="nembra-apfs-backing-seal.", dir="/private/tmp"))
+                  os.chown(workspace, 0, uid)
+                  os.chmod(workspace, 0o710)
+                  image = workspace / "compiler-output.sparseimage"
+                  mountpoint = workspace / "compiler-output"
+
+                  payload["stage"] = "hostile-umask-create"
+                  original_umask = os.umask(0o000)
+                  created = subprocess.run(
+                      ["/usr/bin/hdiutil", "create", "-quiet", "-size", "128m", "-type", "SPARSE",
+                       "-fs", "APFS", "-volname", "NembraBackingSealProbe", str(image)],
+                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                      text=True, check=False
+                  )
+                  os.umask(original_umask)
+                  original_umask = None
+                  if created.returncode != 0:
+                      raise RuntimeError("hdiutil create failed: " + created.stderr[-500:])
+                  payload["preSeal"] = meta(image)
+
+                  payload["stage"] = "explicit-root-seal"
+                  subprocess.run(["/bin/chmod", "-N", str(image)], check=True)
+                  os.chown(image, 0, 0)
+                  os.chmod(image, 0o600)
+                  sealed = meta(image)
+                  payload["sealed"] = sealed
+                  if not sealed["regular"] or sealed["uid"] != 0 or sealed["gid"] != 0 or sealed["mode"] != "0600":
+                      raise RuntimeError("explicit backing-file seal did not establish root:root 0600 regular file")
+
+                  payload["stage"] = "direct-write-before-attach"
+                  before = child(uid, image, "append")
+                  payload["directWriteBeforeAttach"] = before
+                  if before.get("result") != "denied" or before.get("errno") not in (errno.EACCES, errno.EPERM):
+                      raise RuntimeError("build identity retained direct backing-file write authority before attach")
+
+                  payload["stage"] = "attach-and-provision-mounted-build-path"
+                  mountpoint.mkdir(mode=0o700)
+                  device = attach(image, mountpoint)
+                  derived = mountpoint / "DerivedData"
+                  derived.mkdir()
+                  os.chown(derived, uid, uid)
+                  os.chmod(derived, 0o700)
+
+                  payload["stage"] = "mounted-build-write"
+                  mounted_target = derived / "authority.txt"
+                  mounted = child(uid, mounted_target, "create")
+                  payload["mountedWrite"] = mounted
+                  if mounted.get("result") != "wrote" or mounted_target.read_bytes() != MARKER:
+                      raise RuntimeError("root-only backing seal broke intended mounted build write authority")
+
+                  payload["stage"] = "direct-write-while-attached"
+                  during = child(uid, image, "append")
+                  payload["directWriteWhileAttached"] = during
+                  if during.get("result") != "denied" or during.get("errno") not in (errno.EACCES, errno.EPERM):
+                      raise RuntimeError("build identity regained direct backing-file write authority while attached")
+
+                  payload["stage"] = "normal-detach"
+                  detach(device)
+                  device = None
+                  payload["normalDetachSucceeded"] = True
+                  post = meta(image)
+                  payload["postDetach"] = post
+                  if not post["regular"] or post["uid"] != 0 or post["gid"] != 0 or post["mode"] != "0600":
+                      raise RuntimeError("backing-file root-only seal changed across attach/detach")
+
+                  payload["stage"] = "direct-write-after-detach"
+                  after = child(uid, image, "append")
+                  payload["directWriteAfterDetach"] = after
+                  if after.get("result") != "denied" or after.get("errno") not in (errno.EACCES, errno.EPERM):
+                      raise RuntimeError("build identity gained direct backing-file write authority after detach")
+
+                  payload["stage"] = "complete"
+                  payload["result"] = "root-seal-preserves-mounted-authority"
+                  return 0
+              except Exception as error:
+                  payload["result"] = "probe-error"
+                  payload["errorKind"] = type(error).__name__
+                  payload["errorMessage"] = str(error)[:900]
+                  return 70
+              finally:
+                  if original_umask is not None:
+                      os.umask(original_umask)
+                  if device is not None:
+                      subprocess.run(["/usr/bin/hdiutil", "detach", "-force", device],
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     check=False)
+                  if workspace is not None:
+                      shutil.rmtree(workspace, ignore_errors=True)
+                  write_evidence(output, payload)
+
+          raise SystemExit(main())
+          PY
+          /usr/bin/python3 -m py_compile "$probe"
+          set +e
+          /usr/bin/sudo /usr/bin/python3 -B -I "$probe" "$evidence"
+          rc=$?
+          set -e
+          test -f "$evidence"
+          cat "$evidence"
+          exit "$rc"
+
+      - name: Retain APFS backing-seal evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-apfs-backing-seal-${{ github.run_id }}
+          path: ${{ runner.temp }}/nembra-apfs-backing-seal.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Require validation-only truth boundary and clean checkout
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/nembra-apfs-backing-seal.json"
+          test -f "$evidence"
+          /usr/bin/python3 - "$evidence" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          p = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert p["schemaVersion"] == 1
+          assert p["exactProductionParent"] == "cd8a398f54d70c866e74091b04df9bc9f9eefa55"
+          assert p["productionBytesChanged"] is False
+          assert p["productionAcceptanceClaimed"] is False
+          assert p["physicalAuthorityCreated"] is False
+          assert p["result"] in {"probe-error", "root-seal-preserves-mounted-authority"}
+          if p["result"] == "root-seal-preserves-mounted-authority":
+              assert p["normalDetachSucceeded"] is True
+              assert p["sealed"]["uid"] == 0 and p["sealed"]["gid"] == 0 and p["sealed"]["mode"] == "0600"
+              assert p["mountedWrite"]["result"] == "wrote"
+              assert p["directWriteBeforeAttach"]["result"] == "denied"
+              assert p["directWriteWhileAttached"]["result"] == "denied"
+              assert p["directWriteAfterDetach"]["result"] == "denied"
+          else:
+              assert p["errorKind"] and p["errorMessage"]
+          PY
+          git diff --check cd8a398f54d70c866e74091b04df9bc9f9eefa55 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
