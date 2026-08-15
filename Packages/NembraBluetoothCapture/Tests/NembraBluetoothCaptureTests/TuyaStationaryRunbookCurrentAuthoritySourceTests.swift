@@ -4,22 +4,25 @@ import Testing
 
 @Suite("Capture stationary field runbook current authority")
 struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
-    @Test("secure-link procedure requires four fresh package-owned windows and explicit confirmation")
-    func secureLinkRunbookCannotRegressToHistoricalHintAuthority() throws {
+    @Test("secure-link procedure requires four fresh package-owned windows, literal confirmation, and structured-only evidence")
+    func secureLinkRunbookCannotRegressToHistoricalHintOrRawByteAuthority() throws {
         let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
         #expect(runbook.contains("OFF1 → ON1 → OFF2 → ON2"))
         #expect(runbook.contains("package-owned, fresh-manager"))
-        #expect(runbook.contains("exactly one repeatable full CoreBluetooth UUID"))
-        #expect(runbook.contains("Confirm correlated Bluetooth target"))
-        #expect(runbook.contains("historical C7D09A22 UUID"))
-        #expect(runbook.contains("descriptive only"))
+        #expect(runbook.contains("Exactly one repeatable full CoreBluetooth UUID") || runbook.contains("exactly one repeatable full CoreBluetooth UUID"))
+        #expect(runbook.contains("Confirm this scooter signal"))
+        #expect(runbook.contains("historical CoreBluetooth UUID"))
+        #expect(runbook.contains("descriptive capture-local evidence only"))
         #expect(runbook.contains("cannot mint target authority"))
         #expect(runbook.contains("Nembra must not open a second independent CoreBluetooth connection"))
+        #expect(runbook.contains("Structured `dpsUpdate` observations are application-level evidence only"))
+        #expect(runbook.contains("do **not** establish raw authenticated FD50/ATT bytes"))
         #expect(runbook.contains("rawFD50BytesCaptured=false"))
         #expect(runbook.contains("dpQueriesSent=false"))
         #expect(runbook.contains("dpCommandsSent=false"))
 
+        #expect(!runbook.contains("Confirm correlated Bluetooth target"))
         #expect(!runbook.contains("use the best accepted evidence"))
         #expect(!runbook.contains("known first-capture peripheral, FD50 advertisement evidence"))
         #expect(!runbook.contains("OFF baseline then ON correlation"))
