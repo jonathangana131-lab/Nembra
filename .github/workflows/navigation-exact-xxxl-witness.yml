@@ -58,8 +58,8 @@ jobs:
 
                   let surface = app.descendants(matching: .any)["navigation.surface"]
                   XCTAssertTrue(surface.waitForExistence(timeout: 4))
-                  XCTAssertTrue(app.descendants(matching: .any)["navigation.map"].waitForExistence(timeout: 2))
-                  XCTAssertTrue(app.descendants(matching: .any)["navigation.empty"].waitForExistence(timeout: 2))
+                  let nativeMap = app.maps.firstMatch
+                  XCTAssertTrue(nativeMap.waitForExistence(timeout: 2))
                   XCTAssertTrue(app.staticTexts["Find a destination"].waitForExistence(timeout: 2))
                   XCTAssertTrue(app.staticTexts["Search for a place or address. Nembra will preview it here without using scooter telemetry."].waitForExistence(timeout: 2))
                   XCTAssertTrue(app.staticTexts["Choose a destination before riding."].waitForExistence(timeout: 2))
