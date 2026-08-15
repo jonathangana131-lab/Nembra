@@ -1,0 +1,70 @@
+name: Capture Generated Input Tracked Ancestor Symlink Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated_input_tracked_ancestor_symlink_red_team.py
+      - .github/workflows/capture-generated-input-tracked-ancestor-symlink-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-generated-input-tracked-ancestor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_VALIDATION_PARENT: db5b00fdd1bb1b234393a9190e80b817d309c0e3
+
+jobs:
+  exploit-positive:
+    name: Reject tracked ancestor aliases before generated-input admission
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require exact additive red-team child
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$head_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          test "$(git merge-base HEAD "$EXACT_VALIDATION_PARENT")" = "$EXACT_VALIDATION_PARENT"
+          actual="$(git diff --name-only "$EXACT_VALIDATION_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-generated-input-tracked-ancestor-symlink-red-team.yml' \
+            'scripts/ci/tests/test_capture_generated_input_tracked_ancestor_symlink_red_team.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_VALIDATION_PARENT"...HEAD
+
+      - name: Compile helper and red-team witness
+        run: |
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_input_tracked_ancestor_symlink_red_team.py
+
+      - name: Reproduce tracked-ancestor admission defect
+        run: python3 scripts/ci/tests/test_capture_generated_input_tracked_ancestor_symlink_red_team.py
+
+      - name: Preserve exploit-positive truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' \
+            'trackedAncestorSymlinkAdmitted=true' \
+            'generatedPhysicalAliasOutsideManifest=true' \
+            'productionRepairApplied=false' \
+            'validationAcceptance=false' \
+            'appleSigningAuthority=false' \
+            'installAuthority=false' \
+            'physicalAuthorityCreated=false'
