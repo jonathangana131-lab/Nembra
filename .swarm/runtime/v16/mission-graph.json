@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 31,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1360,17 +1360,17 @@
         "lane": "capture-private-read-lease",
         "pr": 3382,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.47,
+        "similarity": 0.299,
         "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
       },
       "3387": {
-        "classification": "requires-review",
+        "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-flagship-convergence",
         "pr": 3387,
-        "recommendedAction": "independent-review",
+        "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.092,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
@@ -1384,17 +1384,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.118,
         "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
-      },
-      "3390": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3390,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.477,
-        "title": "[Capture P0][SECURITY] Bind planned identity into private lease admission"
       },
       "3392": {
         "classification": "validation",
@@ -1449,7 +1438,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:10:06Z",
+    "liveRefreshAt": "2026-08-15T03:10:22Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5234,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 489,
+  "revision": 490,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:10:07Z",
+  "updatedAt": "2026-08-15T03:10:23Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:10:06Z",
+      "updatedAt": "2026-08-15T03:10:22Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
