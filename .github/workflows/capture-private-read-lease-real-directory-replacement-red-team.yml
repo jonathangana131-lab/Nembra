@@ -1,0 +1,67 @@
+name: Capture Private Read Lease Real Directory Replacement Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_private_read_lease_real_directory_replacement_red_team.py
+      - .github/workflows/capture-private-read-lease-real-directory-replacement-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-private-read-lease-real-dir-red-team-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  ATTACKED_HEAD: 9abc3f664b902469b98c0de3d99cc8f3583b85a5
+
+jobs:
+  exploit-positive:
+    name: Prove real-directory replacement remains admissible
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact attacked component-walk head
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$ATTACKED_HEAD")" = "$ATTACKED_HEAD"
+          changed="$(git diff --name-only "$ATTACKED_HEAD"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-real-directory-replacement-red-team.yml \
+            scripts/ci/tests/test_capture_private_read_lease_real_directory_replacement_red_team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$ATTACKED_HEAD"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute exploit-positive witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_real_directory_replacement_red_team.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_real_directory_replacement_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_REAL_DIR_SWAP_RED_TEAM exploitPositive=true productionChanged=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
