@@ -1,0 +1,53 @@
+name: Capture Generated Private Ancestor Symlink Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v17-capture-generated-private-ancestor-symlink-sol-20260814
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_generated_private_ancestor_symlink_red_team.py
+      - .github/workflows/capture-generated-private-ancestor-symlink-red-team.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exploit-positive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind attacked exact parent and diagnostic-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=ff169cf7400d67d421a451d6d0d1d860353bf9e0
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-generated-private-ancestor-symlink-red-team.yml' \
+            'scripts/ci/tests/test_capture_generated_private_ancestor_symlink_red_team.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$parent"...HEAD
+
+      - name: Prove unadmitted LocalSecrets ancestor escape
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_private_ancestor_symlink_red_team.py
+          python3 scripts/ci/tests/test_capture_generated_private_ancestor_symlink_red_team.py
+
+      - name: Pin exploit-positive truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'SUCCESS IS EXPECTED-RED EVIDENCE: the attacked accepted-input helper follows an unadmitted LocalSecrets ancestor outside the repository.'
+          echo 'This workflow creates no product, signing, install, device, Bluetooth, Tuya, telemetry, command, or physical authority.'
+          echo 'PHYSICAL NO-GO.'
