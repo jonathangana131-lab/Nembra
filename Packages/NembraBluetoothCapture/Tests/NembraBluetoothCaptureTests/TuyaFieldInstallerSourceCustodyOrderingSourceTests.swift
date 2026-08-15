@@ -31,7 +31,7 @@ struct TuyaFieldInstallerSourceCustodyOrderingSourceTests {
         #expect(!installer.contains("Switch to capture/one-time-ble-dump-gpt56 first"))
     }
 
-    @Test("source custody survives private workspace bootstrap build and built-app readback before install")
+    @Test("source custody encloses private bootstrap, frozen build, readback, device admission, and install")
     func sourceCustodyEnclosesBuildAndReadback() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
@@ -40,14 +40,14 @@ struct TuyaFieldInstallerSourceCustodyOrderingSourceTests {
               let bootstrap = installer.range(of: "\"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh\"", range: privateAdmission.upperBound..<installer.endIndex),
               let postBootstrapHead = installer.range(of: "Repository HEAD changed during private workspace bootstrap", range: bootstrap.upperBound..<installer.endIndex),
               let postBootstrapTree = installer.range(of: "Private workspace bootstrap changed tracked or unignored accepted-source inputs", range: postBootstrapHead.upperBound..<installer.endIndex),
-              let baseline = installer.range(of: "say \"Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION\"", range: postBootstrapTree.upperBound..<installer.endIndex),
-              let buildStage = installer.range(of: "say \"Building SDK-integrated Nembra Capture inside protected compiler-output custody\"", range: baseline.upperBound..<installer.endIndex),
+              let buildStage = installer.range(of: "say \"Building SDK-integrated Nembra Capture with frozen Xcode inside protected compiler-output custody\"", range: postBootstrapTree.upperBound..<installer.endIndex),
               let postBuildHead = installer.range(of: "Repository HEAD changed while the accepted field build was compiling", range: buildStage.upperBound..<installer.endIndex),
               let postBuildTree = installer.range(of: "Accepted-source inputs changed while the field build was compiling", range: postBuildHead.upperBound..<installer.endIndex),
               let appReadback = installer.range(of: "APP_INFO_PLIST=\"$APP/Info.plist\"", range: postBuildTree.upperBound..<installer.endIndex),
               let builtSource = installer.range(of: "[[ \"$BUILT_SOURCE_SHA\" == \"$SOURCE_SHA\" ]]", range: appReadback.upperBound..<installer.endIndex),
-              let install = installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\"", range: builtSource.upperBound..<installer.endIndex) else {
-            Issue.record("The field build must remain inside exact-source custody from private bootstrap through built-app provenance readback before installation.")
+              let baseline = installer.range(of: "say \"Verifying the intended iPhone 12 / iOS 27 baseline with frozen selected-Xcode tools\"", range: builtSource.upperBound..<installer.endIndex),
+              let install = installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone through frozen selected-Xcode devicectl\"", range: baseline.upperBound..<installer.endIndex) else {
+            Issue.record("The field build must remain inside exact-source custody from private bootstrap through frozen build/readback and intended-device admission before installation.")
             throw SourceContractError.sectionMissing
         }
 
@@ -55,22 +55,24 @@ struct TuyaFieldInstallerSourceCustodyOrderingSourceTests {
         #expect(privateAdmission.lowerBound < bootstrap.lowerBound)
         #expect(bootstrap.lowerBound < postBootstrapHead.lowerBound)
         #expect(postBootstrapHead.lowerBound < postBootstrapTree.lowerBound)
-        #expect(postBootstrapTree.lowerBound < baseline.lowerBound)
-        #expect(baseline.lowerBound < buildStage.lowerBound)
+        #expect(postBootstrapTree.lowerBound < buildStage.lowerBound)
         #expect(buildStage.lowerBound < postBuildHead.lowerBound)
         #expect(postBuildHead.lowerBound < postBuildTree.lowerBound)
         #expect(postBuildTree.lowerBound < appReadback.lowerBound)
         #expect(appReadback.lowerBound < builtSource.lowerBound)
-        #expect(builtSource.lowerBound < install.lowerBound)
+        #expect(builtSource.lowerBound < baseline.lowerBound)
+        #expect(baseline.lowerBound < install.lowerBound)
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_XCTRACE\" list devices"))
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device install app"))
     }
 
-    @Test("built app identity rendezvous is exact rather than label-only")
+    @Test("built app identity rendezvous is exact before frozen-device installation")
     func builtAppIdentityUsesAllThreeExactReadbacks() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
         let readback = try section(
             in: installer,
             from: "APP_INFO_PLIST=\"$APP/Info.plist\"",
-            to: "say \"Installing SDK-integrated Capture on the intended iPhone\""
+            to: "say \"Installing SDK-integrated Capture on the intended iPhone through frozen selected-Xcode devicectl\""
         )
         let body = String(readback)
 
@@ -80,6 +82,7 @@ struct TuyaFieldInstallerSourceCustodyOrderingSourceTests {
         #expect(body.contains("[[ \"$BUILT_BUILD_IDENTIFIER\" == \"$BUILD_LABEL\" ]]"))
         #expect(body.contains("[[ \"$BUILT_SOURCE_SHA\" == \"$SOURCE_SHA\" ]]"))
         #expect(body.contains("[[ \"$BUILT_BUNDLE_ID\" == \"$BUNDLE_ID\" ]]"))
+        #expect(body.contains("Verifying the intended iPhone 12 / iOS 27 baseline with frozen selected-Xcode tools"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
