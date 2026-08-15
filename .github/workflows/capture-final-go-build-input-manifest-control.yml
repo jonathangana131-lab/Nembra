@@ -1,6 +1,14 @@
 name: Capture Final GO Build Input Manifest Control
 
 on:
+  push:
+    branches:
+      - control/v17-final-go-build-input-manifest-review-sol-20260814
+    paths:
+      - scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_build_input_manifest_final_go.py
+      - .github/workflows/capture-final-go-build-input-manifest-control.yml
   pull_request:
     paths:
       - scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py
@@ -41,6 +49,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             test "$head_sha" = "${{ github.event.pull_request.head.sha }}"
             test "${{ github.event.pull_request.base.sha }}" = "$EXACT_FINAL_GO_PARENT"
+          else
+            test "$head_sha" = "${{ github.sha }}"
           fi
           test "$(git merge-base HEAD "$EXACT_FINAL_GO_PARENT")" = "$EXACT_FINAL_GO_PARENT"
           actual="$(git diff --name-only "$EXACT_FINAL_GO_PARENT"...HEAD | LC_ALL=C sort)"
