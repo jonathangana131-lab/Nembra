@@ -1,0 +1,85 @@
+name: Capture Generated Child Entry Generation Guard Diagnostic
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-child-entry-generation-guard-sol-20260815
+    paths:
+      - .github/workflows/capture-generated-child-entry-generation-guard-diagnostic.yml
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_PARENT: 32519114061374744ba1b43d63147dea13623fff
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind diagnostic-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$PRODUCT_PARENT")" = "$PRODUCT_PARENT"
+          changed="$(git diff --name-only "$PRODUCT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-child-entry-generation-guard-authoring.yml \
+            .github/workflows/capture-generated-child-entry-generation-guard-authoring-v2.yml \
+            .github/workflows/capture-generated-child-entry-generation-guard-authoring-v3.yml \
+            .github/workflows/capture-generated-child-entry-generation-guard-diagnostic.yml | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Execute exact V3 candidate materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-generated-child-entry-generation-guard-authoring-v3.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start_marker = "          /usr/bin/python3 -B - <<'PY'"
+          end_marker = "          PY"
+          start = lines.index(start_marker) + 1
+          end = lines.index(end_marker, start)
+          payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[start:end]) + '\n'
+          compile(payload, '<v3-materializer>', 'exec', dont_inherit=True)
+          namespace = {'__name__': '__main__'}
+          exec(payload, namespace, namespace)
+          PY
+
+      - name: Capture exact regression outputs
+        shell: bash
+        run: |
+          set +e
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py > /tmp/shared.log 2>&1
+          shared_status=$?
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py > /tmp/inherited.log 2>&1
+          inherited_status=$?
+          {
+            echo "shared_status=$shared_status"
+            cat /tmp/shared.log
+            echo "inherited_status=$inherited_status"
+            cat /tmp/inherited.log
+          } | tee /tmp/diagnostic.log
+          exit 0
+
+      - name: Retain candidate and diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-generated-child-entry-generation-guard-diagnostic-${{ github.sha }}
+          path: |
+            /tmp/diagnostic.log
+            scripts/ci/capture_accepted_build_input_snapshot.py
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          if-no-files-found: error
+          retention-days: 7
