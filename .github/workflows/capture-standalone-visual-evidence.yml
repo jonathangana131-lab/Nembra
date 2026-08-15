@@ -117,7 +117,7 @@ jobs:
           assert r['syntheticAuthorityEnvironmentRejected'] is True
           assert r['visualAcceptanceRequiresHumanReview'] is True
           assert r['screenshotRenderedContentReadinessVerified'] is True
-          assert r['screenshotRenderedContentGuard'] == 'capture_visual_png_content_guard.py/v1'
+          assert r['screenshotRenderedContentGuard'] == 'capture_visual_png_content_guard.py/v2'
           assert re.fullmatch(r'[0-9a-f]{64}', r['screenshotRenderedContentGuardSHA256'])
           assert re.fullmatch(r'[0-9a-f]{64}', r['simctlUIHelpSHA256'])
           assert re.fullmatch(r'[0-9a-f]{64}', r['simctlIOHelpSHA256'])
