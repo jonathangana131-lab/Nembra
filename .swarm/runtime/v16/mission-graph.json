@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 25,
+    "classifiedPRTotal": 24,
     "classifiedPRs": {
-      "2507": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "ecb4bd30c9217ddc1981ad0e0a4f9a7298bf764f",
-        "lane": "rides-route-render-performance",
-        "pr": 2507,
-        "recommendedAction": "independent-review",
-        "similarity": 0.0,
-        "title": "[Rides V14] Pin route map render projection churn"
-      },
       "3142": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1372,11 +1361,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T01:00:40Z",
+    "liveRefreshAt": "2026-08-15T01:04:56Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
-    "liveRefreshMainSHA": "44946ca3b91ad5deee1003024534e64bda1511d2",
+    "liveRefreshMainSHA": "412c13dbcf5bdc3708e0c2ac0a3586819ffd7772",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -5157,10 +5146,10 @@
       "userValue": 7
     }
   },
-  "revision": 433,
+  "revision": 434,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T01:00:41Z",
+  "updatedAt": "2026-08-15T01:04:57Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5236,7 +5225,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T01:00:40Z",
+      "updatedAt": "2026-08-15T01:04:56Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
