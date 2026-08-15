@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 34,
+    "classifiedPRTotal": 32,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.101,
+        "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.178,
+        "similarity": 0.166,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.117,
+        "similarity": 0.0,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1334,12 +1334,12 @@
         "classification": "superseded",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "927f4a68175b0a987051caca9e9b254ae9a47822",
+        "headSHA": "d6397143d477a0f68c033eba31d70789502f7378",
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3366,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.084,
-        "title": "[Dashboard V17] Re-anchor physical Energy Rail unavailable state on current main"
+        "similarity": 0.0,
+        "title": "[Dashboard V17] Close physical-unavailable cockpit machine state"
       },
       "3368": {
         "classification": "validation",
@@ -1360,8 +1360,8 @@
         "lane": "capture-build-authority-validation",
         "pr": 3369,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.233,
-        "title": "[Capture P0][VALIDATION] Repair provenance guard dataclass loader"
+        "similarity": 0.0,
+        "title": "[Capture P0][VALIDATION] Repair build-authority validation witnesses"
       },
       "3370": {
         "classification": "validation",
@@ -1385,17 +1385,6 @@
         "similarity": 0.313,
         "title": "[Capture P0][AX RUNTIME] Re-anchor Standard + AX5 VoiceOver to 2b7d"
       },
-      "3373": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "9e30aa5f656b8cfe3c4acfd3591606e65ad32cf8",
-        "lane": "capture-build-authority",
-        "pr": 3373,
-        "recommendedAction": "independent-review",
-        "similarity": 0.491,
-        "title": "[Capture P0][TEST] Repair dedicated frozen-device DYLD witness"
-      },
       "3374": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1418,27 +1407,16 @@
         "similarity": 0.409,
         "title": "[Capture P0][RED TEAM] Reject real-directory replacement after lease planning"
       },
-      "3378": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "5bae55f431555146367771c76fafc5e9f7defd91",
-        "lane": "capture-build-authority",
-        "pr": 3378,
-        "recommendedAction": "independent-review",
-        "similarity": 0.509,
-        "title": "[Capture P0][TEST][RECOVERY] Re-anchor dedicated frozen-device DYLD witness"
-      },
-      "3379": {
-        "classification": "requires-review",
+      "3380": {
+        "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "",
-        "pr": 3379,
-        "recommendedAction": "independent-review",
-        "similarity": 0.25,
-        "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
+        "lane": "capture-build-authority",
+        "pr": 3380,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.174,
+        "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1471,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:01:53Z",
+    "liveRefreshAt": "2026-08-15T03:02:14Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5256,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 461,
+  "revision": 462,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:01:54Z",
+  "updatedAt": "2026-08-15T03:02:15Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5335,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:01:53Z",
+      "updatedAt": "2026-08-15T03:02:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
