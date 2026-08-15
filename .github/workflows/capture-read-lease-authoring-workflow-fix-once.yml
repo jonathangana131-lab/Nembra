@@ -1,0 +1,45 @@
+name: Capture Read Lease Authoring Workflow Fix Once
+
+on:
+  push:
+    branches:
+      - hardening/v17-capture-read-lease-component-walk-sol-20260814
+    paths:
+      - .github/workflows/capture-read-lease-authoring-workflow-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: hardening/v17-capture-read-lease-component-walk-sol-20260814
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Remove generated trailing whitespace and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=.github/workflows/capture-read-lease-plan-identity-repair-once.yml
+          SELF=.github/workflows/capture-read-lease-authoring-workflow-fix-once.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-read-lease-plan-identity-repair-once.yml')
+          source = path.read_text(encoding='utf-8')
+          old = '            if component in ("", ".", ".."): \\n'
+          new = '            if component in ("", ".", ".."):\\n'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one generated trailing-whitespace seam, found {source.count(old)}')
+          path.write_text(source.replace(old, new), encoding='utf-8')
+          PY
+          git rm "$SELF"
+          git add "$TARGET"
+          git diff --cached --check
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git commit -m 'ci(capture): keep plan-identity authoring diff clean'
+          git push origin HEAD:hardening/v17-capture-read-lease-component-walk-sol-20260814
