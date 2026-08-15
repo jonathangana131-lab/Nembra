@@ -60,13 +60,38 @@ jobs:
           path.write_text(source, encoding="utf-8")
           PY
 
-          # The macOS runner's tempfile root may be spelled through /var -> /private/var.
-          # The fixture now resolves only that test-owned root before constructing subjects;
-          # production O_NOFOLLOW/openat authority is unchanged.
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          /usr/bin/python3 -B - <<'PY'
+          import os, tempfile
+          from pathlib import Path
+          raw = Path(tempfile.mkdtemp(prefix="nembra-macos-path-diagnostic-"))
+          resolved = raw.resolve(strict=True)
+          print(f"rawTemp={raw}")
+          print(f"resolvedTemp={resolved}")
+          print(f"openDirFdSupported={os.open in os.supports_dir_fd}")
+          print(f"oNoFollow={getattr(os, 'O_NOFOLLOW', 0)}")
+          print(f"oDirectory={getattr(os, 'O_DIRECTORY', 0)}")
+          raw.rmdir()
+          PY
+
+          run_test() {
+            local label="$1"
+            local test_path="$2"
+            local output
+            if ! output=$(/usr/bin/python3 -B -I "$test_path" 2>&1); then
+              local escaped
+              escaped="${output//'%'/'%25'}"
+              escaped="${escaped//$'\r'/'%0D'}"
+              escaped="${escaped//$'\n'/'%0A'}"
+              echo "::error title=${label}::${escaped}"
+              return 1
+            fi
+            printf '%s\n' "$output"
+          }
+
+          run_test component-walk-macos scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          run_test selected-xcode-regression scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          run_test rollback-regression scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          run_test host-ancestry-regression scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
 
       - name: Publish permanent one-file harness repair
         shell: bash
