@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 18,
+    "classifiedPRTotal": 19,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3335,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.292,
+        "similarity": 0.405,
         "title": "[Capture P0][RED TEAM] Preserve exact private guard execution through selected-Xcode composition"
       },
       "3336": {
@@ -1263,6 +1263,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.148,
         "title": "Keep physical Energy Rail truthfully unavailable"
+      },
+      "3345": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "9c693dabce0af12f303a64f8505b012fcbc866ac",
+        "lane": "capture-signed-install-custody",
+        "pr": 3345,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.403,
+        "title": "[Capture P0][VALIDATION] Prove exact private helper sibling bundle"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1295,9 +1306,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:06:37Z",
+    "liveRefreshAt": "2026-08-15T00:06:55Z",
     "liveRefreshDuplicatesSuppressed": [
-      3340
+      3345
     ],
     "liveRefreshMainSHA": "44946ca3b91ad5deee1003024534e64bda1511d2",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5080,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 353,
+  "revision": 354,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:06:38Z",
+  "updatedAt": "2026-08-15T00:06:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:06:37Z",
+      "updatedAt": "2026-08-15T00:06:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
