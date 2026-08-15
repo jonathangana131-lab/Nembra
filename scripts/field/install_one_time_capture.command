@@ -8,8 +8,6 @@ say() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ "$(uname -s)" == "Darwin" ]] || die "Run this on the Mac with Xcode and the intended iPhone connected."
-command -v xcodebuild >/dev/null || die "Xcode command-line tools are not available."
-command -v xcrun >/dev/null || die "xcrun is not available."
 command -v security >/dev/null || die "macOS security tool is not available."
 command -v pod >/dev/null || die "CocoaPods is required for the official Tuya SDK field build."
 [[ -x /usr/bin/python3 ]] || die "System Python 3 is required for private intended-device admission."
@@ -122,84 +120,6 @@ verify_private_tuya_inputs() {
 # Scripts/provision_capture_tuya_identity.sh. Clearing these variables here
 # prevents an old caller environment from becoming accidental authority.
 unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
-
-say "Verifying the intended iPhone 12 / iOS 27 baseline"
-DEVICE_ROWS="$(xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -c '
-import re,sys
-section=False
-for raw in sys.stdin:
-    line=raw.strip()
-    if line=="== Devices ==":
-        section=True; continue
-    if line.startswith("== "):
-        section=False; continue
-    if not section or "iPhone" not in line:
-        continue
-    m=re.search(r"\(([0-9A-Fa-f-]{20,})\)\s*$", line)
-    if m:
-        print(m.group(1)+"\t"+line[:m.start()].strip())
-')"
-[[ -n "$DEVICE_ROWS" ]] || die "No physical iPhone found. Connect the intended device by USB, unlock it, trust this Mac, and enable Developer Mode."
-
-DEVICE_LABEL=""
-DEVICE_OS_VERSION=""
-MATCH_COUNT=0
-INTENDED_NORMALIZED="$(printf '%s' "$DEVICE_UDID" | tr '[:upper:]' '[:lower:]')"
-while IFS=$'\t' read -r ROW_UDID ROW_LABEL; do
-    [[ -n "$ROW_UDID" ]] || continue
-    ROW_NORMALIZED="$(printf '%s' "$ROW_UDID" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$ROW_NORMALIZED" == "$INTENDED_NORMALIZED" ]]; then
-        MATCH_COUNT=$((MATCH_COUNT + 1))
-        DEVICE_LABEL="$ROW_LABEL"
-        if [[ "$ROW_LABEL" =~ \(([0-9]+(\.[0-9]+){1,2})\)$ ]]; then
-            DEVICE_OS_VERSION="${BASH_REMATCH[1]}"
-        fi
-    fi
-done <<< "$DEVICE_ROWS"
-unset INTENDED_NORMALIZED ROW_NORMALIZED ROW_UDID
-[[ "$MATCH_COUNT" == "1" && -n "$DEVICE_LABEL" ]] || die "The connected-device set does not contain exactly one match for the private intended iPhone. No arbitrary-device fallback is permitted."
-[[ "$DEVICE_OS_VERSION" == 27.* ]] || die "The privately admitted intended iPhone is not currently reporting iOS 27 through Xcode device discovery. Do not use a different OS baseline."
-
-# CoreDevice exposes a separate non-private selector and hardware product type.
-# Correlate it to the private UDID through the device hostname, then use only the
-# CoreDevice identifier for install/launch so the private UDID never enters
-# devicectl argv. `--hide-headers` is an Xcode-supported textual-output option.
-COREDEVICE_ROWS="$(xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
-[[ -n "$COREDEVICE_ROWS" ]] || die "CoreDevice did not report the intended iPhone. Keep it connected/unlocked and allow Xcode device preparation to finish."
-COREDEVICE_MATCH="$(printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -I -c '
-import re,sys
-payload=sys.stdin.buffer.read()
-try:
-    intended_raw, rows_raw = payload.split(b"\0", 1)
-    intended=intended_raw.decode("utf-8").lower()
-    rows=rows_raw.decode("utf-8")
-except (ValueError, UnicodeDecodeError):
-    raise SystemExit(2)
-matches=[]
-for raw in rows.splitlines():
-    line=raw.strip()
-    m=re.search(r"(\S+\.coredevice\.local)\s+([0-9A-Fa-f-]{36})\s+(.+)$", line)
-    if not m:
-        continue
-    hostname, selector, tail=m.groups()
-    if hostname.lower() != intended + ".coredevice.local":
-        continue
-    if re.search(r"\bunavailable\b", tail, re.IGNORECASE):
-        continue
-    models=re.findall(r"\b(iPhone[0-9]+,[0-9]+)\b", tail)
-    if len(models) != 1:
-        continue
-    matches.append((selector, models[0]))
-if len(matches) != 1:
-    raise SystemExit(3)
-sys.stdout.write(matches[0][0]+"\t"+matches[0][1])
-')" || die "CoreDevice could not bind exactly one available non-private selector to the intended iPhone."
-COREDEVICE_ID="${COREDEVICE_MATCH%%$'\t'*}"
-DEVICE_MODEL="${COREDEVICE_MATCH#*$'\t'}"
-[[ "$COREDEVICE_ID" =~ ^[0-9A-Fa-f-]{36}$ ]] || die "CoreDevice returned an invalid selector for the intended iPhone."
-[[ "$DEVICE_MODEL" == "iPhone13,2" ]] || die "The privately admitted intended device is not the V14 iPhone 12 hardware baseline (expected product type iPhone13,2)."
-unset COREDEVICE_MATCH COREDEVICE_ROWS DEVICE_ROWS DEVICE_LABEL DEVICE_MODEL
-say "Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION"
 
 say "Finding Apple Development signing team"
 TEAM_IDS="$(security find-identity -v -p codesigning 2>/dev/null | /usr/bin/python3 -I -c '
@@ -368,15 +288,41 @@ exec(
     die "The signed build could not bind frozen selected-Xcode execution to isolated compiler output and protected install custody. No field artifact was admitted."
 fi
 
-[[ "$BUILD_ORIGIN_CUSTODY_RESULT" == *$'\t'* ]] || die "Build-origin custody returned no canonical stage/fingerprint record."
-[[ "${BUILD_ORIGIN_CUSTODY_RESULT#*$'\t'}" != *$'\t'* ]] || die "Build-origin custody returned an ambiguous stage/fingerprint record."
-APP_INSTALL_STAGE_ROOT="${BUILD_ORIGIN_CUSTODY_RESULT%%$'\t'*}"
-STAGED_APP_TREE_SHA256="${BUILD_ORIGIN_CUSTODY_RESULT#*$'\t'}"
+RESULT_EXTRA=""
+IFS=$'\t' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA <<< "$BUILD_ORIGIN_CUSTODY_RESULT"
+[[ -n "$APP_INSTALL_STAGE_ROOT" && -n "$STAGED_APP_TREE_SHA256" && -n "$SELECTED_XCODE_DEVELOPER_DIR" && -n "$SELECTED_XCTRACE" && -n "$SELECTED_DEVICECTL" && -z "$RESULT_EXTRA" ]] || \
+    die "Build-origin custody did not return exactly the protected stage, fingerprint, and three frozen selected-Xcode authority paths."
 [[ "$APP_INSTALL_STAGE_ROOT" == /private/tmp/nembra-authenticated-capture-install.* ]] || \
     die "Build-origin custody returned a stage outside the canonical private temporary root."
 [[ "$STAGED_APP_TREE_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "Build-origin custody returned a malformed signed-app tree fingerprint."
+[[ "$SELECTED_XCODE_DEVELOPER_DIR" == /Library/NembraSelectedXcodeFreeze.*/Xcode.app/Contents/Developer ]] || \
+    die "Build-origin custody returned a frozen Developer directory outside the selected-Xcode namespace."
+[[ "$SELECTED_XCTRACE" == "$SELECTED_XCODE_DEVELOPER_DIR"/* && -x "$SELECTED_XCTRACE" ]] || \
+    die "Build-origin custody returned no executable frozen xctrace inside the selected-Xcode Developer tree."
+[[ "$SELECTED_DEVICECTL" == "$SELECTED_XCODE_DEVELOPER_DIR"/* && -x "$SELECTED_DEVICECTL" ]] || \
+    die "Build-origin custody returned no executable frozen devicectl inside the selected-Xcode Developer tree."
 APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"
 APP="$APP_INSTALL_STAGE"
+
+# Every post-build Xcode device operation must consume the exact frozen paths returned
+# by the same privileged composition that produced the signed app. A closed startup
+# environment prevents ambient DEVELOPER_DIR/TOOLCHAINS/DYLD selectors from regaining
+# authority. HOME=/tmp matches the already-accepted selected-Xcode freeze validation
+# environment; device operations remain non-authoritative until their explicit gates pass.
+run_frozen_xcode_tool() {
+    local tool="$1"
+    shift
+    [[ "$tool" == "$SELECTED_XCTRACE" || "$tool" == "$SELECTED_DEVICECTL" ]] || \
+        die "Attempted to execute an unadmitted Xcode device tool."
+    /usr/bin/env -i \
+        PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+        HOME=/tmp \
+        TMPDIR=/tmp \
+        LANG=C \
+        LC_ALL=C \
+        DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \
+        "$tool" "$@"
+}
 
 # Both privileged layers revoke caller-side cached sudo before selected toolchain
 # publication/compiler output. Reprove command and policy-listing noninteractive
@@ -395,7 +341,7 @@ VERIFIED_STAGE_TREE_SHA256="$(printf '%s' "$SIGNED_APP_CUSTODY_HELPER_BASE64" | 
     die "Protected signed-app install subject failed root-owned custody or exact build-origin tree verification."
 [[ "$VERIFIED_STAGE_TREE_SHA256" == "$STAGED_APP_TREE_SHA256" ]] || \
     die "Protected signed-app install subject differs from the exact isolated xcodebuild output."
-unset BUILD_ORIGIN_CUSTODY_RESULT VERIFIED_STAGE_TREE_SHA256
+unset BUILD_ORIGIN_CUSTODY_RESULT RESULT_EXTRA VERIFIED_STAGE_TREE_SHA256
 
 verify_private_tuya_inputs
 [[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed while the accepted field build was compiling. Discard this candidate."
@@ -496,18 +442,97 @@ say "Final signed app and embedded provisioning profile authorize Sign in with A
 unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER BUILT_APP_ID_PREFIX PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_FIELDS PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE APP_ID_SUFFIX
 unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
-say "Installing SDK-integrated Capture on the intended iPhone"
-open -a Xcode "$ROOT/NembraCapture.xcworkspace" >/dev/null 2>&1 || true
+# Device identity is checked only after the accepted selected-Xcode freeze exists, so
+# discovery cannot silently fall back to whatever mutable Xcode/xcrun the field shell has.
+say "Verifying the intended iPhone 12 / iOS 27 baseline with frozen selected-Xcode tools"
+DEVICE_ROWS="$(run_frozen_xcode_tool "$SELECTED_XCTRACE" list devices 2>/dev/null | /usr/bin/python3 -I -c '
+import re,sys
+section=False
+for raw in sys.stdin:
+    line=raw.strip()
+    if line=="== Devices ==":
+        section=True; continue
+    if line.startswith("== "):
+        section=False; continue
+    if not section or "iPhone" not in line:
+        continue
+    m=re.search(r"\(([0-9A-Fa-f-]{20,})\)\s*$", line)
+    if m:
+        print(m.group(1)+"\t"+line[:m.start()].strip())
+')"
+[[ -n "$DEVICE_ROWS" ]] || die "Frozen selected-Xcode discovery found no physical iPhone. Connect the intended device by USB, unlock it, trust this Mac, and enable Developer Mode."
+
+DEVICE_LABEL=""
+DEVICE_OS_VERSION=""
+MATCH_COUNT=0
+INTENDED_NORMALIZED="$(printf '%s' "$DEVICE_UDID" | tr '[:upper:]' '[:lower:]')"
+while IFS=$'\t' read -r ROW_UDID ROW_LABEL; do
+    [[ -n "$ROW_UDID" ]] || continue
+    ROW_NORMALIZED="$(printf '%s' "$ROW_UDID" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$ROW_NORMALIZED" == "$INTENDED_NORMALIZED" ]]; then
+        MATCH_COUNT=$((MATCH_COUNT + 1))
+        DEVICE_LABEL="$ROW_LABEL"
+        if [[ "$ROW_LABEL" =~ \(([0-9]+(\.[0-9]+){1,2})\)$ ]]; then
+            DEVICE_OS_VERSION="${BASH_REMATCH[1]}"
+        fi
+    fi
+done <<< "$DEVICE_ROWS"
+unset INTENDED_NORMALIZED ROW_NORMALIZED ROW_UDID
+[[ "$MATCH_COUNT" == "1" && -n "$DEVICE_LABEL" ]] || die "The frozen selected-Xcode connected-device set does not contain exactly one match for the private intended iPhone. No arbitrary-device fallback is permitted."
+[[ "$DEVICE_OS_VERSION" == 27.* ]] || die "The privately admitted intended iPhone is not currently reporting iOS 27 through frozen selected-Xcode discovery. Do not use a different OS baseline."
+
+# CoreDevice exposes a separate non-private selector and hardware product type.
+# Correlate it to the private UDID through the device hostname, then use only the
+# CoreDevice identifier for install/launch so the private UDID never enters
+# devicectl argv. `--hide-headers` is an Xcode-supported textual-output option.
+COREDEVICE_ROWS="$(run_frozen_xcode_tool "$SELECTED_DEVICECTL" list devices --hide-headers 2>/dev/null || true)"
+[[ -n "$COREDEVICE_ROWS" ]] || die "Frozen selected-Xcode CoreDevice did not report the intended iPhone. Keep it connected/unlocked and allow device preparation to finish."
+COREDEVICE_MATCH="$(printf '%s\0%s' "$DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -I -c '
+import re,sys
+payload=sys.stdin.buffer.read()
+try:
+    intended_raw, rows_raw = payload.split(b"\0", 1)
+    intended=intended_raw.decode("utf-8").lower()
+    rows=rows_raw.decode("utf-8")
+except (ValueError, UnicodeDecodeError):
+    raise SystemExit(2)
+matches=[]
+for raw in rows.splitlines():
+    line=raw.strip()
+    m=re.search(r"(\S+\.coredevice\.local)\s+([0-9A-Fa-f-]{36})\s+(.+)$", line)
+    if not m:
+        continue
+    hostname, selector, tail=m.groups()
+    if hostname.lower() != intended + ".coredevice.local":
+        continue
+    if re.search(r"\bunavailable\b", tail, re.IGNORECASE):
+        continue
+    models=re.findall(r"\b(iPhone[0-9]+,[0-9]+)\b", tail)
+    if len(models) != 1:
+        continue
+    matches.append((selector, models[0]))
+if len(matches) != 1:
+    raise SystemExit(3)
+sys.stdout.write(matches[0][0]+"\t"+matches[0][1])
+')" || die "Frozen selected-Xcode CoreDevice could not bind exactly one available non-private selector to the intended iPhone."
+COREDEVICE_ID="${COREDEVICE_MATCH%%$'\t'*}"
+DEVICE_MODEL="${COREDEVICE_MATCH#*$'\t'}"
+[[ "$COREDEVICE_ID" =~ ^[0-9A-Fa-f-]{36}$ ]] || die "Frozen selected-Xcode CoreDevice returned an invalid selector for the intended iPhone."
+[[ "$DEVICE_MODEL" == "iPhone13,2" ]] || die "The privately admitted intended device is not the V14 iPhone 12 hardware baseline (expected product type iPhone13,2)."
+unset COREDEVICE_MATCH COREDEVICE_ROWS DEVICE_ROWS DEVICE_LABEL DEVICE_MODEL
+say "Intended baseline proven through frozen selected-Xcode tools: iPhone 12 / iOS $DEVICE_OS_VERSION"
+
+say "Installing SDK-integrated Capture on the intended iPhone through frozen selected-Xcode devicectl"
 INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/nembra-authenticated-capture-install-log.XXXXXX")"
 chmod 600 "$INSTALL_LOG"
 INSTALLED=0
 for ATTEMPT in $(seq 1 60); do
-    if xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
+    if run_frozen_xcode_tool "$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID" "$APP" >"$INSTALL_LOG" 2>&1; then
         INSTALLED=1
         break
     fi
     if [[ "$ATTEMPT" == "1" ]]; then
-        printf '%s\n' "Xcode still appears to be preparing the intended iPhone. Keep it plugged in and unlocked; installation will retry automatically."
+        printf '%s\n' "Frozen selected-Xcode CoreDevice still appears to be preparing the intended iPhone. Keep it plugged in and unlocked; installation will retry automatically." 
     fi
     sleep 3
 done
@@ -541,15 +566,15 @@ sys.stdout.write(text)
         printf '%s\n' "$INSTALL_DIAGNOSTIC" >&2
         unset INSTALL_DIAGNOSTIC
     fi
-    die "The app built successfully, but the intended iPhone never became ready for installation. Keep it unlocked and connected, wait for Xcode to finish Preparing/Connecting, then run this installer again."
+    die "The app built successfully, but frozen selected-Xcode devicectl never saw the intended iPhone become ready for installation. Keep it unlocked and connected, allow device preparation to finish, then run this installer again."
 fi
 
-say "Launching privately provisioned Capture on the intended iPhone"
-if ! xcrun devicectl device process launch \
+say "Launching privately provisioned Capture on the intended iPhone through frozen selected-Xcode devicectl"
+if ! run_frozen_xcode_tool "$SELECTED_DEVICECTL" device process launch \
     --device "$COREDEVICE_ID" \
     --activate \
     "$BUNDLE_ID" >/dev/null 2>&1; then
-    die "Capture installed, but devicectl could not launch it on the intended iPhone. Do not promote the physical test; relaunch through this installer after the device is ready."
+    die "Capture installed, but frozen selected-Xcode devicectl could not launch it on the intended iPhone. Do not promote the physical test; relaunch through this installer after the device is ready."
 fi
 unset DEVICE_UDID COREDEVICE_ID DEVICE_OS_VERSION
 rm -f -- "$INSTALL_LOG"
@@ -562,11 +587,13 @@ fi
 trap - EXIT
 unset STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_BASE64 BUILD_ORIGIN_CUSTODY_HELPER_PATH BUILD_ORIGIN_CUSTODY_HELPER_BLOB BUILD_ORIGIN_CUSTODY_HELPER_BASE64 APP_INSTALL_STAGE
 unset SELECTED_XCODE_FREEZE_HELPER_PATH SELECTED_XCODE_FREEZE_HELPER_BLOB SELECTED_XCODE_FREEZE_HELPER_BASE64 SELECTED_XCODE_FREEZE_LAUNCHER_PATH SELECTED_XCODE_FREEZE_LAUNCHER_BLOB SELECTED_XCODE_FREEZE_LAUNCHER_BASE64 SELECTED_XCODE_BUILD_ORCHESTRATOR_PATH SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB SELECTED_XCODE_BUILD_ORCHESTRATOR_BASE64
+unset SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL
 
 say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \
     "This launch used no Tuya secret in host argv, environment, Git, or the diagnostic export." \
     "The private intended-device UDID was used only for local correlation and was not placed in devicectl argv." \
+    "The exact frozen selected-Xcode xctrace/devicectl subjects returned by the signed-build custody boundary performed device discovery, installation, and launch; no ambient xcrun/Xcode-opening fallback was used." \
     "The exact private Tuya security SDK, resolved lockfile, and generated private app identity matched the bootstrap fingerprint before and after the signed build." \
     "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, canonical stationary procedure, and standalone bundle identifier." \
     "Field procedure: $PROCEDURE_ID. The same identifier is compiled into the immutable accepted export and shown in Capture." \
