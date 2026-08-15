@@ -1,0 +1,67 @@
+name: Capture Private Read Lease Plan Replacement Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_private_read_lease_plan_replacement_red_team.py
+      - .github/workflows/capture-private-read-lease-plan-replacement-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-private-read-lease-plan-replacement-red-team-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 71d84e9b42265dc74894431f7136d66d0f0f43ff
+
+jobs:
+  exploit-positive:
+    name: Classify real-directory plan replacement
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact diagnostic delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-plan-replacement-red-team.yml \
+            scripts/ci/tests/test_capture_private_read_lease_plan_replacement_red-team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove current plan-to-grant replacement is accepted
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_plan_replacement_red_team.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_plan_replacement_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve expected-red truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_PLAN_REPLACEMENT_RED_TEAM exploitPositive=true productionChanged=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
+          echo "SUCCESS means the attacked production parent remains RED for plan-to-grant object continuity; it is not acceptance evidence."
