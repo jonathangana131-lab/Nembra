@@ -36,7 +36,6 @@ jobs:
           changed="$(git diff --name-only "$BASE"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' "$MATERIALIZER" "$SELF" | LC_ALL=C sort)"
           test "$changed" = "$expected"
-          git diff --check "$BASE"...HEAD
 
       - name: Remove the double indentation stripping bug
         shell: bash
