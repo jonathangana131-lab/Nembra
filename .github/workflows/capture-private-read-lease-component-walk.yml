@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Exact acceptance covers both no-follow traversal and plan-to-open object identity continuity.
   EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be
   PYTHONDONTWRITEBYTECODE: 1
 
