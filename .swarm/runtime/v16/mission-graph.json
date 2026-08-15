@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 31,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.166,
+        "similarity": 0.182,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
@@ -1341,17 +1341,6 @@
         "similarity": 0.556,
         "title": "[Capture P0][RED TEAM] Reject tracked ancestor aliases in generated-input staging"
       },
-      "3369": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority-validation",
-        "pr": 3369,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.198,
-        "title": "[Capture P0][VALIDATION] Repair build-authority validation witnesses"
-      },
       "3370": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1382,7 +1371,7 @@
         "lane": "",
         "pr": 3379,
         "recommendedAction": "independent-review",
-        "similarity": 0.209,
+        "similarity": 0.213,
         "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       },
       "3380": {
@@ -1393,7 +1382,7 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.19,
+        "similarity": 0.281,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
       },
       "3382": {
@@ -1407,16 +1396,16 @@
         "similarity": 0.299,
         "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
       },
-      "3385": {
-        "classification": "validation",
+      "3383": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "aa0a0b6c69840a266cf40e59561740600a849db3",
-        "lane": "capture-signed-install-custody",
-        "pr": 3385,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.4,
-        "title": "[Capture P0][REPAIR] Reject generated-input ancestor aliases"
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3383,
+        "recommendedAction": "independent-review",
+        "similarity": 0.281,
+        "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1449,9 +1438,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:04:06Z",
+    "liveRefreshAt": "2026-08-15T03:04:26Z",
     "liveRefreshDuplicatesSuppressed": [
-      3385
+      3370
     ],
     "liveRefreshMainSHA": "412c13dbcf5bdc3708e0c2ac0a3586819ffd7772",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5234,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 468,
+  "revision": 469,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:04:07Z",
+  "updatedAt": "2026-08-15T03:04:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:04:06Z",
+      "updatedAt": "2026-08-15T03:04:26Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
