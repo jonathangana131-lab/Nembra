@@ -27,35 +27,35 @@ jobs:
 
           path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
           source = path.read_text(encoding="utf-8")
-          old = '''\
-                try:
-                    _chmod_acl(descriptor, "+a", acl)
-                except Exception:
-                    os.close(descriptor)
-                    raise
-
-                self._opened.append((descriptor, before_acl, acl))
-          '''
-          new = '''\
-                try:
-                    _chmod_acl(descriptor, "+a", acl)
-                except Exception:
-                    # A command-level failure does not prove the kernel left the ACL
-                    # unchanged. Keep descriptor custody until we can classify the
-                    # post-call vnode. If mutation is observable (or inspection itself
-                    # fails), the outer rollback still owns this exact descriptor.
-                    self._opened.append((descriptor, before_acl, acl))
-                    try:
-                        after_failed_acl = _acl_listing(descriptor)
-                    except Exception:
-                        raise
-                    if after_failed_acl == before_acl:
-                        self._opened.pop()
-                        os.close(descriptor)
-                    raise
-
-                self._opened.append((descriptor, before_acl, acl))
-          '''
+          old = (
+              "                try:\n"
+              "                    _chmod_acl(descriptor, \"+a\", acl)\n"
+              "                except Exception:\n"
+              "                    os.close(descriptor)\n"
+              "                    raise\n"
+              "\n"
+              "                self._opened.append((descriptor, before_acl, acl))\n"
+          )
+          new = (
+              "                try:\n"
+              "                    _chmod_acl(descriptor, \"+a\", acl)\n"
+              "                except Exception:\n"
+              "                    # A command-level failure does not prove the kernel left the ACL\n"
+              "                    # unchanged. Keep descriptor custody until we can classify the\n"
+              "                    # post-call vnode. If mutation is observable (or inspection itself\n"
+              "                    # fails), the outer rollback still owns this exact descriptor.\n"
+              "                    self._opened.append((descriptor, before_acl, acl))\n"
+              "                    try:\n"
+              "                        after_failed_acl = _acl_listing(descriptor)\n"
+              "                    except Exception:\n"
+              "                        raise\n"
+              "                    if after_failed_acl == before_acl:\n"
+              "                        self._opened.pop()\n"
+              "                        os.close(descriptor)\n"
+              "                    raise\n"
+              "\n"
+              "                self._opened.append((descriptor, before_acl, acl))\n"
+          )
           if source.count(old) != 1:
               raise SystemExit("expected exactly one read-lease chmod admission block")
           path.write_text(source.replace(old, new, 1), encoding="utf-8")
