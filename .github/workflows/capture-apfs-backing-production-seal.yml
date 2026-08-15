@@ -66,20 +66,27 @@ jobs:
               raise SystemExit("materializer Python body indentation is not exact")
           script = "\n".join(line[10:] if line else "" for line in body) + "\n"
 
-          # The temporary materializer was authored through a nested Python string
-          # and one validation-only newline escaped into its emitted source. Repair
-          # that exact one-shot authoring seam before compile; product/security
-          # payload and permanent tests remain byte-for-byte otherwise unchanged.
-          malformed = 'if extra:        raise SystemExit(\\n            "test file unexpected executable lines: "'
-          repaired = 'if extra:\n    raise SystemExit(\n        "test file unexpected executable lines: "'
-          count = script.count(malformed)
-          if count != 1:
-              raise SystemExit(f"expected one known materializer newline defect, found {count}")
-          script = script.replace(malformed, repaired, 1)
-
+          # Execute the exact extracted authoring body. The predecessor recovery
+          # required one stale text defect to exist and therefore failed before
+          # compile when the exact pinned materializer contained no such token.
+          # Syntax validity is the authority here; do not rewrite product payload.
           target = Path("/tmp/nembra-full-numeric-principal-materialize.py")
           target.write_text(script, encoding="utf-8")
-          compile(script, str(target), "exec", dont_inherit=True)
+          try:
+              compile(script, str(target), "exec", dont_inherit=True)
+          except SyntaxError as error:
+              line = error.lineno or 0
+              source = script.splitlines()
+              lo = max(0, line - 3)
+              hi = min(len(source), line + 2)
+              context = "\n".join(
+                  f"{index + 1:04d}: {source[index]}" for index in range(lo, hi)
+              )
+              raise SystemExit(
+                  "exact extracted materializer is syntactically invalid: "
+                  f"line={line} offset={error.offset} msg={error.msg}\n{context}"
+              ) from error
+          print("NEMBRA_FULL_NUMERIC_MATERIALIZER_EXTRACT=COMPILED_UNMODIFIED")
           PY
           /usr/bin/python3 -B /tmp/nembra-full-numeric-principal-materialize.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_full_numeric_principal_production.py
