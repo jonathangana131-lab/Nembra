@@ -1,0 +1,217 @@
+name: Capture Frozen Tool Pre-Exec DYLD Materializer
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-frozen-tool-preexec-dyld-sol-20260814
+    paths:
+      - .github/workflows/capture-frozen-tool-preexec-dyld-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 0edb8bc5640ed115af53a7d261266887fc80d48f
+  PRODUCT_BRANCH: repair/v17-capture-frozen-tool-preexec-dyld-sol-20260814
+  MATERIALIZER: .github/workflows/capture-frozen-tool-preexec-dyld-materialize.yml
+  INSTALLER_BLOB: fb8ee8603a50786612b732f3ff3805ccb225c6d3
+  TEST_BLOB: 27d64f172a075ad378841697da1a79fb32c31fda
+
+jobs:
+  materialize:
+    name: Materialize pre-exec DYLD scrub
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact authoring input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = "$MATERIALIZER"
+          test "$(git rev-parse "$EXACT_PARENT:scripts/field/install_one_time_capture.command")" = "$INSTALLER_BLOB"
+          test "$(git rev-parse "$EXACT_PARENT:scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py")" = "$TEST_BLOB"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Repair loader-safe frozen device-tool boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          installer = Path("scripts/field/install_one_time_capture.command")
+          source = installer.read_text(encoding="utf-8")
+          old = '''run_frozen_xcode_tool() {
+              local tool="$1"
+              shift
+              [[ "$tool" == "$SELECTED_XCTRACE" || "$tool" == "$SELECTED_DEVICECTL" ]] || \\
+                  die "Attempted to execute an unadmitted Xcode device tool."
+              /usr/bin/env -i \\
+                  PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+                  HOME=/tmp \\
+                  TMPDIR=/tmp \\
+                  LANG=C \\
+                  LC_ALL=C \\
+                  DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\
+                  "$tool" "$@"
+          }
+          '''.replace("          ", "")
+          new = '''run_frozen_xcode_tool() (
+              local tool="$1"
+              local dyld_name=""
+              shift
+              [[ "$tool" == "$SELECTED_XCTRACE" || "$tool" == "$SELECTED_DEVICECTL" ]] || \\
+                  die "Attempted to execute an unadmitted Xcode device tool."
+
+              # /usr/bin/env is itself a dynamically linked executable. An inherited
+              # DYLD_* value can therefore affect env before `-i` has a chance to clear
+              # the child environment. Strip every current/future DYLD-prefixed shell
+              # variable with bash builtins inside a subshell before the first external
+              # executable in this boundary; the caller shell remains unchanged.
+              while IFS= read -r dyld_name; do
+                  [[ -n "$dyld_name" ]] && unset "$dyld_name"
+              done < <(compgen -A variable DYLD_ || true)
+
+              exec /usr/bin/env -i \\
+                  PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+                  HOME=/tmp \\
+                  TMPDIR=/tmp \\
+                  LANG=C \\
+                  LC_ALL=C \\
+                  DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\
+                  "$tool" "$@"
+          )
+          '''.replace("          ", "")
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one exact frozen-tool wrapper, found {source.count(old)}")
+          installer.write_text(source.replace(old, new), encoding="utf-8")
+
+          test_path = Path("scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py")
+          tests = test_path.read_text(encoding="utf-8")
+          start_marker = "    def test_frozen_device_tool_wrapper_scrubs_hostile_caller_environment(self) -> None:\n"
+          end_marker = "\n\nif __name__ == \"__main__\":\n"
+          if tests.count(start_marker) != 1 or tests.count(end_marker) != 1:
+              raise SystemExit("frozen-tool hostile-environment test anchors changed")
+          start = tests.index(start_marker)
+          end = tests.index(end_marker, start)
+          method = r'''    def test_frozen_device_tool_wrapper_scrubs_hostile_caller_environment(self) -> None:
+              source = INSTALLER.read_text(encoding="utf-8")
+              start = source.index("run_frozen_xcode_tool() (")
+              end = source.index("\n)\n\n# Both privileged layers", start) + len("\n)\n")
+              function_source = source[start:end]
+              self.assertIn("compgen -A variable DYLD_", function_source)
+              self.assertIn('unset "$dyld_name"', function_source)
+              self.assertLess(function_source.index("unset \"$dyld_name\""), function_source.index("exec /usr/bin/env -i"))
+
+              with tempfile.TemporaryDirectory(prefix="nembra-frozen-device-tools-") as temporary:
+                  root = Path(temporary)
+                  developer = root / "Xcode.app/Contents/Developer"
+                  tools = developer / "usr/bin"; tools.mkdir(parents=True)
+                  devicectl = tools / "devicectl"; xctrace = tools / "xctrace"
+                  probe = """#!/bin/bash
+          printf 'DEVELOPER_DIR=%s\\n' "${DEVELOPER_DIR-<unset>}"
+          printf 'HOME=%s\\n' "${HOME-<unset>}"
+          printf 'TMPDIR=%s\\n' "${TMPDIR-<unset>}"
+          printf 'LANG=%s\\n' "${LANG-<unset>}"
+          printf 'LC_ALL=%s\\n' "${LC_ALL-<unset>}"
+          printf 'TOOLCHAINS=%s\\n' "${TOOLCHAINS-<unset>}"
+          printf 'DYLD_INSERT_LIBRARIES=%s\\n' "${DYLD_INSERT_LIBRARIES-<unset>}"
+          printf 'DYLD_FUTURE_SELECTOR=%s\\n' "${DYLD_FUTURE_SELECTOR-<unset>}"
+          printf 'SDKROOT=%s\\n' "${SDKROOT-<unset>}"
+          """
+                  for tool in (devicectl, xctrace):
+                      tool.write_text(probe, encoding="utf-8"); tool.chmod(0o755)
+                  wrapper = root / "wrapper.sh"
+                  wrapper.write_text(
+                      "#!/bin/bash\nset -euo pipefail\n"
+                      "die() { printf 'ERROR: %s\\n' \"$*\" >&2; exit 77; }\n"
+                      f"SELECTED_XCODE_DEVELOPER_DIR={str(developer)!r}\n"
+                      f"SELECTED_XCTRACE={str(xctrace)!r}\n"
+                      f"SELECTED_DEVICECTL={str(devicectl)!r}\n"
+                      + function_source + "tool=\"$1\"\nshift\nrun_frozen_xcode_tool \"$tool\" \"$@\"\n",
+                      encoding="utf-8",
+                  )
+                  wrapper.chmod(0o755)
+
+                  # Start bash without DYLD injection so the test reaches the boundary
+                  # under test. Then export hostile caller selectors inside that already
+                  # running shell and source the wrapper (a bash builtin). This proves the
+                  # wrapper must sanitize DYLD before its first external exec.
+                  launch_environment = {
+                      key: value for key, value in os.environ.items() if not key.startswith("DYLD_")
+                  }
+                  hostile_launcher = r'''export DEVELOPER_DIR=/Applications/AttackerXcode.app/Contents/Developer
+          export TOOLCHAINS=attacker.toolchain
+          export DYLD_INSERT_LIBRARIES=/tmp/attacker.dylib
+          export DYLD_FUTURE_SELECTOR=attacker.future
+          export SDKROOT=/tmp/attacker.sdk
+          export HOME=/tmp/attacker-home
+          export TMPDIR=/tmp/attacker-tmp
+          export LANG=zz_ZZ.UTF-8
+          export LC_ALL=zz_ZZ.UTF-8
+          source "$1" "${@:2}"
+          '''
+                  completed = subprocess.run(
+                      ["/bin/bash", "-c", hostile_launcher, "nembra-hostile-wrapper", str(wrapper),
+                       str(devicectl), "device", "list"],
+                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                      text=True, env=launch_environment, check=False,
+                  )
+                  self.assertEqual(completed.returncode, 0, completed.stderr)
+                  observed = dict(line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line)
+                  self.assertEqual(observed["DEVELOPER_DIR"], str(developer))
+                  self.assertEqual(observed["HOME"], "/tmp")
+                  self.assertEqual(observed["TMPDIR"], "/tmp")
+                  self.assertEqual(observed["LANG"], "C")
+                  self.assertEqual(observed["LC_ALL"], "C")
+                  self.assertEqual(observed["TOOLCHAINS"], "<unset>")
+                  self.assertEqual(observed["DYLD_INSERT_LIBRARIES"], "<unset>")
+                  self.assertEqual(observed["DYLD_FUTURE_SELECTOR"], "<unset>")
+                  self.assertEqual(observed["SDKROOT"], "<unset>")
+                  rejected = subprocess.run(
+                      ["/bin/bash", "-c", hostile_launcher, "nembra-hostile-wrapper", str(wrapper),
+                       str(root / "attacker-devicectl")],
+                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                      text=True, env=launch_environment, check=False,
+                  )
+                  self.assertEqual(rejected.returncode, 77)
+                  self.assertIn("unadmitted Xcode device tool", rejected.stderr)
+          '''.replace("          ", "")
+          test_path.write_text(tests[:start] + method + tests[end:], encoding="utf-8")
+          PY
+
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --check
+
+      - name: Publish clean repair head
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f -- "$MATERIALIZER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all | grep -v -E '^( M| D) (scripts/field/install_one_time_capture.command|scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py|\.github/workflows/capture-frozen-tool-preexec-dyld-materialize.yml)$' || true)"
+          git add scripts/field/install_one_time_capture.command \
+                  scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+                  "$MATERIALIZER"
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            "$MATERIALIZER" \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/field/install_one_time_capture.command | sort)"
+          test "$changed" = "$expected"
+          git config user.name "nembra-capture-swarm"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "fix(capture): scrub DYLD before frozen tool exec"
+          git push origin "HEAD:$PRODUCT_BRANCH"
