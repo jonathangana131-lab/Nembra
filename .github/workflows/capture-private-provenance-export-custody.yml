@@ -1,0 +1,53 @@
+name: Capture Private Provenance Export Custody
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_private_provenance_export_custody.py
+      - .github/workflows/capture-private-provenance-export-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-custody:
+    name: Prove accepted private provenance survives export
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact private-provenance export source: %s\n' "$actual"
+
+      - name: Prove build, readback, and immutable export custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-provenance-export-pycache"
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          /usr/bin/xcrun swiftc -parse \
+            NembraApp/App/NembraCaptureBuildIdentity.swift \
+            NembraApp/App/NembraCaptureEntrypoint.swift
+          /usr/bin/xcodebuild -project NembraCapture.xcodeproj -list >/dev/null
+          bash -n scripts/field/install_one_time_capture.command
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
