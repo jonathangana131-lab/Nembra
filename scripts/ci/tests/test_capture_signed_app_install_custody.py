@@ -85,7 +85,8 @@ class CaptureSignedAppInstallCustodyTests(unittest.TestCase):
         self.assertLess(indexes["codesign"], indexes["install"])
 
         self.assertIn('DERIVED_PLACEHOLDER="__NEMBRA_PROTECTED_DERIVED__"', source)
-        self.assertIn('--install-custody-helper-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"', source)
+        self.assertIn('--install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"', source)
+        self.assertIn('--install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"', source)
         self.assertIn('[[ "$VERIFIED_STAGE_TREE_SHA256" == "$STAGED_APP_TREE_SHA256" ]]', source)
         self.assertIn('APP_INSTALL_STAGE_ROOT=""', source)
         self.assertIn('cleanup_install_subject()', source)
