@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture field installer signed-bundle verification")
 struct TuyaFieldInstallerSignedBundleVerificationSourceTests {
-    @Test("strict recursive signature validation precedes entitlement authority and install")
+    @Test("strict recursive signature validation precedes entitlement authority and frozen install")
     func signedBundleSealMustValidateBeforeAuthorityReadbackOrDeviceInstall() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
@@ -17,12 +17,16 @@ struct TuyaFieldInstallerSignedBundleVerificationSourceTests {
             in: installer
         )
         let install = try requiredOffset(
-            containing: "xcrun devicectl device install app --device \"$COREDEVICE_ID\" \"$APP\"",
+            containing: "run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device install app --device \"$COREDEVICE_ID\" \"$APP\"",
             in: installer
         )
 
         #expect(verify < entitlementReadback)
         #expect(entitlementReadback < install)
+        #expect(installer.contains("DEVELOPER_DIR=\"$SELECTED_XCODE_DEVELOPER_DIR\""))
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device process launch"))
+        #expect(!installer.contains("xcrun devicectl"))
+        #expect(!installer.contains("open -a Xcode"))
         #expect(installer.contains("failed recursive strict code-signature verification"))
         #expect(installer.contains("passed recursive strict code-signature verification"))
     }
