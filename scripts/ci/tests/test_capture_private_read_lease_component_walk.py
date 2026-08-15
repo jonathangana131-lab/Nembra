@@ -128,7 +128,7 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(
                     helper.SelectedXcodeBuildOrchestratorError,
-                    "held ancestry disagrees|no longer reachable",
+                    "held ancestry disagrees|no longer reachable|pathname changed",
                 ):
                     helper._lease_paths(
                         (subject,), repo, include_descriptors=True
@@ -180,6 +180,102 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
             self.assertFalse(lease._opened)
             self.assertEqual(lease._principal, "")
 
+    def test_descriptor_bound_symlink_policy_rejects_pathname_generation_swap(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-race-") as raw:
+            outer = Path(raw)
+            outer.chmod(0o711)
+            repo = outer / "repo"
+            subject = repo / "LocalSecrets/TuyaSDK/Build"
+            subject.mkdir(parents=True)
+
+            external = outer / "outside-subject"
+            external.mkdir()
+            (external / "outside.fixture").write_text("outside\n", encoding="utf-8")
+            (subject / "escape").symlink_to(external, target_is_directory=True)
+            accepted_hold = repo / "LocalSecrets/TuyaSDK/Build.accepted-hold"
+
+            replacement = outer / "replacement-build"
+            replacement.mkdir()
+            (replacement / "escape").symlink_to(".", target_is_directory=True)
+
+            original_subject_entries = helper._subject_entries
+            raced = False
+
+            def classify_replacement_then_restore(
+                path: Path,
+                *,
+                include_signatures: bool = False,
+            ):
+                nonlocal raced
+                candidate = Path(path)
+                if candidate != subject or raced:
+                    return original_subject_entries(
+                        candidate,
+                        include_signatures=include_signatures,
+                    )
+                subject.rename(accepted_hold)
+                replacement.rename(subject)
+                try:
+                    entries = original_subject_entries(
+                        subject,
+                        include_signatures=include_signatures,
+                    )
+                finally:
+                    subject.rename(replacement)
+                    accepted_hold.rename(subject)
+                raced = True
+                return entries
+
+            def unexpected_acl(_descriptor: int) -> str:
+                raise AssertionError("untrusted held symlink reached ACL inspection")
+
+            lease = helper._PrivateReadLease((subject,), repo)
+            with (
+                mock.patch.object(
+                    helper,
+                    "_subject_entries",
+                    side_effect=classify_replacement_then_restore,
+                ),
+                mock.patch.object(helper, "_acl_listing", side_effect=unexpected_acl),
+            ):
+                with self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "symlink escaped|symlink target",
+                ):
+                    lease.grant("nembraheldsymlink")
+            self.assertTrue(raced)
+            self.assertFalse(lease._opened)
+            self.assertEqual(lease._principal, "")
+
+    def test_descriptor_bound_symlink_policy_accepts_internal_framework_chain(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-control-") as raw:
+            repo = Path(raw) / "repo"
+            subject = repo / "LocalSecrets/TuyaSDK/Build"
+            headers = subject / "Thing.framework/Versions/A/Headers"
+            headers.mkdir(parents=True)
+            (headers / "Thing.h").write_text("// fixture\n", encoding="utf-8")
+            (subject / "Thing.framework/Versions/Current").symlink_to(
+                "A",
+                target_is_directory=True,
+            )
+            (subject / "Thing.framework/Headers").symlink_to(
+                "Versions/Current/Headers",
+                target_is_directory=True,
+            )
+
+            plan = helper._lease_paths((subject,), repo, include_descriptors=True)
+            try:
+                paths = {entry[0] for entry in plan}
+                self.assertIn(headers, paths)
+                self.assertIn(headers / "Thing.h", paths)
+                self.assertNotIn(subject / "Thing.framework/Versions/Current", paths)
+                self.assertNotIn(subject / "Thing.framework/Headers", paths)
+            finally:
+                for _path, _host_only, _signature, descriptor in reversed(plan):
+                    os.close(int(descriptor))
+
     def test_held_descriptor_prevents_inode_reuse_after_admission(self) -> None:
         helper = load()
         with tempfile.TemporaryDirectory(prefix="nembra-component-held-inode-") as raw:
@@ -214,12 +310,20 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
         opener = inspect.getsource(helper._open_pinned_path)
         lease_paths = inspect.getsource(helper._lease_paths)
         verifier = inspect.getsource(helper._verify_descriptor_plan)
+        symlink_validator = inspect.getsource(helper._validate_subject_symlinks_from_descriptor)
+        symlink_target = inspect.getsource(helper._validate_held_symlink_target)
         grant = inspect.getsource(helper._PrivateReadLease.grant)
         self.assertIn("dir_fd=current", opener)
         self.assertIn("O_NOFOLLOW", opener)
         self.assertIn("include_descriptors", lease_paths)
         self.assertIn("_verify_descriptor_plan", lease_paths)
+        self.assertIn("_validate_subject_symlinks_from_descriptor", lease_paths)
         self.assertIn("_open_pinned_child", verifier)
+        self.assertIn("os.listdir(directory_descriptor)", symlink_validator)
+        self.assertIn("os.readlink(name, dir_fd=directory_descriptor)", symlink_validator)
+        self.assertIn("os.readlink(component, dir_fd=current)", symlink_target)
+        self.assertNotIn(".resolve(strict=True)", symlink_validator)
+        self.assertNotIn(".resolve(strict=True)", symlink_target)
         self.assertIn("include_descriptors=True", grant)
         self.assertIn("accepted_signature, descriptor", grant)
         self.assertNotIn("include_signatures=True", grant)
