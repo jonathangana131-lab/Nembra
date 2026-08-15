@@ -32,6 +32,8 @@ jobs:
 
           path = Path('.github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml')
           text = path.read_text(encoding='utf-8')
+          expr = '$' + '{{'
+          close = '}}'
 
           replacements = [
               (
@@ -43,16 +45,16 @@ jobs:
                   "    if: github.event_name == 'pull_request' || github.event_name == 'push'\n",
               ),
               (
-                  "          ref: ${{ github.event.pull_request.head.sha }}\n",
-                  "          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+                  "          ref: " + expr + " github.event.pull_request.head.sha " + close + "\n",
+                  "          ref: " + expr + " github.event.pull_request.head.sha || github.sha " + close + "\n",
               ),
               (
-                  "          test \"$(git rev-parse HEAD)\" = \"${{ github.event.pull_request.head.sha }}\"\n",
-                  "          test \"$(git rev-parse HEAD)\" = \"${{ github.event.pull_request.head.sha || github.sha }}\"\n",
+                  "          test \"$(git rev-parse HEAD)\" = \"" + expr + " github.event.pull_request.head.sha " + close + "\"\n",
+                  "          test \"$(git rev-parse HEAD)\" = \"" + expr + " github.event.pull_request.head.sha || github.sha " + close + "\"\n",
               ),
               (
-                  "          git push origin HEAD:\"${{ github.event.pull_request.head.ref }}\"\n",
-                  "          git push origin HEAD:\"${{ github.event.pull_request.head.ref || github.ref_name }}\"\n",
+                  "          git push origin HEAD:\"" + expr + " github.event.pull_request.head.ref " + close + "\"\n",
+                  "          git push origin HEAD:\"" + expr + " github.event.pull_request.head.ref || github.ref_name " + close + "\"\n",
               ),
           ]
           for old, new in replacements:
