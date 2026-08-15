@@ -35,7 +35,7 @@ jobs:
                     raise
 
                 self._opened.append((descriptor, before_acl, acl))
-'''
+          '''
           new = '''\
                 try:
                     _chmod_acl(descriptor, "+a", acl)
@@ -55,7 +55,7 @@ jobs:
                     raise
 
                 self._opened.append((descriptor, before_acl, acl))
-'''
+          '''
           if source.count(old) != 1:
               raise SystemExit("expected exactly one read-lease chmod admission block")
           path.write_text(source.replace(old, new, 1), encoding="utf-8")
