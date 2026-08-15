@@ -27,6 +27,11 @@ SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
 say "Exact requested Capture source matched: $SOURCE_SHA"
 
+: "${NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256:?Final GO must provide NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256 as the independently accepted canonical private-input provenance-record SHA-256.}"
+[[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || die "NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256 must be exactly 64 hex characters."
+ACCEPTED_TUYA_PROVENANCE_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256" | tr '[:upper:]' '[:lower:]')"
+export NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256="$ACCEPTED_TUYA_PROVENANCE_SHA256"
+
 # The intended-device identifier is private field-admission input, never product
 # evidence. Reuse the canonical descriptor-bound reader so the private file is
 # opened once with no-follow component checks and stable metadata/read custody.
@@ -105,6 +110,11 @@ TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
 TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 verify_private_tuya_inputs() {
+    [[ -f "$TUYA_DEPENDENCY_PROVENANCE" ]] || die "Preaccepted private Tuya provenance record disappeared. Restart from review/acceptance; normal field mode may not recreate it."
+    local record_sha
+    record_sha="$(shasum -a 256 "$TUYA_DEPENDENCY_PROVENANCE" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
+    [[ "$record_sha" =~ ^[0-9a-f]{64}$ ]] || die "Could not fingerprint the preaccepted private Tuya provenance record."
+    [[ "$record_sha" == "$ACCEPTED_TUYA_PROVENANCE_SHA256" ]] || die "Private Tuya provenance record no longer matches the independently accepted SHA-256. Normal field mode cannot rebind this authority."
     /usr/bin/python3 -I "$TUYA_PROVENANCE_HELPER" verify \
         --lockfile "$ROOT/Podfile.lock" \
         --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
@@ -112,7 +122,7 @@ verify_private_tuya_inputs() {
         --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
         --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
         --record "$TUYA_DEPENDENCY_PROVENANCE" >/dev/null || \
-        die "Private Tuya SDK/app-identity inputs no longer match the bootstrap fingerprint record. Restart from a freshly reviewed field-build candidate."
+        die "Private Tuya SDK/app-identity inputs no longer match the independently accepted provenance record. Restart from a newly reviewed candidate."
 }
 
 # Never accept launch-time secrets. The field workspace gets AppKey/AppSecret
@@ -269,6 +279,7 @@ exec(
         --security-build "$TUYA_PRIVATE_SDK/Build" \
         --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
         --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+        --expected-provenance-sha256 "$ACCEPTED_TUYA_PROVENANCE_SHA256" \
         -- /usr/bin/xcodebuild \
         -workspace NembraCapture.xcworkspace \
         -scheme "Nembra Capture" \
@@ -285,7 +296,7 @@ exec(
         "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
         "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"
 )"; then
-    die "The signed build could not bind frozen selected-Xcode execution to isolated compiler output and protected install custody. No field artifact was admitted."
+    die "The signed build could not bind frozen selected-Xcode execution, independently accepted private-input provenance, isolated compiler output, and protected install custody. No field artifact was admitted."
 fi
 
 RESULT_EXTRA=""
@@ -587,14 +598,14 @@ fi
 trap - EXIT
 unset STAGED_APP_TREE_SHA256 SIGNED_APP_CUSTODY_HELPER_PATH SIGNED_APP_CUSTODY_HELPER_BLOB SIGNED_APP_CUSTODY_HELPER_BASE64 BUILD_ORIGIN_CUSTODY_HELPER_PATH BUILD_ORIGIN_CUSTODY_HELPER_BLOB BUILD_ORIGIN_CUSTODY_HELPER_BASE64 APP_INSTALL_STAGE
 unset SELECTED_XCODE_FREEZE_HELPER_PATH SELECTED_XCODE_FREEZE_HELPER_BLOB SELECTED_XCODE_FREEZE_HELPER_BASE64 SELECTED_XCODE_FREEZE_LAUNCHER_PATH SELECTED_XCODE_FREEZE_LAUNCHER_BLOB SELECTED_XCODE_FREEZE_LAUNCHER_BASE64 SELECTED_XCODE_BUILD_ORCHESTRATOR_PATH SELECTED_XCODE_BUILD_ORCHESTRATOR_BLOB SELECTED_XCODE_BUILD_ORCHESTRATOR_BASE64
-unset SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL
+unset SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL ACCEPTED_TUYA_PROVENANCE_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256
 
 say "SDK-INTEGRATED CAPTURE LAUNCHED"
 printf '%s\n' \
     "This launch used no Tuya secret in host argv, environment, Git, or the diagnostic export." \
     "The private intended-device UDID was used only for local correlation and was not placed in devicectl argv." \
     "The exact frozen selected-Xcode xctrace/devicectl subjects returned by the signed-build custody boundary performed device discovery, installation, and launch; no ambient xcrun/Xcode-opening fallback was used." \
-    "The exact private Tuya security SDK, resolved lockfile, and generated private app identity matched the bootstrap fingerprint before and after the signed build." \
+    "The exact private Tuya security SDK, resolved lockfile, and generated private app identity matched the independently accepted private-input provenance before bootstrap, inside the guarded build window, and after the signed build." \
     "The exact built device app was read back before installation and matched the requested source SHA, field-build identifier, canonical stationary procedure, and standalone bundle identifier." \
     "Field procedure: $PROCEDURE_ID. The same identifier is compiled into the immutable accepted export and shown in Capture." \
     "Do NOT repeat the old 17-step ride capture." \
