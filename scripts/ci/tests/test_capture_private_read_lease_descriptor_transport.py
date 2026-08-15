@@ -31,22 +31,31 @@ class CapturePrivateReadLeaseDescriptorTransportTests(unittest.TestCase):
         with mock.patch.object(helper.subprocess, "run", return_value=completed) as run:
             helper._acl_listing(41)
             self.assertEqual(run.call_args.kwargs["pass_fds"], (41,))
-            self.assertEqual(run.call_args.args[0][-1], "/dev/fd/41")
+            self.assertEqual(run.call_args.args[0], ["/bin/ls", "-Hlde", "/dev/fd/41"])
         with mock.patch.object(helper.subprocess, "run", return_value=completed) as run:
-            helper._chmod_acl(43, "+a", "nembrabuildfixture allow read")
+            helper._chmod_acl(43, "+a", "user:nembrabuildfixture allow read")
             self.assertEqual(run.call_args.kwargs["pass_fds"], (43,))
             self.assertEqual(run.call_args.args[0][-1], "/dev/fd/43")
+
+    def test_darwin_acl_uses_explicit_user_principal_and_minimal_host_right(self) -> None:
+        helper = load()
+        host_acl = helper._acl_text("nembrabuildfixture", True, True)
+        file_acl = helper._acl_text("nembrabuildfixture", False, False)
+        self.assertEqual(host_acl, "user:nembrabuildfixture allow search")
+        self.assertTrue(file_acl.startswith("user:nembrabuildfixture allow "))
+        self.assertIn("read", file_acl)
+        self.assertNotIn("write", file_acl)
 
     def test_preexisting_build_principal_acl_is_rejected_by_classifier(self) -> None:
         helper = load()
         self.assertTrue(
             helper._principal_already_present(
-                " 0: nembrabuildfixture allow read\n", "nembrabuildfixture"
+                " 0: user:nembrabuildfixture allow read\n", "nembrabuildfixture"
             )
         )
         self.assertFalse(
             helper._principal_already_present(
-                " 0: otheruser allow read\n", "nembrabuildfixture"
+                " 0: user:otheruser allow read\n", "nembrabuildfixture"
             )
         )
 
