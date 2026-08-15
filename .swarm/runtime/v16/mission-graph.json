@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 19,
+    "classifiedPRTotal": 18,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1140,7 +1140,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3332,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.333,
+        "similarity": 0.318,
         "title": "[Capture P0][ORACLE] Rebase install-custody regression on live carrier"
       },
       "3333": {
@@ -1208,17 +1208,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.277,
         "title": "[Capture P0][SECURITY] Descriptor-bind private read lease rollback"
-      },
-      "3340": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "e8030a38dbd3af0e13502047dc19e0614c5abfaa",
-        "lane": "capture-signed-install-custody",
-        "pr": 3340,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.324,
-        "title": "[Capture P0][SECURITY][VALIDATION] Descriptor-pin private input read lease"
       },
       "3341": {
         "classification": "requires-review",
@@ -1306,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:07:10Z",
+    "liveRefreshAt": "2026-08-15T00:07:23Z",
     "liveRefreshDuplicatesSuppressed": [
       3345
     ],
@@ -5091,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 355,
+  "revision": 356,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:07:11Z",
+  "updatedAt": "2026-08-15T00:07:23Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:07:10Z",
+      "updatedAt": "2026-08-15T00:07:23Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
