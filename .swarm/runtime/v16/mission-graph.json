@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 30,
+    "classifiedPRTotal": 31,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "navigation-app-visible",
         "pr": 2959,
         "recommendedAction": "independent-review",
-        "similarity": 0.099,
+        "similarity": 0.097,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.109,
+        "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.152,
+        "similarity": 0.171,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.107,
+        "similarity": 0.0,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1349,19 +1349,8 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3366,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.133,
+        "similarity": 0.0,
         "title": "[Dashboard V17] Re-anchor physical Energy Rail unavailable state on current main"
-      },
-      "3367": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3367,
-        "recommendedAction": "independent-review",
-        "similarity": 0.252,
-        "title": "[Capture][P0][recovery] Materialize component-anchored private read lease"
       },
       "3368": {
         "classification": "validation",
@@ -1393,8 +1382,30 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3371,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.313,
+        "similarity": 0.444,
         "title": "[Capture P0][AX RUNTIME] Re-anchor Standard + AX5 VoiceOver to 2b7d"
+      },
+      "3372": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-runtime-accessibility",
+        "pr": 3372,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.452,
+        "title": "[Capture P0][ACCESSIBILITY][VALIDATION] Re-anchor AX5 VoiceOver matrix to ab2d"
+      },
+      "3373": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "9e30aa5f656b8cfe3c4acfd3591606e65ad32cf8",
+        "lane": "capture-build-authority",
+        "pr": 3373,
+        "recommendedAction": "independent-review",
+        "similarity": 0.173,
+        "title": "[Capture P0][TEST] Repair dedicated frozen-device DYLD witness"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1427,7 +1438,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:00:20Z",
+    "liveRefreshAt": "2026-08-15T03:00:36Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5212,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 456,
+  "revision": 457,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:00:21Z",
+  "updatedAt": "2026-08-15T03:00:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5291,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:00:20Z",
+      "updatedAt": "2026-08-15T03:00:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
