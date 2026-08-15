@@ -1074,7 +1074,7 @@
         "lane": "navigation-app-visible",
         "pr": 2959,
         "recommendedAction": "independent-review",
-        "similarity": 0.065,
+        "similarity": 0.058,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.024,
+        "similarity": 0.027,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1305,7 +1305,7 @@
         "lane": "capture-flagship-convergence",
         "pr": 3387,
         "recommendedAction": "independent-review",
-        "similarity": 0.058,
+        "similarity": 0.051,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
       "3394": {
@@ -1448,8 +1448,8 @@
         "lane": "",
         "pr": 3424,
         "recommendedAction": "independent-review",
-        "similarity": 0.077,
-        "title": "[Battery/Range V15][RED] Re-pin accepted authority and launcher contracts on main"
+        "similarity": 0.064,
+        "title": "[Battery/Range V15] Restore accepted authority and visual contracts on main"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1482,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:06:07Z",
+    "liveRefreshAt": "2026-08-15T11:06:46Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5267,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 592,
+  "revision": 593,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:06:09Z",
+  "updatedAt": "2026-08-15T11:06:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:06:07Z",
+      "updatedAt": "2026-08-15T11:06:46Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
