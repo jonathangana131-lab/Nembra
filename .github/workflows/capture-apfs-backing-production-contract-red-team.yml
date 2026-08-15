@@ -1,0 +1,64 @@
+name: Capture APFS Backing Production Contract Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_signed_app_build_origin_custody.py
+      - scripts/ci/tests/test_capture_apfs_backing_production_contract.py
+      - .github/workflows/capture-apfs-backing-production-contract-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red-contract:
+    name: Require current production backing seal gap to stay visible
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Bind diagnostic to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXACT_PRODUCT_PARENT: 60c365da2061e77ccf949da8f2e3385cec225444
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$EXACT_PRODUCT_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove the current product still fails the required backing-file contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-apfs-backing-contract-pycache"
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_apfs_backing_production_contract.py
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apfs_backing_production_contract.py >"$RUNNER_TEMP/contract.out" 2>&1
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/contract.out"
+          test "$rc" -ne 0
+          grep -F 'test_creation_closes_ambient_umask_write_window' "$RUNNER_TEMP/contract.out"
+          grep -F 'test_root_only_backing_seal_precedes_first_attach' "$RUNNER_TEMP/contract.out"
+          grep -F 'APFS backing creation still inherits ambient root umask' "$RUNNER_TEMP/contract.out"
+          grep -F 'production helper does not define _seal_apfs_backing_file' "$RUNNER_TEMP/contract.out"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' 'EXPECTED RED CONFIRMED: production has not yet composed the root-only APFS backing-file seal.'
+
+      - name: Preserve truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'This diagnostic changes no product helper and creates no signing, device, Bluetooth, Tuya, telemetry, command, install, or physical authority.' \
+            'A green classifier here means the expected production defect remains visible; it is not product acceptance.'
