@@ -72,7 +72,7 @@ jobs:
           test_path.write_text(test, encoding='utf-8')
           PY
           git diff --check -- "$app" "$test_file"
-          test "$(git diff --name-only | LC_ALL=C sort)" = $'.github/workflows/capture-ax5-current-product-materializer.yml\nNembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFirstFoldCopySourceTests.swift'
+          test "$(git diff --name-only | LC_ALL=C sort)" = $'NembraApp/App/NembraCaptureEntrypoint.swift\nPackages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFirstFoldCopySourceTests.swift'
 
       - name: Commit product and source regression only
         shell: bash
