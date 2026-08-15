@@ -171,14 +171,21 @@ jobs:
           grep -Fq 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' "$installer"
           grep -Fq '/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER"' "$installer"
           grep -Fq 'read_private_identifier' "$installer"
-          grep -Fq 'devicectl list devices --hide-headers' "$installer"
+          grep -Fq 'run_frozen_xcode_tool "$SELECTED_XCTRACE" list devices' "$installer"
+          grep -Fq 'run_frozen_xcode_tool "$SELECTED_DEVICECTL" list devices --hide-headers' "$installer"
           grep -Fq '.coredevice.local' "$installer"
           grep -Fq '[[ "$DEVICE_OS_VERSION" == 27.* ]]' "$installer"
           grep -Fq '[[ "$DEVICE_MODEL" == "iPhone13,2" ]]' "$installer"
-          grep -Fq 'devicectl device install app --device "$COREDEVICE_ID"' "$installer"
+          grep -Fq 'run_frozen_xcode_tool "$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID" "$APP"' "$installer"
+          grep -Fq 'run_frozen_xcode_tool "$SELECTED_DEVICECTL" device process launch' "$installer"
+          grep -Fq 'DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR"' "$installer"
           grep -Fq -- '--device "$COREDEVICE_ID"' "$installer"
           if grep -Fq -- '--device "$DEVICE_UDID"' "$installer"; then
             echo 'ERROR: private intended-device UDID must not be placed in devicectl argv; use the correlated CoreDevice selector.' >&2
+            exit 1
+          fi
+          if grep -Fq 'xcrun xctrace' "$installer" || grep -Fq 'xcrun devicectl' "$installer" || grep -Fq 'open -a Xcode' "$installer"; then
+            echo 'ERROR: physical device discovery/install/launch must remain on the exact frozen selected-Xcode subject.' >&2
             exit 1
           fi
 
@@ -220,7 +227,7 @@ jobs:
           grep -Fq '[[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]]' "$installer"
           readback_line="$(grep -nF 'BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil' "$installer" | cut -d: -f1)"
           procedure_check_line="$(grep -nF '[[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]]' "$installer" | cut -d: -f1)"
-          install_line="$(grep -nF 'say "Installing SDK-integrated Capture on the intended iPhone"' "$installer" | cut -d: -f1)"
+          install_line="$(grep -nF 'say "Installing SDK-integrated Capture on the intended iPhone through frozen selected-Xcode devicectl"' "$installer" | cut -d: -f1)"
           test -n "$readback_line" && test -n "$procedure_check_line" && test -n "$install_line"
           test "$readback_line" -lt "$procedure_check_line"
           test "$procedure_check_line" -lt "$install_line"
@@ -249,8 +256,8 @@ jobs:
           grep -Fq -- '--install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB"' "$installer"
           grep -Fq '/usr/bin/sudo -n -l' "$installer"
           grep -Fq -- '-derivedDataPath "$DERIVED_PLACEHOLDER"' "$installer"
-          grep -Fq 'APP_INSTALL_STAGE_ROOT="${BUILD_ORIGIN_CUSTODY_RESULT%%' "$installer"
-          grep -Fq 'STAGED_APP_TREE_SHA256="${BUILD_ORIGIN_CUSTODY_RESULT#*' "$installer"
+          grep -Fq "IFS=\$'\\t' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA" "$installer"
+          grep -Fq '[[ -n "$APP_INSTALL_STAGE_ROOT" && -n "$STAGED_APP_TREE_SHA256" && -n "$SELECTED_XCODE_DEVELOPER_DIR" && -n "$SELECTED_XCTRACE" && -n "$SELECTED_DEVICECTL" && -z "$RESULT_EXTRA" ]]' "$installer"
           grep -Fq 'APP_INSTALL_STAGE="$APP_INSTALL_STAGE_ROOT/Nembra Capture.app"' "$installer"
           grep -Fq 'APP="$APP_INSTALL_STAGE"' "$installer"
           grep -Fq '/usr/bin/python3 -I - verify-stage' "$installer"
@@ -265,6 +272,9 @@ jobs:
           grep -Fq 'def _replace_selected_xcode(' "$selected_xcode_orchestrator"
           grep -Fq 'caller supplied DEVELOPER_DIR authority is forbidden' "$selected_xcode_orchestrator"
           grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' "$selected_xcode_orchestrator"
+          grep -Fq 'selected_xctrace = _require_frozen_tool(tools, "xctrace", frozen_developer)' "$selected_xcode_orchestrator"
+          grep -Fq 'selected_devicectl = _require_frozen_tool(tools, "devicectl", frozen_developer)' "$selected_xcode_orchestrator"
+          grep -Fq 'return stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl' "$selected_xcode_orchestrator"
           grep -Fq 'run_custodied_build(' "$selected_xcode_orchestrator"
           grep -Fq 'DEVELOPER_DIR={frozen_developer}' "$selected_xcode_orchestrator"
           grep -Fq 'def _invalidate_invoker_sudo(' "$build_origin_custody"
@@ -309,7 +319,7 @@ jobs:
           grep -Fq 'rm -f -- "$INSTALL_LOG"' "$installer"
           grep -Fq 'INSTALL_LOG=""' "$installer"
           grep -Fq 'APP_INSTALL_STAGE_ROOT=""' "$installer"
-          grep -Fq 'devicectl device install app --device "$COREDEVICE_ID" "$APP"' "$installer"
+          grep -Fq 'run_frozen_xcode_tool "$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID" "$APP"' "$installer"
           grep -Fq 'payload = sys.stdin.buffer.read()' "$installer"
           grep -Fq 'private_udid_raw, selector_raw = payload.split(b"\0", 1)' "$installer"
           grep -Fq 'secret.replace("-", "")' "$installer"
