@@ -1,0 +1,102 @@
+name: Capture Shared Ancestor Authoring Base
+
+on:
+  pull_request:
+    paths:
+      - .github/nembra-authoring/shared-ancestor-cache-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-shared-ancestor-authoring-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXACT_PRODUCT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
+  SOURCE_BRANCH: repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
+  SOURCE_MATERIALIZER: .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml
+  SELF_WORKFLOW: .github/workflows/capture-shared-ancestor-authoring-base.yml
+  TRIGGER_PATH: .github/nembra-authoring/shared-ancestor-cache-trigger
+
+jobs:
+  materialize-permanent-repair:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact authoring child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PRODUCT_PARENT")" = "$EXACT_PRODUCT_PARENT"
+          test -f "$SELF_WORKFLOW"
+          test -f "$TRIGGER_PATH"
+          changed="$(git diff --name-only '${{ github.event.pull_request.base.sha }}'...HEAD)"
+          test "$changed" = "$TRIGGER_PATH"
+          git diff --check "${{ github.event.pull_request.base.sha }}"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Extract reviewed materializer transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$SOURCE_BRANCH"
+          git show "FETCH_HEAD:$SOURCE_MATERIALIZER" > "$RUNNER_TEMP/source-materializer.yml"
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          source = Path(__import__('os').environ['RUNNER_TEMP']) / 'source-materializer.yml'
+          lines = source.read_text(encoding='utf-8').splitlines()
+          anchor = "          /usr/bin/python3 -B - <<'PY'"
+          try:
+              start = lines.index(anchor) + 1
+              end = lines.index('          PY', start)
+          except ValueError as error:
+              raise SystemExit('reviewed materializer Python body not found exactly') from error
+          body = lines[start:end]
+          if not body or any(line and not line.startswith('          ') for line in body):
+              raise SystemExit('reviewed materializer Python indentation is not exact')
+          script = '\n'.join(line[10:] if line else '' for line in body) + '\n'
+          target = Path(__import__('os').environ['RUNNER_TEMP']) / 'shared-ancestor-materialize.py'
+          compile(script, str(target), 'exec', dont_inherit=True)
+          target.write_text(script, encoding='utf-8')
+          PY
+
+      - name: Materialize and validate permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B "$RUNNER_TEMP/shared-ancestor-materialize.py"
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Remove authoring-only state and publish exact permanent delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm "$SELF_WORKFLOW" "$TRIGGER_PATH"
+          git add \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git diff --cached --check
+          changed="$(git diff --cached --name-only "$EXACT_PRODUCT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git config user.name "nembra-capture-swarm"
+          git config user.email "nembra-capture-swarm@users.noreply.github.com"
+          git commit -m "security(capture): hold shared generated selector ancestors"
+          git push origin HEAD:"${{ github.event.pull_request.head.ref }}"
