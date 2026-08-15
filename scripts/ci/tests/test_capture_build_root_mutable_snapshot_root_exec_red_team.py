@@ -32,6 +32,11 @@ class CaptureBuildRootMutableSnapshotRootExecRedTeamTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="nembra-build-root-mutable-helper-") as raw:
             sandbox = Path(raw)
+            # TemporaryDirectory is root:0700 under this root-run witness. Make only
+            # the synthetic outer sandbox searchable so the dropped field UID can
+            # reach the one deliberately field-owned dependency. The marker parent
+            # stays non-writable to that field identity.
+            os.chmod(sandbox, 0o755)
             bundle = sandbox / "bundle"
             bundle.mkdir(mode=0o755)
             copied_root = bundle / ROOT_HELPER.name
