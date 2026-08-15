@@ -65,6 +65,18 @@ jobs:
           if not body or any(not line.startswith("          ") for line in body if line):
               raise SystemExit("materializer Python body indentation is not exact")
           script = "\n".join(line[10:] if line else "" for line in body) + "\n"
+
+          # The temporary materializer was authored through a nested Python string
+          # and one validation-only newline escaped into its emitted source. Repair
+          # that exact one-shot authoring seam before compile; product/security
+          # payload and permanent tests remain byte-for-byte otherwise unchanged.
+          malformed = 'if extra:        raise SystemExit(\\n            "test file unexpected executable lines: "'
+          repaired = 'if extra:\n    raise SystemExit(\n        "test file unexpected executable lines: "'
+          count = script.count(malformed)
+          if count != 1:
+              raise SystemExit(f"expected one known materializer newline defect, found {count}")
+          script = script.replace(malformed, repaired, 1)
+
           target = Path("/tmp/nembra-full-numeric-principal-materialize.py")
           target.write_text(script, encoding="utf-8")
           compile(script, str(target), "exec", dont_inherit=True)
@@ -82,7 +94,7 @@ jobs:
           git add \
             .github/workflows/capture-full-numeric-principal-production.yml \
             scripts/ci/capture_signed_app_build_origin_custody.py \
-            scripts/ci/tests/test_capture_full_numeric_principal_production.py \
+            scripts/ci/tests/test_capture_full_numeric-principal-production.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           git diff --cached --check
           changed="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
