@@ -200,7 +200,7 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             self.assertEqual(helper.main([]), 0)
         stdout.write.assert_called_once_with("\t".join(str(value) for value in expected) + "\n")
 
-    def test_installer_transports_and_invokes_exact_composition(self) -> None:
+    def test_installer_consumes_frozen_device_tools_without_ambient_xcrun(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
         syntax = subprocess.run(
             ["/bin/bash", "-n", str(INSTALLER)],
@@ -227,10 +227,24 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             '--build-origin-base64 "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64"',
             '--install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"',
             '-- /usr/bin/xcodebuild',
+            "IFS=$'\\t' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA",
+            'DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR"',
+            'run_frozen_xcode_tool "$SELECTED_XCTRACE" list devices',
+            'run_frozen_xcode_tool "$SELECTED_DEVICECTL" list devices --hide-headers',
+            'run_frozen_xcode_tool "$SELECTED_DEVICECTL" device install app',
+            'run_frozen_xcode_tool "$SELECTED_DEVICECTL" device process launch',
             '/usr/bin/sudo -n -l',
         )
         for fragment in required:
             self.assertIn(fragment, source)
+        forbidden = (
+            "xcrun xctrace",
+            "xcrun devicectl",
+            "open -a Xcode",
+            'command -v xcrun',
+        )
+        for fragment in forbidden:
+            self.assertNotIn(fragment, source)
         self.assertNotIn('sys.argv = ["<accepted-build-origin-custody>"]', source)
         self.assertNotIn(
             "otherwise-unused supplementary gid given to this guarded build process group",
