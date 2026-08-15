@@ -36,9 +36,11 @@ class SelectedXcodeBuildOrchestratorError(RuntimeError):
     pass
 
 
-PRIVATE_READ_RELATIVE_ROOTS = (
-    Path("LocalSecrets/TuyaSDK"),
-    Path("LocalSecrets/TuyaRuntime"),
+PRIVATE_READ_RELATIVE_SUBJECTS = (
+    Path("LocalSecrets/TuyaSDK/ThingSmartCryption.podspec"),
+    Path("LocalSecrets/TuyaSDK/Build"),
+    Path("LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"),
+    Path("LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"),
 )
 
 
@@ -501,7 +503,7 @@ def orchestrate(
 
     repository = Path(os.getcwd())
     private_read_lease = _PrivateReadLease(
-        tuple(repository / relative for relative in PRIVATE_READ_RELATIVE_ROOTS),
+        tuple(repository / relative for relative in PRIVATE_READ_RELATIVE_SUBJECTS),
         repository,
     )
 

@@ -878,6 +878,14 @@ def run_custodied_build(
             home,
         )
 
+        _create_apfs_image(image)
+        writable_device = _attach_apfs(image, mountpoint, readonly=False)
+        os.chown(mountpoint, build_uid, build_gid)
+        os.chmod(mountpoint, 0o700)
+
+        derived_root = mountpoint / "DerivedData"
+        guarded_command = _replace_derived_placeholder(command, derived_root)
+
         if private_read_lease is not None:
             grant = getattr(private_read_lease, "grant", None)
             revoke = getattr(private_read_lease, "revoke", None)
@@ -888,13 +896,6 @@ def run_custodied_build(
             grant(build_name)
             private_read_lease_granted = True
 
-        _create_apfs_image(image)
-        writable_device = _attach_apfs(image, mountpoint, readonly=False)
-        os.chown(mountpoint, build_uid, build_gid)
-        os.chmod(mountpoint, 0o700)
-
-        derived_root = mountpoint / "DerivedData"
-        guarded_command = _replace_derived_placeholder(command, derived_root)
         build = _run_exec_bound_build(
             guarded_command,
             name=build_name,
