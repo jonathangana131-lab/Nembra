@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 36,
+    "classifiedPRTotal": 35,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1448,19 +1448,8 @@
         "lane": "",
         "pr": 3424,
         "recommendedAction": "independent-review",
-        "similarity": 0.263,
+        "similarity": 0.077,
         "title": "[Battery/Range V15][RED] Re-pin accepted authority and launcher contracts on main"
-      },
-      "3425": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3425,
-        "recommendedAction": "independent-review",
-        "similarity": 0.271,
-        "title": "[Battery/Range V15][sync] Reconcile accepted closure onto current main"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1493,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:05:05Z",
+    "liveRefreshAt": "2026-08-15T11:05:25Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5278,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 590,
+  "revision": 591,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:05:07Z",
+  "updatedAt": "2026-08-15T11:05:26Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5357,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:05:05Z",
+      "updatedAt": "2026-08-15T11:05:25Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
