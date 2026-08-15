@@ -1,0 +1,140 @@
+name: Capture Standalone Visual Evidence
+
+on:
+  pull_request:
+    paths:
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraApp/Resources/Localizable.strings
+      - NembraApp/Features/Research/TuyaAccountBridge.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - scripts/ci/capture_standalone_visual_evidence.py
+      - scripts/ci/capture_visual_png_content_guard.py
+      - scripts/ci/tests/test_capture_standalone_visual_evidence.py
+      - scripts/ci/tests/test_capture_visual_png_content_guard.py
+      - .github/workflows/capture-standalone-visual-evidence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Portable visual evidence source contract
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify portable visual contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          /usr/bin/python3 -m py_compile scripts/ci/capture_standalone_visual_evidence.py scripts/ci/capture_visual_png_content_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj)" = 2
+
+  standalone-visual:
+    name: Exact iPhone 12 standalone Capture evidence
+    needs: source-contract
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact visual subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$source_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'NEMBRA_VISUAL_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+          /usr/bin/python3 -m py_compile scripts/ci/capture_standalone_visual_evidence.py scripts/ci/capture_visual_png_content_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_visual_png_content_guard.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          grep -Fq 'static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"' NembraApp/App/NembraCaptureBuildIdentity.swift
+          test "$(grep -Fc 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";' NembraCapture.xcodeproj/project.pbxproj)" = 2
+
+      - name: Build exact public-unprovisioned app
+        shell: bash
+        run: |
+          set -euo pipefail
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${NEMBRA_VISUAL_SOURCE_SHA:0:12}"
+          rm -rf /tmp/NembraCaptureProvenanceDerived
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureProvenanceDerived CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$NEMBRA_VISUAL_SOURCE_SHA" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" build
+          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$NEMBRA_VISUAL_SOURCE_SHA"
+          test "$(plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+          test -z "$(plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist" 2>/dev/null || true)"
+
+      - name: Capture exact iPhone 12 presentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app' \
+          ARTIFACTS_DIR="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence" \
+            /usr/bin/python3 scripts/ci/capture_standalone_visual_evidence.py
+          manifest="$RUNNER_TEMP/NembraCaptureStandaloneVisualEvidence/NembraCaptureStandaloneVisualEvidence.json"
+          /usr/bin/python3 - "$manifest" "$NEMBRA_VISUAL_SOURCE_SHA" <<'PY'
+          import json, re, sys
+          with open(sys.argv[1], encoding='utf-8') as handle:
+              r = json.load(handle)
+          assert r['schemaVersion'] == 8
+          assert r['sourceCommitSHA'] == sys.argv[2]
+          assert r['baselineDevice'] == 'iPhone 12' and r['baselineOS'] == 'iOS 27'
+          assert r['procedureIdentifier'] == 'ES80-AUTHENTICATED-STATIONARY-v1'
+          assert r['tuyaDependencyLockSHA256'] == '' and r['expectedFieldBuildAuthority'] is False
+          assert r['syntheticAuthorityEnvironmentRejected'] is True
+          assert r['visualAcceptanceRequiresHumanReview'] is True
+          assert r['screenshotRenderedContentReadinessVerified'] is True
+          assert r['screenshotRenderedContentGuard'] == 'capture_visual_png_content_guard.py/v2'
+          assert re.fullmatch(r'[0-9a-f]{64}', r['screenshotRenderedContentGuardSHA256'])
+          assert re.fullmatch(r'[0-9a-f]{64}', r['simctlUIHelpSHA256'])
+          assert re.fullmatch(r'[0-9a-f]{64}', r['simctlIOHelpSHA256'])
+          assert r['physicalAuthorityCreated'] is False
+          assert r['protocolAuthorityCreated'] is False
+          assert {x['state'] for x in r['screenshots']} == {
+              'unprovisioned-dark-standard',
+              'unprovisioned-system-light-app-forced-dark-standard',
+              'unprovisioned-dark-accessibility-xxxl',
+          }
+          PY
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-capture-standalone-visual-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/NembraCaptureStandaloneVisualEvidence
+          if-no-files-found: error
+          retention-days: 14
