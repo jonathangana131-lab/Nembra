@@ -1,0 +1,61 @@
+name: Capture Symlink Lifetime Fix Compat V2 Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-read-lease-symlink-lifetime-sol-20260815
+    paths:
+      - .github/workflows/capture-symlink-lifetime-fix-compat-v2-once.yml
+
+permissions:
+  contents: write
+
+env:
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Restore exact outer lease compatibility boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          source = path.read_text(encoding='utf-8')
+          old = 'if lease._opened or lease._principal or lease._namespace_witnesses:'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one compatibility assertion, found {source.count(old)}')
+          source = source.replace(old, 'if lease._opened or lease._principal:', 1)
+          compile(source, str(path), 'exec', dont_inherit=True)
+          path.write_text(source, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Verify lifetime and inherited focused regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+
+      - name: Publish verified non-workflow product fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py
+          git commit -m "Preserve selected-Xcode lease compatibility"
+          git push origin HEAD:repair/v17-capture-read-lease-symlink-lifetime-sol-20260815
