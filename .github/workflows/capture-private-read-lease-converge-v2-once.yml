@@ -1,0 +1,64 @@
+name: Capture Private Read Lease Converge V2 Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-private-read-lease-guard-compose-sol-20260814
+    paths:
+      - .github/workflows/capture-private-read-lease-converge-v2-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact convergence input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "634050e7bbc890c08daacbffff145d6e79ff0643"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-private-read-lease-converge-v2-once.yml"
+
+      - name: Materialize least-authority fail-closed lease patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' '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' | base64 --decode | gzip -d | python3 -
+
+      - name: Prove converged portable contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/ci/capture_selected_xcode_build_orchestrator.py scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py scripts/ci/tests/test_capture_private_read_lease_rollback.py scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          git diff --check
+
+      - name: Self-delete and publish convergence
+        shell: bash
+        env:
+          BRANCH: repair/v17-capture-private-read-lease-guard-compose-sol-20260814
+          SELF: .github/workflows/capture-private-read-lease-converge-v2-once.yml
+        run: |
+          set -euo pipefail
+          git rm "$SELF"
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$SELF" scripts/ci/capture_selected_xcode_build_orchestrator.py scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'capture: converge fail-closed least-authority private lease'
+          git push origin "HEAD:$BRANCH"
