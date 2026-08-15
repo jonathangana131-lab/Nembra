@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 33,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1415,7 +1415,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.269,
+        "similarity": 0.289,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1426,8 +1426,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3419,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.286,
+        "similarity": 0.314,
         "title": "[Capture P0][VALIDATION] Root-custody accepted build root after selector repair"
+      },
+      "3420": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3420,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.304,
+        "title": "[Capture P0][VALIDATION] Re-anchor sealed root-helper sibling bundle to 7900"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1460,9 +1471,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:42:04Z",
+    "liveRefreshAt": "2026-08-15T03:43:08Z",
     "liveRefreshDuplicatesSuppressed": [
-      3419
+      3420
     ],
     "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5245,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 567,
+  "revision": 568,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:42:05Z",
+  "updatedAt": "2026-08-15T03:43:10Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:42:04Z",
+      "updatedAt": "2026-08-15T03:43:08Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
