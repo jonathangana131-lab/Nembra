@@ -1374,17 +1374,6 @@
         "similarity": 0.556,
         "title": "[Capture P0][RED TEAM] Reject tracked ancestor aliases in generated-input staging"
       },
-      "3369": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority-validation",
-        "pr": 3369,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.122,
-        "title": "[Capture P0][VALIDATION] Repair provenance guard dataclass loader"
-      },
       "3370": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1395,6 +1384,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.55,
         "title": "[Capture P0][RED TEAM] Reject tracked ancestors of generated build inputs"
+      },
+      "3371": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-runtime-accessibility",
+        "pr": 3371,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.313,
+        "title": "[Capture P0][AX RUNTIME] Re-anchor Standard + AX5 VoiceOver to 2b7d"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1427,7 +1427,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T02:59:59Z",
+    "liveRefreshAt": "2026-08-15T03:00:20Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5212,10 +5212,10 @@
       "userValue": 7
     }
   },
-  "revision": 455,
+  "revision": 456,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:00:00Z",
+  "updatedAt": "2026-08-15T03:00:21Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5291,7 +5291,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T02:59:59Z",
+      "updatedAt": "2026-08-15T03:00:20Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
