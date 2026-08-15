@@ -1,0 +1,79 @@
+name: Capture Private Read Lease Mixed Generation Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_private_read_lease_mixed_generation_red_team.py
+      - .github/workflows/capture-private-read-lease-mixed-generation-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-private-read-lease-mixed-generation-red-team-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: aa610e1000e58ba5e43e35a75ee8f22486aea5ec
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  mixed-generation-red-team:
+    name: Prove mixed-generation lease plan is exploitable
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-mixed-generation-red-team.yml \
+            scripts/ci/tests/test_capture_private_read_lease_mixed_generation_red_team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile red-team witness without artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/ci/tests/test_capture_private_read_lease_mixed_generation_red_team.py")
+          compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+
+      - name: Prove mixed-generation planning reaches production grant admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_mixed_generation_red_team.py
+
+      - name: Preserve attacked component-walk baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+
+      - name: Preserve validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo "NEMBRA_MIXED_GENERATION_RED_TEAM exploitPositiveExpected=true productionChanged=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
