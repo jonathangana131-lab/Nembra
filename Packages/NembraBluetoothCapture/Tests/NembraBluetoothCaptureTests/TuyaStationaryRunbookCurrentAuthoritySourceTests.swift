@@ -4,23 +4,23 @@ import Testing
 
 @Suite("Capture stationary field runbook current authority")
 struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
-    @Test("secure-link procedure requires four fresh package-owned windows, literal confirmation, and structured-only evidence")
-    func secureLinkRunbookCannotRegressToHistoricalHintOrRawByteAuthority() throws {
+    @Test("canonical stationary runbook cannot regress to historical target authority")
+    func secureLinkRunbookCannotRegressToHistoricalHintAuthority() throws {
         let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
+        #expect(runbook.contains("PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`"))
+        #expect(runbook.contains("Status: **PHYSICAL NO-GO.**"))
+        #expect(runbook.contains("single current next-physical-procedure authority"))
         #expect(runbook.contains("OFF1 → ON1 → OFF2 → ON2"))
         #expect(runbook.contains("package-owned, fresh-manager"))
-        #expect(runbook.contains("Exactly one repeatable full CoreBluetooth UUID") || runbook.contains("exactly one repeatable full CoreBluetooth UUID"))
-        #expect(runbook.contains("Confirm this scooter signal"))
-        #expect(runbook.contains("historical CoreBluetooth UUID"))
-        #expect(runbook.contains("descriptive capture-local evidence only"))
-        #expect(runbook.contains("cannot mint target authority"))
+        #expect(
+            runbook.contains("Exactly one repeatable full CoreBluetooth UUID")
+                || runbook.contains("exactly one repeatable full CoreBluetooth UUID")
+        )
+        #expect(runbook.contains("`Confirm this scooter signal`"))
+        #expect(runbook.contains("historical CoreBluetooth UUID is **descriptive capture-local evidence only**"))
+        #expect(runbook.contains("There is no hint-based override."))
         #expect(runbook.contains("Nembra must not open a second independent CoreBluetooth connection"))
-        #expect(runbook.contains("Structured `dpsUpdate` observations are application-level evidence only"))
-        #expect(runbook.contains("do **not** establish raw authenticated FD50/ATT bytes"))
-        #expect(runbook.contains("rawFD50BytesCaptured=false"))
-        #expect(runbook.contains("dpQueriesSent=false"))
-        #expect(runbook.contains("dpCommandsSent=false"))
 
         #expect(!runbook.contains("Confirm correlated Bluetooth target"))
         #expect(!runbook.contains("use the best accepted evidence"))
@@ -28,40 +28,32 @@ struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
         #expect(!runbook.contains("OFF baseline then ON correlation"))
     }
 
-    @Test("private SDK provisioning pins dependency and target-correlation provenance")
-    func privateProvisioningCannotFloatSDKOrRestoreTwoWindowAuthority() throws {
-        let provisioning = try readRepositoryFile("docs/CAPTURE_TUYA_OFFICIAL_SDK_PROVISIONING.md")
+    @Test("current stationary runbook keeps structured observations below telemetry and raw-byte authority")
+    func supportedSDKObservationBoundaryRemainsReadOnlyAndOpaque() throws {
+        let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
-        #expect(provisioning.contains("ThingSmartHomeKit` **7.8.0**"))
-        #expect(provisioning.contains("ThingSmartBusinessExtensionKit` **7.8.0**"))
-        #expect(provisioning.contains("pod install --repo-update"))
-        #expect(provisioning.contains("ResolvedTuyaDependencyProvenance.txt"))
-        #expect(provisioning.contains("OFF1 → ON1 → OFF2 → ON2"))
-        #expect(provisioning.contains("explicitly confirm"))
-        #expect(provisioning.contains("historical C7D09A22 UUID"))
-        #expect(provisioning.contains("descriptive only"))
-        #expect(provisioning.contains("rawFD50BytesCaptured: false"))
-        #expect(provisioning.contains("dpQueriesSent: false"))
-        #expect(provisioning.contains("dpCommandsSent: false"))
-
-        #expect(!provisioning.contains("pins the SmartLife 7.8.x line"))
-        #expect(!provisioning.contains("OFF baseline then ON correlation"))
+        #expect(runbook.contains("Structured `dpsUpdate` observations are application-level evidence only."))
+        #expect(runbook.contains("do **not** establish raw authenticated FD50/ATT bytes"))
+        #expect(runbook.contains("at least **two** genuine non-empty same-generation application observations"))
+        #expect(runbook.contains("at least **30 seconds after authentication**"))
+        #expect(runbook.contains("at least **45 seconds of canonical authenticated observation**"))
+        #expect(runbook.contains("**60 seconds after authentication** without earning canonical readiness is retired fail-closed"))
+        #expect(runbook.contains("rawFD50BytesCaptured=false"))
+        #expect(runbook.contains("dpQueriesSent=false"))
+        #expect(runbook.contains("dpCommandsSent=false"))
+        #expect(runbook.contains("sends no scooter DP query/control command and opens no second CoreBluetooth connection"))
     }
 
-    @Test("legacy secure-link runbook is a tombstone and cannot remain executable")
-    func legacySecureLinkRunbookCannotCarryStalePhysicalInstructions() throws {
-        let legacy = try readRepositoryFile("docs/CAPTURE_NEXT_TUYA_SECURE_LINK_TEST.md")
+    @Test("durable Capture routing points to the same current procedure without minting GO")
+    func durableAuthorityPointerAgreesWithCurrentRunbook() throws {
+        let pointer = try readRepositoryFile("CAPTURE_HARD_FREEZE_ACTIVE.md")
 
-        #expect(legacy.contains("DEPRECATED / DO NOT USE"))
-        #expect(legacy.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
-        #expect(legacy.contains("OFF1 → ON1 → OFF2 → ON2"))
-        #expect(legacy.contains("no historical UUID/name/RSSI/FD50/Tuya-hint fallback authority"))
-        #expect(legacy.contains("PHYSICAL STATUS: NO-GO"))
-
-        #expect(!legacy.contains("With scooter OFF, collect a short local Bluetooth baseline"))
-        #expect(!legacy.contains("previous CoreBluetooth UUID plus FD50 / Tuya company-ID / power-on-delta evidence"))
-        #expect(!legacy.contains("NEMBRA_TUYA_APP_KEY"))
-        #expect(!legacy.contains("NEMBRA_TUYA_APP_SECRET"))
+        #expect(pointer.contains("feature: Nembra Capture / authenticated stationary ES80 physical truth"))
+        #expect(pointer.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
+        #expect(pointer.contains("The canonical current physical procedure is:"))
+        #expect(pointer.contains("OFF1 → ON1 → OFF2 → ON2"))
+        #expect(pointer.contains("physical status: **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**"))
+        #expect(pointer.contains("Only the final composed exact build plus the required private intended-device/runtime gates can authorize the next physical experiment."))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
