@@ -27,7 +27,10 @@ struct BatteryRangeAccessibilityLauncherClearanceSourceTests {
             throw SourceContractError.sectionMissing
         }
 
-        #expect(contentTail.upperBound < viewportModifier.lowerBound)
+        // The viewport modifier may begin exactly at the byte boundary immediately
+        // following the content-tail token. Equality therefore still proves that the
+        // modifier is outside, rather than inside, the ScrollView content.
+        #expect(contentTail.upperBound <= viewportModifier.lowerBound)
     }
 
     private func batteryRangeViewSection(in source: String) throws -> Substring {
