@@ -66,3 +66,73 @@ jobs:
           assert 'gen' not in returned.lower(), returned
           print('EXPLOIT-POSITIVE: current planned identity has no temporal generation discriminator')
           PY
+
+  probe-apfs-baseline:
+    name: Probe macOS runner inode reuse without granting authority
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Probe exact three-field tuple reuse on the macOS baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import tempfile
+          import time
+
+          helper_path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py').resolve()
+          spec = importlib.util.spec_from_file_location('nembra_apfs_inode_reuse_probe', helper_path)
+          if spec is None or spec.loader is None:
+              raise SystemExit('could not load selected-Xcode build orchestrator')
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+
+          observed = False
+          attempts = 0
+          with tempfile.TemporaryDirectory(prefix='nembra-apfs-inode-reuse-probe-') as temporary:
+              target = Path(temporary) / 'accepted-directory'
+              target.mkdir()
+              expected = helper._path_signature(target)
+              original_ctime_ns = target.stat().st_ctime_ns
+              target.rmdir()
+              time.sleep(0.005)
+
+              for attempts in range(1, 100001):
+                  target.mkdir()
+                  current = helper._path_signature(target)
+                  current_ctime_ns = target.stat().st_ctime_ns
+                  if current == expected and current_ctime_ns != original_ctime_ns:
+                      observed = True
+                      marker = target / 'replacement.marker'
+                      marker.write_bytes(b'replacement-generation\n')
+                      descriptor = helper._open_pinned_path(target, True, expected)
+                      try:
+                          marker_descriptor = os.open('replacement.marker', os.O_RDONLY, dir_fd=descriptor)
+                          try:
+                              payload = os.read(marker_descriptor, 128)
+                          finally:
+                              os.close(marker_descriptor)
+                      finally:
+                          os.close(descriptor)
+                      if payload != b'replacement-generation\n':
+                          raise SystemExit('recycled tuple opened unexpected bytes')
+                      break
+                  target.rmdir()
+
+          message = (
+              f'APFS_REUSE_OBSERVED={1 if observed else 0}; attempts={attempts}; '
+              'this probe is diagnostic only and never grants physical authority'
+          )
+          print(message)
+          summary = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary:
+              with open(summary, 'a', encoding='utf-8') as handle:
+                  handle.write('## APFS inode-reuse probe\n\n' + message + '\n')
+          PY
