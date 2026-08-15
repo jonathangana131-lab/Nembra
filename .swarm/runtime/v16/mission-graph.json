@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 33,
+    "classifiedPRTotal": 32,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1239,7 +1239,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3354,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.351,
+        "similarity": 0.309,
         "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
       },
       "3355": {
@@ -1374,17 +1374,6 @@
         "similarity": 0.279,
         "title": "[Capture P0][AX RUNTIME] Re-anchor Standard + AX5 VoiceOver to 2b7d"
       },
-      "3375": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3375,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.433,
-        "title": "[Capture P0][RED TEAM] Reject real-directory replacement after lease planning"
-      },
       "3379": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1415,7 +1404,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3382,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.436,
+        "similarity": 0.299,
         "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
       },
       "3385": {
@@ -1460,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:03:49Z",
+    "liveRefreshAt": "2026-08-15T03:04:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3385
     ],
@@ -5245,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 467,
+  "revision": 468,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:03:50Z",
+  "updatedAt": "2026-08-15T03:04:07Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:03:49Z",
+      "updatedAt": "2026-08-15T03:04:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
