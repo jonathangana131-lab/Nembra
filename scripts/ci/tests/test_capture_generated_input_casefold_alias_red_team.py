@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Exploit-positive witness for case-fold aliases in generated-input staging.
+
+A terminal pass on a case-insensitive filesystem means the accepted-input collision
+predicate can miss a tracked ancestor whose spelling differs only by case, allowing
+that tracked object to redirect generated/private subjects into another physical
+namespace. This is validation evidence only and creates no product/physical authority.
+"""
+from __future__ import annotations
+
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+HELPER = Path(__file__).resolve().parents[1] / "capture_accepted_build_input_snapshot.py"
+spec = importlib.util.spec_from_file_location("snapshot_casefold_alias", HELPER)
+assert spec and spec.loader
+snapshot = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(snapshot)
+
+
+def git(repo: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return completed.stdout.strip()
+
+
+def require_case_insensitive(root: Path) -> None:
+    probe = root / "NEMBRA_CaseFold_Probe"
+    probe.write_text("probe\n", encoding="utf-8")
+    try:
+        if not (root / "nembra_casefold_probe").exists():
+            raise AssertionError("exploit witness requires a case-insensitive filesystem")
+    finally:
+        probe.unlink()
+
+
+def seed_accepted_source(root: Path) -> str:
+    git(root, "init", "-q")
+    git(root, "config", "user.email", "capture-casefold-red-team@example.invalid")
+    git(root, "config", "user.name", "Capture CaseFold Red Team")
+
+    sources = root / "Sources"
+    sources.mkdir()
+    (sources / "App.swift").write_text("let accepted = true\n", encoding="utf-8")
+
+    # The accepted Git spelling deliberately differs from the fixed generated
+    # allowlist's `LocalSecrets` spelling only by case. On a case-insensitive APFS
+    # namespace, `LocalSecrets/...` resolves through this tracked symlink.
+    os.symlink("Sources", root / "localsecrets")
+    git(root, "add", "Sources/App.swift", "localsecrets")
+    git(root, "commit", "-qm", "accepted source with case-fold ancestor alias")
+    return git(root, "rev-parse", "HEAD")
+
+
+def seed_generated_inputs(root: Path) -> None:
+    (root / "Podfile.lock").write_text("PODS:\n  - Fixture (1.0)\n", encoding="utf-8")
+
+    workspace = root / "NembraCapture.xcworkspace"
+    workspace.mkdir()
+    (workspace / "contents.xcworkspacedata").write_text("<Workspace/>\n", encoding="utf-8")
+
+    pods = root / "Pods/Fixture"
+    pods.mkdir(parents=True)
+    (pods / "libFixture.a").write_bytes(b"generated-public-pod")
+
+    sdk = root / "LocalSecrets/TuyaSDK"
+    (sdk / "Build").mkdir(parents=True)
+    (sdk / "ThingSmartCryption.podspec").write_text("Pod::Spec.new\n", encoding="utf-8")
+    (sdk / "Build/libThingSmartCryption.a").write_bytes(b"private-sdk-fixture")
+
+    runtime = root / "LocalSecrets/TuyaRuntime"
+    runtime_sources = runtime / "Sources/NembraTuyaPrivateConfig"
+    runtime_sources.mkdir(parents=True)
+    (runtime / "NembraTuyaPrivateConfig.podspec").write_text("Pod::Spec.new\n", encoding="utf-8")
+    (runtime_sources / "Identity.swift").write_text(
+        'let privateIdentity = "fixture"\n', encoding="utf-8"
+    )
+    (runtime / "ResolvedTuyaDependencyProvenance.txt").write_text(
+        "schema=1\nprivate-hashes-only\n", encoding="utf-8"
+    )
+
+
+class GeneratedInputCaseFoldAliasRedTeamTests(unittest.TestCase):
+    def test_case_variant_tracked_ancestor_redirects_generated_private_inputs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="nembra-generated-casefold-red-team-") as raw:
+            outer = Path(raw)
+            require_case_insensitive(outer)
+            repo = outer / "repo"
+            repo.mkdir()
+            source_sha = seed_accepted_source(repo)
+            seed_generated_inputs(repo)
+
+            tracked = {
+                relative
+                for _mode, _kind, _oid, relative in snapshot._git_tree_entries(repo, source_sha)
+            }
+            self.assertIn(Path("localsecrets"), tracked)
+            self.assertNotIn(Path("LocalSecrets"), tracked)
+            self.assertFalse(
+                any(
+                    path.parts[:1] == ("LocalSecrets",)
+                    for path in tracked
+                )
+            )
+
+            accepted_manifest = snapshot.generated_manifest_sha256(repo, source_sha)
+            destination = outer / "stage"
+            actual = snapshot.stage_accepted_build_inputs(
+                repo,
+                source_sha,
+                destination,
+                accepted_manifest,
+            )
+
+            # EXPLOIT-POSITIVE on a case-insensitive namespace: staging succeeds,
+            # the tracked lower-case symlink remains authoritative, and private
+            # generated bytes appear physically under tracked `Sources/` even though
+            # those paths were absent from the accepted Git tree.
+            self.assertEqual(actual, accepted_manifest)
+            self.assertTrue((destination / "localsecrets").is_symlink())
+            self.assertEqual(os.readlink(destination / "localsecrets"), "Sources")
+            self.assertTrue(
+                (destination / "Sources/TuyaSDK/Build/libThingSmartCryption.a").is_file()
+            )
+            self.assertTrue(
+                (destination / "Sources/TuyaRuntime/Sources/NembraTuyaPrivateConfig/Identity.swift").is_file()
+            )
+            self.assertNotIn(Path("Sources/TuyaSDK/Build/libThingSmartCryption.a"), tracked)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
