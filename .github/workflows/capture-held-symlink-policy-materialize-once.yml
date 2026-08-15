@@ -1,0 +1,542 @@
+name: Capture Held Symlink Policy Materialize Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-held-symlink-policy-sol-20260815
+    paths:
+      - .github/workflows/capture-held-symlink-policy-materialize-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-held-symlink-policy-materialize-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXACT_PARENT: 474507966619ce39288b20de29066711088cd986
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind one-shot authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-held-symlink-policy-materialize-once.yml"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize descriptor-bound symlink policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one anchor, found {count}")
+              return text.replace(old, new, 1)
+
+          helper_path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          helper = helper_path.read_text(encoding="utf-8")
+
+          marker = "\n\ndef _lease_paths(\n"
+          if helper.count(marker) != 1:
+              raise SystemExit("descriptor-policy insertion anchor is not unique")
+
+          descriptor_policy = r'''
+
+          def _held_entry_metadata(parent_descriptor: int, name: str) -> os.stat_result:
+              if not name or name in (".", "..") or os.sep in name:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "private read-lease held entry name is unsafe"
+                  )
+              if os.stat not in os.supports_dir_fd or os.stat not in os.supports_follow_symlinks:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "private read-lease held symlink policy requires descriptor-relative lstat support"
+                  )
+              try:
+                  return os.stat(
+                      name,
+                      dir_fd=parent_descriptor,
+                      follow_symlinks=False,
+                  )
+              except OSError as error:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease held entry is unavailable: {name}"
+                  ) from error
+
+
+          def _held_readlink(parent_descriptor: int, name: str) -> str:
+              if os.readlink not in os.supports_dir_fd:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "private read-lease held symlink policy requires descriptor-relative readlink support"
+                  )
+              try:
+                  target = os.readlink(name, dir_fd=parent_descriptor)
+              except OSError as error:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease held symlink could not be read: {name}"
+                  ) from error
+              if not isinstance(target, str) or not target:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease held symlink has an invalid target: {name}"
+                  )
+              return target
+
+
+          def _held_directory_generation(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+              return (
+                  metadata.st_dev,
+                  metadata.st_ino,
+                  stat.S_IFMT(metadata.st_mode),
+                  int(getattr(metadata, "st_ctime_ns", int(metadata.st_ctime * 1_000_000_000))),
+                  int(getattr(metadata, "st_mtime_ns", int(metadata.st_mtime * 1_000_000_000))),
+              )
+
+
+          def _held_symlink_generation(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:
+              return (
+                  metadata.st_dev,
+                  metadata.st_ino,
+                  stat.S_IFMT(metadata.st_mode),
+                  int(getattr(metadata, "st_ctime_ns", int(metadata.st_ctime * 1_000_000_000))),
+                  int(getattr(metadata, "st_mtime_ns", int(metadata.st_mtime * 1_000_000_000))),
+                  int(metadata.st_size),
+              )
+
+
+          def _normalize_held_symlink_target(
+              link_parts: tuple[str, ...],
+              raw_target: str,
+              link_label: Path,
+          ) -> tuple[str, ...]:
+              target = Path(raw_target)
+              if target.is_absolute():
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease symlink escaped its held subject: {link_label}"
+                  )
+              normalized = list(link_parts[:-1])
+              for component in target.parts:
+                  if component in ("", "."):
+                      continue
+                  if component == "..":
+                      if not normalized:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease symlink escaped its held subject: {link_label}"
+                          )
+                      normalized.pop()
+                      continue
+                  if os.sep in component:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease symlink target has an unsafe component: {link_label}"
+                      )
+                  normalized.append(component)
+              return tuple(normalized)
+
+
+          def _resolve_held_symlink_target(
+              target_parts: tuple[str, ...],
+              *,
+              real_entries: dict[tuple[str, ...], bool],
+              symlinks: dict[tuple[str, ...], str],
+              subject: Path,
+          ) -> None:
+              pending = list(target_parts)
+              resolved: list[str] = []
+              hops = 0
+              while pending:
+                  component = pending.pop(0)
+                  resolved.append(component)
+                  key = tuple(resolved)
+                  if key in symlinks:
+                      hops += 1
+                      if hops > 64:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease held symlink chain is cyclic or too deep: {subject.joinpath(*key)}"
+                          )
+                      replacement = _normalize_held_symlink_target(
+                          key,
+                          symlinks[key],
+                          subject.joinpath(*key),
+                      )
+                      pending = [*replacement, *pending]
+                      resolved = []
+                      continue
+                  is_directory = real_entries.get(key)
+                  if is_directory is None:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease held symlink target is unavailable inside its subject: {subject.joinpath(*key)}"
+                      )
+                  if pending and not is_directory:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease held symlink traversed a non-directory target: {subject.joinpath(*key)}"
+                      )
+
+
+          def _subject_entries_from_descriptor(subject: Path, subject_descriptor: int) -> tuple:
+              """Enumerate and classify one subject through its already-held generation.
+
+              Real files/directories remain ACL-plan entries. Symlinks receive no ACL,
+              but their targets are read through held parent descriptors, checked against
+              a descriptor-enumerated topology, and must remain lexically and recursively
+              inside the same admitted subject. Directory generation metadata is checked
+              before/after enumeration so a mutable contents race fails closed.
+              """
+
+              root_metadata = os.fstat(subject_descriptor)
+              root_signature = _descriptor_signature(subject_descriptor)
+              if stat.S_ISREG(root_metadata.st_mode):
+                  return ((subject, False, root_signature),)
+              if not stat.S_ISDIR(root_metadata.st_mode):
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease held subject has unsupported type: {subject}"
+                  )
+              if os.listdir not in os.supports_fd:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "private read-lease held symlink policy requires descriptor directory enumeration"
+                  )
+
+              entries: dict[tuple[str, ...], tuple[Path, bool, tuple[int, int, int]]] = {
+                  (): (subject, True, root_signature)
+              }
+              real_entries: dict[tuple[str, ...], bool] = {(): True}
+              symlinks: dict[tuple[str, ...], str] = {}
+
+              def scan(directory_descriptor: int, relative: tuple[str, ...]) -> None:
+                  before_directory = os.fstat(directory_descriptor)
+                  try:
+                      names = sorted(os.listdir(directory_descriptor))
+                  except OSError as error:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease held directory could not be enumerated: {subject.joinpath(*relative)}"
+                      ) from error
+
+                  for name in names:
+                      before = _held_entry_metadata(directory_descriptor, name)
+                      child_relative = (*relative, name)
+                      child_path = subject.joinpath(*child_relative)
+                      if stat.S_ISLNK(before.st_mode):
+                          target = _held_readlink(directory_descriptor, name)
+                          after = _held_entry_metadata(directory_descriptor, name)
+                          if (
+                              not stat.S_ISLNK(after.st_mode)
+                              or _held_symlink_generation(before) != _held_symlink_generation(after)
+                          ):
+                              raise SelectedXcodeBuildOrchestratorError(
+                                  f"private read-lease held symlink changed while classifying: {child_path}"
+                              )
+                          symlinks[child_relative] = target
+                          continue
+
+                      signature = _metadata_signature(before)
+                      if stat.S_ISDIR(before.st_mode):
+                          entries[child_relative] = (child_path, True, signature)
+                          real_entries[child_relative] = True
+                          child_descriptor = _open_pinned_child(
+                              directory_descriptor,
+                              name,
+                              True,
+                              signature,
+                          )
+                          try:
+                              scan(child_descriptor, child_relative)
+                          finally:
+                              os.close(child_descriptor)
+                          continue
+                      if stat.S_ISREG(before.st_mode):
+                          entries[child_relative] = (child_path, False, signature)
+                          real_entries[child_relative] = False
+                          continue
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease held entry has unsupported type: {child_path}"
+                      )
+
+                  after_directory = os.fstat(directory_descriptor)
+                  if _held_directory_generation(before_directory) != _held_directory_generation(after_directory):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease held directory changed during symlink classification: {subject.joinpath(*relative)}"
+                      )
+
+              scan(subject_descriptor, ())
+              for link_parts, raw_target in sorted(symlinks.items()):
+                  link_label = subject.joinpath(*link_parts)
+                  target_parts = _normalize_held_symlink_target(
+                      link_parts,
+                      raw_target,
+                      link_label,
+                  )
+                  _resolve_held_symlink_target(
+                      target_parts,
+                      real_entries=real_entries,
+                      symlinks=symlinks,
+                      subject=subject,
+                  )
+
+              return tuple(
+                  entry
+                  for _relative, entry in sorted(entries.items(), key=lambda item: item[0])
+              )
+          '''
+          helper = helper.replace(marker, descriptor_policy + marker, 1)
+
+          old_subject_entries = '''            subject_entries = _subject_entries(
+              subject,
+              include_signatures=(include_signatures or include_descriptors),
+          )
+          '''
+          new_subject_entries = '''            if include_descriptors:
+              subject_record = next(
+                  (
+                      entry
+                      for entry in ordered
+                      if len(entry) == 4 and Path(entry[0]) == subject
+                  ),
+                  None,
+              )
+              if subject_record is None:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease held subject descriptor is unavailable: {subject}"
+                  )
+              subject_entries = _subject_entries_from_descriptor(
+                  subject,
+                  int(subject_record[3]),
+              )
+          else:
+              subject_entries = _subject_entries(
+                  subject,
+                  include_signatures=include_signatures,
+              )
+          '''
+          helper = replace_once(
+              helper,
+              old_subject_entries,
+              new_subject_entries,
+              "descriptor-mode subject enumeration",
+          )
+          compile(helper, str(helper_path), "exec", dont_inherit=True)
+          helper_path.write_text(helper, encoding="utf-8")
+
+          test_path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py")
+          tests = test_path.read_text(encoding="utf-8")
+          test_marker = '''    def test_source_production_grant_consumes_held_descriptor_plan(self) -> None:
+          '''
+          if tests.count(test_marker) != 1:
+              raise SystemExit("component regression insertion anchor is not unique")
+          regression = r'''    def test_descriptor_bound_symlink_policy_rejects_pathname_generation_swap(self) -> None:
+              helper = load()
+              with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-policy-") as raw:
+                  outer = Path(raw)
+                  repo = outer / "repo"
+                  subject = repo / "LocalSecrets/TuyaSDK/Build"
+                  subject.mkdir(parents=True)
+
+                  external = outer / "outside-subject"
+                  external.mkdir()
+                  (external / "outside.fixture").write_text("outside\n", encoding="utf-8")
+                  (subject / "escape").symlink_to(external, target_is_directory=True)
+
+                  replacement = outer / "replacement-build"
+                  replacement.mkdir()
+                  (replacement / "escape").symlink_to(".", target_is_directory=True)
+                  accepted_hold = repo / "LocalSecrets/TuyaSDK/Build.accepted-hold"
+
+                  original_subject_entries = helper._subject_entries
+                  raced = False
+
+                  def classify_replacement_then_restore(
+                      path: Path,
+                      *,
+                      include_signatures: bool = False,
+                  ):
+                      nonlocal raced
+                      candidate = Path(path)
+                      if candidate != subject or raced:
+                          return original_subject_entries(
+                              candidate,
+                              include_signatures=include_signatures,
+                          )
+                      subject.rename(accepted_hold)
+                      replacement.rename(subject)
+                      try:
+                          result = original_subject_entries(
+                              subject,
+                              include_signatures=include_signatures,
+                          )
+                      finally:
+                          subject.rename(replacement)
+                          accepted_hold.rename(subject)
+                      raced = True
+                      return result
+
+                  lease = helper._PrivateReadLease((subject,), repo)
+                  with mock.patch.object(
+                      helper,
+                      "_subject_entries",
+                      side_effect=classify_replacement_then_restore,
+                  ):
+                      with self.assertRaisesRegex(
+                          helper.SelectedXcodeBuildOrchestratorError,
+                          "symlink escaped its held subject",
+                      ):
+                          lease.grant("nembrasymlinkpolicy")
+
+                  self.assertFalse(
+                      raced,
+                      "descriptor production mode delegated symlink authority to pathname classification",
+                  )
+                  self.assertFalse(lease._opened)
+                  self.assertEqual(lease._principal, "")
+
+              def test_descriptor_bound_internal_symlink_remains_non_acl_topology(self) -> None:
+              helper = load()
+              with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-internal-") as raw:
+                  repo = Path(raw) / "repo"
+                  subject = repo / "LocalSecrets/TuyaSDK/Build"
+                  target = subject / "Framework/Versions/A/private.fixture"
+                  target.parent.mkdir(parents=True)
+                  target.write_bytes(b"fixture\n")
+                  current = subject / "Framework/Versions/Current"
+                  current.symlink_to("A", target_is_directory=True)
+
+                  plan = helper._lease_paths((subject,), repo, include_descriptors=True)
+                  try:
+                      planned_paths = {Path(entry[0]) for entry in plan}
+                      self.assertIn(subject, planned_paths)
+                      self.assertIn(target, planned_paths)
+                      self.assertNotIn(current, planned_paths)
+                  finally:
+                      for _path, _host_only, _signature, descriptor in reversed(plan):
+                          os.close(int(descriptor))
+
+              def test_source_descriptor_mode_owns_symlink_classification(self) -> None:
+              helper = load()
+              policy = inspect.getsource(helper._subject_entries_from_descriptor)
+              readlink = inspect.getsource(helper._held_readlink)
+              plan = inspect.getsource(helper._lease_paths)
+              self.assertIn("os.listdir(directory_descriptor)", policy)
+              self.assertIn("_held_readlink", policy)
+              self.assertIn("dir_fd=parent_descriptor", readlink)
+              self.assertIn("_subject_entries_from_descriptor", plan)
+              self.assertIn("include_descriptors", plan)
+
+          '''
+          # The raw string above is intentionally authored with eight extra spaces in
+          # nested method bodies for YAML readability; normalize only the two method
+          # declarations that must be class peers.
+          regression = regression.replace(
+              "\n              def test_descriptor_bound_internal_symlink_remains_non_acl_topology",
+              "\n    def test_descriptor_bound_internal_symlink_remains_non_acl_topology",
+          ).replace(
+              "\n              def test_source_descriptor_mode_owns_symlink_classification",
+              "\n    def test_source_descriptor_mode_owns_symlink_classification",
+          )
+          # Dedent the bodies of those peer methods by twelve spaces while retaining
+          # their four-space class indentation.
+          lines = regression.splitlines(True)
+          normalized = []
+          active_peer = False
+          for line in lines:
+              if line.startswith("    def test_descriptor_bound_internal_symlink") or line.startswith("    def test_source_descriptor_mode"):
+                  active_peer = True
+                  normalized.append(line)
+                  continue
+              if active_peer and line.startswith("              "):
+                  normalized.append("        " + line[14:])
+              else:
+                  normalized.append(line)
+          regression = "".join(normalized)
+          tests = tests.replace(test_marker, regression + test_marker, 1)
+          compile(tests, str(test_path), "exec", dont_inherit=True)
+          test_path.write_text(tests, encoding="utf-8")
+
+          workflow_path = Path(".github/workflows/capture-private-read-lease-component-walk.yml")
+          workflow = workflow_path.read_text(encoding="utf-8")
+          workflow = replace_once(
+              workflow,
+              "  # Exact acceptance covers both no-follow traversal and plan-to-open object identity continuity.\n  EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be\n",
+              "  # Exact acceptance covers held descriptors plus descriptor-bound internal-symlink policy.\n  EXACT_PARENT: 474507966619ce39288b20de29066711088cd986\n",
+              "workflow serial parent",
+          )
+          checkout_anchor = '''      - name: Compile component-walk sources without artifacts
+          '''
+          temp_step = '''      - name: Use canonical Darwin temporary root for no-follow fixtures
+              if: runner.os == 'macOS'
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  test -d /private/tmp
+                  test ! -L /private/tmp
+                  echo "TMPDIR=/private/tmp" >> "$GITHUB_ENV"
+
+          '''
+          workflow = replace_once(
+              workflow,
+              checkout_anchor,
+              temp_step + checkout_anchor,
+              "Darwin canonical temporary root",
+          )
+          workflow = replace_once(
+              workflow,
+              "echo \"NEMBRA_COMPONENT_WALK_BOUNDARY productionLeaseChanged=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false\"",
+              "echo \"NEMBRA_COMPONENT_WALK_BOUNDARY productionLeaseChanged=true heldSymlinkPolicy=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false\"",
+              "truth boundary",
+          )
+          workflow_path.write_text(workflow, encoding="utf-8")
+          PY
+
+      - name: Verify materialized product on portable runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
+              "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Publish clean serial product head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-held-symlink-policy-materialize-once.yml
+          changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-component-walk.yml \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/capture-private-read-lease-component-walk.yml \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          git commit -m "Bind private symlink policy to held descriptor generation"
+          git push origin HEAD:repair/v17-capture-held-symlink-policy-sol-20260815
