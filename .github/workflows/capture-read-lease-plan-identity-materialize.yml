@@ -16,14 +16,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: 1b31d21eb285cd654c7c7dbd3e5c5276eb0945aa
+  OLD_AUTHORING_HEAD: 33191e2e495baf91e42c0c663bf541d26d719ed6
+  PRODUCT_PARENT: 092e109853eeb6cb3ade6c7a9d401c0f55598d99
   SELF: .github/workflows/capture-read-lease-plan-identity-materialize.yml
   BRANCH: hardening/v17-capture-read-lease-real-directory-continuity-sol-20260814
 
 jobs:
   materialize:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v6
         with:
@@ -31,303 +32,52 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind exact serial authoring state
+      - name: Recover and patch original materializer
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
-          test "$changed" = "$SELF"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Materialize planning-time identity custody
-        shell: bash
-        run: |
-          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git cat-file -e "$OLD_AUTHORING_HEAD^{commit}"
+          git cat-file -e "$PRODUCT_PARENT^{commit}"
+          git show "$OLD_AUTHORING_HEAD:$SELF" > /tmp/materializer.yml
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
 
-          path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
-          source = path.read_text(encoding='utf-8')
+          path = Path('/tmp/materializer.yml')
+          text = path.read_text(encoding='utf-8')
+          old_parent = 'EXACT_PARENT: 1b31d21eb285cd654c7c7dbd3e5c5276eb0945aa'
+          new_parent = 'EXACT_PARENT: 092e109853eeb6cb3ade6c7a9d401c0f55598d99'
+          if text.count(old_parent) != 1:
+              raise SystemExit('could not bind original exact parent')
+          text = text.replace(old_parent, new_parent, 1)
 
-          marker = 'def _subject_entries(subject: Path) -> tuple[tuple[Path, bool], ...]:\n'
-          if source.count(marker) != 1:
-              raise SystemExit('could not bind subject-entry seam')
-          replacement = '''def _record_planned_identity(\n    identities: dict[Path, tuple[int, int, int]] | None,\n    path: Path,\n    metadata: os.stat_result,\n) -> None:\n    if identities is None:\n        return\n    signature = (metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode))\n    previous = identities.get(path)\n    if previous is not None and previous != signature:\n        raise SelectedXcodeBuildOrchestratorError(\n            f"private read-lease path changed identity during planning: {path}"\n        )\n    identities[path] = signature\n\n\ndef _subject_entries(\n    subject: Path,\n    identities: dict[Path, tuple[int, int, int]] | None = None,\n) -> tuple[tuple[Path, bool], ...]:\n'''
-          source = source.replace(marker, replacement)
+          old_marker = "          marker = '    _require_real_directory(repo, \"repository root\")\\n'\n"
+          new_marker = "          marker = '    _require_real_directory(repo, \"repository root\")\\n    if not subjects:\\n'\n"
+          if text.count(old_marker) != 1:
+              raise SystemExit('could not bind original repository-root marker')
+          text = text.replace(old_marker, new_marker, 1)
 
-          marker = '    if stat.S_ISLNK(root_metadata.st_mode):\n'
-          if source.count(marker) != 1:
-              raise SystemExit('could not bind subject-root identity seam')
-          source = source.replace(
-              marker,
-              '    _record_planned_identity(identities, subject, root_metadata)\n' + marker,
+          old_replacement = "              '    _record_planned_identity(identities, repo, repo_metadata)\\n',\n"
+          new_replacement = (
+              "              '    _record_planned_identity(identities, repo, repo_metadata)\\n'\n"
+              "              '    if not subjects:\\n',\n"
           )
-
-          marker = '            metadata = candidate.lstat()\n'
-          if source.count(marker) != 2:
-              raise SystemExit('could not bind both subject-entry identity seams')
-          source = source.replace(
-              marker,
-              marker + '            _record_planned_identity(identities, candidate, metadata)\n',
-          )
-
-          marker = 'def _lease_paths(subjects: Sequence[Path], repo: Path) -> tuple[tuple[Path, bool], ...]:\n'
-          if source.count(marker) != 1:
-              raise SystemExit('could not bind lease-plan signature')
-          source = source.replace(
-              marker,
-              'def _lease_paths(\n'
-              '    subjects: Sequence[Path],\n'
-              '    repo: Path,\n'
-              '    identities: dict[Path, tuple[int, int, int]] | None = None,\n'
-              ') -> tuple[tuple[Path, bool], ...]:\n',
-          )
-
-          marker = '    _require_real_directory(repo, "repository root")\n'
-          if source.count(marker) != 1:
-              raise SystemExit('could not bind repository-root planning seam')
-          source = source.replace(
-              marker,
-              '    repo_metadata = _require_real_directory(repo, "repository root")\n'
-              '    _record_planned_identity(identities, repo, repo_metadata)\n',
-          )
-
-          marker = '        metadata = _require_real_directory(current, "repository host ancestry")\n'
-          if source.count(marker) != 1:
-              raise SystemExit('could not bind host-ancestry planning seam')
-          source = source.replace(
-              marker,
-              marker + '        _record_planned_identity(identities, current, metadata)\n',
-          )
-
-          marker = '''            except OSError as error:\n                raise SelectedXcodeBuildOrchestratorError(\n                    f"private read-lease subject ancestry is unavailable: {cursor}"\n                ) from error\n            if stat.S_ISLNK(metadata.st_mode):\n'''
-          if source.count(marker) != 1:
-              raise SystemExit('could not bind subject-ancestry planning seam')
-          source = source.replace(
-              marker,
-              '''            except OSError as error:\n                raise SelectedXcodeBuildOrchestratorError(\n                    f"private read-lease subject ancestry is unavailable: {cursor}"\n                ) from error\n            _record_planned_identity(identities, cursor, metadata)\n            if stat.S_ISLNK(metadata.st_mode):\n''',
-          )
-
-          marker = '        for path, _is_directory in _subject_entries(subject):\n'
-          if source.count(marker) != 1:
-              raise SystemExit('could not bind subject-entry planning call')
-          source = source.replace(
-              marker,
-              '        for path, _is_directory in _subject_entries(subject, identities):\n',
-          )
-
-          marker = '\ndef _descriptor_path(descriptor: int) -> str:\n'
-          if source.count(marker) != 1:
-              raise SystemExit('could not bind planned-open insertion seam')
-          helper = '''\ndef _open_planned_path(\n    path: Path,\n    is_directory: bool,\n    expected_signature: tuple[int, int, int],\n) -> int:\n    descriptor = _open_pinned_path(path, is_directory)\n    if _descriptor_signature(descriptor) != expected_signature:\n        os.close(descriptor)\n        raise SelectedXcodeBuildOrchestratorError(\n            f"private read-lease path changed identity since planning: {path}"\n        )\n    return descriptor\n\n'''
-          source = source.replace(marker, helper + marker)
-
-          old = '''        try:\n            for path, host_only in _lease_paths(self._subjects, self._repository):\n                metadata = path.lstat()\n                if stat.S_ISLNK(metadata.st_mode):\n                    raise SelectedXcodeBuildOrchestratorError(\n                        f"private read-lease plan targeted a symlink: {path}"\n                    )\n                is_directory = stat.S_ISDIR(metadata.st_mode)\n                if not is_directory and not stat.S_ISREG(metadata.st_mode):\n                    raise SelectedXcodeBuildOrchestratorError(\n                        f"private read-lease plan targeted unsupported type: {path}"\n                    )\n                descriptor = _open_pinned_path(path, is_directory)\n'''
-          if source.count(old) != 1:
-              raise SystemExit('could not bind lease grant planning seam')
-          new = '''        identities: dict[Path, tuple[int, int, int]] = {}\n        try:\n            planned = _lease_paths(self._subjects, self._repository, identities)\n            for path, host_only in planned:\n                expected_signature = identities.get(path)\n                if expected_signature is None:\n                    raise SelectedXcodeBuildOrchestratorError(\n                        f"private read-lease path has no planning identity: {path}"\n                    )\n                planned_type = expected_signature[2]\n                is_directory = planned_type == stat.S_IFDIR\n                if not is_directory and planned_type != stat.S_IFREG:\n                    raise SelectedXcodeBuildOrchestratorError(\n                        f"private read-lease plan targeted unsupported type: {path}"\n                    )\n                descriptor = _open_planned_path(path, is_directory, expected_signature)\n'''
-          source = source.replace(old, new)
-
-          path.write_text(source, encoding='utf-8')
+          if text.count(old_replacement) != 1:
+              raise SystemExit('could not bind original repository-root replacement')
+          text = text.replace(old_replacement, new_replacement, 1)
+          path.write_text(text, encoding='utf-8')
           PY
 
-          cat > scripts/ci/tests/test_capture_private_read_lease_plan_identity.py <<'PY'
-          #!/usr/bin/env python3
-          """Regression for planning-time identity custody in the private read lease."""
-          from __future__ import annotations
-
-          import importlib.util
-          import inspect
-          import os
-          from pathlib import Path
-          import tempfile
-          import unittest
-
-          REPO = Path(__file__).resolve().parents[3]
-          HELPER = REPO / "scripts/ci/capture_selected_xcode_build_orchestrator.py"
-
-
-          def load():
-              spec = importlib.util.spec_from_file_location("nembra_plan_identity", HELPER)
-              if spec is None or spec.loader is None:
-                  raise RuntimeError("could not load selected-Xcode orchestrator")
-              module = importlib.util.module_from_spec(spec)
-              spec.loader.exec_module(module)
-              return module
-
-
-          class CapturePrivateReadLeasePlanIdentityTests(unittest.TestCase):
-              def test_real_directory_replacement_is_rejected_against_planned_identity(self) -> None:
-                  helper = load()
-                  with tempfile.TemporaryDirectory(prefix="nembra-plan-identity-") as raw:
-                      outer = Path(raw)
-                      repo = outer / "repo"
-                      sdk = repo / "LocalSecrets/TuyaSDK"
-                      build = sdk / "Build"
-                      build.mkdir(parents=True)
-                      identities: dict[Path, tuple[int, int, int]] = {}
-                      planned = helper._lease_paths((build,), repo, identities)
-                      self.assertIn((sdk, False), planned)
-                      self.assertIn(sdk, identities)
-                      expected = identities[sdk]
-
-                      original = repo / "LocalSecrets/TuyaSDK.original"
-                      sdk.rename(original)
-                      attacker_build = sdk / "Build"
-                      attacker_build.mkdir(parents=True)
-                      self.assertFalse(sdk.is_symlink())
-                      self.assertNotEqual(helper._path_signature(sdk), expected)
-
-                      with self.assertRaisesRegex(
-                          helper.SelectedXcodeBuildOrchestratorError,
-                          "changed identity since planning",
-                      ):
-                          helper._open_planned_path(sdk, True, expected)
-
-                      descriptor = helper._open_pinned_path(sdk, True)
-                      try:
-                          self.assertEqual(
-                              helper._descriptor_signature(descriptor),
-                              helper._path_signature(sdk),
-                          )
-                      finally:
-                          os.close(descriptor)
-
-              def test_unchanged_planned_directory_still_opens(self) -> None:
-                  helper = load()
-                  with tempfile.TemporaryDirectory(prefix="nembra-plan-control-") as raw:
-                      repo = Path(raw) / "repo"
-                      build = repo / "LocalSecrets/TuyaSDK/Build"
-                      build.mkdir(parents=True)
-                      identities: dict[Path, tuple[int, int, int]] = {}
-                      helper._lease_paths((build,), repo, identities)
-                      descriptor = helper._open_planned_path(build, True, identities[build])
-                      try:
-                          self.assertEqual(helper._descriptor_signature(descriptor), identities[build])
-                      finally:
-                          os.close(descriptor)
-
-              def test_grant_consumes_identity_captured_by_planner(self) -> None:
-                  helper = load()
-                  grant = inspect.getsource(helper._PrivateReadLease.grant)
-                  planner = inspect.getsource(helper._lease_paths)
-                  entries = inspect.getsource(helper._subject_entries)
-                  self.assertIn("_lease_paths(self._subjects, self._repository, identities)", grant)
-                  self.assertIn("_open_planned_path(path, is_directory, expected_signature)", grant)
-                  self.assertIn("_record_planned_identity(identities, cursor, metadata)", planner)
-                  self.assertIn("_subject_entries(subject, identities)", planner)
-                  self.assertIn("_record_planned_identity(identities, candidate, metadata)", entries)
-
-
-          if __name__ == "__main__":
-              unittest.main(verbosity=2)
-          PY
-
-          cat > .github/workflows/capture-private-read-lease-plan-identity.yml <<'YML'
-          name: Capture Private Read Lease Plan Identity
-
-          on:
-            pull_request:
-              paths:
-                - scripts/ci/capture_selected_xcode_build_orchestrator.py
-                - scripts/ci/tests/test_capture_private_read_lease_plan_identity.py
-                - .github/workflows/capture-private-read-lease-plan-identity.yml
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          concurrency:
-            group: capture-private-read-lease-plan-identity-${{ github.event.pull_request.number || github.ref }}
-            cancel-in-progress: true
-
-          env:
-            EXACT_PARENT: 1b31d21eb285cd654c7c7dbd3e5c5276eb0945aa
-
-          jobs:
-            plan-identity:
-              name: Prove planning-time vnode identity custody
-              strategy:
-                fail-fast: false
-                matrix:
-                  os: [ubuntu-latest, macos-15]
-              runs-on: ${{ matrix.os }}
-              timeout-minutes: 6
-              steps:
-                - uses: actions/checkout@v6
-                  with:
-                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
-                    fetch-depth: 0
-                    persist-credentials: false
-
-                - name: Bind exact serial delta
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
-                    test "$(git rev-parse HEAD)" = "$expected_head"
-                    test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-                    changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-                    expected="$(printf '%s\n' \
-                      .github/workflows/capture-private-read-lease-plan-identity.yml \
-                      scripts/ci/capture_selected_xcode_build_orchestrator.py \
-                      scripts/ci/tests/test_capture_private_read_lease_plan_identity.py | LC_ALL=C sort)"
-                    test "$changed" = "$expected"
-                    git diff --check "$EXACT_PARENT"...HEAD
-                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-                - name: Execute continuity and inherited lease regressions
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    export PYTHONDONTWRITEBYTECODE=1
-                    /usr/bin/python3 -B -m py_compile \
-                      scripts/ci/capture_selected_xcode_build_orchestrator.py \
-                      scripts/ci/tests/test_capture_private_read_lease_plan_identity.py
-                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_plan_identity.py
-                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
-                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
-                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
-                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-                - name: Preserve truth boundary
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    echo "NEMBRA_PLAN_IDENTITY_BOUNDARY productionLeaseChanged=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
-          YML
-
-          git diff --check
-          export PYTHONDONTWRITEBYTECODE=1
-          /usr/bin/python3 -B -m py_compile \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_plan_identity.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_plan_identity.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
-
-      - name: Publish permanent serial hardening
+      - name: Rebase materializer onto exact current component-walk head
         shell: bash
         run: |
           set -euo pipefail
-          git rm "$SELF"
-          git add \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_plan_identity.py \
-            .github/workflows/capture-private-read-lease-plan-identity.yml
+          git checkout --detach "$PRODUCT_PARENT"
+          cp /tmp/materializer.yml "$SELF"
+          git add "$SELF"
+          test "$(git diff --cached --name-only)" = "$SELF"
           git diff --cached --check
-          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            "$SELF" \
-            .github/workflows/capture-private-read-lease-plan-identity.yml \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_plan_identity.py | LC_ALL=C sort)"
-          test "$actual" = "$expected"
           git config user.name 'nembra-swarm-plan-identity'
           git config user.email 'nembra-swarm@users.noreply.github.com'
-          git commit -m 'capture: bind private lease to planning identity'
-          git push origin "HEAD:$BRANCH"
+          git commit -m 'ci(capture): rebind plan identity materializer to component-walk head'
+          git push --force-with-lease="refs/heads/$BRANCH:$GITHUB_SHA" origin "HEAD:refs/heads/$BRANCH"
