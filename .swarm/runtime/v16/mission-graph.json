@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 34,
+    "classifiedPRTotal": 35,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1439,6 +1439,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.392,
         "title": "[Capture P0][RED TEAM] Reject tracked case-fold directory alias collapse"
+      },
+      "3413": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3413,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.246,
+        "title": "[Capture P0][RED TEAM] Reject mutable snapshot module under root custody"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1471,9 +1482,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:31:12Z",
+    "liveRefreshAt": "2026-08-15T03:32:08Z",
     "liveRefreshDuplicatesSuppressed": [
-      3412
+      3413
     ],
     "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5256,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 545,
+  "revision": 546,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:31:13Z",
+  "updatedAt": "2026-08-15T03:32:09Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5335,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:31:12Z",
+      "updatedAt": "2026-08-15T03:32:08Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
