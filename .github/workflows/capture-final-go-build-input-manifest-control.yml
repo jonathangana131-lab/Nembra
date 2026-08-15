@@ -1,0 +1,92 @@
+name: Capture Final GO Build Input Manifest Control
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_build_input_manifest_final_go.py
+      - .github/workflows/capture-final-go-build-input-manifest-control.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-final-go-build-input-manifest-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_FINAL_GO_PARENT: 01217c20215c31c7380405dc1e2bd1330136894e
+  EXACT_PARENT_MODULE_BLOB: 63567c6674003fc4ddd1caabd398060818beb938
+  EXACT_MANIFEST_HELPER_BLOB: b29cf5a7f344710515d4adec80b068c237b44db3
+
+jobs:
+  control:
+    name: Bind owner-reviewed generated/private build inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact accepted Final-GO parent and four-path child
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$head_sha" = "${{ github.event.pull_request.head.sha }}"
+            test "${{ github.event.pull_request.base.sha }}" = "$EXACT_FINAL_GO_PARENT"
+          fi
+          test "$(git merge-base HEAD "$EXACT_FINAL_GO_PARENT")" = "$EXACT_FINAL_GO_PARENT"
+          actual="$(git diff --name-only "$EXACT_FINAL_GO_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-final-go-build-input-manifest-control.yml' \
+            'scripts/ci/capture_accepted_build_input_snapshot.py' \
+            'scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py' \
+            'scripts/ci/tests/test_es80_authenticated_stationary_build_input_manifest_final_go.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          test "$(git rev-parse "$EXACT_FINAL_GO_PARENT:scripts/ci/es80_authenticated_stationary_private_review_final_go.py")" = "$EXACT_PARENT_MODULE_BLOB"
+          test "$(git rev-parse HEAD:scripts/ci/capture_accepted_build_input_snapshot.py)" = "$EXACT_MANIFEST_HELPER_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check "$EXACT_FINAL_GO_PARENT"...HEAD
+
+      - name: Compile exact control and manifest helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-final-go-build-input-pycache"
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_build_input_manifest_final_go.py
+
+      - name: Run focused owner-review and closed-environment regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -B -I scripts/ci/tests/test_es80_authenticated_stationary_build_input_manifest_final_go.py
+
+      - name: Preserve issuer-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          control=scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' "$control"
+          grep -Fq 'installerConsumerIntegrated": False' "$control"
+          grep -Fq 'physicalAuthorityCreated": False' "$control"
+          test -z "$(git diff --name-only "$EXACT_FINAL_GO_PARENT"...HEAD -- scripts/field NembraApp)"
+          printf '%s\n' \
+            'ownerReviewedGeneratedInputManifest=true' \
+            'exactManifestHelperGitBlob=true' \
+            'closedInstallerEnvironmentIssuer=true' \
+            'installerConsumerIntegrated=false' \
+            'sourceSnapshotIntegrated=false' \
+            'installAuthority=false' \
+            'physicalAuthorityCreated=false'
