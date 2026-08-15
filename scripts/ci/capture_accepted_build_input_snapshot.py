@@ -8,9 +8,11 @@ admitted only when their canonical byte/topology manifest matches an independent
 preaccepted SHA-256 digest.
 
 Generated/private selectors are opened from one held repository root descriptor
-with component-by-component no-follow semantics. The manifest contains paths,
-file hashes/sizes, executable-bit state, and relative symlink targets only. It
-never records private file contents.
+with component-by-component no-follow semantics. Shared generated directories are
+also generation-stamped while they are held so child-entry replacement cannot mix
+multiple live directory generations into one accepted operation. The manifest
+contains paths, file hashes/sizes, executable-bit state, and relative symlink
+targets only. It never records private file contents.
 """
 
 from __future__ import annotations
@@ -271,6 +273,31 @@ def _same_object(first: os.stat_result, second: os.stat_result) -> bool:
     )
 
 
+def _directory_generation(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IFMT(metadata.st_mode),
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _assert_directory_generation(
+    descriptor: int,
+    admitted: os.stat_result,
+    relative: Path,
+) -> None:
+    current = os.fstat(descriptor)
+    if (
+        not stat.S_ISDIR(current.st_mode)
+        or _directory_generation(current) != _directory_generation(admitted)
+    ):
+        raise AcceptedBuildInputSnapshotError(
+            f"generated build-input directory membership changed during operation: {relative}"
+        )
+
+
 def _open_repository_root(root: Path) -> int:
     root = _absolute(root)
     try:
@@ -355,7 +382,7 @@ def _open_file_at(parent_fd: int, name: str, relative: Path) -> tuple[int, os.st
 def _open_subject(
     root_fd: int,
     subject: Path,
-    directory_cache: dict[Path, int] | None = None,
+    directory_cache: dict[Path, tuple[int, os.stat_result]] | None = None,
 ) -> tuple[int, os.stat_result, str]:
     _safe_relative(subject)
     expected_kind = _GENERATED_SUBJECT_KINDS.get(subject)
@@ -367,8 +394,10 @@ def _open_subject(
             relative = Path(*subject.parts[: index + 1])
             is_last = index == len(subject.parts) - 1
             if not is_last and directory_cache is not None and relative in directory_cache:
+                cached_descriptor, admitted = directory_cache[relative]
+                _assert_directory_generation(cached_descriptor, admitted, relative)
                 os.close(current)
-                current = os.dup(directory_cache[relative])
+                current = os.dup(cached_descriptor)
                 continue
             if is_last and expected_kind == "file":
                 descriptor, metadata = _open_file_at(current, component, relative)
@@ -376,7 +405,8 @@ def _open_subject(
                 return descriptor, metadata, "file"
             child = _open_directory_at(current, component, relative)
             if not is_last and directory_cache is not None:
-                directory_cache[relative] = os.dup(child)
+                held = os.dup(child)
+                directory_cache[relative] = (held, os.fstat(held))
             os.close(current)
             current = child
         metadata = os.fstat(current)
@@ -389,8 +419,10 @@ def _open_subject(
         raise
 
 
-def _close_directory_cache(directory_cache: dict[Path, int]) -> None:
-    for descriptor in reversed(tuple(directory_cache.values())):
+def _close_directory_cache(
+    directory_cache: dict[Path, tuple[int, os.stat_result]],
+) -> None:
+    for descriptor, _metadata in reversed(tuple(directory_cache.values())):
         try:
             os.close(descriptor)
         except OSError:
@@ -440,6 +472,7 @@ def _manifest_directory(
     records: list[dict[str, object]],
     seen: set[Path],
 ) -> None:
+    admitted_generation = os.fstat(directory_fd)
     try:
         names = sorted(os.listdir(directory_fd))
     except OSError as error:
@@ -512,6 +545,7 @@ def _manifest_directory(
             )
         seen.add(child_relative)
         records.append(record)
+    _assert_directory_generation(directory_fd, admitted_generation, relative)
 
 
 def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
@@ -521,7 +555,7 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
     records: list[dict[str, object]] = []
     seen: set[Path] = set()
     root_fd = _open_repository_root(root)
-    directory_cache: dict[Path, int] = {}
+    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
             if subject in seen:
@@ -616,6 +650,7 @@ def _copy_directory_fd(
     destination_root: Path,
     relative: Path,
 ) -> None:
+    admitted_generation = os.fstat(source_fd)
     destination = destination_root / relative
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
     os.chmod(destination, 0o700)
@@ -679,6 +714,7 @@ def _copy_directory_fd(
             raise AcceptedBuildInputSnapshotError(
                 f"special build-input file is forbidden: {child_relative}"
             )
+    _assert_directory_generation(source_fd, admitted_generation, relative)
 
 
 def _copy_subject(source_root: Path, destination_root: Path, relative: Path) -> None:
@@ -707,7 +743,7 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
     source_root = _absolute(source_root)
     destination_root = _absolute(destination_root)
     root_fd = _open_repository_root(source_root)
-    directory_cache: dict[Path, int] = {}
+    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
             descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
