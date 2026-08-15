@@ -48,6 +48,21 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -B scripts/ci/recover_capture_final_authority_once.py
 
+      - name: Align strengthened private-input review source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tests/test_capture_tuya_private_input_provenance.py')
+          source = path.read_text(encoding='utf-8')
+          old = "review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'"
+          new = "review_only_stop = 'DEPENDENCY + PRIVATE-INPUT CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'"
+          if source.count(old) != 1:
+              raise SystemExit(f'private-input candidate source-contract shape changed: {source.count(old)}')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Prove repaired authority contracts
         shell: bash
         run: |
@@ -58,11 +73,14 @@ jobs:
             scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_frozen_device_tool_handoff.py \
             scripts/ci/tests/test_capture_private_provenance_preacceptance.py \
-            scripts/ci/tests/test_capture_private_provenance_export_custody.py
+            scripts/ci/tests/test_capture_private_provenance_export_custody.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_preacceptance.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          /usr/bin/python3 -B scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n scripts/field/install_one_time_capture.command
           /usr/bin/xcrun swiftc -parse \
             NembraApp/App/NembraCaptureBuildIdentity.swift \
