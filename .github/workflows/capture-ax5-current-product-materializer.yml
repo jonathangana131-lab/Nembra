@@ -63,8 +63,8 @@ jobs:
           app_path.write_text(app, encoding='utf-8')
 
           test = test_path.read_text(encoding='utf-8')
-          anchor = '''        #expect(app.contains(readOnlyKey))\n\n        #expect(strings.contains("\\\"Prepare the scooter link\\\" = \\\"Link this scooter\\\";"))'''
-          replacement = '''        #expect(app.contains(readOnlyKey))\n        #expect(app.contains(".accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)"))\n\n        #expect(strings.contains("\\\"Prepare the scooter link\\\" = \\\"Link this scooter\\\";"))'''
+          anchor = '        #expect(app.contains(readOnlyKey))\n'
+          replacement = '''        #expect(app.contains(readOnlyKey))\n        #expect(app.contains(".accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)"))\n'''
           if test.count(anchor) != 1:
               raise SystemExit(f'first-fold regression insertion seam count changed: {test.count(anchor)}')
           test = test.replace(anchor, replacement)
