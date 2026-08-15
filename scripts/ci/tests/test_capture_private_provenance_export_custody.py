@@ -11,7 +11,10 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 IDENTITY = REPOSITORY / "NembraApp/App/NembraCaptureBuildIdentity.swift"
 ENTRYPOINT = REPOSITORY / "NembraApp/App/NembraCaptureEntrypoint.swift"
 PROJECT = REPOSITORY / "NembraCapture.xcodeproj/project.pbxproj"
+INFO_PLIST = REPOSITORY / "NembraCapture-Info.plist"
 INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
+EXPORT_WORKFLOW = REPOSITORY / ".github/workflows/capture-private-provenance-export-custody.yml"
+FINAL_AUTHORITY_WORKFLOW = REPOSITORY / ".github/workflows/capture-final-authority-exact-head.yml"
 
 
 class CapturePrivateProvenanceExportCustodyTests(unittest.TestCase):
@@ -32,6 +35,20 @@ class CapturePrivateProvenanceExportCustodyTests(unittest.TestCase):
             '"$(NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256)";'
         )
         self.assertEqual(source.count(marker), 2)
+
+    def test_explicit_info_plist_and_acceptance_gates_cover_private_manifest(self) -> None:
+        plist = INFO_PLIST.read_text(encoding="utf-8")
+        self.assertIn("<key>NembraCaptureTuyaPrivateInputProvenanceSHA256</key>", plist)
+        self.assertIn("<string>$(NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256)</string>", plist)
+
+        trigger = "      - NembraCapture-Info.plist"
+        for workflow in (EXPORT_WORKFLOW, FINAL_AUTHORITY_WORKFLOW):
+            source = workflow.read_text(encoding="utf-8")
+            self.assertEqual(
+                source.count(trigger),
+                1,
+                f"{workflow.name} must re-run on an explicit Capture Info.plist provenance change",
+            )
 
     def test_installer_passes_and_reads_back_same_accepted_digest_before_install(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
