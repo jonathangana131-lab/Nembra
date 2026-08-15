@@ -1,0 +1,27 @@
+name: Capture One-Time Final Authority Dispatcher
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-frozen-device-tools-sol-20260814
+    paths:
+      - .github/capture-final-authority.dispatch
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Dispatch exact branch convergence workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT_BRANCH: repair/v17-capture-frozen-device-tools-sol-20260814
+        run: |
+          set -euo pipefail
+          gh workflow run capture-final-authority-convergence-once.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$PRODUCT_BRANCH"
