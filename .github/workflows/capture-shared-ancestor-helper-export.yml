@@ -8,7 +8,7 @@ on:
       - .github/workflows/capture-shared-ancestor-helper-export.yml
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   EXACT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
@@ -22,7 +22,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Bind temporary export scope
         shell: bash
@@ -78,3 +78,15 @@ jobs:
           path: scripts/ci/capture_accepted_build_input_snapshot.py
           if-no-files-found: error
           retention-days: 7
+
+      - name: Publish only tested helper byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add scripts/ci/capture_accepted_build_input_snapshot.py
+          git diff --cached --check
+          test "$(git diff --cached --name-only)" = "scripts/ci/capture_accepted_build_input_snapshot.py"
+          git config user.name "nembra-capture-swarm"
+          git config user.email "nembra-capture-swarm@users.noreply.github.com"
+          git commit -m "security(capture): hold shared generated selector ancestors"
+          git push origin HEAD:repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
