@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 34,
+    "classifiedPRTotal": 32,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1264,17 +1264,6 @@
         "similarity": 0.347,
         "title": "[Capture P0][REPAIR] Preaccept private Tuya provenance before field build"
       },
-      "3357": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-runtime-accessibility",
-        "pr": 3357,
-        "recommendedAction": "independent-review",
-        "similarity": 0.294,
-        "title": "[Capture P0][ACCESSIBILITY][RECOVERY] Materialize AX5 lock priority on ba615"
-      },
       "3358": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1360,7 +1349,7 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.237,
+        "similarity": 0.19,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
       },
       "3382": {
@@ -1373,17 +1362,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.47,
         "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
-      },
-      "3383": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3383,
-        "recommendedAction": "independent-review",
-        "similarity": 0.284,
-        "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
       },
       "3387": {
         "classification": "requires-review",
@@ -1404,7 +1382,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3388,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.275,
+        "similarity": 0.118,
         "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
       },
       "3390": {
@@ -1418,17 +1396,6 @@
         "similarity": 0.477,
         "title": "[Capture P0][SECURITY] Bind planned identity into private lease admission"
       },
-      "3391": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3391,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.453,
-        "title": "[Capture P0][SECURITY][RECOVERY] Bind private lease to planned object identity"
-      },
       "3392": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1439,6 +1406,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.147,
         "title": "[Capture P0][VISUAL] Re-anchor first-fold evidence to ff779 composition"
+      },
+      "3393": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-visual-qa",
+        "pr": 3393,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.124,
+        "title": "[Capture P0][VISUAL] Re-anchor standalone visual matrix to ff779 composition"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1471,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:09:53Z",
+    "liveRefreshAt": "2026-08-15T03:10:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5256,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 488,
+  "revision": 489,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:09:53Z",
+  "updatedAt": "2026-08-15T03:10:07Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5335,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:09:53Z",
+      "updatedAt": "2026-08-15T03:10:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
