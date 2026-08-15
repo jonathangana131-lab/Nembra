@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 28,
+    "classifiedPRTotal": 30,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1175,17 +1175,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.442,
         "title": "[Capture P0][VALIDATION] Classify kernel PID 0 in numeric-principal witness"
-      },
-      "3341": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "ab7edb36badeb005102c55cf661435952f6f8209",
-        "lane": "capture-physical-runbook-authority",
-        "pr": 3341,
-        "recommendedAction": "independent-review",
-        "similarity": 0.143,
-        "title": "[Capture P0][NO-GO] Re-anchor stationary field procedure to ba615"
       },
       "3343": {
         "classification": "canonical-candidate",
@@ -1373,6 +1362,39 @@
         "recommendedAction": "independent-review",
         "similarity": 0.252,
         "title": "[Capture][P0][recovery] Materialize component-anchored private read lease"
+      },
+      "3368": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "bb11d8970153cb54e06726047a98dfe2b514311a",
+        "lane": "capture-signed-install-custody",
+        "pr": 3368,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.556,
+        "title": "[Capture P0][RED TEAM] Reject tracked ancestor aliases in generated-input staging"
+      },
+      "3369": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority-validation",
+        "pr": 3369,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.122,
+        "title": "[Capture P0][VALIDATION] Repair provenance guard dataclass loader"
+      },
+      "3370": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3370,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.55,
+        "title": "[Capture P0][RED TEAM] Reject tracked ancestors of generated build inputs"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1405,9 +1427,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T02:59:22Z",
+    "liveRefreshAt": "2026-08-15T02:59:40Z",
     "liveRefreshDuplicatesSuppressed": [
-      3359
+      3370
     ],
     "liveRefreshMainSHA": "412c13dbcf5bdc3708e0c2ac0a3586819ffd7772",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5190,10 +5212,10 @@
       "userValue": 7
     }
   },
-  "revision": 453,
+  "revision": 454,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T02:59:23Z",
+  "updatedAt": "2026-08-15T02:59:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5269,7 +5291,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T02:59:22Z",
+      "updatedAt": "2026-08-15T02:59:40Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
