@@ -1,0 +1,109 @@
+name: Capture Private Provenance Product Materializer V4
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-frozen-device-tools-sol-20260814
+    paths:
+      - .github/workflows/capture-private-provenance-product-materialize-v4.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact live construction surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=7f0528a9320d93c154b0ffcf8b2d928143eb7092
+          expected="$RUNNER_TEMP/expected-before"
+          actual="$RUNNER_TEMP/actual-before"
+          cat > "$expected" <<'EOF'
+          .github/workflows/capture-private-provenance-product-materialize-v2.yml
+          .github/workflows/capture-private-provenance-product-materialize-v3.yml
+          .github/workflows/capture-private-provenance-product-materialize-v4.yml
+          .github/workflows/capture-private-provenance-product-materialize.yml
+          scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          EOF
+          git diff --name-only "$base" HEAD | LC_ALL=C sort > "$actual"
+          diff -u "$expected" "$actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute reviewed V3 product transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/capture-private-provenance-product-materialize-v3.yml').read_text(encoding='utf-8')
+          start_marker = '      - name: Materialize compiled private provenance authority\n        shell: bash\n        run: |\n'
+          end_marker = '\n      - name: Verify portable truth contracts\n'
+          if source.count(start_marker) != 1 or source.count(end_marker) != 1:
+              raise SystemExit('V3 transform markers are not unique')
+          body = source.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          lines = body.splitlines()
+          if not lines or any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit('V3 transform indentation changed')
+          script = '\n'.join(line[10:] if line else '' for line in lines) + '\n'
+          Path('/tmp/nembra-private-provenance-transform.sh').write_text(script, encoding='utf-8')
+          PY
+          bash /tmp/nembra-private-provenance-transform.sh
+
+      - name: Verify portable truth contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-provenance-product-pycache"
+          python3 -m py_compile scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          python3 -B -I scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          with Path('NembraCapture-Info.plist').open('rb') as fh:
+              root = plistlib.load(fh)
+          assert root['NembraCaptureTuyaPrivateInputProvenanceSHA256'] == '$(NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256)'
+          PY
+          bash -n scripts/field/install_one_time_capture.command
+          git diff --check
+
+      - name: Retire scaffolding and commit exact product delta
+        shell: bash
+        env:
+          BRANCH: repair/v17-capture-frozen-device-tools-sol-20260814
+        run: |
+          set -euo pipefail
+          base=7f0528a9320d93c154b0ffcf8b2d928143eb7092
+          rm .github/workflows/capture-private-provenance-product-materialize.yml
+          rm .github/workflows/capture-private-provenance-product-materialize-v2.yml
+          rm .github/workflows/capture-private-provenance-product-materialize-v3.yml
+          rm .github/workflows/capture-private-provenance-product-materialize-v4.yml
+          expected="$RUNNER_TEMP/expected-after"
+          actual="$RUNNER_TEMP/actual-after"
+          cat > "$expected" <<'EOF'
+          NembraApp/App/NembraCaptureBuildIdentity.swift
+          NembraApp/App/NembraCaptureEntrypoint.swift
+          NembraCapture-Info.plist
+          NembraCapture.xcodeproj/project.pbxproj
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaCorrelationProvenanceExportSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+          Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift
+          scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          scripts/field/install_one_time_capture.command
+          EOF
+          git diff --name-only "$base" | LC_ALL=C sort > "$actual"
+          diff -u "$expected" "$actual"
+          git diff --check
+          git config user.name jonathangana131-lab
+          git config user.email jonathangana131@gmail.com
+          git add -A
+          git commit -m "Promote accepted private provenance into Capture artifact"
+          git push origin "HEAD:$BRANCH"
