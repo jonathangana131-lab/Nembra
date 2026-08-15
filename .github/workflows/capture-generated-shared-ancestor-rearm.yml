@@ -57,6 +57,21 @@ jobs:
               raise SystemExit(f'reviewed materializer payload markers missing: {exc}')
           payload_lines = lines[start:end]
           payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in payload_lines) + '\n'
+
+          # The reviewed one-shot is stored inside a YAML block scalar. When its Python
+          # payload is extracted here, the block's ten-space YAML indentation has
+          # already been removed. The six template literals still carry a historical
+          # second indentation scrub that would corrupt nested Python indentation and
+          # make their exact source anchors impossible to match. Remove only those six
+          # known template-scrub suffixes before executing the otherwise reviewed bytes.
+          template_scrub = '.replace("          ", "")'
+          scrub_count = payload.count(template_scrub)
+          if scrub_count != 6:
+              raise SystemExit(
+                  f'reviewed materializer template-scrub count drifted: expected 6, found {scrub_count}'
+              )
+          payload = payload.replace(template_scrub, '')
+
           compile(payload, '<reviewed-shared-ancestor-materializer>', 'exec', dont_inherit=True)
           namespace = {'__name__': '__main__'}
           exec(payload, namespace, namespace)
