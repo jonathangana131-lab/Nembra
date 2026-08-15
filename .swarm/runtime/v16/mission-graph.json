@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 42,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "navigation-app-visible",
         "pr": 2959,
         "recommendedAction": "independent-review",
-        "similarity": 0.114,
+        "similarity": 0.107,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
       "3142": {
@@ -1503,30 +1503,8 @@
         "lane": "",
         "pr": 3442,
         "recommendedAction": "independent-review",
-        "similarity": 0.379,
+        "similarity": 0.088,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
-      },
-      "3443": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3443,
-        "recommendedAction": "independent-review",
-        "similarity": 0.431,
-        "title": "[Battery/Range V15] Clear Accessibility XXXL Navigation overlap"
-      },
-      "3444": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3444,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.336,
-        "title": "[Battery/Range V15][QA] Re-prove XXXL launcher clearance"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1559,11 +1537,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T17:01:16Z",
+    "liveRefreshAt": "2026-08-15T19:01:08Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
-    "liveRefreshMainSHA": "fb0b755629e10cc72d9501a587625326b3d67f78",
+    "liveRefreshMainSHA": "7cbf030dca7735fab56f1f71dd05115f0236d556",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -5344,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 658,
+  "revision": 659,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T17:01:18Z",
+  "updatedAt": "2026-08-15T19:01:10Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T17:01:16Z",
+      "updatedAt": "2026-08-15T19:01:08Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
