@@ -1143,17 +1143,6 @@
         "similarity": 0.166,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
-      "3334": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "494369c33e99d1c77a784ec00dcbbf7221df035b",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3334,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.24,
-        "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
-      },
       "3335": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1385,17 +1374,6 @@
         "similarity": 0.444,
         "title": "[Capture P0][VISUAL] Re-anchor first-fold evidence to ff779 composition"
       },
-      "3393": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-visual-qa",
-        "pr": 3393,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.124,
-        "title": "[Capture P0][VISUAL] Re-anchor standalone visual matrix to ff779 composition"
-      },
       "3394": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1426,8 +1404,30 @@
         "lane": "capture-signed-install-custody",
         "pr": 3396,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.217,
+        "similarity": 0.319,
         "title": "[Capture P0][SECURITY] Keep accepted generated inputs owner-only"
+      },
+      "3397": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3397,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.311,
+        "title": "[Capture P0][RED TEAM] Reject APFS case-fold generated-input aliases"
+      },
+      "3398": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3398,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.273,
+        "title": "[Capture P0][SECURITY] Enforce full numeric-principal admission and retirement"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1460,9 +1460,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:12:01Z",
+    "liveRefreshAt": "2026-08-15T03:12:18Z",
     "liveRefreshDuplicatesSuppressed": [
-      3359
+      3397
     ],
     "liveRefreshMainSHA": "412c13dbcf5bdc3708e0c2ac0a3586819ffd7772",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5245,10 +5245,10 @@
       "userValue": 7
     }
   },
-  "revision": 495,
+  "revision": 496,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:12:02Z",
+  "updatedAt": "2026-08-15T03:12:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5324,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:12:01Z",
+      "updatedAt": "2026-08-15T03:12:18Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
