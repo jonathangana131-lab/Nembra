@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 35,
+    "classifiedPRTotal": 36,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "navigation-app-visible",
         "pr": 2959,
         "recommendedAction": "independent-review",
-        "similarity": 0.097,
+        "similarity": 0.101,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.015,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1294,7 +1294,7 @@
         "lane": "navigation-app-visible",
         "pr": 3363,
         "recommendedAction": "independent-review",
-        "similarity": 0.096,
+        "similarity": 0.285,
         "title": "[Navigation V15] Port accessibility surface onto current main"
       },
       "3380": {
@@ -1316,7 +1316,7 @@
         "lane": "capture-flagship-convergence",
         "pr": 3387,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.06,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
       "3394": {
@@ -1450,6 +1450,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.347,
         "title": "[Capture P0][REPAIR] Hold shared generated selector ancestors"
+      },
+      "3422": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3422,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.283,
+        "title": "[Navigation V15][QA] Exact Accessibility XXXL real-surface witness"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1482,7 +1493,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:48:30Z",
+    "liveRefreshAt": "2026-08-15T05:01:31Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5267,10 +5278,10 @@
       "userValue": 7
     }
   },
-  "revision": 572,
+  "revision": 573,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:48:31Z",
+  "updatedAt": "2026-08-15T05:01:32Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5357,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:48:30Z",
+      "updatedAt": "2026-08-15T05:01:31Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
