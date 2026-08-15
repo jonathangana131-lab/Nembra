@@ -120,6 +120,27 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
                             f"generated/private staged subject widened group/other authority: {candidate}",
                         )
 
+    def test_generated_private_ancestor_symlink_escape_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            root.mkdir()
+            source_sha = seed_repo(root)
+            seed_generated(root)
+            accepted = snapshot.generated_manifest_sha256(root, source_sha)
+
+            external_private = Path(raw) / "external-private"
+            os.rename(root / "LocalSecrets", external_private)
+            os.symlink("../external-private", root / "LocalSecrets")
+            self.assertTrue((root / "LocalSecrets").is_symlink())
+
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot.canonical_generated_manifest(root, source_sha)
+
+            destination = Path(raw) / "stage"
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
+            self.assertFalse(destination.exists())
+
     def test_changed_private_input_fails_manifest_and_destroys_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "repo"
@@ -220,10 +241,9 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
             git(root, "commit", "-qm", "track generated ancestor alias")
             source_sha = git(root, "rev-parse", "HEAD")
             seed_generated(root)
-            accepted = snapshot.generated_manifest_sha256(root, source_sha)
-            destination = Path(raw) / "stage"
             with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
-                snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
+                snapshot.generated_manifest_sha256(root, source_sha)
+            destination = Path(raw) / "stage"
             self.assertFalse(destination.exists())
 
 
