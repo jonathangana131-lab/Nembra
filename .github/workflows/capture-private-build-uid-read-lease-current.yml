@@ -10,6 +10,7 @@ on:
       - scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
       - scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
       - scripts/ci/tests/test_capture_private_read_lease_rollback.py
+      - scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
       - .github/workflows/capture-private-build-uid-read-lease-current.yml
   workflow_dispatch:
 
@@ -39,7 +40,7 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'Exact read-lease source: %s\n' "$actual"
 
-      - name: Prove portable ancestry and rollback contracts
+      - name: Prove portable ancestry descriptor and rollback contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -50,10 +51,12 @@ jobs:
             scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py \
             scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
-            scripts/ci/tests/test_capture_private_read_lease_rollback.py
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
 
       - name: Prove dedicated identity receives read/search only and loses it after revoke
         shell: bash
