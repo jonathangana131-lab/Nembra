@@ -734,7 +734,8 @@ private struct RideHistoryDetailView: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.leading, 20)
+        .padding(.trailing, 72)
         .padding(.vertical, 16)
         .accessibilityElement(children: .combine)
     }
@@ -835,17 +836,72 @@ private struct RideHistoryDetailView: View {
 }
 
 private struct RideRouteMapView: View {
+    private struct PresentationSegment: Identifiable {
+        let id: Int
+        let coordinates: [CLLocationCoordinate2D]
+    }
+
     let geometry: RideRouteGeometry
+    private let presentationSegments: [PresentationSegment]
+    private let routeRegion: MKCoordinateRegion
+
+    init(geometry: RideRouteGeometry) {
+        self.geometry = geometry
+
+        var projectedSegments: [PresentationSegment] = []
+        projectedSegments.reserveCapacity(geometry.segments.count)
+
+        var minimumLatitude: Double?
+        var maximumLatitude: Double?
+        var minimumLongitude: Double?
+        var maximumLongitude: Double?
+
+        for segment in geometry.segments {
+            let coordinates = segment.points.map {
+                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+            }
+            if coordinates.count >= 2 {
+                projectedSegments.append(PresentationSegment(id: Int(segment.index), coordinates: coordinates))
+            }
+
+            for point in segment.points {
+                minimumLatitude = min(minimumLatitude ?? point.latitude, point.latitude)
+                maximumLatitude = max(maximumLatitude ?? point.latitude, point.latitude)
+                minimumLongitude = min(minimumLongitude ?? point.longitude, point.longitude)
+                maximumLongitude = max(maximumLongitude ?? point.longitude, point.longitude)
+            }
+        }
+
+        presentationSegments = projectedSegments
+
+        if let minimumLatitude,
+           let maximumLatitude,
+           let minimumLongitude,
+           let maximumLongitude {
+            let center = CLLocationCoordinate2D(
+                latitude: (minimumLatitude + maximumLatitude) / 2,
+                longitude: (minimumLongitude + maximumLongitude) / 2
+            )
+            let span = MKCoordinateSpan(
+                latitudeDelta: max((maximumLatitude - minimumLatitude) * 1.6, 0.002),
+                longitudeDelta: max((maximumLongitude - minimumLongitude) * 1.6, 0.002)
+            )
+            routeRegion = MKCoordinateRegion(center: center, span: span)
+        } else {
+            routeRegion = MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                span: MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1)
+            )
+        }
+    }
 
     var body: some View {
         Map(initialPosition: .region(routeRegion)) {
-            ForEach(geometry.segments, id: \.index) { segment in
-                if segment.points.count >= 2 {
-                    MapPolyline(coordinates: coordinates(for: segment))
-                        .stroke(Color(uiColor: .systemBackground), lineWidth: 8)
-                    MapPolyline(coordinates: coordinates(for: segment))
-                        .stroke(.primary, lineWidth: 4)
-                }
+            ForEach(presentationSegments) { segment in
+                MapPolyline(coordinates: segment.coordinates)
+                    .stroke(Color(uiColor: .systemBackground), lineWidth: 8)
+                MapPolyline(coordinates: segment.coordinates)
+                    .stroke(.primary, lineWidth: 4)
             }
         }
         .mapStyle(
@@ -856,42 +912,5 @@ private struct RideRouteMapView: View {
                 showsTraffic: false
             )
         )
-    }
-
-    private func coordinates(for segment: RideRouteSegment) -> [CLLocationCoordinate2D] {
-        segment.points.map {
-            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-        }
-    }
-
-    private var routeRegion: MKCoordinateRegion {
-        let allPoints = geometry.segments.flatMap(\.points)
-        guard let first = allPoints.first else {
-            return MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
-                span: MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1)
-            )
-        }
-
-        var minimumLatitude = first.latitude
-        var maximumLatitude = first.latitude
-        var minimumLongitude = first.longitude
-        var maximumLongitude = first.longitude
-        for point in allPoints.dropFirst() {
-            minimumLatitude = min(minimumLatitude, point.latitude)
-            maximumLatitude = max(maximumLatitude, point.latitude)
-            minimumLongitude = min(minimumLongitude, point.longitude)
-            maximumLongitude = max(maximumLongitude, point.longitude)
-        }
-
-        let center = CLLocationCoordinate2D(
-            latitude: (minimumLatitude + maximumLatitude) / 2,
-            longitude: (minimumLongitude + maximumLongitude) / 2
-        )
-        let span = MKCoordinateSpan(
-            latitudeDelta: max((maximumLatitude - minimumLatitude) * 1.6, 0.002),
-            longitudeDelta: max((maximumLongitude - minimumLongitude) * 1.6, 0.002)
-        )
-        return MKCoordinateRegion(center: center, span: span)
     }
 }

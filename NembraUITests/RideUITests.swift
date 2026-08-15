@@ -37,7 +37,7 @@ final class RideUITests: XCTestCase {
     }
 
     @MainActor
-    func testCompletedRideAppearsWithDurableRouteThroughRealRidePipeline() {
+    func testCompletedRideAppearsWithDurableRouteThroughRealRidePipeline() throws {
         XCUIDevice.shared.orientation = .portrait
 
         let app = XCUIApplication()
@@ -54,6 +54,20 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(
             row.waitForExistence(timeout: 8),
             "The explicit QA auto-completion must flow through RideEngine, durable history commit, and the real Rides surface."
+        )
+
+        let rowValue = row.value as? String ?? ""
+        XCTAssertTrue(
+            row.label.localizedCaseInsensitiveContains("Ride on"),
+            "A completed ride row must expose one concise Nembra-owned ride identity."
+        )
+        XCTAssertFalse(
+            rowValue.localizedCaseInsensitiveContains("Completed ride"),
+            "A normal completed ride must not repeat its identity inside the accessibility value."
+        )
+        XCTAssertFalse(
+            rowValue.localizedCaseInsensitiveContains("recovered after relaunch"),
+            "The uninterrupted QA ride must not claim recovered continuity."
         )
         keepScreenshot(named: "Completed Ride History")
 
@@ -81,11 +95,162 @@ final class RideUITests: XCTestCase {
             routeMap.waitForExistence(timeout: 3),
             "The explicit QA route fixture must pass through RideRouteRecorder, exact durable route storage, and MapKit presentation."
         )
+        XCTAssertEqual(
+            routeMap.label,
+            "Recorded ride route",
+            "The persisted route visualization must expose the Nembra-owned route identity instead of relying on MapKit internals."
+        )
+        let routeSemantics = routeMap.value as? String ?? ""
+        XCTAssertTrue(
+            routeSemantics.localizedCaseInsensitiveContains("Route coverage partial"),
+            "This fixture starts route recording after ride activation, so accessibility must preserve partial-coverage truth."
+        )
+        XCTAssertTrue(
+            routeSemantics.localizedCaseInsensitiveContains("4 recorded points"),
+            "Route accessibility must report the four points actually persisted by the explicit QA fixture."
+        )
+        XCTAssertTrue(
+            routeSemantics.localizedCaseInsensitiveContains("no known route gaps recorded"),
+            "Partial coverage without an explicit internal segment gap must not invent a known route gap."
+        )
         XCTAssertFalse(
             app.descendants(matching: .any)["rides.route-unavailable"].exists,
             "A ride with verified persisted route geometry must not fall back to the no-route state."
         )
         keepScreenshot(named: "Completed Ride Details With Route")
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .textClipped,
+                .trait,
+                .dynamicType
+            ]
+        )
+    }
+
+    @MainActor
+    func testCompletedRideDetailDarkAppearancePreservesRouteAndBottomControl() {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            XCUIDevice.shared.appearance = previousAppearance
+            XCUIDevice.shared.orientation = .portrait
+        }
+
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.appearance = .dark
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"] = "1"
+        app.launch()
+
+        let ridesTab = app.tabBars.buttons["Rides"]
+        XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
+        ridesTab.tap()
+
+        let row = app.descendants(matching: .any)["rides.completed-row"]
+        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        row.tap()
+
+        let detail = app.descendants(matching: .any)["rides.detail"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 3))
+
+        let routeMap = app.descendants(matching: .any)["rides.route-map"]
+        if !routeMap.waitForExistence(timeout: 3) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(routeMap.waitForExistence(timeout: 3))
+        XCTAssertEqual(routeMap.label, "Recorded ride route")
+        XCTAssertTrue(
+            (routeMap.value as? String ?? "").localizedCaseInsensitiveContains("Route coverage partial"),
+            "Dark appearance must preserve the same accepted partial-route semantics as light appearance."
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["rides.route-unavailable"].exists)
+        keepScreenshot(named: "Completed Ride Details Dark")
+
+        let recordingDetails = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Recording details")
+        ).firstMatch
+        if !recordingDetails.waitForExistence(timeout: 2) || !recordingDetails.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(
+            recordingDetails.waitForExistence(timeout: 3),
+            "The final Ride Details control must remain reachable in dark appearance."
+        )
+        XCTAssertTrue(
+            recordingDetails.isHittable,
+            "The floating shell chrome must not make the final Ride Details control inoperable."
+        )
+        keepScreenshot(named: "Completed Ride Details Dark Bottom")
+    }
+
+    @MainActor
+    func testLongCompletedRideRouteStaysInteractiveAfterDetailInvalidation() {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            XCUIDevice.shared.appearance = previousAppearance
+            XCUIDevice.shared.orientation = .portrait
+        }
+
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.appearance = .light
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
+        app.launchEnvironment["NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"] = "1"
+        app.launchEnvironment["NEMBRA_SIMULATION_ROUTE_POINT_COUNT"] = "5000"
+        app.launch()
+
+        let ridesTab = app.tabBars.buttons["Rides"]
+        XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
+        ridesTab.tap()
+
+        let row = app.descendants(matching: .any)["rides.completed-row"]
+        XCTAssertTrue(
+            row.waitForExistence(timeout: 15),
+            "The bounded 5,000-point QA route must still complete through the real recorder/history pipeline."
+        )
+        row.tap()
+
+        let routeMap = app.descendants(matching: .any)["rides.route-map"]
+        XCTAssertTrue(
+            routeMap.waitForExistence(timeout: 8),
+            "A 5,000-point persisted route must become an interactive real MapKit Ride Detail within the UI acceptance bound."
+        )
+        let routeSemantics = routeMap.value as? String ?? ""
+        XCTAssertTrue(
+            routeSemantics.localizedCaseInsensitiveContains("5000 recorded points"),
+            "Long-route acceptance must prove the exact persisted fixture volume rather than a short-route fallback."
+        )
+        XCTAssertTrue(routeSemantics.localizedCaseInsensitiveContains("Route coverage partial"))
+        keepScreenshot(named: "Completed Ride Details Long Route")
+
+        let recordingDetails = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Recording details")
+        ).firstMatch
+        for _ in 0..<3 where !recordingDetails.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(
+            recordingDetails.waitForExistence(timeout: 3) && recordingDetails.isHittable,
+            "The long MapKit route must not make the final detail disclosure unreachable."
+        )
+        recordingDetails.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Recorded points"].waitForExistence(timeout: 4),
+            "Expanding Recording details forces the parent Ride Detail to update and must remain responsive with a long route."
+        )
+        XCTAssertTrue(
+            app.staticTexts["5000"].waitForExistence(timeout: 4),
+            "The post-invalidation detail view must still expose the exact long-route point count."
+        )
+        keepScreenshot(named: "Completed Ride Details Long Route Expanded")
     }
 
     @MainActor
