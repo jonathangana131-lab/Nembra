@@ -59,6 +59,7 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
 
             self.assertTrue(swapped)
             self.assertEqual(legitimate.stat().st_ino, attacker_build.stat().st_ino)
+            sdk.unlink()
 
     def test_preexisting_intermediate_symlink_is_rejected(self) -> None:
         helper = load()
@@ -69,9 +70,11 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
             local.mkdir(parents=True)
             attacker_sdk = outer / "attacker/TuyaSDK"
             (attacker_sdk / "Build").mkdir(parents=True)
-            (local / "TuyaSDK").symlink_to(attacker_sdk, target_is_directory=True)
+            link = local / "TuyaSDK"
+            link.symlink_to(attacker_sdk, target_is_directory=True)
             with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
                 helper._open_pinned_path(local / "TuyaSDK/Build", True)
+            link.unlink()
 
     def test_real_directory_and_regular_file_still_open(self) -> None:
         helper = load()
