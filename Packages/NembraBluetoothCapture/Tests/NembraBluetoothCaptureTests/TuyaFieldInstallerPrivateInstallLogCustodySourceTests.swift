@@ -11,9 +11,8 @@ struct TuyaFieldInstallerPrivateInstallLogCustodySourceTests {
         #expect(installer.contains("cleanup_install_subject()"))
         #expect(installer.contains("trap cleanup_install_subject EXIT"))
         #expect(installer.contains("APP_INSTALL_STAGE_ROOT=\"\""))
-        #expect(installer.contains("[[ \"$BUILD_ORIGIN_CUSTODY_RESULT\" == *$'\\t'* ]]"))
-        #expect(installer.contains("APP_INSTALL_STAGE_ROOT=\"${BUILD_ORIGIN_CUSTODY_RESULT%%$'\\t'*}\""))
-        #expect(installer.contains("STAGED_APP_TREE_SHA256=\"${BUILD_ORIGIN_CUSTODY_RESULT#*$'\\t'}\""))
+        #expect(installer.contains("IFS=$'\\t' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA"))
+        #expect(installer.contains("[[ -n \"$APP_INSTALL_STAGE_ROOT\" && -n \"$STAGED_APP_TREE_SHA256\" && -n \"$SELECTED_XCODE_DEVELOPER_DIR\" && -n \"$SELECTED_XCTRACE\" && -n \"$SELECTED_DEVICECTL\" && -z \"$RESULT_EXTRA\" ]]"))
         #expect(installer.contains("[[ \"$APP_INSTALL_STAGE_ROOT\" == /private/tmp/nembra-authenticated-capture-install.* ]]"))
         #expect(installer.contains("APP_INSTALL_STAGE=\"$APP_INSTALL_STAGE_ROOT/Nembra Capture.app\""))
         #expect(installer.contains("APP=\"$APP_INSTALL_STAGE\""))
@@ -46,15 +45,18 @@ struct TuyaFieldInstallerPrivateInstallLogCustodySourceTests {
         #expect(!installer.contains("INSTALL_DIAGNOSTIC=\"${INSTALL_DIAGNOSTIC//$COREDEVICE_ID/<redacted-device-selector>}\""))
     }
 
-    @Test("strong intended-device, protected signed-artifact, and V14 baseline custody remain intact")
+    @Test("strong intended-device, protected signed-artifact, frozen Xcode, and V14 baseline custody remain intact")
     func hardeningDoesNotRegressCurrentFieldAuthority() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
         #expect(installer.contains("iPhone13,2"))
         #expect(installer.contains("$DEVICE_OS_VERSION\" == 27.*"))
         #expect(installer.contains("APP=\"$APP_INSTALL_STAGE\""))
-        #expect(installer.contains("devicectl device install app --device \"$COREDEVICE_ID\" \"$APP\""))
-        #expect(!installer.contains("devicectl device install app --device \"$DEVICE_UDID\""))
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device install app --device \"$COREDEVICE_ID\" \"$APP\""))
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device process launch"))
+        #expect(installer.contains("DEVELOPER_DIR=\"$SELECTED_XCODE_DEVELOPER_DIR\""))
+        #expect(!installer.contains("--device \"$DEVICE_UDID\""))
+        #expect(!installer.contains("xcrun devicectl"))
         #expect(installer.contains("APP_INFO_PLIST=\"$APP/Info.plist\""))
         #expect(installer.contains("$BUILT_BUILD_IDENTIFIER\" == \"$BUILD_LABEL"))
         #expect(installer.contains("$BUILT_SOURCE_SHA\" == \"$SOURCE_SHA"))
