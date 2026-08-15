@@ -94,6 +94,16 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
         XCTAssertFalse((speed.value as? String ?? "").isEmpty)
 
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 3),
+            "The riding Simulator cockpit must mount the canonical Energy Rail."
+        )
+        XCTAssertTrue(
+            waitForValue("356 watts", element: energyRail),
+            "Cockpit watts must expose the sealed Simulator receipt, never a render midpoint or cached aggregate field."
+        )
+
         XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
@@ -160,6 +170,17 @@ final class NembraUITests: XCTestCase {
             app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
             "Disconnected transport must fail the field-specific speed projection closed."
         )
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The Simulator cockpit must preserve a designed unavailable Energy Rail state."
+        )
+        XCTAssertTrue(
+            waitForValue("Unavailable", element: energyRail),
+            "Cached VehicleState watts must not fabricate propulsion authority after transport loss."
+        )
+
         XCTAssertFalse(app.staticTexts["READY"].exists)
         XCTAssertFalse(app.staticTexts["RIDING"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
@@ -191,6 +212,16 @@ final class NembraUITests: XCTestCase {
         )
         XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
 
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "The never-observed Simulator state must still render an explicit Energy Rail unavailable state."
+        )
+        XCTAssertTrue(
+            waitForValue("Unavailable", element: energyRail),
+            "No source receipt means no numeric propulsion power, including zero."
+        )
+
         let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
         XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
         let dataStatus = vehicleStatus.descendants(matching: .any).matching(
@@ -212,12 +243,22 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() {
+    func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() throws {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
         XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 2),
+            "Connected-stopped must keep the Energy Rail present at a source-observed zero."
+        )
+        XCTAssertTrue(
+            waitForValue("0 watts", element: energyRail),
+            "A sealed zero-watt receipt is accepted measurement truth and must remain distinct from unavailable."
+        )
 
         let light = app.buttons["dashboard.control.light"]
         let lock = app.buttons["dashboard.control.lock"]
@@ -266,6 +307,16 @@ final class NembraUITests: XCTestCase {
             screenshotName: "Dashboard Sport Confirmed Landscape",
             in: app,
             confirmedMode: confirmedMode
+        )
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .textClipped,
+                .trait,
+                .dynamicType
+            ]
         )
     }
 
