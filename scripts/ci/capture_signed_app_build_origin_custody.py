@@ -828,6 +828,7 @@ def run_custodied_build(
     *,
     app_relative: Path,
     fingerprint_helper_base64: str,
+    private_read_lease: object | None = None,
 ) -> tuple[Path, str]:
     if sys.platform != "darwin":
         raise BuildOriginCustodyError("APFS build-origin custody requires macOS")
@@ -848,6 +849,7 @@ def run_custodied_build(
     build_gid: int | None = None
     build_name = f"nembrabuild{os.getpid()}"
     identity_created = False
+    private_read_lease_granted = False
 
     try:
         build_uid = _choose_ephemeral_id()
@@ -876,6 +878,16 @@ def run_custodied_build(
             home,
         )
 
+        if private_read_lease is not None:
+            grant = getattr(private_read_lease, "grant", None)
+            revoke = getattr(private_read_lease, "revoke", None)
+            if not callable(grant) or not callable(revoke):
+                raise BuildOriginCustodyError(
+                    "private read-lease object does not expose exact grant/revoke lifecycle"
+                )
+            grant(build_name)
+            private_read_lease_granted = True
+
         _create_apfs_image(image)
         writable_device = _attach_apfs(image, mountpoint, readonly=False)
         os.chown(mountpoint, build_uid, build_gid)
@@ -892,6 +904,10 @@ def run_custodied_build(
             environment=build_env,
             cwd=Path(os.getcwd()),
         )
+
+        if private_read_lease_granted:
+            private_read_lease.revoke()
+            private_read_lease_granted = False
 
         # Revoke fresh pathname authority before interpreting status. Authority is
         # admitted only after the following normal non-forced quiescence boundary.
@@ -943,20 +959,35 @@ def run_custodied_build(
     finally:
         failed_before_cleanup = sys.exc_info()[0] is not None
         retirement_error: BuildOriginCustodyError | None = None
+        lease_error: BuildOriginCustodyError | None = None
         # Forced detach is cleanup-only after acceptance has already failed. It is
         # never an authority-producing transition.
         if readonly_device is not None:
             _detach_apfs(readonly_device, force=True)
         if writable_device is not None:
             _detach_apfs(writable_device, force=True)
+        if private_read_lease_granted:
+            try:
+                private_read_lease.revoke()
+                private_read_lease_granted = False
+            except Exception as error:
+                lease_error = BuildOriginCustodyError(
+                    f"private read lease did not revoke before build-principal retirement: {error}"
+                )
         if identity_created:
             try:
                 _remove_local_build_identity(build_name, build_uid, require_absent=True)
             except BuildOriginCustodyError as error:
                 retirement_error = error
         shutil.rmtree(workspace, ignore_errors=True)
-        if (failed_before_cleanup or retirement_error is not None) and stage_root is not None:
+        if (
+            failed_before_cleanup
+            or lease_error is not None
+            or retirement_error is not None
+        ) and stage_root is not None:
             shutil.rmtree(stage_root, ignore_errors=True)
+        if lease_error is not None:
+            raise lease_error
         if retirement_error is not None:
             raise retirement_error
 

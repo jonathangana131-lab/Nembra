@@ -122,7 +122,7 @@ def run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob):
         build_source = b'''\
 from pathlib import Path
 
-def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
+def run_custodied_build(command, *, app_relative, fingerprint_helper_base64, private_read_lease):
     developer = "/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"
     selected = developer + "/usr/bin/xcodebuild"
     marker = command.index("/usr/bin/env")
@@ -130,6 +130,11 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
     assert "/usr/bin/xcodebuild" not in command
     assert app_relative == Path("Build/Products/Debug-iphoneos/Nembra Capture.app")
     assert fingerprint_helper_base64 == INSTALL_BASE64
+    assert private_read_lease.__class__.__name__ == "_PrivateReadLease"
+    assert tuple(private_read_lease._subjects) == (
+        Path.cwd() / "LocalSecrets/TuyaSDK",
+        Path.cwd() / "LocalSecrets/TuyaRuntime",
+    )
     return Path("/private/tmp/nembra-authenticated-capture-install.fixture"), "b" * 64
 '''
         freeze_source = b"# accepted freeze helper fixture\n"

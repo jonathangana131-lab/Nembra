@@ -36,6 +36,12 @@ class SelectedXcodeBuildOrchestratorError(RuntimeError):
     pass
 
 
+PRIVATE_READ_RELATIVE_ROOTS = (
+    Path("LocalSecrets/TuyaSDK"),
+    Path("LocalSecrets/TuyaRuntime"),
+)
+
+
 def _git_blob_oid(raw: bytes) -> str:
     return hashlib.sha1(b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw).hexdigest()
 
@@ -482,6 +488,12 @@ def orchestrate(
         selected_xcodebuild=selected_xcodebuild,
     )
 
+    repository = Path(os.getcwd())
+    private_read_lease = _PrivateReadLease(
+        tuple(repository / relative for relative in PRIVATE_READ_RELATIVE_ROOTS),
+        repository,
+    )
+
     build_origin = _load_namespace(
         build_origin_raw,
         name="nembra_signed_app_build_origin_custody",
@@ -494,6 +506,7 @@ def orchestrate(
         guarded_command,
         app_relative=Path("Build/Products/Debug-iphoneos/Nembra Capture.app"),
         fingerprint_helper_base64=install_custody_base64,
+        private_read_lease=private_read_lease,
     )
     if not isinstance(result, tuple) or len(result) != 2:
         raise SelectedXcodeBuildOrchestratorError("signed build-origin helper returned malformed custody result")
