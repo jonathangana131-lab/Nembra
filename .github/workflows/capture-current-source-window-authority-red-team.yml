@@ -1,0 +1,55 @@
+name: Capture Current Source Window Authority Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/capture_signed_app_build_origin_custody.py
+      - scripts/ci/tests/test_capture_current_source_window_authority_red_team.py
+      - .github/workflows/capture-current-source-window-authority-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-current-source-window-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ATTACKED_PARENT: c8ccf419e0e7c517348ae6e24cdbde09ab4ddee1
+
+jobs:
+  expected-red:
+    name: Prove field-owned source window remains unbound
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require exact additive diagnostic child
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$head_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
+          actual="$(git diff --name-only "$EXACT_ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-current-source-window-authority-red-team.yml' \
+            'scripts/ci/tests/test_capture_current_source_window_authority_red_team.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_ATTACKED_PARENT"...HEAD
+
+      - name: Compile authority oracle
+        run: python3 -m py_compile scripts/ci/tests/test_capture_current_source_window_authority_red_team.py
+
+      - name: Run expected-red compiler-window authority oracle
+        run: python3 scripts/ci/tests/test_capture_current_source_window_authority_red_team.py
