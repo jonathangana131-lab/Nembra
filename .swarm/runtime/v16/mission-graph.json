@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 27,
+    "classifiedPRTotal": 28,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1206,7 +1206,7 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3344,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.181,
         "title": "Keep physical Energy Rail truthfully unavailable"
       },
       "3345": {
@@ -1362,6 +1362,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.363,
         "title": "[Capture P0][ACCESSIBILITY][RECOVERY] Fix AX5 materializer working-tree scope"
+      },
+      "3366": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "927f4a68175b0a987051caca9e9b254ae9a47822",
+        "lane": "dashboard-energyrail-unavailable-projection",
+        "pr": 3366,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.192,
+        "title": "[Dashboard V17] Re-anchor physical Energy Rail unavailable state on current main"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1394,7 +1405,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T02:58:35Z",
+    "liveRefreshAt": "2026-08-15T02:58:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5179,10 +5190,10 @@
       "userValue": 7
     }
   },
-  "revision": 450,
+  "revision": 451,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T02:58:36Z",
+  "updatedAt": "2026-08-15T02:58:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5258,7 +5269,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T02:58:35Z",
+      "updatedAt": "2026-08-15T02:58:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
