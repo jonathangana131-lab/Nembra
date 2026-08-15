@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 41,
+    "classifiedPRTotal": 42,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1516,6 +1516,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.431,
         "title": "[Battery/Range V15] Clear Accessibility XXXL Navigation overlap"
+      },
+      "3444": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3444,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.336,
+        "title": "[Battery/Range V15][QA] Re-prove XXXL launcher clearance"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1548,7 +1559,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T17:00:52Z",
+    "liveRefreshAt": "2026-08-15T17:01:16Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5333,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 657,
+  "revision": 658,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T17:00:54Z",
+  "updatedAt": "2026-08-15T17:01:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5412,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T17:00:52Z",
+      "updatedAt": "2026-08-15T17:01:16Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
