@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 14,
+    "classifiedPRTotal": 16,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "rides-route-render-performance",
         "pr": 2507,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.047,
         "title": "[Rides V14] Pin route map render projection churn"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.064,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3317": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.0,
+        "similarity": 0.214,
         "title": "[Capture P0][BUILD] Preserve frozen device-tool custody after build"
       },
       "3334": {
@@ -1162,7 +1162,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.092,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1206,7 +1206,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3339,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.0,
+        "similarity": 0.277,
         "title": "[Capture P0][SECURITY] Descriptor-bind private read lease rollback"
       },
       "3340": {
@@ -1219,6 +1219,28 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.324,
         "title": "[Capture P0][SECURITY][VALIDATION] Descriptor-pin private input read lease"
+      },
+      "3341": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "19a14c66c4ddbbc10dd446b47ac15a1a7d2486b0",
+        "lane": "capture-physical-runbook-authority",
+        "pr": 3341,
+        "recommendedAction": "independent-review",
+        "similarity": 0.105,
+        "title": "[Capture P0][NO-GO] Re-anchor stationary field procedure to ba615"
+      },
+      "3342": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "6a78db197f40e8ff7761206961e74d35b19d49f3",
+        "lane": "",
+        "pr": 3342,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.288,
+        "title": "[Capture P0][REPAIR] Compose exact private guard read lease"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1251,7 +1273,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:04:22Z",
+    "liveRefreshAt": "2026-08-15T00:04:41Z",
     "liveRefreshDuplicatesSuppressed": [
       3340
     ],
@@ -5036,10 +5058,10 @@
       "userValue": 7
     }
   },
-  "revision": 347,
+  "revision": 348,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:04:22Z",
+  "updatedAt": "2026-08-15T00:04:42Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5115,7 +5137,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:04:22Z",
+      "updatedAt": "2026-08-15T00:04:41Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
