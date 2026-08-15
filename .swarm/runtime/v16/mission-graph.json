@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.082,
+        "similarity": 0.076,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1308,17 +1308,6 @@
         "similarity": 0.078,
         "title": "[Dashboard V17] Close physical-unavailable cockpit machine state"
       },
-      "3369": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority-validation",
-        "pr": 3369,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.207,
-        "title": "[Capture P0][VALIDATION] Repair private-provenance validation witnesses"
-      },
       "3379": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1426,8 +1415,19 @@
         "lane": "capture-private-read-lease",
         "pr": 3403,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.354,
+        "similarity": 0.368,
         "title": "[Capture P0][SECURITY] Hold private lease descriptors from plan through grant"
+      },
+      "3404": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3404,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.383,
+        "title": "[Capture P0][SECURITY] Bind private lease to one planned ancestry generation"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1460,7 +1460,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:17:25Z",
+    "liveRefreshAt": "2026-08-15T03:18:08Z",
     "liveRefreshDuplicatesSuppressed": [
       3397
     ],
@@ -5245,10 +5245,10 @@
       "userValue": 7
     }
   },
-  "revision": 510,
+  "revision": 511,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:17:26Z",
+  "updatedAt": "2026-08-15T03:18:09Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5324,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:17:25Z",
+      "updatedAt": "2026-08-15T03:18:08Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
