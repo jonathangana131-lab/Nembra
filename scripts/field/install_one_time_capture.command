@@ -294,6 +294,7 @@ exec(
         "NEMBRA_CAPTURE_BUILD_IDENTIFIER=$BUILD_LABEL" \
         "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA" \
         "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \
+        "NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256=$ACCEPTED_TUYA_PROVENANCE_SHA256" \
         "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"
 )"; then
     die "The signed build could not bind frozen selected-Xcode execution, independently accepted private-input provenance, isolated compiler output, and protected install custody. No field artifact was admitted."
@@ -363,14 +364,16 @@ APP_INFO_PLIST="$APP/Info.plist"
 BUILT_BUILD_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 BUILT_SOURCE_SHA="$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 BUILT_TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
+BUILT_TUYA_PRIVATE_PROVENANCE_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaPrivateInputProvenanceSHA256 raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 BUILT_PROCEDURE_IDENTIFIER="$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 BUILT_BUNDLE_ID="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"
 [[ "$BUILT_BUILD_IDENTIFIER" == "$BUILD_LABEL" ]] || die "Built Capture app identifier does not match the exact requested field-build label. Discard this candidate."
 [[ "$BUILT_SOURCE_SHA" == "$SOURCE_SHA" ]] || die "Built Capture app source SHA does not match the exact requested source. Discard this candidate."
 [[ "$BUILT_TUYA_DEPENDENCY_LOCK_SHA256" == "$TUYA_DEPENDENCY_LOCK_SHA256" ]] || die "Built Capture app Tuya dependency-lock fingerprint does not match the exact resolved private workspace. Discard this candidate."
+[[ "$BUILT_TUYA_PRIVATE_PROVENANCE_SHA256" == "$ACCEPTED_TUYA_PROVENANCE_SHA256" ]] || die "Built Capture app private-input provenance fingerprint does not match the independently accepted private-input candidate. Discard this candidate."
 [[ "$BUILT_PROCEDURE_IDENTIFIER" == "$PROCEDURE_ID" ]] || die "Built Capture app procedure identity does not match the canonical stationary procedure. Discard this candidate."
 [[ "$BUILT_BUNDLE_ID" == "$BUNDLE_ID" ]] || die "Built Capture app bundle identifier does not match the intended standalone field product. Discard this candidate."
-say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"
+say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, independently accepted private-input provenance, canonical stationary procedure, and field product"
 
 # Entitlement/profile readback proves identity values, but it does not prove the app bundle's
 # recursive signature/seal is valid. Fail closed on the exact signed bytes before those values
@@ -451,7 +454,7 @@ PROFILE_ROOT_TEAM_IDENTIFIER="${PROFILE_TEAM_FIELDS#*$'\t'}"
     die "Embedded provisioning profile root TeamIdentifier does not match the selected Apple Development team. Discard this candidate."
 say "Final signed app and embedded provisioning profile authorize Sign in with Apple for one exact App ID and the selected team"
 unset SIGNED_ENTITLEMENTS_OUTPUT BUILT_SIGNING_IDENTITY BUILT_APPLICATION_IDENTIFIER BUILT_TEAM_IDENTIFIER BUILT_APP_ID_PREFIX PROFILE_PLIST_XML PROFILE_SIGNING_IDENTITY PROFILE_APPLICATION_IDENTIFIER PROFILE_TEAM_FIELDS PROFILE_TEAM_IDENTIFIER PROFILE_ROOT_TEAM_IDENTIFIER BUILT_PROFILE APP_ID_SUFFIX
-unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
+unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_TUYA_PRIVATE_PROVENANCE_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST
 
 # Device identity is checked only after the accepted selected-Xcode freeze exists, so
 # discovery cannot silently fall back to whatever mutable Xcode/xcrun the field shell has.

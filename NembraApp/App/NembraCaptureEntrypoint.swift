@@ -119,7 +119,7 @@ private struct CaptureP0Root: View {
                 if !isAccessibilityLayout {
                     Text(
                         fieldBuildIsAuthoritative
-                            ? "Exact source, reviewed Tuya dependency, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
+                            ? "Exact source, reviewed Tuya dependency, reviewed private-input provenance, and stationary-procedure provenance are present. Account and scooter authority must still be verified before Bluetooth starts."
                             : "This public build can prepare account metadata, but it cannot scan, connect, or collect physical scooter evidence. Install the reviewed field build before a physical Capture."
                     )
                     .font(.subheadline)
@@ -442,6 +442,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let buildIdentifier: String
         let sourceCommitSHA: String
         let tuyaDependencyLockSHA256: String
+        let tuyaPrivateInputProvenanceSHA256: String
         let procedureIdentifier: String
         let tuyaDeviceID: String
         let tuyaUUID: String
@@ -2238,12 +2239,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {
         Export(
-            schemaVersion: 10,
+            schemaVersion: 11,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: exportedAt,
             buildIdentifier: buildIdentity.buildIdentifier,
             sourceCommitSHA: buildIdentity.sourceCommitSHA,
             tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,
+            tuyaPrivateInputProvenanceSHA256: buildIdentity.tuyaPrivateInputProvenanceSHA256,
             procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier,
             tuyaDeviceID: deviceID,
             tuyaUUID: tuyaUUID,

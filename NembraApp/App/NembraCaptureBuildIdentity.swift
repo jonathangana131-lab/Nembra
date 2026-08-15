@@ -4,12 +4,14 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
     static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"
     static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"
     static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"
+    static let tuyaPrivateInputProvenanceSHA256InfoKey = "NembraCaptureTuyaPrivateInputProvenanceSHA256"
     static let procedureIdentifierInfoKey = "NembraCaptureProcedureIdentifier"
     static let requiredFieldProcedureIdentifier = "ES80-AUTHENTICATED-STATIONARY-v1"
 
     let buildIdentifier: String
     let sourceCommitSHA: String
     let tuyaDependencyLockSHA256: String
+    let tuyaPrivateInputProvenanceSHA256: String
     let procedureIdentifier: String
 
     static var current: Self {
@@ -28,6 +30,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
             buildIdentifier: (infoDictionary[buildIdentifierInfoKey] as? String) ?? "",
             sourceCommitSHA: ((infoDictionary[sourceCommitSHAInfoKey] as? String) ?? "").lowercased(),
             tuyaDependencyLockSHA256: ((infoDictionary[tuyaDependencyLockSHA256InfoKey] as? String) ?? "").lowercased(),
+            tuyaPrivateInputProvenanceSHA256: ((infoDictionary[tuyaPrivateInputProvenanceSHA256InfoKey] as? String) ?? "").lowercased(),
             procedureIdentifier: (infoDictionary[procedureIdentifierInfoKey] as? String) ?? ""
         )
     }
@@ -41,6 +44,12 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
               tuyaDependencyLockSHA256.utf8.allSatisfy({ byte in
                   (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
               }),
+              tuyaPrivateInputProvenanceSHA256.count == 64,
+              tuyaPrivateInputProvenanceSHA256.allSatisfy({ character in
+                  let scalars = character.unicodeScalars
+                  guard scalars.count == 1, let scalar = scalars.first else { return false }
+                  return (scalar.value >= 48 && scalar.value <= 57) || (scalar.value >= 97 && scalar.value <= 102)
+              }),
               procedureIdentifier == Self.requiredFieldProcedureIdentifier else { return false }
 
         let expectedIdentifier = "capture-v14-\(sourceCommitSHA.prefix(12))"
@@ -49,7 +58,7 @@ struct NembraCaptureBuildIdentity: Codable, Equatable, Sendable {
 
     var blocker: String? {
         guard isAuthoritativeFieldBuild else {
-            return "This build has no valid exact Git + reviewed Tuya dependency + canonical stationary procedure provenance. Install Capture through the repository field installer before physical evidence collection."
+            return "This build has no valid exact Git + reviewed Tuya dependency + reviewed private-input provenance + canonical stationary procedure provenance. Install Capture through the repository field installer before physical evidence collection."
         }
         return nil
     }
