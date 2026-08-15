@@ -1,0 +1,83 @@
+name: Capture Accepted Build Input Snapshot Validation
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+      - .github/workflows/capture-accepted-build-input-snapshot-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-accepted-build-input-snapshot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PRODUCTION_PARENT: 4da6534f9fde9aa84d6ffb16d0301cd69c375760
+
+jobs:
+  validate:
+    name: Bind generated CocoaPods/private inputs to prior acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require exact additive validation child
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$head_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          test "$(git merge-base HEAD "$EXACT_PRODUCTION_PARENT")" = "$EXACT_PRODUCTION_PARENT"
+          actual="$(git diff --name-only "$EXACT_PRODUCTION_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-accepted-build-input-snapshot-validation.yml' \
+            'scripts/ci/capture_accepted_build_input_snapshot.py' \
+            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check "$EXACT_PRODUCTION_PARENT"...HEAD
+
+      - name: Compile validation helper and tests
+        run: |
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Run accepted build-input snapshot tests
+        run: python3 scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Pin secrecy and whole-generated-input scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=scripts/ci/capture_accepted_build_input_snapshot.py
+          grep -Fq 'Path("Podfile.lock")' "$helper"
+          grep -Fq 'Path("NembraCapture.xcworkspace")' "$helper"
+          grep -Fq 'Path("Pods")' "$helper"
+          grep -Fq 'Path("LocalSecrets/TuyaSDK")' "$helper"
+          grep -Fq 'Path("LocalSecrets/TuyaRuntime")' "$helper"
+          grep -Fq 'sha256=digest' "$helper"
+          grep -Fq 'sourceSHA' "$helper"
+          ! grep -Fq '"contents"' "$helper"
+          ! grep -Fq 'AppSecret' "$helper"
+
+      - name: Preserve validation-only truth boundary
+        run: |
+          printf '%s\n' \
+            'acceptedGeneratedInputManifest=true' \
+            'trackedSourceFromExactGitObjects=true' \
+            'productionWiring=false' \
+            'appleSigningAuthority=false' \
+            'installAuthority=false' \
+            'physicalAuthorityCreated=false'
