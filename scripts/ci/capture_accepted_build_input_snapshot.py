@@ -23,6 +23,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import unicodedata
 from typing import Iterable, Sequence
 
 SCHEMA_VERSION = 1
@@ -55,6 +56,22 @@ def _safe_relative(relative: Path) -> Path:
     if any("\0" in part or "\n" in part or "\t" in part for part in relative.parts):
         raise AcceptedBuildInputSnapshotError("build-input path contains a forbidden separator")
     return relative
+
+
+def _namespace_key(relative: Path) -> tuple[str, ...]:
+    """Conservative case-insensitive/canonical namespace identity for field macOS."""
+
+    _safe_relative(relative)
+    return tuple(unicodedata.normalize("NFD", part).casefold() for part in relative.parts)
+
+
+def _namespace_paths_overlap(first: Path, second: Path) -> bool:
+    first_key = _namespace_key(first)
+    second_key = _namespace_key(second)
+    return (
+        first_key[: len(second_key)] == second_key
+        or second_key[: len(first_key)] == first_key
+    )
 
 
 def _git_environment() -> dict[str, str]:
@@ -344,11 +361,7 @@ def stage_accepted_build_inputs(
         raise AcceptedBuildInputSnapshotError("accepted generated-input manifest digest is malformed")
     tracked = {relative for _mode, _kind, _oid, relative in _git_tree_entries(repo, source_sha)}
     for subject in GENERATED_SUBJECTS:
-        if any(
-            path.parts[: len(subject.parts)] == subject.parts
-            or subject.parts[: len(path.parts)] == path.parts
-            for path in tracked
-        ):
+        if any(_namespace_paths_overlap(path, subject) for path in tracked):
             raise AcceptedBuildInputSnapshotError(
                 f"generated build-input subject collides with accepted tracked source: {subject}"
             )
