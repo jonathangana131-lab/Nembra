@@ -7,8 +7,10 @@ field workspace are copied from the field tree, and those copied subjects are
 admitted only when their canonical byte/topology manifest matches an independently
 preaccepted SHA-256 digest.
 
-The manifest contains paths, file hashes/sizes, executable-bit state, and relative
-symlink targets only. It never records private file contents.
+Generated/private selectors are opened from one held repository root descriptor
+with component-by-component no-follow semantics. The manifest contains paths,
+file hashes/sizes, executable-bit state, and relative symlink targets only. It
+never records private file contents.
 """
 
 from __future__ import annotations
@@ -34,6 +36,20 @@ GENERATED_SUBJECTS = (
     Path("LocalSecrets/TuyaSDK"),
     Path("LocalSecrets/TuyaRuntime"),
 )
+_GENERATED_SUBJECT_KINDS = {
+    Path("Podfile.lock"): "file",
+    Path("NembraCapture.xcworkspace"): "directory",
+    Path("Pods"): "directory",
+    Path("LocalSecrets/TuyaSDK"): "directory",
+    Path("LocalSecrets/TuyaRuntime"): "directory",
+}
+_DIRECTORY_OPEN_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+)
+_FILE_OPEN_FLAGS = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
 
 
 class AcceptedBuildInputSnapshotError(RuntimeError):
@@ -72,6 +88,26 @@ def _namespace_paths_overlap(first: Path, second: Path) -> bool:
         first_key[: len(second_key)] == second_key
         or second_key[: len(first_key)] == first_key
     )
+
+
+def _assert_tracked_namespace_coherence(paths: Iterable[Path]) -> None:
+    """Reject Git paths whose prefixes collapse in the field macOS namespace."""
+
+    seen: dict[tuple[str, ...], tuple[str, ...]] = {}
+    for relative in sorted(paths, key=lambda value: value.as_posix()):
+        _safe_relative(relative)
+        raw_parts = relative.parts
+        key_parts = _namespace_key(relative)
+        for length in range(1, len(raw_parts) + 1):
+            raw_prefix = raw_parts[:length]
+            key_prefix = key_parts[:length]
+            previous = seen.get(key_prefix)
+            if previous is not None and previous != raw_prefix:
+                raise AcceptedBuildInputSnapshotError(
+                    "accepted tracked source has namespace-equivalent paths: "
+                    f"{'/'.join(previous)} vs {'/'.join(raw_prefix)}"
+                )
+            seen[key_prefix] = raw_prefix
 
 
 def _git_environment() -> dict[str, str]:
@@ -137,6 +173,7 @@ def _git_tree_entries(repo: Path, source_sha: str) -> tuple[tuple[str, str, str,
         if mode not in ("100644", "100755", "120000"):
             raise AcceptedBuildInputSnapshotError(f"unsupported accepted Git mode {mode}: {relative}")
         entries.append((mode, kind, oid, relative))
+    _assert_tracked_namespace_coherence(relative for _mode, _kind, _oid, relative in entries)
     return tuple(entries)
 
 
@@ -168,14 +205,39 @@ def _validate_relative_symlink_target(link: Path, root: Path, target_text: str) 
         raise AcceptedBuildInputSnapshotError(f"symlink escapes admitted build root: {link}") from error
 
 
+def _validate_logical_symlink_target(relative: Path, target_text: str) -> None:
+    target = Path(target_text)
+    if target.is_absolute() or not target.parts:
+        raise AcceptedBuildInputSnapshotError(
+            f"absolute/empty symlink target is forbidden: {relative}"
+        )
+    stack = list(relative.parent.parts)
+    for part in target.parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not stack:
+                raise AcceptedBuildInputSnapshotError(
+                    f"symlink escapes admitted build root: {relative}"
+                )
+            stack.pop()
+        else:
+            if "\0" in part or "\n" in part or "\t" in part:
+                raise AcceptedBuildInputSnapshotError(
+                    f"unsafe symlink target component: {relative}"
+                )
+            stack.append(part)
+
+
 def materialize_tracked_source(repo: Path, source_sha: str, destination: Path) -> set[Path]:
     repo = _absolute(repo)
     destination = _absolute(destination)
     if destination.exists():
         raise AcceptedBuildInputSnapshotError("tracked-source destination already exists")
+    entries = _git_tree_entries(repo, source_sha)
     destination.mkdir(parents=True, mode=0o755)
     written: set[Path] = set()
-    for mode, _kind, oid, relative in _git_tree_entries(repo, source_sha):
+    for mode, _kind, oid, relative in entries:
         if relative in written:
             raise AcceptedBuildInputSnapshotError(f"duplicate accepted Git path: {relative}")
         raw = _run_git(repo, ["cat-file", "blob", oid], binary=True)
@@ -197,58 +259,240 @@ def materialize_tracked_source(repo: Path, source_sha: str, destination: Path) -
     return written
 
 
-def _iter_subject_entries(root: Path, subject: Path) -> Iterable[tuple[Path, os.stat_result]]:
-    subject_path = root / subject
+def _same_object(first: os.stat_result, second: os.stat_result) -> bool:
+    return (
+        first.st_dev,
+        first.st_ino,
+        stat.S_IFMT(first.st_mode),
+    ) == (
+        second.st_dev,
+        second.st_ino,
+        stat.S_IFMT(second.st_mode),
+    )
+
+
+def _open_repository_root(root: Path) -> int:
+    root = _absolute(root)
     try:
-        metadata = subject_path.lstat()
+        before = root.lstat()
+        descriptor = os.open(root, _DIRECTORY_OPEN_FLAGS)
     except OSError as error:
-        raise AcceptedBuildInputSnapshotError(f"required build-input subject is unavailable: {subject}") from error
-    yield subject, metadata
-    if stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
-        stack = [subject]
-        while stack:
-            current = stack.pop()
-            try:
-                names = sorted(os.listdir(root / current))
-            except OSError as error:
-                raise AcceptedBuildInputSnapshotError(f"could not enumerate build-input directory: {current}") from error
-            directories: list[Path] = []
-            for name in names:
-                if name in ("", ".", "..") or "\n" in name or "\t" in name or "\0" in name:
-                    raise AcceptedBuildInputSnapshotError(f"unsafe build-input entry name under {current}")
-                relative = current / name
-                metadata = (root / relative).lstat()
-                yield relative, metadata
-                if stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
-                    directories.append(relative)
-            stack.extend(reversed(directories))
+        raise AcceptedBuildInputSnapshotError(
+            f"generated build-input root is not one stable real directory: {root}"
+        ) from error
+    try:
+        opened = os.fstat(descriptor)
+        after = root.lstat()
+        if (
+            not stat.S_ISDIR(before.st_mode)
+            or stat.S_ISLNK(before.st_mode)
+            or not stat.S_ISDIR(opened.st_mode)
+            or not _same_object(before, opened)
+            or not _same_object(opened, after)
+        ):
+            raise AcceptedBuildInputSnapshotError(
+                f"generated build-input root changed identity while opening: {root}"
+            )
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
 
 
-def _file_sha256(path: Path) -> tuple[str, int]:
+def _open_directory_at(parent_fd: int, name: str, relative: Path) -> int:
+    try:
+        before = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        descriptor = os.open(name, _DIRECTORY_OPEN_FLAGS, dir_fd=parent_fd)
+    except OSError as error:
+        raise AcceptedBuildInputSnapshotError(
+            f"generated build-input selector is not one real directory: {relative}"
+        ) from error
+    try:
+        opened = os.fstat(descriptor)
+        after = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(before.st_mode)
+            or stat.S_ISLNK(before.st_mode)
+            or not stat.S_ISDIR(opened.st_mode)
+            or not _same_object(before, opened)
+            or not _same_object(opened, after)
+        ):
+            raise AcceptedBuildInputSnapshotError(
+                f"generated build-input directory changed identity while opening: {relative}"
+            )
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _open_file_at(parent_fd: int, name: str, relative: Path) -> tuple[int, os.stat_result]:
+    try:
+        before = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        descriptor = os.open(name, _FILE_OPEN_FLAGS, dir_fd=parent_fd)
+    except OSError as error:
+        raise AcceptedBuildInputSnapshotError(
+            f"generated build-input file is unavailable without symlink traversal: {relative}"
+        ) from error
+    try:
+        opened = os.fstat(descriptor)
+        after = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or not stat.S_ISREG(opened.st_mode)
+            or not _same_object(before, opened)
+            or not _same_object(opened, after)
+        ):
+            raise AcceptedBuildInputSnapshotError(
+                f"generated build-input file changed identity while opening: {relative}"
+            )
+        return descriptor, opened
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _open_subject(root_fd: int, subject: Path) -> tuple[int, os.stat_result, str]:
+    _safe_relative(subject)
+    expected_kind = _GENERATED_SUBJECT_KINDS.get(subject)
+    if expected_kind is None:
+        raise AcceptedBuildInputSnapshotError(f"unrecognized generated subject: {subject}")
+    current = os.dup(root_fd)
+    try:
+        for index, component in enumerate(subject.parts):
+            relative = Path(*subject.parts[: index + 1])
+            is_last = index == len(subject.parts) - 1
+            if is_last and expected_kind == "file":
+                descriptor, metadata = _open_file_at(current, component, relative)
+                os.close(current)
+                return descriptor, metadata, "file"
+            child = _open_directory_at(current, component, relative)
+            os.close(current)
+            current = child
+        metadata = os.fstat(current)
+        return current, metadata, "directory"
+    except Exception:
+        try:
+            os.close(current)
+        except OSError:
+            pass
+        raise
+
+
+def _safe_entry_name(name: str, parent: Path) -> None:
+    if name in ("", ".", "..") or "\n" in name or "\t" in name or "\0" in name:
+        raise AcceptedBuildInputSnapshotError(f"unsafe build-input entry name under {parent}")
+
+
+def _hash_open_file(descriptor: int, relative: Path) -> tuple[str, int, os.stat_result]:
     digest = hashlib.sha256()
     size = 0
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode):
+        raise AcceptedBuildInputSnapshotError(f"manifest file is not regular: {relative}")
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    while True:
+        block = os.read(descriptor, 1024 * 1024)
+        if not block:
+            break
+        size += len(block)
+        digest.update(block)
+    after = os.fstat(descriptor)
+    if (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    ) != (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    ):
+        raise AcceptedBuildInputSnapshotError(f"manifest file changed while reading: {relative}")
+    return digest.hexdigest(), size, after
+
+
+def _manifest_directory(
+    directory_fd: int,
+    relative: Path,
+    records: list[dict[str, object]],
+    seen: set[Path],
+) -> None:
     try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode):
-            raise AcceptedBuildInputSnapshotError(f"manifest file is not regular: {path}")
-        while True:
-            block = os.read(descriptor, 1024 * 1024)
-            if not block:
-                break
-            size += len(block)
-            digest.update(block)
-        after = os.fstat(descriptor)
-        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
-            after.st_dev,
-            after.st_ino,
-            after.st_size,
-            after.st_mtime_ns,
-        ):
-            raise AcceptedBuildInputSnapshotError(f"manifest file changed while reading: {path}")
-    finally:
-        os.close(descriptor)
-    return digest.hexdigest(), size
+        names = sorted(os.listdir(directory_fd))
+    except OSError as error:
+        raise AcceptedBuildInputSnapshotError(
+            f"could not enumerate build-input directory: {relative}"
+        ) from error
+    for name in names:
+        _safe_entry_name(name, relative)
+        child_relative = relative / name
+        if child_relative in seen:
+            raise AcceptedBuildInputSnapshotError(
+                f"overlapping build-input subject: {child_relative}"
+            )
+        try:
+            metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        except OSError as error:
+            raise AcceptedBuildInputSnapshotError(
+                f"could not inspect generated build-input entry: {child_relative}"
+            ) from error
+        mode = metadata.st_mode
+        record: dict[str, object] = {"path": child_relative.as_posix()}
+        if stat.S_ISREG(mode):
+            descriptor, opened = _open_file_at(directory_fd, name, child_relative)
+            try:
+                digest, size, after = _hash_open_file(descriptor, child_relative)
+                if not _same_object(metadata, opened) or not _same_object(opened, after):
+                    raise AcceptedBuildInputSnapshotError(
+                        f"generated file selection changed identity: {child_relative}"
+                    )
+            finally:
+                os.close(descriptor)
+            record.update(
+                type="file",
+                sha256=digest,
+                size=size,
+                executable=bool(opened.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)),
+            )
+        elif stat.S_ISDIR(mode) and not stat.S_ISLNK(mode):
+            child_fd = _open_directory_at(directory_fd, name, child_relative)
+            try:
+                opened = os.fstat(child_fd)
+                if not _same_object(metadata, opened):
+                    raise AcceptedBuildInputSnapshotError(
+                        f"generated directory selection changed identity: {child_relative}"
+                    )
+                record.update(type="directory")
+                seen.add(child_relative)
+                records.append(record)
+                _manifest_directory(child_fd, child_relative, records, seen)
+                continue
+            finally:
+                os.close(child_fd)
+        elif stat.S_ISLNK(mode):
+            try:
+                target_text = os.readlink(name, dir_fd=directory_fd)
+                after = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            except OSError as error:
+                raise AcceptedBuildInputSnapshotError(
+                    f"could not read generated symlink: {child_relative}"
+                ) from error
+            if not _same_object(metadata, after) or metadata.st_size != after.st_size:
+                raise AcceptedBuildInputSnapshotError(
+                    f"generated symlink changed identity while reading: {child_relative}"
+                )
+            _validate_logical_symlink_target(child_relative, target_text)
+            record.update(type="symlink", target=target_text)
+        else:
+            raise AcceptedBuildInputSnapshotError(
+                f"special build-input file is forbidden: {child_relative}"
+            )
+        seen.add(child_relative)
+        records.append(record)
 
 
 def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
@@ -257,31 +501,37 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
         raise AcceptedBuildInputSnapshotError("accepted source SHA is malformed")
     records: list[dict[str, object]] = []
     seen: set[Path] = set()
-    for subject in GENERATED_SUBJECTS:
-        _safe_relative(subject)
-        for relative, metadata in _iter_subject_entries(root, subject):
-            if relative in seen:
-                raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {relative}")
-            seen.add(relative)
-            mode = metadata.st_mode
-            record: dict[str, object] = {"path": relative.as_posix()}
-            if stat.S_ISREG(mode):
-                digest, size = _file_sha256(root / relative)
-                record.update(
-                    type="file",
-                    sha256=digest,
-                    size=size,
-                    executable=bool(mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)),
-                )
-            elif stat.S_ISDIR(mode):
-                record.update(type="directory")
-            elif stat.S_ISLNK(mode):
-                target_text = os.readlink(root / relative)
-                _validate_relative_symlink_target(root / relative, root, target_text)
-                record.update(type="symlink", target=target_text)
-            else:
-                raise AcceptedBuildInputSnapshotError(f"special build-input file is forbidden: {relative}")
-            records.append(record)
+    root_fd = _open_repository_root(root)
+    try:
+        for subject in GENERATED_SUBJECTS:
+            if subject in seen:
+                raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {subject}")
+            descriptor, metadata, kind = _open_subject(root_fd, subject)
+            try:
+                record: dict[str, object] = {"path": subject.as_posix()}
+                if kind == "file":
+                    digest, size, after = _hash_open_file(descriptor, subject)
+                    if not _same_object(metadata, after):
+                        raise AcceptedBuildInputSnapshotError(
+                            f"generated subject changed identity while reading: {subject}"
+                        )
+                    record.update(
+                        type="file",
+                        sha256=digest,
+                        size=size,
+                        executable=bool(metadata.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)),
+                    )
+                    seen.add(subject)
+                    records.append(record)
+                else:
+                    record.update(type="directory")
+                    seen.add(subject)
+                    records.append(record)
+                    _manifest_directory(descriptor, subject, records, seen)
+            finally:
+                os.close(descriptor)
+    finally:
+        os.close(root_fd)
     payload = {
         "schemaVersion": SCHEMA_VERSION,
         "sourceSHA": source_sha,
@@ -295,58 +545,164 @@ def generated_manifest_sha256(root: Path, source_sha: str) -> str:
     return hashlib.sha256(canonical_generated_manifest(root, source_sha)).hexdigest()
 
 
-def _copy_subject(source_root: Path, destination_root: Path, relative: Path) -> None:
-    source = source_root / relative
+def _copy_open_file(
+    source_fd: int,
+    source_metadata: os.stat_result,
+    destination: Path,
+    relative: Path,
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    out = os.open(destination, flags, 0o700 if (source_metadata.st_mode & 0o111) else 0o600)
+    try:
+        os.lseek(source_fd, 0, os.SEEK_SET)
+        before = os.fstat(source_fd)
+        while True:
+            block = os.read(source_fd, 1024 * 1024)
+            if not block:
+                break
+            view = memoryview(block)
+            while view:
+                written = os.write(out, view)
+                if written <= 0:
+                    raise AcceptedBuildInputSnapshotError("build-input copy made no progress")
+                view = view[written:]
+        os.fsync(out)
+        after = os.fstat(source_fd)
+        if (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ):
+            raise AcceptedBuildInputSnapshotError(
+                f"build-input source changed while copying: {relative}"
+            )
+    finally:
+        os.close(out)
+    os.chmod(destination, 0o700 if (source_metadata.st_mode & 0o111) else 0o600)
+
+
+def _copy_directory_fd(
+    source_fd: int,
+    destination_root: Path,
+    relative: Path,
+) -> None:
     destination = destination_root / relative
-    metadata = source.lstat()
-    if stat.S_ISREG(metadata.st_mode):
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
+    destination.mkdir(mode=0o700, parents=True, exist_ok=False)
+    os.chmod(destination, 0o700)
+    try:
+        names = sorted(os.listdir(source_fd))
+    except OSError as error:
+        raise AcceptedBuildInputSnapshotError(
+            f"could not enumerate build-input directory during copy: {relative}"
+        ) from error
+    for name in names:
+        _safe_entry_name(name, relative)
+        child_relative = relative / name
         try:
-            opened = os.fstat(descriptor)
-            if not stat.S_ISREG(opened.st_mode):
-                raise AcceptedBuildInputSnapshotError(f"copy source changed type: {relative}")
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-            out = os.open(destination, flags, 0o700 if (opened.st_mode & 0o111) else 0o600)
+            metadata = os.stat(name, dir_fd=source_fd, follow_symlinks=False)
+        except OSError as error:
+            raise AcceptedBuildInputSnapshotError(
+                f"could not inspect build-input copy source: {child_relative}"
+            ) from error
+        if stat.S_ISREG(metadata.st_mode):
+            descriptor, opened = _open_file_at(source_fd, name, child_relative)
             try:
-                while True:
-                    block = os.read(descriptor, 1024 * 1024)
-                    if not block:
-                        break
-                    view = memoryview(block)
-                    while view:
-                        written = os.write(out, view)
-                        if written <= 0:
-                            raise AcceptedBuildInputSnapshotError("build-input copy made no progress")
-                        view = view[written:]
-                os.fsync(out)
+                if not _same_object(metadata, opened):
+                    raise AcceptedBuildInputSnapshotError(
+                        f"copy source selection changed identity: {child_relative}"
+                    )
+                _copy_open_file(
+                    descriptor,
+                    opened,
+                    destination_root / child_relative,
+                    child_relative,
+                )
             finally:
-                os.close(out)
-            after = os.fstat(descriptor)
-            if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != (
-                after.st_dev,
-                after.st_ino,
-                after.st_size,
-                after.st_mtime_ns,
-            ):
-                raise AcceptedBuildInputSnapshotError(f"build-input source changed while copying: {relative}")
-            os.chmod(destination, 0o700 if (opened.st_mode & 0o111) else 0o600)
+                os.close(descriptor)
+        elif stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
+            child_fd = _open_directory_at(source_fd, name, child_relative)
+            try:
+                if not _same_object(metadata, os.fstat(child_fd)):
+                    raise AcceptedBuildInputSnapshotError(
+                        f"copy directory selection changed identity: {child_relative}"
+                    )
+                _copy_directory_fd(child_fd, destination_root, child_relative)
+            finally:
+                os.close(child_fd)
+        elif stat.S_ISLNK(metadata.st_mode):
+            try:
+                target_text = os.readlink(name, dir_fd=source_fd)
+                after = os.stat(name, dir_fd=source_fd, follow_symlinks=False)
+            except OSError as error:
+                raise AcceptedBuildInputSnapshotError(
+                    f"could not read build-input copy symlink: {child_relative}"
+                ) from error
+            if not _same_object(metadata, after) or metadata.st_size != after.st_size:
+                raise AcceptedBuildInputSnapshotError(
+                    f"copy symlink changed identity while reading: {child_relative}"
+                )
+            _validate_logical_symlink_target(child_relative, target_text)
+            symlink_destination = destination_root / child_relative
+            symlink_destination.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(target_text, symlink_destination)
+        else:
+            raise AcceptedBuildInputSnapshotError(
+                f"special build-input file is forbidden: {child_relative}"
+            )
+
+
+def _copy_subject(source_root: Path, destination_root: Path, relative: Path) -> None:
+    source_root = _absolute(source_root)
+    destination_root = _absolute(destination_root)
+    root_fd = _open_repository_root(source_root)
+    try:
+        descriptor, metadata, kind = _open_subject(root_fd, relative)
+        try:
+            if kind == "file":
+                _copy_open_file(
+                    descriptor,
+                    metadata,
+                    destination_root / relative,
+                    relative,
+                )
+            else:
+                _copy_directory_fd(descriptor, destination_root, relative)
         finally:
             os.close(descriptor)
-    elif stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
-        destination.mkdir(mode=0o700, parents=True, exist_ok=False)
-        os.chmod(destination, 0o700)
-        for name in sorted(os.listdir(source)):
-            if name in ("", ".", "..") or "\n" in name or "\t" in name or "\0" in name:
-                raise AcceptedBuildInputSnapshotError(f"unsafe build-input entry name under {relative}")
-            _copy_subject(source_root, destination_root, relative / name)
-    elif stat.S_ISLNK(metadata.st_mode):
-        target_text = os.readlink(source)
-        _validate_relative_symlink_target(source, source_root, target_text)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        os.symlink(target_text, destination)
-    else:
-        raise AcceptedBuildInputSnapshotError(f"special build-input file is forbidden: {relative}")
+    finally:
+        os.close(root_fd)
+
+
+def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
+    source_root = _absolute(source_root)
+    destination_root = _absolute(destination_root)
+    root_fd = _open_repository_root(source_root)
+    try:
+        for subject in GENERATED_SUBJECTS:
+            descriptor, metadata, kind = _open_subject(root_fd, subject)
+            try:
+                if kind == "file":
+                    _copy_open_file(
+                        descriptor,
+                        metadata,
+                        destination_root / subject,
+                        subject,
+                    )
+                else:
+                    _copy_directory_fd(descriptor, destination_root, subject)
+            finally:
+                os.close(descriptor)
+    finally:
+        os.close(root_fd)
 
 
 def stage_accepted_build_inputs(
@@ -359,7 +715,8 @@ def stage_accepted_build_inputs(
     destination = _absolute(destination)
     if re.fullmatch(r"[0-9a-f]{64}", expected_generated_manifest_sha256) is None:
         raise AcceptedBuildInputSnapshotError("accepted generated-input manifest digest is malformed")
-    tracked = {relative for _mode, _kind, _oid, relative in _git_tree_entries(repo, source_sha)}
+    entries = _git_tree_entries(repo, source_sha)
+    tracked = {relative for _mode, _kind, _oid, relative in entries}
     for subject in GENERATED_SUBJECTS:
         if any(_namespace_paths_overlap(path, subject) for path in tracked):
             raise AcceptedBuildInputSnapshotError(
@@ -367,8 +724,7 @@ def stage_accepted_build_inputs(
             )
     materialize_tracked_source(repo, source_sha, destination)
     try:
-        for subject in GENERATED_SUBJECTS:
-            _copy_subject(repo, destination, subject)
+        _copy_generated_subjects(repo, destination)
         actual = generated_manifest_sha256(destination, source_sha)
         if actual != expected_generated_manifest_sha256:
             raise AcceptedBuildInputSnapshotError(
