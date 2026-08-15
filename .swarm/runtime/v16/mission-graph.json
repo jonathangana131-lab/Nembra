@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 26,
+    "classifiedPRTotal": 27,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.18,
+        "similarity": 0.187,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3316": {
@@ -1351,6 +1351,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.381,
         "title": "[Capture P0][HARDENING] Close 4da private-lease ACL failure window"
+      },
+      "3359": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3359,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.306,
+        "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1383,9 +1394,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:26:33Z",
+    "liveRefreshAt": "2026-08-15T00:26:45Z",
     "liveRefreshDuplicatesSuppressed": [
-      3350
+      3359
     ],
     "liveRefreshMainSHA": "44946ca3b91ad5deee1003024534e64bda1511d2",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5168,10 +5179,10 @@
       "userValue": 7
     }
   },
-  "revision": 409,
+  "revision": 410,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:26:33Z",
+  "updatedAt": "2026-08-15T00:26:46Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5247,7 +5258,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:26:33Z",
+      "updatedAt": "2026-08-15T00:26:45Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
