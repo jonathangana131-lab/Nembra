@@ -1,0 +1,163 @@
+name: Capture Private Read Lease C8CC Hardening Once
+
+on:
+  push:
+    branches:
+      - hardening/v17-capture-private-read-lease-c8cc-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Narrow subject set and make grant rollback fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              source = path.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one exact patch anchor, found {count}")
+              path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          selected_test = Path("scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py")
+
+          replace_once(
+              orchestrator,
+              "def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Path]:\n",
+              "def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, ...]:\n",
+          )
+          replace_once(
+              orchestrator,
+              "    return repo / CANONICAL_SDK_RELATIVE, repo / CANONICAL_RUNTIME_RELATIVE\n",
+              "    return (\n"
+              "        expected[\"--security-podspec\"],\n"
+              "        expected[\"--security-build\"],\n"
+              "        expected[\"--identity-podspec\"],\n"
+              "        expected[\"--identity-sources\"],\n"
+              "    )\n",
+          )
+
+          old_grant = (
+              "                self._opened.append(record)\n"
+              "                _chmod_acl(descriptor, \"+a\", acl)\n"
+              "                record[\"added\"] = True\n"
+              "\n"
+              "                after = _acl_listing(descriptor)\n"
+          )
+          new_grant = (
+              "                self._opened.append(record)\n"
+              "                try:\n"
+              "                    _chmod_acl(descriptor, \"+a\", acl)\n"
+              "                except Exception:\n"
+              "                    # A command-level failure does not prove the kernel left the ACL\n"
+              "                    # unchanged. Classify the descriptor after the call while exact\n"
+              "                    # rollback custody is still held. Ambiguity is treated as a\n"
+              "                    # possible mutation so revoke must attempt removal and surface any\n"
+              "                    # cleanup failure rather than silently forgetting authority.\n"
+              "                    try:\n"
+              "                        after_failed = _acl_listing(descriptor)\n"
+              "                    except Exception:\n"
+              "                        record[\"added\"] = True\n"
+              "                    else:\n"
+              "                        record[\"added\"] = after_failed != before\n"
+              "                    raise\n"
+              "                record[\"added\"] = True\n"
+              "\n"
+              "                after = _acl_listing(descriptor)\n"
+          )
+          replace_once(orchestrator, old_grant, new_grant)
+
+          old_except = (
+              "        except Exception:\n"
+              "            # Preserve the original admission error. Rollback is best-effort here;\n"
+              "            # the caller still fails closed and the build principal is subsequently\n"
+              "            # retired by the accepted build-origin helper.\n"
+              "            self.revoke(suppress_errors=True)\n"
+              "            raise\n"
+          )
+          new_except = (
+              "        except Exception as error:\n"
+              "            try:\n"
+              "                self.revoke(suppress_errors=False)\n"
+              "            except Exception as rollback_error:\n"
+              "                raise SelectedXcodeBuildOrchestratorError(\n"
+              "                    \"private read-lease grant failed and rollback failed: \"\n"
+              "                    + str(rollback_error)\n"
+              "                ) from error\n"
+              "            raise\n"
+          )
+          replace_once(orchestrator, old_except, new_except)
+
+          old_subject_assertion = (
+              "            self.assertEqual(\n"
+              "                helper._private_read_subjects(command, repo),\n"
+              "                (repo / \"LocalSecrets/TuyaSDK\", repo / \"LocalSecrets/TuyaRuntime\"),\n"
+              "            )\n"
+          )
+          new_subject_assertion = (
+              "            self.assertEqual(\n"
+              "                helper._private_read_subjects(command, repo),\n"
+              "                (\n"
+              "                    repo / \"LocalSecrets/TuyaSDK/ThingSmartCryption.podspec\",\n"
+              "                    repo / \"LocalSecrets/TuyaSDK/Build\",\n"
+              "                    repo / \"LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec\",\n"
+              "                    repo / \"LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig\",\n"
+              "                ),\n"
+              "            )\n"
+          )
+          replace_once(selected_test, old_subject_assertion, new_subject_assertion)
+          PY
+
+      - name: Prove exact portable hardening contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          git diff --check
+
+      - name: Self-delete and publish hardening
+        shell: bash
+        env:
+          BRANCH: hardening/v17-capture-private-read-lease-c8cc-sol-20260814
+          SELF: .github/workflows/capture-private-read-lease-c8cc-hardening-once.yml
+        run: |
+          set -euo pipefail
+          git rm "$SELF"
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            "$SELF" \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'Capture: harden exact private read lease cleanup'
+          git push origin "HEAD:$BRANCH"
