@@ -352,7 +352,11 @@ def _open_file_at(parent_fd: int, name: str, relative: Path) -> tuple[int, os.st
         raise
 
 
-def _open_subject(root_fd: int, subject: Path) -> tuple[int, os.stat_result, str]:
+def _open_subject(
+    root_fd: int,
+    subject: Path,
+    directory_cache: dict[Path, int] | None = None,
+) -> tuple[int, os.stat_result, str]:
     _safe_relative(subject)
     expected_kind = _GENERATED_SUBJECT_KINDS.get(subject)
     if expected_kind is None:
@@ -362,11 +366,22 @@ def _open_subject(root_fd: int, subject: Path) -> tuple[int, os.stat_result, str
         for index, component in enumerate(subject.parts):
             relative = Path(*subject.parts[: index + 1])
             is_last = index == len(subject.parts) - 1
+            if not is_last and directory_cache is not None and relative in directory_cache:
+                os.close(current)
+                current = os.dup(directory_cache[relative])
+                continue
             if is_last and expected_kind == "file":
                 descriptor, metadata = _open_file_at(current, component, relative)
                 os.close(current)
                 return descriptor, metadata, "file"
             child = _open_directory_at(current, component, relative)
+            if not is_last and directory_cache is not None:
+                if relative in directory_cache:
+                    os.close(child)
+                    raise AcceptedBuildInputSnapshotError(
+                        f"duplicate generated selector-cache admission: {relative}"
+                    )
+                directory_cache[relative] = os.dup(child)
             os.close(current)
             current = child
         metadata = os.fstat(current)
@@ -377,6 +392,15 @@ def _open_subject(root_fd: int, subject: Path) -> tuple[int, os.stat_result, str
         except OSError:
             pass
         raise
+
+
+def _close_directory_cache(directory_cache: dict[Path, int]) -> None:
+    for descriptor in reversed(tuple(directory_cache.values())):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+    directory_cache.clear()
 
 
 def _safe_entry_name(name: str, parent: Path) -> None:
@@ -502,11 +526,12 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
     records: list[dict[str, object]] = []
     seen: set[Path] = set()
     root_fd = _open_repository_root(root)
+    directory_cache: dict[Path, int] = {}
     try:
         for subject in GENERATED_SUBJECTS:
             if subject in seen:
                 raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {subject}")
-            descriptor, metadata, kind = _open_subject(root_fd, subject)
+            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
             try:
                 record: dict[str, object] = {"path": subject.as_posix()}
                 if kind == "file":
@@ -531,6 +556,7 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
             finally:
                 os.close(descriptor)
     finally:
+        _close_directory_cache(directory_cache)
         os.close(root_fd)
     payload = {
         "schemaVersion": SCHEMA_VERSION,
@@ -686,9 +712,10 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
     source_root = _absolute(source_root)
     destination_root = _absolute(destination_root)
     root_fd = _open_repository_root(source_root)
+    directory_cache: dict[Path, int] = {}
     try:
         for subject in GENERATED_SUBJECTS:
-            descriptor, metadata, kind = _open_subject(root_fd, subject)
+            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
             try:
                 if kind == "file":
                     _copy_open_file(
@@ -702,6 +729,7 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
             finally:
                 os.close(descriptor)
     finally:
+        _close_directory_cache(directory_cache)
         os.close(root_fd)
 
 
