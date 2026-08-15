@@ -1,0 +1,65 @@
+name: Capture Private Read Lease Real Directory Replacement Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_private_read_lease_real_directory_replacement_red_team.py
+      - .github/workflows/capture-private-read-lease-real-directory-replacement-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-private-read-lease-real-directory-replacement-red-team-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ATTACKED_PARENT: 71d84e9b42265dc74894431f7136d66d0f0f43ff
+
+jobs:
+  exploit-positive-real-directory-replacement:
+    name: Prove planned real directory can be replaced before admission
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind diagnostic to exact attacked lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
+          changed="$(git diff --name-only "$EXACT_ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-real-directory-replacement-red-team.yml \
+            scripts/ci/tests/test_capture_private_read_lease_real_directory_replacement_red_team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_ATTACKED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Reproduce real-directory replacement admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/tests/test_capture_private_read_lease_real_directory_replacement_red_team.py
+          /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_private_read_lease_real_directory_replacement_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Classify product status
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'EXPLOIT-POSITIVE SUCCESS: attacked read-lease production remains RED for plan-to-admission real-directory object continuity.' \
+            'No install, Bluetooth, Tuya traffic, telemetry, command, or physical ES80 authority is created.'
