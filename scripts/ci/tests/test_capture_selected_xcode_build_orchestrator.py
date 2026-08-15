@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -228,6 +230,12 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             '--install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"',
             '-- /usr/bin/xcodebuild',
             "IFS=$'\\t' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA",
+            '/usr/bin/env -i',
+            'PATH=/usr/bin:/bin:/usr/sbin:/sbin',
+            'HOME=/tmp',
+            'TMPDIR=/tmp',
+            'LANG=C',
+            'LC_ALL=C',
             'DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR"',
             'run_frozen_xcode_tool "$SELECTED_XCTRACE" list devices',
             'run_frozen_xcode_tool "$SELECTED_DEVICECTL" list devices --hide-headers',
@@ -250,6 +258,94 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             "otherwise-unused supplementary gid given to this guarded build process group",
             source,
         )
+
+    def test_frozen_device_tool_wrapper_scrubs_hostile_caller_environment(self) -> None:
+        source = INSTALLER.read_text(encoding="utf-8")
+        start = source.index("run_frozen_xcode_tool() {")
+        end = source.index("\n}\n\n# Both privileged layers", start) + len("\n}\n")
+        function_source = source[start:end]
+
+        with tempfile.TemporaryDirectory(prefix="nembra-frozen-device-tools-") as temporary:
+            root = Path(temporary)
+            developer = root / "Xcode.app/Contents/Developer"
+            tools = developer / "usr/bin"
+            tools.mkdir(parents=True)
+            devicectl = tools / "devicectl"
+            xctrace = tools / "xctrace"
+            probe_source = """#!/bin/bash
+printf 'DEVELOPER_DIR=%s\\n' "${DEVELOPER_DIR-<unset>}"
+printf 'HOME=%s\\n' "${HOME-<unset>}"
+printf 'TMPDIR=%s\\n' "${TMPDIR-<unset>}"
+printf 'LANG=%s\\n' "${LANG-<unset>}"
+printf 'LC_ALL=%s\\n' "${LC_ALL-<unset>}"
+printf 'TOOLCHAINS=%s\\n' "${TOOLCHAINS-<unset>}"
+printf 'DYLD_INSERT_LIBRARIES=%s\\n' "${DYLD_INSERT_LIBRARIES-<unset>}"
+printf 'SDKROOT=%s\\n' "${SDKROOT-<unset>}"
+"""
+            for tool in (devicectl, xctrace):
+                tool.write_text(probe_source, encoding="utf-8")
+                tool.chmod(0o755)
+
+            wrapper = root / "wrapper.sh"
+            wrapper.write_text(
+                "#!/bin/bash\n"
+                "set -euo pipefail\n"
+                "die() { printf 'ERROR: %s\\n' \"$*\" >&2; exit 77; }\n"
+                f"SELECTED_XCODE_DEVELOPER_DIR={str(developer)!r}\n"
+                f"SELECTED_XCTRACE={str(xctrace)!r}\n"
+                f"SELECTED_DEVICECTL={str(devicectl)!r}\n"
+                + function_source
+                + "tool=\"$1\"\nshift\nrun_frozen_xcode_tool \"$tool\" \"$@\"\n",
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+
+            hostile = dict(os.environ)
+            hostile.update(
+                {
+                    "DEVELOPER_DIR": "/Applications/AttackerXcode.app/Contents/Developer",
+                    "TOOLCHAINS": "attacker.toolchain",
+                    "DYLD_INSERT_LIBRARIES": "/tmp/attacker.dylib",
+                    "SDKROOT": "/tmp/attacker.sdk",
+                    "HOME": "/tmp/attacker-home",
+                    "TMPDIR": "/tmp/attacker-tmp",
+                    "LANG": "zz_ZZ.UTF-8",
+                    "LC_ALL": "zz_ZZ.UTF-8",
+                }
+            )
+            completed = subprocess.run(
+                ["/bin/bash", str(wrapper), str(devicectl), "device", "list"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=hostile,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            observed = dict(
+                line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line
+            )
+            self.assertEqual(observed["DEVELOPER_DIR"], str(developer))
+            self.assertEqual(observed["HOME"], "/tmp")
+            self.assertEqual(observed["TMPDIR"], "/tmp")
+            self.assertEqual(observed["LANG"], "C")
+            self.assertEqual(observed["LC_ALL"], "C")
+            self.assertEqual(observed["TOOLCHAINS"], "<unset>")
+            self.assertEqual(observed["DYLD_INSERT_LIBRARIES"], "<unset>")
+            self.assertEqual(observed["SDKROOT"], "<unset>")
+
+            rejected = subprocess.run(
+                ["/bin/bash", str(wrapper), str(root / "attacker-devicectl")],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=hostile,
+                check=False,
+            )
+            self.assertEqual(rejected.returncode, 77)
+            self.assertIn("unadmitted Xcode device tool", rejected.stderr)
 
 
 if __name__ == "__main__":
