@@ -1,0 +1,73 @@
+name: Capture Casefold Portability Validation
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-casefold-macos-failclosed-gpt56
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+      - .github/workflows/capture-casefold-portability-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-casefold-portability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 52c278c4b04895bf5e7c5b1c58fee6257967e82c
+
+jobs:
+  validate:
+    name: Casefold fail-closed portability (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact test-only child
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$head_sha" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-casefold-portability-validation.yml' \
+            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile helper and tests
+        run: |
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Run inherited accepted-input suite
+        run: python3 scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Preserve physical truth boundary
+        run: |
+          printf '%s\n' \
+            'testOnly=true' \
+            'productionWiring=false' \
+            'bluetoothExecuted=false' \
+            'dpQueriesSent=false' \
+            'dpCommandsSent=false' \
+            'physicalAuthorityCreated=false'
