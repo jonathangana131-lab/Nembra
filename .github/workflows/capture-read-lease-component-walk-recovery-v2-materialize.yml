@@ -1,6 +1,11 @@
 name: Capture Read Lease Component Walk Recovery V2 Materializer
 
 on:
+  push:
+    branches:
+      - hardening/v17-capture-read-lease-component-walk-recovery-v2-sol-20260814
+    paths:
+      - .github/workflows/capture-read-lease-component-walk-recovery-v2-materialize.yml
   pull_request:
     paths:
       - .github/workflows/capture-read-lease-component-walk-recovery-v2-materialize.yml
@@ -16,7 +21,7 @@ env:
 jobs:
   materialize:
     name: Materialize component-anchored lease helper
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 7
     steps:
