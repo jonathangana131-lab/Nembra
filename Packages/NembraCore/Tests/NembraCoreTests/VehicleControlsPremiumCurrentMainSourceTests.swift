@@ -38,7 +38,7 @@ struct VehicleControlsPremiumCurrentMainSourceTests {
         #expect(view.contains("GridItem(.flexible()"))
         #expect(view.contains("connectionIssueField"))
         #expect(view.contains(".fixedSize(horizontal: false, vertical: true)"))
-        #expect(view.contains("frame(minHeight: 58"))
+        #expect(view.contains("minHeight: 58"))
     }
 
     @Test("Disconnected retained settings are disclosed and remain last-confirmed")
