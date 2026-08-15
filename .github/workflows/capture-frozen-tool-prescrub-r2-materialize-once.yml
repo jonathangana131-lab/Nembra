@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
           test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = "$SELF"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -52,33 +52,22 @@ jobs:
 
           installer = Path("scripts/field/install_one_time_capture.command")
           source = installer.read_text(encoding="utf-8")
-          old = (
-              '    /usr/bin/env -i \\\n'
-              '        PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n'
-              '        HOME=/tmp \\\n'
-              '        TMPDIR=/tmp \\\n'
-              '        LANG=C \\\n'
-              '        LC_ALL=C \\\n'
-              '        DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\\n'
-              '        "$tool" "$@"\n'
+          slash = chr(92)
+          old_head = "    /usr/bin/env -i " + slash + "\n"
+          new_head = (
+              "    (\n"
+              "        # Bash builtin exec -c clears caller state before the first external image.\n"
+              "        # This prevents dyld from consuming hostile DYLD_* before env builds the allowlist.\n"
+              "        exec -c /usr/bin/env -i " + slash + "\n"
           )
-          new = (
-              '    (\n'
-              '        # `exec -c` is a Bash builtin, so the first external image starts\n'
-              '        # with an empty environment before dyld can consume caller DYLD_* state.\n'
-              '        exec -c /usr/bin/env -i \\\n'
-              '            PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n'
-              '            HOME=/tmp \\\n'
-              '            TMPDIR=/tmp \\\n'
-              '            LANG=C \\\n'
-              '            LC_ALL=C \\\n'
-              '            DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\\n'
-              '            "$tool" "$@"\n'
-              '    )\n'
-          )
-          if source.count(old) != 1:
-              raise SystemExit(f"installer frozen-tool trampoline anchor count={source.count(old)}")
-          installer.write_text(source.replace(old, new), encoding="utf-8")
+          if source.count(old_head) != 1:
+              raise SystemExit(f"installer frozen-tool head anchor count={source.count(old_head)}")
+          source = source.replace(old_head, new_head)
+          old_tail = '        "$tool" "$@"\n}\n\n# Both privileged layers'
+          new_tail = '        "$tool" "$@"\n    )\n}\n\n# Both privileged layers'
+          if source.count(old_tail) != 1:
+              raise SystemExit(f"installer frozen-tool tail anchor count={source.count(old_tail)}")
+          installer.write_text(source.replace(old_tail, new_tail), encoding="utf-8")
 
           for raw in (
               "scripts/ci/tests/test_capture_frozen_device_tool_handoff.py",
