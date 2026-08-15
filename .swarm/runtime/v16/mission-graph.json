@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 41,
+    "classifiedPRTotal": 42,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.255,
+        "similarity": 0.285,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1516,6 +1516,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.249,
         "title": "[Vehicle/Controls V15][RED] Pin premium current-main closure"
+      },
+      "3446": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "68a461e2ecf6a2f80e7810e9bc9d978a3a7db43f",
+        "lane": "capture-signed-install-custody",
+        "pr": 3446,
+        "recommendedAction": "independent-review",
+        "similarity": 0.283,
+        "title": "[Capture P0][TEST] Accept macOS casefold fail-closed admission"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1548,7 +1559,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T19:02:55Z",
+    "liveRefreshAt": "2026-08-15T20:03:00Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5333,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 662,
+  "revision": 663,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T19:02:57Z",
+  "updatedAt": "2026-08-15T20:03:02Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5412,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T19:02:55Z",
+      "updatedAt": "2026-08-15T20:03:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
