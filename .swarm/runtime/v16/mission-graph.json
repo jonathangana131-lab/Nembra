@@ -1393,7 +1393,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.367,
+        "similarity": 0.292,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1426,7 +1426,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3421,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.347,
+        "similarity": 0.335,
         "title": "[Capture P0][REPAIR] Hold shared generated selector ancestors"
       },
       "3424": {
@@ -1470,7 +1470,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.27,
+        "similarity": 0.258,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3435": {
@@ -1537,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:26:55Z",
+    "liveRefreshAt": "2026-08-15T11:27:10Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5322,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 643,
+  "revision": 644,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:26:57Z",
+  "updatedAt": "2026-08-15T11:27:12Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:26:55Z",
+      "updatedAt": "2026-08-15T11:27:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
