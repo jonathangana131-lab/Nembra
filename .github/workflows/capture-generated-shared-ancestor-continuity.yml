@@ -20,7 +20,12 @@ env:
 
 jobs:
   exact-portable:
-    runs-on: ubuntu-latest
+    name: Exact generated-input continuity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
