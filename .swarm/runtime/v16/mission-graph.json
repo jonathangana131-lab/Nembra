@@ -1129,7 +1129,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3332,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.332,
+        "similarity": 0.325,
         "title": "[Capture P0][ORACLE] Rebase install-custody regression on live carrier"
       },
       "3333": {
@@ -1261,7 +1261,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3349,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.368,
+        "similarity": 0.35,
         "title": "[Capture P0][RED TEAM] Pin private provenance resnapshot authority gap"
       },
       "3350": {
@@ -1323,11 +1323,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "06b2b14855feb13680ba2d0217d07711f85f45ea",
+        "headSHA": "40886f3f89cb3bbd6b78f92c55bc388d6716677a",
         "lane": "capture-signed-install-custody",
         "pr": 3356,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.379,
+        "similarity": 0.388,
         "title": "[Capture P0][REPAIR] Preaccept private Tuya provenance before field build"
       },
       "3357": {
@@ -1383,7 +1383,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:26:17Z",
+    "liveRefreshAt": "2026-08-15T00:26:33Z",
     "liveRefreshDuplicatesSuppressed": [
       3350
     ],
@@ -5168,10 +5168,10 @@
       "userValue": 7
     }
   },
-  "revision": 408,
+  "revision": 409,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:26:18Z",
+  "updatedAt": "2026-08-15T00:26:33Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5247,7 +5247,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:26:17Z",
+      "updatedAt": "2026-08-15T00:26:33Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
