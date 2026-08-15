@@ -342,7 +342,7 @@ def create_accepted_build_root(
     repo = _absolute(repo)
     _require_real_directory(repo, "field repository")
     if re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:
-        raise SelectedXcodeBuildOrchestratorError("accepted source SHA is malformed")
+        raise AcceptedBuildRootCustodyError("accepted source SHA is malformed")
     if re.fullmatch(r"[0-9a-f]{64}", accepted_generated_manifest_sha256) is None:
         raise AcceptedBuildRootCustodyError("accepted generated manifest digest is malformed")
 
