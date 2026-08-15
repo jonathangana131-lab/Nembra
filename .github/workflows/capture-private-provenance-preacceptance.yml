@@ -1,0 +1,55 @@
+name: Capture Private Provenance Preacceptance
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_input_provenance.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift
+      - .github/workflows/capture-private-provenance-preacceptance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  positive-authority-gate:
+    name: Prove private provenance cannot self-rebind
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact private-provenance source: %s\n' "$actual"
+
+      - name: Prove normal field path consumes independent private provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-provenance-pycache"
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_provenance.py \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
