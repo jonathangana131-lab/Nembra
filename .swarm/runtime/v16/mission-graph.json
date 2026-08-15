@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 36,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1330,17 +1330,6 @@
         "similarity": 0.35,
         "title": "[Capture P0][RED TEAM] Reject inode-reuse ABA in planned lease identity"
       },
-      "3395": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "2452bca778d4870f443a80e214e265cf62179e97",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3395,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.0,
-        "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
-      },
       "3398": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1385,17 +1374,6 @@
         "similarity": 0.337,
         "title": "[Capture P0][VALIDATION] Replay canonical generation split on held-descriptor product"
       },
-      "3409": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3409,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.39,
-        "title": "[Capture P0][RED TEAM] Reject unadmitted LocalSecrets ancestor escape"
-      },
       "3411": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1415,7 +1393,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3412,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.392,
+        "similarity": 0.319,
         "title": "[Capture P0][RED TEAM] Reject tracked case-fold directory alias collapse"
       },
       "3413": {
@@ -1448,7 +1426,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.37,
+        "similarity": 0.315,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1493,7 +1471,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:41:15Z",
+    "liveRefreshAt": "2026-08-15T03:41:32Z",
     "liveRefreshDuplicatesSuppressed": [
       3419
     ],
@@ -5278,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 564,
+  "revision": 565,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:41:16Z",
+  "updatedAt": "2026-08-15T03:41:33Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5357,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:41:15Z",
+      "updatedAt": "2026-08-15T03:41:32Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
