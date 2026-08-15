@@ -41,6 +41,7 @@ for needle in [
     '"schemaVersion": 8',
     '"visualAcceptanceRequiresHumanReview": True',
     '"screenshotRenderedContentReadinessVerified": True',
+    '"screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v2"',
     '"simctlUIHelpSHA256": sha256(ui_help)',
     '"simctlIOHelpSHA256": sha256(io_help)',
     '"physicalAuthorityCreated": False',
@@ -52,6 +53,8 @@ for needle in [
     if needle not in runner:
         raise SystemExit(f"missing standalone visual truth contract: {needle}")
 
+if 'capture_visual_png_content_guard.py/v1' in runner:
+    raise SystemExit("visual runner must not retain stale v1 readiness provenance")
 if 'unprovisioned-light-standard' in runner:
     raise SystemExit("forced-dark Capture must not label a system-light probe as app light-mode evidence")
 if 'SIMCTL_CHILD_' not in runner or '--args' in runner:
@@ -79,6 +82,7 @@ for needle in [
     "assert r['schemaVersion'] == 8",
     "assert r['sourceCommitSHA'] == sys.argv[2]",
     "assert r['baselineDevice'] == 'iPhone 12' and r['baselineOS'] == 'iOS 27'",
+    "assert r['screenshotRenderedContentGuard'] == 'capture_visual_png_content_guard.py/v2'",
     "assert re.fullmatch(r'[0-9a-f]{64}', r['simctlUIHelpSHA256'])",
     "assert re.fullmatch(r'[0-9a-f]{64}', r['simctlIOHelpSHA256'])",
     "'unprovisioned-system-light-app-forced-dark-standard'",
@@ -89,6 +93,8 @@ for needle in [
     if needle not in workflow:
         raise SystemExit(f"missing standalone visual workflow contract: {needle}")
 
+if 'capture_visual_png_content_guard.py/v1' in workflow:
+    raise SystemExit("visual workflow must not retain stale v1 readiness provenance")
 if "'unprovisioned-light-standard'" in workflow:
     raise SystemExit("workflow must not overclaim forced-dark system-light pixels as app light mode")
 if workflow.count('runs-on: xcode-27') != 1:
