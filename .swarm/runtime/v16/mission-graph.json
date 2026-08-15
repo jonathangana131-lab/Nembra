@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 40,
+    "classifiedPRTotal": 41,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1360,7 +1360,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3411,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.419,
+        "similarity": 0.426,
         "title": "[Capture P0][RED TEAM] Bind internal symlink policy to held lease generation"
       },
       "3413": {
@@ -1448,7 +1448,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3428,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.4,
+        "similarity": 0.407,
         "title": "[Capture P0][REPAIR] Bind private symlink policy to held descriptor generation"
       },
       "3430": {
@@ -1470,7 +1470,7 @@
         "lane": "",
         "pr": 3432,
         "recommendedAction": "independent-review",
-        "similarity": 0.102,
+        "similarity": 0.19,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
@@ -1505,6 +1505,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.152,
         "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
+      },
+      "3436": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3436,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.255,
+        "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1537,9 +1548,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:20:56Z",
+    "liveRefreshAt": "2026-08-15T11:21:16Z",
     "liveRefreshDuplicatesSuppressed": [
-      3433
+      3436
     ],
     "liveRefreshMainSHA": "b08f52c8aac7cbf753c3aaac55147303697ac32a",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5322,10 +5333,10 @@
       "userValue": 7
     }
   },
-  "revision": 626,
+  "revision": 627,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:20:58Z",
+  "updatedAt": "2026-08-15T11:21:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5412,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:20:56Z",
+      "updatedAt": "2026-08-15T11:21:16Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
