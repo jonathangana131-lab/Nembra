@@ -1,0 +1,69 @@
+name: Capture Private Provenance Preaccept Build Side
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_input_provenance.py
+      - scripts/ci/tests/test_capture_private_provenance_preaccept_build_side.py
+      - .github/workflows/capture-private-provenance-preaccept-build-side.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-private-provenance-preaccept:
+    name: Require reviewed private-input digest before field bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind exact checked-out production child
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXACT_PARENT: 60c365da2061e77ccf949da8f2e3385cec225444
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual-paths"
+          printf '%s\n' \
+            .github/workflows/capture-private-provenance-preaccept-build-side.yml \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_private_provenance_preaccept_build_side.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected-paths"
+          diff -u "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/actual-paths"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove preaccepted private-input digest closes resnapshot promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-provenance-preaccept-pycache"
+          /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/tests/test_capture_private_provenance_preaccept_build_side.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_preaccept_build_side.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Pin build-side truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bootstrap=Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_TUYA_PRIVATE_PROVENANCE_SHA256' "$bootstrap"
+          grep -Fq 'DEPENDENCY + PRIVATE-INPUT CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY' "$bootstrap"
+          grep -Fq 'Review and bind BOTH exact digests' "$bootstrap"
+          grep -Fq 'This review-only mode' "$bootstrap"
+          ! grep -Fq 'physicalAuthorityCreated=true' "$bootstrap"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
