@@ -1,0 +1,117 @@
+name: Capture APFS Backing Production Seal
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_signed_app_build_origin_custody.py
+      - scripts/ci/tests/test_capture_apfs_backing_production_contract.py
+      - .github/workflows/capture-apfs-backing-production-seal.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-contract:
+    name: Pin production creation and seal ordering
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact head and run permanent contract
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-apfs-production-seal-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_apfs_backing_production_contract.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_apfs_backing_production_contract.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+  macos-seal-smoke:
+    name: Prove root-only seal on real macOS file semantics
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind exact head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Exercise production seal on a real regular file
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-apfs-production-seal-pycache"
+          sudo -E /usr/bin/python3 -B -I - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import stat
+          import tempfile
+
+          production = Path.cwd() / "scripts/ci/capture_signed_app_build_origin_custody.py"
+          spec = importlib.util.spec_from_file_location("nembra_apfs_backing_production_seal", production)
+          if spec is None or spec.loader is None:
+              raise SystemExit("could not load production helper")
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+
+          root = Path(tempfile.mkdtemp(prefix="nembra-apfs-production-seal-", dir="/private/tmp"))
+          subject = root / "compiler-output.sparseimage"
+          try:
+              subject.write_bytes(b"fixture\n")
+              os.chown(subject, 0, 0)
+              os.chmod(subject, 0o666)
+              before = subject.lstat()
+              helper._seal_apfs_backing_file(subject)
+              after = subject.lstat()
+              if (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino):
+                  raise SystemExit("production seal changed the backing subject identity")
+              if not stat.S_ISREG(after.st_mode) or stat.S_ISLNK(after.st_mode):
+                  raise SystemExit("production seal no longer targets one real regular file")
+              if after.st_uid != 0 or after.st_gid != 0 or stat.S_IMODE(after.st_mode) != 0o600:
+                  raise SystemExit(
+                      f"production seal mismatch uid={after.st_uid} gid={after.st_gid} mode={oct(stat.S_IMODE(after.st_mode))}"
+                  )
+              print("APFS_BACKING_PRODUCTION_SEAL=ROOT_ONLY_0600")
+              print("PHYSICAL_AUTHORITY_CREATED=false")
+          finally:
+              try:
+                  subject.unlink(missing_ok=True)
+              finally:
+                  root.rmdir()
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'This gate tests local file authority only. It does not sign or install an app, access a device, open Bluetooth, interpret Tuya traffic, create telemetry, issue commands, or authorize a physical experiment.'
