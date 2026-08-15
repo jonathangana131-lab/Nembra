@@ -379,6 +379,65 @@ def _open_subject(root_fd: int, subject: Path) -> tuple[int, os.stat_result, str
         raise
 
 
+def _close_descriptors(descriptors: Sequence[int]) -> None:
+    for descriptor in reversed(tuple(descriptors)):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _open_generated_subject_set(
+    root_fd: int,
+) -> tuple[dict[Path, tuple[int, os.stat_result, str]], tuple[int, ...]]:
+    """Open the fixed generated subject set through one held selector graph.
+
+    Shared intermediate directories (notably ``LocalSecrets``) are opened once
+    and retained until all fixed subjects have been admitted. This prevents two
+    individually valid child admissions from being spliced across distinct
+    generations of the same shared ancestor.
+    """
+
+    directory_cache: dict[Path, int] = {}
+    subjects: dict[Path, tuple[int, os.stat_result, str]] = {}
+    owned: list[int] = []
+    try:
+        for subject in GENERATED_SUBJECTS:
+            _safe_relative(subject)
+            expected_kind = _GENERATED_SUBJECT_KINDS.get(subject)
+            if expected_kind is None:
+                raise AcceptedBuildInputSnapshotError(
+                    f"unrecognized generated subject: {subject}"
+                )
+            parent_fd = root_fd
+            prefix = Path()
+            for index, component in enumerate(subject.parts):
+                prefix /= component
+                final = index == len(subject.parts) - 1
+                if not final:
+                    cached = directory_cache.get(prefix)
+                    if cached is None:
+                        cached = _open_directory_at(parent_fd, component, prefix)
+                        directory_cache[prefix] = cached
+                        owned.append(cached)
+                    parent_fd = cached
+                    continue
+
+                if expected_kind == "file":
+                    descriptor, metadata = _open_file_at(parent_fd, component, prefix)
+                    kind = "file"
+                else:
+                    descriptor = _open_directory_at(parent_fd, component, prefix)
+                    metadata = os.fstat(descriptor)
+                    kind = "directory"
+                subjects[subject] = (descriptor, metadata, kind)
+                owned.append(descriptor)
+        return subjects, tuple(owned)
+    except Exception:
+        _close_descriptors(owned)
+        raise
+
+
 def _safe_entry_name(name: str, parent: Path) -> None:
     if name in ("", ".", "..") or "\n" in name or "\t" in name or "\0" in name:
         raise AcceptedBuildInputSnapshotError(f"unsafe build-input entry name under {parent}")
@@ -502,35 +561,35 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
     records: list[dict[str, object]] = []
     seen: set[Path] = set()
     root_fd = _open_repository_root(root)
+    subject_descriptors: tuple[int, ...] = ()
     try:
+        subjects, subject_descriptors = _open_generated_subject_set(root_fd)
         for subject in GENERATED_SUBJECTS:
             if subject in seen:
                 raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {subject}")
-            descriptor, metadata, kind = _open_subject(root_fd, subject)
-            try:
-                record: dict[str, object] = {"path": subject.as_posix()}
-                if kind == "file":
-                    digest, size, after = _hash_open_file(descriptor, subject)
-                    if not _same_object(metadata, after):
-                        raise AcceptedBuildInputSnapshotError(
-                            f"generated subject changed identity while reading: {subject}"
-                        )
-                    record.update(
-                        type="file",
-                        sha256=digest,
-                        size=size,
-                        executable=bool(metadata.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)),
+            descriptor, metadata, kind = subjects[subject]
+            record: dict[str, object] = {"path": subject.as_posix()}
+            if kind == "file":
+                digest, size, after = _hash_open_file(descriptor, subject)
+                if not _same_object(metadata, after):
+                    raise AcceptedBuildInputSnapshotError(
+                        f"generated subject changed identity while reading: {subject}"
                     )
-                    seen.add(subject)
-                    records.append(record)
-                else:
-                    record.update(type="directory")
-                    seen.add(subject)
-                    records.append(record)
-                    _manifest_directory(descriptor, subject, records, seen)
-            finally:
-                os.close(descriptor)
+                record.update(
+                    type="file",
+                    sha256=digest,
+                    size=size,
+                    executable=bool(metadata.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)),
+                )
+                seen.add(subject)
+                records.append(record)
+            else:
+                record.update(type="directory")
+                seen.add(subject)
+                records.append(record)
+                _manifest_directory(descriptor, subject, records, seen)
     finally:
+        _close_descriptors(subject_descriptors)
         os.close(root_fd)
     payload = {
         "schemaVersion": SCHEMA_VERSION,
@@ -686,22 +745,22 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
     source_root = _absolute(source_root)
     destination_root = _absolute(destination_root)
     root_fd = _open_repository_root(source_root)
+    subject_descriptors: tuple[int, ...] = ()
     try:
+        subjects, subject_descriptors = _open_generated_subject_set(root_fd)
         for subject in GENERATED_SUBJECTS:
-            descriptor, metadata, kind = _open_subject(root_fd, subject)
-            try:
-                if kind == "file":
-                    _copy_open_file(
-                        descriptor,
-                        metadata,
-                        destination_root / subject,
-                        subject,
-                    )
-                else:
-                    _copy_directory_fd(descriptor, destination_root, subject)
-            finally:
-                os.close(descriptor)
+            descriptor, metadata, kind = subjects[subject]
+            if kind == "file":
+                _copy_open_file(
+                    descriptor,
+                    metadata,
+                    destination_root / subject,
+                    subject,
+                )
+            else:
+                _copy_directory_fd(descriptor, destination_root, subject)
     finally:
+        _close_descriptors(subject_descriptors)
         os.close(root_fd)
 
 

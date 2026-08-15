@@ -234,6 +234,79 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
                 snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
             self.assertFalse(destination.exists())
 
+    def test_shared_localsecrets_generation_cannot_splice_between_subjects(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            root.mkdir()
+            source_sha = seed_repo(root)
+            seed_generated(root, secret="APP-SECRET-A")
+            pure_a = snapshot.canonical_generated_manifest(root, source_sha)
+            accepted_a = snapshot.generated_manifest_sha256(root, source_sha)
+
+            generation_a = Path(raw) / "LocalSecrets.A"
+            (root / "LocalSecrets").rename(generation_a)
+            generation_b = root / "LocalSecrets"
+            sdk_b = generation_b / "TuyaSDK"
+            (sdk_b / "Build").mkdir(parents=True)
+            (sdk_b / "ThingSmartCryption.podspec").write_text("Pod::Spec.new\n", encoding="utf-8")
+            (sdk_b / "Build/libThingSmartCryption.a").write_bytes(b"private-security-B")
+            runtime_b = generation_b / "TuyaRuntime"
+            sources_b = runtime_b / "Sources/NembraTuyaPrivateConfig"
+            sources_b.mkdir(parents=True)
+            (runtime_b / "NembraTuyaPrivateConfig.podspec").write_text("Pod::Spec.new\n", encoding="utf-8")
+            (sources_b / "Identity.swift").write_text('let secret = "APP-SECRET-B"\n', encoding="utf-8")
+            (runtime_b / "ResolvedTuyaDependencyProvenance.txt").write_text(
+                "schema=1\nprivate-hashes-only\n", encoding="utf-8"
+            )
+            pure_b = snapshot.canonical_generated_manifest(root, source_sha)
+            self.assertNotEqual(pure_a, pure_b)
+
+            generation_b_saved = Path(raw) / "LocalSecrets.B"
+            generation_b.rename(generation_b_saved)
+            generation_a.rename(root / "LocalSecrets")
+
+            original_open_directory = snapshot._open_directory_at
+            swapped = False
+
+            def swap_path_before_runtime(parent_fd: int, name: str, relative: Path):
+                nonlocal swapped
+                if relative == Path("LocalSecrets/TuyaRuntime") and not swapped:
+                    (root / "LocalSecrets").rename(Path(raw) / "LocalSecrets.A.attack")
+                    generation_b_saved.rename(root / "LocalSecrets")
+                    swapped = True
+                return original_open_directory(parent_fd, name, relative)
+
+            snapshot._open_directory_at = swap_path_before_runtime
+            try:
+                observed = snapshot.canonical_generated_manifest(root, source_sha)
+            finally:
+                snapshot._open_directory_at = original_open_directory
+            self.assertTrue(swapped)
+            self.assertEqual(observed, pure_a)
+
+            # Restore generation A and repeat against the real staging/copy path.
+            (root / "LocalSecrets").rename(generation_b_saved)
+            (Path(raw) / "LocalSecrets.A.attack").rename(root / "LocalSecrets")
+            swapped = False
+            snapshot._open_directory_at = swap_path_before_runtime
+            destination = Path(raw) / "stage"
+            try:
+                actual = snapshot.stage_accepted_build_inputs(
+                    root, source_sha, destination, accepted_a
+                )
+            finally:
+                snapshot._open_directory_at = original_open_directory
+            self.assertTrue(swapped)
+            self.assertEqual(actual, accepted_a)
+            self.assertEqual(
+                (destination / "LocalSecrets/TuyaSDK/Build/libThingSmartCryption.a").read_bytes(),
+                b"private-security-A",
+            )
+            self.assertEqual(
+                (destination / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig/Identity.swift").read_text(encoding="utf-8"),
+                'let secret = "APP-SECRET-A"\n',
+            )
+
     def test_case_distinct_tracked_directory_prefixes_fail_before_materialization(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "repo"
