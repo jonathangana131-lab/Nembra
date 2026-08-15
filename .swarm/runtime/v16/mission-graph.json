@@ -1495,16 +1495,16 @@
         "similarity": 0.31,
         "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
       },
-      "3441": {
-        "classification": "validation",
+      "3442": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 3441,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.076,
-        "title": "[Battery/Range V15][QA] Re-prove current-main real surface"
+        "pr": 3442,
+        "recommendedAction": "independent-review",
+        "similarity": 0.088,
+        "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1537,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T13:05:03Z",
+    "liveRefreshAt": "2026-08-15T13:06:54Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5322,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 647,
+  "revision": 648,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T13:05:04Z",
+  "updatedAt": "2026-08-15T13:06:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T13:05:03Z",
+      "updatedAt": "2026-08-15T13:06:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
