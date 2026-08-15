@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1393,7 +1393,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3408,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.323,
+        "similarity": 0.346,
         "title": "[Capture P0][VALIDATION] Replay canonical generation split on held-descriptor product"
       },
       "3409": {
@@ -1404,7 +1404,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3409,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.257,
+        "similarity": 0.39,
         "title": "[Capture P0][RED TEAM] Reject unadmitted LocalSecrets ancestor escape"
       },
       "3410": {
@@ -1415,8 +1415,30 @@
         "lane": "capture-signed-install-custody",
         "pr": 3410,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.31,
+        "similarity": 0.324,
         "title": "[Capture P0][VALIDATION] Root-custody the accepted compiler-input tree"
+      },
+      "3411": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3411,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.341,
+        "title": "[Capture P0][RED TEAM] Bind internal symlink policy to held lease generation"
+      },
+      "3412": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3412,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.392,
+        "title": "[Capture P0][RED TEAM] Reject tracked case-fold directory alias collapse"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1449,9 +1471,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:28:00Z",
+    "liveRefreshAt": "2026-08-15T03:28:35Z",
     "liveRefreshDuplicatesSuppressed": [
-      3410
+      3412
     ],
     "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5234,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 539,
+  "revision": 540,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:28:01Z",
+  "updatedAt": "2026-08-15T03:28:36Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:28:00Z",
+      "updatedAt": "2026-08-15T03:28:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
