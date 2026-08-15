@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 21,
+    "classifiedPRTotal": 22,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1296,6 +1296,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.355,
         "title": "[Capture P0][RED TEAM] Re-anchor tracked-source compiler-window oracle to c8ccf"
+      },
+      "3352": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-runtime-accessibility",
+        "pr": 3352,
+        "recommendedAction": "independent-review",
+        "similarity": 0.098,
+        "title": "[Capture P0][ACCESSIBILITY] Compose validated AX5 lock VoiceOver priority"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1328,7 +1339,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:16:04Z",
+    "liveRefreshAt": "2026-08-15T00:16:41Z",
     "liveRefreshDuplicatesSuppressed": [
       3351
     ],
@@ -5113,10 +5124,10 @@
       "userValue": 7
     }
   },
-  "revision": 381,
+  "revision": 382,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:16:05Z",
+  "updatedAt": "2026-08-15T00:16:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5192,7 +5203,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:16:04Z",
+      "updatedAt": "2026-08-15T00:16:41Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
