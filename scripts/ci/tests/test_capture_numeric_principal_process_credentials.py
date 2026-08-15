@@ -121,7 +121,7 @@ int main(int argc, char **argv) {
         const struct kinfo_proc *entry = &entries[index];
         const struct _ucred *ucred = &entry->kp_eproc.e_ucred;
         pid_t pid = entry->kp_proc.p_pid;
-        if (pid <= 0) {
+        if (pid < 0) {
             free(entries);
             fprintf(stderr, "credential inventory error: invalid pid in KERN_PROC_ALL\n");
             return 70;
@@ -198,7 +198,7 @@ def kernel_group_snapshot(binary: Path, candidate: int) -> tuple[set[int], dict[
     for raw_line in completed.stdout.splitlines():
         if raw_line.startswith(KERN_PID_MARKER):
             pid = int(raw_line[len(KERN_PID_MARKER):], 10)
-            require(pid > 0, f"kernel scanner emitted invalid pid: {raw_line!r}")
+            require(pid >= 0, f"kernel scanner emitted invalid pid: {raw_line!r}")
             require(pid not in pids, f"kernel scanner emitted duplicate pid: {pid}")
             pids.add(pid)
         elif raw_line.startswith(MATCH_MARKER):
@@ -206,7 +206,7 @@ def kernel_group_snapshot(binary: Path, candidate: int) -> tuple[set[int], dict[
             require(len(fields) == 2, f"kernel scanner emitted malformed match: {raw_line!r}")
             pid = int(fields[0], 10)
             slots = int(fields[1], 10)
-            require(pid > 0 and slots == GROUP_LIST, f"kernel scanner emitted invalid group match: {raw_line!r}")
+            require(pid >= 0 and slots == GROUP_LIST, f"kernel scanner emitted invalid group match: {raw_line!r}")
             matches[pid] = matches.get(pid, 0) | slots
         elif raw_line.strip():
             raise ValidationError(f"kernel scanner emitted unknown stdout: {raw_line!r}")
@@ -285,7 +285,10 @@ def scan(binary: Path, candidate: int) -> tuple[int, dict[int, int]]:
         kernel_pids, group_matches = kernel_group_snapshot(binary, candidate)
         ps_pids, scalar_matches = ps_scalar_snapshot(candidate)
 
-        persistent_kernel_only = sorted(pid for pid in kernel_pids - ps_pids if pid_still_exists(pid))
+        # Darwin KERN_PROC_ALL includes the kernel pseudo-process PID 0 while /bin/ps
+        # intentionally omits it. Keep PID 0 in group-collision authority, but never
+        # send it through kill(0, 0), whose semantics target the caller's process group.
+        persistent_kernel_only = sorted(pid for pid in kernel_pids - ps_pids if pid > 0 and pid_still_exists(pid))
         persistent_ps_only = sorted(pid for pid in ps_pids - kernel_pids if pid_still_exists(pid))
         if persistent_kernel_only or persistent_ps_only:
             if attempt == 7:
