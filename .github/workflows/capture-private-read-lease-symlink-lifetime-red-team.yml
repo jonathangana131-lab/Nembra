@@ -1,0 +1,97 @@
+name: Capture Private Read Lease Symlink Lifetime Red Team
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - scripts/ci/tests/test_capture_private_read_lease_symlink_lifetime_red_team.py
+      - .github/workflows/capture-private-read-lease-symlink-lifetime-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-private-read-lease-symlink-lifetime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 574b1121be93e967ab6bc6cea3d9e1e078e3efa4
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  exploit-positive:
+    name: Expose same-directory symlink lifetime race
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Anchor Darwin fixtures under a real no-symlink temp root
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          import stat
+          root = Path('/private/tmp')
+          metadata = root.lstat()
+          if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+              raise SystemExit('/private/tmp is not one real directory')
+          if root.resolve(strict=True) != root:
+              raise SystemExit('/private/tmp does not resolve to itself')
+          PY
+          echo 'TMPDIR=/private/tmp' >> "$GITHUB_ENV"
+
+      - name: Bind exact repaired product and validation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-symlink-lifetime-red-team.yml \
+            scripts/ci/tests/test_capture_private_read_lease_symlink-lifetime-red-team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exploit oracle without bytecode artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tests/test_capture_private_read_lease_symlink_lifetime_red_team.py')
+          compile(path.read_bytes(), str(path), 'exec', dont_inherit=True)
+          PY
+
+      - name: Require exploit-positive same-directory symlink lifetime race
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_lifetime_red_team.py
+
+      - name: Preserve repaired component-walk regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+
+      - name: Preserve validation-only head and truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'NEMBRA_SYMLINK_LIFETIME_BOUNDARY exploitPositive=true productionBytesChanged=false privateACLAuthorityMocked=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false'
