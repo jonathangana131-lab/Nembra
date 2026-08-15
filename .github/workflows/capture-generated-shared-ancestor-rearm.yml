@@ -58,12 +58,6 @@ jobs:
           payload_lines = lines[start:end]
           payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in payload_lines) + '\n'
 
-          # The reviewed one-shot lives inside a YAML block scalar. Extraction above
-          # already removes that scalar's ten-space indentation. Inner template
-          # normalizers were authored for direct execution of the YAML payload and
-          # would therefore strip indentation a second time here. Neutralize only the
-          # exact reviewed normalizers; all generated code/workflow bytes otherwise
-          # remain the reviewed payload.
           template_scrub = '.replace("          ", "")'
           scrub_count = payload.count(template_scrub)
           if scrub_count != 6:
@@ -101,7 +95,8 @@ jobs:
       - name: Publish permanent three-path repair
         shell: bash
         run: |
-          set -euo pipefail
+          exec > >(tee /tmp/nembra-shared-ancestor-publish.log) 2>&1
+          set -euxo pipefail
           git rm \
             .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml \
             .github/workflows/capture-generated-shared-ancestor-rearm.yml
@@ -109,14 +104,25 @@ jobs:
             .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_input_snapshot.py \
             scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git status --short
           git diff --cached --check
           changed="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_input_snapshot.py \
             scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          printf 'changed:\n%s\nexpected:\n%s\n' "$changed" "$expected"
           test "$changed" = "$expected"
           git config user.name "nembra-capture-swarm"
           git config user.email "nembra-capture-swarm@users.noreply.github.com"
           git commit -m "security(capture): hold shared generated selector ancestors"
           git push origin HEAD:repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
+
+      - name: Retain publish diagnostic
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-generated-shared-ancestor-publish-${{ github.sha }}
+          path: /tmp/nembra-shared-ancestor-publish.log
+          if-no-files-found: error
+          retention-days: 7
