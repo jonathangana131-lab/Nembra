@@ -1,0 +1,72 @@
+name: Capture Private Read Lease Symlink DotDot Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v17-capture-held-symlink-dotdot-after-link-sol-20260815
+    paths:
+      - scripts/ci/tests/test_capture_private_read_lease_symlink_dotdot_semantics_red_team.py
+      - .github/workflows/capture-private-read-lease-symlink-dotdot-red-team.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_private_read_lease_symlink_dotdot_semantics_red_team.py
+      - .github/workflows/capture-private-read-lease-symlink-dotdot-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXACT_PARENT: 574b1121be93e967ab6bc6cea3d9e1e078e3efa4
+
+jobs:
+  exploit-positive:
+    name: Reproduce symlink/.. descriptor-policy escape (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact attacked product and validation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-private-read-lease-symlink-dotdot-red-team.yml' \
+            'scripts/ci/tests/test_capture_private_read_lease_symlink_dotdot_semantics_red_team.py' | sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Compile exploit oracle without repository artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tests/test_capture_private_read_lease_symlink_dotdot_semantics_red_team.py')
+          compile(path.read_text(encoding='utf-8'), str(path), 'exec', dont_inherit=True)
+          PY
+
+      - name: Require exploit-positive symlink dotdot escape
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_dotdot_semantics_red_team.py
+
+      - name: Preserve validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'Exploit-positive success is adversarial evidence only; it creates no product or physical authority.'
