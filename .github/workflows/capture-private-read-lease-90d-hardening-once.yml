@@ -18,7 +18,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Narrow subject set and make grant rollback fail closed
+      - name: Narrow subject set and close command-failure rollback window
         shell: bash
         run: |
           set -euo pipefail
@@ -55,7 +55,6 @@ jobs:
               "                self._opened.append(record)\n"
               "                _chmod_acl(descriptor, \"+a\", acl)\n"
               "                record[\"added\"] = True\n"
-              "\n"
               "                after = _acl_listing(descriptor)\n"
           )
           new_grant = (
@@ -76,31 +75,9 @@ jobs:
               "                        record[\"added\"] = after_failed != before\n"
               "                    raise\n"
               "                record[\"added\"] = True\n"
-              "\n"
               "                after = _acl_listing(descriptor)\n"
           )
           replace_once(orchestrator, old_grant, new_grant)
-
-          old_except = (
-              "        except Exception:\n"
-              "            # Preserve the original admission error. Rollback is best-effort here;\n"
-              "            # the caller still fails closed and the build principal is subsequently\n"
-              "            # retired by the accepted build-origin helper.\n"
-              "            self.revoke(suppress_errors=True)\n"
-              "            raise\n"
-          )
-          new_except = (
-              "        except Exception as error:\n"
-              "            try:\n"
-              "                self.revoke(suppress_errors=False)\n"
-              "            except Exception as rollback_error:\n"
-              "                raise SelectedXcodeBuildOrchestratorError(\n"
-              "                    \"private read-lease grant failed and rollback failed: \"\n"
-              "                    + str(rollback_error)\n"
-              "                ) from error\n"
-              "            raise\n"
-          )
-          replace_once(orchestrator, old_except, new_except)
 
           old_subject_assertion = (
               "            self.assertEqual(\n"
