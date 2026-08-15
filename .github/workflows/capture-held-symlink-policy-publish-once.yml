@@ -1,0 +1,77 @@
+name: Capture Held Symlink Policy Publish Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-held-symlink-policy-sol-20260815
+    paths:
+      - .github/workflows/capture-held-symlink-policy-publish-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 474507966619ce39288b20de29066711088cd986
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind authoring checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-held-symlink-policy-materialize-once.yml \
+            .github/workflows/capture-held-symlink-policy-publish-once.yml | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Reuse accepted authoring transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/capture-held-symlink-policy-materialize-once.yml').read_text(encoding='utf-8')
+          start_anchor = "          /usr/bin/python3 -B - <<'PY'\n"
+          step_anchor = "      - name: Materialize descriptor-bound symlink policy\n"
+          step = source.index(step_anchor)
+          start = source.index(start_anchor, step) + len(start_anchor)
+          end = source.index("\n          PY\n", start)
+          script = textwrap.dedent(source[start:end]) + "\n"
+          compile(script, '<held-symlink-materializer>', 'exec', dont_inherit=True)
+          Path('/tmp/held-symlink-materializer.py').write_text(script, encoding='utf-8')
+          PY
+          /usr/bin/python3 -B /tmp/held-symlink-materializer.py
+
+      - name: Publish inspectable product checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-held-symlink-policy-materialize-once.yml \
+            .github/workflows/capture-held-symlink-policy-publish-once.yml
+          changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-component-walk.yml \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_held_symlink_policy.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Bind private symlink policy to held descriptor generation"
+          git push origin HEAD:repair/v17-capture-held-symlink-policy-sol-20260815
