@@ -17,7 +17,7 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(!installer.contains("DEVICE_COUNT"))
     }
 
-    @Test("intended-device identity is bound to Final GO digest before device discovery")
+    @Test("intended-device identity is bound to Final GO digest before frozen device discovery")
     func intendedDeviceIdentityMustMatchFinalGoDigest() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
@@ -27,7 +27,7 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(installer.contains("private intended-device identifier does not match Final GO authority"))
         #expect(installer.contains("unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"))
         let digestCheck = installer.range(of: "hmac.compare_digest(actual_digest, expected_digest)")
-        let deviceDiscovery = installer.range(of: "Verifying the intended iPhone 12 / iOS 27 baseline")
+        let deviceDiscovery = installer.range(of: "Verifying the intended iPhone 12 / iOS 27 baseline with frozen selected-Xcode tools")
         #expect(digestCheck != nil)
         #expect(deviceDiscovery != nil)
         if let digestCheck, let deviceDiscovery {
@@ -76,16 +76,18 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(installer.contains("Accepted-source inputs changed while the field build was compiling"))
     }
 
-    @Test("connected-device discovery must match the private intended iPhone exactly once")
+    @Test("frozen selected-Xcode discovery must match the private intended iPhone exactly once")
     func arbitraryConnectedIPhoneCannotBecomeTheFieldDevice() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("Verifying the intended iPhone 12 / iOS 27 baseline"))
+        #expect(installer.contains("Verifying the intended iPhone 12 / iOS 27 baseline with frozen selected-Xcode tools"))
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_XCTRACE\" list devices"))
         #expect(installer.contains("MATCH_COUNT=0"))
         #expect(installer.contains("ROW_NORMALIZED"))
         #expect(installer.contains("INTENDED_NORMALIZED"))
         #expect(installer.contains("$MATCH_COUNT\" == \"1"))
         #expect(installer.contains("No arbitrary-device fallback is permitted"))
+        #expect(!installer.contains("xcrun xctrace"))
     }
 
     @Test("private intended device must also be the exact V14 hardware and OS baseline")
@@ -96,21 +98,23 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(installer.contains("$DEVICE_OS_VERSION\" == 27.*"))
         #expect(installer.contains("iPhone13,2"))
         #expect(installer.contains("not the V14 iPhone 12 hardware baseline"))
-        #expect(installer.contains("Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION"))
+        #expect(installer.contains("Intended baseline proven through frozen selected-Xcode tools: iPhone 12 / iOS $DEVICE_OS_VERSION"))
     }
 
-    @Test("devicectl uses a non-private CoreDevice selector correlated to the private UDID")
+    @Test("frozen devicectl uses a non-private CoreDevice selector correlated to the private UDID")
     func rawPrivateUDIDCannotEnterDevicectlArgv() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("devicectl list devices --hide-headers"))
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" list devices --hide-headers"))
         #expect(installer.contains(".coredevice.local"))
         #expect(installer.contains("COREDEVICE_ID"))
-        #expect(installer.contains("devicectl device install app --device \"$COREDEVICE_ID\""))
-        #expect(installer.contains("devicectl device process launch"))
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device install app --device \"$COREDEVICE_ID\""))
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device process launch"))
+        #expect(installer.contains("DEVELOPER_DIR=\"$SELECTED_XCODE_DEVELOPER_DIR\""))
         #expect(installer.contains("--device \"$COREDEVICE_ID\""))
-        #expect(!installer.contains("devicectl device install app --device \"$DEVICE_UDID\""))
         #expect(!installer.contains("--device \"$DEVICE_UDID\""))
+        #expect(!installer.contains("xcrun devicectl"))
+        #expect(!installer.contains("open -a Xcode"))
         #expect(installer.contains("not placed in devicectl argv"))
     }
 
@@ -128,13 +132,13 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(installer.contains("-scheme \"Nembra Capture\""))
     }
 
-    @Test("exact built device app provenance is read back before installation")
+    @Test("exact built device app provenance is read back before frozen installation")
     func builtArtifactMustMatchRequestedSourceAndFieldProduct() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
         let readbackRange = try requiredRange(
             in: installer,
             from: "APP_INFO_PLIST=\"$APP/Info.plist\"",
-            to: "say \"Installing SDK-integrated Capture on the intended iPhone\""
+            to: "say \"Installing SDK-integrated Capture on the intended iPhone through frozen selected-Xcode devicectl\""
         )
         let readback = installer[readbackRange]
 
@@ -150,6 +154,7 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(readback.contains("$BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID"))
         #expect(readback.contains("$BUILT_BUNDLE_ID\" == \"$BUNDLE_ID"))
         #expect(readback.contains("Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"))
+        #expect(readback.contains("Verifying the intended iPhone 12 / iOS 27 baseline with frozen selected-Xcode tools"))
     }
 
     @Test("installer does not echo the private device identifier through normal diagnostics")
