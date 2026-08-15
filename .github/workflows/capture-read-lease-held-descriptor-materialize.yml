@@ -1,0 +1,566 @@
+name: Capture Private Read Lease Held Descriptor Materializer
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-read-lease-held-descriptor-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-read-lease-held-descriptor-materialize-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: aa610e1000e58ba5e43e35a75ee8f22486aea5ec
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact authoring parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-read-lease-held-descriptor-materialize.yml"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Materialize descriptor-custodied planning and grant
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper_path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          source = helper_path.read_text()
+          marker = "\ndef _acl_text(principal: str, is_directory: bool, host_only: bool) -> str:\n"
+          if source.count(marker) != 1:
+              raise SystemExit("unexpected ACL helper marker")
+
+          addition = r'''
+
+def _open_relative_lease_entry(
+    parent_descriptor: int,
+    component: str,
+    *,
+    require_directory: bool | None,
+) -> int:
+    """Open one child from a descriptor already in custody, never through a pathname root."""
+    if component in ("", ".", "..") or os.sep in component:
+        raise SelectedXcodeBuildOrchestratorError("private read-lease component is unsafe")
+    if os.open not in os.supports_dir_fd:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease descriptor planning requires openat/dir_fd support"
+        )
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    odirectory = getattr(os, "O_DIRECTORY", 0)
+    if nofollow == 0 or odirectory == 0:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease descriptor planning requires O_NOFOLLOW and O_DIRECTORY"
+        )
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | nofollow
+    )
+    if require_directory is True:
+        flags |= odirectory
+    try:
+        descriptor = os.open(component, flags, dir_fd=parent_descriptor)
+    except OSError as error:
+        raise SelectedXcodeBuildOrchestratorError(
+            f"private read-lease child could not be descriptor-pinned: {component}"
+        ) from error
+    try:
+        mode = os.fstat(descriptor).st_mode
+        if require_directory is True and not stat.S_ISDIR(mode):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease child is not a directory: {component}"
+            )
+        if require_directory is False and not stat.S_ISREG(mode):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease child is not a regular file: {component}"
+            )
+        if require_directory is None and not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease child has unsupported type: {component}"
+            )
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _close_lease_descriptor_plan(plan: Sequence[dict[str, object]]) -> None:
+    failures: list[str] = []
+    for item in plan:
+        descriptor = int(item.get("descriptor", -1))
+        if descriptor < 0:
+            continue
+        item["descriptor"] = -1
+        try:
+            os.close(descriptor)
+        except OSError as error:
+            failures.append(f"{item.get('path')}: {error}")
+    if failures:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease descriptor-plan cleanup failed: " + "; ".join(failures)
+        )
+
+
+def _lease_descriptor_plan(subjects: Sequence[Path], repo: Path) -> list[dict[str, object]]:
+    """Acquire one coherent set of lease objects and keep exact descriptors through grant.
+
+    The repository and every admitted descendant are selected relative to descriptors
+    already in custody.  No later inode lookup is allowed to mint authority for the
+    plan, which closes both mixed-generation pathname planning and inode-reuse ABA.
+    """
+    repo = _absolute_lexical(repo)
+    if not subjects:
+        raise SelectedXcodeBuildOrchestratorError("private read lease has no subjects")
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    odirectory = getattr(os, "O_DIRECTORY", 0)
+    if os.open not in os.supports_dir_fd or nofollow == 0 or odirectory == 0:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease descriptor planning primitives are unavailable"
+        )
+
+    held: dict[Path, int] = {}
+    selected: set[Path] = set()
+    plan: list[dict[str, object]] = []
+
+    def admit(path: Path, host_only: bool, descriptor: int) -> None:
+        if path in selected:
+            return
+        mode = os.fstat(descriptor).st_mode
+        if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease planned object has unsupported type: {path}"
+            )
+        plan.append(
+            {
+                "path": path,
+                "host_only": host_only,
+                "descriptor": descriptor,
+                "is_directory": stat.S_ISDIR(mode),
+                "signature": _descriptor_signature(descriptor),
+            }
+        )
+        selected.add(path)
+
+    try:
+        root_descriptor = os.open(
+            os.sep,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | odirectory,
+        )
+        held[Path(os.sep)] = root_descriptor
+        cursor_path = Path(os.sep)
+        cursor_descriptor = root_descriptor
+        for component in repo.parts[1:]:
+            descriptor = _open_relative_lease_entry(
+                cursor_descriptor,
+                component,
+                require_directory=True,
+            )
+            cursor_path = cursor_path / component
+            held[cursor_path] = descriptor
+            cursor_descriptor = descriptor
+
+        if repo not in held:
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease repository descriptor was not acquired"
+            )
+
+        private_hosts: list[Path] = []
+        current = repo.parent
+        while current != current.parent:
+            descriptor = held.get(current)
+            if descriptor is None:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease repository host descriptor is unavailable: {current}"
+                )
+            if os.fstat(descriptor).st_mode & stat.S_IXOTH:
+                break
+            private_hosts.append(current)
+            current = current.parent
+        for path in reversed(private_hosts):
+            admit(path, True, held[path])
+        admit(repo, False, held[repo])
+
+        def walk_directory(directory_path: Path, directory_descriptor: int, subject: Path) -> None:
+            try:
+                names = sorted(os.listdir(directory_descriptor))
+            except OSError as error:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease directory could not be enumerated: {directory_path}"
+                ) from error
+            for name in names:
+                candidate = directory_path / name
+                try:
+                    metadata = os.stat(
+                        name,
+                        dir_fd=directory_descriptor,
+                        follow_symlinks=False,
+                    )
+                except OSError as error:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease directory entry disappeared: {candidate}"
+                    ) from error
+                if stat.S_ISLNK(metadata.st_mode):
+                    # Symlinks receive no ACL authority themselves.  Preserve the
+                    # existing internal-only policy; every real target that needs
+                    # lease authority is independently descriptor-opened in this tree.
+                    _validate_internal_symlink(candidate, subject)
+                    continue
+                require_directory = stat.S_ISDIR(metadata.st_mode)
+                if not require_directory and not stat.S_ISREG(metadata.st_mode):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease directory entry has unsupported type: {candidate}"
+                    )
+                descriptor = _open_relative_lease_entry(
+                    directory_descriptor,
+                    name,
+                    require_directory=require_directory,
+                )
+                held[candidate] = descriptor
+                admit(candidate, False, descriptor)
+                if require_directory:
+                    walk_directory(candidate, descriptor, subject)
+
+        for raw_subject in subjects:
+            subject = _absolute_lexical(raw_subject)
+            try:
+                relative = subject.relative_to(repo)
+            except ValueError as error:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "private read-lease subject escaped the repository"
+                ) from error
+            if not relative.parts:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "private read-lease subject may not be the repository root"
+                )
+
+            cursor_path = repo
+            cursor_descriptor = held[repo]
+            for index, component in enumerate(relative.parts):
+                candidate = cursor_path / component
+                descriptor = held.get(candidate)
+                final = index == len(relative.parts) - 1
+                if descriptor is None:
+                    descriptor = _open_relative_lease_entry(
+                        cursor_descriptor,
+                        component,
+                        require_directory=None if final else True,
+                    )
+                    held[candidate] = descriptor
+                if not final and not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease subject ancestry is not a directory: {candidate}"
+                    )
+                admit(candidate, False, descriptor)
+                cursor_path = candidate
+                cursor_descriptor = descriptor
+
+            mode = os.fstat(cursor_descriptor).st_mode
+            if stat.S_ISDIR(mode):
+                walk_directory(subject, cursor_descriptor, subject)
+            elif not stat.S_ISREG(mode):
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease subject root has unsupported type: {subject}"
+                )
+
+        for path, descriptor in tuple(held.items()):
+            if path in selected:
+                continue
+            os.close(descriptor)
+            del held[path]
+        return plan
+    except Exception:
+        closed: set[int] = set()
+        for descriptor in held.values():
+            if descriptor in closed:
+                continue
+            closed.add(descriptor)
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        for item in plan:
+            item["descriptor"] = -1
+        raise
+'''
+          source = source.replace(marker, addition + marker, 1)
+
+          grant_start = source.index("    def grant(self, principal: str) -> None:\n")
+          revoke_start = source.index("    def revoke(self, *, suppress_errors: bool = False) -> None:\n", grant_start)
+          new_grant = r'''    def grant(self, principal: str) -> None:
+        if self._opened or self._principal:
+            raise SelectedXcodeBuildOrchestratorError("private read lease is already active")
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", principal) is None:
+            raise SelectedXcodeBuildOrchestratorError("build principal name is malformed")
+        self._principal = principal
+        plan: list[dict[str, object]] = []
+        try:
+            # Planning acquires the exact objects once.  Those descriptors are the
+            # authority from planning through ACL mutation and later rollback; grant
+            # never reopens a planned pathname and cannot be fooled by inode reuse.
+            plan = _lease_descriptor_plan(self._subjects, self._repository)
+            for planned in plan:
+                path = Path(planned["path"])
+                host_only = bool(planned["host_only"])
+                descriptor = int(planned["descriptor"])
+                is_directory = bool(planned["is_directory"])
+                expected_signature = tuple(planned["signature"])
+                if descriptor < 0 or _descriptor_signature(descriptor) != expected_signature:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease held descriptor changed after planning: {path}"
+                    )
+                before = _acl_listing(descriptor)
+                if _principal_already_present(before, principal):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease principal already has ACL authority: {path}"
+                    )
+                acl = _acl_text(principal, is_directory, host_only)
+                record: dict[str, object] = {
+                    "descriptor": descriptor,
+                    "path": path,
+                    "before": before,
+                    "acl": acl,
+                    "added": False,
+                }
+                # Transfer descriptor ownership to the active lease before mutation.
+                self._opened.append(record)
+                planned["descriptor"] = -1
+                try:
+                    _chmod_acl(descriptor, "+a", acl)
+                except Exception:
+                    try:
+                        after_failed = _acl_listing(descriptor)
+                    except Exception:
+                        record["added"] = True
+                    else:
+                        record["added"] = after_failed != before
+                    raise
+                record["added"] = True
+                after = _acl_listing(descriptor)
+                if after == before or not _principal_already_present(after, principal):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease ACL did not materialize exactly: {path}"
+                    )
+                # Path equality is only a fail-closed liveness diagnostic.  Authority
+                # remains the descriptor selected by the coherent plan above.
+                if _descriptor_signature(descriptor) != _path_signature(path):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease pathname changed after grant: {path}"
+                    )
+        except Exception as error:
+            cleanup_error: Exception | None = None
+            try:
+                _close_lease_descriptor_plan(plan)
+            except Exception as pending_error:
+                cleanup_error = pending_error
+            try:
+                self.revoke()
+            except Exception as rollback_error:
+                if cleanup_error is not None:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        "private read-lease admission failed and pending-descriptor cleanup plus exact rollback failed"
+                    ) from rollback_error
+                raise SelectedXcodeBuildOrchestratorError(
+                    "private read-lease admission failed and exact rollback also failed"
+                ) from rollback_error
+            if cleanup_error is not None:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "private read-lease admission failed and pending-descriptor cleanup also failed"
+                ) from cleanup_error
+            raise error
+
+'''
+          source = source[:grant_start] + new_grant + source[revoke_start:]
+          helper_path.write_text(source)
+
+          test_path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py")
+          test_path.write_text(r'''#!/usr/bin/env python3
+"""Portable regression for descriptor-custodied private read-lease admission."""
+from __future__ import annotations
+
+import importlib.util
+import inspect
+import os
+from pathlib import Path
+import tempfile
+import unittest
+
+REPO = Path(__file__).resolve().parents[3]
+HELPER = REPO / "scripts/ci/capture_selected_xcode_build_orchestrator.py"
+
+
+def load():
+    spec = importlib.util.spec_from_file_location("nembra_component_walk", HELPER)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load selected-Xcode orchestrator")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def close_plan(helper, plan) -> None:
+    helper._close_lease_descriptor_plan(plan)
+
+
+class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
+    def test_intermediate_symlink_swap_is_rejected_by_path_opener(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-component-walk-") as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            legitimate = repo / "LocalSecrets/TuyaSDK/Build"
+            legitimate.mkdir(parents=True)
+            planned = helper._lease_paths((legitimate,), repo)
+            self.assertIn((legitimate, False), planned)
+
+            sdk = repo / "LocalSecrets/TuyaSDK"
+            original = repo / "LocalSecrets/TuyaSDK.original"
+            sdk.rename(original)
+            attacker = outer / "attacker/TuyaSDK"
+            (attacker / "Build").mkdir(parents=True)
+            sdk.symlink_to(attacker, target_is_directory=True)
+            with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                helper._open_pinned_path(legitimate, True)
+
+    def test_held_plan_survives_same_path_real_directory_replacement_without_reopening(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-held-plan-swap-") as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            subject = repo / "LocalSecrets/TuyaSDK/Build"
+            subject.mkdir(parents=True)
+            marker = subject / "accepted.bin"
+            marker.write_bytes(b"accepted")
+            plan = helper._lease_descriptor_plan((subject,), repo)
+            try:
+                planned_subject = next(item for item in plan if Path(item["path"]) == subject)
+                accepted_signature = tuple(planned_subject["signature"])
+                sdk = repo / "LocalSecrets/TuyaSDK"
+                original = repo / "LocalSecrets/TuyaSDK.accepted"
+                sdk.rename(original)
+                replacement = repo / "LocalSecrets/TuyaSDK/Build"
+                replacement.mkdir(parents=True)
+                (replacement / "replacement.bin").write_bytes(b"replacement")
+                self.assertNotEqual(accepted_signature, helper._path_signature(replacement))
+                self.assertEqual(
+                    helper._descriptor_signature(int(planned_subject["descriptor"])),
+                    accepted_signature,
+                )
+            finally:
+                close_plan(helper, plan)
+
+    def test_plan_is_descriptor_rooted_and_descendants_share_one_generation(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-held-plan-generation-") as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            subject = repo / "LocalSecrets/TuyaSDK/Build"
+            nested = subject / "nested"
+            nested.mkdir(parents=True)
+            leaf = nested / "private.bin"
+            leaf.write_bytes(b"one")
+            plan = helper._lease_descriptor_plan((subject,), repo)
+            try:
+                by_path = {Path(item["path"]): item for item in plan}
+                self.assertEqual(
+                    helper._descriptor_signature(int(by_path[repo]["descriptor"])),
+                    helper._path_signature(repo),
+                )
+                self.assertEqual(
+                    helper._descriptor_signature(int(by_path[subject]["descriptor"])),
+                    helper._path_signature(subject),
+                )
+                self.assertEqual(
+                    helper._descriptor_signature(int(by_path[leaf]["descriptor"])),
+                    helper._path_signature(leaf),
+                )
+            finally:
+                close_plan(helper, plan)
+
+    def test_real_directory_and_regular_file_path_opener_still_work(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-component-walk-control-") as raw:
+            root = Path(raw)
+            directory = root / "a/b/c"
+            directory.mkdir(parents=True)
+            file = directory / "private.fixture"
+            file.write_bytes(b"fixture\n")
+            for path, is_directory in ((directory, True), (file, False)):
+                descriptor = helper._open_pinned_path(path, is_directory)
+                try:
+                    self.assertEqual(helper._descriptor_signature(descriptor), helper._path_signature(path))
+                finally:
+                    os.close(descriptor)
+
+    def test_grant_uses_held_descriptor_plan_not_path_reopen(self) -> None:
+        helper = load()
+        source = inspect.getsource(helper._PrivateReadLease.grant)
+        self.assertIn("_lease_descriptor_plan", source)
+        self.assertNotIn("_lease_paths(", source)
+        self.assertNotIn("_open_pinned_path(", source)
+        self.assertIn('planned["descriptor"] = -1', source)
+
+    def test_descriptor_plan_source_is_root_anchored_and_relative(self) -> None:
+        helper = load()
+        source = inspect.getsource(helper._lease_descriptor_plan)
+        self.assertIn("held[Path(os.sep)]", source)
+        self.assertIn("dir_fd=directory_descriptor", source)
+        self.assertIn("_open_relative_lease_entry", source)
+        self.assertNotIn("os.walk(", source)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+''')
+          PY
+
+          git diff --check
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Run focused portable authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+
+      - name: Publish permanent repair bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-authority-bot"
+          git config user.email "nembra-capture-authority-bot@users.noreply.github.com"
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          git commit -m "fix(capture): hold private lease descriptors from plan through grant"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
+          echo "NEMBRA_HELD_DESCRIPTOR_LEASE_MATERIALIZED productionChanged=true validationOnly=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
