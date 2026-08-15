@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 33,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1360,7 +1360,7 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.19,
+        "similarity": 0.237,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
       },
       "3382": {
@@ -1373,6 +1373,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.47,
         "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
+      },
+      "3383": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3383,
+        "recommendedAction": "independent-review",
+        "similarity": 0.284,
+        "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
       },
       "3387": {
         "classification": "requires-review",
@@ -1460,7 +1471,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:09:25Z",
+    "liveRefreshAt": "2026-08-15T03:09:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5245,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 487,
+  "revision": 488,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:09:26Z",
+  "updatedAt": "2026-08-15T03:09:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:09:25Z",
+      "updatedAt": "2026-08-15T03:09:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
