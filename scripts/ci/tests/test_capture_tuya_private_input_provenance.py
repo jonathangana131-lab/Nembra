@@ -86,7 +86,7 @@ class CaptureTuyaPrivateInputProvenanceTests(unittest.TestCase):
         required_digest = ': "${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?'
         digest_shape = '[[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]'
         lock_compare = '[[ "$LOCK_SHA256" == "$ACCEPTED_LOCK_SHA256" ]]'
-        review_only_stop = 'DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
+        review_only_stop = 'DEPENDENCY + PRIVATE-INPUT CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY'
         bootstrap_call = '"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"'
         build_call = "-- /usr/bin/xcodebuild"
 
