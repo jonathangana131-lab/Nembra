@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 34,
+    "classifiedPRTotal": 33,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1385,17 +1385,6 @@
         "similarity": 0.333,
         "title": "[Capture P0][RED TEAM] Bind internal symlink policy to held lease generation"
       },
-      "3412": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3412,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.319,
-        "title": "[Capture P0][RED TEAM] Reject tracked case-fold directory alias collapse"
-      },
       "3413": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1426,7 +1415,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.315,
+        "similarity": 0.269,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1437,7 +1426,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3419,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.326,
+        "similarity": 0.286,
         "title": "[Capture P0][VALIDATION] Root-custody accepted build root after selector repair"
       }
     },
@@ -1471,7 +1460,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:41:32Z",
+    "liveRefreshAt": "2026-08-15T03:41:46Z",
     "liveRefreshDuplicatesSuppressed": [
       3419
     ],
@@ -5256,10 +5245,10 @@
       "userValue": 7
     }
   },
-  "revision": 565,
+  "revision": 566,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:41:33Z",
+  "updatedAt": "2026-08-15T03:41:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5335,7 +5324,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:41:32Z",
+      "updatedAt": "2026-08-15T03:41:46Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
