@@ -410,7 +410,18 @@ class _PrivateReadLease:
                 try:
                     _chmod_acl(descriptor, "+a", acl)
                 except Exception:
-                    os.close(descriptor)
+                    # A command-level failure does not prove the kernel left the ACL
+                    # unchanged. Keep descriptor custody until we can classify the
+                    # post-call vnode. If mutation is observable (or inspection itself
+                    # fails), the outer rollback still owns this exact descriptor.
+                    self._opened.append((descriptor, before_acl, acl))
+                    try:
+                        after_failed_acl = _acl_listing(descriptor)
+                    except Exception:
+                        raise
+                    if after_failed_acl == before_acl:
+                        self._opened.pop()
+                        os.close(descriptor)
                     raise
 
                 self._opened.append((descriptor, before_acl, acl))
