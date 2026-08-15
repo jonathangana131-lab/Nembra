@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 35,
+    "classifiedPRTotal": 36,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.015,
+        "similarity": 0.024,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1448,8 +1448,19 @@
         "lane": "",
         "pr": 3422,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.102,
+        "similarity": 0.181,
         "title": "[Navigation V15][QA] Exact Accessibility XXXL real-surface witness"
+      },
+      "3424": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3424,
+        "recommendedAction": "independent-review",
+        "similarity": 0.196,
+        "title": "[Battery/Range V15][RED] Re-pin accepted authority and launcher contracts on main"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1482,7 +1493,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T09:03:10Z",
+    "liveRefreshAt": "2026-08-15T10:00:21Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5267,10 +5278,10 @@
       "userValue": 7
     }
   },
-  "revision": 585,
+  "revision": 586,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T09:03:11Z",
+  "updatedAt": "2026-08-15T10:00:23Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5357,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T09:03:10Z",
+      "updatedAt": "2026-08-15T10:00:21Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
