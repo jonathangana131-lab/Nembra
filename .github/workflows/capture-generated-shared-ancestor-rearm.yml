@@ -92,6 +92,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Retain tested generated candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-generated-shared-ancestor-candidate-${{ github.sha }}
+          path: |
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml
+            scripts/ci/capture_accepted_build_input_snapshot.py
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Publish permanent three-path repair
         shell: bash
         run: |
