@@ -19,6 +19,7 @@ struct CaptureFirstFoldCopySourceTests {
         #expect(app.contains("Text(\"Prepare the scooter link\")"))
         #expect(app.contains(heroKey))
         #expect(app.contains(readOnlyKey))
+        #expect(app.contains(".accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)"))
 
         #expect(strings.contains("\"Prepare the scooter link\" = \"Link this scooter\";"))
         #expect(strings.contains("\"\(heroKey)\" = \"\(heroValue)\";"))
