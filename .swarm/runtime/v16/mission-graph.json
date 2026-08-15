@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 42,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1360,7 +1360,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3411,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.426,
+        "similarity": 0.375,
         "title": "[Capture P0][RED TEAM] Bind internal symlink policy to held lease generation"
       },
       "3413": {
@@ -1448,19 +1448,8 @@
         "lane": "capture-private-read-lease",
         "pr": 3428,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.407,
+        "similarity": 0.38,
         "title": "[Capture P0][REPAIR] Bind private symlink policy to held descriptor generation"
-      },
-      "3430": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3430,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.315,
-        "title": "[Capture P0][VALIDATION] Isolate macOS held-descriptor regression"
       },
       "3432": {
         "classification": "requires-review",
@@ -1481,7 +1470,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.402,
+        "similarity": 0.27,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3435": {
@@ -1503,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.308,
+        "similarity": 0.255,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1514,19 +1503,8 @@
         "lane": "capture-private-read-lease",
         "pr": 3438,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.352,
+        "similarity": 0.31,
         "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
-      },
-      "3439": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3439,
-        "recommendedAction": "independent-review",
-        "similarity": 0.386,
-        "title": "[Capture P0][HARDENING] Close shared-ancestor cache-dup child FD on failure"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1559,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:26:17Z",
+    "liveRefreshAt": "2026-08-15T11:26:36Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5344,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 641,
+  "revision": 642,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:26:19Z",
+  "updatedAt": "2026-08-15T11:26:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:26:17Z",
+      "updatedAt": "2026-08-15T11:26:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
