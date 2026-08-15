@@ -1,0 +1,219 @@
+name: Capture Exact Private Helper Sibling Bundle Validation
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-private-helper-sibling-bundle-sol-20260814
+    paths:
+      - .github/workflows/capture-exact-private-helper-sibling-bundle-validation.yml
+  pull_request:
+    paths:
+      - .github/workflows/capture-exact-private-helper-sibling-bundle-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-private-helper-bundle:
+    name: Prove exact guard + provenance sibling execution survives checkout mutation
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind validation to exact production parent and one path
+        shell: bash
+        env:
+          EXACT_PARENT: 60c365da2061e77ccf949da8f2e3385cec225444
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual="$RUNNER_TEMP/nembra-private-helper-bundle-paths.txt"
+          expected="$RUNNER_TEMP/nembra-private-helper-bundle-expected.txt"
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > "$actual"
+          printf '%s\n' '.github/workflows/capture-exact-private-helper-sibling-bundle-validation.yml' > "$expected"
+          diff -u "$expected" "$actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove root-sealed exact sibling bundle is the execution subject
+        shell: bash
+        env:
+          EXACT_PARENT: 60c365da2061e77ccf949da8f2e3385cec225444
+        run: |
+          set -euo pipefail
+          guard_rel='Scripts/capture_tuya_private_input_build_guard.py'
+          provenance_rel='Scripts/capture_tuya_private_input_provenance.py'
+          bundle="$RUNNER_TEMP/nembra-exact-private-helper-bundle"
+          guard_blob="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$EXACT_PARENT:$guard_rel")"
+          provenance_blob="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git rev-parse "$EXACT_PARENT:$provenance_rel")"
+          [[ "$guard_blob" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$provenance_blob" =~ ^[0-9a-f]{40}$ ]]
+          guard_b64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$guard_blob" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+          provenance_b64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git cat-file blob "$provenance_blob" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')"
+          [[ -n "$guard_b64" && -n "$provenance_b64" ]]
+
+          cleanup() {
+            git checkout -- "$guard_rel" "$provenance_rel" >/dev/null 2>&1 || true
+            /usr/bin/sudo /bin/rm -rf -- "$bundle" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          /usr/bin/sudo /usr/bin/python3 -B -I - \
+            "$bundle" "$guard_b64" "$guard_blob" "$provenance_b64" "$provenance_blob" <<'PY'
+          import base64
+          import hashlib
+          import os
+          from pathlib import Path
+          import stat
+          import sys
+
+          bundle = Path(sys.argv[1])
+          entries = (
+              ("capture_tuya_private_input_build_guard.py", sys.argv[2], sys.argv[3]),
+              ("capture_tuya_private_input_provenance.py", sys.argv[4], sys.argv[5]),
+          )
+
+          def git_blob_oid(raw: bytes) -> str:
+              return hashlib.sha1(b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw).hexdigest()
+
+          if os.geteuid() != 0:
+              raise SystemExit("materializer did not execute as root")
+          bundle.mkdir(mode=0o700)
+          os.chown(bundle, 0, 0)
+          for name, encoded, expected in entries:
+              raw = base64.b64decode(encoded, validate=True)
+              if git_blob_oid(raw) != expected:
+                  raise SystemExit(f"{name}: transported bytes do not match accepted Git blob")
+              subject = bundle / name
+              descriptor = os.open(subject, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+              try:
+                  os.write(descriptor, raw)
+                  os.fsync(descriptor)
+              finally:
+                  os.close(descriptor)
+              os.chown(subject, 0, 0, follow_symlinks=False)
+              os.chmod(subject, 0o444, follow_symlinks=False)
+          os.chmod(bundle, 0o555)
+
+          root = bundle.lstat()
+          if not stat.S_ISDIR(root.st_mode) or stat.S_ISLNK(root.st_mode):
+              raise SystemExit("accepted helper bundle is not one real directory")
+          if (root.st_uid, root.st_gid, stat.S_IMODE(root.st_mode)) != (0, 0, 0o555):
+              raise SystemExit("accepted helper bundle did not seal as root:root 0555")
+          for name, _encoded, expected in entries:
+              subject = bundle / name
+              metadata = subject.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                  raise SystemExit(f"{name}: accepted execution subject is not one real regular file")
+              if (metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode)) != (0, 0, 0o444):
+                  raise SystemExit(f"{name}: accepted execution subject did not seal as root:root 0444")
+              raw = subject.read_bytes()
+              if git_blob_oid(raw) != expected:
+                  raise SystemExit(f"{name}: sealed bytes changed after materialization")
+          PY
+
+          /usr/bin/sudo /bin/chmod -N "$bundle" "$bundle/capture_tuya_private_input_build_guard.py" "$bundle/capture_tuya_private_input_provenance.py"
+          acl_subject="$(/usr/bin/sudo /usr/bin/find "$bundle" -acl -print -quit)"
+          test -z "$acl_subject"
+          /usr/bin/sudo /usr/bin/python3 -B -I - "$bundle" <<'PY'
+          from pathlib import Path
+          import stat
+          import sys
+
+          bundle = Path(sys.argv[1])
+          expected = (
+              (bundle, stat.S_IFDIR, 0o555),
+              (bundle / "capture_tuya_private_input_build_guard.py", stat.S_IFREG, 0o444),
+              (bundle / "capture_tuya_private_input_provenance.py", stat.S_IFREG, 0o444),
+          )
+          for path, kind, mode in expected:
+              metadata = path.lstat()
+              if stat.S_IFMT(metadata.st_mode) != kind or stat.S_ISLNK(metadata.st_mode):
+                  raise SystemExit(f"sealed helper subject changed kind after ACL removal: {path}")
+              if (metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode)) != (0, 0, mode):
+                  raise SystemExit(f"sealed helper subject changed authority after ACL removal: {path}")
+          PY
+
+          # The field identity may read/execute the accepted bundle, but it must not be
+          # able to mutate either execution subject or replace a sibling by pathname.
+          /usr/bin/python3 -B -I - "$bundle" <<'PY'
+          import errno
+          import os
+          from pathlib import Path
+          import sys
+
+          bundle = Path(sys.argv[1])
+          for subject in (
+              bundle / "capture_tuya_private_input_build_guard.py",
+              bundle / "capture_tuya_private_input_provenance.py",
+          ):
+              try:
+                  descriptor = os.open(subject, os.O_WRONLY | os.O_APPEND)
+              except OSError as error:
+                  if error.errno not in (errno.EACCES, errno.EPERM):
+                      raise
+              else:
+                  os.close(descriptor)
+                  raise SystemExit(f"field identity retained write authority: {subject}")
+          try:
+              os.unlink(bundle / "capture_tuya_private_input_provenance.py")
+          except OSError as error:
+              if error.errno not in (errno.EACCES, errno.EPERM):
+                  raise
+          else:
+              raise SystemExit("field identity retained sibling replacement authority")
+          PY
+
+          # Poison the mutable checkout subjects after exact-byte capture. The accepted
+          # bundle must continue to execute independently, including the guard's sibling
+          # provenance import through Path(__file__).with_name(...).
+          printf '%s\n' 'raise SystemExit(91)' > "$guard_rel"
+          printf '%s\n' 'raise SystemExit(92)' > "$provenance_rel"
+          set +e
+          /usr/bin/python3 -B -I "$guard_rel" --help >/dev/null 2>&1
+          live_guard_rc=$?
+          /usr/bin/python3 -B -I "$provenance_rel" --help >/dev/null 2>&1
+          live_provenance_rc=$?
+          set -e
+          test "$live_guard_rc" = 91
+          test "$live_provenance_rc" = 92
+
+          /usr/bin/python3 -B -I "$bundle/capture_tuya_private_input_build_guard.py" --help >/dev/null
+          /usr/bin/python3 -B -I "$bundle/capture_tuya_private_input_provenance.py" --help >/dev/null
+
+          /usr/bin/python3 -B -I - "$bundle" "$guard_blob" "$provenance_blob" <<'PY'
+          import hashlib
+          from pathlib import Path
+          import sys
+
+          bundle = Path(sys.argv[1])
+          expected = {
+              "capture_tuya_private_input_build_guard.py": sys.argv[2],
+              "capture_tuya_private_input_provenance.py": sys.argv[3],
+          }
+          for name, oid in expected.items():
+              raw = (bundle / name).read_bytes()
+              actual = hashlib.sha1(b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw).hexdigest()
+              if actual != oid:
+                  raise SystemExit(f"{name}: exact execution subject changed across launch")
+          PY
+
+          git checkout -- "$guard_rel" "$provenance_rel"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          trap - EXIT
+          /usr/bin/sudo /bin/rm -rf -- "$bundle"
+
+      - name: Require validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check 60c365da2061e77ccf949da8f2e3385cec225444 HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' 'VALIDATION ONLY: exact sibling-bundle execution shape proven; production bytes and physical authority unchanged.'
