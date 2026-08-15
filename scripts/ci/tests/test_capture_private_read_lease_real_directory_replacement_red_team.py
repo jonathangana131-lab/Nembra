@@ -65,6 +65,54 @@ class CapturePrivateReadLeaseRealDirectoryReplacementRedTeamTests(unittest.TestC
             self.assertEqual(opened_signature, replacement_signature)
             self.assertNotEqual(opened_signature, accepted_signature)
 
+    def test_grant_reopens_replacement_selected_after_real_plan(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-real-dir-grant-") as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            legitimate = repo / "LocalSecrets/TuyaSDK/Build"
+            legitimate.mkdir(parents=True)
+            original_lease_paths = helper._lease_paths
+            accepted_signature = None
+            replacement_signature = None
+            probed_signatures: list[tuple[int, int, int]] = []
+
+            def raced_lease_paths(subjects, repository):
+                nonlocal accepted_signature, replacement_signature
+                planned = original_lease_paths(subjects, repository)
+                self.assertIn((legitimate, False), planned)
+                accepted_signature = helper._path_signature(legitimate)
+
+                sdk = repo / "LocalSecrets/TuyaSDK"
+                sdk.rename(repo / "LocalSecrets/TuyaSDK.accepted")
+                replacement = sdk / "Build"
+                replacement.mkdir(parents=True)
+                replacement_signature = helper._path_signature(replacement)
+                self.assertNotEqual(accepted_signature, replacement_signature)
+
+                # Narrow the portable probe to the exact planned subject. The real
+                # planner above already completed before the race was injected.
+                return ((legitimate, False),)
+
+            class AdmissionObserved(RuntimeError):
+                pass
+
+            def observe_first_acl_listing(descriptor: int) -> str:
+                probed_signatures.append(helper._descriptor_signature(descriptor))
+                os.close(descriptor)
+                raise AdmissionObserved("descriptor reached ACL admission")
+
+            helper._lease_paths = raced_lease_paths
+            helper._acl_listing = observe_first_acl_listing
+            lease = helper._PrivateReadLease((legitimate,), repo)
+            with self.assertRaises(AdmissionObserved):
+                lease.grant("nembra_red_team")
+
+            self.assertIsNotNone(accepted_signature)
+            self.assertIsNotNone(replacement_signature)
+            self.assertEqual(probed_signatures, [replacement_signature])
+            self.assertNotEqual(probed_signatures[0], accepted_signature)
+
     def test_opener_has_no_planned_identity_input(self) -> None:
         helper = load()
         parameters = tuple(inspect.signature(helper._open_pinned_path).parameters)
