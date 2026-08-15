@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Compose selected-Xcode, private-input read custody, and signed build-origin custody.
+"""Compose selected-Xcode, exact private-helper custody, and signed build-origin custody.
 
 This root-only helper is itself executed from exact accepted Git-object bytes by the
 field installer. It freezes the selected Xcode toolchain, materializes the accepted
 private-input guard/provenance pair from the exact accepted Git tree, grants the fresh
-dedicated build identity only the minimum read/search ACL needed for the canonical
-private Tuya trees during the exec-bound build window, and then calls the accepted
-build-origin helper.
+dedicated build identity only a temporary descriptor-pinned read/search lease for the
+canonical private Tuya inputs during the exec-bound build window, and then calls the
+accepted build-origin helper.
 
-The helper does not discover/install/launch a device, open Bluetooth, interpret Tuya
-traffic, or create physical authority. Accepted whole-source snapshot custody and Apple
-signing/provisioning remain independent gates.
+It does not discover/install/launch a device, open Bluetooth, interpret Tuya traffic,
+or create physical authority. Whole-source snapshot custody and Apple signing remain
+independent gates.
 """
 
 from __future__ import annotations
@@ -93,8 +93,7 @@ def _replace_selected_xcode(
         raise SelectedXcodeBuildOrchestratorError("guarded build command is empty")
     if not frozen_developer.is_absolute() or not selected_xcodebuild.is_absolute():
         raise SelectedXcodeBuildOrchestratorError("selected-Xcode authority paths must be absolute")
-    expected_prefix = str(frozen_developer) + os.sep
-    if not str(selected_xcodebuild).startswith(expected_prefix):
+    if not str(selected_xcodebuild).startswith(str(frozen_developer) + os.sep):
         raise SelectedXcodeBuildOrchestratorError("selected xcodebuild escaped the frozen Developer tree")
     if any(argument.startswith("DEVELOPER_DIR=") for argument in command):
         raise SelectedXcodeBuildOrchestratorError("caller supplied DEVELOPER_DIR authority is forbidden")
@@ -149,9 +148,7 @@ def _subject_entries(subject: Path) -> tuple[tuple[Path, bool], ...]:
             f"private read-lease subject is unavailable: {subject}"
         ) from error
     if stat.S_ISLNK(root_metadata.st_mode):
-        raise SelectedXcodeBuildOrchestratorError(
-            "private read-lease subject root may not be a symlink"
-        )
+        raise SelectedXcodeBuildOrchestratorError("private read-lease subject root may not be a symlink")
     if stat.S_ISREG(root_metadata.st_mode):
         return ((subject, False),)
     if not stat.S_ISDIR(root_metadata.st_mode):
@@ -160,9 +157,7 @@ def _subject_entries(subject: Path) -> tuple[tuple[Path, bool], ...]:
         )
 
     entries: list[tuple[Path, bool]] = [(subject, True)]
-    for current_raw, directory_names, file_names in os.walk(
-        subject, topdown=True, followlinks=False
-    ):
+    for current_raw, directory_names, file_names in os.walk(subject, topdown=True, followlinks=False):
         current = Path(current_raw)
         kept_directories: list[str] = []
         for name in directory_names:
@@ -203,8 +198,7 @@ def _lease_paths(subjects: Sequence[Path], repo: Path) -> tuple[tuple[Path, bool
     ordered: list[tuple[Path, bool]] = []
     seen: set[Path] = set()
 
-    # Widen host traversal only until the first ancestor already searchable by
-    # everyone. Nothing above that boundary needs new authority.
+    # Widen host traversal only until the first ancestor already searchable by all.
     current = repo.parent
     private_hosts: list[Path] = []
     while current != current.parent:
@@ -240,7 +234,12 @@ def _lease_paths(subjects: Sequence[Path], repo: Path) -> tuple[tuple[Path, bool
                     "private read-lease subject has unsafe ancestry"
                 )
             cursor = cursor / component
-            metadata = cursor.lstat()
+            try:
+                metadata = cursor.lstat()
+            except OSError as error:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease subject ancestry is unavailable: {cursor}"
+                ) from error
             if stat.S_ISLNK(metadata.st_mode):
                 raise SelectedXcodeBuildOrchestratorError(
                     f"private read-lease subject ancestry contains a symlink: {cursor}"
@@ -265,18 +264,14 @@ def _acl_text(principal: str, is_directory: bool, host_only: bool) -> str:
     if re.fullmatch(r"[A-Za-z0-9_.-]+", principal) is None:
         raise SelectedXcodeBuildOrchestratorError("build principal name is malformed")
     if host_only and not is_directory:
-        raise SelectedXcodeBuildOrchestratorError(
-            "host traversal authority may target directories only"
-        )
+        raise SelectedXcodeBuildOrchestratorError("host traversal authority may target directories only")
     if is_directory:
-        rights = (
-            "search"
-            if host_only
-            else "list,search,readattr,readextattr,readsecurity"
-        )
+        rights = "search" if host_only else "list,search,readattr,readextattr,readsecurity"
     else:
         rights = "read,readattr,readextattr,readsecurity"
-    return f"{principal} allow {rights}"
+    # Darwin chmod(1) ACL grammar requires the principal tag. Keeping it explicit
+    # also makes the before/after classifier unambiguous.
+    return f"user:{principal} allow {rights}"
 
 
 def _path_signature(path: Path) -> tuple[int, int, int]:
@@ -335,8 +330,10 @@ def _descriptor_path(descriptor: int) -> str:
 
 
 def _acl_listing(descriptor: int) -> str:
+    # /dev/fd/<n> is a descriptor indirection; -H makes ls inspect the opened vnode,
+    # while pass_fds ensures that exact descriptor survives the child exec.
     completed = subprocess.run(
-        ["/bin/ls", "-lde", _descriptor_path(descriptor)],
+        ["/bin/ls", "-Hlde", _descriptor_path(descriptor)],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -355,9 +352,7 @@ def _acl_listing(descriptor: int) -> str:
 
 def _chmod_acl(descriptor: int, operation: str, acl: str) -> None:
     if operation not in ("+a", "-a"):
-        raise SelectedXcodeBuildOrchestratorError(
-            "private read-lease ACL operation is invalid"
-        )
+        raise SelectedXcodeBuildOrchestratorError("private read-lease ACL operation is invalid")
     completed = subprocess.run(
         ["/bin/chmod", operation, acl, _descriptor_path(descriptor)],
         stdin=subprocess.DEVNULL,
@@ -377,7 +372,7 @@ def _chmod_acl(descriptor: int, operation: str, acl: str) -> None:
 
 def _principal_already_present(listing: str, principal: str) -> bool:
     pattern = re.compile(
-        r"^\s*\d+:\s+" + re.escape(principal) + r"(?:\s|:)",
+        r"^\s*\d+:\s+(?:user:)?" + re.escape(principal) + r"(?:\s|:)" ,
         re.MULTILINE,
     )
     return pattern.search(listing) is not None
@@ -389,9 +384,7 @@ class _PrivateReadLease:
     def __init__(self, subjects: Sequence[Path], repo: Path) -> None:
         self._subjects = tuple(_absolute_lexical(Path(subject)) for subject in subjects)
         if not self._subjects:
-            raise SelectedXcodeBuildOrchestratorError(
-                "private read lease requires at least one subject"
-            )
+            raise SelectedXcodeBuildOrchestratorError("private read lease requires at least one subject")
         self._repository = _absolute_lexical(repo)
         self._opened: list[dict[str, object]] = []
         self._principal = ""
@@ -414,11 +407,6 @@ class _PrivateReadLease:
                     raise SelectedXcodeBuildOrchestratorError(
                         f"private read-lease plan targeted unsupported type: {path}"
                     )
-                if host_only and not is_directory:
-                    raise SelectedXcodeBuildOrchestratorError(
-                        "private read-lease host traversal targeted a non-directory"
-                    )
-
                 descriptor = _open_pinned_path(path, is_directory)
                 before = _acl_listing(descriptor)
                 if _principal_already_present(before, principal):
@@ -434,11 +422,10 @@ class _PrivateReadLease:
                     "acl": acl,
                     "added": False,
                 }
-                # Track before mutation so every partial grant is reversibly owned.
+                # Record ownership before mutation so every partial grant is reversible.
                 self._opened.append(record)
                 _chmod_acl(descriptor, "+a", acl)
                 record["added"] = True
-
                 after = _acl_listing(descriptor)
                 if after == before or not _principal_already_present(after, principal):
                     raise SelectedXcodeBuildOrchestratorError(
@@ -448,12 +435,14 @@ class _PrivateReadLease:
                     raise SelectedXcodeBuildOrchestratorError(
                         f"private read-lease pathname changed after grant: {path}"
                     )
-        except Exception:
-            # Preserve the original admission error. Rollback is best-effort here;
-            # the caller still fails closed and the build principal is subsequently
-            # retired by the accepted build-origin helper.
-            self.revoke(suppress_errors=True)
-            raise
+        except Exception as error:
+            try:
+                self.revoke()
+            except Exception as rollback_error:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "private read-lease admission failed and exact rollback also failed"
+                ) from rollback_error
+            raise error
 
     def revoke(self, *, suppress_errors: bool = False) -> None:
         failures: list[str] = []
@@ -469,7 +458,6 @@ class _PrivateReadLease:
                     failures.append(
                         f"private read-lease pathname no longer identifies opened object: {path}"
                     )
-
                 if bool(record["added"]):
                     _chmod_acl(descriptor, "-a", str(record["acl"]))
                     restored = _acl_listing(descriptor)
@@ -490,6 +478,7 @@ class _PrivateReadLease:
             raise SelectedXcodeBuildOrchestratorError(
                 "private read-lease revocation failed: " + "; ".join(failures)
             )
+
 
 def _git_read_environment() -> dict[str, str]:
     return {
@@ -566,7 +555,9 @@ def _write_root_readonly(path: Path, raw: bytes) -> None:
         while view:
             written = os.write(descriptor, view)
             if written <= 0:
-                raise SelectedXcodeBuildOrchestratorError("accepted guard bundle write made no progress")
+                raise SelectedXcodeBuildOrchestratorError(
+                    "accepted guard bundle write made no progress"
+                )
             view = view[written:]
         os.fsync(descriptor)
     finally:
@@ -578,7 +569,9 @@ def _write_root_readonly(path: Path, raw: bytes) -> None:
     if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
         raise SelectedXcodeBuildOrchestratorError("accepted guard bundle file changed type")
     if metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != 0o444:
-        raise SelectedXcodeBuildOrchestratorError("accepted guard bundle file custody is not root read-only")
+        raise SelectedXcodeBuildOrchestratorError(
+            "accepted guard bundle file custody is not root read-only"
+        )
 
 
 def _materialize_accepted_guard_bundle(repo: Path, source_sha: str) -> tuple[Path, Path, Path]:
@@ -598,7 +591,9 @@ def _materialize_accepted_guard_bundle(repo: Path, source_sha: str) -> tuple[Pat
         os.chmod(bundle, 0o555)
         metadata = bundle.lstat()
         if metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != 0o555:
-            raise SelectedXcodeBuildOrchestratorError("accepted guard bundle directory is not root read-only")
+            raise SelectedXcodeBuildOrchestratorError(
+                "accepted guard bundle directory is not root read-only"
+            )
         return bundle, guard, provenance
     except Exception:
         try:
@@ -628,7 +623,9 @@ def _replace_live_guard(command: Sequence[str], *, live_guard: Path, accepted_gu
             "guarded build must execute exactly one canonical live private-input guard marker"
         )
     if any(argument == str(accepted_guard) for argument in command):
-        raise SelectedXcodeBuildOrchestratorError("caller supplied the accepted guard materialization path")
+        raise SelectedXcodeBuildOrchestratorError(
+            "caller supplied the accepted guard materialization path"
+        )
     replaced = list(command)
     replaced[matches[0]] = str(accepted_guard)
     return replaced
@@ -637,7 +634,9 @@ def _replace_live_guard(command: Sequence[str], *, live_guard: Path, accepted_gu
 def _flag_path(command: Sequence[str], flag: str) -> Path:
     matches = [index for index, value in enumerate(command) if value == flag]
     if len(matches) != 1 or matches[0] + 1 >= len(command):
-        raise SelectedXcodeBuildOrchestratorError(f"private-input guard requires exactly one {flag}")
+        raise SelectedXcodeBuildOrchestratorError(
+            f"private-input guard requires exactly one {flag}"
+        )
     value = command[matches[0] + 1]
     if value == "--" or value.startswith("--"):
         raise SelectedXcodeBuildOrchestratorError(f"private-input guard {flag} has no path")
@@ -649,10 +648,14 @@ def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Pa
     live_guard = repo / ACCEPTED_GUARD_RELATIVE
     guard_indices = [index for index, value in enumerate(command) if value == str(live_guard)]
     if len(guard_indices) != 1:
-        raise SelectedXcodeBuildOrchestratorError("canonical private-input guard invocation is missing")
+        raise SelectedXcodeBuildOrchestratorError(
+            "canonical private-input guard invocation is missing"
+        )
     guard_index = guard_indices[0]
     if guard_index < 2 or list(command[guard_index - 2 : guard_index]) != ["/usr/bin/python3", "-I"]:
-        raise SelectedXcodeBuildOrchestratorError("canonical private-input guard interpreter shape changed")
+        raise SelectedXcodeBuildOrchestratorError(
+            "canonical private-input guard interpreter shape changed"
+        )
 
     expected = {
         "--lockfile": repo / "Podfile.lock",
@@ -668,14 +671,14 @@ def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Pa
             )
     separators = [index for index, value in enumerate(command) if value == "--" and index > guard_index]
     if len(separators) != 1:
-        raise SelectedXcodeBuildOrchestratorError("private-input guard build separator is ambiguous")
+        raise SelectedXcodeBuildOrchestratorError(
+            "private-input guard build separator is ambiguous"
+        )
     return repo / CANONICAL_SDK_RELATIVE, repo / CANONICAL_RUNTIME_RELATIVE
 
 
 def _bind_private_read_lease(build_origin: dict[str, object], lease: _PrivateReadLease) -> None:
-    original = _require_callable(
-        build_origin, "_run_exec_bound_build", "signed build-origin helper"
-    )
+    original = _require_callable(build_origin, "_run_exec_bound_build", "signed build-origin helper")
 
     def leased_exec_bound_build(
         command: Sequence[str],
@@ -688,7 +691,9 @@ def _bind_private_read_lease(build_origin: dict[str, object], lease: _PrivateRea
         cwd: Path,
     ):
         if not isinstance(name, str) or not name:
-            raise SelectedXcodeBuildOrchestratorError("build-origin helper exposed no exact build principal")
+            raise SelectedXcodeBuildOrchestratorError(
+                "build-origin helper exposed no exact build principal"
+            )
         lease.grant(name)
         try:
             return original(
@@ -703,9 +708,8 @@ def _bind_private_read_lease(build_origin: dict[str, object], lease: _PrivateRea
         finally:
             lease.revoke()
 
-    # Functions loaded by exec keep this namespace as their globals. Rebinding only
-    # this accepted internal execution seam composes the lease around the exact
-    # dedicated-identity exec without changing caller-selected compiler authority.
+    # Functions loaded by exec retain this namespace as globals; rebinding this one
+    # accepted seam scopes private authority to the exact exec-bound compiler child.
     build_origin["_run_exec_bound_build"] = leased_exec_bound_build
 
 
@@ -724,7 +728,9 @@ def orchestrate(
     command: Sequence[str],
 ) -> tuple[Path, str]:
     if sys.platform != "darwin" or os.geteuid() != 0:
-        raise SelectedXcodeBuildOrchestratorError("selected-Xcode build composition requires root on macOS")
+        raise SelectedXcodeBuildOrchestratorError(
+            "selected-Xcode build composition requires root on macOS"
+        )
     if field_pid <= 1:
         raise SelectedXcodeBuildOrchestratorError("field shell PID is invalid")
     if re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:
@@ -738,20 +744,24 @@ def orchestrate(
     launcher_raw = _decode_verified_git_blob(
         freeze_launcher_base64, freeze_launcher_blob, "selected-Xcode freeze launcher"
     )
-    _decode_verified_git_blob(freeze_helper_base64, freeze_helper_blob, "selected-Xcode freeze helper")
+    _decode_verified_git_blob(
+        freeze_helper_base64, freeze_helper_blob, "selected-Xcode freeze helper"
+    )
     build_origin_raw = _decode_verified_git_blob(
         build_origin_base64, build_origin_blob, "signed build-origin helper"
     )
-    _decode_verified_git_blob(install_custody_base64, install_custody_blob, "signed install-custody helper")
+    _decode_verified_git_blob(
+        install_custody_base64, install_custody_blob, "signed install-custody helper"
+    )
 
     bundle: Path | None = None
     lease: _PrivateReadLease | None = None
     try:
-        bundle, accepted_guard, _accepted_provenance = _materialize_accepted_guard_bundle(repo, source_sha)
+        bundle, accepted_guard, _accepted_provenance = _materialize_accepted_guard_bundle(
+            repo, source_sha
+        )
         guarded_command = _replace_live_guard(
-            command,
-            live_guard=live_guard,
-            accepted_guard=accepted_guard,
+            command, live_guard=live_guard, accepted_guard=accepted_guard
         )
 
         launcher = _load_namespace(
@@ -759,19 +769,34 @@ def orchestrate(
             name="nembra_selected_xcode_freeze_launcher",
             filename="<accepted-selected-xcode-freeze-launcher>",
         )
-        launcher_run = _require_callable(launcher, "run", "selected-Xcode freeze launcher")
-        freeze_result = launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)
+        launcher_run = _require_callable(
+            launcher, "run", "selected-Xcode freeze launcher"
+        )
+        freeze_result = launcher_run(
+            field_pid, source_sha, freeze_helper_base64, freeze_helper_blob
+        )
         if not isinstance(freeze_result, tuple) or len(freeze_result) != 4:
-            raise SelectedXcodeBuildOrchestratorError("selected-Xcode freeze launcher returned malformed authority")
+            raise SelectedXcodeBuildOrchestratorError(
+                "selected-Xcode freeze launcher returned malformed authority"
+            )
         _namespace, frozen_developer, tools, _janitor_pid = freeze_result
-        if not isinstance(frozen_developer, Path) or not frozen_developer.is_absolute() or not isinstance(tools, dict):
-            raise SelectedXcodeBuildOrchestratorError("selected-Xcode freeze launcher returned invalid paths")
+        if (
+            not isinstance(frozen_developer, Path)
+            or not frozen_developer.is_absolute()
+            or not isinstance(tools, dict)
+        ):
+            raise SelectedXcodeBuildOrchestratorError(
+                "selected-Xcode freeze launcher returned invalid paths"
+            )
         if "\t" in str(frozen_developer) or "\n" in str(frozen_developer):
-            raise SelectedXcodeBuildOrchestratorError("frozen Developer path contains an invalid separator")
-        selected_xcodebuild = _require_frozen_tool(tools, "xcodebuild", frozen_developer)
+            raise SelectedXcodeBuildOrchestratorError(
+                "frozen Developer path contains an invalid separator"
+            )
+        selected_xcodebuild = _require_frozen_tool(
+            tools, "xcodebuild", frozen_developer
+        )
         _require_frozen_tool(tools, "xctrace", frozen_developer)
         _require_frozen_tool(tools, "devicectl", frozen_developer)
-
         guarded_command = _replace_selected_xcode(
             guarded_command,
             frozen_developer=frozen_developer,
@@ -794,12 +819,18 @@ def orchestrate(
             fingerprint_helper_base64=install_custody_base64,
         )
         if not isinstance(result, tuple) or len(result) != 2:
-            raise SelectedXcodeBuildOrchestratorError("signed build-origin helper returned malformed custody result")
+            raise SelectedXcodeBuildOrchestratorError(
+                "signed build-origin helper returned malformed custody result"
+            )
         stage_root, fingerprint = result
         if not isinstance(stage_root, Path) or not isinstance(fingerprint, str):
-            raise SelectedXcodeBuildOrchestratorError("signed build-origin helper returned invalid custody types")
+            raise SelectedXcodeBuildOrchestratorError(
+                "signed build-origin helper returned invalid custody types"
+            )
         if lease._opened or lease._principal:
-            raise SelectedXcodeBuildOrchestratorError("private read lease survived the guarded build window")
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read lease survived the guarded build window"
+            )
         return stage_root, fingerprint
     finally:
         if lease is not None and (lease._opened or lease._principal):
@@ -846,11 +877,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         values = (str(stage_root), fingerprint)
         if any("\t" in value or "\n" in value for value in values):
-            raise SelectedXcodeBuildOrchestratorError("selected-Xcode build result contains malformed separators")
+            raise SelectedXcodeBuildOrchestratorError(
+                "selected-Xcode build result contains malformed separators"
+            )
         sys.stdout.write("\t".join(values) + "\n")
         return 0
     except Exception as error:
-        print(f"ERROR: selected-Xcode signed-build composition failed: {error}", file=sys.stderr)
+        print(
+            f"ERROR: selected-Xcode signed-build composition failed: {error}",
+            file=sys.stderr,
+        )
         return 78
 
 
