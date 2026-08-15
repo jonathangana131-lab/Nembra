@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 23,
+    "classifiedPRTotal": 24,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1318,6 +1318,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.38,
         "title": "[Capture P0][SECURITY] Seal APFS backing before writable attach"
+      },
+      "3354": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3354,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.196,
+        "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1350,7 +1361,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:17:36Z",
+    "liveRefreshAt": "2026-08-15T00:17:55Z",
     "liveRefreshDuplicatesSuppressed": [
       3351
     ],
@@ -5135,10 +5146,10 @@
       "userValue": 7
     }
   },
-  "revision": 385,
+  "revision": 386,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:17:37Z",
+  "updatedAt": "2026-08-15T00:17:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5214,7 +5225,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:17:36Z",
+      "updatedAt": "2026-08-15T00:17:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
