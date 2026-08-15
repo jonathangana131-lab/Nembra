@@ -1,0 +1,62 @@
+name: Capture Generated Input Ancestor Alias Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_generated_input_ancestor_alias_red_team.py
+      - .github/workflows/capture-generated-input-ancestor-alias-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-generated-input-ancestor-alias-red-team-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: db5b00fdd1bb1b234393a9190e80b817d309c0e3
+
+jobs:
+  exploit-positive:
+    name: Prove tracked ancestor alias redirects generated inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation-child delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-input-ancestor-alias-red-team.yml \
+            scripts/ci/tests/test_capture_generated_input_ancestor_alias_red_team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute exploit-positive witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_input_ancestor_alias_red_team.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_input_ancestor_alias_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_GENERATED_ANCESTOR_ALIAS_BOUNDARY exploitPositive=true validationOnly=true productionChanged=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
