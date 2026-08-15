@@ -13,6 +13,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -28,6 +29,11 @@ def load_guard():
     if spec is None or spec.loader is None:
         raise RuntimeError("could not load private-input build guard")
     module = importlib.util.module_from_spec(spec)
+    # Python 3.9's dataclasses implementation resolves postponed annotations
+    # through sys.modules while the class decorator executes. Register the
+    # importlib-created module before exec so the hosted macOS/Xcode Python
+    # exercises production guard semantics instead of failing in the test loader.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
