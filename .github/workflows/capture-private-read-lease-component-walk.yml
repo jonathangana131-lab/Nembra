@@ -2,102 +2,238 @@ name: Capture Private Read Lease Component Walk
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - scripts/ci/capture_selected_xcode_build_orchestrator.py
       - scripts/ci/tests/test_capture_private_read_lease_component_walk.py
       - .github/workflows/capture-private-read-lease-component-walk.yml
+      - .github/workflows/capture-read-lease-plan-generation-materialize-once.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: capture-private-read-lease-component-walk-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
-  # Exact acceptance covers both no-follow traversal and plan-to-open object identity continuity.
-  EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be
+  EXACT_PARENT: aa610e1000e58ba5e43e35a75ee8f22486aea5ec
+  BRANCH: hardening/v17-capture-lease-plan-generation-coherence-sol-20260814
+  TEMP_MATERIALIZER: .github/workflows/capture-read-lease-plan-generation-materialize-once.yml
   PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
-  component-walk:
-    name: Prove no-follow component-anchored lease admission
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 6
+  materialize-generation-coherence:
+    name: Materialize coherent planned ancestry generation
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
-          persist-credentials: false
 
-      - name: Bind exact serial hardening delta
+      - name: Bind exact serial parent and authoring paths
         shell: bash
         run: |
           set -euo pipefail
-          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          expected_head='${{ github.event.pull_request.head.sha || github.sha }}'
           test "$(git rev-parse HEAD)" = "$expected_head"
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-private-read-lease-component-walk.yml \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+            .github/workflows/capture-read-lease-plan-generation-materialize-once.yml | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile component-walk sources without artifacts
+      - name: Compose ancestry-coherent production repair
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
-          for raw in (
-              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
-              "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
-          ):
-              path = Path(raw)
-              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+
+          orchestrator = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          regression = Path('scripts/ci/tests/test_capture_private_read_lease_component_walk.py')
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement anchor, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(
+              orchestrator,
+              '''    return tuple(ordered)\n\n\ndef _acl_text(principal: str, is_directory: bool, host_only: bool) -> str:\n''',
+              '''    return tuple(ordered)\n\n\ndef _lease_plan_with_ancestry(\n    subjects: Sequence[Path],\n    repo: Path,\n) -> tuple[\n    tuple[\n        Path,\n        bool,\n        tuple[int, int, int],\n        tuple[tuple[Path, tuple[int, int, int]], ...],\n    ],\n    ...\n]:\n    """Bind every planned subject to one coherent set of admitted ancestor identities."""\n\n    repo = _absolute_lexical(repo)\n    raw_plan = _lease_paths(subjects, repo, include_signatures=True)\n    signatures = {path: signature for path, _host_only, signature in raw_plan}\n    enriched = []\n    for path, host_only, signature in raw_plan:\n        ancestry = tuple(\n            (ancestor, signatures[ancestor])\n            for ancestor in reversed(path.parents)\n            if ancestor in signatures\n        )\n        for ancestor, ancestor_signature in ancestry:\n            if not stat.S_ISDIR(ancestor_signature[2]):\n                raise SelectedXcodeBuildOrchestratorError(\n                    f"private read-lease planned ancestry is not a directory: {ancestor}"\n                )\n        try:\n            path.relative_to(repo)\n        except ValueError:\n            pass\n        else:\n            if path != repo and repo not in {ancestor for ancestor, _signature in ancestry}:\n                raise SelectedXcodeBuildOrchestratorError(\n                    f"private read-lease descendant has no planned repository identity: {path}"\n                )\n        enriched.append((path, host_only, signature, ancestry))\n    return tuple(enriched)\n\n\ndef _acl_text(principal: str, is_directory: bool, host_only: bool) -> str:\n''',
+          )
+
+          replace_once(
+              orchestrator,
+              '''def _open_pinned_path(\n    path: Path,\n    is_directory: bool,\n    expected_signature: tuple[int, int, int] | None = None,\n) -> int:\n    """Open an absolute lease subject without following any path component."""\n    path = _absolute_lexical(path)\n    parts = path.parts\n''',
+              '''def _open_pinned_path(\n    path: Path,\n    is_directory: bool,\n    expected_signature: tuple[int, int, int] | None = None,\n    expected_ancestry: Sequence[tuple[Path, tuple[int, int, int]]] = (),\n) -> int:\n    """Open one lease subject through the exact planned ancestor generation."""\n    path = _absolute_lexical(path)\n    ancestry_by_path: dict[Path, tuple[int, int, int]] = {}\n    for raw_ancestor, signature in expected_ancestry:\n        ancestor = _absolute_lexical(Path(raw_ancestor))\n        if ancestor == path or ancestor in ancestry_by_path:\n            raise SelectedXcodeBuildOrchestratorError(\n                f"private read-lease planned ancestry is malformed: {path}"\n            )\n        try:\n            path.relative_to(ancestor)\n        except ValueError as error:\n            raise SelectedXcodeBuildOrchestratorError(\n                f"private read-lease planned ancestry escaped its subject: {path}"\n            ) from error\n        if not stat.S_ISDIR(signature[2]):\n            raise SelectedXcodeBuildOrchestratorError(\n                f"private read-lease planned ancestor is not a directory: {ancestor}"\n            )\n        ancestry_by_path[ancestor] = signature\n    parts = path.parts\n''',
+          )
+
+          replace_once(
+              orchestrator,
+              '''        for index, component in enumerate(parts[1:]):\n            if component in ("", ".", "..") or os.sep in component:\n''',
+              '''        current_path = Path(os.sep)\n        for index, component in enumerate(parts[1:]):\n            if component in ("", ".", "..") or os.sep in component:\n''',
+          )
+
+          replace_once(
+              orchestrator,
+              '''            os.close(current)\n            current = next_descriptor\n\n        descriptor = current\n''',
+              '''            os.close(current)\n            current = next_descriptor\n            current_path = current_path / component\n            planned_ancestor_signature = ancestry_by_path.get(current_path)\n            if (\n                planned_ancestor_signature is not None\n                and _descriptor_signature(current) != planned_ancestor_signature\n            ):\n                raise SelectedXcodeBuildOrchestratorError(\n                    f"private read-lease component disagrees with planned ancestry: {current_path}"\n                )\n\n        descriptor = current\n''',
+          )
+
+          replace_once(
+              orchestrator,
+              '''            for path, host_only, expected_signature in _lease_paths(\n                self._subjects,\n                self._repository,\n                include_signatures=True,\n            ):\n''',
+              '''            for path, host_only, expected_signature, expected_ancestry in _lease_plan_with_ancestry(\n                self._subjects,\n                self._repository,\n            ):\n''',
+          )
+
+          replace_once(
+              orchestrator,
+              '''                descriptor = _open_pinned_path(path, is_directory, expected_signature)\n''',
+              '''                descriptor = _open_pinned_path(\n                    path,\n                    is_directory,\n                    expected_signature,\n                    expected_ancestry,\n                )\n''',
+          )
+
+          insert_anchor = '''    def test_source_uses_dirfd_component_walk_before_path_diagnostic(self) -> None:\n'''
+          mixed_generation_test = r'''    def test_mixed_generation_plan_is_rejected_by_planned_ancestry(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-plan-generation-regression-") as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            original_subject = repo / "LocalSecrets/TuyaSDK/Build"
+            original_subject.mkdir(parents=True)
+            (original_subject / "private.fixture").write_text("original\n", encoding="utf-8")
+
+            attacker_hold = outer / "repo-attacker-hold"
+            attacker_subject = attacker_hold / "LocalSecrets/TuyaSDK/Build"
+            attacker_subject.mkdir(parents=True)
+            (attacker_subject / "private.fixture").write_text("replacement\n", encoding="utf-8")
+
+            original_root_signature = helper._path_signature(repo)
+            attacker_subject_signature = helper._path_signature(attacker_subject)
+            original_hold = outer / "repo-original-hold"
+            original_require = helper._require_real_directory
+            original_open = helper._open_pinned_path
+            original_acl_listing = helper._acl_listing
+            original_chmod_acl = helper._chmod_acl
+            injected = False
+            acl_state: dict[int, str] = {}
+
+            def ensure_original_at_repo() -> None:
+                if original_hold.exists():
+                    repo.rename(attacker_hold)
+                    original_hold.rename(repo)
+
+            def ensure_attacker_at_repo() -> None:
+                if attacker_hold.exists():
+                    repo.rename(original_hold)
+                    attacker_hold.rename(repo)
+
+            def raced_require(path: Path, label: str = "private read-lease path"):
+                nonlocal injected
+                metadata = original_require(path, label)
+                if not injected and Path(path) == repo:
+                    repo.rename(original_hold)
+                    attacker_hold.rename(repo)
+                    injected = True
+                return metadata
+
+            def raced_open(path: Path, is_directory: bool, expected_signature=None, expected_ancestry=()):
+                candidate = Path(path)
+                if candidate == repo and expected_signature == original_root_signature:
+                    ensure_original_at_repo()
+                else:
+                    try:
+                        candidate.relative_to(repo)
+                    except ValueError:
+                        pass
+                    else:
+                        ensure_attacker_at_repo()
+                return original_open(candidate, is_directory, expected_signature, expected_ancestry)
+
+            def fake_acl_listing(descriptor: int) -> str:
+                return acl_state.get(descriptor, "")
+
+            def fake_chmod_acl(descriptor: int, operation: str, acl: str) -> None:
+                if operation == "+a":
+                    acl_state[descriptor] = f"0: {acl}"
+                elif operation == "-a":
+                    acl_state[descriptor] = ""
+                else:
+                    raise AssertionError(f"unexpected ACL operation: {operation}")
+
+            lease = helper._PrivateReadLease((original_subject,), repo)
+            helper._require_real_directory = raced_require
+            helper._open_pinned_path = raced_open
+            helper._acl_listing = fake_acl_listing
+            helper._chmod_acl = fake_chmod_acl
+            try:
+                with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                    lease.grant("nembra-build")
+                self.assertTrue(injected)
+                self.assertFalse(lease._opened)
+                self.assertEqual(lease._principal, "")
+                self.assertEqual(helper._path_signature(original_subject), attacker_subject_signature)
+            finally:
+                if lease._opened or lease._principal:
+                    lease.revoke(suppress_errors=True)
+                helper._require_real_directory = original_require
+                helper._open_pinned_path = original_open
+                helper._acl_listing = original_acl_listing
+                helper._chmod_acl = original_chmod_acl
+
+'''
+          replace_once(regression, insert_anchor, mixed_generation_test + insert_anchor)
+          replace_once(
+              regression,
+              '''        self.assertIn("expected_signature", source)\n        self.assertNotIn("os.open(path,", source)\n''',
+              '''        self.assertIn("expected_signature", source)\n        self.assertIn("expected_ancestry", source)\n        self.assertIn("planned_ancestor_signature", source)\n        planning = inspect.getsource(helper._lease_plan_with_ancestry)\n        self.assertIn("reversed(path.parents)", planning)\n        self.assertIn("repo not in {ancestor", planning)\n        self.assertNotIn("os.open(path,", source)\n''',
+          )
           PY
 
-      - name: Prove component-walk behavior
-        shell: bash
-        run: |
-          set -euo pipefail
+          # Restore the permanent gate from the exact serial parent, rebased to this
+          # new serial parent. This running authoring workflow must not survive.
+          git show "$EXACT_PARENT:.github/workflows/capture-private-read-lease-component-walk.yml" \
+            > .github/workflows/capture-private-read-lease-component-walk.yml
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/capture-private-read-lease-component-walk.yml')
+          text=path.read_text(encoding='utf-8')
+          old='''  # Exact acceptance covers both no-follow traversal and plan-to-open object identity continuity.\n  EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be\n'''
+          new='''  # Exact acceptance covers no-follow traversal, final-object identity, and one coherent planned ancestry generation.\n  EXACT_PARENT: aa610e1000e58ba5e43e35a75ee8f22486aea5ec\n'''
+          if text.count(old) != 1:
+              raise SystemExit('permanent workflow parent anchor changed')
+          path.write_text(text.replace(old,new,1), encoding='utf-8')
+          PY
+          git rm "$TEMP_MATERIALIZER"
+
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
-
-      - name: Preserve selected-Xcode composition regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-
-      - name: Preserve rollback regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
-
-      - name: Preserve host-ancestry regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          git diff --check
 
-      - name: Preserve clean exact head
+          changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-component-walk.yml \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Commit and publish clean serial product head
         shell: bash
         run: |
           set -euo pipefail
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Preserve truth boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "NEMBRA_COMPONENT_WALK_BOUNDARY productionLeaseChanged=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'capture: bind private lease to one planned ancestry generation'
+          git push origin "HEAD:$BRANCH"
