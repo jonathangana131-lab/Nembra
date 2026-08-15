@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 18,
+    "classifiedPRTotal": 19,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1261,8 +1261,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3348,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.321,
+        "similarity": 0.322,
         "title": "[Capture P0][RED TEAM] Pin APFS backing-file production seal"
+      },
+      "3349": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3349,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.35,
+        "title": "[Capture P0][RED TEAM] Pin private provenance resnapshot authority gap"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1295,9 +1306,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:13:38Z",
+    "liveRefreshAt": "2026-08-15T00:13:57Z",
     "liveRefreshDuplicatesSuppressed": [
-      3348
+      3349
     ],
     "liveRefreshMainSHA": "44946ca3b91ad5deee1003024534e64bda1511d2",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5080,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 376,
+  "revision": 377,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:13:39Z",
+  "updatedAt": "2026-08-15T00:13:58Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:13:38Z",
+      "updatedAt": "2026-08-15T00:13:57Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
