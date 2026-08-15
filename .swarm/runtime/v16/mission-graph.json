@@ -1283,7 +1283,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3360,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.262,
+        "similarity": 0.268,
         "title": "[Capture P0][SECURITY] Anchor private lease component traversal"
       },
       "3363": {
@@ -1338,7 +1338,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3394,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.353,
+        "similarity": 0.35,
         "title": "[Capture P0][RED TEAM] Reject inode-reuse ABA in planned lease identity"
       },
       "3395": {
@@ -1404,7 +1404,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3408,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.3,
+        "similarity": 0.323,
         "title": "[Capture P0][VALIDATION] Replay canonical generation split on held-descriptor product"
       }
     },
@@ -1438,7 +1438,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:26:16Z",
+    "liveRefreshAt": "2026-08-15T03:26:37Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5223,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 535,
+  "revision": 536,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:26:16Z",
+  "updatedAt": "2026-08-15T03:26:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5302,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:26:16Z",
+      "updatedAt": "2026-08-15T03:26:37Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
