@@ -2,9 +2,8 @@ name: Capture Generated Shared Ancestor Continuity
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - scripts/ci/capture_accepted_build_input_snapshot.py
-      - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
   workflow_dispatch:
 
@@ -12,15 +11,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: capture-generated-shared-ancestor-continuity-${{ github.event.pull_request.number || github.ref }}
+  group: capture-generated-directory-generation-macos-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
+  EXACT_PRODUCT: 9ab493f5a0b99ae0d78fb072c756bee71221a5a6
+  PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
-  exact-portable:
-    runs-on: ubuntu-latest
+  darwin-generation-continuity:
+    name: Prove directory membership continuity on macOS 15
+    runs-on: macos-15
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
@@ -29,21 +30,86 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind serial repair delta and run full admission regressions
+      - name: Bind exact product and validation-only workflow delta
         shell: bash
         run: |
           set -euo pipefail
-          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          expected_head='${{ github.event.pull_request.head.sha || github.sha }}'
           test "$(git rev-parse HEAD)" = "$expected_head"
-          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
-          test "$changed" = "$expected"
-          git diff --check "$EXACT_PARENT"...HEAD
-          export PYTHONDONTWRITEBYTECODE=1
+          test "$(git merge-base HEAD "$EXACT_PRODUCT")" = "$EXACT_PRODUCT"
+          changed="$(git diff --name-only "$EXACT_PRODUCT"...HEAD | LC_ALL=C sort)"
+          test "$changed" = '.github/workflows/capture-generated-shared-ancestor-continuity.yml'
+          git diff --check "$EXACT_PRODUCT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exact repaired helper and regression without artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              'scripts/ci/capture_accepted_build_input_snapshot.py',
+              'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py',
+              'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py',
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), 'exec', dont_inherit=True)
+          PY
+
+      - name: Prove real Darwin directory membership stamps move on child splice
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import tempfile
+
+          repo = Path.cwd()
+          helper_path = repo / 'scripts/ci/capture_accepted_build_input_snapshot.py'
+          spec = importlib.util.spec_from_file_location('nembra_darwin_generation_probe', helper_path)
+          if spec is None or spec.loader is None:
+              raise SystemExit('could not load accepted-input helper')
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+
+          with tempfile.TemporaryDirectory(prefix='nembra-darwin-dir-generation-', dir=repo) as raw:
+              root = Path(raw)
+              parent = root / 'LocalSecrets'
+              parent.mkdir()
+              (parent / 'TuyaSDK').mkdir()
+              replacement = root / 'TuyaSDK.B'
+              replacement.mkdir()
+              descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+              try:
+                  before = os.fstat(descriptor)
+                  (parent / 'TuyaSDK').rename(parent / 'TuyaSDK.A')
+                  replacement.rename(parent / 'TuyaSDK')
+                  after = os.fstat(descriptor)
+                  if helper._directory_generation(before) == helper._directory_generation(after):
+                      raise SystemExit('Darwin directory generation stamp did not change across child-entry splice')
+                  try:
+                      helper._assert_directory_generation(descriptor, before, Path('LocalSecrets'))
+                  except helper.AcceptedBuildInputSnapshotError:
+                      pass
+                  else:
+                      raise SystemExit('production generation assertion accepted a changed held directory')
+              finally:
+                  os.close(descriptor)
+          PY
+
+      - name: Replay exact repaired generation-splice regressions on Darwin
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Preserve validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'NEMBRA_DARWIN_DIRECTORY_GENERATION exactProduct=9ab493f5a0b99ae0d78fb072c756bee71221a5a6 productBytesChanged=false directoryMembershipSpliceProbed=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false'
