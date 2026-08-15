@@ -51,24 +51,11 @@ jobs:
         run: |
           set -euo pipefail
           export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-provenance-preaccept-pycache"
-          test_file='scripts/ci/tests/test_capture_private_provenance_preaccept_build_side.py'
           /bin/bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           /usr/bin/python3 -m py_compile \
             Scripts/capture_tuya_private_input_provenance.py \
-            "$test_file"
-
-          status=0
-          for case in \
-            PrivateProvenancePreacceptBuildSideTests.test_missing_private_digest_fails_before_pod_resolution \
-            PrivateProvenancePreacceptBuildSideTests.test_reviewed_private_digest_rejects_resnapshot_of_mutated_input \
-            PrivateProvenancePreacceptBuildSideTests.test_source_contract_requires_both_reviewed_digests_before_resolution
-          do
-            if ! /usr/bin/python3 -B -I "$test_file" "$case"; then
-              echo "::error::Private provenance regression failed: $case"
-              status=1
-            fi
-          done
-          test "$status" = 0
+            scripts/ci/tests/test_capture_private_provenance_preaccept_build_side.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_preaccept_build_side.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Pin build-side truth boundary
