@@ -318,14 +318,49 @@ def _validate_held_symlink_target(
             return
 
 
+def _directory_namespace_generation(
+    descriptor: int,
+) -> tuple[int, int, int, int, int]:
+    """Return an unforgeable-by-normal-owner generation witness for one held directory."""
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease namespace witness targeted a non-directory"
+        )
+    ctime_ns = int(
+        getattr(metadata, "st_ctime_ns", int(metadata.st_ctime * 1_000_000_000))
+    )
+    mtime_ns = int(
+        getattr(metadata, "st_mtime_ns", int(metadata.st_mtime * 1_000_000_000))
+    )
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IFMT(metadata.st_mode),
+        ctime_ns,
+        mtime_ns,
+    )
+
+
+def _verify_namespace_generation_witnesses(
+    witnesses: Sequence[tuple[Path, int, tuple[int, int, int, int, int]]],
+) -> None:
+    for path, descriptor, expected in witnesses:
+        actual = _directory_namespace_generation(descriptor)
+        if actual != expected:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease namespace generation changed: {path}"
+            )
+
+
 def _validate_subject_symlinks_from_descriptor(
     subject: Path,
     subject_descriptor: int,
-) -> None:
-    """Classify every symlink from the already-held subject directory generation."""
+) -> dict[tuple[str, ...], tuple[int, int, int, int, int]]:
+    """Classify symlinks and return stable generations for every held directory scanned."""
     root_metadata = os.fstat(subject_descriptor)
     if stat.S_ISREG(root_metadata.st_mode):
-        return
+        return {}
     if not stat.S_ISDIR(root_metadata.st_mode):
         raise SelectedXcodeBuildOrchestratorError(
             "private read-lease held subject has unsupported type"
@@ -335,7 +370,10 @@ def _validate_subject_symlinks_from_descriptor(
             "private read-lease held symlink policy requires descriptor-relative stat/readlink"
         )
 
+    generations: dict[tuple[str, ...], tuple[int, int, int, int, int]] = {}
+
     def walk(directory_descriptor: int, relative_parts: tuple[str, ...]) -> None:
+        before_generation = _directory_namespace_generation(directory_descriptor)
         try:
             names = sorted(os.listdir(directory_descriptor))
         except (OSError, TypeError) as error:
@@ -393,7 +431,81 @@ def _validate_subject_symlinks_from_descriptor(
             finally:
                 os.close(child)
 
+        after_generation = _directory_namespace_generation(directory_descriptor)
+        if after_generation != before_generation:
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease held directory changed during symlink validation"
+            )
+        generations[relative_parts] = after_generation
+
     walk(subject_descriptor, ())
+    return generations
+
+
+def _validated_namespace_witnesses(
+    subjects: Sequence[Path],
+    plan: Sequence[tuple[Path, bool, tuple[int, int, int], int]],
+) -> tuple[tuple[Path, int, tuple[int, int, int, int, int]], ...]:
+    """Validate current symlink policy and bind it to held directory generations."""
+    by_path = {Path(entry[0]): entry for entry in plan}
+    expectations: dict[Path, tuple[int, int, int, int, int]] = {}
+    for raw_subject in subjects:
+        subject = _absolute_lexical(Path(raw_subject))
+        held_subject = by_path.get(subject)
+        if held_subject is None:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held subject descriptor is unavailable: {subject}"
+            )
+        signature = held_subject[2]
+        if stat.S_ISREG(signature[2]):
+            continue
+        if not stat.S_ISDIR(signature[2]):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held subject has unsupported type: {subject}"
+            )
+        generations = _validate_subject_symlinks_from_descriptor(
+            subject,
+            int(held_subject[3]),
+        )
+        if not isinstance(generations, dict):
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease symlink validator returned malformed generation evidence"
+            )
+        for relative_parts, generation in generations.items():
+            if not isinstance(relative_parts, tuple) or any(
+                not isinstance(part, str)
+                or part in ("", ".", "..")
+                or os.sep in part
+                for part in relative_parts
+            ):
+                raise SelectedXcodeBuildOrchestratorError(
+                    "private read-lease namespace witness has an unsafe relative path"
+                )
+            path = subject.joinpath(*relative_parts)
+            held_entry = by_path.get(path)
+            if held_entry is None or not stat.S_ISDIR(held_entry[2][2]):
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease namespace witness has no held directory: {path}"
+                )
+            previous = expectations.get(path)
+            if previous is not None and previous != generation:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease overlapping namespace witnesses disagree: {path}"
+                )
+            expectations[path] = generation
+
+    witnesses = tuple(
+        (
+            path,
+            int(by_path[path][3]),
+            generation,
+        )
+        for path, generation in sorted(
+            expectations.items(), key=lambda item: str(item[0])
+        )
+    )
+    _verify_namespace_generation_witnesses(witnesses)
+    return witnesses
 
 
 def _lease_paths(
@@ -402,6 +514,7 @@ def _lease_paths(
     *,
     include_signatures: bool = False,
     include_descriptors: bool = False,
+    namespace_witnesses_out: list[tuple] | None = None,
 ) -> tuple:
     """Plan exact ACL subjects; descriptor mode is the production object authority.
 
@@ -414,6 +527,10 @@ def _lease_paths(
     if include_signatures and include_descriptors:
         raise SelectedXcodeBuildOrchestratorError(
             "private read-lease plan cannot request signatures and descriptors together"
+        )
+    if namespace_witnesses_out is not None and not include_descriptors:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease namespace witnesses require descriptor mode"
         )
 
     repo = _absolute_lexical(repo)
@@ -538,7 +655,13 @@ def _lease_paths(
                 seen.add(path)
 
         if include_descriptors:
-            _verify_descriptor_plan(tuple(ordered))
+            plan = tuple(ordered)
+            _verify_descriptor_plan(plan)
+            namespace_witnesses = _validated_namespace_witnesses(subjects, plan)
+            _verify_descriptor_plan(plan)
+            if namespace_witnesses_out is not None:
+                namespace_witnesses_out.clear()
+                namespace_witnesses_out.extend(namespace_witnesses)
         return tuple(ordered)
     except Exception:
         if include_descriptors:
@@ -818,20 +941,24 @@ class _PrivateReadLease:
             raise SelectedXcodeBuildOrchestratorError("private read lease requires at least one subject")
         self._repository = _absolute_lexical(repo)
         self._opened: list[dict[str, object]] = []
+        self._namespace_witnesses: list[tuple] = []
         self._principal = ""
 
     def grant(self, principal: str) -> None:
-        if self._opened or self._principal:
+        if self._opened or self._principal or self._namespace_witnesses:
             raise SelectedXcodeBuildOrchestratorError("private read lease is already active")
         if re.fullmatch(r"[A-Za-z0-9_.-]+", principal) is None:
             raise SelectedXcodeBuildOrchestratorError("build principal name is malformed")
         self._principal = principal
         try:
+            admission_namespace_witnesses: list[tuple] = []
             pinned_plan = _lease_paths(
                 self._subjects,
                 self._repository,
                 include_descriptors=True,
+                namespace_witnesses_out=admission_namespace_witnesses,
             )
+            _verify_namespace_generation_witnesses(admission_namespace_witnesses)
             self._opened = [
                 {
                     "descriptor": descriptor,
@@ -883,6 +1010,14 @@ class _PrivateReadLease:
                     path, is_directory, accepted_signature
                 )
                 os.close(diagnostic)
+
+            # ACL metadata changes can legitimately advance directory ctime. Revalidate
+            # the exact held namespace after all grants, then use that post-ACL stable
+            # generation as the build-window baseline. Any later symlink retarget, even
+            # one restored before revoke, changes the parent directory generation.
+            self._namespace_witnesses = list(
+                _validated_namespace_witnesses(self._subjects, pinned_plan)
+            )
         except Exception as error:
             try:
                 self.revoke()
@@ -894,6 +1029,15 @@ class _PrivateReadLease:
 
     def revoke(self, *, suppress_errors: bool = False) -> None:
         failures: list[str] = []
+        if self._namespace_witnesses:
+            try:
+                _verify_namespace_generation_witnesses(self._namespace_witnesses)
+            except Exception as error:
+                # Cleanup must still remove every ACL from its held descriptor. The
+                # namespace failure is surfaced only after exact rollback completes.
+                failures.append(
+                    f"private read-lease namespace changed during guarded build: {error}"
+                )
         for record in reversed(self._opened):
             descriptor = int(record["descriptor"])
             path = Path(record["path"])
@@ -941,6 +1085,7 @@ class _PrivateReadLease:
                 except OSError as error:
                     failures.append(f"{path}: descriptor close failed: {error}")
         self._opened.clear()
+        self._namespace_witnesses.clear()
         self._principal = ""
         if failures and not suppress_errors:
             raise SelectedXcodeBuildOrchestratorError(
