@@ -1503,19 +1503,19 @@
         "lane": "",
         "pr": 3442,
         "recommendedAction": "independent-review",
-        "similarity": 0.215,
+        "similarity": 0.115,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
       },
       "3445": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "e05844fd2b314291115c9acdff399b31aafe7da4",
+        "headSHA": "",
         "lane": "",
         "pr": 3445,
         "recommendedAction": "independent-review",
-        "similarity": 0.249,
-        "title": "[Vehicle/Controls V15][RED] Pin premium current-main closure"
+        "similarity": 0.119,
+        "title": "[Vehicle/Controls V15] Ship premium truthful current-main surface"
       },
       "3446": {
         "classification": "requires-review",
@@ -1559,7 +1559,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T20:03:00Z",
+    "liveRefreshAt": "2026-08-15T20:03:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5344,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 663,
+  "revision": 664,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T20:03:02Z",
+  "updatedAt": "2026-08-15T20:03:21Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T20:03:00Z",
+      "updatedAt": "2026-08-15T20:03:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
