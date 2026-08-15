@@ -1,0 +1,114 @@
+name: Capture Private Read Lease Component Walk Failure Isolation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-private-read-lease-component-walk-failure-isolation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-private-read-lease-component-walk-isolation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 474507966619ce39288b20de29066711088cd986
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  isolate:
+    name: Isolate held-descriptor behavior (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact product and one-file diagnostic delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-private-read-lease-component-walk-failure-isolation.yml"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove Python openat no-follow primitives exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          import os
+          assert os.open in os.supports_dir_fd, "os.open lacks dir_fd/openat support"
+          assert getattr(os, "O_NOFOLLOW", 0) != 0, "O_NOFOLLOW unavailable"
+          assert getattr(os, "O_DIRECTORY", 0) != 0, "O_DIRECTORY unavailable"
+          print("NEMBRA_OPENAT_CAPABILITY dirFd=true noFollow=true directory=true")
+          PY
+
+      - name: Control real directory and file open
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
+            CapturePrivateReadLeaseComponentWalkTests.test_real_directory_and_regular_file_still_open
+
+      - name: Intermediate symlink swap rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
+            CapturePrivateReadLeaseComponentWalkTests.test_intermediate_symlink_swap_is_rejected_after_plan
+
+      - name: Real directory replacement rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
+            CapturePrivateReadLeaseComponentWalkTests.test_real_directory_replacement_is_rejected_against_planned_identity
+
+      - name: Mixed-generation descriptor-plan rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
+            CapturePrivateReadLeaseComponentWalkTests.test_descriptor_plan_rejects_mixed_generation_descendant
+
+      - name: Mixed-generation grant rejects before ACL mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
+            CapturePrivateReadLeaseComponentWalkTests.test_actual_grant_rejects_mixed_generation_before_acl_mutation
+
+      - name: Held descriptor prevents inode reuse after admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
+            CapturePrivateReadLeaseComponentWalkTests.test_held_descriptor_prevents_inode_reuse_after_admission
+
+      - name: Source contract still consumes held descriptors
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
+            CapturePrivateReadLeaseComponentWalkTests.test_source_production_grant_consumes_held_descriptor_plan
+
+      - name: Preserve diagnostic-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'NEMBRA_COMPONENT_WALK_ISOLATION productBytesChanged=false signingAuthorityCreated=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false'
