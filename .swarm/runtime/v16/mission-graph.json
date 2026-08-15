@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 34,
+    "classifiedPRTotal": 32,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1228,7 +1228,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3354,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.283,
+        "similarity": 0.264,
         "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
       },
       "3355": {
@@ -1283,7 +1283,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3360,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.265,
+        "similarity": 0.26,
         "title": "[Capture P0][SECURITY] Anchor private lease component traversal"
       },
       "3363": {
@@ -1371,7 +1371,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3394,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.385,
+        "similarity": 0.272,
         "title": "[Capture P0][RED TEAM] Reject inode-reuse ABA in planned lease identity"
       },
       "3395": {
@@ -1417,28 +1417,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.354,
         "title": "[Capture P0][SECURITY][RECOVERY] Pre-scrub frozen tool exec on current carrier"
-      },
-      "3400": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3400,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.434,
-        "title": "[Capture P0][RED TEAM] Reject mixed-generation private lease planning"
-      },
-      "3401": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3401,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.436,
-        "title": "[Capture P0][RED TEAM] Reject mixed-generation private lease planning"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1471,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:15:39Z",
+    "liveRefreshAt": "2026-08-15T03:16:41Z",
     "liveRefreshDuplicatesSuppressed": [
       3397
     ],
@@ -5256,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 507,
+  "revision": 508,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:15:40Z",
+  "updatedAt": "2026-08-15T03:16:42Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5335,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:15:39Z",
+      "updatedAt": "2026-08-15T03:16:41Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
