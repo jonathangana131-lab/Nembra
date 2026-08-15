@@ -73,15 +73,29 @@ jobs:
       - name: Prove sealed root rejects real field identity
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           field_user="$(/usr/bin/id -un)"
+          log="$RUNNER_TEMP/capture-root-custody-macos.log"
+          set +e
           /usr/bin/sudo -n env \
             NEMBRA_TEST_FIELD_USER="$field_user" \
             PYTHONDONTWRITEBYTECODE=1 \
             /usr/bin/python3 -B -I \
             scripts/ci/tests/test_capture_accepted_build_root_custody.py \
-            --field-user "$field_user"
+            --field-user "$field_user" 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          exit "$status"
+
+      - name: Upload exact macOS custody diagnostic
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-root-custody-macos-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/capture-root-custody-macos.log
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Preserve production-boundary truth
         shell: bash
