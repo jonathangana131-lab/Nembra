@@ -1064,8 +1064,19 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 24,
+    "classifiedPRTotal": 25,
     "classifiedPRs": {
+      "2959": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "navigation-app-visible",
+        "pr": 2959,
+        "recommendedAction": "independent-review",
+        "similarity": 0.0,
+        "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
+      },
       "3142": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1361,7 +1372,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T01:04:56Z",
+    "liveRefreshAt": "2026-08-15T01:05:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5146,10 +5157,10 @@
       "userValue": 7
     }
   },
-  "revision": 434,
+  "revision": 435,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T01:04:57Z",
+  "updatedAt": "2026-08-15T01:05:20Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5225,7 +5236,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T01:04:56Z",
+      "updatedAt": "2026-08-15T01:05:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
