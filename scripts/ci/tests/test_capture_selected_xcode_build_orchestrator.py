@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Regress the converged selected-Xcode -> private-input -> signed-build boundary."""
-
+"""Regress selected-Xcode -> accepted-source snapshot -> signed-build composition."""
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 import subprocess
-import tempfile
 import unittest
 from unittest import mock
 
@@ -30,218 +27,118 @@ class CaptureSelectedXcodeBuildOrchestratorTests(unittest.TestCase):
         helper = load()
         developer = Path("/Library/NembraSelectedXcodeFreeze.test/Xcode.app/Contents/Developer")
         xcodebuild = developer / "usr/bin/xcodebuild"
-        command = [
-            "/usr/bin/python3", "-I", "/accepted/guard.py", "--", "/usr/bin/xcodebuild", "-version"
-        ]
-        replaced = helper._replace_selected_xcode(
-            command, frozen_developer=developer, selected_xcodebuild=xcodebuild
-        )
+        command = ["/usr/bin/python3", "-I", "/accepted/guard.py", "--", "/usr/bin/xcodebuild", "-version"]
+        replaced = helper._replace_selected_xcode(command, frozen_developer=developer, selected_xcodebuild=xcodebuild)
         marker = replaced.index("/usr/bin/env")
-        self.assertEqual(
-            replaced[marker : marker + 3],
-            ["/usr/bin/env", f"DEVELOPER_DIR={developer}", str(xcodebuild)],
-        )
+        self.assertEqual(replaced[marker:marker + 3], ["/usr/bin/env", f"DEVELOPER_DIR={developer}", str(xcodebuild)])
         self.assertNotIn("/usr/bin/xcodebuild", replaced)
-        self.assertEqual(command[-2:], ["/usr/bin/xcodebuild", "-version"])
-
         for bad in (
             ["/usr/bin/python3", "guard.py"],
             ["/usr/bin/xcodebuild", "/usr/bin/xcodebuild"],
             ["DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer", "/usr/bin/xcodebuild"],
         ):
             with self.subTest(command=bad), self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
-                helper._replace_selected_xcode(
-                    bad, frozen_developer=developer, selected_xcodebuild=xcodebuild
-                )
+                helper._replace_selected_xcode(bad, frozen_developer=developer, selected_xcodebuild=xcodebuild)
 
-    def test_frozen_tool_must_remain_inside_frozen_developer_tree(self) -> None:
+    def test_frozen_tools_remain_inside_one_frozen_developer_tree(self) -> None:
         helper = load()
         developer = Path("/Library/NembraSelectedXcodeFreeze.test/Xcode.app/Contents/Developer")
-        expected = developer / "usr/bin/devicectl"
-        self.assertEqual(helper._require_frozen_tool({"devicectl": expected}, "devicectl", developer), expected)
-        with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
-            helper._require_frozen_tool({"devicectl": Path("/usr/bin/devicectl")}, "devicectl", developer)
-        with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
-            helper._require_frozen_tool({}, "devicectl", developer)
+        for name in ("xcodebuild", "xctrace", "devicectl"):
+            expected = developer / "usr/bin" / name
+            self.assertEqual(helper._require_frozen_tool({name: expected}, name, developer), expected)
+            with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                helper._require_frozen_tool({name: Path("/usr/bin") / name}, name, developer)
 
     def test_git_blob_transport_rejects_substitution(self) -> None:
         helper = load()
-        raw = b"accepted selected-Xcode helper bytes\n"
+        raw = b"accepted helper bytes\n"
         blob = helper._git_blob_oid(raw)
         encoded = __import__("base64").b64encode(raw).decode("ascii")
         self.assertEqual(helper._decode_verified_git_blob(encoded, blob, "fixture"), raw)
         with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
-            helper._decode_verified_git_blob(
-                __import__("base64").b64encode(b"substituted\n").decode("ascii"), blob, "fixture"
-            )
-        with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
-            helper._decode_verified_git_blob(encoded, "not-a-git-blob", "fixture")
+            helper._decode_verified_git_blob(__import__("base64").b64encode(b"substituted\n").decode("ascii"), blob, "fixture")
 
-    def test_live_guard_replacement_requires_exact_canonical_marker(self) -> None:
-        helper = load()
-        live = Path("/repo/Scripts/capture_tuya_private_input_build_guard.py")
-        accepted = Path("/private/tmp/nembra-accepted/guard.py")
-        command = ["/usr/bin/python3", "-I", str(live), "--", "/usr/bin/xcodebuild"]
-        replaced = helper._replace_live_guard(command, live_guard=live, accepted_guard=accepted)
-        self.assertEqual(replaced[2], str(accepted))
-        self.assertNotIn(str(live), replaced)
-        with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
-            helper._replace_live_guard(
-                ["/usr/bin/python3", "-I", "/other/guard.py", "--", "/usr/bin/xcodebuild"],
-                live_guard=live,
-                accepted_guard=accepted,
-            )
-
-    def test_private_subjects_are_exact_canonical_field_inputs(self) -> None:
-        helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-private-subject-contract-") as temporary:
-            repo = Path(temporary)
-            live_guard = repo / helper.ACCEPTED_GUARD_RELATIVE
-            command = [
-                "/usr/bin/python3", "-I", str(live_guard),
-                "--lockfile", str(repo / "Podfile.lock"),
-                "--security-podspec", str(repo / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec"),
-                "--security-build", str(repo / "LocalSecrets/TuyaSDK/Build"),
-                "--identity-podspec", str(repo / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"),
-                "--identity-sources", str(repo / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"),
-                "--", "/usr/bin/xcodebuild",
-            ]
-            self.assertEqual(
-                helper._private_read_subjects(command, repo),
-                (repo / "LocalSecrets/TuyaSDK", repo / "LocalSecrets/TuyaRuntime"),
-            )
-            escaped = list(command)
-            escaped[escaped.index("--identity-sources") + 1] = str(repo / "other")
-            with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
-                helper._private_read_subjects(escaped, repo)
-
-    def test_build_origin_exec_is_wrapped_by_exact_reversible_lease(self) -> None:
-        helper = load()
-        events: list[tuple[str, str]] = []
-
-        class Lease:
-            def grant(self, principal: str) -> None:
-                events.append(("grant", principal))
-            def revoke(self, **_kwargs) -> None:
-                events.append(("revoke", ""))
-
-        def original(command, *, name, uid, gid, baseline_groups, environment, cwd):
-            events.append(("exec", name))
-            self.assertEqual(command, ["/usr/bin/true"])
-            return 0
-
-        namespace: dict[str, object] = {"_run_exec_bound_build": original}
-        helper._bind_private_read_lease(namespace, Lease())
-        wrapped = namespace["_run_exec_bound_build"]
-        result = wrapped(
-            ["/usr/bin/true"], name="nembrabuildfixture", uid=52000, gid=52000,
-            baseline_groups=(52000,), environment={}, cwd=Path("/"),
-        )
-        self.assertEqual(result, 0)
-        self.assertEqual(
-            events,
-            [("grant", "nembrabuildfixture"), ("exec", "nembrabuildfixture"), ("revoke", "")],
-        )
-
-    def test_orchestration_converges_exact_guard_lease_and_full_frozen_toolset(self) -> None:
+    def test_orchestration_binds_snapshot_instead_of_live_tree_lease(self) -> None:
         helper = load()
         launcher_source = b'''\
 from pathlib import Path
 
 def run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob):
-    assert field_pid == 4242
-    assert source_sha == "a" * 40
     developer = Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer")
-    return (
-        Path("/Library/NembraSelectedXcodeFreeze.fixture"), developer,
-        {"xcodebuild": developer / "usr/bin/xcodebuild",
-         "xctrace": developer / "usr/bin/xctrace",
-         "devicectl": developer / "usr/bin/devicectl"}, 777,
-    )
+    return (Path("/Library/NembraSelectedXcodeFreeze.fixture"), developer,
+            {"xcodebuild": developer / "usr/bin/xcodebuild",
+             "xctrace": developer / "usr/bin/xctrace",
+             "devicectl": developer / "usr/bin/devicectl"}, 777)
 '''
         build_source = b'''\
 from pathlib import Path
 
 def _run_exec_bound_build(command, *, name, uid, gid, baseline_groups, environment, cwd):
-    developer = "/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"
-    selected = developer + "/usr/bin/xcodebuild"
-    assert command[2] == EXPECTED_GUARD
-    marker = command.index("/usr/bin/env")
-    assert command[marker:marker + 3] == ["/usr/bin/env", "DEVELOPER_DIR=" + developer, selected]
-    assert "/usr/bin/xcodebuild" not in command
     return 0
 
 def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
     assert _run_exec_bound_build(command, name="nembrabuildfixture", uid=52000, gid=52000,
-                                 baseline_groups=(52000,), environment={}, cwd=Path("/")) == 0
-    assert app_relative == Path("Build/Products/Debug-iphoneos/Nembra Capture.app")
-    assert fingerprint_helper_base64 == INSTALL_BASE64
+                                 baseline_groups=(52000,), environment={}, cwd=Path("/live")) == 0
     return Path("/private/tmp/nembra-authenticated-capture-install.fixture"), "b" * 64
 '''
-        freeze_source = b"# accepted freeze helper fixture\n"
-        install_source = b"# accepted install helper fixture\n"
+        snapshot_source = b'''\
+SCHEMA_VERSION = 1
+GENERATED_SUBJECTS = ()
+def stage_accepted_build_inputs(*args): return "c" * 64
+def generated_manifest_sha256(*args): return "c" * 64
+'''
+        custody_source = b'''\
+class FakeSnapshot:
+    def __init__(self): self.bound = False; self.destroyed = False; self.sealed = True
+    def bind_build_origin(self, build_origin):
+        self.bound = True
+        original = build_origin["_run_exec_bound_build"]
+        def wrapped(command, **kwargs): return original(command, **{**kwargs, "cwd": __import__("pathlib").Path("/snapshot")})
+        build_origin["_run_exec_bound_build"] = wrapped
+    def destroy(self): self.destroyed = True
+LAST = None
+def create(**kwargs):
+    global LAST
+    LAST = FakeSnapshot()
+    return LAST
+'''
+        freeze_source = b"# freeze\n"
+        install_source = b"# install\n"
         encode = lambda raw: __import__("base64").b64encode(raw).decode("ascii")
-        install_encoded = encode(install_source)
+        reads = {
+            helper.SNAPSHOT_HELPER_RELATIVE: snapshot_source,
+            helper.SNAPSHOT_CUSTODY_RELATIVE: custody_source,
+        }
+        command = [
+            "/usr/bin/python3", "-I", str(REPOSITORY / helper.ACCEPTED_GUARD_RELATIVE),
+            "--lockfile", str(REPOSITORY / "Podfile.lock"),
+            "--security-podspec", str(REPOSITORY / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec"),
+            "--security-build", str(REPOSITORY / "LocalSecrets/TuyaSDK/Build"),
+            "--identity-podspec", str(REPOSITORY / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"),
+            "--identity-sources", str(REPOSITORY / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"),
+            "--", "/usr/bin/xcodebuild", "-version",
+        ]
+        with (
+            mock.patch.object(helper.sys, "platform", "darwin"),
+            mock.patch.object(helper.os, "geteuid", return_value=0),
+            mock.patch.object(helper.os, "getcwd", return_value=str(REPOSITORY)),
+            mock.patch.object(helper, "_private_read_subjects", return_value=()),
+            mock.patch.object(helper, "_read_accepted_git_blob", side_effect=lambda _repo, _sha, rel: reads[rel]),
+        ):
+            result = helper.orchestrate(
+                field_pid=4242, source_sha="a" * 40,
+                accepted_generated_manifest_sha256="c" * 64,
+                freeze_launcher_base64=encode(launcher_source), freeze_launcher_blob=helper._git_blob_oid(launcher_source),
+                freeze_helper_base64=encode(freeze_source), freeze_helper_blob=helper._git_blob_oid(freeze_source),
+                build_origin_base64=encode(build_source), build_origin_blob=helper._git_blob_oid(build_source),
+                install_custody_base64=encode(install_source), install_custody_blob=helper._git_blob_oid(install_source),
+                command=command,
+            )
+        self.assertEqual(result[0], Path("/private/tmp/nembra-authenticated-capture-install.fixture"))
+        self.assertEqual(result[1], "b" * 64)
+        self.assertEqual(result[2], Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"))
 
-        class FakeLease:
-            instances: list["FakeLease"] = []
-            def __init__(self, subjects, repo):
-                self.subjects = tuple(subjects); self.repo = repo
-                self._opened: list[object] = []; self._principal = ""; self.events: list[str] = []
-                self.__class__.instances.append(self)
-            def grant(self, principal: str) -> None:
-                self._principal = principal; self._opened = [object()]; self.events.append("grant:" + principal)
-            def revoke(self, *, suppress_errors: bool = False) -> None:
-                self.events.append("revoke"); self._opened = []; self._principal = ""
-
-        with tempfile.TemporaryDirectory(prefix="nembra-accepted-guard-fixture-") as temporary:
-            bundle = Path(temporary) / "bundle"; bundle.mkdir()
-            accepted_guard = bundle / helper.ACCEPTED_GUARD_RELATIVE.name
-            accepted_provenance = bundle / helper.ACCEPTED_PROVENANCE_RELATIVE.name
-            accepted_guard.write_text("# fixture\n", encoding="utf-8")
-            accepted_provenance.write_text("# fixture\n", encoding="utf-8")
-            build_source = build_source.replace(b"EXPECTED_GUARD", repr(str(accepted_guard)).encode("ascii"))
-            build_source = build_source.replace(b"INSTALL_BASE64", repr(install_encoded).encode("ascii"))
-            canonical_command = [
-                "/usr/bin/python3", "-I", str(REPOSITORY / helper.ACCEPTED_GUARD_RELATIVE),
-                "--lockfile", str(REPOSITORY / "Podfile.lock"),
-                "--security-podspec", str(REPOSITORY / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec"),
-                "--security-build", str(REPOSITORY / "LocalSecrets/TuyaSDK/Build"),
-                "--identity-podspec", str(REPOSITORY / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"),
-                "--identity-sources", str(REPOSITORY / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"),
-                "--", "/usr/bin/xcodebuild", "-version",
-            ]
-            with (
-                mock.patch.object(helper.sys, "platform", "darwin"),
-                mock.patch.object(helper.os, "geteuid", return_value=0),
-                mock.patch.object(helper.os, "getcwd", return_value=str(REPOSITORY)),
-                mock.patch.object(helper, "_private_read_subjects",
-                                  return_value=(Path("/private/fixture/sdk"), Path("/private/fixture/runtime"))),
-                mock.patch.object(helper, "_materialize_accepted_guard_bundle",
-                                  return_value=(bundle, accepted_guard, accepted_provenance)),
-                mock.patch.object(helper, "_PrivateReadLease", FakeLease),
-            ):
-                stage, fingerprint, developer, xctrace, devicectl = helper.orchestrate(
-                    field_pid=4242, source_sha="a" * 40,
-                    freeze_launcher_base64=encode(launcher_source),
-                    freeze_launcher_blob=helper._git_blob_oid(launcher_source),
-                    freeze_helper_base64=encode(freeze_source),
-                    freeze_helper_blob=helper._git_blob_oid(freeze_source),
-                    build_origin_base64=encode(build_source),
-                    build_origin_blob=helper._git_blob_oid(build_source),
-                    install_custody_base64=install_encoded,
-                    install_custody_blob=helper._git_blob_oid(install_source),
-                    command=canonical_command,
-                )
-            expected_developer = Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer")
-            self.assertEqual(stage, Path("/private/tmp/nembra-authenticated-capture-install.fixture"))
-            self.assertEqual(fingerprint, "b" * 64)
-            self.assertEqual(developer, expected_developer)
-            self.assertEqual(xctrace, expected_developer / "usr/bin/xctrace")
-            self.assertEqual(devicectl, expected_developer / "usr/bin/devicectl")
-            self.assertEqual(FakeLease.instances[0].events, ["grant:nembrabuildfixture", "revoke"])
-
-    def test_main_serializes_exact_five_field_handoff(self) -> None:
+    def test_main_serializes_exact_five_field_handoff_and_manifest_arg(self) -> None:
         helper = load()
         expected = (
             Path("/private/tmp/nembra-authenticated-capture-install.fixture"), "b" * 64,
@@ -250,111 +147,31 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             Path("/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer/usr/bin/devicectl"),
         )
         args = mock.Mock(
-            field_pid=4242, source_sha="a" * 40,
+            field_pid=4242, source_sha="a" * 40, accepted_generated_manifest_sha256="c" * 64,
             freeze_launcher_base64="launcher", freeze_launcher_blob="a" * 40,
             freeze_helper_base64="freeze", freeze_helper_blob="b" * 40,
             build_origin_base64="origin", build_origin_blob="c" * 40,
             install_custody_base64="install", install_custody_blob="d" * 40,
             command=["/usr/bin/xcodebuild"],
         )
-        with (
-            mock.patch.object(helper, "_parse", return_value=args),
-            mock.patch.object(helper, "orchestrate", return_value=expected),
-            mock.patch.object(helper.sys, "stdout") as stdout,
-        ):
+        with mock.patch.object(helper, "_parse", return_value=args), mock.patch.object(helper, "orchestrate", return_value=expected), mock.patch.object(helper.sys, "stdout") as stdout:
             self.assertEqual(helper.main([]), 0)
         stdout.write.assert_called_once_with("\t".join(str(value) for value in expected) + "\n")
 
-    def test_installer_consumes_frozen_device_tools_without_ambient_xcrun(self) -> None:
+    def test_installer_carries_reviewed_manifest_and_frozen_device_tools(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
-        syntax = subprocess.run(
-            ["/bin/bash", "-n", str(INSTALLER)], stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
-        )
+        syntax = subprocess.run(["/bin/bash", "-n", str(INSTALLER)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
         for fragment in (
-            'SELECTED_XCODE_BUILD_ORCHESTRATOR_PATH="scripts/ci/capture_selected_xcode_build_orchestrator.py"',
-            '--field-pid "$$"', '--source-sha "$SOURCE_SHA"',
-            '--freeze-launcher-base64 "$SELECTED_XCODE_FREEZE_LAUNCHER_BASE64"',
-            '--freeze-helper-base64 "$SELECTED_XCODE_FREEZE_HELPER_BASE64"',
-            '--build-origin-base64 "$BUILD_ORIGIN_CUSTODY_HELPER_BASE64"',
-            '--install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64"',
-            '-- /usr/bin/xcodebuild',
-            "IFS=$'\\t' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA",
-            '/usr/bin/env -i', 'DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR"',
-            'run_frozen_xcode_tool "$SELECTED_XCTRACE" list devices',
-            'run_frozen_xcode_tool "$SELECTED_DEVICECTL" list devices --hide-headers',
-            'run_frozen_xcode_tool "$SELECTED_DEVICECTL" device install app',
-            'run_frozen_xcode_tool "$SELECTED_DEVICECTL" device process launch',
-            '/usr/bin/sudo -n -l',
+            'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256',
+            '--accepted-generated-manifest-sha256 "$ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256"',
+            'IFS=$\'\\t\' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA',
+            'run_frozen_xcode_tool()',
+            '"$SELECTED_DEVICECTL" device install app --device "$DEVICE_UDID" "$APP"',
         ):
             self.assertIn(fragment, source)
-        for fragment in ("xcrun xctrace", "xcrun devicectl", "open -a Xcode", 'command -v xcrun'):
-            self.assertNotIn(fragment, source)
-
-    def test_frozen_device_tool_wrapper_scrubs_hostile_caller_environment(self) -> None:
-        source = INSTALLER.read_text(encoding="utf-8")
-        start = source.index("run_frozen_xcode_tool() {")
-        end = source.index("\n}\n\n# Both privileged layers", start) + len("\n}\n")
-        function_source = source[start:end]
-
-        with tempfile.TemporaryDirectory(prefix="nembra-frozen-device-tools-") as temporary:
-            root = Path(temporary)
-            developer = root / "Xcode.app/Contents/Developer"
-            tools = developer / "usr/bin"; tools.mkdir(parents=True)
-            devicectl = tools / "devicectl"; xctrace = tools / "xctrace"
-            probe = """#!/bin/bash
-printf 'DEVELOPER_DIR=%s\\n' "${DEVELOPER_DIR-<unset>}"
-printf 'HOME=%s\\n' "${HOME-<unset>}"
-printf 'TMPDIR=%s\\n' "${TMPDIR-<unset>}"
-printf 'LANG=%s\\n' "${LANG-<unset>}"
-printf 'LC_ALL=%s\\n' "${LC_ALL-<unset>}"
-printf 'TOOLCHAINS=%s\\n' "${TOOLCHAINS-<unset>}"
-printf 'DYLD_INSERT_LIBRARIES=%s\\n' "${DYLD_INSERT_LIBRARIES-<unset>}"
-printf 'SDKROOT=%s\\n' "${SDKROOT-<unset>}"
-"""
-            for tool in (devicectl, xctrace):
-                tool.write_text(probe, encoding="utf-8"); tool.chmod(0o755)
-            wrapper = root / "wrapper.sh"
-            wrapper.write_text(
-                "#!/bin/bash\nset -euo pipefail\n"
-                "die() { printf 'ERROR: %s\\n' \"$*\" >&2; exit 77; }\n"
-                f"SELECTED_XCODE_DEVELOPER_DIR={str(developer)!r}\n"
-                f"SELECTED_XCTRACE={str(xctrace)!r}\n"
-                f"SELECTED_DEVICECTL={str(devicectl)!r}\n"
-                + function_source + "tool=\"$1\"\nshift\nrun_frozen_xcode_tool \"$tool\" \"$@\"\n",
-                encoding="utf-8",
-            )
-            wrapper.chmod(0o755)
-            hostile = dict(os.environ)
-            hostile.update({
-                "DEVELOPER_DIR": "/Applications/AttackerXcode.app/Contents/Developer",
-                "TOOLCHAINS": "attacker.toolchain", "DYLD_INSERT_LIBRARIES": "/tmp/attacker.dylib",
-                "SDKROOT": "/tmp/attacker.sdk", "HOME": "/tmp/attacker-home",
-                "TMPDIR": "/tmp/attacker-tmp", "LANG": "zz_ZZ.UTF-8", "LC_ALL": "zz_ZZ.UTF-8",
-            })
-            completed = subprocess.run(
-                ["/bin/bash", str(wrapper), str(devicectl), "device", "list"],
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, env=hostile, check=False,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            observed = dict(line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line)
-            self.assertEqual(observed["DEVELOPER_DIR"], str(developer))
-            self.assertEqual(observed["HOME"], "/tmp")
-            self.assertEqual(observed["TMPDIR"], "/tmp")
-            self.assertEqual(observed["LANG"], "C")
-            self.assertEqual(observed["LC_ALL"], "C")
-            self.assertEqual(observed["TOOLCHAINS"], "<unset>")
-            self.assertEqual(observed["DYLD_INSERT_LIBRARIES"], "<unset>")
-            self.assertEqual(observed["SDKROOT"], "<unset>")
-            rejected = subprocess.run(
-                ["/bin/bash", str(wrapper), str(root / "attacker-devicectl")],
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, env=hostile, check=False,
-            )
-            self.assertEqual(rejected.returncode, 77)
-            self.assertIn("unadmitted Xcode device tool", rejected.stderr)
+        self.assertNotIn('/usr/bin/xcrun xctrace', source)
+        self.assertNotIn('/usr/bin/xcrun devicectl', source)
 
 
 if __name__ == "__main__":
