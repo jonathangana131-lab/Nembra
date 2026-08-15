@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 39,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1462,6 +1462,17 @@
         "similarity": 0.357,
         "title": "[Capture P0][VALIDATION] Isolate macOS held-descriptor regression"
       },
+      "3432": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3432,
+        "recommendedAction": "independent-review",
+        "similarity": 0.102,
+        "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
+      },
       "3433": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1526,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:20:38Z",
+    "liveRefreshAt": "2026-08-15T11:20:56Z",
     "liveRefreshDuplicatesSuppressed": [
       3433
     ],
@@ -5311,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 625,
+  "revision": 626,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:20:39Z",
+  "updatedAt": "2026-08-15T11:20:58Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5390,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:20:38Z",
+      "updatedAt": "2026-08-15T11:20:56Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
