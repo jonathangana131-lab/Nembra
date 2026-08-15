@@ -193,6 +193,23 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
             with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
                 snapshot.stage_accepted_build_inputs(root, source_sha, Path(raw) / "stage", accepted)
 
+    def test_casefolded_tracked_ancestor_cannot_alias_generated_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            root.mkdir()
+            seed_repo(root)
+            os.symlink(".", root / "localsecrets")
+            git(root, "add", "localsecrets")
+            git(root, "commit", "-qm", "track case-fold generated ancestor alias")
+            source_sha = git(root, "rev-parse", "HEAD")
+            seed_generated(root)
+            accepted = snapshot.generated_manifest_sha256(root, source_sha)
+            destination = Path(raw) / "stage"
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
+            self.assertFalse(destination.exists())
+            self.assertTrue(snapshot._namespace_paths_overlap(Path("localsecrets"), Path("LocalSecrets/TuyaSDK")))
+
     def test_tracked_ancestor_symlink_cannot_alias_generated_subject(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "repo"
