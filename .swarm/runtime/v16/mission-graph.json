@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 30,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1330,17 +1330,6 @@
         "similarity": 0.061,
         "title": "[Dashboard V17] Close physical-unavailable cockpit machine state"
       },
-      "3368": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "bb11d8970153cb54e06726047a98dfe2b514311a",
-        "lane": "capture-signed-install-custody",
-        "pr": 3368,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.556,
-        "title": "[Capture P0][RED TEAM] Reject tracked ancestor aliases in generated-input staging"
-      },
       "3369": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1351,17 +1340,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.215,
         "title": "[Capture P0][VALIDATION] Repair private-provenance validation witnesses"
-      },
-      "3370": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3370,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.55,
-        "title": "[Capture P0][RED TEAM] Reject tracked ancestors of generated build inputs"
       },
       "3379": {
         "classification": "requires-review",
@@ -1449,9 +1427,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:06:23Z",
+    "liveRefreshAt": "2026-08-15T03:06:43Z",
     "liveRefreshDuplicatesSuppressed": [
-      3370
+      3359
     ],
     "liveRefreshMainSHA": "412c13dbcf5bdc3708e0c2ac0a3586819ffd7772",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5234,10 +5212,10 @@
       "userValue": 7
     }
   },
-  "revision": 476,
+  "revision": 477,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:06:24Z",
+  "updatedAt": "2026-08-15T03:06:43Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5291,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:06:23Z",
+      "updatedAt": "2026-08-15T03:06:43Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
