@@ -12,7 +12,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import stat
 import subprocess
 import tempfile
 import unittest
@@ -23,6 +22,15 @@ BOOTSTRAP = REPO / "Scripts/bootstrap_capture_tuya_sdk.sh"
 PROVENANCE = REPO / "Scripts/capture_tuya_private_input_provenance.py"
 LOCK_LABEL = "Podfile.lock SHA-256:"
 PROVENANCE_LABEL = "Private-input provenance-record SHA-256:"
+
+
+def _annotation_text(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _emit_stage_failure(stage: str, result: subprocess.CompletedProcess[str]) -> None:
+    detail = f"rc={result.returncode}; stdout={result.stdout!r}; stderr={result.stderr!r}"
+    print(f"::error title={stage}::{_annotation_text(detail)}", flush=True)
 
 
 class PrivateProvenancePreacceptBuildSideTests(unittest.TestCase):
@@ -115,6 +123,11 @@ class PrivateProvenancePreacceptBuildSideTests(unittest.TestCase):
             raise AssertionError(f"candidate output missing {label!r}: {output!r}")
         return match.group(1)
 
+    def require_success(self, stage: str, result: subprocess.CompletedProcess[str]) -> None:
+        if result.returncode != 0:
+            _emit_stage_failure(stage, result)
+        self.assertEqual(result.returncode, 0, f"{stage}: {result.stderr}")
+
     def test_missing_private_digest_fails_before_pod_resolution(self) -> None:
         result = self.run_bootstrap(lock_digest="1" * 64)
         self.assertNotEqual(result.returncode, 0)
@@ -123,14 +136,14 @@ class PrivateProvenancePreacceptBuildSideTests(unittest.TestCase):
 
     def test_reviewed_private_digest_rejects_resnapshot_of_mutated_input(self) -> None:
         review_a = self.run_bootstrap("--resolve-lock-for-review")
-        self.assertEqual(review_a.returncode, 0, review_a.stderr)
+        self.require_success("review-A", review_a)
         self.assertIn("NOT FIELD BUILD AUTHORITY", review_a.stdout)
         lock_a = self.digest_from(review_a.stdout, LOCK_LABEL)
         provenance_a = self.digest_from(review_a.stdout, PROVENANCE_LABEL)
         self.assertTrue(self.pod_marker.exists())
 
         accepted_a = self.run_bootstrap(lock_digest=lock_a, provenance_digest=provenance_a)
-        self.assertEqual(accepted_a.returncode, 0, accepted_a.stderr)
+        self.require_success("accepted-A", accepted_a)
         self.assertIn("Preaccepted private Tuya input provenance matched", accepted_a.stdout)
 
         # Keep the dependency lock byte-identical and change only one ignored
@@ -138,6 +151,8 @@ class PrivateProvenancePreacceptBuildSideTests(unittest.TestCase):
         # must not promote that new record under the old externally reviewed digest.
         self.identity.write_text('let appKey = "SYNTHETIC-B"\n', encoding="utf-8")
         rejected_b = self.run_bootstrap(lock_digest=lock_a, provenance_digest=provenance_a)
+        if rejected_b.returncode == 0 or "does not match the preaccepted provenance-record SHA-256" not in rejected_b.stderr:
+            _emit_stage_failure("rejected-B", rejected_b)
         self.assertNotEqual(rejected_b.returncode, 0)
         self.assertIn(
             "does not match the preaccepted provenance-record SHA-256",
@@ -146,9 +161,15 @@ class PrivateProvenancePreacceptBuildSideTests(unittest.TestCase):
         self.assertNotIn("NEXT BUILD RULE:", rejected_b.stdout)
 
         review_b = self.run_bootstrap("--resolve-lock-for-review")
-        self.assertEqual(review_b.returncode, 0, review_b.stderr)
+        self.require_success("review-B", review_b)
         lock_b = self.digest_from(review_b.stdout, LOCK_LABEL)
         provenance_b = self.digest_from(review_b.stdout, PROVENANCE_LABEL)
+        if lock_b != lock_a or provenance_b == provenance_a:
+            detail = (
+                f"lockA={lock_a} lockB={lock_b} "
+                f"provenanceA={provenance_a} provenanceB={provenance_b}"
+            )
+            print(f"::error title=review-B-digests::{_annotation_text(detail)}", flush=True)
         self.assertEqual(lock_b, lock_a)
         self.assertNotEqual(provenance_b, provenance_a)
 
