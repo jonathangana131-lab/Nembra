@@ -1,0 +1,147 @@
+name: Capture One-Time Private Read Convergence
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-frozen-device-tools-sol-20260814
+    paths:
+      - .github/workflows/capture-import-private-read-hardening-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    name: Import exact private-read hardening and preserve frozen tools
+    runs-on: macos-15
+    timeout-minutes: 12
+    env:
+      IMPORT_HEAD: c15bb755ebbbf140c17cf6a0a78451c435992e27
+      IMPORT_BRANCH: repair/v17-capture-root-private-read-sol-20260814
+      PRODUCT_BRANCH: repair/v17-capture-frozen-device-tools-sol-20260814
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind one-shot import to exact heads
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch --no-tags origin "$IMPORT_BRANCH"
+          actual_import="$(git rev-parse FETCH_HEAD)"
+          test "$actual_import" = "$IMPORT_HEAD"
+          printf 'Convergence source: %s\n' "$IMPORT_HEAD"
+          printf 'Carrier before convergence: %s\n' "$GITHUB_SHA"
+
+      - name: Import exact latest private-read implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout "$IMPORT_HEAD" -- \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            .github/workflows/capture-private-build-uid-read-lease-current.yml
+
+      - name: Reapply only frozen post-build device-tool handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          source = path.read_text(encoding="utf-8")
+
+          replacements = (
+              (
+                  ") -> tuple[Path, str]:\n",
+                  ") -> tuple[Path, str, Path, Path, Path]:\n",
+                  1,
+              ),
+              (
+                  '        selected_xcodebuild = _require_frozen_tool(tools, "xcodebuild", frozen_developer)\n'
+                  '        _require_frozen_tool(tools, "xctrace", frozen_developer)\n'
+                  '        _require_frozen_tool(tools, "devicectl", frozen_developer)\n',
+                  '        selected_xcodebuild = _require_frozen_tool(tools, "xcodebuild", frozen_developer)\n'
+                  '        selected_xctrace = _require_frozen_tool(tools, "xctrace", frozen_developer)\n'
+                  '        selected_devicectl = _require_frozen_tool(tools, "devicectl", frozen_developer)\n',
+                  1,
+              ),
+              (
+                  "        return stage_root, fingerprint\n",
+                  "        return stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl\n",
+                  1,
+              ),
+              (
+                  "        stage_root, fingerprint = orchestrate(\n",
+                  "        stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl = orchestrate(\n",
+                  1,
+              ),
+              (
+                  '        if "\\t" in str(stage_root) or "\\n" in str(stage_root) or "\\t" in fingerprint or "\\n" in fingerprint:\n'
+                  '            raise SelectedXcodeBuildOrchestratorError("signed build result contains malformed separators")\n'
+                  '        sys.stdout.write(f"{stage_root}\\t{fingerprint}\\n")\n',
+                  '        values = (\n'
+                  '            str(stage_root),\n'
+                  '            fingerprint,\n'
+                  '            str(frozen_developer),\n'
+                  '            str(selected_xctrace),\n'
+                  '            str(selected_devicectl),\n'
+                  '        )\n'
+                  '        if any("\\t" in value or "\\n" in value for value in values):\n'
+                  '            raise SelectedXcodeBuildOrchestratorError("selected-Xcode build result contains malformed separators")\n'
+                  '        sys.stdout.write("\\t".join(values) + "\\n")\n',
+                  1,
+              ),
+          )
+
+          for old, new, expected_count in replacements:
+              actual = source.count(old)
+              if actual != expected_count:
+                  raise SystemExit(
+                      f"exact private-read import changed expected handoff patch shape: wanted {expected_count}, found {actual}: {old[:100]!r}"
+                  )
+              source = source.replace(old, new, expected_count)
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Prove converged authority before push
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-read-convergence-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_frozen_device_tool_handoff.py \
+            scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+
+      - name: Commit converged product tree and remove one-shot machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/capture-import-private-read-hardening-once.yml
+          git add -A
+          test -n "$(git status --porcelain=v1)"
+          git config user.name "nembra-convergence-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Converge latest private-read hardening with frozen device tools"
+          git push origin "HEAD:$PRODUCT_BRANCH"
