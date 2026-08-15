@@ -1,0 +1,59 @@
+name: Capture Read Lease Authoring Recovery Once
+
+on:
+  push:
+    branches:
+      - hardening/v17-capture-read-lease-component-walk-sol-20260814
+    paths:
+      - .github/workflows/capture-read-lease-authoring-recovery-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: hardening/v17-capture-read-lease-component-walk-sol-20260814
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Repair materializer and remove stale authoring helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=578b389e7974ff8814020d773ee0115531b654be
+          MATERIALIZER=.github/workflows/capture-read-lease-component-walk-materialize.yml
+          STALE=.github/workflows/capture-read-lease-materializer-whitespace-repair-once.yml
+          SELF=.github/workflows/capture-read-lease-authoring-recovery-once.yml
+
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          for path in "$MATERIALIZER" "$STALE" "$SELF"; do test -f "$path"; done
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-read-lease-component-walk-materialize.yml')
+          source = path.read_text(encoding='utf-8')
+          marker = ".replace('          ', '')"
+          count = source.count(marker)
+          if count != 4:
+              raise SystemExit(f'expected exactly four unsafe indentation-strip calls, found {count}')
+          path.write_text(source.replace(marker, ''), encoding='utf-8')
+          PY
+
+          git rm "$STALE" "$SELF"
+          git add "$MATERIALIZER"
+          git diff --cached --check
+          test "$(git diff --cached --name-only | LC_ALL=C sort)" = "$(printf '%s\n' "$MATERIALIZER" "$SELF" "$STALE" | LC_ALL=C sort)"
+
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git commit -m 'ci(capture): restore component-walk materializer invariant'
+
+          test "$(git diff --name-only "$BASE"...HEAD)" = "$MATERIALIZER"
+          git diff --check "$BASE"...HEAD
+          git push origin HEAD:hardening/v17-capture-read-lease-component-walk-sol-20260814
