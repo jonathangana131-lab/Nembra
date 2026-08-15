@@ -1,0 +1,90 @@
+name: Capture Build Root Exact Sibling Bundle Validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-build-root-exact-sibling-bundle-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-build-root-exact-sibling-bundle-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 3e65f6a4aa9792ea48c924f3ca9f7e9bc4557d6d
+  ROOT_HELPER: scripts/ci/capture_accepted_build_root_custody.py
+  SNAPSHOT_HELPER: scripts/ci/capture_accepted_build_input_snapshot.py
+
+jobs:
+  portable-positive:
+    name: Prove exact sealed sibling bundle defeats live-helper poisoning
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-build-root-exact-sibling-bundle-validation.yml"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize exact sibling blobs into root-sealed bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/nembra-build-root-exact-helper-bundle"
+          sudo rm -rf "$bundle"
+          sudo mkdir -p "$bundle"
+          git show "$EXACT_PARENT:$ROOT_HELPER" | sudo tee "$bundle/$(basename "$ROOT_HELPER")" >/dev/null
+          git show "$EXACT_PARENT:$SNAPSHOT_HELPER" | sudo tee "$bundle/$(basename "$SNAPSHOT_HELPER")" >/dev/null
+
+          root_oid="$(git rev-parse "$EXACT_PARENT:$ROOT_HELPER")"
+          snapshot_oid="$(git rev-parse "$EXACT_PARENT:$SNAPSHOT_HELPER")"
+          test "$(git hash-object "$bundle/$(basename "$ROOT_HELPER")")" = "$root_oid"
+          test "$(git hash-object "$bundle/$(basename "$SNAPSHOT_HELPER")")" = "$snapshot_oid"
+
+          sudo chown -R root:root "$bundle"
+          sudo chmod 0555 "$bundle"
+          sudo chmod 0444 \
+            "$bundle/$(basename "$ROOT_HELPER")" \
+            "$bundle/$(basename "$SNAPSHOT_HELPER")"
+          test "$(stat -c '%u:%g:%a' "$bundle")" = "0:0:555"
+          test "$(stat -c '%u:%g:%a' "$bundle/$(basename "$ROOT_HELPER")")" = "0:0:444"
+          test "$(stat -c '%u:%g:%a' "$bundle/$(basename "$SNAPSHOT_HELPER")")" = "0:0:444"
+
+      - name: Poison live sibling and prove privileged import stays inside sealed bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/nembra-build-root-exact-helper-bundle"
+          printf '%s\n' 'raise RuntimeError("MUTABLE_CHECKOUT_SNAPSHOT_EXECUTED")' > "$SNAPSHOT_HELPER"
+          grep -q MUTABLE_CHECKOUT_SNAPSHOT_EXECUTED "$SNAPSHOT_HELPER"
+
+          sudo /usr/bin/python3 -B -I "$bundle/$(basename "$ROOT_HELPER")" --help > "$RUNNER_TEMP/root-helper-help.txt"
+          grep -q 'Create a root-custodied accepted Nembra Capture build root' "$RUNNER_TEMP/root-helper-help.txt"
+
+          test "$(git hash-object "$bundle/$(basename "$ROOT_HELPER")")" = "$(git rev-parse "$EXACT_PARENT:$ROOT_HELPER")"
+          test "$(git hash-object "$bundle/$(basename "$SNAPSHOT_HELPER")")" = "$(git rev-parse "$EXACT_PARENT:$SNAPSHOT_HELPER")"
+          git checkout -- "$SNAPSHOT_HELPER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf "$RUNNER_TEMP/nembra-build-root-exact-helper-bundle"
+          echo "NEMBRA_BUILD_ROOT_EXACT_SIBLING_BUNDLE exactRootHelper=true exactSnapshotHelper=true rootSealed=true liveCheckoutPoisonIgnored=true productionWired=false inputAdmissionAccepted=false signingAuthorityCreated=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
