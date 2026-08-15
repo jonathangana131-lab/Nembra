@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 31,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1385,17 +1385,6 @@
         "similarity": 0.397,
         "title": "[Capture P0][SECURITY] Hold private lease descriptors from plan through grant"
       },
-      "3404": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3404,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.383,
-        "title": "[Capture P0][SECURITY] Bind private lease to one planned ancestry generation"
-      },
       "3406": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1449,7 +1438,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:22:58Z",
+    "liveRefreshAt": "2026-08-15T03:23:14Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5234,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 525,
+  "revision": 526,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:22:59Z",
+  "updatedAt": "2026-08-15T03:23:15Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:22:58Z",
+      "updatedAt": "2026-08-15T03:23:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
