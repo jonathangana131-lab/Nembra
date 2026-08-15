@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Capture stationary field runbook current authority")
 struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
-    @Test("secure-link procedure requires four fresh package-owned windows, literal confirmation, and structured-only evidence")
-    func secureLinkRunbookCannotRegressToHistoricalHintOrRawByteAuthority() throws {
+    @Test("current procedure requires four fresh package-owned windows, literal confirmation, and structured-only evidence")
+    func currentProcedureCannotRegressToHistoricalHintOrRawByteAuthority() throws {
         let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
         #expect(runbook.contains("OFF1 → ON1 → OFF2 → ON2"))
@@ -15,6 +15,7 @@ struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
         #expect(runbook.contains("historical CoreBluetooth UUID"))
         #expect(runbook.contains("descriptive capture-local evidence only"))
         #expect(runbook.contains("cannot mint target authority"))
+        #expect(runbook.contains("There is no hint-based override"))
         #expect(runbook.contains("Nembra must not open a second independent CoreBluetooth connection"))
         #expect(runbook.contains("Structured `dpsUpdate` observations are application-level evidence only"))
         #expect(runbook.contains("do **not** establish raw authenticated FD50/ATT bytes"))
@@ -25,43 +26,23 @@ struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
         #expect(!runbook.contains("Confirm correlated Bluetooth target"))
         #expect(!runbook.contains("use the best accepted evidence"))
         #expect(!runbook.contains("known first-capture peripheral, FD50 advertisement evidence"))
+        #expect(!runbook.contains("combined FD50 + Tuya-company evidence"))
         #expect(!runbook.contains("OFF baseline then ON correlation"))
     }
 
-    @Test("private SDK provisioning pins dependency and target-correlation provenance")
-    func privateProvisioningCannotFloatSDKOrRestoreTwoWindowAuthority() throws {
-        let provisioning = try readRepositoryFile("docs/CAPTURE_TUYA_OFFICIAL_SDK_PROVISIONING.md")
+    @Test("one current procedure owns execution authority and remains explicit NO-GO")
+    func currentProcedureIsSingleFailClosedAuthority() throws {
+        let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
-        #expect(provisioning.contains("ThingSmartHomeKit` **7.8.0**"))
-        #expect(provisioning.contains("ThingSmartBusinessExtensionKit` **7.8.0**"))
-        #expect(provisioning.contains("pod install --repo-update"))
-        #expect(provisioning.contains("ResolvedTuyaDependencyProvenance.txt"))
-        #expect(provisioning.contains("OFF1 → ON1 → OFF2 → ON2"))
-        #expect(provisioning.contains("explicitly confirm"))
-        #expect(provisioning.contains("historical C7D09A22 UUID"))
-        #expect(provisioning.contains("descriptive only"))
-        #expect(provisioning.contains("rawFD50BytesCaptured: false"))
-        #expect(provisioning.contains("dpQueriesSent: false"))
-        #expect(provisioning.contains("dpCommandsSent: false"))
-
-        #expect(!provisioning.contains("pins the SmartLife 7.8.x line"))
-        #expect(!provisioning.contains("OFF baseline then ON correlation"))
-    }
-
-    @Test("legacy secure-link runbook is a tombstone and cannot remain executable")
-    func legacySecureLinkRunbookCannotCarryStalePhysicalInstructions() throws {
-        let legacy = try readRepositoryFile("docs/CAPTURE_NEXT_TUYA_SECURE_LINK_TEST.md")
-
-        #expect(legacy.contains("DEPRECATED / DO NOT USE"))
-        #expect(legacy.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
-        #expect(legacy.contains("OFF1 → ON1 → OFF2 → ON2"))
-        #expect(legacy.contains("no historical UUID/name/RSSI/FD50/Tuya-hint fallback authority"))
-        #expect(legacy.contains("PHYSICAL STATUS: NO-GO"))
-
-        #expect(!legacy.contains("With scooter OFF, collect a short local Bluetooth baseline"))
-        #expect(!legacy.contains("previous CoreBluetooth UUID plus FD50 / Tuya company-ID / power-on-delta evidence"))
-        #expect(!legacy.contains("NEMBRA_TUYA_APP_KEY"))
-        #expect(!legacy.contains("NEMBRA_TUYA_APP_SECRET"))
+        #expect(runbook.contains("PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`"))
+        #expect(runbook.contains("single current next-physical-procedure authority"))
+        #expect(runbook.contains("Older passive/authenticated gate documents are historical only and cannot authorize execution"))
+        #expect(runbook.contains("physical secure-link experiment is **NO-GO**"))
+        #expect(runbook.contains("Accepted exact source commit: **NOT YET AUTHORIZED**"))
+        #expect(runbook.contains("Accepted signed field build / install evidence: **NOT YET AUTHORIZED**"))
+        #expect(runbook.contains("Accepted visual/runtime exact-head subject: **NOT YET AUTHORIZED**"))
+        #expect(runbook.contains("Physical execution state: **NO-GO / NOT YET AUTHORIZED**"))
+        #expect(runbook.contains("Only a final composed exact build may replace the NOT YET AUTHORIZED fields and change this document to GO"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
