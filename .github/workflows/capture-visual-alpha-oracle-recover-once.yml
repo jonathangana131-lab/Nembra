@@ -1,0 +1,214 @@
+name: Capture Visual Alpha Oracle Recover Once
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-visual-ba615-blank-guard-sol-20260814
+    paths:
+      - .github/workflows/capture-visual-alpha-oracle-recover-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-visual-alpha-oracle-recover-once
+  cancel-in-progress: false
+
+env:
+  SOURCE_HEAD: 4576ef07538fc3b91c7e2866f7705405046c56d2
+  PRODUCT_PARENT: ba615954b2afdf2e011f485c0ecbc9152614d21e
+  BRANCH: validation/v17-capture-visual-ba615-blank-guard-sol-20260814
+  FIRST: .github/workflows/capture-visual-alpha-oracle-materialize-once.yml
+  SELF: .github/workflows/capture-visual-alpha-oracle-recover-once.yml
+
+jobs:
+  recover:
+    name: Recover fail-closed RGBA visual oracle
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind untouched visual evidence source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          changed="$(git diff --name-only "$SOURCE_HEAD"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$FIRST" "$SELF" | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          test "$(git hash-object scripts/ci/capture_visual_png_content_guard.py)" = "63e8fa75c3d5b01b4646699b983bf9fc99c15cb7"
+          test "$(git hash-object scripts/ci/tests/test_capture_visual_png_content_guard.py)" = "3aa2420fe57348c404dd97e9619646039280279e"
+          test "$(git hash-object scripts/ci/capture_standalone_visual_evidence.py)" = "0b867f2b7c8556d17af7e67b5b9317dd9ac22165"
+          test "$(git hash-object scripts/ci/tests/test_capture_standalone_visual_evidence.py)" = "54e145b7a3780c48b63c5fa3395fbd2868dcec6a"
+          git diff --check "$SOURCE_HEAD"...HEAD
+
+      - name: Apply alpha-visible rendered-content contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          def insert_before_once(lines: list[str], needle: str, addition: list[str], label: str) -> list[str]:
+              matches = [index for index, line in enumerate(lines) if line == needle]
+              if len(matches) != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {len(matches)}')
+              index = matches[0]
+              return lines[:index] + addition + lines[index:]
+
+          def insert_after_once(lines: list[str], needle: str, addition: list[str], label: str) -> list[str]:
+              matches = [index for index, line in enumerate(lines) if line == needle]
+              if len(matches) != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {len(matches)}')
+              index = matches[0] + 1
+              return lines[:index] + addition + lines[index:]
+
+          guard = Path('scripts/ci/capture_visual_png_content_guard.py')
+          lines = guard.read_text(encoding='utf-8').splitlines()
+          lines = insert_before_once(
+              lines,
+              '                bucket = _color_bucket(reconstructed[x], reconstructed[x + 1], reconstructed[x + 2])',
+              [
+                  '                if color_type == 6 and reconstructed[x + 3] != 255:',
+                  '                    raise PNGGuardError(',
+                  '                        "RGBA app-content pixel is not fully opaque; hidden RGB cannot prove rendered content"',
+                  '                    )',
+              ],
+              'RGBA classification',
+          )
+          lines = insert_after_once(
+              lines,
+              '        "bandVariantPixels": band_variant_pixels,',
+              ['        "alphaPolicy": "rgba-app-region-fully-opaque" if color_type == 6 else "implicit-opaque-rgb",'],
+              'alpha policy result',
+          )
+          guard.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+          tests = Path('scripts/ci/tests/test_capture_visual_png_content_guard.py')
+          lines = tests.read_text(encoding='utf-8').splitlines()
+          lines = insert_before_once(
+              lines,
+              '    rendered = temp / "rendered.png"',
+              [
+                  '    transparent_noise = temp / "transparent-hidden-rgb.png"',
+                  '',
+                  '    def transparent_noise_pixel(x: int, y: int) -> tuple[int, int, int, int]:',
+                  '        if y < status_bar_end:',
+                  '            return (255, 255, 255, 255)',
+                  '        if status_bar_end + 16 <= y < status_bar_end + 32:',
+                  '            return ((x * 37) & 0xFF, (x * 17) & 0xFF, 220, 0)',
+                  '        if status_bar_end + 112 <= y < status_bar_end + 128:',
+                  '            return (40, (x * 29) & 0xFF, (x * 11) & 0xFF, 0)',
+                  '        return (8, 8, 8, 0)',
+                  '',
+                  '    transparent_noise.write_bytes(rgba_png(width, height, transparent_noise_pixel))',
+                  '    try:',
+                  '        guard.inspect_rendered_content(transparent_noise)',
+                  '    except guard.PNGGuardError as exc:',
+                  '        if "fully opaque" not in str(exc):',
+                  '            raise SystemExit(f"transparent hidden-RGB evidence failed for the wrong reason: {exc}")',
+                  '    else:',
+                  '        raise SystemExit("fully transparent hidden RGB must never count as rendered app content")',
+                  '',
+                  '    partially_transparent = temp / "partially-transparent-blank.png"',
+                  '',
+                  '    def partially_transparent_pixel(_x: int, y: int) -> tuple[int, int, int, int]:',
+                  '        if status_bar_end + 16 <= y < status_bar_end + 32:',
+                  '            return (24, 24, 24, 128)',
+                  '        if status_bar_end + 112 <= y < status_bar_end + 128:',
+                  '            return (80, 80, 80, 1)',
+                  '        return (250, 250, 250, 255)',
+                  '',
+                  '    partially_transparent.write_bytes(rgba_png(width, height, partially_transparent_pixel))',
+                  '    try:',
+                  '        guard.inspect_rendered_content(partially_transparent)',
+                  '    except guard.PNGGuardError as exc:',
+                  '        if "fully opaque" not in str(exc):',
+                  '            raise SystemExit(f"partially transparent evidence failed for the wrong reason: {exc}")',
+                  '    else:',
+                  '        raise SystemExit("partially transparent RGB variation must never prove rendered app content")',
+                  '',
+              ],
+              'transparent fixtures',
+          )
+          lines = insert_after_once(
+              lines,
+              '        raise SystemExit(f"non-trivial dark rendered app content should pass readiness: {result}")',
+              [
+                  '    if result.get("alphaPolicy") != "rgba-app-region-fully-opaque":',
+                  '        raise SystemExit(f"opaque RGBA readiness must retain explicit alpha policy: {result}")',
+              ],
+              'opaque RGBA policy assertion',
+          )
+          tests.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+          runner = Path('scripts/ci/capture_standalone_visual_evidence.py')
+          source = runner.read_text(encoding='utf-8')
+          old = '"screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v1",'
+          new = '"screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v2",'
+          if source.count(old) != 1:
+              raise SystemExit(f'visual provenance: expected one v1 marker, found {source.count(old)}')
+          runner.write_text(source.replace(old, new), encoding='utf-8')
+
+          runner_test = Path('scripts/ci/tests/test_capture_standalone_visual_evidence.py')
+          lines = runner_test.read_text(encoding='utf-8').splitlines()
+          lines = insert_after_once(
+              lines,
+              '    '\''"screenshotRenderedContentReadinessVerified": True'\'',',
+              ['    '\''"screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v2"'\'','],
+              'v2 provenance source contract',
+          )
+          lines = insert_before_once(
+              lines,
+              'print("capture standalone visual exact-head source contract: PASS")',
+              [
+                  'if "capture_visual_png_content_guard.py/v1" in runner:',
+                  '    raise SystemExit("stale visual guard v1 provenance survived alpha-policy change")',
+                  '',
+              ],
+              'stale v1 rejection',
+          )
+          runner_test.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+          git diff --check
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_visual_png_content_guard.py \
+            scripts/ci/capture_standalone_visual_evidence.py \
+            scripts/ci/tests/test_capture_visual_png_content_guard.py \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_visual_png_content_guard.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_standalone_visual_evidence.py
+
+      - name: Publish clean repaired validation head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm "$FIRST" "$SELF"
+          git add \
+            scripts/ci/capture_visual_png_content_guard.py \
+            scripts/ci/capture_standalone_visual_evidence.py \
+            scripts/ci/tests/test_capture_visual_png_content_guard.py \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py
+          git diff --cached --check
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git commit -m 'capture: fail closed on transparent visual evidence'
+          changed="$(git diff --name-only "$PRODUCT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-standalone-visual-evidence.yml \
+            .github/workflows/capture-visual-exact-parent-guard.yml \
+            scripts/ci/capture_standalone_visual_evidence.py \
+            scripts/ci/capture_visual_png_content_guard.py \
+            scripts/ci/tests/test_capture_standalone_visual_evidence.py \
+            scripts/ci/tests/test_capture_visual_png_content_guard.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git push origin "HEAD:$BRANCH"
