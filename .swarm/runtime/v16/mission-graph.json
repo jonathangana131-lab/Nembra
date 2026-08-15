@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 35,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1297,17 +1297,6 @@
         "similarity": 0.364,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
       },
-      "3387": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-flagship-convergence",
-        "pr": 3387,
-        "recommendedAction": "independent-review",
-        "similarity": 0.051,
-        "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
-      },
       "3394": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1482,7 +1471,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:10:06Z",
+    "liveRefreshAt": "2026-08-15T11:10:21Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5267,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 596,
+  "revision": 597,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:10:08Z",
+  "updatedAt": "2026-08-15T11:10:22Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:10:06Z",
+      "updatedAt": "2026-08-15T11:10:21Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
