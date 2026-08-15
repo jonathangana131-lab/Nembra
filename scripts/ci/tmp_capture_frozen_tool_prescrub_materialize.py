@@ -16,11 +16,11 @@ def transform_installer() -> None:
     index = matches[0]
     expected_tail = [
         "        PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n",
-        "        HOME=\"$FROZEN_TOOL_HOME\" \\\n",
-        "        TMPDIR=\"$FROZEN_TOOL_TMPDIR\" \\\n",
+        "        HOME=/tmp \\\n",
+        "        TMPDIR=/tmp \\\n",
         "        LANG=C \\\n",
         "        LC_ALL=C \\\n",
-        "        DEVELOPER_DIR=\"$SELECTED_DEVELOPER_DIR\" \\\n",
+        "        DEVELOPER_DIR=\"$SELECTED_XCODE_DEVELOPER_DIR\" \\\n",
         "        \"$tool\" \"$@\"\n",
     ]
     actual_tail = lines[index + 1 : index + 1 + len(expected_tail)]
