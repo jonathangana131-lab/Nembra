@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 34,
+    "classifiedPRTotal": 35,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1439,6 +1439,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.064,
         "title": "[Battery/Range V15] Restore accepted authority and visual contracts on main"
+      },
+      "3426": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3426,
+        "recommendedAction": "independent-review",
+        "similarity": 0.285,
+        "title": "[Capture P0][RECOVERY] Repair shared-ancestor materializer indentation"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1471,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:11:16Z",
+    "liveRefreshAt": "2026-08-15T11:11:32Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5256,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 599,
+  "revision": 600,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:11:17Z",
+  "updatedAt": "2026-08-15T11:11:34Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5335,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:11:16Z",
+      "updatedAt": "2026-08-15T11:11:32Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
