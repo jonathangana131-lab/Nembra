@@ -6,6 +6,7 @@ on:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraCapture.xcodeproj/project.pbxproj
+      - NembraCapture-Info.plist
       - scripts/field/install_one_time_capture.command
       - scripts/ci/tests/test_capture_private_provenance_export_custody.py
       - .github/workflows/capture-private-provenance-export-custody.yml
