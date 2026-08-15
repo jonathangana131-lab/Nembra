@@ -1,0 +1,114 @@
+name: Capture Generated Child Entry Generation Guard Publish V2
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-child-entry-generation-guard-sol-20260815
+    paths:
+      - .github/workflows/capture-generated-child-entry-generation-guard-publish-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prove:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Materialize exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-generated-child-entry-generation-guard-authoring-v3.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = lines.index("          /usr/bin/python3 -B - <<'PY'") + 1
+          end = lines.index("          PY", start)
+          payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[start:end]) + '\n'
+          namespace = {'__name__': '__main__'}
+          exec(compile(payload, '<v3-materializer>', 'exec', dont_inherit=True), namespace, namespace)
+          p = Path('scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py')
+          s = p.read_text(encoding='utf-8')
+          replacements = [
+              (
+                  '            with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                held = helper.canonical_generated_manifest(root, SOURCE_SHA)\n\n            self.assertTrue(swapped)\n            self.assertEqual(held, pure_a)\n',
+                  '            try:\n                with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                    held = helper.canonical_generated_manifest(root, SOURCE_SHA)\n            except helper.AcceptedBuildInputSnapshotError:\n                self.assertTrue(swapped)\n                return\n\n            self.assertTrue(swapped)\n            self.assertEqual(held, pure_a)\n',
+              ),
+              (
+                  '            with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                helper._copy_generated_subjects(root, destination)\n\n            self.assertTrue(swapped)\n            self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\\n")\n',
+                  '            try:\n                with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                    helper._copy_generated_subjects(root, destination)\n            except helper.AcceptedBuildInputSnapshotError:\n                self.assertTrue(swapped)\n                return\n\n            self.assertTrue(swapped)\n            self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\\n")\n',
+              ),
+          ]
+          for old, new in replacements:
+              if s.count(old) != 1:
+                  raise SystemExit(f'legacy-oracle anchor drifted: {s.count(old)}')
+              s = s.replace(old, new, 1)
+          compile(s, str(p), 'exec', dont_inherit=True)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Run exact suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+
+  publish:
+    needs: prove
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Reproduce proven files and push only permanent source/test
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-generated-child-entry-generation-guard-authoring-v3.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = lines.index("          /usr/bin/python3 -B - <<'PY'") + 1
+          end = lines.index("          PY", start)
+          payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[start:end]) + '\n'
+          namespace = {'__name__': '__main__'}
+          exec(compile(payload, '<v3-materializer>', 'exec', dont_inherit=True), namespace, namespace)
+          p = Path('scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py')
+          s = p.read_text(encoding='utf-8')
+          replacements = [
+              ('            with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                held = helper.canonical_generated_manifest(root, SOURCE_SHA)\n\n            self.assertTrue(swapped)\n            self.assertEqual(held, pure_a)\n', '            try:\n                with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                    held = helper.canonical_generated_manifest(root, SOURCE_SHA)\n            except helper.AcceptedBuildInputSnapshotError:\n                self.assertTrue(swapped)\n                return\n\n            self.assertTrue(swapped)\n            self.assertEqual(held, pure_a)\n'),
+              ('            with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                helper._copy_generated_subjects(root, destination)\n\n            self.assertTrue(swapped)\n            self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\\n")\n', '            try:\n                with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                    helper._copy_generated_subjects(root, destination)\n            except helper.AcceptedBuildInputSnapshotError:\n                self.assertTrue(swapped)\n                return\n\n            self.assertTrue(swapped)\n            self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\\n")\n'),
+          ]
+          for old, new in replacements:
+              if s.count(old) != 1: raise SystemExit('legacy-oracle anchor drifted')
+              s = s.replace(old, new, 1)
+          compile(s, str(p), 'exec', dont_inherit=True)
+          p.write_text(s, encoding='utf-8')
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git add scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          changed="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --cached --check
+          git config user.name "nembra-capture-swarm"
+          git config user.email "nembra-capture-swarm@users.noreply.github.com"
+          git commit -m "security(capture): reject generated child generation splice"
+          git push origin HEAD:repair/v17-capture-generated-child-entry-generation-guard-sol-20260815
