@@ -49,11 +49,11 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             "selected_xcode_orchestrator": selected_xcode_orchestrator,
             "supervisor": "/usr/bin/sudo /usr/bin/python3 -I -c",
             "derived": '-derivedDataPath "$DERIVED_PLACEHOLDER"',
-            "stage_result": 'APP_INSTALL_STAGE_ROOT="${BUILD_ORIGIN_CUSTODY_RESULT%%$\'\\t\'*}"',
+            "stage_result": "IFS=$'\\t' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA",
             "switch": 'APP="$APP_INSTALL_STAGE"',
             "verify": "/usr/bin/python3 -I - verify-stage",
             "codesign": '/usr/bin/codesign --verify --deep --strict "$APP"',
-            "install": 'xcrun devicectl device install app --device "$COREDEVICE_ID" "$APP"',
+            "install": 'run_frozen_xcode_tool "$SELECTED_DEVICECTL" device install app --device "$COREDEVICE_ID" "$APP"',
         }
         indexes: dict[str, int] = {}
         for name, marker in markers.items():
@@ -78,13 +78,17 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            'STAGED_APP_TREE_SHA256="${BUILD_ORIGIN_CUSTODY_RESULT#*$\'\\t\'}"',
+            "IFS=$'\\t' read -r APP_INSTALL_STAGE_ROOT STAGED_APP_TREE_SHA256 SELECTED_XCODE_DEVELOPER_DIR SELECTED_XCTRACE SELECTED_DEVICECTL RESULT_EXTRA",
             source,
         )
         self.assertIn(
             '[[ "$VERIFIED_STAGE_TREE_SHA256" == "$STAGED_APP_TREE_SHA256" ]]',
             source,
         )
+        self.assertIn('DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR"', source)
+        self.assertIn('run_frozen_xcode_tool "$SELECTED_XCTRACE" list devices', source)
+        self.assertIn('run_frozen_xcode_tool "$SELECTED_DEVICECTL" list devices --hide-headers', source)
+        self.assertIn('run_frozen_xcode_tool "$SELECTED_DEVICECTL" device process launch', source)
         self.assertIn("Noninteractive sudo authority remained after selected-Xcode/build-origin custody", source)
         self.assertNotIn(
             'APP="$DERIVED/Build/Products/Debug-iphoneos/Nembra Capture.app"',
@@ -95,6 +99,9 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
             '/usr/bin/sudo /usr/bin/ditto --noacl "$APP" "$APP_INSTALL_STAGE"',
             source,
         )
+        self.assertNotIn("xcrun devicectl", source)
+        self.assertNotIn("xcrun xctrace", source)
+        self.assertNotIn("open -a Xcode", source)
 
     def test_supervisor_requires_dedicated_identity_apfs_quiescence_before_fingerprint(self) -> None:
         source = ORIGIN_HELPER.read_text(encoding="utf-8")
@@ -411,6 +418,7 @@ class CaptureSignedAppPreStageOriginTests(unittest.TestCase):
                 stderr="",
             )
             with (
+                self.subTest(output=bad_groups),
                 mock.patch.object(helper.os, "getuid", return_value=0),
                 mock.patch.object(helper.os, "getgrouplist", return_value=[55001, 12, 61, 100, 701]),
                 mock.patch.object(helper.subprocess, "run", return_value=completed),
