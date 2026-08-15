@@ -45,7 +45,7 @@ jobs:
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-private-read-lease-symlink-generation-race-red-team.yml \
-            scripts/ci/tests/test_capture_private_read_lease_symlink_generation_race_red_team.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_private_read-lease-symlink-generation-race-red-team.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -64,7 +64,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_generation_race_red_team.py
+          output_file="$(mktemp)"
+          trap 'rm -f "$output_file"' EXIT
+          set +e
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_generation_race_red_team.py >"$output_file" 2>&1
+          status=$?
+          set -e
+          cat "$output_file"
+          if [ "$status" -ne 0 ]; then
+            encoded="$(/usr/bin/python3 - "$output_file" <<'PY'
+          from pathlib import Path
+          import sys
+          from urllib.parse import quote
+          print(quote(Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace'), safe=''))
+          PY
+          )"
+            printf '::error title=Symlink generation oracle failed (%s)::%s\n' "$RUNNER_OS" "$encoded"
+            exit "$status"
+          fi
 
       - name: Preserve held-descriptor component regressions
         shell: bash
