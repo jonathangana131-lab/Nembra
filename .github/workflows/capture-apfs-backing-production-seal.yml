@@ -94,7 +94,7 @@ jobs:
           git add \
             .github/workflows/capture-full-numeric-principal-production.yml \
             scripts/ci/capture_signed_app_build_origin_custody.py \
-            scripts/ci/tests/test_capture_full_numeric-principal-production.py \
+            scripts/ci/tests/test_capture_full_numeric_principal_production.py \
             scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
           git diff --cached --check
           changed="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
