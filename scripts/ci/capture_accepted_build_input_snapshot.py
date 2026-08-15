@@ -313,11 +313,12 @@ def _copy_subject(source_root: Path, destination_root: Path, relative: Path) -> 
                 after.st_mtime_ns,
             ):
                 raise AcceptedBuildInputSnapshotError(f"build-input source changed while copying: {relative}")
-            os.chmod(destination, 0o755 if (opened.st_mode & 0o111) else 0o644)
+            os.chmod(destination, 0o700 if (opened.st_mode & 0o111) else 0o600)
         finally:
             os.close(descriptor)
     elif stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
-        destination.mkdir(parents=True, exist_ok=False)
+        destination.mkdir(mode=0o700, parents=True, exist_ok=False)
+        os.chmod(destination, 0o700)
         for name in sorted(os.listdir(source)):
             if name in ("", ".", "..") or "\n" in name or "\t" in name or "\0" in name:
                 raise AcceptedBuildInputSnapshotError(f"unsafe build-input entry name under {relative}")
