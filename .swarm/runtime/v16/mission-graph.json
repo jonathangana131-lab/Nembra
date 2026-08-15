@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 35,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.089,
+        "similarity": 0.082,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1305,7 +1305,7 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3366,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.061,
+        "similarity": 0.078,
         "title": "[Dashboard V17] Close physical-unavailable cockpit machine state"
       },
       "3369": {
@@ -1316,7 +1316,7 @@
         "lane": "capture-build-authority-validation",
         "pr": 3369,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.215,
+        "similarity": 0.207,
         "title": "[Capture P0][VALIDATION] Repair private-provenance validation witnesses"
       },
       "3379": {
@@ -1327,7 +1327,7 @@
         "lane": "",
         "pr": 3379,
         "recommendedAction": "independent-review",
-        "similarity": 0.221,
+        "similarity": 0.229,
         "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       },
       "3380": {
@@ -1349,7 +1349,7 @@
         "lane": "capture-flagship-convergence",
         "pr": 3387,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.092,
+        "similarity": 0.112,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
       "3388": {
@@ -1360,19 +1360,8 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3388,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.118,
+        "similarity": 0.113,
         "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
-      },
-      "3392": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3392,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.435,
-        "title": "[Capture P0][VISUAL] Re-anchor first-fold evidence to ff779 composition"
       },
       "3394": {
         "classification": "validation",
@@ -1393,7 +1382,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3395,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.44,
+        "similarity": 0.105,
         "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
       },
       "3397": {
@@ -1482,7 +1471,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:13:53Z",
+    "liveRefreshAt": "2026-08-15T03:14:11Z",
     "liveRefreshDuplicatesSuppressed": [
       3397
     ],
@@ -5267,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 501,
+  "revision": 502,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:13:54Z",
+  "updatedAt": "2026-08-15T03:14:12Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:13:53Z",
+      "updatedAt": "2026-08-15T03:14:11Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
