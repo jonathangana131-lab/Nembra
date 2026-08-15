@@ -1213,11 +1213,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "19a14c66c4ddbbc10dd446b47ac15a1a7d2486b0",
+        "headSHA": "7496fb9bbf3e2a1b77367d46e15b756ff486e238",
         "lane": "capture-physical-runbook-authority",
         "pr": 3341,
         "recommendedAction": "independent-review",
-        "similarity": 0.22,
+        "similarity": 0.243,
         "title": "[Capture P0][NO-GO] Re-anchor stationary field procedure to ba615"
       },
       "3342": {
@@ -1272,7 +1272,7 @@
         "lane": "capture-physical-runbook-authority",
         "pr": 3346,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.215,
+        "similarity": 0.249,
         "title": "[Capture P0][VALIDATION] Retire stale stationary runbook oracle debt"
       }
     },
@@ -1306,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:07:59Z",
+    "liveRefreshAt": "2026-08-15T00:08:18Z",
     "liveRefreshDuplicatesSuppressed": [
       3345
     ],
@@ -5091,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 358,
+  "revision": 359,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:07:59Z",
+  "updatedAt": "2026-08-15T00:08:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:07:59Z",
+      "updatedAt": "2026-08-15T00:08:18Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
