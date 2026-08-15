@@ -322,14 +322,16 @@ printf 'SDKROOT=%s\\n' "${SDKROOT-<unset>}"
                 f"SELECTED_XCODE_DEVELOPER_DIR={str(developer)!r}\n"
                 f"SELECTED_XCTRACE={str(xctrace)!r}\n"
                 f"SELECTED_DEVICECTL={str(devicectl)!r}\n"
-                + function_source + "tool=\"$1\"\nshift\nrun_frozen_xcode_tool \"$tool\" \"$@\"\n",
+                + function_source
+                + "export DYLD_INSERT_LIBRARIES=/tmp/attacker.dylib\n"
+                + "tool=\"$1\"\nshift\nrun_frozen_xcode_tool \"$tool\" \"$@\"\n",
                 encoding="utf-8",
             )
             wrapper.chmod(0o755)
             hostile = dict(os.environ)
             hostile.update({
                 "DEVELOPER_DIR": "/Applications/AttackerXcode.app/Contents/Developer",
-                "TOOLCHAINS": "attacker.toolchain", "DYLD_INSERT_LIBRARIES": "/tmp/attacker.dylib",
+                "TOOLCHAINS": "attacker.toolchain",
                 "SDKROOT": "/tmp/attacker.sdk", "HOME": "/tmp/attacker-home",
                 "TMPDIR": "/tmp/attacker-tmp", "LANG": "zz_ZZ.UTF-8", "LC_ALL": "zz_ZZ.UTF-8",
             })
