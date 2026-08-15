@@ -1,0 +1,63 @@
+name: Capture Generated Input CaseFold Alias Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated_input_casefold_alias_red_team.py
+      - .github/workflows/capture-generated-input-casefold-alias-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-generated-input-casefold-alias-red-team-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ATTACKED_PARENT: a831ac73e33b1e4c09b2abdd8651164399fb45d3
+
+jobs:
+  exploit-positive:
+    name: Prove case-fold alias redirects generated inputs
+    runs-on: macos-15
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact attacked validation head
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
+          changed="$(git diff --name-only "$EXACT_ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-input-casefold-alias-red-team.yml \
+            scripts/ci/tests/test_capture_generated_input_casefold_alias_red-team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_ATTACKED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute case-fold exploit witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_input_casefold_alias_red_team.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_input_casefold_alias_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve expected-red truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_GENERATED_CASEFOLD_ALIAS_BOUNDARY exploitReproduced=true validationOnly=true productionChanged=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
