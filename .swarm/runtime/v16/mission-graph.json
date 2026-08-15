@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 13,
+    "classifiedPRTotal": 14,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1140,7 +1140,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3332,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.299,
+        "similarity": 0.333,
         "title": "[Capture P0][ORACLE] Rebase install-custody regression on live carrier"
       },
       "3333": {
@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3335,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.276,
+        "similarity": 0.292,
         "title": "[Capture P0][RED TEAM] Preserve exact private guard execution through selected-Xcode composition"
       },
       "3336": {
@@ -1208,6 +1208,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.0,
         "title": "[Capture P0][SECURITY] Descriptor-bind private read lease rollback"
+      },
+      "3340": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "e8030a38dbd3af0e13502047dc19e0614c5abfaa",
+        "lane": "capture-signed-install-custody",
+        "pr": 3340,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.324,
+        "title": "[Capture P0][SECURITY][VALIDATION] Descriptor-pin private input read lease"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1240,9 +1251,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:03:11Z",
+    "liveRefreshAt": "2026-08-15T00:03:27Z",
     "liveRefreshDuplicatesSuppressed": [
-      3337
+      3340
     ],
     "liveRefreshMainSHA": "44946ca3b91ad5deee1003024534e64bda1511d2",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5025,10 +5036,10 @@
       "userValue": 7
     }
   },
-  "revision": 343,
+  "revision": 344,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:03:11Z",
+  "updatedAt": "2026-08-15T00:03:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5104,7 +5115,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:03:11Z",
+      "updatedAt": "2026-08-15T00:03:27Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
