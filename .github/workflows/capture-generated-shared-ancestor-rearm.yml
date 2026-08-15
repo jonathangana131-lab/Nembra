@@ -3,7 +3,7 @@ name: Capture Generated Shared Ancestor Rearm
 on:
   push:
     branches:
-      - repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
+      - recovery/v17-capture-shared-ancestor-rearm-indent-sol-20260815
     paths:
       - .github/workflows/capture-generated-shared-ancestor-rearm.yml
 
@@ -72,6 +72,20 @@ jobs:
               )
           payload = payload.replace(template_scrub, '')
 
+          # The permanent regression template has its own one-shot ten-space scrub.
+          # Extraction above has already removed that YAML indentation too, so applying
+          # it again corrupts only deeply nested test lines (for example a 12-space
+          # return becomes 2 spaces). Replace exactly that historical second scrub with
+          # a newline-preserving normalization and fail closed if the reviewed payload drifts.
+          regression_scrub = 'regression = "\\n".join(line[10:] if line.startswith("          ") else line for line in regression.splitlines()) + "\\n"'
+          regression_preserve = 'regression = "\\n".join(regression.splitlines()) + "\\n"'
+          regression_scrub_count = payload.count(regression_scrub)
+          if regression_scrub_count != 1:
+              raise SystemExit(
+                  f'reviewed materializer regression-scrub count drifted: expected 1, found {regression_scrub_count}'
+              )
+          payload = payload.replace(regression_scrub, regression_preserve, 1)
+
           compile(payload, '<reviewed-shared-ancestor-materializer>', 'exec', dont_inherit=True)
           namespace = {'__name__': '__main__'}
           exec(payload, namespace, namespace)
@@ -110,4 +124,4 @@ jobs:
           git config user.name "nembra-capture-swarm"
           git config user.email "nembra-capture-swarm@users.noreply.github.com"
           git commit -m "security(capture): hold shared generated selector ancestors"
-          git push origin HEAD:repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
+          git push origin HEAD:recovery/v17-capture-shared-ancestor-rearm-indent-sol-20260815
