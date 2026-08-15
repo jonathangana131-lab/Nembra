@@ -22,6 +22,27 @@ def git(repo: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
+def git_input(repo: Path, *args: str, input_text: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        input=input_text,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return completed.stdout.strip()
+
+
+def git_hash_blob(repo: Path, payload: bytes) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
+        input=payload,
+        capture_output=True,
+        check=True,
+    )
+    return completed.stdout.decode("ascii").strip()
+
+
 def seed_repo(root: Path) -> str:
     git(root, "init", "-q")
     git(root, "config", "user.email", "capture@example.invalid")
@@ -193,6 +214,70 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
             with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
                 snapshot.stage_accepted_build_inputs(root, source_sha, Path(raw) / "stage", accepted)
 
+    def test_unadmitted_generated_ancestor_symlink_cannot_create_manifest_or_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            root.mkdir()
+            source_sha = seed_repo(root)
+            seed_generated(root)
+            accepted = snapshot.generated_manifest_sha256(root, source_sha)
+
+            external = Path(raw) / "external-private"
+            (root / "LocalSecrets").rename(external)
+            os.symlink("../external-private", root / "LocalSecrets")
+
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot.generated_manifest_sha256(root, source_sha)
+
+            destination = Path(raw) / "stage"
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
+            self.assertFalse(destination.exists())
+
+    def test_case_distinct_tracked_directory_prefixes_fail_before_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            root.mkdir()
+            git(root, "init", "-q")
+            git(root, "config", "user.email", "capture@example.invalid")
+            git(root, "config", "user.name", "Capture Test")
+
+            upper_blob = git_hash_blob(root, b"UPPER\n")
+            lower_blob = git_hash_blob(root, b"lower\n")
+            upper_tree = git_input(
+                root,
+                "mktree",
+                input_text=f"100644 blob {upper_blob}\tA.swift\n",
+            )
+            lower_tree = git_input(
+                root,
+                "mktree",
+                input_text=f"100644 blob {lower_blob}\tB.swift\n",
+            )
+            root_tree = git_input(
+                root,
+                "mktree",
+                input_text=(
+                    f"040000 tree {upper_tree}\tFoo\n"
+                    f"040000 tree {lower_tree}\tfoo\n"
+                ),
+            )
+            source_sha = git_input(
+                root,
+                "commit-tree",
+                root_tree,
+                "-m",
+                "case-distinct tracked namespace",
+                input_text="",
+            )
+
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot._git_tree_entries(root, source_sha)
+            destination = Path(raw) / "stage"
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot.materialize_tracked_source(root, source_sha, destination)
+            self.assertFalse(destination.exists())
+
     def test_casefolded_tracked_ancestor_cannot_alias_generated_subject(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "repo"
@@ -220,10 +305,9 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
             git(root, "commit", "-qm", "track generated ancestor alias")
             source_sha = git(root, "rev-parse", "HEAD")
             seed_generated(root)
-            accepted = snapshot.generated_manifest_sha256(root, source_sha)
-            destination = Path(raw) / "stage"
             with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
-                snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
+                snapshot.generated_manifest_sha256(root, source_sha)
+            destination = Path(raw) / "stage"
             self.assertFalse(destination.exists())
 
 
