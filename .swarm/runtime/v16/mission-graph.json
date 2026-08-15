@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 40,
+    "classifiedPRTotal": 41,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1437,7 +1437,7 @@
         "lane": "",
         "pr": 3424,
         "recommendedAction": "independent-review",
-        "similarity": 0.074,
+        "similarity": 0.125,
         "title": "[Battery/Range V15] Restore accepted authority and visual contracts on main"
       },
       "3428": {
@@ -1505,6 +1505,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.31,
         "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
+      },
+      "3441": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3441,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.126,
+        "title": "[Battery/Range V15][QA] Re-prove current-main real surface"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1537,7 +1548,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T12:01:27Z",
+    "liveRefreshAt": "2026-08-15T12:05:04Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5322,10 +5333,10 @@
       "userValue": 7
     }
   },
-  "revision": 645,
+  "revision": 646,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T12:01:28Z",
+  "updatedAt": "2026-08-15T12:05:06Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5412,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T12:01:27Z",
+      "updatedAt": "2026-08-15T12:05:04Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
