@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 42,
+    "classifiedPRTotal": 39,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1440,17 +1440,6 @@
         "similarity": 0.074,
         "title": "[Battery/Range V15] Restore accepted authority and visual contracts on main"
       },
-      "3426": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3426,
-        "recommendedAction": "independent-review",
-        "similarity": 0.306,
-        "title": "[Capture P0][RECOVERY] Repair shared-ancestor materializer indentation"
-      },
       "3428": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1472,28 +1461,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.357,
         "title": "[Capture P0][VALIDATION] Isolate macOS held-descriptor regression"
-      },
-      "3431": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3431,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.329,
-        "title": "[Capture P0][RED TEAM] Surface macOS symlink-race oracle failure"
-      },
-      "3432": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3432,
-        "recommendedAction": "independent-review",
-        "similarity": 0.178,
-        "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
         "classification": "validation",
@@ -1559,7 +1526,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:19:53Z",
+    "liveRefreshAt": "2026-08-15T11:20:09Z",
     "liveRefreshDuplicatesSuppressed": [
       3433
     ],
@@ -5344,10 +5311,10 @@
       "userValue": 7
     }
   },
-  "revision": 622,
+  "revision": 623,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:19:54Z",
+  "updatedAt": "2026-08-15T11:20:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5390,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:19:53Z",
+      "updatedAt": "2026-08-15T11:20:09Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
