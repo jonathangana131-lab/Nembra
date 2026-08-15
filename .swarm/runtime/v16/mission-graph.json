@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 28,
+    "classifiedPRTotal": 27,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.137,
+        "similarity": 0.0,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
@@ -1362,17 +1362,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.363,
         "title": "[Capture P0][ACCESSIBILITY][RECOVERY] Fix AX5 materializer working-tree scope"
-      },
-      "3365": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "24d464c6d04065f6a0bb9054ff21e1461f5a6488",
-        "lane": "capture-build-authority",
-        "pr": 3365,
-        "recommendedAction": "independent-review",
-        "similarity": 0.157,
-        "title": "[Capture P0][TEST] Make frozen-tool DYLD scrub witness reach the authority boundary"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1405,7 +1394,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T02:58:20Z",
+    "liveRefreshAt": "2026-08-15T02:58:35Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5190,10 +5179,10 @@
       "userValue": 7
     }
   },
-  "revision": 449,
+  "revision": 450,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T02:58:21Z",
+  "updatedAt": "2026-08-15T02:58:36Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5269,7 +5258,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T02:58:20Z",
+      "updatedAt": "2026-08-15T02:58:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
