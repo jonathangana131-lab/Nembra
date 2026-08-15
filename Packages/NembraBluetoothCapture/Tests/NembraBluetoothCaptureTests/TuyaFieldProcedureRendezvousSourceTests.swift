@@ -37,9 +37,10 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         #expect(installer.contains("plutil -extract NembraCaptureProcedureIdentifier"))
         let readback = try #require(installer.range(of: "BUILT_PROCEDURE_IDENTIFIER=\"$(/usr/bin/plutil"))
         let check = try #require(installer.range(of: "[[ \"$BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID\" ]]"))
-        let install = try #require(installer.range(of: "Installing SDK-integrated Capture on the intended iPhone"))
+        let install = try #require(installer.range(of: "Installing SDK-integrated Capture on the intended iPhone through frozen selected-Xcode devicectl"))
         #expect(readback.lowerBound < check.lowerBound)
         #expect(check.lowerBound < install.lowerBound)
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device install app"))
     }
 
     @Test("procedure authority is mechanical rather than duplicated acceptance prose")
