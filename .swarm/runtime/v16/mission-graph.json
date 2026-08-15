@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 12,
+    "classifiedPRTotal": 13,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1197,6 +1197,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.376,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
+      },
+      "3335": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3335,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.271,
+        "title": "[Capture P0][RED TEAM] Preserve exact private guard execution through selected-Xcode composition"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1229,9 +1240,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-14T23:59:47Z",
+    "liveRefreshAt": "2026-08-15T00:00:16Z",
     "liveRefreshDuplicatesSuppressed": [
-      3321
+      3335
     ],
     "liveRefreshMainSHA": "cb339e500ccf7b164dcc72452368e1aa22720e35",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5014,10 +5025,10 @@
       "userValue": 7
     }
   },
-  "revision": 332,
+  "revision": 333,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-14T23:59:47Z",
+  "updatedAt": "2026-08-15T00:00:16Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5093,7 +5104,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-14T23:59:47Z",
+      "updatedAt": "2026-08-15T00:00:16Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
