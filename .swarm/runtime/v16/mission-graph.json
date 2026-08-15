@@ -1448,7 +1448,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3426,
         "recommendedAction": "independent-review",
-        "similarity": 0.285,
+        "similarity": 0.306,
         "title": "[Capture P0][RECOVERY] Repair shared-ancestor materializer indentation"
       }
     },
@@ -1482,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:11:32Z",
+    "liveRefreshAt": "2026-08-15T11:12:23Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5267,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 600,
+  "revision": 601,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:11:34Z",
+  "updatedAt": "2026-08-15T11:12:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:11:32Z",
+      "updatedAt": "2026-08-15T11:12:23Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
