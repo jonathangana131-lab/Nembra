@@ -10,6 +10,7 @@ on:
 permissions:
   contents: write
 
+# Rerun after pinning the current carrier's exact /tmp + Developer-dir trampoline.
 env:
   EXACT_PARENT: c9c018ccd4f12ce90fd41fdb0855dc5e300c5172
   SELF: .github/workflows/capture-frozen-tool-prescrub-portable-materialize.yml
