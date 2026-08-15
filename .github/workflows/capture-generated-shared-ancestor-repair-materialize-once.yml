@@ -1,0 +1,91 @@
+name: Capture Generated Shared Ancestor Repair Materializer Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-shared-ancestor-set-sol-20260814
+    paths:
+      - .github/workflows/capture-generated-shared-ancestor-repair-materialize-once.yml
+
+permissions:
+  contents: write
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Bind exact attacked parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=fe40c025eb10247c73820f4001ab63affaa60af7
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-generated-shared-ancestor-repair-materialize-once.yml"
+
+      - name: Hold one descriptor graph across all generated subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from pathlib import Path
+
+          helper = Path('scripts/ci/capture_accepted_build_input_snapshot.py')
+          text = helper.read_text(encoding='utf-8')
+
+          insert_anchor = 'def _safe_entry_name(name: str, parent: Path) -> None:\n'
+          addition = '''def _close_descriptors(descriptors: Sequence[int]) -> None:\n    for descriptor in reversed(tuple(descriptors)):\n        try:\n            os.close(descriptor)\n        except OSError:\n            pass\n\n\ndef _open_generated_subject_set(\n    root_fd: int,\n) -> tuple[dict[Path, tuple[int, os.stat_result, str]], tuple[int, ...]]:\n    """Open the fixed generated subject set through one held selector graph.\n\n    Shared intermediate directories (notably ``LocalSecrets``) are opened once\n    and retained until all fixed subjects have been admitted. This prevents two\n    individually valid child admissions from being spliced across distinct\n    generations of the same shared ancestor.\n    """\n\n    directory_cache: dict[Path, int] = {}\n    subjects: dict[Path, tuple[int, os.stat_result, str]] = {}\n    owned: list[int] = []\n    try:\n        for subject in GENERATED_SUBJECTS:\n            _safe_relative(subject)\n            expected_kind = _GENERATED_SUBJECT_KINDS.get(subject)\n            if expected_kind is None:\n                raise AcceptedBuildInputSnapshotError(\n                    f"unrecognized generated subject: {subject}"\n                )\n            parent_fd = root_fd\n            prefix = Path()\n            for index, component in enumerate(subject.parts):\n                prefix /= component\n                final = index == len(subject.parts) - 1\n                if not final:\n                    cached = directory_cache.get(prefix)\n                    if cached is None:\n                        cached = _open_directory_at(parent_fd, component, prefix)\n                        directory_cache[prefix] = cached\n                        owned.append(cached)\n                    parent_fd = cached\n                    continue\n\n                if expected_kind == "file":\n                    descriptor, metadata = _open_file_at(parent_fd, component, prefix)\n                    kind = "file"\n                else:\n                    descriptor = _open_directory_at(parent_fd, component, prefix)\n                    metadata = os.fstat(descriptor)\n                    kind = "directory"\n                subjects[subject] = (descriptor, metadata, kind)\n                owned.append(descriptor)\n        return subjects, tuple(owned)\n    except Exception:\n        _close_descriptors(owned)\n        raise\n\n\n'''
+          if text.count(insert_anchor) != 1 or '_open_generated_subject_set' in text:
+              raise SystemExit('generated subject-set insertion anchor mismatch')
+          text = text.replace(insert_anchor, addition + insert_anchor)
+
+          start = text.index('def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:\n')
+          end = text.index('\n\ndef generated_manifest_sha256(', start)
+          canonical = '''def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:\n    root = _absolute(root)\n    if re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:\n        raise AcceptedBuildInputSnapshotError("accepted source SHA is malformed")\n    records: list[dict[str, object]] = []\n    seen: set[Path] = set()\n    root_fd = _open_repository_root(root)\n    subject_descriptors: tuple[int, ...] = ()\n    try:\n        subjects, subject_descriptors = _open_generated_subject_set(root_fd)\n        for subject in GENERATED_SUBJECTS:\n            if subject in seen:\n                raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {subject}")\n            descriptor, metadata, kind = subjects[subject]\n            record: dict[str, object] = {"path": subject.as_posix()}\n            if kind == "file":\n                digest, size, after = _hash_open_file(descriptor, subject)\n                if not _same_object(metadata, after):\n                    raise AcceptedBuildInputSnapshotError(\n                        f"generated subject changed identity while reading: {subject}"\n                    )\n                record.update(\n                    type="file",\n                    sha256=digest,\n                    size=size,\n                    executable=bool(metadata.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)),\n                )\n                seen.add(subject)\n                records.append(record)\n            else:\n                record.update(type="directory")\n                seen.add(subject)\n                records.append(record)\n                _manifest_directory(descriptor, subject, records, seen)\n    finally:\n        _close_descriptors(subject_descriptors)\n        os.close(root_fd)\n    payload = {\n        "schemaVersion": SCHEMA_VERSION,\n        "sourceSHA": source_sha,\n        "generatedSubjects": [subject.as_posix() for subject in GENERATED_SUBJECTS],\n        "entries": sorted(records, key=lambda value: str(value["path"])),\n    }\n    return (json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\\n").encode("utf-8")\n'''
+          text = text[:start] + canonical + text[end:]
+
+          start = text.index('def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:\n')
+          end = text.index('\n\ndef stage_accepted_build_inputs(', start)
+          copier = '''def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:\n    source_root = _absolute(source_root)\n    destination_root = _absolute(destination_root)\n    root_fd = _open_repository_root(source_root)\n    subject_descriptors: tuple[int, ...] = ()\n    try:\n        subjects, subject_descriptors = _open_generated_subject_set(root_fd)\n        for subject in GENERATED_SUBJECTS:\n            descriptor, metadata, kind = subjects[subject]\n            if kind == "file":\n                _copy_open_file(\n                    descriptor,\n                    metadata,\n                    destination_root / subject,\n                    subject,\n                )\n            else:\n                _copy_directory_fd(descriptor, destination_root, subject)\n    finally:\n        _close_descriptors(subject_descriptors)\n        os.close(root_fd)\n'''
+          text = text[:start] + copier + text[end:]
+          helper.write_text(text, encoding='utf-8')
+
+          tests = Path('scripts/ci/tests/test_capture_accepted_build_input_snapshot.py')
+          text = tests.read_text(encoding='utf-8')
+          marker = '    def test_case_distinct_tracked_directory_prefixes_fail_before_materialization(self) -> None:\n'
+          regression = '''    def test_shared_localsecrets_generation_cannot_splice_between_subjects(self) -> None:\n        with tempfile.TemporaryDirectory() as raw:\n            root = Path(raw) / "repo"\n            root.mkdir()\n            source_sha = seed_repo(root)\n            seed_generated(root, secret="APP-SECRET-A")\n            pure_a = snapshot.canonical_generated_manifest(root, source_sha)\n            accepted_a = snapshot.generated_manifest_sha256(root, source_sha)\n\n            generation_a = Path(raw) / "LocalSecrets.A"\n            (root / "LocalSecrets").rename(generation_a)\n            generation_b = root / "LocalSecrets"\n            sdk_b = generation_b / "TuyaSDK"\n            (sdk_b / "Build").mkdir(parents=True)\n            (sdk_b / "ThingSmartCryption.podspec").write_text("Pod::Spec.new\\n", encoding="utf-8")\n            (sdk_b / "Build/libThingSmartCryption.a").write_bytes(b"private-security-B")\n            runtime_b = generation_b / "TuyaRuntime"\n            sources_b = runtime_b / "Sources/NembraTuyaPrivateConfig"\n            sources_b.mkdir(parents=True)\n            (runtime_b / "NembraTuyaPrivateConfig.podspec").write_text("Pod::Spec.new\\n", encoding="utf-8")\n            (sources_b / "Identity.swift").write_text('let secret = "APP-SECRET-B"\\n', encoding="utf-8")\n            (runtime_b / "ResolvedTuyaDependencyProvenance.txt").write_text(\n                "schema=1\\nprivate-hashes-only\\n", encoding="utf-8"\n            )\n            pure_b = snapshot.canonical_generated_manifest(root, source_sha)\n            self.assertNotEqual(pure_a, pure_b)\n\n            generation_b_saved = Path(raw) / "LocalSecrets.B"\n            generation_b.rename(generation_b_saved)\n            generation_a.rename(root / "LocalSecrets")\n\n            original_open_directory = snapshot._open_directory_at\n            swapped = False\n\n            def swap_path_before_runtime(parent_fd: int, name: str, relative: Path):\n                nonlocal swapped\n                if relative == Path("LocalSecrets/TuyaRuntime") and not swapped:\n                    (root / "LocalSecrets").rename(Path(raw) / "LocalSecrets.A.attack")\n                    generation_b_saved.rename(root / "LocalSecrets")\n                    swapped = True\n                return original_open_directory(parent_fd, name, relative)\n\n            snapshot._open_directory_at = swap_path_before_runtime\n            try:\n                observed = snapshot.canonical_generated_manifest(root, source_sha)\n            finally:\n                snapshot._open_directory_at = original_open_directory\n            self.assertTrue(swapped)\n            self.assertEqual(observed, pure_a)\n\n            # Restore generation A and repeat against the real staging/copy path.\n            (root / "LocalSecrets").rename(generation_b_saved)\n            (Path(raw) / "LocalSecrets.A.attack").rename(root / "LocalSecrets")\n            swapped = False\n            snapshot._open_directory_at = swap_path_before_runtime\n            destination = Path(raw) / "stage"\n            try:\n                actual = snapshot.stage_accepted_build_inputs(\n                    root, source_sha, destination, accepted_a\n                )\n            finally:\n                snapshot._open_directory_at = original_open_directory\n            self.assertTrue(swapped)\n            self.assertEqual(actual, accepted_a)\n            self.assertEqual(\n                (destination / "LocalSecrets/TuyaSDK/Build/libThingSmartCryption.a").read_bytes(),\n                b"private-security-A",\n            )\n            self.assertEqual(\n                (destination / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig/Identity.swift").read_text(encoding="utf-8"),\n                'let secret = "APP-SECRET-A"\\n',\n            )\n\n'''
+          if text.count(marker) != 1 or 'test_shared_localsecrets_generation_cannot_splice_between_subjects' in text:
+              raise SystemExit('shared generation regression anchor mismatch')
+          tests.write_text(text.replace(marker, regression + marker), encoding='utf-8')
+          PY
+
+          python3 -B -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 -B scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+
+      - name: Publish exact permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-generated-shared-ancestor-repair-materialize-once.yml
+          git config user.name "nembra-capture-materializer"
+          git config user.email "capture-materializer@users.noreply.github.com"
+          git add -A
+          staged="$(git diff --cached --name-only fe40c025eb10247c73820f4001ab63affaa60af7 | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            'scripts/ci/capture_accepted_build_input_snapshot.py' \
+            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' | LC_ALL=C sort)"
+          test "$staged" = "$expected"
+          test -z "$(git diff --cached --name-only | grep -E '(__pycache__|\\.pyc$)' || true)"
+          git commit -m "Hold generated subject shared ancestor generation"
+          git push origin HEAD:repair/v17-capture-generated-shared-ancestor-set-sol-20260814
