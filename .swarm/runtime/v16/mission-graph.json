@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 41,
+    "classifiedPRTotal": 42,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.27,
+        "similarity": 0.364,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3434": {
@@ -1514,8 +1514,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.255,
+        "similarity": 0.313,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
+      },
+      "3437": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3437,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.363,
+        "title": "[Capture P0][RED TEAM] Re-anchor sibling-entry generation splice on current shared-ancestor head"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1548,9 +1559,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:21:16Z",
+    "liveRefreshAt": "2026-08-15T11:21:33Z",
     "liveRefreshDuplicatesSuppressed": [
-      3436
+      3437
     ],
     "liveRefreshMainSHA": "b08f52c8aac7cbf753c3aaac55147303697ac32a",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5333,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 627,
+  "revision": 628,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:21:17Z",
+  "updatedAt": "2026-08-15T11:21:35Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5412,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:21:16Z",
+      "updatedAt": "2026-08-15T11:21:33Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
