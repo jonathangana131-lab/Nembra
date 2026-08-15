@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 35,
+    "classifiedPRTotal": 33,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.177,
+        "similarity": 0.166,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
@@ -1220,17 +1220,6 @@
         "similarity": 0.378,
         "title": "[Capture P0][RED TEAM] Re-anchor whole-source compiler-window mutation on current carrier"
       },
-      "3352": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-runtime-accessibility",
-        "pr": 3352,
-        "recommendedAction": "independent-review",
-        "similarity": 0.448,
-        "title": "[Capture P0][ACCESSIBILITY] Compose validated AX5 lock VoiceOver priority"
-      },
       "3353": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1283,7 +1272,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3357,
         "recommendedAction": "independent-review",
-        "similarity": 0.458,
+        "similarity": 0.28,
         "title": "[Capture P0][ACCESSIBILITY][RECOVERY] Materialize AX5 lock priority on ba615"
       },
       "3358": {
@@ -1360,7 +1349,7 @@
         "lane": "capture-build-authority-validation",
         "pr": 3369,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.197,
+        "similarity": 0.198,
         "title": "[Capture P0][VALIDATION] Repair build-authority validation witnesses"
       },
       "3370": {
@@ -1382,7 +1371,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3371,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.477,
+        "similarity": 0.279,
         "title": "[Capture P0][AX RUNTIME] Re-anchor Standard + AX5 VoiceOver to 2b7d"
       },
       "3375": {
@@ -1404,7 +1393,7 @@
         "lane": "",
         "pr": 3379,
         "recommendedAction": "independent-review",
-        "similarity": 0.244,
+        "similarity": 0.209,
         "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       },
       "3380": {
@@ -1415,7 +1404,7 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.283,
+        "similarity": 0.19,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
       },
       "3382": {
@@ -1429,27 +1418,16 @@
         "similarity": 0.436,
         "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
       },
-      "3383": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3383,
-        "recommendedAction": "independent-review",
-        "similarity": 0.283,
-        "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
-      },
-      "3384": {
+      "3385": {
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-runtime-accessibility",
-        "pr": 3384,
+        "headSHA": "aa0a0b6c69840a266cf40e59561740600a849db3",
+        "lane": "capture-signed-install-custody",
+        "pr": 3385,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.484,
-        "title": "[Capture P0][ACCESSIBILITY][VALIDATION] VoiceOver matrix on exact 2b7d product"
+        "similarity": 0.4,
+        "title": "[Capture P0][REPAIR] Reject generated-input ancestor aliases"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1482,9 +1460,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:03:22Z",
+    "liveRefreshAt": "2026-08-15T03:03:49Z",
     "liveRefreshDuplicatesSuppressed": [
-      3370
+      3385
     ],
     "liveRefreshMainSHA": "412c13dbcf5bdc3708e0c2ac0a3586819ffd7772",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5267,10 +5245,10 @@
       "userValue": 7
     }
   },
-  "revision": 466,
+  "revision": 467,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:03:23Z",
+  "updatedAt": "2026-08-15T03:03:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5324,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:03:22Z",
+      "updatedAt": "2026-08-15T03:03:49Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
