@@ -1,0 +1,60 @@
+name: Navigation Exact XXXL Witness Repair Once
+
+on:
+  push:
+    branches:
+      - qa/v15-navigation-exact-xxxl-witness-gpt56
+    paths:
+      - .github/workflows/navigation-exact-xxxl-witness-repair-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Repair witness-only AX queries
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "$(git merge-base HEAD 7531af2bce3ae63d12a9e969ad9dc72503a49f7a)" = "7531af2bce3ae63d12a9e969ad9dc72503a49f7a"
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/navigation-exact-xxxl-witness.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '''                  XCTAssertTrue(app.descendants(matching: .any)["navigation.map"].waitForExistence(timeout: 2))
+                  XCTAssertTrue(app.descendants(matching: .any)["navigation.empty"].waitForExistence(timeout: 2))
+                  XCTAssertTrue(app.staticTexts["Find a destination"].waitForExistence(timeout: 2))
+'''
+          new = '''                  let nativeMap = app.maps.firstMatch
+                  XCTAssertTrue(nativeMap.waitForExistence(timeout: 2))
+                  XCTAssertTrue(app.staticTexts["Find a destination"].waitForExistence(timeout: 2))
+'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one Navigation AX witness anchor, found {count}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          git rm .github/workflows/navigation-exact-xxxl-witness-repair-once.yml
+          git add .github/workflows/navigation-exact-xxxl-witness.yml
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/navigation-exact-xxxl-witness-repair-once.yml \
+            .github/workflows/navigation-exact-xxxl-witness.yml | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git config user.name "nembra-navigation-swarm"
+          git config user.email "nembra-navigation-swarm@users.noreply.github.com"
+          git commit -m "test(navigation): query native map in XXXL witness"
+          git push origin HEAD:qa/v15-navigation-exact-xxxl-witness-gpt56
