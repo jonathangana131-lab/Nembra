@@ -1283,7 +1283,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3360,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.26,
+        "similarity": 0.262,
         "title": "[Capture P0][SECURITY] Anchor private lease component traversal"
       },
       "3363": {
@@ -1382,7 +1382,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3403,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.397,
+        "similarity": 0.364,
         "title": "[Capture P0][SECURITY] Hold private lease descriptors from plan through grant"
       },
       "3406": {
@@ -1393,7 +1393,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3406,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.405,
+        "similarity": 0.349,
         "title": "[Capture P0][SECURITY][SERIAL] Hold private lease descriptors through planning"
       },
       "3407": {
@@ -1415,7 +1415,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3408,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.301,
+        "similarity": 0.3,
         "title": "[Capture P0][VALIDATION] Replay canonical generation split on held-descriptor product"
       }
     },
@@ -1449,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:24:23Z",
+    "liveRefreshAt": "2026-08-15T03:25:02Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5234,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 530,
+  "revision": 531,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:24:24Z",
+  "updatedAt": "2026-08-15T03:25:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:24:23Z",
+      "updatedAt": "2026-08-15T03:25:02Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
