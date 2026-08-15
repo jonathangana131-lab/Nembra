@@ -1,0 +1,109 @@
+name: Capture Frozen Tool Pre-Scrub Portable Materializer
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-frozen-device-tools-sol-20260814
+    paths:
+      - .github/workflows/capture-frozen-tool-prescrub-portable-materialize.yml
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: c9c018ccd4f12ce90fd41fdb0855dc5e300c5172
+  SELF: .github/workflows/capture-frozen-tool-prescrub-portable-materialize.yml
+  INSTALLER: scripts/field/install_one_time_capture.command
+  HANDOFF_TEST: scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact live carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = "$SELF"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize reviewed clean-exec repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - "$INSTALLER" "$HANDOFF_TEST" <<'PY'
+          from pathlib import Path
+          import sys
+
+          installer_path = Path(sys.argv[1])
+          test_path = Path(sys.argv[2])
+          installer = installer_path.read_text(encoding='utf-8')
+          old = '''    /usr/bin/env -i \\
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+              HOME=/tmp \\
+              TMPDIR=/tmp \\
+              LANG=C \\
+              LC_ALL=C \\
+              DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\
+              "$tool" "$@"
+          '''
+          new = '''    (
+              # Bash builtin `exec -c` clears inherited environment before the first
+              # dynamically linked external image is loaded, so hostile DYLD_*
+              # selectors cannot influence /usr/bin/env itself.
+              exec -c /usr/bin/env -i \\
+                  PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+                  HOME=/tmp \\
+                  TMPDIR=/tmp \\
+                  LANG=C \\
+                  LC_ALL=C \\
+                  DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\
+                  "$tool" "$@"
+              )
+          '''
+          if installer.count(old) != 1:
+              raise SystemExit(f'installer trampoline seam count changed: {installer.count(old)}')
+          installer_path.write_text(installer.replace(old, new), encoding='utf-8')
+
+          test = test_path.read_text(encoding='utf-8')
+          old_test = '            "/usr/bin/env -i",\n'
+          new_test = '            "exec -c /usr/bin/env -i",\n'
+          if test.count(old_test) != 1:
+              raise SystemExit(f'frozen-tool source regression seam count changed: {test.count(old_test)}')
+          test_path.write_text(test.replace(old_test, new_test), encoding='utf-8')
+          PY
+          bash -n "$INSTALLER"
+          bash -c 'help exec' | grep -Fq -- '-c'
+          test "$(grep -Fc 'exec -c /usr/bin/env -i' "$INSTALLER")" = 1
+          grep -Fq 'export DYLD_INSERT_LIBRARIES=/tmp/attacker.dylib' "$HANDOFF_TEST"
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -B -m py_compile "$HANDOFF_TEST" scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B -I "$HANDOFF_TEST"
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --check -- "$INSTALLER" "$HANDOFF_TEST"
+
+      - name: Publish clean two-path product delta
+        shell: bash
+        env:
+          BRANCH: repair/v17-capture-frozen-device-tools-sol-20260814
+        run: |
+          set -euo pipefail
+          rm "$SELF"
+          actual="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$HANDOFF_TEST" "$INSTALLER" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"
+          git config user.name nembra-capture-authority-bot
+          git config user.email nembra-capture-authority-bot@users.noreply.github.com
+          git add -A
+          git commit -m 'Capture security: scrub frozen tool environment before exec'
+          git push origin "HEAD:$BRANCH"
+          echo 'NEMBRA_FROZEN_TOOL_PRESCRUB_MATERIALIZED productionChanged=true validationOnly=false deviceTouched=false bluetoothTouched=false telemetryCreated=false physicalAuthorityCreated=false'
