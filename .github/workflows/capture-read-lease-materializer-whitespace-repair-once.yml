@@ -1,7 +1,10 @@
-# Trigger the one-shot repair after the workflow exists on the branch.
+# One-shot repair for the failed component-walk authoring workflow.
 name: Capture Read Lease Materializer Whitespace Repair Once
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-read-lease-materializer-whitespace-repair-once.yml
   push:
     branches:
       - hardening/v17-capture-read-lease-component-walk-sol-20260814
@@ -13,13 +16,15 @@ permissions:
 
 jobs:
   repair:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 0
+          persist-credentials: true
 
       - name: Bind exact failed authoring state
         shell: bash
