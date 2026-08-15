@@ -40,7 +40,7 @@ jobs:
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Prepare canonical temporary fixture roots
+      - name: Prepare canonical component-walk fixture roots
         shell: bash
         run: |
           set -euo pipefail
@@ -59,110 +59,28 @@ jobs:
           path.write_text(source, encoding="utf-8")
           PY
 
-      - name: Test real directory and regular file
+      - name: Component-walk security suite
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import importlib.util, unittest
-          from pathlib import Path
-          path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py").resolve()
-          spec = importlib.util.spec_from_file_location("component_walk_test", path)
-          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-          suite = unittest.TestSuite([module.CapturePrivateReadLeaseComponentWalkTests("test_real_directory_and_regular_file_still_open")])
-          raise SystemExit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)
-          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
 
-      - name: Test intermediate symlink swap
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import importlib.util, unittest
-          from pathlib import Path
-          path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py").resolve()
-          spec = importlib.util.spec_from_file_location("component_walk_test", path)
-          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-          suite = unittest.TestSuite([module.CapturePrivateReadLeaseComponentWalkTests("test_intermediate_symlink_swap_is_rejected_after_plan")])
-          raise SystemExit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)
-          PY
-
-      - name: Test planned identity replacement
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import importlib.util, unittest
-          from pathlib import Path
-          path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py").resolve()
-          spec = importlib.util.spec_from_file_location("component_walk_test", path)
-          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-          suite = unittest.TestSuite([module.CapturePrivateReadLeaseComponentWalkTests("test_real_directory_replacement_is_rejected_against_planned_identity")])
-          raise SystemExit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)
-          PY
-
-      - name: Test descriptor mixed-generation rejection
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import importlib.util, unittest
-          from pathlib import Path
-          path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py").resolve()
-          spec = importlib.util.spec_from_file_location("component_walk_test", path)
-          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-          suite = unittest.TestSuite([module.CapturePrivateReadLeaseComponentWalkTests("test_descriptor_plan_rejects_mixed_generation_descendant")])
-          raise SystemExit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)
-          PY
-
-      - name: Test grant mixed-generation rejection
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import importlib.util, unittest
-          from pathlib import Path
-          path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py").resolve()
-          spec = importlib.util.spec_from_file_location("component_walk_test", path)
-          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-          suite = unittest.TestSuite([module.CapturePrivateReadLeaseComponentWalkTests("test_actual_grant_rejects_mixed_generation_before_acl_mutation")])
-          raise SystemExit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)
-          PY
-
-      - name: Test held descriptor inode reuse resistance
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import importlib.util, unittest
-          from pathlib import Path
-          path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py").resolve()
-          spec = importlib.util.spec_from_file_location("component_walk_test", path)
-          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-          suite = unittest.TestSuite([module.CapturePrivateReadLeaseComponentWalkTests("test_held_descriptor_prevents_inode_reuse_after_admission")])
-          raise SystemExit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)
-          PY
-
-      - name: Test production source contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import importlib.util, unittest
-          from pathlib import Path
-          path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py").resolve()
-          spec = importlib.util.spec_from_file_location("component_walk_test", path)
-          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-          suite = unittest.TestSuite([module.CapturePrivateReadLeaseComponentWalkTests("test_source_production_grant_consumes_held_descriptor_plan")])
-          raise SystemExit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)
-          PY
-
-      - name: Run neighboring lease regressions
+      - name: Selected-Xcode orchestrator regression
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+
+      - name: Private lease rollback regression
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+
+      - name: Private lease host-ancestry regression
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
 
       - name: Publish permanent one-file harness repair
