@@ -1,0 +1,64 @@
+name: Capture Generated Child Entry Generation Guard macOS Diagnostic
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-child-entry-generation-guard-sol-20260815
+    paths:
+      - .github/workflows/capture-generated-child-entry-generation-guard-macos-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reproduce V3 candidate and migrated oracles
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/capture-generated-child-entry-generation-guard-authoring-v3.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = lines.index("          /usr/bin/python3 -B - <<'PY'") + 1
+          end = lines.index("          PY", start)
+          payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[start:end]) + '\n'
+          ns = {'__name__': '__main__'}
+          exec(compile(payload, '<v3-materializer>', 'exec', dont_inherit=True), ns, ns)
+          p = Path('scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py')
+          s = p.read_text(encoding='utf-8')
+          replacements = [
+              ('            with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                held = helper.canonical_generated_manifest(root, SOURCE_SHA)\n\n            self.assertTrue(swapped)\n            self.assertEqual(held, pure_a)\n', '            try:\n                with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                    held = helper.canonical_generated_manifest(root, SOURCE_SHA)\n            except helper.AcceptedBuildInputSnapshotError:\n                self.assertTrue(swapped)\n                return\n\n            self.assertTrue(swapped)\n            self.assertEqual(held, pure_a)\n'),
+              ('            with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                helper._copy_generated_subjects(root, destination)\n\n            self.assertTrue(swapped)\n            self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\\n")\n', '            try:\n                with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):\n                    helper._copy_generated_subjects(root, destination)\n            except helper.AcceptedBuildInputSnapshotError:\n                self.assertTrue(swapped)\n                return\n\n            self.assertTrue(swapped)\n            self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\\n")\n'),
+          ]
+          for old, new in replacements:
+              if s.count(old) != 1: raise SystemExit('legacy-oracle anchor drifted')
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Capture exact outputs
+        shell: bash
+        run: |
+          set +e
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py > /tmp/shared.log 2>&1
+          shared=$?
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py > /tmp/inherited.log 2>&1
+          inherited=$?
+          { echo "shared_status=$shared"; cat /tmp/shared.log; echo "inherited_status=$inherited"; cat /tmp/inherited.log; } | tee /tmp/macos-diagnostic.log
+          exit 0
+      - name: Retain macOS diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-child-entry-macos-diagnostic-${{ github.sha }}
+          path: /tmp/macos-diagnostic.log
+          if-no-files-found: error
+          retention-days: 7
