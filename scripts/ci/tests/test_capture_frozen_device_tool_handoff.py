@@ -127,6 +127,7 @@ printf 'SDKROOT=%s\\n' "${SDKROOT-<unset>}"
                 f"SELECTED_XCTRACE={str(xctrace)!r}\n"
                 f"SELECTED_DEVICECTL={str(devicectl)!r}\n"
                 + function_source
+                + "export DYLD_INSERT_LIBRARIES=/tmp/attacker.dylib\n"
                 + "tool=\"$1\"\nshift\nrun_frozen_xcode_tool \"$tool\" \"$@\"\n",
                 encoding="utf-8",
             )
@@ -136,7 +137,6 @@ printf 'SDKROOT=%s\\n' "${SDKROOT-<unset>}"
                 {
                     "DEVELOPER_DIR": "/Applications/AttackerXcode.app/Contents/Developer",
                     "TOOLCHAINS": "attacker.toolchain",
-                    "DYLD_INSERT_LIBRARIES": "/tmp/attacker.dylib",
                     "SDKROOT": "/tmp/attacker.sdk",
                     "HOME": "/tmp/attacker-home",
                     "TMPDIR": "/tmp/attacker-tmp",
