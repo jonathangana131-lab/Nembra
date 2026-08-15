@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 25,
+    "classifiedPRTotal": 24,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1286,17 +1286,6 @@
         "similarity": 0.378,
         "title": "[Capture P0][RED TEAM] Re-anchor whole-source compiler-window mutation on current carrier"
       },
-      "3351": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3351,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.354,
-        "title": "[Capture P0][RED TEAM] Re-anchor tracked-source compiler-window oracle to c8ccf"
-      },
       "3352": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1372,9 +1361,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:19:21Z",
+    "liveRefreshAt": "2026-08-15T00:19:39Z",
     "liveRefreshDuplicatesSuppressed": [
-      3351
+      3350
     ],
     "liveRefreshMainSHA": "44946ca3b91ad5deee1003024534e64bda1511d2",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5157,10 +5146,10 @@
       "userValue": 7
     }
   },
-  "revision": 389,
+  "revision": 390,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:19:21Z",
+  "updatedAt": "2026-08-15T00:19:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5236,7 +5225,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:19:21Z",
+      "updatedAt": "2026-08-15T00:19:39Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
