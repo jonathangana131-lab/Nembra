@@ -1,0 +1,89 @@
+name: Capture Generated Shared Ancestor Rearm
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
+    paths:
+      - .github/workflows/capture-generated-shared-ancestor-rearm.yml
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml \
+            .github/workflows/capture-generated-shared-ancestor-rearm.yml | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute reviewed materialization payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          source = Path('.github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml')
+          lines = source.read_text(encoding='utf-8').splitlines()
+          start_marker = "          /usr/bin/python3 -B - <<'PY'"
+          end_marker = "          PY"
+          try:
+              start = lines.index(start_marker) + 1
+              end = lines.index(end_marker, start)
+          except ValueError as exc:
+              raise SystemExit(f'reviewed materializer payload markers missing: {exc}')
+          payload_lines = lines[start:end]
+          payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in payload_lines) + '\n'
+          compile(payload, '<reviewed-shared-ancestor-materializer>', 'exec', dont_inherit=True)
+          namespace = {'__name__': '__main__'}
+          exec(payload, namespace, namespace)
+          PY
+
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Publish permanent three-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm \
+            .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml \
+            .github/workflows/capture-generated-shared-ancestor-rearm.yml
+          git add \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git diff --cached --check
+          changed="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git config user.name "nembra-capture-swarm"
+          git config user.email "nembra-capture-swarm@users.noreply.github.com"
+          git commit -m "security(capture): hold shared generated selector ancestors"
+          git push origin HEAD:repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
