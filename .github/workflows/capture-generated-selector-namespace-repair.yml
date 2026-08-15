@@ -1,0 +1,88 @@
+name: Capture Generated Selector Namespace Repair
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated_selector_namespace_repair.py
+      - .github/workflows/capture-generated-selector-namespace-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-generated-selector-namespace-repair-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ATTACKED_PARENT: ff169cf7400d67d421a451d6d0d1d860353bf9e0
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  repair:
+    name: Reject escaped selectors and tracked namespace collapse
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact serial repair child
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
+          actual="$(git diff --name-only "$EXACT_ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-selector-namespace-repair.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_selector_namespace_repair.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_ATTACKED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile helper and repair regressions without artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_accepted_build_input_snapshot.py",
+              "scripts/ci/tests/test_capture_accepted_build_input_snapshot.py",
+              "scripts/ci/tests/test_capture_generated_selector_namespace_repair.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run inherited admission suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Run selector and tracked-namespace regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_selector_namespace_repair.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Pin authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=scripts/ci/capture_accepted_build_input_snapshot.py
+          grep -Fq 'O_NOFOLLOW' "$helper"
+          grep -Fq 'dir_fd=parent_fd' "$helper"
+          grep -Fq '_assert_tracked_namespace_coherence' "$helper"
+          grep -Fq '_open_subject(root_fd, subject)' "$helper"
+          echo "NEMBRA_ACCEPTED_INPUT_NAMESPACE_BOUNDARY selectorAncestorNoFollow=true trackedNamespaceCoherent=true acceptedManifestRequired=true productionWiring=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
