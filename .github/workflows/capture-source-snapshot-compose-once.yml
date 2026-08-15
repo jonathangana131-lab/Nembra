@@ -1,0 +1,230 @@
+name: Capture Source Snapshot Compose Once
+
+on:
+  push:
+    branches:
+      - product/v17-capture-accepted-source-snapshot-compose-sol-20260814
+    paths:
+      - .github/workflows/capture-source-snapshot-compose-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact staged migration input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "231df1814785ecfe7828bc7e289643b817682a82"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-source-snapshot-compose-once.yml"
+
+      - name: Compose snapshot consumer into orchestrator and installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              source = path.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: exact patch anchor count {count}, expected 1\nANCHOR:\n{old}")
+              path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          installer = Path("scripts/field/install_one_time_capture.command")
+
+          replace_once(
+              orchestrator,
+              'CANONICAL_RUNTIME_RELATIVE = Path("LocalSecrets/TuyaRuntime")\n',
+              'CANONICAL_RUNTIME_RELATIVE = Path("LocalSecrets/TuyaRuntime")\n'
+              'SNAPSHOT_HELPER_RELATIVE = Path("scripts/ci/capture_accepted_build_input_snapshot.py")\n'
+              'SNAPSHOT_CUSTODY_RELATIVE = Path("scripts/ci/capture_accepted_source_snapshot_custody.py")\n',
+          )
+          replace_once(
+              orchestrator,
+              '    source_sha: str,\n    freeze_launcher_base64: str,\n',
+              '    source_sha: str,\n    accepted_generated_manifest_sha256: str,\n    freeze_launcher_base64: str,\n',
+          )
+          replace_once(
+              orchestrator,
+              '    if re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:\n'
+              '        raise SelectedXcodeBuildOrchestratorError("accepted source SHA is malformed")\n\n'
+              '    repo = _absolute_lexical(Path(os.getcwd()))\n'
+              '    _require_real_directory(repo, "repository root")\n'
+              '    live_guard = repo / ACCEPTED_GUARD_RELATIVE\n'
+              '    private_subjects = _private_read_subjects(command, repo)\n',
+              '    if re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:\n'
+              '        raise SelectedXcodeBuildOrchestratorError("accepted source SHA is malformed")\n'
+              '    if re.fullmatch(r"[0-9a-f]{64}", accepted_generated_manifest_sha256) is None:\n'
+              '        raise SelectedXcodeBuildOrchestratorError("accepted generated/private manifest digest is malformed")\n\n'
+              '    repo = _absolute_lexical(Path(os.getcwd()))\n'
+              '    _require_real_directory(repo, "repository root")\n'
+              '    # Keep the exact canonical guard/subject shape check, but do not grant the\n'
+              '    # dedicated build identity any authority over the mutable field checkout.\n'
+              '    _private_read_subjects(command, repo)\n'
+              '    snapshot_helper_raw = _read_accepted_git_blob(repo, source_sha, SNAPSHOT_HELPER_RELATIVE)\n'
+              '    snapshot_custody_raw = _read_accepted_git_blob(repo, source_sha, SNAPSHOT_CUSTODY_RELATIVE)\n',
+          )
+          replace_once(
+              orchestrator,
+              '    bundle: Path | None = None\n'
+              '    lease: _PrivateReadLease | None = None\n'
+              '    try:\n'
+              '        bundle, accepted_guard, _accepted_provenance = _materialize_accepted_guard_bundle(repo, source_sha)\n'
+              '        guarded_command = _replace_live_guard(\n'
+              '            command,\n'
+              '            live_guard=live_guard,\n'
+              '            accepted_guard=accepted_guard,\n'
+              '        )\n',
+              '    accepted_snapshot = None\n'
+              '    try:\n'
+              '        guarded_command = list(command)\n',
+          )
+          replace_once(
+              orchestrator,
+              '        build_origin = _load_namespace(\n'
+              '            build_origin_raw,\n'
+              '            name="nembra_signed_app_build_origin_custody",\n'
+              '            filename="<accepted-build-origin-custody>",\n'
+              '        )\n'
+              '        lease = _PrivateReadLease(private_subjects, repo)\n'
+              '        _bind_private_read_lease(build_origin, lease)\n'
+              '        run_custodied_build = _require_callable(\n',
+              '        build_origin = _load_namespace(\n'
+              '            build_origin_raw,\n'
+              '            name="nembra_signed_app_build_origin_custody",\n'
+              '            filename="<accepted-build-origin-custody>",\n'
+              '        )\n'
+              '        snapshot_helper = _load_namespace(\n'
+              '            snapshot_helper_raw,\n'
+              '            name="nembra_accepted_build_input_snapshot",\n'
+              '            filename="<accepted-build-input-snapshot>",\n'
+              '        )\n'
+              '        snapshot_custody = _load_namespace(\n'
+              '            snapshot_custody_raw,\n'
+              '            name="nembra_accepted_source_snapshot_custody",\n'
+              '            filename="<accepted-source-snapshot-custody>",\n'
+              '        )\n'
+              '        create_snapshot = _require_callable(\n'
+              '            snapshot_custody, "create", "accepted source-snapshot custody helper"\n'
+              '        )\n'
+              '        accepted_snapshot = create_snapshot(\n'
+              '            live_repo=repo,\n'
+              '            source_sha=source_sha,\n'
+              '            expected_manifest_sha256=accepted_generated_manifest_sha256,\n'
+              '            snapshot_helper=snapshot_helper,\n'
+              '        )\n'
+              '        bind_snapshot = getattr(accepted_snapshot, "bind_build_origin", None)\n'
+              '        if not callable(bind_snapshot):\n'
+              '            raise SelectedXcodeBuildOrchestratorError("accepted source snapshot exposes no build-origin bind")\n'
+              '        bind_snapshot(build_origin)\n'
+              '        run_custodied_build = _require_callable(\n',
+          )
+          replace_once(
+              orchestrator,
+              '        if lease._opened or lease._principal:\n'
+              '            raise SelectedXcodeBuildOrchestratorError("private read lease survived the guarded build window")\n'
+              '        return stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl\n'
+              '    finally:\n'
+              '        if lease is not None and (lease._opened or lease._principal):\n'
+              '            lease.revoke(suppress_errors=True)\n'
+              '        _destroy_guard_bundle(bundle)\n',
+              '        return stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl\n'
+              '    finally:\n'
+              '        if accepted_snapshot is not None:\n'
+              '            destroy_snapshot = getattr(accepted_snapshot, "destroy", None)\n'
+              '            if callable(destroy_snapshot):\n'
+              '                destroy_snapshot()\n',
+          )
+          replace_once(
+              orchestrator,
+              '    parser.add_argument("--source-sha", required=True)\n',
+              '    parser.add_argument("--source-sha", required=True)\n'
+              '    parser.add_argument("--accepted-generated-manifest-sha256", required=True)\n',
+          )
+          replace_once(
+              orchestrator,
+              '            source_sha=args.source_sha.lower(),\n'
+              '            freeze_launcher_base64=args.freeze_launcher_base64,\n',
+              '            source_sha=args.source_sha.lower(),\n'
+              '            accepted_generated_manifest_sha256=args.accepted_generated_manifest_sha256.lower(),\n'
+              '            freeze_launcher_base64=args.freeze_launcher_base64,\n',
+          )
+          replace_once(
+              orchestrator,
+              '"""Compose selected-Xcode, private-input read custody, and signed build-origin custody.\n',
+              '"""Compose selected-Xcode, accepted source-snapshot custody, and signed build-origin custody.\n',
+          )
+
+          replace_once(
+              installer,
+              'export NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256="$ACCEPTED_TUYA_PROVENANCE_SHA256"\n\n'
+              '# The intended-device identifier is private field-admission input, never product\n',
+              'export NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256="$ACCEPTED_TUYA_PROVENANCE_SHA256"\n\n'
+              ': "${NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256:?Final GO must provide NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256 as the owner-reviewed generated/private build-input manifest SHA-256.}"\n'
+              '[[ "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || die "NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256 must be exactly 64 hex characters."\n'
+              'ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256="$(printf \'%s\' "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256" | tr \'[:upper:]\' \'[:lower:]\')"\n'
+              'export NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256="$ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256"\n\n'
+              '# The intended-device identifier is private field-admission input, never product\n',
+          )
+          replace_once(
+              installer,
+              '        --install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" \\\n        -- \\\n',
+              '        --install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" \\\n'
+              '        --accepted-generated-manifest-sha256 "$ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256" \\\n'
+              '        -- \\\n',
+          )
+          PY
+
+      - name: Prove composed source snapshot contracts before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-source-compose-pycache"
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/capture_accepted_source_snapshot_custody.py \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_source_snapshot_custody.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_source_snapshot_custody.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          bash -n scripts/field/install_one_time_capture.command
+          grep -Fq -- '--accepted-generated-manifest-sha256 "$ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256"' scripts/field/install_one_time_capture.command
+          if grep -Fq '_bind_private_read_lease(build_origin' scripts/ci/capture_selected_xcode_build_orchestrator.py; then
+            echo 'superseded live-tree lease remains bound' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Self-delete and publish exact composed product branch
+        shell: bash
+        env:
+          BRANCH: product/v17-capture-accepted-source-snapshot-compose-sol-20260814
+          SELF: .github/workflows/capture-source-snapshot-compose-once.yml
+        run: |
+          set -euo pipefail
+          git rm "$SELF"
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/field/install_one_time_capture.command
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$SELF" scripts/ci/capture_selected_xcode_build_orchestrator.py scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'capture: build from reviewed root-sealed source snapshot'
+          git push origin "HEAD:$BRANCH"
