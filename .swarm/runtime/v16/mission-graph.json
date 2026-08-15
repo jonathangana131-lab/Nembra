@@ -1136,12 +1136,12 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "e00fef4049a3a4fbe3f03bfbcf91e25aa9d5bd99",
+        "headSHA": "",
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.233,
-        "title": "[Capture P0][BUILD] Preserve frozen device-tool custody after build"
+        "similarity": 0.273,
+        "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
         "classification": "validation",
@@ -1206,7 +1206,7 @@
         "lane": "",
         "pr": 3342,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.265,
+        "similarity": 0.269,
         "title": "[Capture P0][REPAIR] Compose exact private guard read lease"
       },
       "3343": {
@@ -1405,7 +1405,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:46:16Z",
+    "liveRefreshAt": "2026-08-15T00:48:49Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5190,10 +5190,10 @@
       "userValue": 7
     }
   },
-  "revision": 427,
+  "revision": 428,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:46:16Z",
+  "updatedAt": "2026-08-15T00:48:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5269,7 +5269,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:46:16Z",
+      "updatedAt": "2026-08-15T00:48:49Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
