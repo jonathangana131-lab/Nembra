@@ -69,6 +69,44 @@ with tempfile.TemporaryDirectory() as temp_dir:
     if result["ready"]:
         raise SystemExit(f"blank white transition with system chrome must fail closed: {result}")
 
+    transparent_noise = temp / "transparent-hidden-rgb.png"
+
+    def transparent_noise_pixel(x: int, y: int) -> tuple[int, int, int, int]:
+        if y < status_bar_end:
+            return (255, 255, 255, 255)
+        if status_bar_end + 16 <= y < status_bar_end + 32:
+            return ((x * 37) & 0xFF, (x * 17) & 0xFF, 220, 0)
+        if status_bar_end + 112 <= y < status_bar_end + 128:
+            return (40, (x * 29) & 0xFF, (x * 11) & 0xFF, 0)
+        return (8, 8, 8, 0)
+
+    transparent_noise.write_bytes(rgba_png(width, height, transparent_noise_pixel))
+    try:
+        guard.inspect_rendered_content(transparent_noise)
+    except guard.PNGGuardError as exc:
+        if "fully opaque" not in str(exc):
+            raise SystemExit(f"transparent hidden-RGB evidence failed for the wrong reason: {exc}")
+    else:
+        raise SystemExit("fully transparent hidden RGB must never count as rendered app content")
+
+    partially_transparent = temp / "partially-transparent-blank.png"
+
+    def partially_transparent_pixel(_x: int, y: int) -> tuple[int, int, int, int]:
+        if status_bar_end + 16 <= y < status_bar_end + 32:
+            return (24, 24, 24, 128)
+        if status_bar_end + 112 <= y < status_bar_end + 128:
+            return (80, 80, 80, 1)
+        return (250, 250, 250, 255)
+
+    partially_transparent.write_bytes(rgba_png(width, height, partially_transparent_pixel))
+    try:
+        guard.inspect_rendered_content(partially_transparent)
+    except guard.PNGGuardError as exc:
+        if "fully opaque" not in str(exc):
+            raise SystemExit(f"partially transparent evidence failed for the wrong reason: {exc}")
+    else:
+        raise SystemExit("partially transparent RGB variation must never prove rendered app content")
+
     rendered = temp / "rendered.png"
 
     def rendered_pixel(_x: int, y: int) -> tuple[int, int, int, int]:
@@ -82,6 +120,8 @@ with tempfile.TemporaryDirectory() as temp_dir:
     result = guard.inspect_rendered_content(rendered)
     if not result["ready"]:
         raise SystemExit(f"non-trivial dark rendered app content should pass readiness: {result}")
+    if result.get("alphaPolicy") != "rgba-app-region-fully-opaque":
+        raise SystemExit(f"opaque RGBA readiness must retain explicit alpha policy: {result}")
     if result["activeVerticalBands"] < guard.MIN_ACTIVE_BANDS:
         raise SystemExit(f"dark rendered proof did not span required app-content bands: {result}")
 

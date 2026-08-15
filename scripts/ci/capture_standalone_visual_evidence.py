@@ -197,7 +197,7 @@ def main() -> int:
             "syntheticAuthorityEnvironmentRejected": True,
             "visualAcceptanceRequiresHumanReview": True,
             "screenshotRenderedContentReadinessVerified": True,
-            "screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v1",
+            "screenshotRenderedContentGuard": "capture_visual_png_content_guard.py/v2",
             "screenshotRenderedContentGuardSHA256": sha256(guard_path),
             "simctlUIHelpSHA256": sha256(ui_help),
             "simctlIOHelpSHA256": sha256(io_help),

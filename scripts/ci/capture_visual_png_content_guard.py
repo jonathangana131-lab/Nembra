@@ -144,6 +144,10 @@ def inspect_rendered_content(path: Path) -> dict[str, object]:
         if y >= app_y_start:
             band = min(VERTICAL_BANDS - 1, ((y - app_y_start) * VERTICAL_BANDS) // app_rows)
             for x in range(0, stride, bytes_per_pixel):
+                if color_type == 6 and reconstructed[x + 3] != 255:
+                    raise PNGGuardError(
+                        "RGBA app-content pixel is not fully opaque; hidden RGB cannot prove rendered content"
+                    )
                 bucket = _color_bucket(reconstructed[x], reconstructed[x + 1], reconstructed[x + 2])
                 color_counts[bucket] = color_counts.get(bucket, 0) + 1
                 band_counts = band_color_counts[band]
@@ -175,6 +179,7 @@ def inspect_rendered_content(path: Path) -> dict[str, object]:
         "activeVerticalBands": active_bands,
         "requiredActiveVerticalBands": MIN_ACTIVE_BANDS,
         "bandVariantPixels": band_variant_pixels,
+        "alphaPolicy": "rgba-app-region-fully-opaque" if color_type == 6 else "implicit-opaque-rgb",
         "ready": ready,
     }
 
