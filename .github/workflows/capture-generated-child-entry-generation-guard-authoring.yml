@@ -1,0 +1,312 @@
+name: Capture Generated Child Entry Generation Guard Authoring
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-child-entry-generation-guard-sol-20260815
+    paths:
+      - .github/workflows/capture-generated-child-entry-generation-guard-authoring.yml
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_PARENT: 32519114061374744ba1b43d63147dea13623fff
+
+jobs:
+  prove:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind authoring-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "$(git merge-base HEAD "$PRODUCT_PARENT")" = "$PRODUCT_PARENT"
+          changed="$(git diff --name-only "$PRODUCT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-generated-child-entry-generation-guard-authoring.yml"
+          git diff --check "$PRODUCT_PARENT"...HEAD
+
+      - name: Materialize candidate permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          helper_path = Path('scripts/ci/capture_accepted_build_input_snapshot.py')
+          source = helper_path.read_text(encoding='utf-8')
+
+          same_object = '''def _same_object(first: os.stat_result, second: os.stat_result) -> bool:
+              return (
+                  first.st_dev,
+                  first.st_ino,
+                  stat.S_IFMT(first.st_mode),
+              ) == (
+                  second.st_dev,
+                  second.st_ino,
+                  stat.S_IFMT(second.st_mode),
+              )
+          '''.replace('          ', '')
+          same_generation = same_object + '''
+
+          def _directory_generation(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:
+              return (
+                  metadata.st_dev,
+                  metadata.st_ino,
+                  stat.S_IFMT(metadata.st_mode),
+                  metadata.st_size,
+                  metadata.st_mtime_ns,
+                  metadata.st_ctime_ns,
+              )
+          '''.replace('          ', '')
+          if source.count(same_object) != 1:
+              raise SystemExit('same-object anchor drifted')
+          source = source.replace(same_object, same_generation, 1)
+
+          old_signature = '''def _open_subject(
+              root_fd: int,
+              subject: Path,
+              directory_cache: dict[Path, int] | None = None,
+          ) -> tuple[int, os.stat_result, str]:'''.replace('          ', '')
+          new_signature = '''def _open_subject(
+              root_fd: int,
+              subject: Path,
+              directory_cache: dict[Path, tuple[int, tuple[int, int, int, int, int, int]]] | None = None,
+          ) -> tuple[int, os.stat_result, str]:'''.replace('          ', '')
+          if source.count(old_signature) != 1:
+              raise SystemExit('open-subject signature anchor drifted')
+          source = source.replace(old_signature, new_signature, 1)
+
+          old_reuse = '''            if not is_last and directory_cache is not None and relative in directory_cache:
+                          os.close(current)
+                          current = os.dup(directory_cache[relative])
+                          continue
+          '''.replace('          ', '')
+          new_reuse = '''            if not is_last and directory_cache is not None and relative in directory_cache:
+                          cached_descriptor, cached_generation = directory_cache[relative]
+                          if _directory_generation(os.fstat(cached_descriptor)) != cached_generation:
+                              raise AcceptedBuildInputSnapshotError(
+                                  f"generated build-input shared directory changed during operation: {relative}"
+                              )
+                          os.close(current)
+                          current = os.dup(cached_descriptor)
+                          continue
+          '''.replace('          ', '')
+          if source.count(old_reuse) != 1:
+              raise SystemExit('cache-reuse anchor drifted')
+          source = source.replace(old_reuse, new_reuse, 1)
+
+          old_cache = '''            if not is_last and directory_cache is not None:
+                          directory_cache[relative] = os.dup(child)
+          '''.replace('          ', '')
+          new_cache = '''            if not is_last and directory_cache is not None:
+                          cached_descriptor = os.dup(child)
+                          try:
+                              directory_cache[relative] = (
+                                  cached_descriptor,
+                                  _directory_generation(os.fstat(cached_descriptor)),
+                              )
+                          except Exception:
+                              os.close(cached_descriptor)
+                              raise
+          '''.replace('          ', '')
+          if source.count(old_cache) != 1:
+              raise SystemExit('cache-store anchor drifted')
+          source = source.replace(old_cache, new_cache, 1)
+
+          old_close = '''def _close_directory_cache(directory_cache: dict[Path, int]) -> None:
+              for descriptor in reversed(tuple(directory_cache.values())):
+                  try:
+                      os.close(descriptor)
+                  except OSError:
+                      pass
+              directory_cache.clear()
+          '''.replace('          ', '')
+          new_close = '''def _assert_directory_cache_stable(
+              directory_cache: dict[Path, tuple[int, tuple[int, int, int, int, int, int]]]
+          ) -> None:
+              for relative, (descriptor, baseline) in directory_cache.items():
+                  try:
+                      current = os.fstat(descriptor)
+                  except OSError as error:
+                      raise AcceptedBuildInputSnapshotError(
+                          f"generated build-input shared directory became unavailable: {relative}"
+                      ) from error
+                  if _directory_generation(current) != baseline:
+                      raise AcceptedBuildInputSnapshotError(
+                          f"generated build-input shared directory changed during operation: {relative}"
+                      )
+
+
+          def _close_directory_cache(
+              directory_cache: dict[Path, tuple[int, tuple[int, int, int, int, int, int]]]
+          ) -> None:
+              for descriptor, _baseline in reversed(tuple(directory_cache.values())):
+                  try:
+                      os.close(descriptor)
+                  except OSError:
+                      pass
+              directory_cache.clear()
+          '''.replace('          ', '')
+          if source.count(old_close) != 1:
+              raise SystemExit('cache-close anchor drifted')
+          source = source.replace(old_close, new_close, 1)
+
+          source = source.replace(
+              '    directory_cache: dict[Path, int] = {}\n',
+              '    directory_cache: dict[Path, tuple[int, tuple[int, int, int, int, int, int]]] = {}\n',
+          )
+          if source.count('directory_cache: dict[Path, tuple[int, tuple[int, int, int, int, int, int]]] = {}') != 2:
+              raise SystemExit('operation cache annotation count drifted')
+
+          manifest_tail = '''            finally:
+                          os.close(descriptor)
+              finally:
+                  _close_directory_cache(directory_cache)
+                  os.close(root_fd)
+              payload = {
+          '''.replace('          ', '')
+          manifest_guard = '''            finally:
+                          os.close(descriptor)
+                  _assert_directory_cache_stable(directory_cache)
+              finally:
+                  _close_directory_cache(directory_cache)
+                  os.close(root_fd)
+              payload = {
+          '''.replace('          ', '')
+          if source.count(manifest_tail) != 1:
+              raise SystemExit('manifest-finalization anchor drifted')
+          source = source.replace(manifest_tail, manifest_guard, 1)
+
+          copy_tail = '''            finally:
+                          os.close(descriptor)
+              finally:
+                  _close_directory_cache(directory_cache)
+                  os.close(root_fd)
+          '''.replace('          ', '')
+          copy_guard = '''            finally:
+                          os.close(descriptor)
+                  _assert_directory_cache_stable(directory_cache)
+              finally:
+                  _close_directory_cache(directory_cache)
+                  os.close(root_fd)
+          '''.replace('          ', '')
+          if source.count(copy_tail) != 1:
+              raise SystemExit('copy-finalization anchor drifted')
+          source = source.replace(copy_tail, copy_guard, 1)
+
+          compile(source, str(helper_path), 'exec', dont_inherit=True)
+          helper_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py')
+          tests = test_path.read_text(encoding='utf-8')
+          marker = '\n\nif __name__ == "__main__":\n'
+          if tests.count(marker) != 1:
+              raise SystemExit('permanent test footer drifted')
+          regression = '''
+              def test_manifest_rejects_child_entry_splice_inside_held_parent(self) -> None:
+                  helper = load()
+                  with tempfile.TemporaryDirectory(prefix="nembra-shared-ancestor-child-manifest-") as raw:
+                      root = Path(raw)
+                      seed_common(root)
+                      generation_a = make_generation(root, "LocalSecrets.A", b"SDK-A\\n", b"RUNTIME-A\\n")
+                      generation_b = make_generation(root, "LocalSecrets.B", b"SDK-B\\n", b"RUNTIME-B\\n")
+                      generation_a.rename(root / "LocalSecrets")
+                      pure_a = helper.canonical_generated_manifest(root, SOURCE_SHA)
+                      original_open = helper._open_subject
+                      swapped = False
+
+                      def splice_before_runtime(root_fd: int, subject: Path, directory_cache=None):
+                          nonlocal swapped
+                          if subject == Path("LocalSecrets/TuyaRuntime") and not swapped:
+                              active = root / "LocalSecrets"
+                              (active / "TuyaSDK").rename(active / "TuyaSDK.A.attack")
+                              (active / "TuyaRuntime").rename(active / "TuyaRuntime.A.attack")
+                              (generation_b / "TuyaSDK").rename(active / "TuyaSDK")
+                              (generation_b / "TuyaRuntime").rename(active / "TuyaRuntime")
+                              swapped = True
+                          return original_open(root_fd, subject, directory_cache)
+
+                      try:
+                          with mock.patch.object(helper, "_open_subject", side_effect=splice_before_runtime):
+                              held = helper.canonical_generated_manifest(root, SOURCE_SHA)
+                      except helper.AcceptedBuildInputSnapshotError:
+                          self.assertTrue(swapped)
+                          return
+                      self.assertTrue(swapped)
+                      self.assertEqual(held, pure_a)
+
+              def test_copy_rejects_child_entry_splice_inside_held_parent(self) -> None:
+                  helper = load()
+                  with tempfile.TemporaryDirectory(prefix="nembra-shared-ancestor-child-copy-") as raw:
+                      root = Path(raw)
+                      seed_common(root)
+                      generation_a = make_generation(root, "LocalSecrets.A", b"SDK-A\\n", b"RUNTIME-A\\n")
+                      generation_b = make_generation(root, "LocalSecrets.B", b"SDK-B\\n", b"RUNTIME-B\\n")
+                      generation_a.rename(root / "LocalSecrets")
+                      destination = root / "stage"
+                      destination.mkdir()
+                      original_open = helper._open_subject
+                      swapped = False
+
+                      def splice_before_runtime(root_fd: int, subject: Path, directory_cache=None):
+                          nonlocal swapped
+                          if subject == Path("LocalSecrets/TuyaRuntime") and not swapped:
+                              active = root / "LocalSecrets"
+                              (active / "TuyaSDK").rename(active / "TuyaSDK.A.attack")
+                              (active / "TuyaRuntime").rename(active / "TuyaRuntime.A.attack")
+                              (generation_b / "TuyaSDK").rename(active / "TuyaSDK")
+                              (generation_b / "TuyaRuntime").rename(active / "TuyaRuntime")
+                              swapped = True
+                          return original_open(root_fd, subject, directory_cache)
+
+                      try:
+                          with mock.patch.object(helper, "_open_subject", side_effect=splice_before_runtime):
+                              helper._copy_generated_subjects(root, destination)
+                      except helper.AcceptedBuildInputSnapshotError:
+                          self.assertTrue(swapped)
+                          return
+                      self.assertTrue(swapped)
+                      self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\\n")
+                      self.assertEqual((destination / "LocalSecrets/TuyaRuntime/identity.bin").read_bytes(), b"RUNTIME-A\\n")
+          '''.replace('          ', '')
+          tests = tests.replace(marker, '\n' + regression + marker, 1)
+          compile(tests, str(test_path), 'exec', dont_inherit=True)
+          test_path.write_text(tests, encoding='utf-8')
+          PY
+
+      - name: Prove repair and inherited admission suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+          changed="$(git diff --name-only "$PRODUCT_PARENT" -- scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          expected="$(printf '%s\n' scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Retain exact candidate payload
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-generated-child-entry-generation-guard-${{ github.sha }}
+          path: |
+            scripts/ci/capture_accepted_build_input_snapshot.py
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          if-no-files-found: error
+          retention-days: 7
