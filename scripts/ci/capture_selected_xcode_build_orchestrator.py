@@ -203,8 +203,20 @@ def _lease_paths(
     repo: Path,
     *,
     include_signatures: bool = False,
+    include_descriptors: bool = False,
 ) -> tuple:
-    """Return exact ACL subjects and optionally their identity at planning time."""
+    """Plan exact ACL subjects; descriptor mode is the production object authority.
+
+    The legacy/signature projections are diagnostic compatibility surfaces only.
+    Production descriptor mode pins each admitted object immediately and holds every
+    descriptor until grant/revoke. A final parent-child coherence pass proves that
+    independently pinned descendants belong to the same held ancestry generation.
+    """
+
+    if include_signatures and include_descriptors:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease plan cannot request signatures and descriptors together"
+        )
 
     repo = _absolute_lexical(repo)
     repo_metadata = _require_real_directory(repo, "repository root")
@@ -214,71 +226,115 @@ def _lease_paths(
     ordered: list[tuple] = []
     seen: set[Path] = set()
 
+    def append_descriptor(path: Path, host_only: bool, is_directory: bool) -> None:
+        descriptor = _open_pinned_path(path, is_directory)
+        ordered.append(
+            (path, host_only, _descriptor_signature(descriptor), descriptor)
+        )
+
     def admit(path: Path, host_only: bool, metadata: os.stat_result) -> None:
         if path in seen:
             return
-        signature = _metadata_signature(metadata)
-        ordered.append((path, host_only, signature) if include_signatures else (path, host_only))
+        is_directory = stat.S_ISDIR(metadata.st_mode)
+        if not is_directory and not stat.S_ISREG(metadata.st_mode):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease plan targeted unsupported type: {path}"
+            )
+        if include_descriptors:
+            append_descriptor(path, host_only, is_directory)
+        else:
+            signature = _metadata_signature(metadata)
+            ordered.append(
+                (path, host_only, signature)
+                if include_signatures
+                else (path, host_only)
+            )
         seen.add(path)
 
-    # Widen host traversal only until the first ancestor already searchable by all.
-    current = repo.parent
-    private_hosts: list[tuple[Path, os.stat_result]] = []
-    while current != current.parent:
-        metadata = _require_real_directory(current, "repository host ancestry")
-        if metadata.st_mode & stat.S_IXOTH:
-            break
-        private_hosts.append((current, metadata))
-        current = current.parent
-    for path, metadata in reversed(private_hosts):
-        admit(path, True, metadata)
+    try:
+        # Widen host traversal only until the first ancestor already searchable by all.
+        current = repo.parent
+        private_hosts: list[tuple[Path, os.stat_result]] = []
+        while current != current.parent:
+            metadata = _require_real_directory(current, "repository host ancestry")
+            if metadata.st_mode & stat.S_IXOTH:
+                break
+            private_hosts.append((current, metadata))
+            current = current.parent
+        for path, metadata in reversed(private_hosts):
+            admit(path, True, metadata)
 
-    admit(repo, False, repo_metadata)
+        admit(repo, False, repo_metadata)
 
-    for raw_subject in subjects:
-        subject = _absolute_lexical(raw_subject)
-        try:
-            relative = subject.relative_to(repo)
-        except ValueError as error:
-            raise SelectedXcodeBuildOrchestratorError(
-                "private read-lease subject escaped the repository"
-            ) from error
-        if not relative.parts:
-            raise SelectedXcodeBuildOrchestratorError(
-                "private read-lease subject may not be the repository root"
-            )
-
-        cursor = repo
-        for component in relative.parts:
-            if component in ("", ".", ".."):
-                raise SelectedXcodeBuildOrchestratorError(
-                    "private read-lease subject has unsafe ancestry"
-                )
-            cursor = cursor / component
+        for raw_subject in subjects:
+            subject = _absolute_lexical(raw_subject)
             try:
-                metadata = cursor.lstat()
-            except OSError as error:
+                relative = subject.relative_to(repo)
+            except ValueError as error:
                 raise SelectedXcodeBuildOrchestratorError(
-                    f"private read-lease subject ancestry is unavailable: {cursor}"
+                    "private read-lease subject escaped the repository"
                 ) from error
-            if stat.S_ISLNK(metadata.st_mode):
+            if not relative.parts:
                 raise SelectedXcodeBuildOrchestratorError(
-                    f"private read-lease subject ancestry contains a symlink: {cursor}"
+                    "private read-lease subject may not be the repository root"
                 )
-            if cursor != subject and not stat.S_ISDIR(metadata.st_mode):
-                raise SelectedXcodeBuildOrchestratorError(
-                    f"private read-lease subject ancestry is not a directory: {cursor}"
-                )
-            admit(cursor, False, metadata)
 
-        for path, _is_directory, signature in _subject_entries(subject, include_signatures=True):
-            if path in seen:
-                continue
-            ordered.append((path, False, signature) if include_signatures else (path, False))
-            seen.add(path)
+            cursor = repo
+            for component in relative.parts:
+                if component in ("", ".", ".."):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        "private read-lease subject has unsafe ancestry"
+                    )
+                cursor = cursor / component
+                try:
+                    metadata = cursor.lstat()
+                except OSError as error:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease subject ancestry is unavailable: {cursor}"
+                    ) from error
+                if stat.S_ISLNK(metadata.st_mode):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease subject ancestry contains a symlink: {cursor}"
+                    )
+                if cursor != subject and not stat.S_ISDIR(metadata.st_mode):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease subject ancestry is not a directory: {cursor}"
+                    )
+                admit(cursor, False, metadata)
 
-    return tuple(ordered)
+            subject_entries = _subject_entries(
+                subject,
+                include_signatures=(include_signatures or include_descriptors),
+            )
+            for entry in subject_entries:
+                if include_signatures or include_descriptors:
+                    path, is_directory, signature = entry
+                else:
+                    path, is_directory = entry
+                    signature = None
+                if path in seen:
+                    continue
+                if include_descriptors:
+                    append_descriptor(path, False, is_directory)
+                elif include_signatures:
+                    ordered.append((path, False, signature))
+                else:
+                    ordered.append((path, False))
+                seen.add(path)
 
+        if include_descriptors:
+            _verify_descriptor_plan(tuple(ordered))
+        return tuple(ordered)
+    except Exception:
+        if include_descriptors:
+            for entry in reversed(ordered):
+                if len(entry) != 4:
+                    continue
+                try:
+                    os.close(int(entry[3]))
+                except OSError:
+                    pass
+        raise
 
 def _acl_text(principal: str, is_directory: bool, host_only: bool) -> str:
     if re.fullmatch(r"[A-Za-z0-9_.-]+", principal) is None:
@@ -393,6 +449,96 @@ def _open_pinned_path(
             os.close(descriptor)
         raise
 
+def _open_pinned_child(
+    parent_descriptor: int,
+    name: str,
+    is_directory: bool,
+    expected_signature: tuple[int, int, int],
+) -> int:
+    """Re-open one held-plan child through its held parent directory."""
+    if not name or name in (".", "..") or os.sep in name:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease child name is unsafe"
+        )
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    odirectory = getattr(os, "O_DIRECTORY", 0)
+    if nofollow == 0 or odirectory == 0 or os.open not in os.supports_dir_fd:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease child verification requires openat no-follow support"
+        )
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow
+    if is_directory:
+        flags |= odirectory
+    try:
+        descriptor = os.open(name, flags, dir_fd=parent_descriptor)
+    except OSError as error:
+        raise SelectedXcodeBuildOrchestratorError(
+            f"private read-lease child is no longer reachable from held parent: {name}"
+        ) from error
+    try:
+        mode = os.fstat(descriptor).st_mode
+        if is_directory != stat.S_ISDIR(mode):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held child changed type: {name}"
+            )
+        if not is_directory and not stat.S_ISREG(mode):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held child is not regular: {name}"
+            )
+        if _descriptor_signature(descriptor) != expected_signature:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held ancestry disagrees with pinned child: {name}"
+            )
+        result = descriptor
+        descriptor = -1
+        return result
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _verify_descriptor_plan(
+    plan: Sequence[tuple[Path, bool, tuple[int, int, int], int]],
+) -> None:
+    """Require one coherent held ancestry generation before any ACL mutation."""
+    by_path = {Path(path): entry for entry in plan for path in (entry[0],)}
+    if len(by_path) != len(plan):
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease descriptor plan contains duplicate paths"
+        )
+    for path_raw, host_only, signature, descriptor in plan:
+        path = Path(path_raw)
+        is_directory = stat.S_ISDIR(signature[2])
+        if not is_directory and not stat.S_ISREG(signature[2]):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held descriptor has unsupported type: {path}"
+            )
+        if host_only and not is_directory:
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease host traversal plan targeted a file"
+            )
+        if _descriptor_signature(descriptor) != signature:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held descriptor changed identity: {path}"
+            )
+
+        parent = by_path.get(path.parent)
+        if parent is not None:
+            parent_signature = parent[2]
+            if not stat.S_ISDIR(parent_signature[2]):
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease held parent is not a directory: {path.parent}"
+                )
+            diagnostic = _open_pinned_child(
+                int(parent[3]), path.name, is_directory, signature
+            )
+        else:
+            # Topmost admitted host path is still checked through the real
+            # root-anchored component walker. All descendants are checked
+            # through already-held parents, preventing mixed generations.
+            diagnostic = _open_pinned_path(path, is_directory, signature)
+        os.close(diagnostic)
+
 def _descriptor_path(descriptor: int) -> str:
     if descriptor < 0:
         raise SelectedXcodeBuildOrchestratorError("read-lease descriptor is invalid")
@@ -466,41 +612,41 @@ class _PrivateReadLease:
             raise SelectedXcodeBuildOrchestratorError("build principal name is malformed")
         self._principal = principal
         try:
-            for path, host_only, expected_signature in _lease_paths(
+            pinned_plan = _lease_paths(
                 self._subjects,
                 self._repository,
-                include_signatures=True,
+                include_descriptors=True,
+            )
+            self._opened = [
+                {
+                    "descriptor": descriptor,
+                    "path": path,
+                    "before": "",
+                    "acl": "",
+                    "added": False,
+                    "accepted_signature": accepted_signature,
+                    "is_directory": stat.S_ISDIR(accepted_signature[2]),
+                }
+                for path, _host_only, accepted_signature, descriptor in pinned_plan
+            ]
+
+            for record, (path, host_only, accepted_signature, descriptor) in zip(
+                self._opened, pinned_plan
             ):
-                is_directory = stat.S_ISDIR(expected_signature[2])
-                if not is_directory and not stat.S_ISREG(expected_signature[2]):
-                    raise SelectedXcodeBuildOrchestratorError(
-                        f"private read-lease plan targeted unsupported type: {path}"
-                    )
-                descriptor = _open_pinned_path(path, is_directory, expected_signature)
+                is_directory = bool(record["is_directory"])
                 before = _acl_listing(descriptor)
                 if _principal_already_present(before, principal):
-                    os.close(descriptor)
                     raise SelectedXcodeBuildOrchestratorError(
                         f"private read-lease principal already has ACL authority: {path}"
                     )
                 acl = _acl_text(principal, is_directory, host_only)
-                record: dict[str, object] = {
-                    "descriptor": descriptor,
-                    "path": path,
-                    "before": before,
-                    "acl": acl,
-                    "added": False,
-                }
-                # Record ownership before mutation so every partial grant is reversible.
-                self._opened.append(record)
+                record["before"] = before
+                record["acl"] = acl
                 try:
                     _chmod_acl(descriptor, "+a", acl)
                 except Exception:
                     # A command-level failure does not prove the kernel left the ACL
-                    # unchanged. Classify the descriptor after the call while exact
-                    # rollback custody is still held. Ambiguity is treated as a
-                    # possible mutation so revoke must attempt removal and surface any
-                    # cleanup failure rather than silently forgetting authority.
+                    # unchanged. Classify while the exact held descriptor remains live.
                     try:
                         after_failed = _acl_listing(descriptor)
                     except Exception:
@@ -514,10 +660,14 @@ class _PrivateReadLease:
                     raise SelectedXcodeBuildOrchestratorError(
                         f"private read-lease ACL did not materialize exactly: {path}"
                     )
-                if _descriptor_signature(descriptor) != _path_signature(path):
+                if _descriptor_signature(descriptor) != accepted_signature:
                     raise SelectedXcodeBuildOrchestratorError(
-                        f"private read-lease pathname changed after grant: {path}"
+                        f"private read-lease held descriptor changed after grant: {path}"
                     )
+                diagnostic = _open_pinned_path(
+                    path, is_directory, accepted_signature
+                )
+                os.close(diagnostic)
         except Exception as error:
             try:
                 self.revoke()
@@ -533,15 +683,35 @@ class _PrivateReadLease:
             descriptor = int(record["descriptor"])
             path = Path(record["path"])
             try:
-                try:
-                    path_matches = _descriptor_signature(descriptor) == _path_signature(path)
-                except Exception:
-                    path_matches = False
-                if not path_matches:
-                    failures.append(
-                        f"private read-lease pathname no longer identifies opened object: {path}"
-                    )
                 if bool(record["added"]):
+                    accepted_signature = record.get("accepted_signature")
+                    is_directory = record.get("is_directory")
+                    path_matches = False
+                    if (
+                        isinstance(accepted_signature, tuple)
+                        and len(accepted_signature) == 3
+                        and isinstance(is_directory, bool)
+                    ):
+                        try:
+                            diagnostic = _open_pinned_path(
+                                path, is_directory, accepted_signature
+                            )
+                        except Exception:
+                            path_matches = False
+                        else:
+                            os.close(diagnostic)
+                            path_matches = True
+                    else:
+                        try:
+                            path_matches = (
+                                _descriptor_signature(descriptor) == _path_signature(path)
+                            )
+                        except Exception:
+                            path_matches = False
+                    if not path_matches:
+                        failures.append(
+                            f"private read-lease pathname no longer identifies opened object: {path}"
+                        )
                     _chmod_acl(descriptor, "-a", str(record["acl"]))
                     restored = _acl_listing(descriptor)
                     if restored != str(record["before"]):
