@@ -1,0 +1,68 @@
+name: Capture Private Read Lease Inode ABA Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_private_read_lease_inode_aba_red_team.py
+      - .github/workflows/capture-private-read-lease-inode-aba-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exploit-positive-linux:
+    name: Prove three-field planned identity is recyclable
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Bind attacked exact product head and validation-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARENT=aa610e1000e58ba5e43e35a75ee8f22486aea5ec
+          git merge-base --is-ancestor "$PARENT" HEAD
+          expected="$RUNNER_TEMP/expected"
+          actual="$RUNNER_TEMP/actual"
+          cat > "$expected" <<'EOF'
+          .github/workflows/capture-private-read-lease-inode-aba-red-team.yml
+          scripts/ci/tests/test_capture_private_read_lease_inode_aba_red_team.py
+          EOF
+          git diff --name-only "$PARENT"...HEAD | LC_ALL=C sort > "$actual"
+          diff -u "$expected" "$actual"
+          git diff --check "$PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run exploit-positive inode ABA witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_private_read_lease_inode_aba_red_team.py
+
+      - name: Pin attacked identity grammar
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          tree = ast.parse(path.read_text(encoding='utf-8'))
+          target = next(
+              node for node in tree.body
+              if isinstance(node, ast.FunctionDef) and node.name == '_metadata_signature'
+          )
+          returned = ast.unparse(target.body[0].value)
+          required = ('metadata.st_dev', 'metadata.st_ino', 'stat.S_IFMT(metadata.st_mode)')
+          for fragment in required:
+              assert fragment in returned, returned
+          assert 'ctime' not in returned.lower(), returned
+          assert 'birth' not in returned.lower(), returned
+          assert 'gen' not in returned.lower(), returned
+          print('EXPLOIT-POSITIVE: current planned identity has no temporal generation discriminator')
+          PY
