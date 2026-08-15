@@ -1,0 +1,77 @@
+name: Capture Generated Shared Ancestor Cache Rearm Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
+    paths:
+      - .github/workflows/capture-generated-shared-ancestor-cache-rearm-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  rearm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Re-arm exact materializer for push execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "$(git merge-base HEAD fe40c025eb10247c73820f4001ab63affaa60af7)" = "fe40c025eb10247c73820f4001ab63affaa60af7"
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  "on:\n  pull_request:\n    paths:\n      - .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml\n  workflow_dispatch:\n",
+                  "on:\n  push:\n    branches:\n      - repair/v17-capture-generated-shared-ancestor-cache-sol-20260814\n    paths:\n      - .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml\n  pull_request:\n    paths:\n      - .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml\n  workflow_dispatch:\n",
+              ),
+              (
+                  "    if: github.event_name == 'pull_request'\n",
+                  "    if: github.event_name == 'pull_request' || github.event_name == 'push'\n",
+              ),
+              (
+                  "          ref: ${{ github.event.pull_request.head.sha }}\n",
+                  "          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n",
+              ),
+              (
+                  "          test \"$(git rev-parse HEAD)\" = \"${{ github.event.pull_request.head.sha }}\"\n",
+                  "          test \"$(git rev-parse HEAD)\" = \"${{ github.event.pull_request.head.sha || github.sha }}\"\n",
+              ),
+              (
+                  "          git push origin HEAD:\"${{ github.event.pull_request.head.ref }}\"\n",
+                  "          git push origin HEAD:\"${{ github.event.pull_request.head.ref || github.ref_name }}\"\n",
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one rearm anchor, found {count}: {old!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git rm .github/workflows/capture-generated-shared-ancestor-cache-rearm-once.yml
+          git add .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml
+          git diff --cached --check
+          changed="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml \
+            .github/workflows/capture-generated-shared-ancestor-cache-rearm-once.yml | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git config user.name "nembra-capture-swarm"
+          git config user.email "nembra-capture-swarm@users.noreply.github.com"
+          git commit -m "ci(capture): allow shared-ancestor materializer on branch push"
+          git push origin HEAD:repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
