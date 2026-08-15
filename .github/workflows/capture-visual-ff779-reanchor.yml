@@ -1,0 +1,181 @@
+name: Capture Visual ff779 Re-anchor
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - .github/workflows/capture-visual-ff779-reanchor.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-visual-ff779-reanchor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  visual-evidence:
+    name: Exact ff779 iPhone 12 Capture first-fold evidence
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      PRODUCT_PARENT_SHA: ff77967e1089a1da9c862c894396cf64d145236d
+      PRODUCT_SOURCE_BLOB: 59124f9528421ee060f11df706b565099fd397be
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind validation-only child to exact composed product
+        shell: bash
+        run: |
+          set -euo pipefail
+          exact_head='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$exact_head"
+          test "$(git merge-base "$PRODUCT_PARENT_SHA" HEAD)" = "$PRODUCT_PARENT_SHA"
+          test "$(git diff --name-only "$PRODUCT_PARENT_SHA"...HEAD)" = '.github/workflows/capture-visual-ff779-reanchor.yml'
+          test "$(git rev-parse "${PRODUCT_PARENT_SHA}:NembraApp/App/NembraCaptureEntrypoint.swift")" = "$PRODUCT_SOURCE_BLOB"
+          test "$(git rev-parse "HEAD:NembraApp/App/NembraCaptureEntrypoint.swift")" = "$PRODUCT_SOURCE_BLOB"
+          test "$(grep -Fc '.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
+          grep -Fq 'Status: **PHYSICAL NO-GO.**' docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+          git diff --check "$PRODUCT_PARENT_SHA"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'NEMBRA_VISUAL_VALIDATION_HEAD=%s\n' "$exact_head" >> "$GITHUB_ENV"
+
+      - name: Record exact toolchain and build standalone Capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/CaptureVisualFF779"
+          mkdir -p "$evidence/screenshots"
+          {
+            xcodebuild -version
+            sw_vers
+            xcrun simctl version || true
+          } > "$evidence/toolchain.txt" 2>&1
+          rm -rf /tmp/NembraCaptureVisualFF779Derived
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/NembraCaptureVisualFF779Derived CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="capture-v17-${PRODUCT_PARENT_SHA:0:12}" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$PRODUCT_PARENT_SHA" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER='ES80-AUTHENTICATED-STATIONARY-v1' build
+          plist='/tmp/NembraCaptureVisualFF779Derived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$plist")" = 'com.jonathangana131.nembra.capturelearn'
+          test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$PRODUCT_PARENT_SHA"
+          printf 'NEMBRA_VISUAL_EVIDENCE=%s\n' "$evidence" >> "$GITHUB_ENV"
+
+      - name: Create exact iPhone 12 iOS 27 Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$({ xcrun simctl list runtimes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable", True) and str(r.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          if not rows: raise SystemExit(1)
+          rows.sort(key=lambda r: tuple(int(p) for p in str(r.get("version","0")).split(".") if p.isdigit()), reverse=True)
+          print(rows[0]["identifier"])
+          '; } 2>/dev/null)"
+          device_type="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
+          import json,sys
+          for row in json.load(sys.stdin)["devicetypes"]:
+              if row.get("name") == "iPhone 12": print(row["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)
+          '; } 2>/dev/null)"
+          test "$device_type" = 'com.apple.CoreSimulator.SimDeviceType.iPhone-12'
+          udid="$(xcrun simctl create "Nembra Capture Visual ff779 ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$device_type" "$runtime")"
+          printf 'NEMBRA_VISUAL_UDID=%s\n' "$udid" >> "$GITHUB_ENV"
+          printf 'NEMBRA_VISUAL_RUNTIME=%s\n' "$runtime" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" '/tmp/NembraCaptureVisualFF779Derived/Build/Products/Debug-iphonesimulator/Nembra Capture.app'
+          xcrun simctl status_bar "$udid" override --time 9:41 --batteryState charged --batteryLevel 82 --wifiBars 3 --cellularMode active --cellularBars 4 >/dev/null 2>&1 || true
+
+      - name: Capture exact standard and AX5 first-fold states
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle='com.jonathangana131.nembra.capturelearn'
+          capture() {
+            local name="$1" appearance="$2" size="$3"
+            xcrun simctl terminate "$NEMBRA_VISUAL_UDID" "$bundle" >/dev/null 2>&1 || true
+            xcrun simctl ui "$NEMBRA_VISUAL_UDID" appearance "$appearance"
+            xcrun simctl ui "$NEMBRA_VISUAL_UDID" content_size "$size"
+            launch="$(xcrun simctl launch "$NEMBRA_VISUAL_UDID" "$bundle")"
+            pid="${launch##*: }"
+            test "$pid" -gt 0
+            sleep 3
+            kill -0 "$pid"
+            out="$NEMBRA_VISUAL_EVIDENCE/screenshots/$name.png"
+            xcrun simctl io "$NEMBRA_VISUAL_UDID" screenshot "$out"
+            test -s "$out"
+            width="$(sips -g pixelWidth "$out" 2>/dev/null | awk '/pixelWidth/ {print $2}')"
+            height="$(sips -g pixelHeight "$out" 2>/dev/null | awk '/pixelHeight/ {print $2}')"
+            test "$width" -gt 500
+            test "$height" -gt 1000
+          }
+          capture standard-dark dark large
+          capture standard-system-light light large
+          capture ax5-dark dark accessibility-extra-extra-extra-large
+
+      - name: Seal visual evidence manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - "$NEMBRA_VISUAL_EVIDENCE" <<'PY'
+          import hashlib, json, os, pathlib, sys
+          root=pathlib.Path(sys.argv[1])
+          names=['standard-dark.png','standard-system-light.png','ax5-dark.png']
+          states=[]
+          for name in names:
+              p=root/'screenshots'/name
+              if not p.is_file() or p.stat().st_size == 0: raise SystemExit(f'missing {name}')
+              states.append({'file':name,'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          manifest={
+              'schemaVersion':1,
+              'authority':'capture-standalone-visual-exact-product-evidence',
+              'validationHeadSHA':os.environ['NEMBRA_VISUAL_VALIDATION_HEAD'],
+              'productHeadSHA':os.environ['PRODUCT_PARENT_SHA'],
+              'productSourceBlob':os.environ['PRODUCT_SOURCE_BLOB'],
+              'baselineDevice':'iPhone 12',
+              'baselineOS':'iOS 27',
+              'simulatorRuntime':os.environ['NEMBRA_VISUAL_RUNTIME'],
+              'states':states,
+              'humanPixelReviewRequired':True,
+              'physicalAuthorityCreated':False,
+              'protocolAuthorityCreated':False,
+          }
+          (root/'manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+          PY
+          cat "$NEMBRA_VISUAL_EVIDENCE/manifest.json"
+
+      - name: Require clean validation-only workspace
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test "$(git diff --name-only "$PRODUCT_PARENT_SHA"...HEAD)" = '.github/workflows/capture-visual-ff779-reanchor.yml'
+
+      - name: Upload exact composed visual evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-capture-visual-ff779-${{ github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/CaptureVisualFF779
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Delete temporary Simulator
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${NEMBRA_VISUAL_UDID:-}" ]]; then
+            xcrun simctl shutdown "$NEMBRA_VISUAL_UDID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$NEMBRA_VISUAL_UDID" >/dev/null 2>&1 || true
+          fi
