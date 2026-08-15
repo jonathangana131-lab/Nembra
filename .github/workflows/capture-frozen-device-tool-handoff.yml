@@ -1,0 +1,49 @@
+name: Capture Frozen Device Tool Handoff
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+      - .github/workflows/capture-frozen-device-tool-handoff.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-handoff:
+    name: Prove frozen post-build device tools
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact frozen-device-tool source: %s\n' "$actual"
+
+      - name: Prove five-field custody and hostile environment rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-frozen-device-tool-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          bash -n scripts/field/install_one_time_capture.command
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
