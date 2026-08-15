@@ -45,6 +45,28 @@ struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
         #expect(runbook.contains("Only a final composed exact build may replace the NOT YET AUTHORIZED fields and change this document to GO"))
     }
 
+    @Test("durable routing follows live GitHub and cannot revive a retired flagship")
+    func durableRoutingCannotFreezeStaleCurrentAuthority() throws {
+        let pointer = try readRepositoryFile("CAPTURE_HARD_FREEZE_ACTIVE.md")
+
+        #expect(pointer.contains("**Live GitHub is authoritative.**"))
+        #expect(pointer.contains("feature: Nembra Capture / authenticated stationary ES80 physical truth"))
+        #expect(pointer.contains("accepted public-software checkpoint: PR #3316 exact `ba615954b2afdf2e011f485c0ecbc9152614d21e`"))
+        #expect(pointer.contains("software evidence only"))
+        #expect(pointer.contains("signed/private-field closure must be discovered from live GitHub"))
+        #expect(pointer.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
+        #expect(pointer.contains("Queued/running/skipped/cancelled/ancestor workflow results are non-evidence."))
+        #expect(pointer.contains("This pointer cannot mint GO."))
+        #expect(pointer.contains("physical status: **NO-GO / DO NOT INSTALL / DO NOT SCAN / DO NOT RUN BLE / DO NOT RIDE**"))
+
+        #expect(!pointer.contains("PR #2178"))
+        #expect(!pointer.contains("df30de17"))
+        #expect(!pointer.contains("integration/v14-capture-final-stationary-convergence-sol"))
+        #expect(!pointer.contains("31366062131"))
+        #expect(!pointer.contains("31366062142"))
+        #expect(!pointer.contains("Always re-read live PR #"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
