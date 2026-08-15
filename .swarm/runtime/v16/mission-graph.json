@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 42,
+    "classifiedPRTotal": 43,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1527,6 +1527,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.363,
         "title": "[Capture P0][RED TEAM] Re-anchor sibling-entry generation splice on current shared-ancestor head"
+      },
+      "3438": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3438,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.352,
+        "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1559,7 +1570,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:21:33Z",
+    "liveRefreshAt": "2026-08-15T11:22:41Z",
     "liveRefreshDuplicatesSuppressed": [
       3437
     ],
@@ -5344,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 628,
+  "revision": 629,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:21:35Z",
+  "updatedAt": "2026-08-15T11:22:43Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:21:33Z",
+      "updatedAt": "2026-08-15T11:22:41Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
