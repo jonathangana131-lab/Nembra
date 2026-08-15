@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3335,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.271,
+        "similarity": 0.276,
         "title": "[Capture P0][RED TEAM] Preserve exact private guard execution through selected-Xcode composition"
       },
       "3336": {
@@ -1229,7 +1229,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:02:43Z",
+    "liveRefreshAt": "2026-08-15T00:02:57Z",
     "liveRefreshDuplicatesSuppressed": [
       3337
     ],
@@ -5014,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 341,
+  "revision": 342,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:02:44Z",
+  "updatedAt": "2026-08-15T00:02:57Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5093,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:02:43Z",
+      "updatedAt": "2026-08-15T00:02:57Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
