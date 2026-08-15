@@ -672,32 +672,70 @@ def _create_local_build_identity(name: str, uid: int, gid: int, home: Path) -> N
 
 
 def _create_apfs_image(image: Path) -> None:
-    completed = subprocess.run(
-        [
-            "/usr/bin/hdiutil",
-            "create",
-            "-quiet",
-            "-size",
-            "6g",
-            "-type",
-            "SPARSE",
-            "-fs",
-            "APFS",
-            "-volname",
-            APFS_VOLUME_NAME,
-            str(image),
-        ],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
+    previous_umask = os.umask(0o077)
+    try:
+        completed = subprocess.run(
+            [
+                "/usr/bin/hdiutil",
+                "create",
+                "-quiet",
+                "-size",
+                "6g",
+                "-type",
+                "SPARSE",
+                "-fs",
+                "APFS",
+                "-volname",
+                APFS_VOLUME_NAME,
+                str(image),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    finally:
+        os.umask(previous_umask)
     if completed.returncode != 0:
         detail = (completed.stderr or "").strip()
         raise BuildOriginCustodyError(
             "could not create isolated APFS compiler-output image" + (f": {detail}" if detail else "")
         )
+
+
+def _seal_apfs_backing_file(image: Path) -> None:
+    try:
+        before = image.lstat()
+    except OSError as error:
+        raise BuildOriginCustodyError("APFS compiler-output backing file is unavailable") from error
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        raise BuildOriginCustodyError("APFS compiler-output backing subject is not one real regular file")
+
+    acl = subprocess.run(
+        ["/bin/chmod", "-N", str(image)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if acl.returncode != 0:
+        detail = (acl.stderr or "").strip()
+        raise BuildOriginCustodyError(
+            "could not remove APFS compiler-output backing ACL"
+            + (f": {detail[-800:]}" if detail else "")
+        )
+
+    os.chown(image, 0, 0, follow_symlinks=False)
+    os.chmod(image, 0o600, follow_symlinks=False)
+    after = image.lstat()
+    if stat.S_ISLNK(after.st_mode) or not stat.S_ISREG(after.st_mode):
+        raise BuildOriginCustodyError("APFS compiler-output backing subject changed type while sealing")
+    if (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino):
+        raise BuildOriginCustodyError("APFS compiler-output backing subject changed identity while sealing")
+    if after.st_uid != 0 or after.st_gid != 0 or stat.S_IMODE(after.st_mode) != 0o600:
+        raise BuildOriginCustodyError("APFS compiler-output backing file did not become root-only 0600")
 
 
 def _attach_apfs(image: Path, mountpoint: Path, *, readonly: bool) -> str:
@@ -877,6 +915,7 @@ def run_custodied_build(
         )
 
         _create_apfs_image(image)
+        _seal_apfs_backing_file(image)
         writable_device = _attach_apfs(image, mountpoint, readonly=False)
         os.chown(mountpoint, build_uid, build_gid)
         os.chmod(mountpoint, 0o700)
