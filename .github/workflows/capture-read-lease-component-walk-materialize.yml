@@ -16,7 +16,6 @@ concurrency:
 env:
   EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be
   MATERIALIZER: .github/workflows/capture-read-lease-component-walk-materialize.yml
-  REPAIR: .github/workflows/capture-read-lease-materializer-whitespace-repair-once.yml
 
 jobs:
   materialize:
@@ -36,9 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-          expected="$(printf '%s\n' "$MATERIALIZER" "$REPAIR" | LC_ALL=C sort)"
-          test "$changed" = "$expected"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = "$MATERIALIZER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Materialize anchored component walk and regression
