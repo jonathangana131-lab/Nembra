@@ -25,24 +25,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-ref: ${{ github.event.pull_request.head.sha || github.sha }}
-fetch-depth: 0
-persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Bind serial repair delta and run full admission regressions
         shell: bash
         run: |
-set -euo pipefail
-expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
-test "$(git rev-parse HEAD)" = "$expected_head"
-test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-expected="$(printf '%s\n' \
-  .github/workflows/capture-generated-shared-ancestor-continuity.yml \
-  scripts/ci/capture_accepted_build_input_snapshot.py \
-  scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
-test "$changed" = "$expected"
-git diff --check "$EXACT_PARENT"...HEAD
-export PYTHONDONTWRITEBYTECODE=1
-/usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
-/usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
-test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
