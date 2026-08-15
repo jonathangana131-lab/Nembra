@@ -1,0 +1,97 @@
+name: Capture One-Time Final Authority Recovery
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-final-authority-recovery-sol-20260814
+    paths:
+      - .github/workflows/capture-final-authority-recovery-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    name: Materialize missing private provenance and repair exact-head oracles
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      EXACT_PARENT: 0edb8bc5640ed115af53a7d261266887fc80d48f
+      PRODUCT_BRANCH: repair/v17-capture-final-authority-recovery-sol-20260814
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind recovery to exact carrier and scaffolding-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git cat-file -e "$EXACT_PARENT^{commit}"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          actual="$(git diff --name-only "$EXACT_PARENT"..HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-final-authority-recovery-once.yml' \
+            'scripts/ci/recover_capture_final_authority_once.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected" || {
+            echo 'Recovery child drifted before materialization; refusing to patch an unreviewed delta.' >&2
+            printf 'Expected:\n%s\nActual:\n%s\n' "$expected" "$actual" >&2
+            exit 73
+          }
+
+      - name: Materialize final-authority recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/recover_capture_final_authority_once.py
+
+      - name: Prove repaired authority contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-final-authority-recovery-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/recover_capture_final_authority_once.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_frozen_device_tool_handoff.py \
+            scripts/ci/tests/test_capture_private_provenance_preacceptance.py \
+            scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_export_custody.py
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/xcrun swiftc -parse \
+            NembraApp/App/NembraCaptureBuildIdentity.swift \
+            NembraApp/App/NembraCaptureEntrypoint.swift
+          /usr/bin/xcodebuild -project NembraCapture.xcodeproj -list >/dev/null
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaFieldDependencyProvenanceSourceTests
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter TuyaFieldProcedureRendezvousSourceTests
+          test -z "$(git diff --check)"
+
+      - name: Commit recovery only if branch head stayed exact
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$PRODUCT_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA" || {
+            echo 'Recovery branch advanced while validation ran; refusing stale push.' >&2
+            exit 73
+          }
+          rm -f .github/workflows/capture-import-private-read-hardening-once.yml
+          rm -f .github/workflows/capture-final-authority-convergence-once.yml
+          rm -f .github/workflows/capture-final-authority-recovery-once.yml
+          rm -f scripts/ci/recover_capture_final_authority_once.py
+          git add -A
+          test -n "$(git status --porcelain=v1)"
+          git config user.name "nembra-recovery-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Recover Capture final authority convergence"
+          git push origin "HEAD:$PRODUCT_BRANCH"
