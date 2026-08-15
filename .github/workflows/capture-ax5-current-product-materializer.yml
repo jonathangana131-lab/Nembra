@@ -1,4 +1,5 @@
 name: Capture AX5 Current Product Materializer
+# Recovery lineage: the only authoring fix is the fail-closed first-fold insertion seam.
 
 on:
   pull_request:
