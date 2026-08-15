@@ -1202,11 +1202,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "c6a7dec070d48425223edb08b41ab4865b2963ef",
+        "headSHA": "a62a8a5f8a86c89ea00e6ad23d9ad21c0cb86022",
         "lane": "capture-private-read-lease",
         "pr": 3339,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.277,
+        "similarity": 0.225,
         "title": "[Capture P0][SECURITY] Descriptor-bind private read lease rollback"
       },
       "3341": {
@@ -1228,7 +1228,7 @@
         "lane": "",
         "pr": 3342,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.288,
+        "similarity": 0.274,
         "title": "[Capture P0][REPAIR] Compose exact private guard read lease"
       },
       "3343": {
@@ -1306,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:07:40Z",
+    "liveRefreshAt": "2026-08-15T00:07:59Z",
     "liveRefreshDuplicatesSuppressed": [
       3345
     ],
@@ -5091,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 357,
+  "revision": 358,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:07:41Z",
+  "updatedAt": "2026-08-15T00:07:59Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:07:40Z",
+      "updatedAt": "2026-08-15T00:07:59Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
