@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 31,
+    "classifiedPRTotal": 32,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1404,8 +1404,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3409,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.218,
+        "similarity": 0.257,
         "title": "[Capture P0][RED TEAM] Reject unadmitted LocalSecrets ancestor escape"
+      },
+      "3410": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "3e65f6a4aa9792ea48c924f3ca9f7e9bc4557d6d",
+        "lane": "capture-signed-install-custody",
+        "pr": 3410,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.31,
+        "title": "[Capture P0][VALIDATION] Root-custody the accepted compiler-input tree"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1438,9 +1449,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:27:23Z",
+    "liveRefreshAt": "2026-08-15T03:28:00Z",
     "liveRefreshDuplicatesSuppressed": [
-      3409
+      3410
     ],
     "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5223,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 538,
+  "revision": 539,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:27:24Z",
+  "updatedAt": "2026-08-15T03:28:01Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5302,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:27:23Z",
+      "updatedAt": "2026-08-15T03:28:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
