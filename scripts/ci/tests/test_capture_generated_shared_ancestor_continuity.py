@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression for coherent shared generated-selector ancestry."""
+"""Regression for coherent generated-selector ancestry and directory membership."""
 from __future__ import annotations
 
 import hashlib
@@ -53,7 +53,7 @@ def entry_sha(payload: dict[str, object], path: str) -> str:
 
 
 class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
-    def test_manifest_holds_one_localsecrets_generation_across_private_subjects(self) -> None:
+    def test_manifest_holds_or_rejects_whole_localsecrets_generation_replacement(self) -> None:
         helper = load()
         with tempfile.TemporaryDirectory(prefix="nembra-shared-ancestor-continuity-") as raw:
             root = Path(raw)
@@ -73,8 +73,12 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
                     swapped = True
                 return original_open(root_fd, subject, directory_cache)
 
-            with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):
-                held = helper.canonical_generated_manifest(root, SOURCE_SHA)
+            try:
+                with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):
+                    held = helper.canonical_generated_manifest(root, SOURCE_SHA)
+            except helper.AcceptedBuildInputSnapshotError:
+                self.assertTrue(swapped)
+                return
 
             self.assertTrue(swapped)
             self.assertEqual(held, pure_a)
@@ -88,7 +92,7 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
                 hashlib.sha256(b"RUNTIME-A\n").hexdigest(),
             )
 
-    def test_copy_holds_one_localsecrets_generation_across_private_subjects(self) -> None:
+    def test_copy_holds_or_rejects_whole_localsecrets_generation_replacement(self) -> None:
         helper = load()
         with tempfile.TemporaryDirectory(prefix="nembra-shared-ancestor-copy-") as raw:
             root = Path(raw)
@@ -109,8 +113,88 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
                     swapped = True
                 return original_open(root_fd, subject, directory_cache)
 
-            with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):
-                helper._copy_generated_subjects(root, destination)
+            try:
+                with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):
+                    helper._copy_generated_subjects(root, destination)
+            except helper.AcceptedBuildInputSnapshotError:
+                self.assertTrue(swapped)
+                return
+
+            self.assertTrue(swapped)
+            self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\n")
+            self.assertEqual(
+                (destination / "LocalSecrets/TuyaRuntime/identity.bin").read_bytes(),
+                b"RUNTIME-A\n",
+            )
+
+    def test_manifest_rejects_or_holds_runtime_sibling_replacement_inside_held_parent(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-sibling-entry-manifest-") as raw:
+            root = Path(raw)
+            seed_common(root)
+            generation_a = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
+            generation_b = make_generation(root, "LocalSecrets.B", b"SDK-B\n", b"RUNTIME-B\n")
+            generation_a.rename(root / "LocalSecrets")
+            pure_a = helper.canonical_generated_manifest(root, SOURCE_SHA)
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_runtime_inside_parent(root_fd: int, subject: Path, directory_cache=None):
+                nonlocal swapped
+                if subject == Path("LocalSecrets/TuyaRuntime") and not swapped:
+                    active = root / "LocalSecrets"
+                    (active / "TuyaRuntime").rename(active / "TuyaRuntime.A.attack")
+                    (generation_b / "TuyaRuntime").rename(active / "TuyaRuntime")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache)
+
+            try:
+                with mock.patch.object(helper, "_open_subject", side_effect=splice_runtime_inside_parent):
+                    held = helper.canonical_generated_manifest(root, SOURCE_SHA)
+            except helper.AcceptedBuildInputSnapshotError:
+                self.assertTrue(swapped)
+                return
+
+            self.assertTrue(swapped)
+            self.assertEqual(held, pure_a)
+            payload = json.loads(held)
+            self.assertEqual(
+                entry_sha(payload, "LocalSecrets/TuyaSDK/sdk.bin"),
+                hashlib.sha256(b"SDK-A\n").hexdigest(),
+            )
+            self.assertEqual(
+                entry_sha(payload, "LocalSecrets/TuyaRuntime/identity.bin"),
+                hashlib.sha256(b"RUNTIME-A\n").hexdigest(),
+            )
+
+    def test_copy_rejects_or_holds_runtime_sibling_replacement_inside_held_parent(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-sibling-entry-copy-") as raw:
+            root = Path(raw)
+            seed_common(root)
+            generation_a = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
+            generation_b = make_generation(root, "LocalSecrets.B", b"SDK-B\n", b"RUNTIME-B\n")
+            generation_a.rename(root / "LocalSecrets")
+            destination = root / "stage"
+            destination.mkdir()
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_runtime_inside_parent(root_fd: int, subject: Path, directory_cache=None):
+                nonlocal swapped
+                if subject == Path("LocalSecrets/TuyaRuntime") and not swapped:
+                    active = root / "LocalSecrets"
+                    (active / "TuyaRuntime").rename(active / "TuyaRuntime.A.attack")
+                    (generation_b / "TuyaRuntime").rename(active / "TuyaRuntime")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache)
+
+            try:
+                with mock.patch.object(helper, "_open_subject", side_effect=splice_runtime_inside_parent):
+                    helper._copy_generated_subjects(root, destination)
+            except helper.AcceptedBuildInputSnapshotError:
+                self.assertTrue(swapped)
+                return
 
             self.assertTrue(swapped)
             self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\n")
