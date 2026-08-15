@@ -22,7 +22,7 @@ struct TuyaSignedAppleAppIdentityCustodySourceTests {
         #expect(installer.contains("com.apple.developer.team-identifier"))
         #expect(installer.contains("TeamIdentifier"))
 
-        let installMarker = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\""))
+        let installMarker = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone through frozen selected-Xcode devicectl\""))
         for check in [
             "[[ \"$BUILT_APPLICATION_IDENTIFIER\" == *\"$APP_ID_SUFFIX\" ]]",
             "[[ \"$BUILT_APPLICATION_IDENTIFIER\" != *\"*\"* ]]",
@@ -34,6 +34,8 @@ struct TuyaSignedAppleAppIdentityCustodySourceTests {
             let range = try #require(installer.range(of: check))
             #expect(range.lowerBound < installMarker.lowerBound, "signed Apple identity must be proven before installation: \(check)")
         }
+        #expect(installer.contains("run_frozen_xcode_tool \"$SELECTED_DEVICECTL\" device install app"))
+        #expect(!installer.contains("xcrun devicectl"))
     }
 
     @Test("profile identity is matched to signed app rather than synthesized from Team ID")
@@ -49,7 +51,7 @@ struct TuyaSignedAppleAppIdentityCustodySourceTests {
     func identityProofCannotMintScooterAuthority() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
         let start = try #require(installer.range(of: "APP_ID_SUFFIX=\".${BUNDLE_ID}\""))
-        let end = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\"", range: start.upperBound..<installer.endIndex))
+        let end = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone through frozen selected-Xcode devicectl\"", range: start.upperBound..<installer.endIndex))
         let custody = installer[start.lowerBound..<end.lowerBound]
 
         for forbidden in [
