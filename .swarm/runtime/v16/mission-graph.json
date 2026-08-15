@@ -1074,7 +1074,7 @@
         "lane": "rides-route-render-performance",
         "pr": 2507,
         "recommendedAction": "independent-review",
-        "similarity": 0.047,
+        "similarity": 0.044,
         "title": "[Rides V14] Pin route map render projection churn"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.064,
+        "similarity": 0.072,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.214,
+        "similarity": 0.244,
         "title": "[Capture P0][BUILD] Preserve frozen device-tool custody after build"
       },
       "3334": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.092,
+        "similarity": 0.104,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1184,7 +1184,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3339,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.225,
+        "similarity": 0.234,
         "title": "[Capture P0][SECURITY] Descriptor-bind private read lease rollback"
       },
       "3341": {
@@ -1202,11 +1202,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "6a78db197f40e8ff7761206961e74d35b19d49f3",
+        "headSHA": "c8ccf419e0e7c517348ae6e24cdbde09ab4ddee1",
         "lane": "",
         "pr": 3342,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.274,
+        "similarity": 0.25,
         "title": "[Capture P0][REPAIR] Compose exact private guard read lease"
       },
       "3343": {
@@ -1228,7 +1228,7 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3344,
         "recommendedAction": "independent-review",
-        "similarity": 0.148,
+        "similarity": 0.135,
         "title": "Keep physical Energy Rail truthfully unavailable"
       },
       "3345": {
@@ -1295,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:11:09Z",
+    "liveRefreshAt": "2026-08-15T00:11:25Z",
     "liveRefreshDuplicatesSuppressed": [
       3348
     ],
@@ -5080,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 369,
+  "revision": 370,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:11:10Z",
+  "updatedAt": "2026-08-15T00:11:26Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:11:09Z",
+      "updatedAt": "2026-08-15T00:11:25Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
