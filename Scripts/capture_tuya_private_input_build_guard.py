@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import os
+import re
 import select
 import stat
 import subprocess
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Protocol, Sequence
@@ -48,6 +49,24 @@ class PrivateInputs:
             identity_sources=self.identity_sources,
         )
 
+    def canonical_provenance_sha256(self) -> str:
+        """Hash the exact canonical v2 provenance record implied by live inputs.
+
+        The field-owned record file is deliberately not trusted here. Review mode
+        creates that record only as a candidate for independent acceptance. The
+        guarded build recomputes the same canonical record directly from the live
+        lock/private inputs and compares it to the externally accepted digest.
+        """
+        record = provenance.build_record(
+            lockfile=self.lockfile,
+            security_podspec=self.security_podspec,
+            security_build=self.security_build,
+            identity_podspec=self.identity_podspec,
+            identity_sources=self.identity_sources,
+        )
+        encoded = provenance._record_text(record).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
 
 class EventBackend(Protocol):
     def register(self, descriptor: int) -> None: ...
@@ -60,19 +79,9 @@ class KqueueVnodeBackend:
 
     def __init__(self) -> None:
         required = (
-            "kqueue",
-            "kevent",
-            "KQ_FILTER_VNODE",
-            "KQ_EV_ADD",
-            "KQ_EV_ENABLE",
-            "KQ_EV_CLEAR",
-            "KQ_NOTE_DELETE",
-            "KQ_NOTE_WRITE",
-            "KQ_NOTE_EXTEND",
-            "KQ_NOTE_ATTRIB",
-            "KQ_NOTE_LINK",
-            "KQ_NOTE_RENAME",
-            "KQ_NOTE_REVOKE",
+            "kqueue", "kevent", "KQ_FILTER_VNODE", "KQ_EV_ADD", "KQ_EV_ENABLE", "KQ_EV_CLEAR",
+            "KQ_NOTE_DELETE", "KQ_NOTE_WRITE", "KQ_NOTE_EXTEND", "KQ_NOTE_ATTRIB",
+            "KQ_NOTE_LINK", "KQ_NOTE_RENAME", "KQ_NOTE_REVOKE",
         )
         missing = [name for name in required if not hasattr(select, name)]
         if missing:
@@ -81,12 +90,8 @@ class KqueueVnodeBackend:
             )
         self._queue = select.kqueue()
         self._fflags = (
-            select.KQ_NOTE_DELETE
-            | select.KQ_NOTE_WRITE
-            | select.KQ_NOTE_EXTEND
-            | select.KQ_NOTE_ATTRIB
-            | select.KQ_NOTE_LINK
-            | select.KQ_NOTE_RENAME
+            select.KQ_NOTE_DELETE | select.KQ_NOTE_WRITE | select.KQ_NOTE_EXTEND
+            | select.KQ_NOTE_ATTRIB | select.KQ_NOTE_LINK | select.KQ_NOTE_RENAME
             | select.KQ_NOTE_REVOKE
         )
 
@@ -115,12 +120,6 @@ def _lstat_identity(path: Path) -> tuple[int, int, int, int, int, int, int]:
 
 
 def _watch_paths(inputs: PrivateInputs) -> tuple[Path, ...]:
-    """Return every regular file + directory whose mutation could change admitted inputs.
-
-    Symlink objects are covered by their containing directory watcher. The provenance
-    helper independently proves that any admitted symlink remains internal and stable.
-    """
-
     paths: set[Path] = {
         inputs.lockfile,
         inputs.security_podspec,
@@ -200,10 +199,31 @@ def _stop_process(process: subprocess.Popen[bytes] | subprocess.Popen[str]) -> N
         process.wait(timeout=5)
 
 
+def _accepted_digest(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if re.fullmatch(r"[0-9a-f]{64}", normalized) is None:
+        raise BuildGuardError("accepted private-input provenance SHA-256 is malformed")
+    return normalized
+
+
+def _require_accepted_live_inputs(inputs: PrivateInputs, accepted: str | None, phase: str) -> None:
+    accepted = _accepted_digest(accepted)
+    if accepted is None:
+        return
+    actual = inputs.canonical_provenance_sha256()
+    if actual != accepted:
+        raise BuildGuardError(
+            f"live private build inputs do not match the independently accepted provenance at {phase}"
+        )
+
+
 def run_guarded_build(
     inputs: PrivateInputs,
     command: Sequence[str],
     *,
+    expected_provenance_sha256: str | None = None,
     backend_factory: Callable[[], EventBackend] = KqueueVnodeBackend,
     popen_factory: Callable[..., subprocess.Popen] = subprocess.Popen,
     poll_interval: float = 0.10,
@@ -211,19 +231,19 @@ def run_guarded_build(
     if not command:
         raise BuildGuardError("no build command was supplied")
 
+    accepted = _accepted_digest(expected_provenance_sha256)
     initial_snapshot = inputs.generation_snapshot()
+    _require_accepted_live_inputs(inputs, accepted, "initial admission")
     backend = backend_factory()
     watched: tuple[tuple[int, Path], ...] = ()
     process: subprocess.Popen | None = None
     try:
         watched = _open_watched_inputs(_watch_paths(inputs), backend)
 
-        # Registration itself has a race boundary. Reprove the entire admitted
-        # generation after every vnode watch is armed, then reject any queued
-        # mutation before the child build is allowed to start.
         armed_snapshot = inputs.generation_snapshot()
         if armed_snapshot != initial_snapshot:
             raise BuildGuardError("private build inputs changed while build-window monitoring was armed")
+        _require_accepted_live_inputs(inputs, accepted, "armed admission")
         queued = backend.events(0)
         if queued:
             raise BuildGuardError(
@@ -248,13 +268,10 @@ def run_guarded_build(
                 + _describe_events(trailing, watched)
             )
 
-        # Keep every vnode watcher live while the final generation is sampled.
-        # A mutation after this point cannot have affected the already-finished
-        # child build; the install script still performs its independent crypto
-        # provenance verification immediately after this guard returns.
         final_snapshot = inputs.generation_snapshot()
         if final_snapshot != initial_snapshot:
             raise BuildGuardError("private build inputs changed across the guarded xcodebuild window")
+        _require_accepted_live_inputs(inputs, accepted, "final admission")
         trailing = backend.events(0)
         if trailing:
             raise BuildGuardError(
@@ -273,15 +290,16 @@ def run_guarded_build(
         backend.close()
 
 
-def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
+def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, str, list[str]]:
     parser = argparse.ArgumentParser(
-        description="Run the Capture field build while macOS vnode custody watches every admitted private input."
+        description="Run the Capture field build while macOS vnode custody watches every independently accepted private input."
     )
     parser.add_argument("--lockfile", required=True, type=Path)
     parser.add_argument("--security-podspec", required=True, type=Path)
     parser.add_argument("--security-build", required=True, type=Path)
     parser.add_argument("--identity-podspec", required=True, type=Path)
     parser.add_argument("--identity-sources", required=True, type=Path)
+    parser.add_argument("--expected-provenance-sha256", required=True)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(list(argv))
     command = list(args.command)
@@ -295,14 +313,15 @@ def _parse_args(argv: Sequence[str]) -> tuple[PrivateInputs, list[str]]:
             identity_podspec=args.identity_podspec.resolve(),
             identity_sources=args.identity_sources.resolve(),
         ),
+        _accepted_digest(args.expected_provenance_sha256) or "",
         command,
     )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    inputs, command = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        return run_guarded_build(inputs, command)
+        inputs, accepted, command = _parse_args(sys.argv[1:] if argv is None else argv)
+        return run_guarded_build(inputs, command, expected_provenance_sha256=accepted)
     except BuildGuardError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 74
