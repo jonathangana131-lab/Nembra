@@ -6,6 +6,7 @@ on:
       - repair/v17-capture-frozen-device-tools-sol-20260814
     paths:
       - .github/workflows/capture-import-private-read-hardening-once.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
