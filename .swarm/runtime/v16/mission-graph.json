@@ -1136,11 +1136,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
+        "headSHA": "e00fef4049a3a4fbe3f03bfbcf91e25aa9d5bd99",
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.244,
+        "similarity": 0.234,
         "title": "[Capture P0][BUILD] Preserve frozen device-tool custody after build"
       },
       "3334": {
@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3337,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.454,
+        "similarity": 0.442,
         "title": "[Capture P0][VALIDATION] Classify kernel PID 0 in numeric-principal witness"
       },
       "3339": {
@@ -1217,7 +1217,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3343,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.455,
+        "similarity": 0.45,
         "title": "[Capture P0][REPAIR] Make full numeric-principal witness PID-0 aware"
       },
       "3344": {
@@ -1295,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:12:48Z",
+    "liveRefreshAt": "2026-08-15T00:13:04Z",
     "liveRefreshDuplicatesSuppressed": [
       3348
     ],
@@ -5080,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 373,
+  "revision": 374,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:12:49Z",
+  "updatedAt": "2026-08-15T00:13:05Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:12:48Z",
+      "updatedAt": "2026-08-15T00:13:04Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
