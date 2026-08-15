@@ -1415,7 +1415,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.37,
+        "similarity": 0.367,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1448,7 +1448,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3421,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.38,
+        "similarity": 0.347,
         "title": "[Capture P0][REPAIR] Hold shared generated selector ancestors"
       }
     },
@@ -1482,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:46:18Z",
+    "liveRefreshAt": "2026-08-15T03:48:30Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5267,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 571,
+  "revision": 572,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:46:18Z",
+  "updatedAt": "2026-08-15T03:48:31Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:46:18Z",
+      "updatedAt": "2026-08-15T03:48:30Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
