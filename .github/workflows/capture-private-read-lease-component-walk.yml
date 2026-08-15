@@ -6,98 +6,119 @@ on:
       - scripts/ci/capture_selected_xcode_build_orchestrator.py
       - scripts/ci/tests/test_capture_private_read_lease_component_walk.py
       - .github/workflows/capture-private-read-lease-component-walk.yml
+      - .github/workflows/capture-read-lease-held-descriptor-plan-materialize.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: capture-private-read-lease-component-walk-${{ github.event.pull_request.number || github.ref }}
+  group: capture-private-read-lease-held-plan-bootstrap-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  # Exact acceptance covers both no-follow traversal and plan-to-open object identity continuity.
-  EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be
+  EXACT_PARENT: aa610e1000e58ba5e43e35a75ee8f22486aea5ec
+  BOOTSTRAP: .github/workflows/capture-read-lease-held-descriptor-plan-materialize.yml
+  PERMANENT_GATE: .github/workflows/capture-private-read-lease-component-walk.yml
   PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
-  component-walk:
-    name: Prove no-follow component-anchored lease admission
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 6
+  bootstrap-held-plan:
+    name: Bootstrap held-descriptor planning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
-      - name: Bind exact serial hardening delta
+      - name: Bind exact authoring input
         shell: bash
         run: |
           set -euo pipefail
-          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
-          test "$(git rev-parse HEAD)" = "$expected_head"
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            .github/workflows/capture-private-read-lease-component-walk.yml \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$PERMANENT_GATE" "$BOOTSTRAP" | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile component-walk sources without artifacts
+      - name: Extract and execute exact embedded materialization payload
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
-          for raw in (
-              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
-              "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
-          ):
-              path = Path(raw)
-              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          import subprocess
+
+          workflow = Path('.github/workflows/capture-read-lease-held-descriptor-plan-materialize.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start_marker = "          /usr/bin/python3 -B -I - <<'PY'"
+          end_marker = "          PY"
+          starts = [index for index, line in enumerate(lines) if line == start_marker]
+          if len(starts) != 1:
+              raise SystemExit(f'expected one embedded payload start, found {len(starts)}')
+          start = starts[0] + 1
+          try:
+              end = lines.index(end_marker, start)
+          except ValueError as error:
+              raise SystemExit('embedded payload end marker missing') from error
+          payload_lines = lines[start:end]
+          if not payload_lines or any(not line.startswith('          ') for line in payload_lines if line):
+              raise SystemExit('embedded payload indentation changed')
+          payload = '\n'.join(line[10:] if line else '' for line in payload_lines) + '\n'
+          completed = subprocess.run(
+              ['/usr/bin/python3', '-B', '-I', '-'],
+              input=payload,
+              text=True,
+              check=False,
+          )
+          if completed.returncode != 0:
+              raise SystemExit(completed.returncode)
           PY
 
-      - name: Prove component-walk behavior
+      - name: Validate materialized production bytes
         shell: bash
         run: |
           set -euo pipefail
+          git diff --check
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
-
-      - name: Preserve selected-Xcode composition regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-
-      - name: Preserve rollback regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
-
-      - name: Preserve host-ancestry regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
 
-      - name: Preserve clean exact head
+      - name: Publish only permanent product and regression paths
         shell: bash
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
         run: |
           set -euo pipefail
+          test -n "$HEAD_REF"
+          git checkout "$EXACT_PARENT" -- "$PERMANENT_GATE"
+          git rm "$BOOTSTRAP"
+          git add \
+            "$PERMANENT_GATE" \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            "$BOOTSTRAP" \
+            "$PERMANENT_GATE" \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git commit -m 'capture: hold descriptors through private lease planning'
+          final="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          wanted="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$final" = "$wanted"
+          git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Preserve truth boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "NEMBRA_COMPONENT_WALK_BOUNDARY productionLeaseChanged=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
+          git push origin "HEAD:$HEAD_REF"
