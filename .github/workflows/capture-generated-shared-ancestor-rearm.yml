@@ -8,7 +8,7 @@ on:
       - .github/workflows/capture-generated-shared-ancestor-rearm.yml
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   EXACT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
@@ -22,7 +22,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Bind exact authoring scope
         shell: bash
@@ -58,12 +58,6 @@ jobs:
           payload_lines = lines[start:end]
           payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in payload_lines) + '\n'
 
-          # The reviewed one-shot is stored inside a YAML block scalar. When its Python
-          # payload is extracted here, the block's ten-space YAML indentation has
-          # already been removed. The six template literals still carry a historical
-          # second indentation scrub that would corrupt nested Python indentation and
-          # make their exact source anchors impossible to match. Remove only those six
-          # known template-scrub suffixes before executing the otherwise reviewed bytes.
           template_scrub = '.replace("          ", "")'
           scrub_count = payload.count(template_scrub)
           if scrub_count != 6:
@@ -72,11 +66,6 @@ jobs:
               )
           payload = payload.replace(template_scrub, '')
 
-          # The permanent regression template has its own one-shot ten-space scrub.
-          # Extraction above has already removed that YAML indentation too, so applying
-          # it again corrupts only deeply nested test lines (for example a 12-space
-          # return becomes 2 spaces). Replace exactly that historical second scrub with
-          # a newline-preserving normalization and fail closed if the reviewed payload drifts.
           regression_scrub = 'regression = "\\n".join(line[10:] if line.startswith("          ") else line for line in regression.splitlines()) + "\\n"'
           regression_preserve = 'regression = "\\n".join(regression.splitlines()) + "\\n"'
           regression_scrub_count = payload.count(regression_scrub)
@@ -103,11 +92,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish permanent three-path repair
+      - name: Verify permanent three-path repair
         shell: bash
         run: |
           set -euo pipefail
-          exec > >(tee /tmp/nembra-shared-ancestor-publish.log) 2>&1
           git rm \
             .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml \
             .github/workflows/capture-generated-shared-ancestor-rearm.yml
@@ -122,16 +110,14 @@ jobs:
             scripts/ci/capture_accepted_build_input_snapshot.py \
             scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
-          git config user.name "nembra-capture-swarm"
-          git config user.email "nembra-capture-swarm@users.noreply.github.com"
-          git commit -m "security(capture): hold shared generated selector ancestors"
-          git push origin HEAD:recovery/v17-capture-shared-ancestor-rearm-indent-sol-20260815
 
-      - name: Retain publication diagnostic
-        if: failure()
+      - name: Retain reviewed permanent payload
         uses: actions/upload-artifact@v4
         with:
-          name: capture-generated-shared-ancestor-publish-${{ github.sha }}
-          path: /tmp/nembra-shared-ancestor-publish.log
-          if-no-files-found: ignore
+          name: capture-generated-shared-ancestor-reviewed-payload-${{ github.sha }}
+          path: |
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml
+            scripts/ci/capture_accepted_build_input_snapshot.py
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          if-no-files-found: error
           retention-days: 7
