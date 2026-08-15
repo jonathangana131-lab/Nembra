@@ -1,3 +1,4 @@
+# Trigger the one-shot repair after the workflow exists on the branch.
 name: Capture Read Lease Materializer Whitespace Repair Once
 
 on:
