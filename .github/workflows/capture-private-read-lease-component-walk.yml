@@ -51,13 +51,19 @@ jobs:
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile component-walk sources
+      - name: Compile component-walk sources without artifacts
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 -B -m py_compile \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
+              "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
 
       - name: Prove component-walk behavior
         shell: bash
