@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 39,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "navigation-app-visible",
         "pr": 2959,
         "recommendedAction": "independent-review",
-        "similarity": 0.058,
+        "similarity": 0.068,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.027,
+        "similarity": 0.044,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1494,6 +1494,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.328,
         "title": "[Capture P0][RED TEAM] Surface macOS symlink-race oracle failure"
+      },
+      "3432": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3432,
+        "recommendedAction": "independent-review",
+        "similarity": 0.178,
+        "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1526,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:18:56Z",
+    "liveRefreshAt": "2026-08-15T11:19:17Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
@@ -5311,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 619,
+  "revision": 620,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:18:57Z",
+  "updatedAt": "2026-08-15T11:19:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5390,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:18:56Z",
+      "updatedAt": "2026-08-15T11:19:17Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
