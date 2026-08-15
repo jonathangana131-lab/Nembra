@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 37,
+    "classifiedPRTotal": 36,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1319,17 +1319,6 @@
         "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
-      "3388": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-runtime-accessibility",
-        "pr": 3388,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
-        "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
-      },
       "3394": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1504,7 +1493,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:36:03Z",
+    "liveRefreshAt": "2026-08-15T03:36:35Z",
     "liveRefreshDuplicatesSuppressed": [
       3413
     ],
@@ -5289,10 +5278,10 @@
       "userValue": 7
     }
   },
-  "revision": 552,
+  "revision": 553,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:36:04Z",
+  "updatedAt": "2026-08-15T03:36:36Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5368,7 +5357,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:36:03Z",
+      "updatedAt": "2026-08-15T03:36:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
