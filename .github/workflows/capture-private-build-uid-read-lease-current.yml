@@ -1,16 +1,15 @@
-name: Capture Private Build UID Read Lease
+name: Capture Accepted Source Snapshot Custody
 
 on:
   pull_request:
     paths:
+      - scripts/field/install_one_time_capture.command
       - scripts/ci/capture_selected_xcode_build_orchestrator.py
       - scripts/ci/capture_signed_app_build_origin_custody.py
-      - Scripts/capture_tuya_private_input_build_guard.py
-      - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-      - scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
-      - scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
-      - scripts/ci/tests/test_capture_private_read_lease_rollback.py
-      - scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/capture_accepted_source_snapshot_custody.py
+      - scripts/ci/tests/test_capture_accepted_source_snapshot_custody.py
+      - scripts/ci/tests/test_capture_accepted_snapshot_build_group_no_acl.py
       - .github/workflows/capture-private-build-uid-read-lease-current.yml
   workflow_dispatch:
 
@@ -18,14 +17,15 @@ permissions:
   contents: read
 
 jobs:
-  macos-real-lease:
-    name: Prove scoped read-only lease on real macOS
+  macos-source-custody:
+    name: Prove accepted source snapshot without live-tree ACL
     runs-on: macos-15
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: Bind evidence to exact checked-out source
         shell: bash
@@ -38,30 +38,53 @@ jobs:
           [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
           test "$actual" = "$expected"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          printf 'Exact read-lease source: %s\n' "$actual"
+          printf 'Exact accepted-source custody source: %s\n' "$actual"
 
-      - name: Prove portable ancestry descriptor and rollback contracts
+      - name: Prove portable production snapshot composition
         shell: bash
         run: |
           set -euo pipefail
-          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-read-lease-pycache"
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-accepted-source-pycache"
           /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/capture_accepted_source_snapshot_custody.py \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/capture_signed_app_build_origin_custody.py \
-            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py \
-            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
-            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
-            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+            scripts/ci/tests/test_capture_accepted_source_snapshot_custody.py \
+            scripts/ci/tests/test_capture_accepted_snapshot_build_group_no_acl.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_source_snapshot_custody.py
+          bash -n scripts/field/install_one_time_capture.command
 
-      - name: Prove dedicated identity receives read/search only and loses it after revoke
+      - name: Prove root snapshot + dedicated build group on real macOS
         shell: bash
         run: |
           set -euo pipefail
-          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-read-lease-pycache"
-          sudo -E /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-accepted-source-pycache"
+          sudo -E /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_snapshot_build_group_no_acl.py
+
+      - name: Reject superseded live-tree ACL production authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          orchestrator=scripts/ci/capture_selected_xcode_build_orchestrator.py
+          installer=scripts/field/install_one_time_capture.command
+          grep -Fq 'capture_accepted_build_input_snapshot.py' "$orchestrator"
+          grep -Fq 'capture_accepted_source_snapshot_custody.py' "$orchestrator"
+          grep -Fq -- '--accepted-generated-manifest-sha256' "$orchestrator"
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' "$installer"
+          grep -Fq -- '--accepted-generated-manifest-sha256 "$ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256"' "$installer"
+          if grep -Fq '_bind_private_read_lease(build_origin' "$orchestrator"; then
+            echo 'production still binds the superseded live-tree ACL lease' >&2
+            exit 1
+          fi
+          if grep -Fq 'lease = _PrivateReadLease' "$orchestrator"; then
+            echo 'production still constructs the superseded live-tree ACL lease' >&2
+            exit 1
+          fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' \
+            'acceptedTrackedGitSource=true' \
+            'acceptedGeneratedPrivateManifest=true' \
+            'rootSealedSnapshot=true' \
+            'dedicatedBuildGroupReadExecute=true' \
+            'liveFieldTreeACLAuthority=false' \
+            'physicalAuthorityCreated=false'
