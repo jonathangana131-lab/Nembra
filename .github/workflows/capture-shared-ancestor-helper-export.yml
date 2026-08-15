@@ -1,0 +1,80 @@
+name: Capture Shared Ancestor Helper Export
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
+    paths:
+      - .github/workflows/capture-shared-ancestor-helper-export.yml
+
+permissions:
+  contents: read
+
+env:
+  EXACT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
+
+jobs:
+  export-tested-helper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind temporary export scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            .github/workflows/capture-shared-ancestor-helper-export.yml \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          test "$(git rev-parse "HEAD:scripts/ci/capture_accepted_build_input_snapshot.py")" = \
+               "$(git rev-parse "$EXACT_PARENT:scripts/ci/capture_accepted_build_input_snapshot.py")"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Execute reviewed recovery payload and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          source = Path('.github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml')
+          lines = source.read_text(encoding='utf-8').splitlines()
+          start_marker = "          /usr/bin/python3 -B - <<'PY'"
+          end_marker = "          PY"
+          try:
+              start = lines.index(start_marker) + 1
+              end = lines.index(end_marker, start)
+          except ValueError as exc:
+              raise SystemExit(f'reviewed recovery payload markers missing: {exc}')
+          payload = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in lines[start:end]
+          ) + '\n'
+          compile(payload, '<reviewed-shared-ancestor-recovery>', 'exec', dont_inherit=True)
+          namespace = {'__name__': '__main__'}
+          exec(payload, namespace, namespace)
+          PY
+
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all | grep -v '^ M scripts/ci/capture_accepted_build_input_snapshot.py$' || true)"
+
+      - name: Retain tested helper candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-shared-ancestor-helper-${{ github.sha }}
+          path: scripts/ci/capture_accepted_build_input_snapshot.py
+          if-no-files-found: error
+          retention-days: 7
