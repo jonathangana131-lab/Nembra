@@ -1,0 +1,1226 @@
+name: Capture Full Numeric Principal Production Materialize Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-full-numeric-principal-production-materialize-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-full-numeric-principal-production-materialize-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXACT_PARENT: c2211115ccc1bbe8a5dedff1544f1de73277c65d
+
+jobs:
+  materialize:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind one-shot authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-full-numeric-principal-production-materialize-once.yml"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize full credential admission and retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          helper_path = Path("scripts/ci/capture_signed_app_build_origin_custody.py")
+          test_path = Path("scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py")
+          helper = helper_path.read_text(encoding="utf-8")
+          tests = test_path.read_text(encoding="utf-8")
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              return text.replace(old, new, 1)
+
+          def replace_between(text: str, start: str, end: str, replacement: str, label: str) -> str:
+              begin = text.find(start)
+              if begin < 0:
+                  raise SystemExit(f"{label}: start anchor missing")
+              finish = text.find(end, begin)
+              if finish < 0:
+                  raise SystemExit(f"{label}: end anchor missing")
+              return text[:begin] + replacement + text[finish:]
+
+          identity_block = r'''PROCESS_CREDENTIAL_GROUP_LIST = 1 << 6
+          PROCESS_CREDENTIAL_RUID = 1 << 0
+          PROCESS_CREDENTIAL_EUID = 1 << 1
+          PROCESS_CREDENTIAL_SVUID = 1 << 2
+          PROCESS_CREDENTIAL_RGID = 1 << 3
+          PROCESS_CREDENTIAL_EGID = 1 << 4
+          PROCESS_CREDENTIAL_SVGID = 1 << 5
+          PROCESS_CREDENTIAL_PID_MARKER = "NEMBRA_KERN_PROC_PID="
+          PROCESS_CREDENTIAL_MATCH_MARKER = "NEMBRA_PROCESS_CREDENTIAL_MATCH="
+
+          PROCESS_CREDENTIAL_GROUP_SCANNER_SOURCE = r"""
+          #include <sys/types.h>
+          #include <sys/param.h>
+          #include <sys/sysctl.h>
+          #include <errno.h>
+          #include <inttypes.h>
+          #include <stdint.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+
+          #define GROUP_LIST_BIT (1u << 6)
+
+          static void die(const char *message) {
+              fprintf(stderr, "credential inventory error: %s (errno=%d: %s)\n", message, errno, strerror(errno));
+              exit(70);
+          }
+
+          static struct kinfo_proc *snapshot_processes(size_t *count_out) {
+              int mib[3] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL};
+              for (int attempt = 0; attempt < 8; ++attempt) {
+                  size_t needed = 0;
+                  if (sysctl(mib, 3, NULL, &needed, NULL, 0) != 0) {
+                      die("KERN_PROC_ALL size query failed");
+                  }
+                  if (needed == 0) {
+                      fprintf(stderr, "credential inventory error: KERN_PROC_ALL returned zero bytes\n");
+                      exit(70);
+                  }
+                  size_t capacity = needed + (32u * sizeof(struct kinfo_proc));
+                  struct kinfo_proc *entries = calloc(1, capacity);
+                  if (entries == NULL) {
+                      die("could not allocate KERN_PROC_ALL buffer");
+                  }
+                  size_t actual = capacity;
+                  if (sysctl(mib, 3, entries, &actual, NULL, 0) == 0) {
+                      if (actual == 0 || actual % sizeof(struct kinfo_proc) != 0) {
+                          free(entries);
+                          fprintf(stderr, "credential inventory error: KERN_PROC_ALL byte count is unclassifiable\n");
+                          exit(70);
+                      }
+                      *count_out = actual / sizeof(struct kinfo_proc);
+                      return entries;
+                  }
+                  int saved_errno = errno;
+                  free(entries);
+                  if (saved_errno != ENOMEM) {
+                      errno = saved_errno;
+                      die("KERN_PROC_ALL snapshot failed");
+                  }
+              }
+              fprintf(stderr, "credential inventory error: KERN_PROC_ALL did not converge after retries\n");
+              exit(70);
+          }
+
+          int main(int argc, char **argv) {
+              if (argc != 2) {
+                  fprintf(stderr, "usage: %s NUMERIC_ID\n", argv[0]);
+                  return 64;
+              }
+              char *end = NULL;
+              errno = 0;
+              unsigned long parsed = strtoul(argv[1], &end, 10);
+              if (errno != 0 || end == argv[1] || *end != '\0' || parsed > UINT32_MAX) {
+                  fprintf(stderr, "invalid numeric principal: %s\n", argv[1]);
+                  return 64;
+              }
+              uint32_t candidate = (uint32_t)parsed;
+              if (candidate == 0) {
+                  fprintf(stderr, "root numeric principal is never admissible\n");
+                  return 64;
+              }
+
+              size_t count = 0;
+              struct kinfo_proc *entries = snapshot_processes(&count);
+              for (size_t index = 0; index < count; ++index) {
+                  const struct kinfo_proc *entry = &entries[index];
+                  const struct _ucred *ucred = &entry->kp_eproc.e_ucred;
+                  pid_t pid = entry->kp_proc.p_pid;
+                  if (pid < 0) {
+                      free(entries);
+                      fprintf(stderr, "credential inventory error: invalid pid in KERN_PROC_ALL\n");
+                      return 70;
+                  }
+                  if (ucred->cr_ngroups <= 0 || ucred->cr_ngroups > NGROUPS) {
+                      free(entries);
+                      fprintf(stderr, "credential inventory error: pid=%d has invalid group count=%d\n",
+                              pid, (int)ucred->cr_ngroups);
+                      return 70;
+                  }
+                  printf("NEMBRA_KERN_PROC_PID=%d\n", pid);
+                  for (int group_index = 0; group_index < ucred->cr_ngroups; ++group_index) {
+                      if ((uint32_t)ucred->cr_groups[group_index] == candidate) {
+                          printf("NEMBRA_PROCESS_CREDENTIAL_MATCH=%d,%u\n", pid, GROUP_LIST_BIT);
+                          break;
+                      }
+                  }
+              }
+              free(entries);
+              return 0;
+          }
+          """
+
+
+def _id_in_use(candidate: int) -> bool:
+              try:
+                  pwd.getpwuid(candidate)
+                  return True
+              except KeyError:
+                  pass
+              try:
+                  grp.getgrgid(candidate)
+                  return True
+              except KeyError:
+                  return False
+
+
+def _process_state_for_uid(uid: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
+              """Legacy effective-UID diagnostic; never sufficient for production admission."""
+              if uid <= 0:
+                  raise BuildOriginCustodyError("cannot inspect process authority for root or invalid UID")
+              completed = subprocess.run(
+                  ["/bin/ps", "-axo", "pid=,uid=,state="],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+              if completed.returncode != 0:
+                  detail = (completed.stderr or "").strip()
+                  raise BuildOriginCustodyError(
+                      "could not inspect numeric build-principal process authority"
+                      + (f": {detail[-1000:]}" if detail else "")
+                  )
+              live: list[int] = []
+              zombies: list[int] = []
+              for raw_line in completed.stdout.splitlines():
+                  line = raw_line.strip()
+                  if not line:
+                      continue
+                  parts = line.split()
+                  if len(parts) != 3:
+                      raise BuildOriginCustodyError("process authority inventory was malformed")
+                  try:
+                      pid = int(parts[0])
+                      owner = int(parts[1])
+                  except ValueError as error:
+                      raise BuildOriginCustodyError(
+                          "process authority inventory contained non-numeric identity"
+                      ) from error
+                  if pid <= 0 or owner < 0 or not parts[2]:
+                      raise BuildOriginCustodyError("process authority inventory contained invalid identity/state")
+                  if owner != uid:
+                      continue
+                  if parts[2].upper().startswith("Z"):
+                      zombies.append(pid)
+                  else:
+                      live.append(pid)
+              return tuple(sorted(live)), tuple(sorted(zombies))
+
+
+def _compile_numeric_principal_group_scanner(directory: Path) -> Path:
+              if sys.platform != "darwin":
+                  raise BuildOriginCustodyError("full numeric-principal inventory requires macOS")
+              try:
+                  metadata = directory.lstat()
+              except OSError as error:
+                  raise BuildOriginCustodyError("numeric-principal inventory directory is unavailable") from error
+              if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                  raise BuildOriginCustodyError("numeric-principal inventory root is not one real directory")
+              source = directory / "process-credential-group-scanner.c"
+              binary = directory / "process-credential-group-scanner"
+              source.write_text(PROCESS_CREDENTIAL_GROUP_SCANNER_SOURCE, encoding="utf-8")
+              os.chmod(source, 0o600, follow_symlinks=False)
+              completed = subprocess.run(
+                  [
+                      "/usr/bin/clang",
+                      "-std=c11",
+                      "-O2",
+                      "-Wall",
+                      "-Wextra",
+                      "-Werror",
+                      str(source),
+                      "-o",
+                      str(binary),
+                  ],
+                  env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C"},
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+              try:
+                  source.unlink()
+              except OSError as error:
+                  raise BuildOriginCustodyError("could not retire numeric-principal scanner source") from error
+              if completed.returncode != 0:
+                  detail = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
+                  raise BuildOriginCustodyError(
+                      "could not compile full numeric-principal credential scanner"
+                      + (f": {detail[-1600:]}" if detail else "")
+                  )
+              try:
+                  result = binary.lstat()
+              except OSError as error:
+                  raise BuildOriginCustodyError("numeric-principal scanner binary is unavailable") from error
+              if stat.S_ISLNK(result.st_mode) or not stat.S_ISREG(result.st_mode):
+                  raise BuildOriginCustodyError("numeric-principal scanner binary is not one real regular file")
+              os.chmod(binary, 0o700, follow_symlinks=False)
+              return binary
+
+
+def _kernel_group_snapshot(group_scanner: Path, candidate: int) -> tuple[set[int], dict[int, int]]:
+              if candidate <= 0:
+                  raise BuildOriginCustodyError("root or invalid numeric principal is never admissible")
+              completed = subprocess.run(
+                  [str(group_scanner), str(candidate)],
+                  env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C"},
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+              if completed.returncode != 0:
+                  detail = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
+                  raise BuildOriginCustodyError(
+                      "KERN_PROC_ALL supplementary-group inventory failed"
+                      + (f": {detail[-1600:]}" if detail else "")
+                  )
+              pids: set[int] = set()
+              matches: dict[int, int] = {}
+              for raw_line in completed.stdout.splitlines():
+                  if raw_line.startswith(PROCESS_CREDENTIAL_PID_MARKER):
+                      try:
+                          pid = int(raw_line[len(PROCESS_CREDENTIAL_PID_MARKER):], 10)
+                      except ValueError as error:
+                          raise BuildOriginCustodyError("kernel credential scanner emitted non-numeric PID") from error
+                      if pid < 0 or pid in pids:
+                          raise BuildOriginCustodyError("kernel credential scanner emitted invalid/duplicate PID")
+                      pids.add(pid)
+                  elif raw_line.startswith(PROCESS_CREDENTIAL_MATCH_MARKER):
+                      fields = raw_line[len(PROCESS_CREDENTIAL_MATCH_MARKER):].split(",")
+                      if len(fields) != 2:
+                          raise BuildOriginCustodyError("kernel credential scanner emitted malformed match")
+                      try:
+                          pid = int(fields[0], 10)
+                          slots = int(fields[1], 10)
+                      except ValueError as error:
+                          raise BuildOriginCustodyError("kernel credential scanner emitted non-numeric match") from error
+                      if pid < 0 or slots != PROCESS_CREDENTIAL_GROUP_LIST:
+                          raise BuildOriginCustodyError("kernel credential scanner emitted invalid group match")
+                      matches[pid] = matches.get(pid, 0) | slots
+                  elif raw_line.strip():
+                      raise BuildOriginCustodyError("kernel credential scanner emitted unknown output")
+              if not pids or not set(matches).issubset(pids):
+                  raise BuildOriginCustodyError("kernel credential scanner did not produce one coherent PID snapshot")
+              return pids, matches
+
+
+def _ps_scalar_snapshot(candidate: int) -> tuple[set[int], dict[int, int]]:
+              completed = subprocess.run(
+                  [
+                      "/bin/ps", "-A",
+                      "-o", "pid=",
+                      "-o", "uid=",
+                      "-o", "ruid=",
+                      "-o", "svuid=",
+                      "-o", "gid=",
+                      "-o", "rgid=",
+                      "-o", "svgid=",
+                  ],
+                  env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C"},
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+              if completed.returncode != 0:
+                  detail = (completed.stderr or "").strip()
+                  raise BuildOriginCustodyError(
+                      "system ps full credential inventory failed"
+                      + (f": {detail[-1600:]}" if detail else "")
+                  )
+              pids: set[int] = set()
+              matches: dict[int, int] = {}
+              for raw_line in completed.stdout.splitlines():
+                  fields = raw_line.split()
+                  if len(fields) != 7:
+                      raise BuildOriginCustodyError("system ps emitted malformed full credential row")
+                  try:
+                      pid, euid, ruid, svuid, egid, rgid, svgid = [int(field, 10) for field in fields]
+                  except ValueError as error:
+                      raise BuildOriginCustodyError("system ps emitted non-numeric full credential row") from error
+                  if pid <= 0 or min(euid, ruid, svuid, egid, rgid, svgid) < 0 or pid in pids:
+                      raise BuildOriginCustodyError("system ps emitted invalid/duplicate full credential row")
+                  pids.add(pid)
+                  slots = 0
+                  if ruid == candidate:
+                      slots |= PROCESS_CREDENTIAL_RUID
+                  if euid == candidate:
+                      slots |= PROCESS_CREDENTIAL_EUID
+                  if svuid == candidate:
+                      slots |= PROCESS_CREDENTIAL_SVUID
+                  if rgid == candidate:
+                      slots |= PROCESS_CREDENTIAL_RGID
+                  if egid == candidate:
+                      slots |= PROCESS_CREDENTIAL_EGID
+                  if svgid == candidate:
+                      slots |= PROCESS_CREDENTIAL_SVGID
+                  if slots:
+                      matches[pid] = slots
+              if not pids:
+                  raise BuildOriginCustodyError("system ps emitted no process IDs")
+              return pids, matches
+
+
+def _pid_still_exists(pid: int) -> bool:
+              if pid <= 0:
+                  raise BuildOriginCustodyError("PID liveness probe requires one positive PID")
+              try:
+                  os.kill(pid, 0)
+              except ProcessLookupError:
+                  return False
+              except PermissionError:
+                  return True
+              except OSError as error:
+                  if error.errno == errno.ESRCH:
+                      return False
+                  if error.errno == errno.EPERM:
+                      return True
+                  raise BuildOriginCustodyError(
+                      f"process-existence probe failed pid={pid} errno={error.errno}"
+                  ) from error
+              return True
+
+
+def _full_numeric_principal_matches(group_scanner: Path, candidate: int) -> dict[int, int]:
+              if candidate <= 0:
+                  raise BuildOriginCustodyError("root or invalid numeric principal is never admissible")
+              for attempt in range(8):
+                  kernel_pids, group_matches = _kernel_group_snapshot(group_scanner, candidate)
+                  ps_pids, scalar_matches = _ps_scalar_snapshot(candidate)
+                  # Current Darwin includes kernel PID 0 in KERN_PROC_ALL while /bin/ps omits it.
+                  # Keep PID 0's supplementary-group collision authority, but never probe kill(0, 0).
+                  persistent_kernel_only = sorted(
+                      pid for pid in kernel_pids - ps_pids if pid > 0 and _pid_still_exists(pid)
+                  )
+                  persistent_ps_only = sorted(
+                      pid for pid in ps_pids - kernel_pids if _pid_still_exists(pid)
+                  )
+                  if persistent_kernel_only or persistent_ps_only:
+                      if attempt == 7:
+                          raise BuildOriginCustodyError(
+                              "KERN_PROC_ALL/ps credential snapshots did not converge for live processes: "
+                              f"kernel_only={persistent_kernel_only[:24]} ps_only={persistent_ps_only[:24]}"
+                          )
+                      continue
+                  matches = dict(group_matches)
+                  for pid, slots in scalar_matches.items():
+                      matches[pid] = matches.get(pid, 0) | slots
+                  return matches
+              raise BuildOriginCustodyError("full numeric-principal credential snapshots did not converge")
+
+
+def _numeric_principal_in_use(candidate: int, group_scanner: Path) -> bool:
+              if candidate <= 0 or _id_in_use(candidate):
+                  return True
+              return bool(_full_numeric_principal_matches(group_scanner, candidate))
+
+
+def _choose_ephemeral_id(group_scanner: Path) -> int:
+              start = 52000 + (os.getpid() % 7000)
+              for candidate in range(start, 62000):
+                  if not _numeric_principal_in_use(candidate, group_scanner):
+                      return candidate
+              for candidate in range(52000, start):
+                  if not _numeric_principal_in_use(candidate, group_scanner):
+                      return candidate
+              raise BuildOriginCustodyError("could not allocate one fully isolated ephemeral build UID/GID")
+
+
+'''
+          helper = replace_between(
+              helper,
+              "def _id_in_use(candidate: int) -> bool:\n",
+              "def _run_root_checked(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:\n",
+              identity_block,
+              "identity inventory block",
+          )
+
+          retirement_block = r'''def _identity_lookup_survivors(name: str, uid: int) -> tuple[str, ...]:
+              survivors: list[str] = []
+              checks = (
+                  (pwd.getpwnam, name, "build user name"),
+                  (pwd.getpwuid, uid, "build user UID"),
+                  (grp.getgrnam, name, "build group name"),
+                  (grp.getgrgid, uid, "build group GID"),
+              )
+              for lookup, key, label in checks:
+                  try:
+                      lookup(key)
+                  except KeyError:
+                      continue
+                  survivors.append(label)
+              return tuple(survivors)
+
+
+def _wait_for_no_live_uid(uid: int, *, timeout: float = 6.0) -> tuple[int, ...]:
+              """Legacy effective-UID diagnostic retained for focused regression only."""
+              if uid <= 0:
+                  raise BuildOriginCustodyError("cannot verify process retirement for a missing build UID")
+              deadline = time.monotonic() + timeout
+              latest_live: tuple[int, ...] = ()
+              latest_zombies: tuple[int, ...] = ()
+              while True:
+                  latest_live, latest_zombies = _process_state_for_uid(uid)
+                  if not latest_live:
+                      return latest_zombies
+                  if time.monotonic() >= deadline:
+                      raise BuildOriginCustodyError(
+                          "live build-principal processes survived legacy UID diagnostic: "
+                          f"live_pids={list(latest_live)} zombie_pids={list(latest_zombies)}"
+                      )
+                  time.sleep(0.05)
+
+
+def _wait_for_numeric_principal_clear(
+              group_scanner: Path,
+              uid: int,
+              *,
+              timeout: float = 6.0,
+          ) -> None:
+              if uid <= 0:
+                  raise BuildOriginCustodyError("cannot verify full retirement for a missing build UID/GID")
+              deadline = time.monotonic() + timeout
+              latest: dict[int, int] = {}
+              while True:
+                  latest = _full_numeric_principal_matches(group_scanner, uid)
+                  if not latest:
+                      return
+                  if time.monotonic() >= deadline:
+                      raise BuildOriginCustodyError(
+                          "numeric build principal survived full credential retirement: "
+                          f"matches={dict(sorted(latest.items()))}"
+                      )
+                  time.sleep(0.05)
+
+
+def _direct_local_identity_record_exists(kind: str, name: str) -> bool:
+              completed = subprocess.run(
+                  ["/usr/bin/dscl", ".", "-read", f"/{kind}/{name}"],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+              detail = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
+              if completed.returncode == 0:
+                  return True
+              if "eDSRecordNotFound" in detail or "-14136" in detail:
+                  return False
+              raise BuildOriginCustodyError(
+                  f"could not classify direct Directory Services {kind} record: "
+                  f"rc={completed.returncode} detail={detail[-800:]!r}"
+              )
+
+
+def _assert_local_build_identity_retired(
+              name: str,
+              uid: int,
+              group_scanner: Path,
+              *,
+              timeout: float = 6.0,
+          ) -> None:
+              if uid <= 0:
+                  raise BuildOriginCustodyError("cannot verify retirement for a missing build UID/GID")
+              deadline = time.monotonic() + timeout
+              latest_matches: dict[int, int] = {}
+              latest_user_record = True
+              latest_group_record = True
+              while True:
+                  latest_matches = _full_numeric_principal_matches(group_scanner, uid)
+                  latest_user_record = _direct_local_identity_record_exists("Users", name)
+                  latest_group_record = _direct_local_identity_record_exists("Groups", name)
+                  if not latest_matches and not latest_user_record and not latest_group_record:
+                      return
+                  if time.monotonic() >= deadline:
+                      break
+                  subprocess.run(
+                      ["/usr/bin/dscacheutil", "-flushcache"],
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      check=False,
+                  )
+                  time.sleep(0.05)
+              raise BuildOriginCustodyError(
+                  "ephemeral build destructive authority survived retirement: "
+                  f"credential_matches={dict(sorted(latest_matches.items()))} "
+                  f"user_record={latest_user_record} group_record={latest_group_record}"
+              )
+
+
+def _remove_local_build_identity(
+              name: str,
+              uid: int | None,
+              *,
+              group_scanner: Path | None = None,
+              require_absent: bool = False,
+          ) -> None:
+              if sys.platform != "darwin":
+                  return
+              if require_absent and (uid is None or uid <= 0 or group_scanner is None):
+                  raise BuildOriginCustodyError(
+                      "strict retirement requires one build UID/GID and full credential scanner"
+                  )
+              if uid is not None and uid > 0:
+                  killed = subprocess.run(
+                      ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      check=False,
+                  )
+                  if require_absent and killed.returncode not in (0, 1):
+                      raise BuildOriginCustodyError(
+                          f"could not request initial build-principal process retirement: pkill exit {killed.returncode}"
+                      )
+              if require_absent:
+                  assert uid is not None and group_scanner is not None
+                  # Do not delete the Directory Services reservation while any process still
+                  # carries this integer as real/effective/saved UID/GID or supplementary GID.
+                  _wait_for_numeric_principal_clear(group_scanner, uid)
+              subprocess.run(
+                  ["/usr/bin/dscl", ".", "-delete", f"/Users/{name}"],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+              )
+              subprocess.run(
+                  ["/usr/bin/dscl", ".", "-delete", f"/Groups/{name}"],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+              )
+              subprocess.run(["/usr/bin/dscacheutil", "-flushcache"], check=False)
+              if require_absent:
+                  assert uid is not None and group_scanner is not None
+                  final_kill = subprocess.run(
+                      ["/usr/bin/pkill", "-9", "-u", str(uid), ".*"],
+                      stdin=subprocess.DEVNULL,
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      check=False,
+                  )
+                  if final_kill.returncode not in (0, 1):
+                      raise BuildOriginCustodyError(
+                          f"could not request final build-principal process retirement: pkill exit {final_kill.returncode}"
+                      )
+                  _wait_for_numeric_principal_clear(group_scanner, uid)
+                  _assert_local_build_identity_retired(name, uid, group_scanner)
+
+
+'''
+          helper = replace_between(
+              helper,
+              "def _identity_lookup_survivors(name: str, uid: int) -> tuple[str, ...]:\n",
+              "def _create_local_build_identity(name: str, uid: int, gid: int, home: Path) -> None:\n",
+              retirement_block,
+              "retirement block",
+          )
+
+          helper = replace_once(
+              helper,
+              "def _create_local_build_identity(name: str, uid: int, gid: int, home: Path) -> None:\n",
+              "def _create_local_build_identity(\n    name: str,\n    uid: int,\n    gid: int,\n    home: Path,\n    *,\n    group_scanner: Path | None = None,\n) -> None:\n",
+              "identity create signature",
+          )
+          helper = replace_once(
+              helper,
+              "        _remove_local_build_identity(name, uid, require_absent=True)\n        raise\n",
+              "        _remove_local_build_identity(\n            name,\n            uid,\n            group_scanner=group_scanner,\n            require_absent=group_scanner is not None,\n        )\n        raise\n",
+              "identity create rollback",
+          )
+          helper = replace_once(
+              helper,
+              "    identity_created = False\n\n    try:\n        build_uid = _choose_ephemeral_id()\n",
+              "    identity_created = False\n    group_scanner: Path | None = None\n\n    try:\n        principal_inventory = workspace / \"principal-inventory\"\n        principal_inventory.mkdir(mode=0o700)\n        os.chown(principal_inventory, 0, 0)\n        os.chmod(principal_inventory, 0o700)\n        group_scanner = _compile_numeric_principal_group_scanner(principal_inventory)\n        build_uid = _choose_ephemeral_id(group_scanner)\n",
+              "run scanner admission",
+          )
+          helper = replace_once(
+              helper,
+              "        _create_local_build_identity(build_name, build_uid, build_gid, home)\n",
+              "        _create_local_build_identity(\n            build_name,\n            build_uid,\n            build_gid,\n            home,\n            group_scanner=group_scanner,\n        )\n",
+              "run identity create",
+          )
+          helper = replace_once(
+              helper,
+              "                _remove_local_build_identity(build_name, build_uid, require_absent=True)\n",
+              "                _remove_local_build_identity(\n                    build_name,\n                    build_uid,\n                    group_scanner=group_scanner,\n                    require_absent=True,\n                )\n",
+              "run strict retirement",
+          )
+
+          tests = replace_once(
+              tests,
+              '            "identity_id": "build_uid = _choose_ephemeral_id()",\n',
+              '            "identity_scanner": "group_scanner = _compile_numeric_principal_group_scanner(principal_inventory)",\n            "identity_id": "build_uid = _choose_ephemeral_id(group_scanner)",\n',
+              "source marker scanner",
+          )
+          tests = replace_once(
+              tests,
+              '        self.assertIn("if not _numeric_principal_in_use(candidate):", source)\n',
+              '        self.assertIn("def _full_numeric_principal_matches(", source)\n        self.assertIn("if not _numeric_principal_in_use(candidate, group_scanner):", source)\n',
+              "source marker full principal",
+          )
+          tests = replace_once(
+              tests,
+              '            "if not latest_live and not latest_zombies and not latest_user_record and not latest_group_record:",\n',
+              '            "if not latest_matches and not latest_user_record and not latest_group_record:",\n',
+              "source marker retired predicate",
+          )
+          tests = replace_once(
+              tests,
+              '        self.assertIn("_remove_local_build_identity(name, uid, require_absent=True)", source)\n',
+              '        self.assertIn("_wait_for_numeric_principal_clear(group_scanner, uid)", source)\n        self.assertIn("_assert_local_build_identity_retired(name, uid, group_scanner)", source)\n',
+              "source marker strict remove",
+          )
+          tests = replace_once(
+              tests,
+              '        self.assertIn("_remove_local_build_identity(build_name, build_uid, require_absent=True)", source)\n',
+              '        self.assertIn("group_scanner=group_scanner", source)\n',
+              "source marker run retirement",
+          )
+
+          selector_test = r'''    def test_ephemeral_identity_selector_skips_account_and_full_process_credential_collisions(self) -> None:
+              helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_identity")
+              scanner = Path("/private/tmp/full-credential-scanner")
+              with (
+                  mock.patch.object(helper.os, "getpid", return_value=123),
+                  mock.patch.object(
+                      helper,
+                      "_numeric_principal_in_use",
+                      side_effect=lambda value, _scanner: value < 52125,
+                  ),
+              ):
+                  self.assertEqual(helper._choose_ephemeral_id(scanner), 52125)
+
+              with (
+                  mock.patch.object(helper, "_id_in_use", return_value=False),
+                  mock.patch.object(helper, "_full_numeric_principal_matches", return_value={999: helper.PROCESS_CREDENTIAL_RGID}),
+              ):
+                  self.assertTrue(helper._numeric_principal_in_use(55001, scanner))
+              with (
+                  mock.patch.object(helper, "_id_in_use", return_value=False),
+                  mock.patch.object(helper, "_full_numeric_principal_matches", return_value={}),
+              ):
+                  self.assertFalse(helper._numeric_principal_in_use(55001, scanner))
+
+'''
+          tests = replace_between(
+              tests,
+              "    def test_ephemeral_identity_selector_skips_account_and_process_collisions(self) -> None:\n",
+              "    def test_process_state_separates_live_and_zombie_numeric_uid_subjects(self) -> None:\n",
+              selector_test,
+              "selector regression",
+          )
+
+          retirement_test = r'''    def test_verified_identity_retirement_requires_no_full_process_or_direct_ds_authority(self) -> None:
+              helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_retirement")
+              scanner = Path("/private/tmp/full-credential-scanner")
+              with (
+                  mock.patch.object(helper, "_full_numeric_principal_matches", return_value={}),
+                  mock.patch.object(helper, "_direct_local_identity_record_exists", return_value=False),
+              ):
+                  helper._assert_local_build_identity_retired("nembrabuildtest", 55001, scanner)
+
+              with (
+                  mock.patch.object(
+                      helper,
+                      "_full_numeric_principal_matches",
+                      return_value={1234: helper.PROCESS_CREDENTIAL_GROUP_LIST},
+                  ),
+                  mock.patch.object(helper, "_direct_local_identity_record_exists", return_value=False),
+                  self.assertRaises(helper.BuildOriginCustodyError),
+              ):
+                  helper._assert_local_build_identity_retired("nembrabuildtest", 55001, scanner, timeout=0)
+
+              with (
+                  mock.patch.object(helper, "_full_numeric_principal_matches", return_value={}),
+                  mock.patch.object(helper, "_direct_local_identity_record_exists", return_value=True),
+                  self.assertRaises(helper.BuildOriginCustodyError),
+              ):
+                  helper._assert_local_build_identity_retired("nembrabuildtest", 55001, scanner, timeout=0)
+
+              with self.assertRaises(helper.BuildOriginCustodyError):
+                  helper._assert_local_build_identity_retired("nembrabuildtest", 0, scanner)
+
+'''
+          tests = replace_between(
+              tests,
+              "    def test_verified_identity_retirement_requires_no_process_or_direct_ds_authority(self) -> None:\n",
+              "    def test_direct_ds_record_classifier_is_fail_closed(self) -> None:\n",
+              retirement_test,
+              "retirement regression",
+          )
+
+          strict_remove_test = r'''    def test_strict_identity_removal_clears_full_credentials_before_ds_deletion(self) -> None:
+              helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_strict_retirement")
+              scanner = Path("/private/tmp/full-credential-scanner")
+              events: list[str] = []
+              pkill_count = 0
+
+              def run_side_effect(argv, **_kwargs):
+                  nonlocal pkill_count
+                  if argv[:3] == ["/usr/bin/pkill", "-9", "-u"]:
+                      pkill_count += 1
+                      events.append(f"pkill-{pkill_count}")
+                  elif argv[:3] == ["/usr/bin/dscl", ".", "-delete"]:
+                      if argv[3].startswith("/Users/"):
+                          events.append("delete-user")
+                      elif argv[3].startswith("/Groups/"):
+                          events.append("delete-group")
+                  return mock.Mock(returncode=0)
+
+              def clear_side_effect(_scanner, _uid, **_kwargs):
+                  events.append("full-clear")
+
+              def verify_side_effect(_name, _uid, _scanner):
+                  events.append("verify-retired")
+
+              with (
+                  mock.patch.object(helper.sys, "platform", "darwin"),
+                  mock.patch.object(helper.subprocess, "run", side_effect=run_side_effect),
+                  mock.patch.object(helper, "_wait_for_numeric_principal_clear", side_effect=clear_side_effect),
+                  mock.patch.object(helper, "_assert_local_build_identity_retired", side_effect=verify_side_effect),
+              ):
+                  helper._remove_local_build_identity(
+                      "nembrabuildtest",
+                      55001,
+                      group_scanner=scanner,
+                      require_absent=True,
+                  )
+
+              first_clear = events.index("full-clear")
+              self.assertLess(events.index("pkill-1"), first_clear)
+              self.assertLess(first_clear, events.index("delete-user"))
+              self.assertLess(events.index("delete-user"), events.index("delete-group"))
+              self.assertLess(events.index("delete-group"), events.index("pkill-2"))
+              self.assertLess(events.index("pkill-2"), max(i for i, value in enumerate(events) if value == "full-clear"))
+              self.assertLess(max(i for i, value in enumerate(events) if value == "full-clear"), events.index("verify-retired"))
+
+'''
+          tests = replace_between(
+              tests,
+              "    def test_strict_identity_removal_deletes_ds_before_final_uid_kill_and_verification(self) -> None:\n",
+              "    def test_strict_identity_removal_rejects_unclassifiable_initial_or_final_pkill_failure(self) -> None:\n",
+              strict_remove_test,
+              "strict retirement order",
+          )
+
+          pkill_failure_test = r'''    def test_strict_identity_removal_rejects_unclassifiable_initial_or_final_pkill_failure(self) -> None:
+              helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_pkill_failure")
+              scanner = Path("/private/tmp/full-credential-scanner")
+              failed = mock.Mock(returncode=3)
+              with (
+                  mock.patch.object(helper.sys, "platform", "darwin"),
+                  mock.patch.object(helper.subprocess, "run", return_value=failed),
+                  self.assertRaises(helper.BuildOriginCustodyError),
+              ):
+                  helper._remove_local_build_identity(
+                      "nembrabuildtest", 55001, group_scanner=scanner, require_absent=True
+                  )
+
+              calls = 0
+
+              def final_failure(argv, **_kwargs):
+                  nonlocal calls
+                  if argv[:3] == ["/usr/bin/pkill", "-9", "-u"]:
+                      calls += 1
+                      return mock.Mock(returncode=0 if calls == 1 else 3)
+                  return mock.Mock(returncode=0)
+
+              with (
+                  mock.patch.object(helper.sys, "platform", "darwin"),
+                  mock.patch.object(helper.subprocess, "run", side_effect=final_failure),
+                  mock.patch.object(helper, "_wait_for_numeric_principal_clear", return_value=None),
+                  self.assertRaises(helper.BuildOriginCustodyError),
+              ):
+                  helper._remove_local_build_identity(
+                      "nembrabuildtest", 55001, group_scanner=scanner, require_absent=True
+                  )
+
+'''
+          tests = replace_between(
+              tests,
+              "    def test_strict_identity_removal_rejects_unclassifiable_initial_or_final_pkill_failure(self) -> None:\n",
+              "    def test_sudo_policy_classifier_rejects_passwordless_authority(self) -> None:\n",
+              pkill_failure_test,
+              "pkill failure regression",
+          )
+
+          real_macos_test = r'''    @unittest.skipUnless(
+              sys.platform == "darwin" and os.geteuid() == 0,
+              "requires root on macOS",
+          )
+              def test_real_macos_ephemeral_identity_is_distinct_from_field_authority(self) -> None:
+                  helper = load(ORIGIN_HELPER, "capture_signed_app_build_origin_custody_macos_identity")
+                  _user, field_uid, _field_gid, _home, field_groups = helper._invoking_identity()
+                  private_tmp = helper._require_real_private_tmp()
+                  workspace = Path(tempfile.mkdtemp(prefix="nembra-build-identity-test.", dir=private_tmp))
+                  principal_inventory = workspace / "principal-inventory"
+                  principal_inventory.mkdir(mode=0o700)
+                  scanner = helper._compile_numeric_principal_group_scanner(principal_inventory)
+                  build_uid = helper._choose_ephemeral_id(scanner)
+                  build_gid = build_uid
+                  self.assertNotEqual(build_uid, field_uid)
+                  self.assertNotIn(build_gid, field_groups)
+                  home = workspace / "home"
+                  name = f"nembratest{os.getpid()}"
+                  created = False
+                  try:
+                      home.mkdir()
+                      helper._create_local_build_identity(
+                          name, build_uid, build_gid, home, group_scanner=scanner
+                      )
+                      created = True
+                      account = helper.pwd.getpwnam(name)
+                      group = helper.grp.getgrnam(name)
+                      self.assertEqual((account.pw_uid, account.pw_gid, group.gr_gid), (build_uid, build_gid, build_gid))
+                  finally:
+                      if created:
+                          helper._remove_local_build_identity(name, build_uid)
+                      shutil.rmtree(workspace, ignore_errors=True)
+
+'''
+          tests = replace_between(
+              tests,
+              "    @unittest.skipUnless(\n        sys.platform == \"darwin\" and os.geteuid() == 0,\n        \"requires root on macOS\",\n    )\n    def test_real_macos_ephemeral_identity_is_distinct_from_field_authority(self) -> None:\n",
+              "\n\nif __name__ == \"__main__\":\n",
+              real_macos_test,
+              "real mac identity regression",
+          )
+
+          contract = r'''#!/usr/bin/env python3
+          """Portable production contract for full numeric-principal admission/retirement."""
+          from __future__ import annotations
+
+          import importlib.util
+          import inspect
+          from pathlib import Path
+          import unittest
+          from unittest import mock
+
+          REPO = Path(__file__).resolve().parents[3]
+          HELPER = REPO / "scripts/ci/capture_signed_app_build_origin_custody.py"
+
+          def load():
+              spec = importlib.util.spec_from_file_location("nembra_full_numeric_principal", HELPER)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError("could not load build-origin helper")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+
+          class CaptureFullNumericPrincipalProductionTests(unittest.TestCase):
+              def test_full_inventory_merges_pid0_group_and_all_scalar_slots(self) -> None:
+                  helper = load()
+                  scanner = Path("/private/tmp/scanner")
+                  kernel = ({0, 100, 200}, {0: helper.PROCESS_CREDENTIAL_GROUP_LIST, 200: helper.PROCESS_CREDENTIAL_GROUP_LIST})
+                  scalar = ({100, 200}, {100: helper.PROCESS_CREDENTIAL_RUID | helper.PROCESS_CREDENTIAL_EUID | helper.PROCESS_CREDENTIAL_SVUID, 200: helper.PROCESS_CREDENTIAL_RGID | helper.PROCESS_CREDENTIAL_EGID | helper.PROCESS_CREDENTIAL_SVGID})
+                  with (
+                      mock.patch.object(helper, "_kernel_group_snapshot", return_value=kernel),
+                      mock.patch.object(helper, "_ps_scalar_snapshot", return_value=scalar),
+                  ):
+                      matches = helper._full_numeric_principal_matches(scanner, 55001)
+                  self.assertEqual(matches[0], helper.PROCESS_CREDENTIAL_GROUP_LIST)
+                  self.assertEqual(
+                      matches[100],
+                      helper.PROCESS_CREDENTIAL_RUID | helper.PROCESS_CREDENTIAL_EUID | helper.PROCESS_CREDENTIAL_SVUID,
+                  )
+                  self.assertEqual(
+                      matches[200],
+                      helper.PROCESS_CREDENTIAL_GROUP_LIST | helper.PROCESS_CREDENTIAL_RGID | helper.PROCESS_CREDENTIAL_EGID | helper.PROCESS_CREDENTIAL_SVGID,
+                  )
+
+              def test_live_snapshot_disagreement_fails_closed(self) -> None:
+                  helper = load()
+                  scanner = Path("/private/tmp/scanner")
+                  with (
+                      mock.patch.object(helper, "_kernel_group_snapshot", return_value=({100, 999}, {})),
+                      mock.patch.object(helper, "_ps_scalar_snapshot", return_value=({100}, {})),
+                      mock.patch.object(helper, "_pid_still_exists", return_value=True),
+                      self.assertRaises(helper.BuildOriginCustodyError),
+                  ):
+                      helper._full_numeric_principal_matches(scanner, 55001)
+
+              def test_esrch_only_disagreement_is_tolerated_without_dropping_matches(self) -> None:
+                  helper = load()
+                  scanner = Path("/private/tmp/scanner")
+                  with (
+                      mock.patch.object(
+                          helper,
+                          "_kernel_group_snapshot",
+                          return_value=({100, 999}, {999: helper.PROCESS_CREDENTIAL_GROUP_LIST}),
+                      ),
+                      mock.patch.object(helper, "_ps_scalar_snapshot", return_value=({100}, {})),
+                      mock.patch.object(helper, "_pid_still_exists", return_value=False),
+                  ):
+                      matches = helper._full_numeric_principal_matches(scanner, 55001)
+                  self.assertEqual(matches, {999: helper.PROCESS_CREDENTIAL_GROUP_LIST})
+
+              def test_selector_requires_full_inventory_not_effective_uid_only(self) -> None:
+                  helper = load()
+                  scanner = Path("/private/tmp/scanner")
+                  with (
+                      mock.patch.object(helper, "_id_in_use", return_value=False),
+                      mock.patch.object(
+                          helper,
+                          "_full_numeric_principal_matches",
+                          return_value={44: helper.PROCESS_CREDENTIAL_SVGID},
+                      ),
+                  ):
+                      self.assertTrue(helper._numeric_principal_in_use(55001, scanner))
+                  with (
+                      mock.patch.object(helper, "_id_in_use", return_value=False),
+                      mock.patch.object(helper, "_full_numeric_principal_matches", return_value={}),
+                  ):
+                      self.assertFalse(helper._numeric_principal_in_use(55001, scanner))
+
+              def test_retirement_wait_fails_closed_while_any_credential_slot_survives(self) -> None:
+                  helper = load()
+                  scanner = Path("/private/tmp/scanner")
+                  with (
+                      mock.patch.object(
+                          helper,
+                          "_full_numeric_principal_matches",
+                          return_value={777: helper.PROCESS_CREDENTIAL_GROUP_LIST},
+                      ),
+                      self.assertRaises(helper.BuildOriginCustodyError),
+                  ):
+                      helper._wait_for_numeric_principal_clear(scanner, 55001, timeout=0)
+
+              def test_run_path_requires_scanner_before_identity_and_strict_retirement(self) -> None:
+                  helper = load()
+                  source = inspect.getsource(helper.run_custodied_build)
+                  scanner = source.index("group_scanner = _compile_numeric_principal_group_scanner(principal_inventory)")
+                  choose = source.index("build_uid = _choose_ephemeral_id(group_scanner)")
+                  create = source.index("_create_local_build_identity(")
+                  self.assertLess(scanner, choose)
+                  self.assertLess(choose, create)
+                  self.assertIn("group_scanner=group_scanner", source)
+                  self.assertIn("require_absent=True", source)
+                  self.assertNotIn("build_uid = _choose_ephemeral_id()", source)
+
+              def test_canonical_scanner_keeps_pid0_and_full_scalar_grammar(self) -> None:
+                  helper = load()
+                  scanner_source = helper.PROCESS_CREDENTIAL_GROUP_SCANNER_SOURCE
+                  self.assertIn("if (pid < 0)", scanner_source)
+                  self.assertNotIn("if (pid <= 0)", scanner_source)
+                  source = inspect.getsource(helper._ps_scalar_snapshot)
+                  for field in ("uid=", "ruid=", "svuid=", "gid=", "rgid=", "svgid="):
+                      self.assertIn(field, source)
+                  full = inspect.getsource(helper._full_numeric_principal_matches)
+                  self.assertIn("pid > 0", full)
+                  self.assertIn("_pid_still_exists", full)
+
+          if __name__ == "__main__":
+              unittest.main(verbosity=2)
+          '''
+          contract = "\n".join(line[10:] if line.startswith("          ") else line for line in contract.splitlines()) + "\n"
+
+          permanent_workflow = r'''name: Capture Full Numeric Principal Production
+
+          on:
+            pull_request:
+              paths:
+                - scripts/ci/capture_signed_app_build_origin_custody.py
+                - scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+                - scripts/ci/tests/test_capture_full_numeric_principal_production.py
+                - .github/workflows/capture-full-numeric-principal-production.yml
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          concurrency:
+            group: capture-full-numeric-principal-production-${{ github.event.pull_request.number || github.ref }}
+            cancel-in-progress: true
+
+          env:
+            EXACT_PARENT: c2211115ccc1bbe8a5dedff1544f1de73277c65d
+
+          jobs:
+            portable-contract:
+              runs-on: ubuntu-latest
+              timeout-minutes: 8
+              steps:
+                - uses: actions/checkout@v6
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
+                    fetch-depth: 0
+                    persist-credentials: false
+                - name: Bind exact serial delta
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+                    test "$(git rev-parse HEAD)" = "$expected_head"
+                    test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+                    changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+                    expected="$(printf '%s\n' \
+                      .github/workflows/capture-full-numeric-principal-production.yml \
+                      scripts/ci/capture_signed_app_build_origin_custody.py \
+                      scripts/ci/tests/test_capture_full_numeric_principal_production.py \
+                      scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py | LC_ALL=C sort)"
+                    test "$changed" = "$expected"
+                    git diff --check "$EXACT_PARENT"...HEAD
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+                - name: Compile without workspace artifacts
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    /usr/bin/python3 -B -I - <<'PY'
+                    from pathlib import Path
+                    for raw in (
+                        "scripts/ci/capture_signed_app_build_origin_custody.py",
+                        "scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py",
+                        "scripts/ci/tests/test_capture_full_numeric_principal_production.py",
+                    ):
+                        path = Path(raw)
+                        compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+                    PY
+                - name: Run production authority regressions
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    export PYTHONDONTWRITEBYTECODE=1
+                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_full_numeric_principal_production.py
+                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+            macos-runtime:
+              runs-on: macos-15
+              timeout-minutes: 8
+              steps:
+                - uses: actions/checkout@v6
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
+                    fetch-depth: 0
+                    persist-credentials: false
+                - name: Exercise production full credential scanner on current Darwin
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    export PYTHONDONTWRITEBYTECODE=1
+                    /usr/bin/python3 -B -I - <<'PY'
+                    import importlib.util
+                    import os
+                    from pathlib import Path
+                    import tempfile
+
+                    path = Path("scripts/ci/capture_signed_app_build_origin_custody.py").resolve()
+                    spec = importlib.util.spec_from_file_location("nembra_full_numeric_runtime", path)
+                    if spec is None or spec.loader is None:
+                        raise SystemExit("could not load production helper")
+                    helper = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(helper)
+                    uid = os.getuid()
+                    gid = os.getgid()
+                    if uid <= 0 or gid <= 0:
+                        raise SystemExit("runtime witness requires ordinary macOS runner identity")
+                    with tempfile.TemporaryDirectory(prefix="nembra-full-principal-runtime.") as raw:
+                        root = Path(raw)
+                        scanner = helper._compile_numeric_principal_group_scanner(root)
+                        uid_matches = helper._full_numeric_principal_matches(scanner, uid)
+                        gid_matches = helper._full_numeric_principal_matches(scanner, gid)
+                        pid = os.getpid()
+                        if pid not in uid_matches:
+                            raise SystemExit(f"production scanner missed witness UID slots: pid={pid} matches={uid_matches}")
+                        if pid not in gid_matches:
+                            raise SystemExit(f"production scanner missed witness GID/group slots: pid={pid} matches={gid_matches}")
+                        free = None
+                        for candidate in range(52000, 62000):
+                            if helper._id_in_use(candidate):
+                                continue
+                            if not helper._full_numeric_principal_matches(scanner, candidate):
+                                free = candidate
+                                break
+                        if free is None:
+                            raise SystemExit("production scanner found no credential-free high numeric principal")
+                        print(
+                            "NEMBRA_FULL_NUMERIC_PRINCIPAL_RUNTIME "
+                            f"uidSlotsObserved=true gidSlotsObserved=true processFreeCandidate={free} "
+                            "directoryServicesMutated=false sudoUsed=false deviceTouched=false "
+                            "bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false "
+                            "physicalAuthorityCreated=false"
+                        )
+                    PY
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          '''
+          permanent_workflow = "\n".join(line[10:] if line.startswith("          ") else line for line in permanent_workflow.splitlines()) + "\n"
+
+          helper_path.write_text(helper, encoding="utf-8")
+          test_path.write_text(tests, encoding="utf-8")
+          Path("scripts/ci/tests/test_capture_full_numeric_principal_production.py").write_text(contract, encoding="utf-8")
+          Path(".github/workflows/capture-full-numeric-principal-production.yml").write_text(permanent_workflow, encoding="utf-8")
+
+          for path in (
+              helper_path,
+              test_path,
+              Path("scripts/ci/tests/test_capture_full_numeric_principal_production.py"),
+          ):
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_full_numeric_principal_production.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+
+      - name: Replace authoring shim with permanent product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-full-numeric-principal-production-materialize-once.yml
+          git add \
+            .github/workflows/capture-full-numeric-principal-production.yml \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_full_numeric_principal_production.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py
+          git diff --cached --check
+          changed="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-full-numeric-principal-production.yml \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_full_numeric_principal_production.py \
+            scripts/ci/tests/test_capture_signed_app_pre_stage_origin.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git config user.name "nembra-capture-swarm"
+          git config user.email "nembra-capture-swarm@users.noreply.github.com"
+          git commit -m "security(capture): enforce full numeric-principal custody"
+          git push origin HEAD:"${{ github.event.pull_request.head.ref }}"
