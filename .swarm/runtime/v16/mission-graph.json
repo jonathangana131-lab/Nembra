@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 33,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.133,
+        "similarity": 0.183,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1428,6 +1428,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.453,
         "title": "[Capture P0][SECURITY][RECOVERY] Bind private lease to planned object identity"
+      },
+      "3392": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3392,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.147,
+        "title": "[Capture P0][VISUAL] Re-anchor first-fold evidence to ff779 composition"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1460,7 +1471,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:08:35Z",
+    "liveRefreshAt": "2026-08-15T03:08:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5245,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 484,
+  "revision": 485,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:08:36Z",
+  "updatedAt": "2026-08-15T03:08:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:08:35Z",
+      "updatedAt": "2026-08-15T03:08:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
