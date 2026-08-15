@@ -1,0 +1,74 @@
+name: Capture Generated Symlink DotDot Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v17-capture-generated-symlink-dotdot-escape-sol-20260815
+    paths:
+      - scripts/ci/tests/test_capture_generated_symlink_dotdot_escape_red_team.py
+      - .github/workflows/capture-generated-symlink-dotdot-red-team.yml
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_generated_symlink_dotdot_escape_red_team.py
+      - .github/workflows/capture-generated-symlink-dotdot-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXACT_PARENT: 9ab493f5a0b99ae0d78fb072c756bee71221a5a6
+
+jobs:
+  exploit-positive:
+    name: Reproduce generated symlink/.. escape (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact attacked accepted-input product
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-generated-symlink-dotdot-red-team.yml' \
+            'scripts/ci/tests/test_capture_generated_symlink_dotdot_escape_red_team.py' | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Compile validation oracle without artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/tests/test_capture_generated_symlink_dotdot_escape_red_team.py')
+          compile(path.read_text(encoding='utf-8'), str(path), 'exec', dont_inherit=True)
+          PY
+
+      - name: Require exploit-positive generated symlink escape
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_symlink_dotdot_escape_red_team.py
+
+      - name: Preserve validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'Green is exploit-positive evidence only; no product or physical authority is created.'
