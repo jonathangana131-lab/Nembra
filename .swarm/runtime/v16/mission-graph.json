@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 36,
+    "classifiedPRTotal": 35,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1286,17 +1286,6 @@
         "similarity": 0.268,
         "title": "[Capture P0][SECURITY] Anchor private lease component traversal"
       },
-      "3363": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "navigation-app-visible",
-        "pr": 3363,
-        "recommendedAction": "independent-review",
-        "similarity": 0.285,
-        "title": "[Navigation V15] Port accessibility surface onto current main"
-      },
       "3380": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1459,7 +1448,7 @@
         "lane": "",
         "pr": 3422,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.283,
+        "similarity": 0.102,
         "title": "[Navigation V15][QA] Exact Accessibility XXXL real-surface witness"
       }
     },
@@ -1493,11 +1482,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T09:02:37Z",
+    "liveRefreshAt": "2026-08-15T09:03:10Z",
     "liveRefreshDuplicatesSuppressed": [
       3420
     ],
-    "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
+    "liveRefreshMainSHA": "b08f52c8aac7cbf753c3aaac55147303697ac32a",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -5278,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 584,
+  "revision": 585,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T09:02:38Z",
+  "updatedAt": "2026-08-15T09:03:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5357,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T09:02:37Z",
+      "updatedAt": "2026-08-15T09:03:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
