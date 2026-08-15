@@ -1,0 +1,87 @@
+name: Capture Provenance Validation Oracle Fast Once
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-private-provenance-loader-repair-sol-20260814
+    paths:
+      - .github/workflows/capture-provenance-validation-oracle-fast-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Bind one-shot witness parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=3409af9cec332761567192a3fbdc5bf48f7c7178
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-provenance-validation-oracle-fast-once.yml"
+
+      - name: Exercise repaired provenance assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/tests/test_capture_private_provenance_preacceptance.py \
+            scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          import unittest
+
+          def load(path: str, name: str):
+              spec = importlib.util.spec_from_file_location(name, Path(path))
+              if spec is None or spec.loader is None:
+                  raise RuntimeError(f"could not load {path}")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+
+          pre = load(
+              "scripts/ci/tests/test_capture_private_provenance_preacceptance.py",
+              "capture_private_provenance_preacceptance_fast",
+          )
+          source = load(
+              "scripts/ci/tests/test_capture_tuya_private_input_provenance.py",
+              "capture_tuya_private_input_provenance_fast",
+          )
+          suite = unittest.TestSuite(
+              [
+                  pre.CapturePrivateProvenancePreacceptanceTests(
+                      "test_canonical_live_digest_changes_when_only_private_input_changes"
+                  ),
+                  pre.CapturePrivateProvenancePreacceptanceTests(
+                      "test_wrong_or_malformed_accepted_digest_fails_before_build_or_watcher"
+                  ),
+                  source.CaptureTuyaPrivateInputProvenanceTests(
+                      "test_field_build_requires_preaccepted_lock_before_xcodebuild"
+                  ),
+              ]
+          )
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful():
+              raise SystemExit(1)
+          PY
+
+      - name: Remove one-shot witness without changing product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-provenance-validation-oracle-fast-once.yml
+          git config user.name "nembra-capture-oracle"
+          git config user.email "capture-oracle@users.noreply.github.com"
+          git add -u .github/workflows/capture-provenance-validation-oracle-fast-once.yml
+          test "$(git diff --cached --name-only)" = ".github/workflows/capture-provenance-validation-oracle-fast-once.yml"
+          git commit -m "ci(capture): retire fast provenance oracle"
+          git push origin HEAD:validation/v17-capture-private-provenance-loader-repair-sol-20260814
