@@ -24,7 +24,14 @@ def load():
 class CapturePrivateReadLeaseSymlinkGenerationRaceRedTeamTests(unittest.TestCase):
     def test_actual_grant_can_validate_internal_symlink_B_while_holding_external_symlink_A(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-race-") as raw:
+        # Keep the synthetic repository beneath the checked-out repository rather than
+        # the platform-default temporary root. On macOS, TemporaryDirectory() defaults
+        # beneath /var/folders while /var is itself a compatibility symlink to
+        # /private/var. Production's no-follow component walker correctly rejects that
+        # unrelated host-path symlink before the generation-race seam can execute.
+        # The checkout is already reached through the exact Actions path and gives this
+        # portable witness an ordinary real-directory ancestry on both Linux and macOS.
+        with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-race-", dir=REPO) as raw:
             outer = Path(raw)
             repo = outer / "repo"
             subject = repo / "LocalSecrets/TuyaSDK/Build"
