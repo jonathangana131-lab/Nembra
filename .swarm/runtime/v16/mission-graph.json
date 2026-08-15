@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 26,
+    "classifiedPRTotal": 25,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1175,17 +1175,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.442,
         "title": "[Capture P0][VALIDATION] Classify kernel PID 0 in numeric-principal witness"
-      },
-      "3339": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "4bb608acaa7f767fd1226364068acd8e5a0deef9",
-        "lane": "capture-private-read-lease",
-        "pr": 3339,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.298,
-        "title": "[Capture P0][SECURITY] Descriptor-bind private read lease rollback"
       },
       "3341": {
         "classification": "requires-review",
@@ -1383,7 +1372,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T01:00:24Z",
+    "liveRefreshAt": "2026-08-15T01:00:40Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5168,10 +5157,10 @@
       "userValue": 7
     }
   },
-  "revision": 432,
+  "revision": 433,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T01:00:25Z",
+  "updatedAt": "2026-08-15T01:00:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5247,7 +5236,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T01:00:24Z",
+      "updatedAt": "2026-08-15T01:00:40Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
