@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 17,
+    "classifiedPRTotal": 18,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1252,6 +1252,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.455,
         "title": "[Capture P0][REPAIR] Make full numeric-principal witness PID-0 aware"
+      },
+      "3344": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "dashboard-energyrail-unavailable-projection",
+        "pr": 3344,
+        "recommendedAction": "independent-review",
+        "similarity": 0.148,
+        "title": "Keep physical Energy Rail truthfully unavailable"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1284,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:05:53Z",
+    "liveRefreshAt": "2026-08-15T00:06:37Z",
     "liveRefreshDuplicatesSuppressed": [
       3340
     ],
@@ -5069,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 352,
+  "revision": 353,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:05:54Z",
+  "updatedAt": "2026-08-15T00:06:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5148,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:05:53Z",
+      "updatedAt": "2026-08-15T00:06:37Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
