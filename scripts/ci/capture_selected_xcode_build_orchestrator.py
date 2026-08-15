@@ -294,20 +294,52 @@ def _descriptor_signature(descriptor: int) -> tuple[int, int, int]:
 
 
 def _open_pinned_path(path: Path, is_directory: bool) -> int:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    if is_directory:
-        flags |= getattr(os, "O_DIRECTORY", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError as error:
+    """Open an absolute lease subject without following any path component."""
+    path = _absolute_lexical(path)
+    parts = path.parts
+    if len(parts) < 2 or parts[0] != os.sep:
         raise SelectedXcodeBuildOrchestratorError(
-            f"private read-lease path could not be descriptor-pinned: {path}"
-        ) from error
+            f"private read-lease path has no admissible absolute component walk: {path}"
+        )
+    if os.open not in os.supports_dir_fd:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease component walk requires openat/dir_fd support"
+        )
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    odirectory = getattr(os, "O_DIRECTORY", 0)
+    if nofollow == 0 or odirectory == 0:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease component walk requires O_NOFOLLOW and O_DIRECTORY"
+        )
+
+    common = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow
+    current = -1
+    descriptor = -1
     try:
-        if _descriptor_signature(descriptor) != _path_signature(path):
-            raise SelectedXcodeBuildOrchestratorError(
-                f"private read-lease path changed identity while opening: {path}"
-            )
+        current = os.open(
+            os.sep,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | odirectory,
+        )
+        for index, component in enumerate(parts[1:]):
+            if component in ("", ".", "..") or os.sep in component:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease path contains an unsafe component: {path}"
+                )
+            final = index == len(parts) - 2
+            flags = common
+            if not final or is_directory:
+                flags |= odirectory
+            try:
+                next_descriptor = os.open(component, flags, dir_fd=current)
+            except OSError as error:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease component could not be pinned without following links: {path}"
+                ) from error
+            os.close(current)
+            current = next_descriptor
+
+        descriptor = current
+        current = -1
         mode = os.fstat(descriptor).st_mode
         if is_directory != stat.S_ISDIR(mode):
             raise SelectedXcodeBuildOrchestratorError(
@@ -317,11 +349,20 @@ def _open_pinned_path(path: Path, is_directory: bool) -> int:
             raise SelectedXcodeBuildOrchestratorError(
                 f"private read-lease file descriptor is not regular: {path}"
             )
-        return descriptor
+        # Full-path lookup below is diagnostic only after anchored selection.
+        if _descriptor_signature(descriptor) != _path_signature(path):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease pathname changed during anchored component walk: {path}"
+            )
+        result = descriptor
+        descriptor = -1
+        return result
     except Exception:
-        os.close(descriptor)
+        if current >= 0:
+            os.close(current)
+        if descriptor >= 0:
+            os.close(descriptor)
         raise
-
 
 def _descriptor_path(descriptor: int) -> str:
     if descriptor < 0:
