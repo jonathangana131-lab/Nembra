@@ -1,0 +1,189 @@
+name: Capture Numeric Principal PID Zero Oracle Validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-numeric-principal-pid0-oracle-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-numeric-principal-pid0-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 19c4c7469d67e43d1d3530de9d0bd675fda690a9
+  WITNESS_PATH: scripts/ci/tests/test_capture_numeric_principal_process_credentials.py
+  WITNESS_BLOB: d797f2a85b16c611bbd3d5b281e90178d6757e16
+
+jobs:
+  pid-zero-oracle:
+    name: Prove kernel PID zero can be handled without weakening inventory
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind validation to exact failed witness and one additive path
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-numeric-principal-pid0-oracle-validation.yml"
+          test "$(git rev-parse "$EXACT_PARENT:$WITNESS_PATH")" = "$WITNESS_BLOB"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize exact witness with PID-zero-only oracle repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          patched="$RUNNER_TEMP/nembra_numeric_principal_pid0_witness.py"
+          git show "$EXACT_PARENT:$WITNESS_PATH" > "$patched"
+          test "$(git hash-object "$patched")" = "$WITNESS_BLOB"
+          /usr/bin/python3 -B -I - "$patched" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding='utf-8')
+          replacements = (
+              (
+                  'if (pid <= 0) {',
+                  'if (pid < 0) {',
+              ),
+              (
+                  'require(pid > 0, f"kernel scanner emitted invalid pid: {raw_line!r}")',
+                  'require(pid >= 0, f"kernel scanner emitted invalid pid: {raw_line!r}")',
+              ),
+              (
+                  'require(pid > 0 and slots == GROUP_LIST, f"kernel scanner emitted invalid group match: {raw_line!r}")',
+                  'require(pid >= 0 and slots == GROUP_LIST, f"kernel scanner emitted invalid group match: {raw_line!r}")',
+              ),
+              (
+                  'persistent_kernel_only = sorted(pid for pid in kernel_pids - ps_pids if pid_still_exists(pid))',
+                  'persistent_kernel_only = sorted(pid for pid in kernel_pids - ps_pids if pid > 0 and pid_still_exists(pid))',
+              ),
+          )
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one PID-zero repair site for {old!r}, found {count}')
+              source = source.replace(old, new)
+          path.write_text(source, encoding='utf-8')
+          PY
+          /usr/bin/python3 -B -m py_compile "$patched"
+          printf '%s\n' "PATCHED_WITNESS=$patched" >> "$GITHUB_ENV"
+
+      - name: Prove PID zero remains represented by KERN_PROC and is not kill-probed
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - "$PATCHED_WITNESS" <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import sys
+          import tempfile
+
+          path = Path(sys.argv[1]).resolve()
+          spec = importlib.util.spec_from_file_location('nembra_numeric_pid0_probe', path)
+          if spec is None or spec.loader is None:
+              raise SystemExit('could not load patched numeric-principal witness')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          with tempfile.TemporaryDirectory(prefix='nembra-pid0-probe.') as raw:
+              binary = module.compile_group_scanner(Path(raw))
+              pids, matches = module.kernel_group_snapshot(binary, os.getuid())
+          if 0 not in pids:
+              raise SystemExit('current KERN_PROC_ALL did not expose kernel PID 0; hypothesis was not exercised')
+          # PID 0 remains in the KERN_PROC credential set and any candidate group match
+          # on PID 0 remains in `matches`. Only cross-snapshot liveness reconciliation
+          # excludes it because /bin/ps omits PID 0 and kill(0, 0) targets a process group.
+          print(f'NEMBRA_KERNEL_PID_ZERO_OBSERVED=true groupMatchForRunnerUID={0 in matches}')
+          PY
+
+      - name: Execute complete repaired credential inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          out="$RUNNER_TEMP/nembra-numeric-principal-pid0.log"
+          set +e
+          /usr/bin/python3 -B -I "$PATCHED_WITNESS" >"$out" 2>&1
+          status=$?
+          set -e
+          /bin/cat "$out"
+          /usr/bin/python3 -B -I - "$out" "$status" "$GITHUB_SHA" "$EXACT_PARENT" > "$RUNNER_TEMP/nembra-numeric-principal-pid0-evidence.json" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          log = Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace')
+          status = int(sys.argv[2])
+          head = sys.argv[3]
+          parent = sys.argv[4]
+          marker = 'NEMBRA_NUMERIC_PROCESS_CREDENTIAL_JSON='
+          rows = [line for line in log.splitlines() if line.startswith(marker)]
+          payload = json.loads(rows[0][len(marker):]) if len(rows) == 1 else None
+          evidence = {
+              'schemaVersion': 1,
+              'exactFailedWitnessParent': parent,
+              'validationHead': head,
+              'kernelPIDZeroObserved': True,
+              'kernelPIDZeroRetainedInKernProcCredentialSet': True,
+              'kernelPIDZeroExcludedOnlyFromPSLivenessReconciliation': True,
+              'killZeroProbeUsed': False,
+              'fullWitnessExitStatus': status,
+              'fullWitnessPayload': payload,
+              'productionBytesChanged': False,
+              'productionAcceptanceClaimed': False,
+              'physicalAuthorityCreated': False,
+          }
+          print(json.dumps(evidence, sort_keys=True, indent=2))
+          if status != 0 or payload is None:
+              raise SystemExit(status or 1)
+          required = (
+              'uidSlotsObserved',
+              'primaryGIDSlotsObserved',
+              'supplementaryGroupOnlyCollisionObserved',
+              'persistentPIDSetsReconciled',
+              'vanishedPIDsAreOnlySkippableAfterESRCH',
+          )
+          if not all(payload.get(key) is True for key in required):
+              raise SystemExit('repaired witness did not preserve complete credential-inventory invariants')
+          if payload.get('processFreeCandidateMatchCount') != 0:
+              raise SystemExit('repaired witness admitted an occupied production-range numeric principal')
+          if payload.get('directoryServicesMutated') is not False or payload.get('sudoUsed') is not False:
+              raise SystemExit('validation crossed its read-only authority boundary')
+          if payload.get('physicalAuthorityCreated') is not False:
+              raise SystemExit('validation falsely created physical authority')
+          PY
+          test "$status" = 0
+
+      - name: Retain PID-zero validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-numeric-principal-pid0-${{ github.run_id }}
+          path: ${{ runner.temp }}/nembra-numeric-principal-pid0-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo "NEMBRA_PID0_ORACLE_BOUNDARY productionBytesChanged=false productionAcceptanceClaimed=false physicalAuthorityCreated=false"
