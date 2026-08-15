@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.183,
+        "similarity": 0.24,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1349,19 +1349,8 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.272,
+        "similarity": 0.19,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
-      },
-      "3383": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3383,
-        "recommendedAction": "independent-review",
-        "similarity": 0.284,
-        "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
       },
       "3387": {
         "classification": "validation",
@@ -1393,7 +1382,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3392,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.147,
+        "similarity": 0.444,
         "title": "[Capture P0][VISUAL] Re-anchor first-fold evidence to ff779 composition"
       },
       "3393": {
@@ -1417,6 +1406,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.272,
         "title": "[Capture P0][RED TEAM] Reject inode-reuse ABA in planned lease identity"
+      },
+      "3395": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "2452bca778d4870f443a80e214e265cf62179e97",
+        "lane": "capture-standalone-runtime-visual-evidence",
+        "pr": 3395,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.447,
+        "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1449,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:10:58Z",
+    "liveRefreshAt": "2026-08-15T03:11:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5234,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 492,
+  "revision": 493,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:10:59Z",
+  "updatedAt": "2026-08-15T03:11:19Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:10:58Z",
+      "updatedAt": "2026-08-15T03:11:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
