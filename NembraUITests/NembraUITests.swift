@@ -321,6 +321,35 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapePhysicalProfileKeepsPowerUnavailableRailVisible() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeRight
+
+        let app = XCUIApplication()
+        app.launch()
+
+        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
+        XCTAssertTrue(
+            cockpit.waitForExistence(timeout: 5),
+            "The real unverified AOVOPRO profile must render the landscape Cockpit."
+        )
+
+        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(
+            energyRail.waitForExistence(timeout: 3),
+            "The physical/unverified profile must keep the propulsion machine layer visible even without power authority."
+        )
+        XCTAssertTrue(
+            waitForValue("Unavailable", element: energyRail),
+            "An AOVOPRO ES80 profile with no verified watts capability must never manufacture numeric propulsion power."
+        )
+        XCTAssertFalse(app.staticTexts["LIVE POWER"].exists)
+        XCTAssertFalse(app.staticTexts["LAST KNOWN POWER"].exists)
+
+        keepScreenshot(named: "Dashboard Physical Power Unavailable Landscape")
+    }
+
+    @MainActor
     func testLandscapeDashboardLaunchPerformance() {
         defer { XCUIDevice.shared.orientation = .portrait }
 
