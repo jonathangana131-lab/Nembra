@@ -1,0 +1,51 @@
+name: Capture Private Provenance Resnapshot Red Team
+
+on:
+  pull_request:
+    paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_input_provenance.py
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_private_provenance_resnapshot_authority.py
+      - .github/workflows/capture-private-provenance-resnapshot-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expected-red-private-provenance-resnapshot:
+    name: Expose lock-preserving private-input provenance rebinding
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind diagnostic to exact checked-out head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Private provenance red-team source: %s\n' "$actual"
+
+      - name: Reproduce lock-preserving private-input provenance rebinding
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-provenance-red-pycache"
+          test_file='scripts/ci/tests/test_capture_private_provenance_resnapshot_authority.py'
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_provenance.py \
+            "$test_file"
+          /usr/bin/python3 -B -I "$test_file"
+          printf '%s\n' 'EXPECTED RED: normal field bootstrap can rewrite the private-input fingerprint record under an unchanged preaccepted dependency-lock digest.'
+          printf '%s\n' 'This workflow green is diagnostic evidence of an open authority gap, not product acceptance.'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
