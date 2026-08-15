@@ -1,0 +1,124 @@
+name: Capture Private Read Lease Least Authority Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-private-read-lease-descriptor-60c-sol-20260814
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Narrow subjects and move grant to exact build edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              source = path.read_text(encoding="utf-8")
+              if source.count(old) != 1:
+                  raise SystemExit(f"{path}: expected one exact patch anchor, found {source.count(old)}")
+              path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          origin = Path("scripts/ci/capture_signed_app_build_origin_custody.py")
+
+          old_subjects = (
+              "PRIVATE_READ_RELATIVE_ROOTS = (\n"
+              "    Path(\"LocalSecrets/TuyaSDK\"),\n"
+              "    Path(\"LocalSecrets/TuyaRuntime\"),\n"
+              ")\n"
+          )
+          new_subjects = (
+              "PRIVATE_READ_RELATIVE_SUBJECTS = (\n"
+              "    Path(\"LocalSecrets/TuyaSDK/ThingSmartCryption.podspec\"),\n"
+              "    Path(\"LocalSecrets/TuyaSDK/Build\"),\n"
+              "    Path(\"LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec\"),\n"
+              "    Path(\"LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig\"),\n"
+              ")\n"
+          )
+          replace_once(orchestrator, old_subjects, new_subjects)
+          replace_once(
+              orchestrator,
+              "tuple(repository / relative for relative in PRIVATE_READ_RELATIVE_ROOTS)",
+              "tuple(repository / relative for relative in PRIVATE_READ_RELATIVE_SUBJECTS)",
+          )
+
+          grant_block = (
+              "        if private_read_lease is not None:\n"
+              "            grant = getattr(private_read_lease, \"grant\", None)\n"
+              "            revoke = getattr(private_read_lease, \"revoke\", None)\n"
+              "            if not callable(grant) or not callable(revoke):\n"
+              "                raise BuildOriginCustodyError(\n"
+              "                    \"private read-lease object does not expose exact grant/revoke lifecycle\"\n"
+              "                )\n"
+              "            grant(build_name)\n"
+              "            private_read_lease_granted = True\n"
+              "\n"
+          )
+          replace_once(origin, grant_block, "")
+          build_anchor = (
+              "        derived_root = mountpoint / \"DerivedData\"\n"
+              "        guarded_command = _replace_derived_placeholder(command, derived_root)\n"
+              "        build = _run_exec_bound_build(\n"
+          )
+          replace_once(
+              origin,
+              build_anchor,
+              "        derived_root = mountpoint / \"DerivedData\"\n"
+              "        guarded_command = _replace_derived_placeholder(command, derived_root)\n"
+              "\n"
+              + grant_block
+              + "        build = _run_exec_bound_build(\n",
+          )
+          PY
+
+      - name: Prove least-authority portable contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_private_read_lease_build_window.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_build_window.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          git diff --check
+
+      - name: Self-delete and publish least-authority carrier
+        shell: bash
+        env:
+          BRANCH: repair/v17-capture-private-read-lease-descriptor-60c-sol-20260814
+          SELF: .github/workflows/capture-private-read-lease-least-authority-once.yml
+        run: |
+          set -euo pipefail
+          git rm "$SELF"
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            "$SELF" \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'nembra-swarm-materializer'
+          git config user.email 'nembra-swarm@users.noreply.github.com'
+          git commit -m 'Capture: narrow private read lease to guarded build window'
+          git push origin "HEAD:$BRANCH"
