@@ -1,0 +1,58 @@
+name: Capture Private Read Lease Generation Coherence Current
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-private-read-lease-generation-coherence-current.yml
+      - scripts/ci/tests/test_capture_private_read_lease_generation_coherence_current.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXACT_PRODUCT: 474507966619ce39288b20de29066711088cd986
+
+jobs:
+  canonical-replay:
+    name: Reject canonical mixed-generation held lease
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact product and validation-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PRODUCT")" = "$EXACT_PRODUCT"
+          changed="$(git diff --name-only "$EXACT_PRODUCT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-generation-coherence-current.yml \
+            scripts/ci/tests/test_capture_private_read_lease_generation_coherence_current.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          test "$(git rev-parse "$EXACT_PRODUCT:scripts/ci/capture_selected_xcode_build_orchestrator.py")" = \
+               "$(git rev-parse "HEAD:scripts/ci/capture_selected_xcode_build_orchestrator.py")"
+          git diff --check "$EXACT_PRODUCT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Replay canonical generation-split attack against exact product
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_generation_coherence_current.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_generation_coherence_current.py
+
+      - name: Preserve validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'NEMBRA_GENERATION_COHERENCE_REPLAY productBytesChanged=false aclTransportMocked=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false'
