@@ -12,31 +12,37 @@ ORCHESTRATOR = REPOSITORY / "scripts/ci/capture_selected_xcode_build_orchestrato
 
 
 class CapturePrivateReadLeaseBuildWindowTests(unittest.TestCase):
-    def test_orchestrator_admits_only_fixed_private_tuya_roots(self) -> None:
+    def test_orchestrator_admits_only_guarded_private_tuya_inputs(self) -> None:
         source = ORCHESTRATOR.read_text(encoding="utf-8")
         self.assertIn(
-            'PRIVATE_READ_RELATIVE_ROOTS = (\n'
-            '    Path("LocalSecrets/TuyaSDK"),\n'
-            '    Path("LocalSecrets/TuyaRuntime"),\n'
+            'PRIVATE_READ_RELATIVE_SUBJECTS = (\n'
+            '    Path("LocalSecrets/TuyaSDK/ThingSmartCryption.podspec"),\n'
+            '    Path("LocalSecrets/TuyaSDK/Build"),\n'
+            '    Path("LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"),\n'
+            '    Path("LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"),\n'
             ')',
             source,
         )
+        self.assertNotIn('Path("LocalSecrets/TuyaSDK"),', source)
+        self.assertNotIn('Path("LocalSecrets/TuyaRuntime"),', source)
         self.assertIn(
             "private_read_lease = _PrivateReadLease(\n"
-            "        tuple(repository / relative for relative in PRIVATE_READ_RELATIVE_ROOTS),\n"
+            "        tuple(repository / relative for relative in PRIVATE_READ_RELATIVE_SUBJECTS),\n"
             "        repository,\n"
             "    )",
             source,
         )
         self.assertIn("private_read_lease=private_read_lease", source)
 
-    def test_lease_is_granted_after_identity_attestation_and_revoked_before_promotion(self) -> None:
+    def test_lease_is_granted_only_after_build_setup_and_revoked_before_promotion(self) -> None:
         source = ORIGIN.read_text(encoding="utf-8")
         markers = {
             "identity": "_create_local_build_identity(build_name, build_uid, build_gid, home)",
             "attest": "build_groups = _attest_build_identity_groups(",
-            "grant": "grant(build_name)",
             "image": "_create_apfs_image(image)",
+            "attach": "writable_device = _attach_apfs(image, mountpoint, readonly=False)",
+            "command": "guarded_command = _replace_derived_placeholder(command, derived_root)",
+            "grant": "grant(build_name)",
             "build": "build = _run_exec_bound_build(",
             "revoke": "private_read_lease.revoke()",
             "lock": "os.chown(mountpoint, 0, 0)",
@@ -49,9 +55,11 @@ class CapturePrivateReadLeaseBuildWindowTests(unittest.TestCase):
             self.assertGreaterEqual(position, 0, f"missing private read-lease build-window marker: {name}")
 
         self.assertLess(positions["identity"], positions["attest"])
-        self.assertLess(positions["attest"], positions["grant"])
-        self.assertLess(positions["grant"], positions["image"])
-        self.assertLess(positions["image"], positions["build"])
+        self.assertLess(positions["attest"], positions["image"])
+        self.assertLess(positions["image"], positions["attach"])
+        self.assertLess(positions["attach"], positions["command"])
+        self.assertLess(positions["command"], positions["grant"])
+        self.assertLess(positions["grant"], positions["build"])
         self.assertLess(positions["build"], positions["revoke"])
         self.assertLess(positions["revoke"], positions["lock"])
         self.assertLess(positions["revoke"], positions["status"])
