@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.089,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.125,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1338,7 +1338,7 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3366,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.0,
+        "similarity": 0.061,
         "title": "[Dashboard V17] Close physical-unavailable cockpit machine state"
       },
       "3368": {
@@ -1360,7 +1360,7 @@
         "lane": "capture-build-authority-validation",
         "pr": 3369,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.197,
         "title": "[Capture P0][VALIDATION] Repair build-authority validation witnesses"
       },
       "3370": {
@@ -1385,17 +1385,6 @@
         "similarity": 0.313,
         "title": "[Capture P0][AX RUNTIME] Re-anchor Standard + AX5 VoiceOver to 2b7d"
       },
-      "3374": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3374,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.413,
-        "title": "[Capture P0][SECURITY][VALIDATION] Prove real-directory lease replacement gap"
-      },
       "3375": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1404,8 +1393,19 @@
         "lane": "capture-private-read-lease",
         "pr": 3375,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.409,
+        "similarity": 0.433,
         "title": "[Capture P0][RED TEAM] Reject real-directory replacement after lease planning"
+      },
+      "3379": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3379,
+        "recommendedAction": "independent-review",
+        "similarity": 0.206,
+        "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       },
       "3380": {
         "classification": "canonical-candidate",
@@ -1415,8 +1415,30 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.174,
+        "similarity": 0.19,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
+      },
+      "3381": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3381,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.296,
+        "title": "[Capture P0][SECURITY][VALIDATION][RECOVERY] Re-anchor real-directory lease swap oracle"
+      },
+      "3382": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3382,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.436,
+        "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1449,7 +1471,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:02:14Z",
+    "liveRefreshAt": "2026-08-15T03:02:36Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5234,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 462,
+  "revision": 463,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:02:15Z",
+  "updatedAt": "2026-08-15T03:02:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:02:14Z",
+      "updatedAt": "2026-08-15T03:02:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
