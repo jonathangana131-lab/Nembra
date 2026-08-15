@@ -1,0 +1,97 @@
+name: Capture Generated Selector Descriptor Recovery Once
+
+on:
+  push:
+    branches:
+      - hardening/v17-capture-generated-selector-descriptor-custody-sol-20260814
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-generated-selector-descriptor-recovery-once
+  cancel-in-progress: false
+
+env:
+  EXACT_PARENT: ff169cf7400d67d421a451d6d0d1d860353bf9e0
+  TARGET_BRANCH: hardening/v17-capture-generated-selector-descriptor-custody-sol-20260814
+  AUTHORING_WORKFLOW: .github/workflows/capture-generated-selector-descriptor-materialize-once.yml
+  RECOVERY_WORKFLOW: .github/workflows/capture-generated-selector-descriptor-recovery-once.yml
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$AUTHORING_WORKFLOW" "$RECOVERY_WORKFLOW" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Execute corrected embedded materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path(".github/workflows/capture-generated-selector-descriptor-materialize-once.yml").read_text()
+          start = "          python3 - <<'PY'\n"
+          end = "\n          PY\n"
+          if source.count(start) != 1:
+              raise SystemExit("expected exactly one embedded materializer")
+          body = source.split(start, 1)[1]
+          if end not in body:
+              raise SystemExit("embedded materializer terminator missing")
+          body = body.split(end, 1)[0]
+          lines = [line[10:] if line.startswith("          ") else line for line in body.splitlines()]
+          script = "\n".join(lines) + "\n"
+          old = 'copy_start = source.index("def _copy_subject(")'
+          new = 'copy_start = source.rindex("def _copy_subject(", 0, stage_start)'
+          if script.count(old) != 1:
+              raise SystemExit("copy-selector recovery patch shape changed")
+          script = script.replace(old, new, 1)
+          Path("/tmp/nembra-generated-selector-materialize.py").write_text(script)
+          PY
+          python3 -B /tmp/nembra-generated-selector-materialize.py
+          git diff --check
+
+      - name: Run complete accepted-input regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -B -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          grep -Fq 'dir_fd=current' scripts/ci/capture_accepted_build_input_snapshot.py
+          grep -Fq '_copy_subject_from_root_descriptor' scripts/ci/capture_accepted_build_input_snapshot.py
+          grep -Fq 'test_unadmitted_generated_ancestor_symlink_is_rejected' scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Publish clean two-file repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$AUTHORING_WORKFLOW" "$RECOVERY_WORKFLOW"
+          actual="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"
+          git config user.name "nembra-capture-authority-bot"
+          git config user.email "nembra-capture-authority-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): pin generated selectors to held root"
+          git push origin "HEAD:$TARGET_BRANCH"
+          echo 'NEMBRA_GENERATED_SELECTOR_DESCRIPTOR_RECOVERY productChanged=true exploit3409Closed=true temporaryWorkflowsRetired=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false'
