@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.18,
+        "similarity": 0.196,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3314": {
@@ -1118,7 +1118,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3317,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.304,
+        "similarity": 0.419,
         "title": "[Capture P0][VALIDATION] Probe APFS sparse-image backing-file custody"
       },
       "3320": {
@@ -1154,17 +1154,6 @@
         "similarity": 0.0,
         "title": "[Capture P0][VALIDATION] Repair exact private-guard current contract"
       },
-      "3331": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "78e57b657a0589e5fad033b88a10d8fdc8a1f98c",
-        "lane": "capture-standalone-runtime-visual-evidence",
-        "pr": 3331,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.367,
-        "title": "[Capture P0][VALIDATION] Reject blank light visual evidence on ba615 recovery"
-      },
       "3332": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -1195,7 +1184,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.376,
+        "similarity": 0.0,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1208,6 +1197,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.271,
         "title": "[Capture P0][RED TEAM] Preserve exact private guard execution through selected-Xcode composition"
+      },
+      "3336": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "f367993a45520870a74b71afdf1f525897552330",
+        "lane": "capture-signed-install-custody",
+        "pr": 3336,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.421,
+        "title": "[Capture P0][VALIDATION] Prove root-sealed APFS backing preserves mount authority"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1240,9 +1240,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:00:16Z",
+    "liveRefreshAt": "2026-08-15T00:00:36Z",
     "liveRefreshDuplicatesSuppressed": [
-      3335
+      3336
     ],
     "liveRefreshMainSHA": "cb339e500ccf7b164dcc72452368e1aa22720e35",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5025,10 +5025,10 @@
       "userValue": 7
     }
   },
-  "revision": 333,
+  "revision": 334,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:00:16Z",
+  "updatedAt": "2026-08-15T00:00:36Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5104,7 +5104,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:00:16Z",
+      "updatedAt": "2026-08-15T00:00:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
