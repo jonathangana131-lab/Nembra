@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 37,
+    "classifiedPRTotal": 36,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1440,17 +1440,6 @@
         "similarity": 0.407,
         "title": "[Capture P0][RED TEAM] Reject mutable snapshot module under root custody"
       },
-      "3414": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c66c7fcfa318b70d1722e5392264e3c2d34ac97e",
-        "lane": "capture-signed-install-custody",
-        "pr": 3414,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.503,
-        "title": "[Capture P0][REPAIR] Bind generated selectors and tracked namespace"
-      },
       "3415": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1459,7 +1448,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3415,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.435,
+        "similarity": 0.385,
         "title": "[Capture P0][REPAIR] Hold generated private selectors by descriptor"
       },
       "3416": {
@@ -1504,7 +1493,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:37:15Z",
+    "liveRefreshAt": "2026-08-15T03:37:55Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5289,10 +5278,10 @@
       "userValue": 7
     }
   },
-  "revision": 555,
+  "revision": 556,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:37:16Z",
+  "updatedAt": "2026-08-15T03:37:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5368,7 +5357,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:37:15Z",
+      "updatedAt": "2026-08-15T03:37:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
