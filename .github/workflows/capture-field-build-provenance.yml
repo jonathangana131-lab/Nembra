@@ -176,7 +176,6 @@ jobs:
           grep -Fq 'INFOPLIST_KEY_NembraCaptureBuildIdentifier = "$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)";' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";' "$project"
           grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";' "$project"
-
           grep -Fq 'static let buildIdentifierInfoKey = "NembraCaptureBuildIdentifier"' "$identity"
           grep -Fq 'static let sourceCommitSHAInfoKey = "NembraCaptureSourceCommitSHA"' "$identity"
           grep -Fq 'static let tuyaDependencyLockSHA256InfoKey = "NembraCaptureTuyaDependencyLockSHA256"' "$identity"
@@ -205,14 +204,15 @@ jobs:
           dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
           label="capture-v14-${sha:0:12}"
-          rm -rf /tmp/NembraCaptureProvenanceDerived
+          derived_data="$(mktemp -d "${RUNNER_TEMP:?RUNNER_TEMP is required}/NembraCaptureProvenanceDerived.XXXXXX")"
+          trap 'rm -rf -- "$derived_data"' EXIT
           xcodebuild \
             -project NembraCapture.xcodeproj \
             -scheme 'Nembra Capture' \
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath /tmp/NembraCaptureProvenanceDerived \
+            -derivedDataPath "$derived_data" \
             CODE_SIGNING_ALLOWED=NO \
             NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
             NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
@@ -220,7 +220,7 @@ jobs:
             INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
             build
 
-          plist='/tmp/NembraCaptureProvenanceDerived/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist'
+          plist="$derived_data/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist"
           test -f "$plist"
           test "$(plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
           test "$(plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
