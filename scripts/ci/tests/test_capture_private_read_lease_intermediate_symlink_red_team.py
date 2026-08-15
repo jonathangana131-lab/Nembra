@@ -12,7 +12,6 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
-import shutil
 import tempfile
 import unittest
 
@@ -46,8 +45,6 @@ class CapturePrivateReadLeaseIntermediateSymlinkRedTeam(unittest.TestCase):
             (trusted_build / "trusted.txt").write_text("trusted", encoding="utf-8")
             (external_build / "attacker.txt").write_text("attacker", encoding="utf-8")
 
-            # This models the earlier planning/ancestry phase seeing the legitimate
-            # directory chain before the same-UID actor swaps an intermediate component.
             planned = production._lease_paths((trusted_build,), repository)
             self.assertTrue(any(path == trusted_build for path, _ in planned))
 
@@ -61,8 +58,9 @@ class CapturePrivateReadLeaseIntermediateSymlinkRedTeam(unittest.TestCase):
                 self.assertTrue(is_directory)
                 opened = os.fstat(descriptor)
                 external = external_build.stat()
+                original = (parked / "Build").stat()
                 self.assertEqual((opened.st_dev, opened.st_ino), (external.st_dev, external.st_ino))
-                self.assertNotEqual((opened.st_dev, opened.st_ino), (parked / "Build").stat()[:2])
+                self.assertNotEqual((opened.st_dev, opened.st_ino), (original.st_dev, original.st_ino))
             finally:
                 if descriptor >= 0:
                     os.close(descriptor)
