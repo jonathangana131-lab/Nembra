@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 19,
+    "classifiedPRTotal": 18,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1085,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.196,
+        "similarity": 0.18,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3316": {
@@ -1164,17 +1164,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.405,
         "title": "[Capture P0][RED TEAM] Preserve exact private guard execution through selected-Xcode composition"
-      },
-      "3336": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "f367993a45520870a74b71afdf1f525897552330",
-        "lane": "capture-signed-install-custody",
-        "pr": 3336,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.433,
-        "title": "[Capture P0][VALIDATION] Prove root-sealed APFS backing preserves mount authority"
       },
       "3337": {
         "classification": "validation",
@@ -1272,7 +1261,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3348,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.407,
+        "similarity": 0.321,
         "title": "[Capture P0][RED TEAM] Pin APFS backing-file production seal"
       }
     },
@@ -1306,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:10:19Z",
+    "liveRefreshAt": "2026-08-15T00:10:40Z",
     "liveRefreshDuplicatesSuppressed": [
       3348
     ],
@@ -5091,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 366,
+  "revision": 367,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:10:20Z",
+  "updatedAt": "2026-08-15T00:10:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:10:19Z",
+      "updatedAt": "2026-08-15T00:10:40Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
