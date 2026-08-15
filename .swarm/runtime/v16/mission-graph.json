@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 22,
+    "classifiedPRTotal": 23,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1261,7 +1261,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3348,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.322,
+        "similarity": 0.371,
         "title": "[Capture P0][RED TEAM] Pin APFS backing-file production seal"
       },
       "3349": {
@@ -1307,6 +1307,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.098,
         "title": "[Capture P0][ACCESSIBILITY] Compose validated AX5 lock VoiceOver priority"
+      },
+      "3353": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "c2211115ccc1bbe8a5dedff1544f1de73277c65d",
+        "lane": "capture-signed-install-custody",
+        "pr": 3353,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.38,
+        "title": "[Capture P0][SECURITY] Seal APFS backing before writable attach"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1339,7 +1350,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:16:59Z",
+    "liveRefreshAt": "2026-08-15T00:17:16Z",
     "liveRefreshDuplicatesSuppressed": [
       3351
     ],
@@ -5124,10 +5135,10 @@
       "userValue": 7
     }
   },
-  "revision": 383,
+  "revision": 384,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:17:00Z",
+  "updatedAt": "2026-08-15T00:17:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5203,7 +5214,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:16:59Z",
+      "updatedAt": "2026-08-15T00:17:16Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
