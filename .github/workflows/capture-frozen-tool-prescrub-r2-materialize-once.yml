@@ -1,0 +1,127 @@
+name: Capture Frozen Tool Pre-Scrub Recovery Materializer
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-frozen-tool-prescrub-r2-sol-20260814
+    paths:
+      - .github/workflows/capture-frozen-tool-prescrub-r2-materialize-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-frozen-tool-prescrub-r2-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 14017c3076270fc25983b01620466b41e3f33af3
+  SELF: .github/workflows/capture-frozen-tool-prescrub-r2-materialize-once.yml
+  INSTALLER: scripts/field/install_one_time_capture.command
+  HANDOFF_TEST: scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+  ORCHESTRATOR_TEST: scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+
+jobs:
+  materialize:
+    name: Pre-scrub frozen device-tool process image
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact recovery parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = "$SELF"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize bounded production repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          installer = Path("scripts/field/install_one_time_capture.command")
+          source = installer.read_text(encoding="utf-8")
+          old = (
+              '    /usr/bin/env -i \\\n'
+              '        PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n'
+              '        HOME=/tmp \\\n'
+              '        TMPDIR=/tmp \\\n'
+              '        LANG=C \\\n'
+              '        LC_ALL=C \\\n'
+              '        DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\\n'
+              '        "$tool" "$@"\n'
+          )
+          new = (
+              '    (\n'
+              '        # `exec -c` is a Bash builtin, so the first external image starts\n'
+              '        # with an empty environment before dyld can consume caller DYLD_* state.\n'
+              '        exec -c /usr/bin/env -i \\\n'
+              '            PATH=/usr/bin:/bin:/usr/sbin:/sbin \\\n'
+              '            HOME=/tmp \\\n'
+              '            TMPDIR=/tmp \\\n'
+              '            LANG=C \\\n'
+              '            LC_ALL=C \\\n'
+              '            DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\\n'
+              '            "$tool" "$@"\n'
+              '    )\n'
+          )
+          if source.count(old) != 1:
+              raise SystemExit(f"installer frozen-tool trampoline anchor count={source.count(old)}")
+          installer.write_text(source.replace(old, new), encoding="utf-8")
+
+          for raw in (
+              "scripts/ci/tests/test_capture_frozen_device_tool_handoff.py",
+              "scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py",
+          ):
+              path = Path(raw)
+              test_source = path.read_text(encoding="utf-8")
+              old_assertion = "            '/usr/bin/env -i',"
+              new_assertion = "            'exec -c /usr/bin/env -i',"
+              if test_source.count(old_assertion) != 1:
+                  raise SystemExit(f"{raw} installer assertion anchor count={test_source.count(old_assertion)}")
+              path.write_text(test_source.replace(old_assertion, new_assertion), encoding="utf-8")
+          PY
+
+          /bin/bash -n "$INSTALLER"
+          /bin/bash -c 'help exec' | grep -Fq -- '-c'
+          grep -Fq 'exec -c /usr/bin/env -i' "$INSTALLER"
+          grep -Fq 'export DYLD_INSERT_LIBRARIES=/tmp/attacker.dylib' "$HANDOFF_TEST"
+          grep -Fq 'export DYLD_INSERT_LIBRARIES=/tmp/attacker.dylib' "$ORCHESTRATOR_TEST"
+          /usr/bin/python3 -B -m py_compile "$HANDOFF_TEST" "$ORCHESTRATOR_TEST"
+          /usr/bin/python3 -B -I "$HANDOFF_TEST"
+          /usr/bin/python3 -B -I "$ORCHESTRATOR_TEST"
+          git diff --check
+
+      - name: Publish exact three-path recovery
+        shell: bash
+        env:
+          HEAD_REF: repair/v17-capture-frozen-tool-prescrub-r2-sol-20260814
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$INSTALLER" "$HANDOFF_TEST" "$ORCHESTRATOR_TEST" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git add "$INSTALLER" "$HANDOFF_TEST" "$ORCHESTRATOR_TEST"
+          git diff --cached --check
+          git commit -m 'capture: scrub frozen tool environment before external exec'
+          git rm "$SELF"
+          git commit -m 'capture: remove frozen-tool pre-scrub recovery materializer'
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$INSTALLER" "$HANDOFF_TEST" "$ORCHESTRATOR_TEST" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git push origin "HEAD:$HEAD_REF"
