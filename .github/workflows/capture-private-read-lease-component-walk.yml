@@ -5,6 +5,7 @@ on:
     paths:
       - scripts/ci/capture_selected_xcode_build_orchestrator.py
       - scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+      - scripts/ci/tests/test_capture_private_read_lease_held_symlink_policy.py
       - .github/workflows/capture-private-read-lease-component-walk.yml
   workflow_dispatch:
 
@@ -16,13 +17,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Exact acceptance covers both no-follow traversal and plan-to-open object identity continuity.
-  EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be
+  # Exact acceptance extends the held-descriptor serial head with descriptor-bound symlink policy.
+  EXACT_PARENT: 474507966619ce39288b20de29066711088cd986
   PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
   component-walk:
-    name: Prove no-follow component-anchored lease admission
+    name: Prove held-generation private lease admission
     strategy:
       fail-fast: false
       matrix:
@@ -47,10 +48,19 @@ jobs:
           expected="$(printf '%s\n' \
             .github/workflows/capture-private-read-lease-component-walk.yml \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_private_read_lease_held_symlink_policy.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Use canonical Darwin temporary root for no-follow fixtures
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d /private/tmp
+          test ! -L /private/tmp
+          echo "TMPDIR=/private/tmp" >> "$GITHUB_ENV"
 
       - name: Compile component-walk sources without artifacts
         shell: bash
@@ -61,10 +71,17 @@ jobs:
           for raw in (
               "scripts/ci/capture_selected_xcode_build_orchestrator.py",
               "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
+              "scripts/ci/tests/test_capture_private_read_lease_held_symlink_policy.py",
           ):
               path = Path(raw)
               compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
           PY
+
+      - name: Prove held-generation symlink policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_held_symlink_policy.py
 
       - name: Prove component-walk behavior
         shell: bash
@@ -100,4 +117,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "NEMBRA_COMPONENT_WALK_BOUNDARY productionLeaseChanged=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
+          echo "NEMBRA_COMPONENT_WALK_BOUNDARY productionLeaseChanged=true heldSymlinkPolicy=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
