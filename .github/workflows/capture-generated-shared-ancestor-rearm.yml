@@ -107,6 +107,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          exec > >(tee /tmp/nembra-shared-ancestor-publish.log) 2>&1
           git rm \
             .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml \
             .github/workflows/capture-generated-shared-ancestor-rearm.yml
@@ -125,3 +126,12 @@ jobs:
           git config user.email "nembra-capture-swarm@users.noreply.github.com"
           git commit -m "security(capture): hold shared generated selector ancestors"
           git push origin HEAD:recovery/v17-capture-shared-ancestor-rearm-indent-sol-20260815
+
+      - name: Retain publication diagnostic
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-generated-shared-ancestor-publish-${{ github.sha }}
+          path: /tmp/nembra-shared-ancestor-publish.log
+          if-no-files-found: ignore
+          retention-days: 7
