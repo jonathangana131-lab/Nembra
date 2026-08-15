@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 36,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.101,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.117,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1338,7 +1338,7 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3366,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.0,
+        "similarity": 0.084,
         "title": "[Dashboard V17] Re-anchor physical Energy Rail unavailable state on current main"
       },
       "3368": {
@@ -1360,7 +1360,7 @@
         "lane": "capture-build-authority-validation",
         "pr": 3369,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.233,
         "title": "[Capture P0][VALIDATION] Repair provenance guard dataclass loader"
       },
       "3370": {
@@ -1382,19 +1382,8 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3371,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.444,
+        "similarity": 0.313,
         "title": "[Capture P0][AX RUNTIME] Re-anchor Standard + AX5 VoiceOver to 2b7d"
-      },
-      "3372": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-runtime-accessibility",
-        "pr": 3372,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.452,
-        "title": "[Capture P0][ACCESSIBILITY][VALIDATION] Re-anchor AX5 VoiceOver matrix to ab2d"
       },
       "3373": {
         "classification": "requires-review",
@@ -1415,7 +1404,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3374,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.48,
+        "similarity": 0.413,
         "title": "[Capture P0][SECURITY][VALIDATION] Prove real-directory lease replacement gap"
       },
       "3375": {
@@ -1426,30 +1415,8 @@
         "lane": "capture-private-read-lease",
         "pr": 3375,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.479,
+        "similarity": 0.409,
         "title": "[Capture P0][RED TEAM] Reject real-directory replacement after lease planning"
-      },
-      "3376": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3376,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.483,
-        "title": "[Capture P0][RED TEAM] Pin plan-to-grant real-directory replacement"
-      },
-      "3377": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3377,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.498,
-        "title": "[Capture P0][RED TEAM] Prove real-directory read-lease replacement race"
       },
       "3378": {
         "classification": "requires-review",
@@ -1461,6 +1428,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.509,
         "title": "[Capture P0][TEST][RECOVERY] Re-anchor dedicated frozen-device DYLD witness"
+      },
+      "3379": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3379,
+        "recommendedAction": "independent-review",
+        "similarity": 0.25,
+        "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1493,7 +1471,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:01:34Z",
+    "liveRefreshAt": "2026-08-15T03:01:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5278,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 460,
+  "revision": 461,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:01:35Z",
+  "updatedAt": "2026-08-15T03:01:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5357,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:01:34Z",
+      "updatedAt": "2026-08-15T03:01:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
