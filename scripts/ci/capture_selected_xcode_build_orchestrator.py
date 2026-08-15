@@ -198,6 +198,226 @@ def _subject_entries(subject: Path, *, include_signatures: bool = False) -> tupl
     return tuple(entries)
 
 
+def _held_entry_metadata(parent_descriptor: int, name: str) -> os.stat_result:
+    if not name or name in (".", "..") or os.sep in name:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease held entry name is unsafe"
+        )
+    if os.stat not in os.supports_dir_fd or os.stat not in os.supports_follow_symlinks:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease held symlink policy requires descriptor-relative lstat support"
+        )
+    try:
+        return os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+    except OSError as error:
+        raise SelectedXcodeBuildOrchestratorError(
+            f"private read-lease held entry is unavailable: {name}"
+        ) from error
+
+
+def _held_readlink(parent_descriptor: int, name: str) -> str:
+    if os.readlink not in os.supports_dir_fd:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease held symlink policy requires descriptor-relative readlink support"
+        )
+    try:
+        target = os.readlink(name, dir_fd=parent_descriptor)
+    except OSError as error:
+        raise SelectedXcodeBuildOrchestratorError(
+            f"private read-lease held symlink could not be read: {name}"
+        ) from error
+    if not isinstance(target, str) or not target:
+        raise SelectedXcodeBuildOrchestratorError(
+            f"private read-lease held symlink has an invalid target: {name}"
+        )
+    return target
+
+
+def _held_directory_generation(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IFMT(metadata.st_mode),
+        int(metadata.st_ctime_ns),
+        int(metadata.st_mtime_ns),
+    )
+
+
+def _held_symlink_generation(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IFMT(metadata.st_mode),
+        int(metadata.st_ctime_ns),
+        int(metadata.st_mtime_ns),
+        int(metadata.st_size),
+    )
+
+
+def _normalize_held_symlink_target(
+    link_parts: tuple[str, ...],
+    raw_target: str,
+    link_label: Path,
+) -> tuple[str, ...]:
+    target = Path(raw_target)
+    if target.is_absolute():
+        raise SelectedXcodeBuildOrchestratorError(
+            f"private read-lease symlink escaped its held subject: {link_label}"
+        )
+    normalized = list(link_parts[:-1])
+    for component in target.parts:
+        if component in ("", "."):
+            continue
+        if component == "..":
+            if not normalized:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease symlink escaped its held subject: {link_label}"
+                )
+            normalized.pop()
+            continue
+        if os.sep in component:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease symlink target has an unsafe component: {link_label}"
+            )
+        normalized.append(component)
+    return tuple(normalized)
+
+
+def _resolve_held_symlink_target(
+    target_parts: tuple[str, ...],
+    *,
+    real_entries: dict[tuple[str, ...], bool],
+    symlinks: dict[tuple[str, ...], str],
+    subject: Path,
+) -> None:
+    pending = list(target_parts)
+    resolved: list[str] = []
+    hops = 0
+    while pending:
+        component = pending.pop(0)
+        resolved.append(component)
+        key = tuple(resolved)
+        if key in symlinks:
+            hops += 1
+            if hops > 64:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"private read-lease held symlink chain is cyclic or too deep: {subject.joinpath(*key)}"
+                )
+            replacement = _normalize_held_symlink_target(
+                key,
+                symlinks[key],
+                subject.joinpath(*key),
+            )
+            pending = [*replacement, *pending]
+            resolved = []
+            continue
+        is_directory = real_entries.get(key)
+        if is_directory is None:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held symlink target is unavailable inside its subject: {subject.joinpath(*key)}"
+            )
+        if pending and not is_directory:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held symlink traversed a non-directory target: {subject.joinpath(*key)}"
+            )
+
+
+def _subject_entries_from_descriptor(subject: Path, subject_descriptor: int) -> tuple:
+    """Classify one private subject through its already-held generation."""
+    root_metadata = os.fstat(subject_descriptor)
+    root_signature = _descriptor_signature(subject_descriptor)
+    if stat.S_ISREG(root_metadata.st_mode):
+        return ((subject, False, root_signature),)
+    if not stat.S_ISDIR(root_metadata.st_mode):
+        raise SelectedXcodeBuildOrchestratorError(
+            f"private read-lease held subject has unsupported type: {subject}"
+        )
+    if os.listdir not in os.supports_fd:
+        raise SelectedXcodeBuildOrchestratorError(
+            "private read-lease held symlink policy requires descriptor directory enumeration"
+        )
+
+    entries: dict[tuple[str, ...], tuple[Path, bool, tuple[int, int, int]]] = {
+        (): (subject, True, root_signature)
+    }
+    real_entries: dict[tuple[str, ...], bool] = {(): True}
+    symlinks: dict[tuple[str, ...], str] = {}
+
+    def scan(directory_descriptor: int, relative: tuple[str, ...]) -> None:
+        before_directory = os.fstat(directory_descriptor)
+        try:
+            names = sorted(os.listdir(directory_descriptor))
+        except OSError as error:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held directory could not be enumerated: {subject.joinpath(*relative)}"
+            ) from error
+
+        for name in names:
+            before = _held_entry_metadata(directory_descriptor, name)
+            child_relative = (*relative, name)
+            child_path = subject.joinpath(*child_relative)
+            if stat.S_ISLNK(before.st_mode):
+                target = _held_readlink(directory_descriptor, name)
+                after = _held_entry_metadata(directory_descriptor, name)
+                if (
+                    not stat.S_ISLNK(after.st_mode)
+                    or _held_symlink_generation(before) != _held_symlink_generation(after)
+                ):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease held symlink changed while classifying: {child_path}"
+                    )
+                symlinks[child_relative] = target
+                continue
+
+            signature = _metadata_signature(before)
+            if stat.S_ISDIR(before.st_mode):
+                entries[child_relative] = (child_path, True, signature)
+                real_entries[child_relative] = True
+                child_descriptor = _open_pinned_child(
+                    directory_descriptor,
+                    name,
+                    True,
+                    signature,
+                )
+                try:
+                    scan(child_descriptor, child_relative)
+                finally:
+                    os.close(child_descriptor)
+                continue
+            if stat.S_ISREG(before.st_mode):
+                entries[child_relative] = (child_path, False, signature)
+                real_entries[child_relative] = False
+                continue
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held entry has unsupported type: {child_path}"
+            )
+
+        after_directory = os.fstat(directory_descriptor)
+        if _held_directory_generation(before_directory) != _held_directory_generation(after_directory):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held directory changed during symlink classification: {subject.joinpath(*relative)}"
+            )
+
+    scan(subject_descriptor, ())
+    for link_parts, raw_target in sorted(symlinks.items()):
+        link_label = subject.joinpath(*link_parts)
+        target_parts = _normalize_held_symlink_target(
+            link_parts,
+            raw_target,
+            link_label,
+        )
+        _resolve_held_symlink_target(
+            target_parts,
+            real_entries=real_entries,
+            symlinks=symlinks,
+            subject=subject,
+        )
+
+    return tuple(
+        entry
+        for _relative, entry in sorted(entries.items(), key=lambda item: item[0])
+    )
+
 def _lease_paths(
     subjects: Sequence[Path],
     repo: Path,
@@ -302,10 +522,22 @@ def _lease_paths(
                     )
                 admit(cursor, False, metadata)
 
-            subject_entries = _subject_entries(
-                subject,
-                include_signatures=(include_signatures or include_descriptors),
-            )
+            if include_descriptors:
+                subject_record = next(
+                    (entry for entry in ordered if len(entry) == 4 and Path(entry[0]) == subject),
+                    None,
+                )
+                if subject_record is None:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease held subject descriptor is unavailable: {subject}"
+                    )
+                subject_entries = _subject_entries_from_descriptor(
+                    subject, int(subject_record[3])
+                )
+            else:
+                subject_entries = _subject_entries(
+                    subject, include_signatures=include_signatures
+                )
             for entry in subject_entries:
                 if include_signatures or include_descriptors:
                     path, is_directory, signature = entry
