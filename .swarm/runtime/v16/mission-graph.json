@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 42,
+    "classifiedPRTotal": 43,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.27,
+        "similarity": 0.402,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3434": {
@@ -1514,7 +1514,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.255,
+        "similarity": 0.308,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1527,6 +1527,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.352,
         "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
+      },
+      "3439": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3439,
+        "recommendedAction": "independent-review",
+        "similarity": 0.386,
+        "title": "[Capture P0][HARDENING] Close shared-ancestor cache-dup child FD on failure"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1559,7 +1570,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:23:21Z",
+    "liveRefreshAt": "2026-08-15T11:23:36Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5344,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 631,
+  "revision": 632,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:23:23Z",
+  "updatedAt": "2026-08-15T11:23:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:23:21Z",
+      "updatedAt": "2026-08-15T11:23:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
