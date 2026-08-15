@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.043,
+        "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1316,7 +1316,7 @@
         "lane": "capture-flagship-convergence",
         "pr": 3387,
         "recommendedAction": "independent-review",
-        "similarity": 0.077,
+        "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
       "3388": {
@@ -1327,7 +1327,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3388,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.05,
+        "similarity": 0.0,
         "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
       },
       "3394": {
@@ -1349,7 +1349,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3395,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.08,
+        "similarity": 0.0,
         "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
       },
       "3398": {
@@ -1385,17 +1385,6 @@
         "similarity": 0.336,
         "title": "[Capture P0][SECURITY][SERIAL] Hold private lease descriptors through planning"
       },
-      "3407": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3407,
-        "recommendedAction": "independent-review",
-        "similarity": 0.18,
-        "title": "[Capture P0][AUTHORING] Execute held-descriptor materializer"
-      },
       "3408": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1406,6 +1395,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.323,
         "title": "[Capture P0][VALIDATION] Replay canonical generation split on held-descriptor product"
+      },
+      "3409": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3409,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.218,
+        "title": "[Capture P0][RED TEAM] Reject unadmitted LocalSecrets ancestor escape"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1438,9 +1438,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:26:37Z",
+    "liveRefreshAt": "2026-08-15T03:27:00Z",
     "liveRefreshDuplicatesSuppressed": [
-      3359
+      3409
     ],
     "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5223,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 536,
+  "revision": 537,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:26:38Z",
+  "updatedAt": "2026-08-15T03:27:01Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5302,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:26:37Z",
+      "updatedAt": "2026-08-15T03:27:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
