@@ -19,16 +19,15 @@ struct BatteryRangeAccessibilityLauncherClearanceSourceTests {
         let source = try readRepositoryFile("NembraApp/Features/Home/VehicleControlsView.swift")
         let view = try batteryRangeViewSection(in: source)
 
-        guard let scrollEnd = view.range(of: "        }\n        .background") else {
-            Issue.record("BatteryRangeView ScrollView boundary was not found")
+        guard let contentTail = view.range(of: ".safeAreaPadding(.bottom, 36)"),
+              let viewportModifier = view.range(
+                of: "\n        }\n        .padding(.bottom, persistentNavigationViewportClearance)"
+              ) else {
+            Issue.record("BatteryRangeView viewport-clearance boundary was not found")
             throw SourceContractError.sectionMissing
         }
 
-        let scrollBody = view[..<scrollEnd.lowerBound]
-        let outerModifiers = view[scrollEnd.lowerBound...]
-
-        #expect(!scrollBody.contains(".padding(.bottom, persistentNavigationViewportClearance)"))
-        #expect(outerModifiers.contains(".padding(.bottom, persistentNavigationViewportClearance)"))
+        #expect(contentTail.upperBound < viewportModifier.lowerBound)
     }
 
     private func batteryRangeViewSection(in source: String) throws -> Substring {
