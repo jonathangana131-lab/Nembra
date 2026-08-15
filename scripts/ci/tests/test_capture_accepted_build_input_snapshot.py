@@ -168,6 +168,22 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
             with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
                 snapshot.stage_accepted_build_inputs(root, source_sha, Path(raw) / "stage", accepted)
 
+    def test_tracked_ancestor_symlink_cannot_alias_generated_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            root.mkdir()
+            seed_repo(root)
+            os.symlink(".", root / "LocalSecrets")
+            git(root, "add", "LocalSecrets")
+            git(root, "commit", "-qm", "track generated ancestor alias")
+            source_sha = git(root, "rev-parse", "HEAD")
+            seed_generated(root)
+            accepted = snapshot.generated_manifest_sha256(root, source_sha)
+            destination = Path(raw) / "stage"
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
+            self.assertFalse(destination.exists())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

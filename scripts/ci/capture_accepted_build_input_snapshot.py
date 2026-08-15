@@ -343,7 +343,11 @@ def stage_accepted_build_inputs(
         raise AcceptedBuildInputSnapshotError("accepted generated-input manifest digest is malformed")
     tracked = {relative for _mode, _kind, _oid, relative in _git_tree_entries(repo, source_sha)}
     for subject in GENERATED_SUBJECTS:
-        if subject in tracked or any(path.parts[: len(subject.parts)] == subject.parts for path in tracked):
+        if any(
+            path.parts[: len(subject.parts)] == subject.parts
+            or subject.parts[: len(path.parts)] == path.parts
+            for path in tracked
+        ):
             raise AcceptedBuildInputSnapshotError(
                 f"generated build-input subject collides with accepted tracked source: {subject}"
             )
