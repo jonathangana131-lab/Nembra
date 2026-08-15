@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - scripts/ci/capture_accepted_build_input_snapshot.py
-      - scripts/ci/tests/test_capture_generated_input_casefold_alias_red_team.py
+      - scripts/ci/tests/test_capture_generated_input_casefold_alias_red-team.py
       - .github/workflows/capture-generated-input-casefold-alias-red-team.yml
   workflow_dispatch:
 
@@ -21,7 +21,7 @@ env:
 jobs:
   exploit-positive:
     name: Prove case-fold alias redirects generated inputs
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v6
@@ -34,6 +34,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$(uname -s)" = Darwin
           expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
           test "$(git rev-parse HEAD)" = "$expected_head"
           test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
