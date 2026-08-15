@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
           test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = "$SELF"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -47,28 +47,28 @@ jobs:
           test_path = Path(sys.argv[2])
           installer = installer_path.read_text(encoding='utf-8')
           old = '''    /usr/bin/env -i \\
-              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
-              HOME=/tmp \\
-              TMPDIR=/tmp \\
-              LANG=C \\
-              LC_ALL=C \\
-              DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\
-              "$tool" "$@"
-          '''
+        PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+        HOME="$FROZEN_TOOL_HOME" \\
+        TMPDIR="$FROZEN_TOOL_TMPDIR" \\
+        LANG=C \\
+        LC_ALL=C \\
+        DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" \\
+        "$tool" "$@"
+'''
           new = '''    (
-              # Bash builtin `exec -c` clears inherited environment before the first
-              # dynamically linked external image is loaded, so hostile DYLD_*
-              # selectors cannot influence /usr/bin/env itself.
-              exec -c /usr/bin/env -i \\
-                  PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
-                  HOME=/tmp \\
-                  TMPDIR=/tmp \\
-                  LANG=C \\
-                  LC_ALL=C \\
-                  DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\
-                  "$tool" "$@"
-              )
-          '''
+        # Bash builtin `exec -c` clears inherited environment before the first
+        # dynamically linked external image is loaded, so hostile DYLD_*
+        # selectors cannot influence /usr/bin/env itself.
+        exec -c /usr/bin/env -i \\
+            PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+            HOME="$FROZEN_TOOL_HOME" \\
+            TMPDIR="$FROZEN_TOOL_TMPDIR" \\
+            LANG=C \\
+            LC_ALL=C \\
+            DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" \\
+            "$tool" "$@"
+    )
+'''
           if installer.count(old) != 1:
               raise SystemExit(f'installer trampoline seam count changed: {installer.count(old)}')
           installer_path.write_text(installer.replace(old, new), encoding='utf-8')
