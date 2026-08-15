@@ -1,0 +1,196 @@
+name: Capture Read Lease Component Walk Recovery V2 Materializer
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-read-lease-component-walk-recovery-v2-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be
+  MATERIALIZER: .github/workflows/capture-read-lease-component-walk-recovery-v2-materialize.yml
+
+jobs:
+  materialize:
+    name: Materialize component-anchored lease helper
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact authoring input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-component-walk.yml \
+            "$MATERIALIZER" \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Replace vulnerable full-path descriptor open
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          source = path.read_text(encoding='utf-8')
+          old = textwrap.dedent('''\
+          def _open_pinned_path(path: Path, is_directory: bool) -> int:
+              flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+              if is_directory:
+                  flags |= getattr(os, "O_DIRECTORY", 0)
+              try:
+                  descriptor = os.open(path, flags)
+              except OSError as error:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease path could not be descriptor-pinned: {path}"
+                  ) from error
+              try:
+                  if _descriptor_signature(descriptor) != _path_signature(path):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease path changed identity while opening: {path}"
+                      )
+                  mode = os.fstat(descriptor).st_mode
+                  if is_directory != stat.S_ISDIR(mode):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease descriptor type disagrees with plan: {path}"
+                      )
+                  if not is_directory and not stat.S_ISREG(mode):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease file descriptor is not regular: {path}"
+                      )
+                  return descriptor
+              except Exception:
+                  os.close(descriptor)
+                  raise
+          ''')
+          new = textwrap.dedent('''\
+          def _open_pinned_path(path: Path, is_directory: bool) -> int:
+              """Pin every absolute-path component without following intermediate links."""
+              path = _absolute_lexical(path)
+              parts = path.parts
+              if len(parts) < 2 or parts[0] != os.sep:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease path has no admissible absolute component walk: {path}"
+                  )
+              if os.open not in os.supports_dir_fd:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "private read-lease component walk requires openat/dir_fd support"
+                  )
+              nofollow = getattr(os, "O_NOFOLLOW", 0)
+              odirectory = getattr(os, "O_DIRECTORY", 0)
+              if nofollow == 0 or odirectory == 0:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "private read-lease component walk requires O_NOFOLLOW and O_DIRECTORY"
+                  )
+
+              cloexec = getattr(os, "O_CLOEXEC", 0)
+              common = os.O_RDONLY | cloexec | nofollow
+              current = -1
+              descriptor = -1
+              try:
+                  current = os.open(os.sep, os.O_RDONLY | cloexec | odirectory)
+                  for index, component in enumerate(parts[1:]):
+                      if component in ("", ".", "..") or os.sep in component:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease path contains an unsafe component: {path}"
+                          )
+                      final = index == len(parts) - 2
+                      flags = common
+                      if not final or is_directory:
+                          flags |= odirectory
+                      try:
+                          next_descriptor = os.open(component, flags, dir_fd=current)
+                      except OSError as error:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease component could not be pinned without following links: {path}"
+                          ) from error
+                      parent_descriptor = current
+                      current = next_descriptor
+                      os.close(parent_descriptor)
+
+                  descriptor = current
+                  current = -1
+                  mode = os.fstat(descriptor).st_mode
+                  if is_directory != stat.S_ISDIR(mode):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease descriptor type disagrees with plan: {path}"
+                      )
+                  if not is_directory and not stat.S_ISREG(mode):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease file descriptor is not regular: {path}"
+                      )
+                  if _descriptor_signature(descriptor) != _path_signature(path):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease pathname changed during anchored component walk: {path}"
+                      )
+                  result = descriptor
+                  descriptor = -1
+                  return result
+              finally:
+                  if current >= 0:
+                      os.close(current)
+                  if descriptor >= 0:
+                      os.close(descriptor)
+          ''')
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one exact vulnerable helper, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Prove authoring result before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          git diff --check
+
+      - name: Publish final three-path serial hardening
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py
+          git rm "$MATERIALIZER"
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            "$MATERIALIZER" \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git commit -m 'capture: anchor private lease component traversal'
+          final="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected_final="$(printf '%s\n' \
+            .github/workflows/capture-private-read-lease-component-walk.yml \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$final" = "$expected_final"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git push origin "HEAD:$HEAD_REF"
