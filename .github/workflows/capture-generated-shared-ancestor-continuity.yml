@@ -5,6 +5,7 @@ on:
     paths:
       - scripts/ci/capture_accepted_build_input_snapshot.py
       - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+      - scripts/ci/tests/test_capture_generated_two_child_splice_regression.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
   workflow_dispatch:
 
@@ -16,11 +17,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
+  EXACT_REPAIRED_PARENT: 807f1097332435d36e8c859444b63e415b846404
+  PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
   exact-portable:
-    name: Exact generated-input continuity (${{ matrix.os }})
+    name: Replay two-child splice (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -34,21 +36,37 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind serial repair delta and run full admission regressions
+      - name: Bind exact repaired product and validation-only delta
         shell: bash
         run: |
           set -euo pipefail
           expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
           test "$(git rev-parse HEAD)" = "$expected_head"
-          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          test "$(git merge-base HEAD "$EXACT_REPAIRED_PARENT")" = "$EXACT_REPAIRED_PARENT"
+          changed="$(git diff --name-only "$EXACT_REPAIRED_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-generated-shared-ancestor-continuity.yml \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_generated_two_child_splice_regression.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
-          git diff --check "$EXACT_PARENT"...HEAD
-          export PYTHONDONTWRITEBYTECODE=1
+          git diff --check "$EXACT_REPAIRED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Require repaired two-child generation continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_two_child_splice_regression.py
+
+      - name: Preserve permanent shared-ancestor and accepted-input regressions
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Preserve validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'NEMBRA_TWO_CHILD_SPLICE_REGRESSION productParent=807f109 generationSpliceRejected=true productionBytesChanged=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false'
