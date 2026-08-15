@@ -13,6 +13,36 @@ struct TuyaFieldDependencyProvenanceSourceTests {
         #expect(installer.contains("BUILT_TUYA_DEPENDENCY_LOCK_SHA256\" == \"$TUYA_DEPENDENCY_LOCK_SHA256"))
     }
 
+    @Test("normal field bootstrap consumes preaccepted private-input provenance instead of resnapshotting it")
+    func privateInputsRequireIndependentPreacceptance() throws {
+        let bootstrap = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+        let guardSource = try readRepositoryFile("Scripts/capture_tuya_private_input_build_guard.py")
+
+        #expect(bootstrap.contains("NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256"))
+        #expect(bootstrap.contains("NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256"))
+        #expect(bootstrap.contains("pre-bootstrap private-input provenance record does not match the independently accepted SHA-256"))
+        #expect(bootstrap.contains("normal field bootstrap requires the pre-reviewed private-input provenance record"))
+        #expect(bootstrap.contains("REVIEW MODE ONLY: create a candidate record"))
+        #expect(bootstrap.contains("DEPENDENCY + PRIVATE-INPUT CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY"))
+
+        let reviewStart = try #require(bootstrap.range(of: "if [[ \"$REVIEW_ONLY\" == \"1\" ]]; then"))
+        let snapshot = try #require(bootstrap.range(of: "\"$PROVENANCE_HELPER\" snapshot"))
+        let reviewExit = try #require(bootstrap.range(of: "  exit 0", range: snapshot.upperBound..<bootstrap.endIndex))
+        #expect(reviewStart.lowerBound < snapshot.lowerBound)
+        #expect(snapshot.lowerBound < reviewExit.lowerBound)
+        #expect(bootstrap[..<reviewStart.lowerBound].range(of: "\"$PROVENANCE_HELPER\" snapshot") == nil)
+        #expect(bootstrap[reviewExit.upperBound...].range(of: "\"$PROVENANCE_HELPER\" snapshot") == nil)
+
+        #expect(installer.contains("NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256"))
+        #expect(installer.contains("record_sha\" == \"$ACCEPTED_TUYA_PROVENANCE_SHA256"))
+        #expect(installer.contains("--expected-provenance-sha256 \"$ACCEPTED_TUYA_PROVENANCE_SHA256\""))
+        #expect(installer.contains("Normal field mode cannot rebind this authority"))
+        #expect(guardSource.contains("def canonical_provenance_sha256(self) -> str"))
+        #expect(guardSource.contains("live private build inputs do not match the independently accepted provenance"))
+        #expect(guardSource.contains("--expected-provenance-sha256"))
+    }
+
     @Test("field authority requires both exact source and dependency lock fingerprints")
     func buildIdentityFailsClosedWithoutDependencyProvenance() throws {
         let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
@@ -47,7 +77,10 @@ struct TuyaFieldDependencyProvenanceSourceTests {
             "Packages/NembraBluetoothCapture/**",
             "Packages/NembraCore/**",
             "Podfile",
-            "Podfile.lock"
+            "Podfile.lock",
+            "Scripts/bootstrap_capture_tuya_sdk.sh",
+            "Scripts/capture_tuya_private_input_provenance.py",
+            "Scripts/capture_tuya_private_input_build_guard.py"
         ] {
             #expect(workflow.contains("- \(path)"))
         }
@@ -67,6 +100,7 @@ struct TuyaFieldDependencyProvenanceSourceTests {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
         let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
         #expect(installer.contains("Podfile.lock"))
+        #expect(installer.contains("ACCEPTED_TUYA_PROVENANCE_SHA256"))
         #expect(!identity.contains("AppSecret"))
         #expect(!identity.contains("local_key"))
         #expect(!identity.contains("appKeySHA"))
