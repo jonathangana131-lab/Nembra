@@ -1,0 +1,88 @@
+name: Capture Accepted Snapshot Build Group No ACL
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/capture_signed_app_build_origin_custody.py
+      - scripts/ci/tests/test_capture_accepted_snapshot_build_group_no_acl.py
+      - .github/workflows/capture-accepted-snapshot-build-group-no-acl.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-accepted-snapshot-build-group-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: db5b00fdd1bb1b234393a9190e80b817d309c0e3
+  EXACT_SNAPSHOT_HELPER_BLOB: b29cf5a7f344710515d4adec80b068c237b44db3
+
+jobs:
+  macos-group-seal:
+    name: Prove root snapshot read-only build group without ACL
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation parent and additive scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse HEAD)"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test "$actual_head" = "${{ github.event.pull_request.head.sha }}"
+            test "${{ github.event.pull_request.base.sha }}" = "$EXACT_PARENT"
+          fi
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-accepted-snapshot-build-group-no-acl.yml' \
+            'scripts/ci/tests/test_capture_accepted_snapshot_build_group_no_acl.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          test "$(git rev-parse HEAD:scripts/ci/capture_accepted_build_input_snapshot.py)" = "$EXACT_SNAPSHOT_HELPER_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Compile exact validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-snapshot-build-group-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_accepted_snapshot_build_group_no_acl.py
+
+      - name: Prove root snapshot + ephemeral build-group authority on real macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-snapshot-build-group-pycache"
+          sudo -E /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_snapshot_build_group_no_acl.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve validation-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git diff --name-only "$EXACT_PARENT"...HEAD -- scripts/field NembraApp)"
+          printf '%s\n' \
+            'acceptedSnapshotAdmission=true' \
+            'rootOwnedSnapshot=true' \
+            'ephemeralBuildGroupReadExecute=true' \
+            'buildSnapshotWriteAuthority=false' \
+            'fieldSnapshotTraverseAuthority=false' \
+            'extendedACLRequired=false' \
+            'xcodeExecutionProven=false' \
+            'installerIntegrated=false' \
+            'physicalAuthorityCreated=false'
