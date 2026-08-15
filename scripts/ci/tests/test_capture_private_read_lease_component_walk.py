@@ -7,6 +7,7 @@ import inspect
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -276,6 +277,112 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
                 for _path, _host_only, _signature, descriptor in reversed(plan):
                     os.close(int(descriptor))
 
+    def test_post_validation_retarget_is_rejected_before_acl_mutation(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-post-validate-retarget-") as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            subject = repo / "LocalSecrets/TuyaSDK/Build"
+            inside = subject / "inside"
+            inside.mkdir(parents=True)
+            (inside / "inside.fixture").write_text("inside\n", encoding="utf-8")
+            external = outer / "outside-subject"
+            external.mkdir()
+            (external / "outside.fixture").write_text("outside\n", encoding="utf-8")
+            link = subject / "escape"
+            link.symlink_to("inside", target_is_directory=True)
+
+            real_validator = helper._validate_subject_symlinks_from_descriptor
+            retargeted = False
+
+            def validate_safe_then_retarget(admitted_subject: Path, descriptor: int):
+                nonlocal retargeted
+                generations = real_validator(admitted_subject, descriptor)
+                if not retargeted:
+                    link.unlink()
+                    link.symlink_to(external, target_is_directory=True)
+                    retargeted = True
+                return generations
+
+            def unexpected_acl(_descriptor: int) -> str:
+                raise AssertionError("post-validation retarget reached ACL inspection")
+
+            lease = helper._PrivateReadLease((subject,), repo)
+            with (
+                mock.patch.object(
+                    helper,
+                    "_validate_subject_symlinks_from_descriptor",
+                    side_effect=validate_safe_then_retarget,
+                ),
+                mock.patch.object(helper, "_acl_listing", side_effect=unexpected_acl),
+            ):
+                with self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "namespace generation changed|symlink escaped|symlink target",
+                ):
+                    lease.grant("nembrapostvalidate")
+            self.assertTrue(retargeted)
+            self.assertFalse(lease._opened)
+            self.assertFalse(lease._namespace_witnesses)
+            self.assertEqual(lease._principal, "")
+
+    def test_build_window_symlink_retarget_restore_invalidates_after_cleanup(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-build-window-retarget-") as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            subject = repo / "LocalSecrets/TuyaSDK/Build"
+            inside = subject / "inside"
+            inside.mkdir(parents=True)
+            (inside / "inside.fixture").write_text("inside\n", encoding="utf-8")
+            external = outer / "outside-subject"
+            external.mkdir()
+            link = subject / "escape"
+            link.symlink_to("inside", target_is_directory=True)
+
+            acl_state: dict[int, str] = {}
+
+            def fake_acl_listing(descriptor: int) -> str:
+                return acl_state.get(descriptor, "")
+
+            def fake_chmod_acl(descriptor: int, operation: str, acl: str) -> None:
+                if operation == "+a":
+                    acl_state[descriptor] = f"0: {acl}"
+                elif operation == "-a":
+                    acl_state[descriptor] = ""
+                else:
+                    raise AssertionError(f"unexpected ACL operation: {operation}")
+
+            lease = helper._PrivateReadLease((subject,), repo)
+            with (
+                mock.patch.object(helper, "_acl_listing", side_effect=fake_acl_listing),
+                mock.patch.object(helper, "_chmod_acl", side_effect=fake_chmod_acl),
+            ):
+                lease.grant("nembralifetime")
+                self.assertTrue(lease._opened)
+                self.assertTrue(lease._namespace_witnesses)
+
+                # Retarget and restore the exact pathname before revoke. A
+                # final pathname reread would see the safe text again; the
+                # held parent-directory generation must still remember it.
+                time.sleep(0.01)
+                link.unlink()
+                link.symlink_to(external, target_is_directory=True)
+                link.unlink()
+                link.symlink_to("inside", target_is_directory=True)
+
+                with self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "namespace changed during guarded build",
+                ):
+                    lease.revoke()
+
+            self.assertTrue(all(value == "" for value in acl_state.values()))
+            self.assertFalse(lease._opened)
+            self.assertFalse(lease._namespace_witnesses)
+            self.assertEqual(lease._principal, "")
+            self.assertEqual(link.readlink(), Path("inside"))
+
     def test_held_descriptor_prevents_inode_reuse_after_admission(self) -> None:
         helper = load()
         with tempfile.TemporaryDirectory(prefix="nembra-component-held-inode-") as raw:
@@ -312,7 +419,10 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
         verifier = inspect.getsource(helper._verify_descriptor_plan)
         symlink_validator = inspect.getsource(helper._validate_subject_symlinks_from_descriptor)
         symlink_target = inspect.getsource(helper._validate_held_symlink_target)
+        namespace_validator = inspect.getsource(helper._validated_namespace_witnesses)
+        namespace_verifier = inspect.getsource(helper._verify_namespace_generation_witnesses)
         grant = inspect.getsource(helper._PrivateReadLease.grant)
+        revoke = inspect.getsource(helper._PrivateReadLease.revoke)
         self.assertIn("dir_fd=current", opener)
         self.assertIn("O_NOFOLLOW", opener)
         self.assertIn("include_descriptors", lease_paths)
@@ -327,6 +437,17 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
         self.assertIn("include_descriptors=True", grant)
         self.assertIn("accepted_signature, descriptor", grant)
         self.assertNotIn("include_signatures=True", grant)
+        self.assertIn("_validated_namespace_witnesses", namespace_validator)
+        self.assertIn("_verify_namespace_generation_witnesses", namespace_validator)
+        self.assertIn("namespace_witnesses_out", lease_paths)
+        self.assertIn("_validated_namespace_witnesses", lease_paths)
+        self.assertIn("_validated_namespace_witnesses", grant)
+        self.assertIn("_verify_namespace_generation_witnesses", namespace_verifier)
+        self.assertIn("_verify_namespace_generation_witnesses", revoke)
+        self.assertLess(
+            revoke.index("_verify_namespace_generation_witnesses"),
+            revoke.index("_chmod_acl"),
+        )
 
 
 if __name__ == "__main__":
