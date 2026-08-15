@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 36,
+    "classifiedPRTotal": 37,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1404,7 +1404,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3410,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.324,
+        "similarity": 0.434,
         "title": "[Capture P0][VALIDATION] Root-custody the accepted compiler-input tree"
       },
       "3411": {
@@ -1461,6 +1461,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.37,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
+      },
+      "3419": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "7900d7d1fdab3a21c51190892d11d7e4e7ef43b0",
+        "lane": "capture-signed-install-custody",
+        "pr": 3419,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.426,
+        "title": "[Capture P0][VALIDATION] Root-custody accepted build root after selector repair"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1493,9 +1504,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:40:29Z",
+    "liveRefreshAt": "2026-08-15T03:41:00Z",
     "liveRefreshDuplicatesSuppressed": [
-      3418
+      3419
     ],
     "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5278,10 +5289,10 @@
       "userValue": 7
     }
   },
-  "revision": 562,
+  "revision": 563,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:40:30Z",
+  "updatedAt": "2026-08-15T03:41:01Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5357,7 +5368,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:40:29Z",
+      "updatedAt": "2026-08-15T03:41:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
