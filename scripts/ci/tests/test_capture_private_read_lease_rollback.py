@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable rollback regression for partial private read-lease admission."""
+"""Portable rollback regressions for partial private read-lease admission."""
 
 from __future__ import annotations
 
@@ -25,16 +25,19 @@ def load():
 
 
 class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
+    def _subject(self, temporary: str) -> tuple[Path, Path]:
+        outer = Path(temporary)
+        outer.chmod(0o711)
+        repo = outer / "repo"
+        repo.mkdir(mode=0o755)
+        subject = repo / "private.fixture"
+        subject.write_bytes(b"fixture\n")
+        return repo, subject
+
     def test_failed_post_grant_verification_revokes_the_exact_acl(self) -> None:
         helper = load()
         with tempfile.TemporaryDirectory(prefix="nembra-lease-rollback-") as temporary:
-            outer = Path(temporary)
-            outer.chmod(0o711)
-            repo = outer / "repo"
-            repo.mkdir(mode=0o755)
-            subject = repo / "private.fixture"
-            subject.write_bytes(b"fixture\n")
-
+            repo, subject = self._subject(temporary)
             lease = helper._PrivateReadLease((subject,), repo)
             mutations: list[tuple[str, str]] = []
             listings = iter(("", "", ""))
@@ -55,6 +58,36 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
             self.assertEqual(len(mutations), 2)
             self.assertEqual(mutations[0][0], "+a")
             self.assertEqual(mutations[1][0], "-a")
+            self.assertEqual(mutations[0][1], mutations[1][1])
+            self.assertEqual(lease._opened, [])
+            self.assertEqual(lease._principal, "")
+
+    def test_chmod_failure_after_observable_mutation_keeps_descriptor_for_rollback(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-lease-chmod-failure-") as temporary:
+            repo, subject = self._subject(temporary)
+            lease = helper._PrivateReadLease((subject,), repo)
+            mutations: list[tuple[str, str]] = []
+            listings = iter(("before", "after-plus-a", "before"))
+
+            def fake_listing(_descriptor: int) -> str:
+                return next(listings)
+
+            def fake_chmod(_descriptor: int, operation: str, acl: str) -> None:
+                mutations.append((operation, acl))
+                if operation == "+a":
+                    raise helper.SelectedXcodeBuildOrchestratorError(
+                        "simulated chmod error after kernel mutation"
+                    )
+
+            with (
+                mock.patch.object(helper, "_acl_listing", side_effect=fake_listing),
+                mock.patch.object(helper, "_chmod_acl", side_effect=fake_chmod),
+                self.assertRaises(helper.SelectedXcodeBuildOrchestratorError),
+            ):
+                lease.grant("nembrabuildrollback")
+
+            self.assertEqual([operation for operation, _acl in mutations], ["+a", "-a"])
             self.assertEqual(mutations[0][1], mutations[1][1])
             self.assertEqual(lease._opened, [])
             self.assertEqual(lease._principal, "")
