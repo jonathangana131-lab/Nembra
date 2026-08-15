@@ -106,7 +106,7 @@ jobs:
           git add "$INSTALLER" "$HANDOFF_TEST" "$ORCHESTRATOR_TEST"
           git diff --cached --check
           git commit -m 'capture: scrub frozen tool environment before external exec'
-          git rm "$SELF"
+          git rm -f "$SELF"
           git commit -m 'capture: remove frozen-tool pre-scrub recovery materializer'
           actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' "$INSTALLER" "$HANDOFF_TEST" "$ORCHESTRATOR_TEST" | LC_ALL=C sort)"
