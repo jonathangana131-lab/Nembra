@@ -58,11 +58,22 @@ struct RollingSpeedValueView: View {
                         value: fallbackText
                     )
             } else {
-                Text("—")
+                unavailableMark
             }
         } else {
-            Text("—")
+            unavailableMark
         }
+    }
+
+    /// Unavailable speed is a designed machine state, not an enormous number-shaped
+    /// placeholder. Keep the mark optically subordinate to the explicit
+    /// `NO LIVE SPEED` authority while preserving a stable text baseline beside the
+    /// configured unit. The mark is presentation only; VoiceOver consumes the
+    /// parent instrument's semantic `Unavailable` value instead.
+    private var unavailableMark: some View {
+        Text("–")
+            .font(.system(size: 82, weight: .light, design: .rounded))
+            .foregroundStyle(Color.white.opacity(0.62))
     }
 
     /// Each fixed digit slot owns its own brief roll so an unchanged column does

@@ -312,10 +312,11 @@ private struct DashboardEnergyRailVisualState: Equatable {
 /// The only positive input is `VehicleStore.simulatorPowerStoreProjection`, which
 /// already joins an exact source-owned Simulator receipt with aggregate transport
 /// currentness. This model copies that immutable receipt into NembraCore's explicit
-/// Simulator factory, then consumes the canonical cockpit projection so numeric watts
-/// remain accepted measurement truth while rail geometry alone uses the display clock.
-/// It has no production measurement factory and no path back into vehicle state,
-/// persistence, rides, battery learning, protocol evidence, or physical ES80 claims.
+/// Simulator factory, then consumes NembraCore's canonical Energy Rail projection.
+/// The typed cockpit measurement is still rebound to the exact Store receipt before
+/// accepted watts can escape this model. It has no production measurement factory and
+/// no path back into vehicle state, persistence, rides, battery learning, protocol
+/// evidence, or physical ES80 claims.
 @MainActor
 @Observable
 private final class DashboardEnergyRailModel {
@@ -441,7 +442,9 @@ private final class DashboardEnergyRailModel {
             atUptimeNanoseconds: uptimeNanoseconds,
             scale: scale
         )
-        guard snapshot.identity == gauge.identity else {
+        let rail = snapshot.energyRailPresentation
+        guard snapshot.identity == gauge.identity,
+              rail.identity == gauge.identity else {
             return .unavailable
         }
 
@@ -464,18 +467,18 @@ private final class DashboardEnergyRailModel {
             return .unavailable
         }
 
-        switch snapshot.measurement {
+        switch rail.currentness {
         case .unavailable:
             return .unavailable
 
         case .retained:
-            // NembraCore is allowed to be more conservative than Store truth. A
-            // package freshness demotion never gets promoted back to LIVE here.
+            // NembraCore may be more conservative than Store truth. Preserve its
+            // typed retained state rather than promoting it back to LIVE.
             guard let accepted = validatedAcceptedMeasurement(
                 snapshot.measurement,
                 receipt: receipt,
                 expectedIdentity: gauge.identity
-            ) else {
+            ), rail.acceptedWatts == accepted.watts else {
                 return .unavailable
             }
             return DashboardEnergyRailVisualState(
@@ -489,15 +492,15 @@ private final class DashboardEnergyRailModel {
                 snapshot.measurement,
                 receipt: receipt,
                 expectedIdentity: gauge.identity
-            ) else {
+            ), rail.acceptedWatts == accepted.watts else {
                 return .unavailable
             }
 
             let railFraction = prefersReducedMotion
                 ? acceptedTargetFraction(accepted.watts, ceilingWatts: scale.ceilingWatts)
-                : sanitizedFraction(snapshot.visualPropulsionFraction)
+                : rail.railFraction
 
-            if railFraction != nil, snapshot.scaleOrigin != .simulator {
+            if railFraction != nil, rail.scaleOrigin != .simulator {
                 return .unavailable
             }
 
@@ -673,11 +676,6 @@ private final class DashboardEnergyRailModel {
         cancelScheduledWakes()
         rejectedCurrentReceipt = true
         revision &+= 1
-    }
-
-    private func sanitizedFraction(_ value: Double?) -> Double? {
-        guard let value, value.isFinite, value >= 0, value <= 1 else { return nil }
-        return value
     }
 
     /// Reduce Motion uses a stable Simulator presentation target rather than a
@@ -878,9 +876,9 @@ private struct DashboardEnergyRailView: View {
 ///
 /// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
 /// ride detection, persistence, distance, and safety continue to consume the
-/// accepted domain/source state rather than rendered interpolation frames. The
-/// Energy Rail is additionally capability-gated to the exact Simulator power
-/// source; current physical ES80 builds therefore cannot manufacture a watt value.
+/// accepted domain/source state rather than rendered interpolation frames. Positive
+/// Energy Rail values are capability-gated to the exact Simulator power source;
+/// physical/unverified profiles still retain the designed unavailable machine layer.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
@@ -927,7 +925,7 @@ struct DashboardSpeedInstrumentView: View {
                     atUptimeNanoseconds: now,
                     prefersReducedMotion: reduceMotion
                 )
-                : nil
+                : .unavailable
 
             instrumentContent(
                 frame: frame,
@@ -974,7 +972,7 @@ struct DashboardSpeedInstrumentView: View {
     private func instrumentContent(
         frame: SpeedInstrumentDisplayFrame?,
         speedAvailability: SpeedEvidenceAvailability,
-        energyRailState: DashboardEnergyRailVisualState?
+        energyRailState: DashboardEnergyRailVisualState
     ) -> some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
@@ -1020,14 +1018,10 @@ struct DashboardSpeedInstrumentView: View {
             .foregroundStyle(Color.white.opacity(modePersonality.statusOpacity))
             .animation(modeAnimation, value: modePersonality.statusOpacity)
 
-            if let energyRailState {
-                Spacer(minLength: 6)
-                DashboardEnergyRailView(state: energyRailState)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 6)
-            } else {
-                Spacer(minLength: 0)
-            }
+            Spacer(minLength: 6)
+            DashboardEnergyRailView(state: energyRailState)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 6)
         }
         .padding(.horizontal, 8)
     }
