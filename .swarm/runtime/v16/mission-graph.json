@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 26,
+    "classifiedPRTotal": 27,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1351,6 +1351,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.096,
         "title": "[Navigation V15] Port accessibility surface onto current main"
+      },
+      "3364": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-runtime-accessibility",
+        "pr": 3364,
+        "recommendedAction": "independent-review",
+        "similarity": 0.363,
+        "title": "[Capture P0][ACCESSIBILITY][RECOVERY] Fix AX5 materializer working-tree scope"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1383,7 +1394,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T02:56:51Z",
+    "liveRefreshAt": "2026-08-15T02:57:10Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5168,10 +5179,10 @@
       "userValue": 7
     }
   },
-  "revision": 444,
+  "revision": 445,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T02:56:51Z",
+  "updatedAt": "2026-08-15T02:57:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5247,7 +5258,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T02:56:51Z",
+      "updatedAt": "2026-08-15T02:57:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
