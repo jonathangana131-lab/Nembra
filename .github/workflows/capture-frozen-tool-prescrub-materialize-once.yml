@@ -1,0 +1,138 @@
+name: Capture Frozen Tool Pre-Scrub Materializer
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-frozen-tool-prescrub-sol-20260814
+    paths:
+      - .github/workflows/capture-frozen-tool-prescrub-materialize-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-frozen-tool-prescrub-materialize-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 7f0528a9320d93c154b0ffcf8b2d928143eb7092
+  SELF: .github/workflows/capture-frozen-tool-prescrub-materialize-once.yml
+  INSTALLER: scripts/field/install_one_time_capture.command
+  HANDOFF_TEST: scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+
+jobs:
+  materialize:
+    name: Move DYLD scrub ahead of external exec
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact serial authoring input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = "$SELF"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize clean-exec production repair and witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          installer = Path("scripts/field/install_one_time_capture.command")
+          source = installer.read_text(encoding="utf-8")
+          old = '''    /usr/bin/env -i \\
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+              HOME=/tmp \\
+              TMPDIR=/tmp \\
+              LANG=C \\
+              LC_ALL=C \\
+              DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\
+              "$tool" "$@"
+          '''
+          new = '''    (
+              # `exec -c` is a Bash builtin: the dynamically linked /usr/bin/env
+              # process itself starts with an empty environment, so hostile DYLD_*
+              # selectors cannot execute before `env -i` establishes the allowlist.
+              exec -c /usr/bin/env -i \\
+                  PATH=/usr/bin:/bin:/usr/sbin:/sbin \\
+                  HOME=/tmp \\
+                  TMPDIR=/tmp \\
+                  LANG=C \\
+                  LC_ALL=C \\
+                  DEVELOPER_DIR="$SELECTED_XCODE_DEVELOPER_DIR" \\
+                  "$tool" "$@"
+              )
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"installer env trampoline anchor count={source.count(old)}")
+          source = source.replace(old, new)
+          installer.write_text(source, encoding="utf-8")
+
+          test = Path("scripts/ci/tests/test_capture_frozen_device_tool_handoff.py")
+          source = test.read_text(encoding="utf-8")
+          old_wrapper = '''                + function_source + "tool=\\"$1\\"\\nshift\\nrun_frozen_xcode_tool \\"$tool\\" \\"$@\\"\\n",
+          '''
+          new_wrapper = '''                + function_source
+                  + "export DYLD_INSERT_LIBRARIES=/tmp/attacker.dylib\\n"
+                  + "tool=\\"$1\\"\\nshift\\nrun_frozen_xcode_tool \\"$tool\\" \\"$@\\"\\n",
+          '''
+          if source.count(old_wrapper) != 1:
+              raise SystemExit(f"stale wrapper anchor count={source.count(old_wrapper)}")
+          source = source.replace(old_wrapper, new_wrapper)
+          old_env = '''                    "TOOLCHAINS": "attacker.toolchain",
+                      "DYLD_INSERT_LIBRARIES": "/tmp/attacker.dylib",
+                      "SDKROOT": "/tmp/attacker.sdk",
+          '''
+          new_env = '''                    "TOOLCHAINS": "attacker.toolchain",
+                      "SDKROOT": "/tmp/attacker.sdk",
+          '''
+          if source.count(old_env) != 1:
+              raise SystemExit(f"stale outer DYLD anchor count={source.count(old_env)}")
+          source = source.replace(old_env, new_env)
+          test.write_text(source, encoding="utf-8")
+          PY
+
+          /bin/bash -n "$INSTALLER"
+          /bin/bash -c 'help exec' | grep -Fq -- '-c'
+          grep -Fq 'exec -c /usr/bin/env -i' "$INSTALLER"
+          grep -Fq 'export DYLD_INSERT_LIBRARIES=/tmp/attacker.dylib' "$HANDOFF_TEST"
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/tests/test_capture_frozen_device_tool_handoff.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --check
+
+      - name: Publish exact two-path serial repair
+        shell: bash
+        env:
+          HEAD_REF: repair/v17-capture-frozen-tool-prescrub-sol-20260814
+        run: |
+          set -euo pipefail
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$INSTALLER" "$HANDOFF_TEST" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git add "$INSTALLER" "$HANDOFF_TEST"
+          git diff --cached --check
+          git commit -m 'capture: scrub frozen tool environment before external exec'
+          git rm "$SELF"
+          git commit -m 'capture: remove frozen-tool pre-scrub materializer'
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$INSTALLER" "$HANDOFF_TEST" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git push origin "HEAD:$HEAD_REF"
