@@ -7,6 +7,11 @@ same-UID field actor can transiently replace tracked source after the pre-build
 acceptance checks, let the compiler consume those bytes, and restore the accepted
 bytes before the post-build endpoint checks.
 
+The private Tuya fingerprint record has the same acceptance problem if bootstrap
+regenerates it from whatever live local SDK/identity bytes are present without an
+independently preaccepted record digest. An immutable snapshot must bind reviewed
+private executable inputs, not merely freeze newly observed bytes.
+
 This test is intentionally red until the current signed-build composition either
 consumes a protected accepted source/private-input snapshot or establishes an
 equally strong immutable build-input root through the compiler window.
@@ -21,6 +26,7 @@ import unittest
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
+BOOTSTRAP = REPOSITORY / "Scripts/bootstrap_capture_tuya_sdk.sh"
 ORCHESTRATOR = REPOSITORY / "scripts/ci/capture_selected_xcode_build_orchestrator.py"
 BUILD_ORIGIN = REPOSITORY / "scripts/ci/capture_signed_app_build_origin_custody.py"
 
@@ -80,6 +86,17 @@ class CaptureCurrentSourceWindowAuthorityRedTeamTests(unittest.TestCase):
             "red-team marker appeared; inspect the implementation instead of assuming this test is still current",
         )
 
+    def test_private_fingerprint_record_is_regenerated_without_preaccepted_record_digest(self) -> None:
+        source = BOOTSTRAP.read_text(encoding="utf-8")
+        self.assertIn('/usr/bin/python3 -I "$PROVENANCE_HELPER" snapshot', source)
+        self.assertIn('DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"', source)
+        self.assertIn("NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256", source)
+        self.assertNotIn(
+            "NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256",
+            source,
+            "private provenance gained an explicit accepted digest; inspect the new authority handoff",
+        )
+
     def test_required_invariant_protected_build_input_root(self) -> None:
         installer = INSTALLER.read_text(encoding="utf-8")
         orchestrator = ORCHESTRATOR.read_text(encoding="utf-8")
@@ -99,6 +116,20 @@ class CaptureCurrentSourceWindowAuthorityRedTeamTests(unittest.TestCase):
             has_snapshot and not live_checkout_cwd,
             "EXPECTED RED: current dedicated compiler still consumes the field-owned checkout/private trees; "
             "endpoint SHA/status/provenance checks and a live read lease do not bind the bytes consumed during xcodebuild",
+        )
+
+    def test_required_invariant_private_record_is_preaccepted_before_snapshot(self) -> None:
+        bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
+        installer = INSTALLER.read_text(encoding="utf-8")
+        combined = bootstrap + "\n" + installer
+        accepted_private_markers = (
+            "NEMBRA_CAPTURE_ACCEPTED_TUYA_PROVENANCE_SHA256",
+            "accepted_private_provenance_sha256",
+            "accepted_private_input_manifest",
+        )
+        self.assertTrue(
+            any(marker in combined for marker in accepted_private_markers),
+            "EXPECTED RED: private SDK/identity fingerprints are regenerated from live local bytes without an independently preaccepted fingerprint-record identity; a future immutable snapshot must bind reviewed private executable inputs, not bless arbitrary field-time bytes",
         )
 
 
