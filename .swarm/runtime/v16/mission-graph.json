@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 20,
+    "classifiedPRTotal": 19,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1098,17 +1098,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.064,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
-      },
-      "3317": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "e720bd1677ff74efa19579ddd12ca361e57f8980",
-        "lane": "capture-signed-install-custody",
-        "pr": 3317,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.419,
-        "title": "[Capture P0][VALIDATION] Probe APFS sparse-image backing-file custody"
       },
       "3320": {
         "classification": "validation",
@@ -1213,11 +1202,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "7496fb9bbf3e2a1b77367d46e15b756ff486e238",
+        "headSHA": "ab7edb36badeb005102c55cf661435952f6f8209",
         "lane": "capture-physical-runbook-authority",
         "pr": 3341,
         "recommendedAction": "independent-review",
-        "similarity": 0.236,
+        "similarity": 0.21,
         "title": "[Capture P0][NO-GO] Re-anchor stationary field procedure to ba615"
       },
       "3342": {
@@ -1272,7 +1261,7 @@
         "lane": "capture-physical-runbook-authority",
         "pr": 3347,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.23,
+        "similarity": 0.192,
         "title": "[Capture P0][VALIDATION] Converge stationary runbook oracle on current head"
       },
       "3348": {
@@ -1317,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:10:01Z",
+    "liveRefreshAt": "2026-08-15T00:10:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3348
     ],
@@ -5102,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 365,
+  "revision": 366,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:10:02Z",
+  "updatedAt": "2026-08-15T00:10:20Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5181,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:10:01Z",
+      "updatedAt": "2026-08-15T00:10:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
