@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 35,
+    "classifiedPRTotal": 36,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1450,6 +1450,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.246,
         "title": "[Capture P0][RED TEAM] Reject mutable snapshot module under root custody"
+      },
+      "3414": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "c66c7fcfa318b70d1722e5392264e3c2d34ac97e",
+        "lane": "capture-signed-install-custody",
+        "pr": 3414,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.381,
+        "title": "[Capture P0][REPAIR] Bind generated selectors and tracked namespace"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1482,7 +1493,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:33:19Z",
+    "liveRefreshAt": "2026-08-15T03:35:00Z",
     "liveRefreshDuplicatesSuppressed": [
       3413
     ],
@@ -5267,10 +5278,10 @@
       "userValue": 7
     }
   },
-  "revision": 549,
+  "revision": 550,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:33:20Z",
+  "updatedAt": "2026-08-15T03:35:02Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5357,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:33:19Z",
+      "updatedAt": "2026-08-15T03:35:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
