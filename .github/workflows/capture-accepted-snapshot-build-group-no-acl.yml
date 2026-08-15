@@ -1,6 +1,12 @@
 name: Capture Accepted Snapshot Build Group No ACL
 
 on:
+  push:
+    branches:
+      - validation/v17-capture-snapshot-build-group-no-acl-sol-20260814
+    paths:
+      - scripts/ci/tests/test_capture_accepted_snapshot_build_group_no_acl.py
+      - .github/workflows/capture-accepted-snapshot-build-group-no-acl.yml
   pull_request:
     paths:
       - scripts/ci/capture_accepted_build_input_snapshot.py
@@ -40,6 +46,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             test "$actual_head" = "${{ github.event.pull_request.head.sha }}"
             test "${{ github.event.pull_request.base.sha }}" = "$EXACT_PARENT"
+          else
+            test "$actual_head" = "${{ github.sha }}"
           fi
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
