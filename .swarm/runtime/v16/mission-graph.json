@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 33,
+    "classifiedPRTotal": 35,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.089,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1228,7 +1228,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3354,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.274,
+        "similarity": 0.283,
         "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
       },
       "3355": {
@@ -1283,7 +1283,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3360,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.26,
+        "similarity": 0.265,
         "title": "[Capture P0][SECURITY] Anchor private lease component traversal"
       },
       "3363": {
@@ -1305,7 +1305,7 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3366,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.0,
+        "similarity": 0.061,
         "title": "[Dashboard V17] Close physical-unavailable cockpit machine state"
       },
       "3369": {
@@ -1316,8 +1316,19 @@
         "lane": "capture-build-authority-validation",
         "pr": 3369,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.215,
         "title": "[Capture P0][VALIDATION] Repair private-provenance validation witnesses"
+      },
+      "3379": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3379,
+        "recommendedAction": "independent-review",
+        "similarity": 0.221,
+        "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       },
       "3380": {
         "classification": "canonical-candidate",
@@ -1338,7 +1349,7 @@
         "lane": "capture-flagship-convergence",
         "pr": 3387,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.092,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
       "3388": {
@@ -1349,7 +1360,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3388,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.118,
         "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
       },
       "3392": {
@@ -1371,7 +1382,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3394,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.35,
+        "similarity": 0.385,
         "title": "[Capture P0][RED TEAM] Reject inode-reuse ABA in planned lease identity"
       },
       "3395": {
@@ -1426,7 +1437,18 @@
         "lane": "capture-private-read-lease",
         "pr": 3400,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.35,
+        "similarity": 0.434,
+        "title": "[Capture P0][RED TEAM] Reject mixed-generation private lease planning"
+      },
+      "3401": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3401,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.436,
         "title": "[Capture P0][RED TEAM] Reject mixed-generation private lease planning"
       }
     },
@@ -1460,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:13:33Z",
+    "liveRefreshAt": "2026-08-15T03:13:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3397
     ],
@@ -5245,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 500,
+  "revision": 501,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:13:34Z",
+  "updatedAt": "2026-08-15T03:13:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:13:33Z",
+      "updatedAt": "2026-08-15T03:13:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
