@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 33,
+    "classifiedPRTotal": 32,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.076,
+        "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1305,19 +1305,8 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3366,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.078,
+        "similarity": 0.0,
         "title": "[Dashboard V17] Close physical-unavailable cockpit machine state"
-      },
-      "3379": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3379,
-        "recommendedAction": "independent-review",
-        "similarity": 0.229,
-        "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       },
       "3380": {
         "classification": "canonical-candidate",
@@ -1338,7 +1327,7 @@
         "lane": "capture-flagship-convergence",
         "pr": 3387,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.112,
+        "similarity": 0.0,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
       "3388": {
@@ -1349,7 +1338,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3388,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.113,
+        "similarity": 0.0,
         "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
       },
       "3394": {
@@ -1371,7 +1360,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3395,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.105,
+        "similarity": 0.0,
         "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
       },
       "3397": {
@@ -1460,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:18:29Z",
+    "liveRefreshAt": "2026-08-15T03:18:51Z",
     "liveRefreshDuplicatesSuppressed": [
       3397
     ],
@@ -5245,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 512,
+  "revision": 513,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:18:30Z",
+  "updatedAt": "2026-08-15T03:18:52Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:18:29Z",
+      "updatedAt": "2026-08-15T03:18:51Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
