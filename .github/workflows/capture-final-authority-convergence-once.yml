@@ -1,0 +1,367 @@
+name: Capture One-Time Final Authority Convergence
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-frozen-device-tools-sol-20260814
+    paths:
+      - .github/workflows/capture-final-authority-convergence-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    name: Converge private read, provenance, and frozen device custody
+    runs-on: macos-15
+    timeout-minutes: 18
+    env:
+      IMPORT_HEAD: c15bb755ebbbf140c17cf6a0a78451c435992e27
+      IMPORT_BRANCH: repair/v17-capture-root-private-read-sol-20260814
+      PRODUCT_BRANCH: repair/v17-capture-frozen-device-tools-sol-20260814
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact convergence inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch --no-tags origin "$IMPORT_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$IMPORT_HEAD"
+          printf 'Carrier before convergence: %s\n' "$GITHUB_SHA"
+          printf 'Exact private-read import: %s\n' "$IMPORT_HEAD"
+
+      - name: Import latest exact private-read implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout "$IMPORT_HEAD" -- \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            .github/workflows/capture-private-build-uid-read-lease-current.yml
+
+      - name: Reapply frozen post-build Xcode device-tool custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          source = path.read_text(encoding="utf-8")
+          replacements = (
+              (") -> tuple[Path, str]:\n", ") -> tuple[Path, str, Path, Path, Path]:\n", 1),
+              (
+                  '        selected_xcodebuild = _require_frozen_tool(tools, "xcodebuild", frozen_developer)\n'
+                  '        _require_frozen_tool(tools, "xctrace", frozen_developer)\n'
+                  '        _require_frozen_tool(tools, "devicectl", frozen_developer)\n',
+                  '        selected_xcodebuild = _require_frozen_tool(tools, "xcodebuild", frozen_developer)\n'
+                  '        selected_xctrace = _require_frozen_tool(tools, "xctrace", frozen_developer)\n'
+                  '        selected_devicectl = _require_frozen_tool(tools, "devicectl", frozen_developer)\n',
+                  1,
+              ),
+              (
+                  "        return stage_root, fingerprint\n",
+                  "        return stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl\n",
+                  1,
+              ),
+              (
+                  "        stage_root, fingerprint = orchestrate(\n",
+                  "        stage_root, fingerprint, frozen_developer, selected_xctrace, selected_devicectl = orchestrate(\n",
+                  1,
+              ),
+              (
+                  '        if "\\t" in str(stage_root) or "\\n" in str(stage_root) or "\\t" in fingerprint or "\\n" in fingerprint:\n'
+                  '            raise SelectedXcodeBuildOrchestratorError("signed build result contains malformed separators")\n'
+                  '        sys.stdout.write(f"{stage_root}\\t{fingerprint}\\n")\n',
+                  '        values = (\n'
+                  '            str(stage_root),\n'
+                  '            fingerprint,\n'
+                  '            str(frozen_developer),\n'
+                  '            str(selected_xctrace),\n'
+                  '            str(selected_devicectl),\n'
+                  '        )\n'
+                  '        if any("\\t" in value or "\\n" in value for value in values):\n'
+                  '            raise SelectedXcodeBuildOrchestratorError("selected-Xcode build result contains malformed separators")\n'
+                  '        sys.stdout.write("\\t".join(values) + "\\n")\n',
+                  1,
+              ),
+          )
+          for old, new, expected in replacements:
+              actual = source.count(old)
+              if actual != expected:
+                  raise SystemExit(f"frozen-device patch shape changed: expected {expected}, found {actual}: {old[:100]!r}")
+              source = source.replace(old, new, expected)
+          path.write_text(source, encoding="utf-8")
+          PY
+
+      - name: Embed independently accepted private provenance in immutable Capture build/export
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path: str) -> str:
+              return Path(path).read_text(encoding="utf-8")
+
+          def write(path: str, source: str) -> None:
+              Path(path).write_text(source, encoding="utf-8")
+
+          identity_path = "NembraApp/App/NembraCaptureBuildIdentity.swift"
+          source = read(identity_path)
+          if "NembraCaptureTuyaPrivateInputProvenanceSHA256" in source:
+              raise SystemExit("private provenance is already embedded; one-shot patch is no longer single-use")
+          source, count = re.subn(
+              r'(?m)^(\s*static let tuyaDependencyLockSHA256InfoKey\s*=\s*"NembraCaptureTuyaDependencyLockSHA256"\s*)$',
+              r'\1\n    static let tuyaPrivateInputProvenanceSHA256InfoKey = "NembraCaptureTuyaPrivateInputProvenanceSHA256"',
+              source,
+          )
+          if count != 1:
+              raise SystemExit(f"build-identity key shape changed: {count}")
+          source, count = re.subn(
+              r'(?m)^(\s*let tuyaDependencyLockSHA256: String\s*)$',
+              r'\1\n        let tuyaPrivateInputProvenanceSHA256: String',
+              source,
+          )
+          if count != 1:
+              raise SystemExit(f"build-identity stored-property shape changed: {count}")
+          output = []
+          inserted = 0
+          for line in source.splitlines():
+              output.append(line)
+              if "tuyaDependencyLockSHA256:" in line and "let tuyaDependencyLockSHA256:" not in line:
+                  indent = line[: len(line) - len(line.lstrip())]
+                  rhs = line.split(":", 1)[1].strip()
+                  rebound = rhs.replace("tuyaDependencyLockSHA256InfoKey", "tuyaPrivateInputProvenanceSHA256InfoKey")
+                  if rebound == rhs:
+                      raise SystemExit(f"build-identity current initializer shape changed: {line!r}")
+                  output.append(f"{indent}tuyaPrivateInputProvenanceSHA256: {rebound}")
+                  inserted += 1
+          if inserted != 1:
+              raise SystemExit(f"build-identity current initializer count changed: {inserted}")
+          source = "\n".join(output) + "\n"
+          output = []
+          count_checks = 0
+          hex_checks = 0
+          for line in source.splitlines():
+              output.append(line)
+              if "tuyaDependencyLockSHA256.count == 64" in line:
+                  indent = line[: len(line) - len(line.lstrip())]
+                  suffix = "," if line.rstrip().endswith(",") else ""
+                  output.append(f"{indent}tuyaPrivateInputProvenanceSHA256.count == 64{suffix}")
+                  count_checks += 1
+              if "tuyaDependencyLockSHA256.allSatisfy" in line:
+                  indent = line[: len(line) - len(line.lstrip())]
+                  output.append(indent + line.strip().replace("tuyaDependencyLockSHA256", "tuyaPrivateInputProvenanceSHA256"))
+                  hex_checks += 1
+          if (count_checks, hex_checks) != (1, 1):
+              raise SystemExit(f"build-identity validation shape changed: count={count_checks} hex={hex_checks}")
+          write(identity_path, "\n".join(output) + "\n")
+
+          project_path = "NembraCapture.xcodeproj/project.pbxproj"
+          source = read(project_path)
+          old = 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";'
+          if source.count(old) != 2:
+              raise SystemExit(f"project lock build-setting count changed: {source.count(old)}")
+          source = source.replace(
+              old,
+              old + '\n\t\t\t\tINFOPLIST_KEY_NembraCaptureTuyaPrivateInputProvenanceSHA256 = "$(NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256)";',
+          )
+          write(project_path, source)
+
+          entrypoint_path = "NembraApp/App/NembraCaptureEntrypoint.swift"
+          source = read(entrypoint_path)
+          if "tuyaPrivateInputProvenanceSHA256" in source:
+              raise SystemExit("entrypoint already carries private provenance")
+          source, count = re.subn(
+              r'(?m)^(\s*let tuyaDependencyLockSHA256: String\s*)$',
+              r'\1\n    let tuyaPrivateInputProvenanceSHA256: String',
+              source,
+          )
+          if count != 1:
+              raise SystemExit(f"entrypoint provenance-property shape changed: {count}")
+          anchor = "tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256,"
+          if source.count(anchor) != 1:
+              raise SystemExit(f"entrypoint provenance-construction shape changed: {source.count(anchor)}")
+          source = source.replace(
+              anchor,
+              anchor + "\n            tuyaPrivateInputProvenanceSHA256: buildIdentity.tuyaPrivateInputProvenanceSHA256,",
+              1,
+          )
+          if source.count("schemaVersion: 10") != 1:
+              raise SystemExit(f"immutable export schema shape changed: {source.count('schemaVersion: 10')}")
+          source = source.replace("schemaVersion: 10", "schemaVersion: 11", 1)
+          write(entrypoint_path, source)
+
+          installer_path = "scripts/field/install_one_time_capture.command"
+          source = read(installer_path)
+          compile_line = '        "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \\\n'
+          if source.count(compile_line) != 1:
+              raise SystemExit(f"installer compile provenance shape changed: {source.count(compile_line)}")
+          source = source.replace(
+              compile_line,
+              compile_line + '        "NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256=$ACCEPTED_TUYA_PROVENANCE_SHA256" \\\n',
+              1,
+          )
+          read_line = 'BUILT_TUYA_DEPENDENCY_LOCK_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"\n'
+          if source.count(read_line) != 1:
+              raise SystemExit(f"installer readback shape changed: {source.count(read_line)}")
+          source = source.replace(
+              read_line,
+              read_line + 'BUILT_TUYA_PRIVATE_PROVENANCE_SHA256="$(/usr/bin/plutil -extract NembraCaptureTuyaPrivateInputProvenanceSHA256 raw -o - "$APP_INFO_PLIST" 2>/dev/null || true)"\n',
+              1,
+          )
+          check_line = '[[ "$BUILT_TUYA_DEPENDENCY_LOCK_SHA256" == "$TUYA_DEPENDENCY_LOCK_SHA256" ]] || die "Built Capture app Tuya dependency-lock fingerprint does not match the exact resolved private workspace. Discard this candidate."\n'
+          if source.count(check_line) != 1:
+              raise SystemExit(f"installer lock-check shape changed: {source.count(check_line)}")
+          source = source.replace(
+              check_line,
+              check_line + '[[ "$BUILT_TUYA_PRIVATE_PROVENANCE_SHA256" == "$ACCEPTED_TUYA_PROVENANCE_SHA256" ]] || die "Built Capture app private-input provenance does not match the independently accepted manifest SHA-256. Discard this candidate."\n',
+              1,
+          )
+          old_unset = "unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST\n"
+          if source.count(old_unset) != 1:
+              raise SystemExit(f"installer provenance cleanup shape changed: {source.count(old_unset)}")
+          source = source.replace(
+              old_unset,
+              "unset BUILT_BUILD_IDENTIFIER BUILT_SOURCE_SHA BUILT_TUYA_DEPENDENCY_LOCK_SHA256 BUILT_TUYA_PRIVATE_PROVENANCE_SHA256 BUILT_PROCEDURE_IDENTIFIER BUILT_BUNDLE_ID APP_INFO_PLIST\n",
+              1,
+          )
+          old_message = 'say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"'
+          if source.count(old_message) != 1:
+              raise SystemExit(f"installer provenance message shape changed: {source.count(old_message)}")
+          source = source.replace(
+              old_message,
+              'say "Built app provenance matched exact requested source, reviewed Tuya dependency lock, independently accepted private-input provenance, canonical stationary procedure, and field product"',
+              1,
+          )
+          write(installer_path, source)
+
+          schema_files = []
+          tests_root = Path("Packages/NembraBluetoothCapture/Tests")
+          for path in tests_root.rglob("*.swift"):
+              source = path.read_text(encoding="utf-8")
+              if "schemaVersion: 10" not in source:
+                  continue
+              source = source.replace("schemaVersion: 10", "schemaVersion: 11")
+              source = source.replace("schemaVersion: 9", "schemaVersion: 10")
+              path.write_text(source, encoding="utf-8")
+              schema_files.append(path.as_posix())
+          if not schema_files:
+              raise SystemExit("no Capture package schema-version source contracts were migrated")
+
+          dependency_test = "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldDependencyProvenanceSourceTests.swift"
+          source = read(dependency_test)
+          anchors = (
+              (
+                  '#expect(installer.contains("NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256"))',
+                  '#expect(installer.contains("NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256=$ACCEPTED_TUYA_PROVENANCE_SHA256"))',
+              ),
+              (
+                  '#expect(installer.contains("BUILT_TUYA_DEPENDENCY_LOCK_SHA256\\\" == \\\"$TUYA_DEPENDENCY_LOCK_SHA256"))',
+                  '#expect(installer.contains("BUILT_TUYA_PRIVATE_PROVENANCE_SHA256\\\" == \\\"$ACCEPTED_TUYA_PROVENANCE_SHA256"))',
+              ),
+              (
+                  '#expect(app.contains("let tuyaDependencyLockSHA256: String"))',
+                  '#expect(app.contains("let tuyaPrivateInputProvenanceSHA256: String"))',
+              ),
+              (
+                  '#expect(app.contains("tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256"))',
+                  '#expect(app.contains("tuyaPrivateInputProvenanceSHA256: buildIdentity.tuyaPrivateInputProvenanceSHA256"))',
+              ),
+          )
+          for old, new in anchors:
+              if source.count(old) != 1:
+                  raise SystemExit(f"dependency provenance source-contract shape changed: {old}")
+              source = source.replace(old, old + "\n        " + new, 1)
+          write(dependency_test, source)
+
+          workflow_path = ".github/workflows/capture-field-build-provenance.yml"
+          source = read(workflow_path)
+          workflow_anchors = (
+              (
+                  "grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = \"$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)\";' \"$project\"",
+                  "grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaPrivateInputProvenanceSHA256 = \"$(NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256)\";' \"$project\"",
+              ),
+              (
+                  "grep -Fq 'static let tuyaDependencyLockSHA256InfoKey = \"NembraCaptureTuyaDependencyLockSHA256\"' \"$identity\"",
+                  "grep -Fq 'static let tuyaPrivateInputProvenanceSHA256InfoKey = \"NembraCaptureTuyaPrivateInputProvenanceSHA256\"' \"$identity\"",
+              ),
+              (
+                  "grep -Fq 'tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256' \"$entrypoint\"",
+                  "grep -Fq 'tuyaPrivateInputProvenanceSHA256: buildIdentity.tuyaPrivateInputProvenanceSHA256' \"$entrypoint\"",
+              ),
+              (
+                  "grep -Fq '\"NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256\"' \"$installer\"",
+                  "grep -Fq '\"NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256=$ACCEPTED_TUYA_PROVENANCE_SHA256\"' \"$installer\"",
+              ),
+              (
+                  "grep -Fq 'plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - \"$APP_INFO_PLIST\"' \"$installer\"",
+                  "grep -Fq 'plutil -extract NembraCaptureTuyaPrivateInputProvenanceSHA256 raw -o - \"$APP_INFO_PLIST\"' \"$installer\"",
+              ),
+              (
+                  "grep -Fq '[[ \"$BUILT_TUYA_DEPENDENCY_LOCK_SHA256\" == \"$TUYA_DEPENDENCY_LOCK_SHA256\" ]]' \"$installer\"",
+                  "grep -Fq '[[ \"$BUILT_TUYA_PRIVATE_PROVENANCE_SHA256\" == \"$ACCEPTED_TUYA_PROVENANCE_SHA256\" ]]' \"$installer\"",
+              ),
+          )
+          for old, new in workflow_anchors:
+              if source.count(old) != 1:
+                  raise SystemExit(f"field-provenance workflow anchor changed: {old}")
+              source = source.replace(old, old + "\n          " + new, 1)
+          write(workflow_path, source)
+          PY
+
+      - name: Prove combined authority and provenance source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-final-authority-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_frozen_device_tool_handoff.py \
+            scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_frozen_device_tool_handoff.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_provenance_preacceptance.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/xcrun swiftc -parse NembraApp/App/NembraCaptureBuildIdentity.swift NembraApp/App/NembraCaptureEntrypoint.swift
+          /usr/bin/xcodebuild -project NembraCapture.xcodeproj -list >/dev/null
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaFieldDependencyProvenanceSourceTests
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaFieldProcedureRendezvousSourceTests
+          test -z "$(git diff --check)"
+
+      - name: Commit only if carrier head is still exact
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$PRODUCT_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA" || {
+            echo "Carrier advanced while convergence ran; refusing stale push." >&2
+            exit 73
+          }
+          rm -f .github/workflows/capture-import-private-read-hardening-once.yml
+          rm -f .github/workflows/capture-final-authority-convergence-once.yml
+          git add -A
+          test -n "$(git status --porcelain=v1)"
+          git config user.name "nembra-convergence-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Converge Capture private authority and export provenance"
+          git push origin "HEAD:$PRODUCT_BRANCH"
