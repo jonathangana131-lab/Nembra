@@ -4,6 +4,11 @@ on:
   pull_request:
     paths:
       - .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml
+  push:
+    branches:
+      - repair/v17-capture-generated-shared-ancestor-cache-sol-20260814
+    paths:
+      - .github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml
   workflow_dispatch:
 
 permissions:
@@ -18,13 +23,13 @@ env:
 
 jobs:
   materialize:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -32,7 +37,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
           test "$changed" = ".github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml"
@@ -453,4 +459,5 @@ def _close_directory_cache(directory_cache: dict[Path, int]) -> None:
           git config user.name "nembra-capture-swarm"
           git config user.email "nembra-capture-swarm@users.noreply.github.com"
           git commit -m "security(capture): hold shared generated selector ancestors"
-          git push origin HEAD:"${{ github.event.pull_request.head.ref }}"
+          target_ref="${{ github.event.pull_request.head.ref || github.ref_name }}"
+          git push origin HEAD:"$target_ref"
