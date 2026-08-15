@@ -1,0 +1,83 @@
+name: Capture Private Stage Mode Materializer Once
+
+on:
+  push:
+    branches:
+      - hardening/v17-capture-private-stage-modes-sol-20260814
+    paths:
+      - .github/workflows/capture-private-stage-mode-materialize-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Bind one-shot authoring parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=a831ac73e33b1e4c09b2abdd8651164399fb45d3
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-private-stage-mode-materialize-once.yml"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize owner-only generated input staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
+          text = helper.read_text(encoding="utf-8")
+          old_file_mode = "            os.chmod(destination, 0o755 if (opened.st_mode & 0o111) else 0o644)\n"
+          new_file_mode = "            os.chmod(destination, 0o700 if (opened.st_mode & 0o111) else 0o600)\n"
+          if text.count(old_file_mode) != 1:
+              raise SystemExit("expected one generated-file mode normalization anchor")
+          text = text.replace(old_file_mode, new_file_mode)
+
+          old_directory = "        destination.mkdir(parents=True, exist_ok=False)\n        for name in sorted(os.listdir(source)):\n"
+          new_directory = "        destination.mkdir(mode=0o700, parents=True, exist_ok=False)\n        os.chmod(destination, 0o700)\n        for name in sorted(os.listdir(source)):\n"
+          if text.count(old_directory) != 1:
+              raise SystemExit("expected one generated-directory creation anchor")
+          helper.write_text(text.replace(old_directory, new_directory), encoding="utf-8")
+
+          tests = Path("scripts/ci/tests/test_capture_accepted_build_input_snapshot.py")
+          text = tests.read_text(encoding="utf-8")
+          marker = "    def test_changed_private_input_fails_manifest_and_destroys_candidate(self) -> None:\n"
+          if text.count(marker) != 1:
+              raise SystemExit("expected one private-input mutation test anchor")
+          regression = '''    def test_staged_generated_inputs_remain_owner_only(self) -> None:\n        with tempfile.TemporaryDirectory() as raw:\n            root = Path(raw) / "repo"\n            root.mkdir()\n            source_sha = seed_repo(root)\n            seed_generated(root)\n            accepted = snapshot.generated_manifest_sha256(root, source_sha)\n            destination = Path(raw) / "stage"\n            snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)\n\n            for subject in snapshot.GENERATED_SUBJECTS:\n                subject_path = destination / subject\n                candidates = [subject_path]\n                if subject_path.is_dir() and not subject_path.is_symlink():\n                    candidates.extend(subject_path.rglob("*"))\n                for candidate in candidates:\n                    if candidate.is_symlink():\n                        continue\n                    with self.subTest(path=candidate.relative_to(destination)):\n                        self.assertEqual(\n                            candidate.stat().st_mode & 0o077,\n                            0,\n                            f"generated/private staged subject widened group/other authority: {candidate}",\n                        )\n\n'''
+          tests.write_text(text.replace(marker, regression + marker), encoding="utf-8")
+          PY
+
+          rm .github/workflows/capture-private-stage-mode-materialize-once.yml
+          git diff --check
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Commit exact hardening delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-private-stage-mode-materialize-once.yml' \
+            'scripts/ci/capture_accepted_build_input_snapshot.py' \
+            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name "nembra-capture-materializer"
+          git config user.email "capture-materializer@users.noreply.github.com"
+          git add -A
+          git commit -m "Harden accepted build-input private stage modes"
+          git push origin HEAD:hardening/v17-capture-private-stage-modes-sol-20260814
