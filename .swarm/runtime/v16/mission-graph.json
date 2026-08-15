@@ -1341,6 +1341,17 @@
         "similarity": 0.556,
         "title": "[Capture P0][RED TEAM] Reject tracked ancestor aliases in generated-input staging"
       },
+      "3369": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority-validation",
+        "pr": 3369,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.215,
+        "title": "[Capture P0][VALIDATION] Repair private-provenance validation witnesses"
+      },
       "3370": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1371,7 +1382,7 @@
         "lane": "",
         "pr": 3379,
         "recommendedAction": "independent-review",
-        "similarity": 0.213,
+        "similarity": 0.221,
         "title": "[Capture P0][CI] Repair stale private-provenance candidate wording oracle"
       },
       "3380": {
@@ -1406,17 +1417,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.281,
         "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
-      },
-      "3386": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-flagship-composition",
-        "pr": 3386,
-        "recommendedAction": "independent-review",
-        "similarity": 0.115,
-        "title": "[Capture P0][COMPOSE] Fold AX5 accessibility into merged stationary runbook lineage"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1449,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:05:11Z",
+    "liveRefreshAt": "2026-08-15T03:05:27Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5234,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 472,
+  "revision": 473,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:05:12Z",
+  "updatedAt": "2026-08-15T03:05:28Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:05:11Z",
+      "updatedAt": "2026-08-15T03:05:27Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
