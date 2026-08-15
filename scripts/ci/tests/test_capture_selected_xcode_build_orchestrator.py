@@ -132,8 +132,10 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64, pri
     assert fingerprint_helper_base64 == INSTALL_BASE64
     assert private_read_lease.__class__.__name__ == "_PrivateReadLease"
     assert tuple(private_read_lease._subjects) == (
-        Path.cwd() / "LocalSecrets/TuyaSDK",
-        Path.cwd() / "LocalSecrets/TuyaRuntime",
+        Path.cwd() / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec",
+        Path.cwd() / "LocalSecrets/TuyaSDK/Build",
+        Path.cwd() / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec",
+        Path.cwd() / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig",
     )
     return Path("/private/tmp/nembra-authenticated-capture-install.fixture"), "b" * 64
 '''
