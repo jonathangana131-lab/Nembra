@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 43,
+    "classifiedPRTotal": 42,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1448,19 +1448,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3426,
         "recommendedAction": "independent-review",
-        "similarity": 0.341,
+        "similarity": 0.306,
         "title": "[Capture P0][RECOVERY] Repair shared-ancestor materializer indentation"
-      },
-      "3427": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3427,
-        "recommendedAction": "independent-review",
-        "similarity": 0.391,
-        "title": "[Capture P0][RECOVERY] Publish shared-ancestor continuity repair directly"
       },
       "3428": {
         "classification": "canonical-candidate",
@@ -1492,7 +1481,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3431,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.378,
+        "similarity": 0.329,
         "title": "[Capture P0][RED TEAM] Surface macOS symlink-race oracle failure"
       },
       "3432": {
@@ -1514,7 +1503,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.262,
+        "similarity": 0.27,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3434": {
@@ -1525,7 +1514,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3434,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.362,
+        "similarity": 0.358,
         "title": "[Capture P0][REPAIR] Use real Darwin temp root for lease acceptance"
       },
       "3435": {
@@ -1570,7 +1559,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T11:19:36Z",
+    "liveRefreshAt": "2026-08-15T11:19:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3433
     ],
@@ -5355,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 621,
+  "revision": 622,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T11:19:38Z",
+  "updatedAt": "2026-08-15T11:19:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5434,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T11:19:36Z",
+      "updatedAt": "2026-08-15T11:19:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
