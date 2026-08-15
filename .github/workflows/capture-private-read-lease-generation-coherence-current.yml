@@ -45,9 +45,6 @@ jobs:
         run: |
           set -euo pipefail
           export PYTHONDONTWRITEBYTECODE=1
-          python3 -B -m py_compile \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_generation_coherence_current.py
           python3 -B -I scripts/ci/tests/test_capture_private_read_lease_generation_coherence_current.py
 
       - name: Preserve validation-only truth boundary
