@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 13,
+    "classifiedPRTotal": 12,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1087,17 +1087,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.196,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
-      },
-      "3314": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-energy-rail-app-visible",
-        "pr": 3314,
-        "recommendedAction": "independent-review",
-        "similarity": 0.0,
-        "title": "Mount truthful Energy Rail in Dashboard"
       },
       "3316": {
         "classification": "requires-review",
@@ -1240,11 +1229,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:00:51Z",
+    "liveRefreshAt": "2026-08-15T00:01:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3336
     ],
-    "liveRefreshMainSHA": "cb339e500ccf7b164dcc72452368e1aa22720e35",
+    "liveRefreshMainSHA": "44946ca3b91ad5deee1003024534e64bda1511d2",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -5025,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 335,
+  "revision": 336,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:00:51Z",
+  "updatedAt": "2026-08-15T00:01:06Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5104,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:00:51Z",
+      "updatedAt": "2026-08-15T00:01:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
