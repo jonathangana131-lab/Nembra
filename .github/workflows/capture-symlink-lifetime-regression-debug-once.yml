@@ -1,0 +1,60 @@
+name: Capture Symlink Lifetime Regression Debug Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-read-lease-symlink-lifetime-sol-20260815
+    paths:
+      - .github/workflows/capture-symlink-lifetime-regression-debug-once.yml
+
+permissions:
+  contents: read
+
+env:
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  isolate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Component walk
+        id: component
+        continue-on-error: true
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+
+      - name: Selected Xcode orchestrator
+        id: selected
+        continue-on-error: true
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+
+      - name: Rollback
+        id: rollback
+        continue-on-error: true
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+
+      - name: Host ancestry
+        id: host
+        continue-on-error: true
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+
+      - name: Surface exact failed suites
+        if: always()
+        shell: bash
+        env:
+          COMPONENT: ${{ steps.component.outcome }}
+          SELECTED: ${{ steps.selected.outcome }}
+          ROLLBACK: ${{ steps.rollback.outcome }}
+          HOST: ${{ steps.host.outcome }}
+        run: |
+          set -euo pipefail
+          echo "component=$COMPONENT selected=$SELECTED rollback=$ROLLBACK host=$HOST"
+          if [ "$COMPONENT" != success ] || [ "$SELECTED" != success ] || [ "$ROLLBACK" != success ] || [ "$HOST" != success ]; then
+            echo "::error title=Lifetime regression matrix::component=$COMPONENT selected=$SELECTED rollback=$ROLLBACK host=$HOST"
+            exit 1
+          fi
