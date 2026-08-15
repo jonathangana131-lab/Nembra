@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 33,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.043,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1316,7 +1316,7 @@
         "lane": "capture-flagship-convergence",
         "pr": 3387,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.077,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
       "3388": {
@@ -1327,7 +1327,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3388,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.05,
         "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
       },
       "3394": {
@@ -1349,7 +1349,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3395,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.0,
+        "similarity": 0.08,
         "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
       },
       "3397": {
@@ -1417,6 +1417,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.405,
         "title": "[Capture P0][SECURITY][SERIAL] Hold private lease descriptors through planning"
+      },
+      "3407": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3407,
+        "recommendedAction": "independent-review",
+        "similarity": 0.18,
+        "title": "[Capture P0][AUTHORING] Execute held-descriptor materializer"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1449,7 +1460,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:20:43Z",
+    "liveRefreshAt": "2026-08-15T03:21:16Z",
     "liveRefreshDuplicatesSuppressed": [
       3397
     ],
@@ -5234,10 +5245,10 @@
       "userValue": 7
     }
   },
-  "revision": 519,
+  "revision": 520,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:20:44Z",
+  "updatedAt": "2026-08-15T03:21:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5324,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:20:43Z",
+      "updatedAt": "2026-08-15T03:21:16Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
