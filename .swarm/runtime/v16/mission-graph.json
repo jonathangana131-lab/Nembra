@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 30,
+    "classifiedPRTotal": 31,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1272,7 +1272,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3357,
         "recommendedAction": "independent-review",
-        "similarity": 0.146,
+        "similarity": 0.294,
         "title": "[Capture P0][ACCESSIBILITY][RECOVERY] Materialize AX5 lock priority on ba615"
       },
       "3358": {
@@ -1395,6 +1395,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.092,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
+      },
+      "3388": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-runtime-accessibility",
+        "pr": 3388,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.275,
+        "title": "[Capture P0][AX RUNTIME] Re-anchor VoiceOver matrix to ff779 composition"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1427,7 +1438,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:06:43Z",
+    "liveRefreshAt": "2026-08-15T03:06:59Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5212,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 477,
+  "revision": 478,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:06:43Z",
+  "updatedAt": "2026-08-15T03:07:00Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5291,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:06:43Z",
+      "updatedAt": "2026-08-15T03:06:59Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
