@@ -112,3 +112,101 @@ jobs:
           set -euo pipefail
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           echo 'NEMBRA_COMPONENT_WALK_ISOLATION productBytesChanged=false signingAuthorityCreated=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false'
+
+  darwin-control:
+    name: Darwin open control — ${{ matrix.case }}
+    runs-on: macos-15
+    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [root-open, component-walk, descriptor-path-signature, production-directory, production-file]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact one-file diagnostic scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = ".github/workflows/capture-private-read-lease-component-walk-failure-isolation.yml"
+
+      - name: Exercise exact Darwin open boundary
+        shell: bash
+        env:
+          NEMBRA_CASE: ${{ matrix.case }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import stat
+          import tempfile
+
+          helper_path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          spec = importlib.util.spec_from_file_location("nembra_darwin_open_control", helper_path)
+          if spec is None or spec.loader is None:
+              raise RuntimeError("could not load selected-Xcode orchestrator")
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+
+          case = os.environ["NEMBRA_CASE"]
+          nofollow = getattr(os, "O_NOFOLLOW", 0)
+          odirectory = getattr(os, "O_DIRECTORY", 0)
+          cloexec = getattr(os, "O_CLOEXEC", 0)
+
+          if case == "root-open":
+              descriptor = os.open(os.sep, os.O_RDONLY | cloexec | odirectory)
+              try:
+                  assert stat.S_ISDIR(os.fstat(descriptor).st_mode)
+              finally:
+                  os.close(descriptor)
+              raise SystemExit(0)
+
+          with tempfile.TemporaryDirectory(prefix="nembra-darwin-open-control-") as raw:
+              root = Path(raw)
+              directory = root / "a/b/c"
+              directory.mkdir(parents=True)
+              file = directory / "private.fixture"
+              file.write_bytes(b"fixture\n")
+
+              if case in ("component-walk", "descriptor-path-signature"):
+                  path = directory
+                  current = os.open(os.sep, os.O_RDONLY | cloexec | odirectory)
+                  try:
+                      for component in path.parts[1:]:
+                          next_descriptor = os.open(
+                              component,
+                              os.O_RDONLY | cloexec | nofollow | odirectory,
+                              dir_fd=current,
+                          )
+                          os.close(current)
+                          current = next_descriptor
+                      if case == "descriptor-path-signature":
+                          assert helper._descriptor_signature(current) == helper._path_signature(path)
+                  finally:
+                      os.close(current)
+                  raise SystemExit(0)
+
+              if case == "production-directory":
+                  descriptor = helper._open_pinned_path(directory, True)
+              elif case == "production-file":
+                  descriptor = helper._open_pinned_path(file, False)
+              else:
+                  raise AssertionError(f"unknown diagnostic case: {case}")
+              os.close(descriptor)
+          PY
+
+      - name: Preserve diagnostic-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo "NEMBRA_DARWIN_OPEN_CONTROL case=${{ matrix.case }} productBytesChanged=false physicalAuthorityCreated=false"
