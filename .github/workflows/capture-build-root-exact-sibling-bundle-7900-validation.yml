@@ -1,0 +1,95 @@
+name: Capture Build Root Exact Sibling Bundle 7900 Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - .github/workflows/capture-build-root-exact-sibling-bundle-7900-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-build-root-exact-sibling-bundle-7900-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 7900d7d1fdab3a21c51190892d11d7e4e7ef43b0
+  ACCEPTED_INPUT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
+  ROOT_HELPER: scripts/ci/capture_accepted_build_root_custody.py
+  SNAPSHOT_HELPER: scripts/ci/capture_accepted_build_input_snapshot.py
+
+jobs:
+  portable-positive:
+    name: Exact 7900 sealed helper bundle defeats live sibling poisoning
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation child and accepted-input ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git merge-base "$EXACT_PARENT" "$ACCEPTED_INPUT_PARENT")" = "$ACCEPTED_INPUT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = '.github/workflows/capture-build-root-exact-sibling-bundle-7900-validation.yml'
+          test "$(git rev-parse "$EXACT_PARENT:$SNAPSHOT_HELPER")" = "$(git rev-parse "$ACCEPTED_INPUT_PARENT:$SNAPSHOT_HELPER")"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize exact 7900 sibling blobs into one root-sealed bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/nembra-build-root-exact-helper-bundle-7900"
+          sudo rm -rf "$bundle"
+          sudo mkdir -p "$bundle"
+          git show "$EXACT_PARENT:$ROOT_HELPER" | sudo tee "$bundle/$(basename "$ROOT_HELPER")" >/dev/null
+          git show "$EXACT_PARENT:$SNAPSHOT_HELPER" | sudo tee "$bundle/$(basename "$SNAPSHOT_HELPER")" >/dev/null
+
+          root_oid="$(git rev-parse "$EXACT_PARENT:$ROOT_HELPER")"
+          snapshot_oid="$(git rev-parse "$EXACT_PARENT:$SNAPSHOT_HELPER")"
+          test "$(git hash-object "$bundle/$(basename "$ROOT_HELPER")")" = "$root_oid"
+          test "$(git hash-object "$bundle/$(basename "$SNAPSHOT_HELPER")")" = "$snapshot_oid"
+
+          sudo chown -R root:root "$bundle"
+          sudo chmod 0555 "$bundle"
+          sudo chmod 0444 "$bundle/$(basename "$ROOT_HELPER")" "$bundle/$(basename "$SNAPSHOT_HELPER")"
+          test "$(stat -c '%u:%g:%a' "$bundle")" = '0:0:555'
+          test "$(stat -c '%u:%g:%a' "$bundle/$(basename "$ROOT_HELPER")")" = '0:0:444'
+          test "$(stat -c '%u:%g:%a' "$bundle/$(basename "$SNAPSHOT_HELPER")")" = '0:0:444'
+
+      - name: Poison live snapshot helper and execute only exact sealed sibling pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/nembra-build-root-exact-helper-bundle-7900"
+          printf '%s\n' 'raise RuntimeError("MUTABLE_CHECKOUT_SNAPSHOT_EXECUTED")' > "$SNAPSHOT_HELPER"
+          grep -q MUTABLE_CHECKOUT_SNAPSHOT_EXECUTED "$SNAPSHOT_HELPER"
+
+          sudo /usr/bin/python3 -B -I "$bundle/$(basename "$ROOT_HELPER")" --help > "$RUNNER_TEMP/root-helper-help.txt"
+          grep -q 'Create a root-custodied accepted Nembra Capture build root' "$RUNNER_TEMP/root-helper-help.txt"
+
+          test "$(git hash-object "$bundle/$(basename "$ROOT_HELPER")")" = "$(git rev-parse "$EXACT_PARENT:$ROOT_HELPER")"
+          test "$(git hash-object "$bundle/$(basename "$SNAPSHOT_HELPER")")" = "$(git rev-parse "$EXACT_PARENT:$SNAPSHOT_HELPER")"
+          git checkout -- "$SNAPSHOT_HELPER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf "$RUNNER_TEMP/nembra-build-root-exact-helper-bundle-7900"
+          git checkout -- "$SNAPSHOT_HELPER" >/dev/null 2>&1 || true
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'NEMBRA_BUILD_ROOT_SIBLING_BUNDLE_7900 exactParent=true exactRootHelper=true exactSnapshotHelper=true rootSealed=true liveCheckoutPoisonIgnored=true acceptedInputParentBound=true rootCustodyProductAccepted=false productionWired=false signingAuthorityCreated=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false'
