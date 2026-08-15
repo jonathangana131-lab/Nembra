@@ -1,0 +1,98 @@
+name: Capture Private Read Lease Held Descriptor Recovery Once
+
+on:
+  push:
+    branches:
+      - hardening/v17-capture-read-lease-held-descriptor-custody-sol-20260814
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-read-lease-held-descriptor-recovery-once
+  cancel-in-progress: false
+
+env:
+  EXACT_PARENT: aa610e1000e58ba5e43e35a75ee8f22486aea5ec
+  TARGET_BRANCH: hardening/v17-capture-read-lease-held-descriptor-custody-sol-20260814
+  AUTHORING_WORKFLOW: .github/workflows/capture-read-lease-held-descriptor-materialize.yml
+  RECOVERY_WORKFLOW: .github/workflows/capture-read-lease-held-descriptor-recovery-once.yml
+
+jobs:
+  recover-materializer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind recovery-only authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "$AUTHORING_WORKFLOW" "$RECOVERY_WORKFLOW" | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Execute embedded reviewed materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'EXTRACT'
+          import os
+          from pathlib import Path
+
+          source = Path(os.environ["AUTHORING_WORKFLOW"]).read_text()
+          start = "          python3 - <<'PY'\n"
+          end = "\n          PY\n"
+          if source.count(start) != 1:
+              raise SystemExit("expected exactly one embedded Python materializer")
+          body = source.split(start, 1)[1]
+          if end not in body:
+              raise SystemExit("embedded Python materializer terminator missing")
+          body = body.split(end, 1)[0]
+          lines = []
+          for line in body.splitlines():
+              if line.startswith("          "):
+                  lines.append(line[10:])
+              else:
+                  lines.append(line)
+          Path("/tmp/nembra-held-descriptor-materialize.py").write_text("\n".join(lines) + "\n")
+          EXTRACT
+          python3 -B /tmp/nembra-held-descriptor-materialize.py
+          git diff --check
+
+      - name: Run focused authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+
+      - name: Publish clean two-path permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$AUTHORING_WORKFLOW" "$RECOVERY_WORKFLOW"
+          changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"
+          git config user.name "nembra-capture-authority-bot"
+          git config user.email "nembra-capture-authority-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): hold private lease descriptors from plan through grant"
+          git push origin "HEAD:$TARGET_BRANCH"
+          echo "NEMBRA_HELD_DESCRIPTOR_RECOVERY_MATERIALIZED productionChanged=true temporaryWorkflowsRetired=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
