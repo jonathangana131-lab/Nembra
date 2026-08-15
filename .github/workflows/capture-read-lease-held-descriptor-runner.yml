@@ -1,0 +1,91 @@
+name: Capture Private Read Lease Held Descriptor Runner
+
+on:
+  pull_request:
+    paths:
+      - .github/.capture-read-lease-held-descriptor-run
+      - .github/workflows/capture-read-lease-held-descriptor-runner.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-read-lease-held-descriptor-runner-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PRODUCT_PARENT: aa610e1000e58ba5e43e35a75ee8f22486aea5ec
+  EXPECTED_MATERIALIZER_BLOB: 0db84b482836dc261691fa49c5d7b04c9e66feb0
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact authoring inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PRODUCT_PARENT")" = "$EXACT_PRODUCT_PARENT"
+          test "$(git hash-object .github/workflows/capture-read-lease-held-descriptor-materialize.yml)" = "$EXPECTED_MATERIALIZER_BLOB"
+          git diff --exit-code "$EXACT_PRODUCT_PARENT" -- \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+
+      - name: Extract and execute exact materializer payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          raw = Path('.github/workflows/capture-read-lease-held-descriptor-materialize.yml').read_text()
+          opener = "          python3 - <<'PY'\n"
+          closer = "\n          PY\n"
+          start = raw.index(opener) + len(opener)
+          end = raw.index(closer, start)
+          block = raw[start:end]
+          normalized = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in block.splitlines()
+          ) + "\n"
+          target = Path('/tmp/nembra-held-descriptor-materialize.py')
+          target.write_text(normalized)
+          compile(normalized, str(target), 'exec', dont_inherit=True)
+          PY
+          python3 -B /tmp/nembra-held-descriptor-materialize.py
+          git diff --check
+
+      - name: Prove focused portable authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Publish tested product bytes to authoring head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-capture-authority-bot"
+          git config user.email "nembra-capture-authority-bot@users.noreply.github.com"
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          git commit -m "fix(capture): hold private lease descriptors from plan through grant"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
+          echo "NEMBRA_HELD_DESCRIPTOR_AUTHORING_RUNNER productBytesPublished=true productAcceptance=false physicalAuthorityCreated=false"
