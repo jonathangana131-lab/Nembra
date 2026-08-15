@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 31,
+    "classifiedPRTotal": 32,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1239,7 +1239,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3354,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.223,
+        "similarity": 0.264,
         "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
       },
       "3355": {
@@ -1294,7 +1294,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3360,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.251,
+        "similarity": 0.26,
         "title": "[Capture P0][SECURITY] Anchor private lease component traversal"
       },
       "3363": {
@@ -1406,6 +1406,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.124,
         "title": "[Capture P0][VISUAL] Re-anchor standalone visual matrix to ff779 composition"
+      },
+      "3394": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3394,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.272,
+        "title": "[Capture P0][RED TEAM] Reject inode-reuse ABA in planned lease identity"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1438,7 +1449,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:10:39Z",
+    "liveRefreshAt": "2026-08-15T03:10:58Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5223,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 491,
+  "revision": 492,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:10:40Z",
+  "updatedAt": "2026-08-15T03:10:59Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5302,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:10:39Z",
+      "updatedAt": "2026-08-15T03:10:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
