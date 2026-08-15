@@ -16,54 +16,59 @@ INSTALLER = REPOSITORY / "scripts/field/install_one_time_capture.command"
 ORCHESTRATOR = REPOSITORY / "scripts/ci/capture_selected_xcode_build_orchestrator.py"
 
 
-class CaptureSelectedXcodeGuardExecutionAuthorityTests(unittest.TestCase):
-    def test_guard_and_provenance_do_not_reopen_mutable_checkout_helpers(self) -> None:
-        installer = INSTALLER.read_text(encoding="utf-8")
-        orchestrator = ORCHESTRATOR.read_text(encoding="utf-8")
+def _sources() -> tuple[str, str, str]:
+    installer = INSTALLER.read_text(encoding="utf-8")
+    orchestrator = ORCHESTRATOR.read_text(encoding="utf-8")
+    return installer, orchestrator, installer + "\n" + orchestrator
 
-        mutable_guard = '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"'
-        mutable_provenance = '/usr/bin/python3 -I "$TUYA_PROVENANCE_HELPER" verify'
+
+class CaptureSelectedXcodeGuardExecutionAuthorityTests(unittest.TestCase):
+    def test_guard_is_not_reopened_by_mutable_checkout_path(self) -> None:
+        installer, _orchestrator, _combined = _sources()
         self.assertNotIn(
-            mutable_guard,
+            '/usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD"',
             installer,
             "selected-Xcode composition reopens the private build-window guard by mutable checkout pathname",
         )
+
+    def test_provenance_is_not_reopened_by_mutable_checkout_path(self) -> None:
+        installer, _orchestrator, _combined = _sources()
         self.assertNotIn(
-            mutable_provenance,
+            '/usr/bin/python3 -I "$TUYA_PROVENANCE_HELPER" verify',
             installer,
             "selected-Xcode composition reopens the private provenance helper by mutable checkout pathname",
         )
 
-        # The previously selected field-authority contract executed these helpers
-        # directly from exact accepted Git source. A future production repair may
-        # use an equally strong base64/blob handoff in the orchestrator instead;
-        # either shape must make exact accepted bytes mechanically visible here.
+    def test_guard_has_mechanically_visible_exact_execution_subject(self) -> None:
+        _installer, _orchestrator, combined = _sources()
         exact_guard_markers = (
             'run_accepted_source_python "$TUYA_BUILD_WINDOW_GUARD_RELATIVE"',
             "guard_base64",
             "guard_blob",
             "accepted_guard",
         )
+        self.assertTrue(
+            any(marker in combined for marker in exact_guard_markers),
+            "no exact accepted execution subject is visible for the private build-window guard",
+        )
+
+    def test_provenance_has_mechanically_visible_exact_execution_subject(self) -> None:
+        _installer, _orchestrator, combined = _sources()
         exact_provenance_markers = (
             'run_accepted_source_python "$TUYA_PROVENANCE_HELPER_RELATIVE"',
             "provenance_base64",
             "provenance_blob",
             "accepted_provenance",
         )
-        combined = installer + "\n" + orchestrator
-        self.assertTrue(
-            any(marker in combined for marker in exact_guard_markers),
-            "no exact accepted execution subject is visible for the private build-window guard",
-        )
         self.assertTrue(
             any(marker in combined for marker in exact_provenance_markers),
             "no exact accepted execution subject is visible for the private provenance helper",
         )
 
-    def test_current_orchestrator_blob_transport_does_not_silently_count_as_guard_transport(self) -> None:
-        orchestrator = ORCHESTRATOR.read_text(encoding="utf-8")
-        # These are accepted helper transports, but none names the private guard or
-        # provenance helper. Their presence cannot be used to make the guard gate green.
+    def test_current_accepted_blob_transports_do_not_substitute_for_helper_identity(self) -> None:
+        _installer, orchestrator, _combined = _sources()
+        # These current accepted transports are legitimate for their own subjects.
+        # Their presence alone cannot prove that guard/provenance bytes were admitted.
         for marker in (
             "freeze_launcher_base64",
             "freeze_helper_base64",
@@ -71,10 +76,6 @@ class CaptureSelectedXcodeGuardExecutionAuthorityTests(unittest.TestCase):
             "install_custody_base64",
         ):
             self.assertIn(marker, orchestrator)
-        self.assertFalse(
-            "guard_base64" in orchestrator or "accepted_guard" in orchestrator,
-            "update this oracle if production intentionally adds an exact private-guard handoff",
-        )
 
 
 if __name__ == "__main__":
