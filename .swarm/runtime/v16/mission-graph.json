@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 36,
+    "classifiedPRTotal": 37,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.041,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1316,7 +1316,7 @@
         "lane": "capture-flagship-convergence",
         "pr": 3387,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.053,
         "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       },
       "3394": {
@@ -1338,7 +1338,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3395,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.0,
+        "similarity": 0.096,
         "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
       },
       "3398": {
@@ -1461,6 +1461,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.407,
         "title": "[Capture P0][VALIDATION] Seal exact build-root helper sibling bundle"
+      },
+      "3417": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3417,
+        "recommendedAction": "independent-review",
+        "similarity": 0.187,
+        "title": "[Capture P0][INTERNAL] Re-anchor root custody onto fe40 admission"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1493,7 +1504,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:38:10Z",
+    "liveRefreshAt": "2026-08-15T03:39:17Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5278,10 +5289,10 @@
       "userValue": 7
     }
   },
-  "revision": 557,
+  "revision": 558,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:38:11Z",
+  "updatedAt": "2026-08-15T03:39:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5357,7 +5368,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:38:10Z",
+      "updatedAt": "2026-08-15T03:39:17Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
