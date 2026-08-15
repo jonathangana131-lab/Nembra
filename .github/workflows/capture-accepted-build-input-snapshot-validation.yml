@@ -40,11 +40,20 @@ jobs:
           fi
           test "$(git merge-base HEAD "$EXACT_PRODUCTION_PARENT")" = "$EXACT_PRODUCTION_PARENT"
           actual="$(git diff --name-only "$EXACT_PRODUCTION_PARENT"...HEAD | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
+          foundation_expected="$(printf '%s\n' \
             '.github/workflows/capture-accepted-build-input-snapshot-validation.yml' \
             'scripts/ci/capture_accepted_build_input_snapshot.py' \
             'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' | LC_ALL=C sort)"
-          test "$actual" = "$expected"
+          shared_ancestor_expected="$(printf '%s\n' \
+            '.github/workflows/capture-accepted-build-input-snapshot-validation.yml' \
+            '.github/workflows/capture-generated-shared-ancestor-continuity.yml' \
+            'scripts/ci/capture_accepted_build_input_snapshot.py' \
+            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' \
+            'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py' | LC_ALL=C sort)"
+          if [[ "$actual" != "$foundation_expected" && "$actual" != "$shared_ancestor_expected" ]]; then
+            printf 'unexpected generated-input validation scope:\n%s\n' "$actual" >&2
+            exit 1
+          fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           git diff --check "$EXACT_PRODUCTION_PARENT"...HEAD
 
