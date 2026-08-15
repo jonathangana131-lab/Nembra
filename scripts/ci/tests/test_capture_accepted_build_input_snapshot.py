@@ -214,6 +214,27 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
             with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
                 snapshot.stage_accepted_build_inputs(root, source_sha, Path(raw) / "stage", accepted)
 
+    def test_case_distinct_tracked_prefixes_fail_before_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            root.mkdir()
+            git(root, "init", "-q")
+            git(root, "config", "user.email", "capture@example.invalid")
+            git(root, "config", "user.name", "Capture Test")
+            (root / "Foo").mkdir()
+            (root / "foo").mkdir()
+            (root / "Foo/A.swift").write_text("UPPER\n", encoding="utf-8")
+            (root / "foo/B.swift").write_text("lower\n", encoding="utf-8")
+            git(root, "add", "Foo/A.swift", "foo/B.swift")
+            git(root, "commit", "-qm", "case-distinct tracked namespace")
+            source_sha = git(root, "rev-parse", "HEAD")
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot._git_tree_entries(root, source_sha)
+            destination = Path(raw) / "stage"
+            with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
+                snapshot.materialize_tracked_source(root, source_sha, destination)
+            self.assertFalse(destination.exists())
+
     def test_casefolded_tracked_ancestor_cannot_alias_generated_subject(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "repo"

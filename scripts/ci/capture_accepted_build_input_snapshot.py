@@ -74,6 +74,26 @@ def _namespace_paths_overlap(first: Path, second: Path) -> bool:
     )
 
 
+def _assert_tracked_namespace_coherence(paths: Iterable[Path]) -> None:
+    """Reject tracked paths whose prefixes collapse in the field macOS namespace."""
+
+    seen: dict[tuple[str, ...], tuple[str, ...]] = {}
+    for relative in sorted(paths, key=lambda value: value.as_posix()):
+        _safe_relative(relative)
+        raw_parts = relative.parts
+        key_parts = _namespace_key(relative)
+        for length in range(1, len(raw_parts) + 1):
+            raw_prefix = raw_parts[:length]
+            key_prefix = key_parts[:length]
+            previous = seen.get(key_prefix)
+            if previous is not None and previous != raw_prefix:
+                raise AcceptedBuildInputSnapshotError(
+                    "accepted tracked source has namespace-equivalent paths: "
+                    f"{'/'.join(previous)} vs {'/'.join(raw_prefix)}"
+                )
+            seen[key_prefix] = raw_prefix
+
+
 def _git_environment() -> dict[str, str]:
     return {
         "HOME": "/var/empty",
@@ -137,6 +157,7 @@ def _git_tree_entries(repo: Path, source_sha: str) -> tuple[tuple[str, str, str,
         if mode not in ("100644", "100755", "120000"):
             raise AcceptedBuildInputSnapshotError(f"unsupported accepted Git mode {mode}: {relative}")
         entries.append((mode, kind, oid, relative))
+    _assert_tracked_namespace_coherence(relative for _mode, _kind, _oid, relative in entries)
     return tuple(entries)
 
 
@@ -173,9 +194,10 @@ def materialize_tracked_source(repo: Path, source_sha: str, destination: Path) -
     destination = _absolute(destination)
     if destination.exists():
         raise AcceptedBuildInputSnapshotError("tracked-source destination already exists")
+    entries = _git_tree_entries(repo, source_sha)
     destination.mkdir(parents=True, mode=0o755)
     written: set[Path] = set()
-    for mode, _kind, oid, relative in _git_tree_entries(repo, source_sha):
+    for mode, _kind, oid, relative in entries:
         if relative in written:
             raise AcceptedBuildInputSnapshotError(f"duplicate accepted Git path: {relative}")
         raw = _run_git(repo, ["cat-file", "blob", oid], binary=True)
