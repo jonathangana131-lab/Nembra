@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 42,
+    "classifiedPRTotal": 43,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1503,7 +1503,7 @@
         "lane": "",
         "pr": 3442,
         "recommendedAction": "independent-review",
-        "similarity": 0.115,
+        "similarity": 0.225,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
       },
       "3445": {
@@ -1527,6 +1527,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.283,
         "title": "[Capture P0][TEST] Accept macOS casefold fail-closed admission"
+      },
+      "3447": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3447,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.26,
+        "title": "[Vehicle/Controls V15][QA] Real surface + exact XXXL witness"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1559,7 +1570,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T22:01:22Z",
+    "liveRefreshAt": "2026-08-15T22:04:47Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5344,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 669,
+  "revision": 670,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T22:01:24Z",
+  "updatedAt": "2026-08-15T22:04:49Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T22:01:22Z",
+      "updatedAt": "2026-08-15T22:04:47Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
