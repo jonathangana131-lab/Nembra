@@ -24,8 +24,8 @@ env:
 
 jobs:
   materialize:
-    name: Pre-scrub frozen device-tool process image
-    runs-on: macos-15
+    name: Publish pre-scrub recovery (portable precheck only)
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
