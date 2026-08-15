@@ -136,6 +136,7 @@ private struct CaptureP0Root: View {
                 .frame(height: 1)
         }
         .accessibilityElement(children: .combine)
+        .accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)
         .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
         .accessibilityValue(
             fieldBuildIsAuthoritative
