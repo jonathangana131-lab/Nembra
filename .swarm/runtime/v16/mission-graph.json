@@ -1074,7 +1074,7 @@
         "lane": "rides-route-render-performance",
         "pr": 2507,
         "recommendedAction": "independent-review",
-        "similarity": 0.049,
+        "similarity": 0.05,
         "title": "[Rides V14] Pin route map render projection churn"
       },
       "3142": {
@@ -1195,14 +1195,14 @@
         "lane": "capture-physical-runbook-authority",
         "pr": 3341,
         "recommendedAction": "independent-review",
-        "similarity": 0.12,
+        "similarity": 0.119,
         "title": "[Capture P0][NO-GO] Re-anchor stationary field procedure to ba615"
       },
       "3342": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "90d525330003dc7adda7eb9806605923f167be54",
+        "headSHA": "4da6534f9fde9aa84d6ffb16d0301cd69c375760",
         "lane": "",
         "pr": 3342,
         "recommendedAction": "review-for-canonical-selection",
@@ -1228,7 +1228,7 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3344,
         "recommendedAction": "independent-review",
-        "similarity": 0.14,
+        "similarity": 0.142,
         "title": "Keep physical Energy Rail truthfully unavailable"
       },
       "3345": {
@@ -1261,7 +1261,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3349,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.375,
+        "similarity": 0.368,
         "title": "[Capture P0][RED TEAM] Pin private provenance resnapshot authority gap"
       },
       "3350": {
@@ -1283,7 +1283,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3352,
         "recommendedAction": "independent-review",
-        "similarity": 0.098,
+        "similarity": 0.097,
         "title": "[Capture P0][ACCESSIBILITY] Compose validated AX5 lock VoiceOver priority"
       },
       "3353": {
@@ -1323,7 +1323,7 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "b6e8bd5bf1cb519cbea5888e71f1b3cc80fad01c",
+        "headSHA": "06b2b14855feb13680ba2d0217d07711f85f45ea",
         "lane": "capture-signed-install-custody",
         "pr": 3356,
         "recommendedAction": "review-for-canonical-selection",
@@ -1361,7 +1361,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:21:06Z",
+    "liveRefreshAt": "2026-08-15T00:21:24Z",
     "liveRefreshDuplicatesSuppressed": [
       3350
     ],
@@ -5146,10 +5146,10 @@
       "userValue": 7
     }
   },
-  "revision": 394,
+  "revision": 395,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:21:07Z",
+  "updatedAt": "2026-08-15T00:21:24Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5225,7 +5225,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:21:06Z",
+      "updatedAt": "2026-08-15T00:21:24Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
