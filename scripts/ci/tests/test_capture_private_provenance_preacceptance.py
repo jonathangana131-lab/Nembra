@@ -13,6 +13,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -28,7 +29,12 @@ def load_guard():
     if spec is None or spec.loader is None:
         raise RuntimeError("could not load private-input build guard")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(spec.name, None)
+        raise
     return module
 
 
