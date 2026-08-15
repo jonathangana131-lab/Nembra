@@ -8,6 +8,9 @@ on:
       - Scripts/capture_tuya_private_input_build_guard.py
       - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
       - scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
+      - scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+      - scripts/ci/tests/test_capture_private_read_lease_rollback.py
+      - scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
       - .github/workflows/capture-private-build-uid-read-lease-current.yml
   workflow_dispatch:
 
@@ -37,7 +40,7 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'Exact read-lease source: %s\n' "$actual"
 
-      - name: Prove dedicated identity receives read/search only and loses it after revoke
+      - name: Prove portable ancestry descriptor and rollback contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -45,6 +48,20 @@ jobs:
           /usr/bin/python3 -m py_compile \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
             scripts/ci/capture_signed_app_build_origin_custody.py \
-            scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+
+      - name: Prove dedicated identity receives read/search only and loses it after revoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-read-lease-pycache"
           sudo -E /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
