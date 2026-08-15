@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 40,
+    "classifiedPRTotal": 41,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "navigation-app-visible",
         "pr": 2959,
         "recommendedAction": "independent-review",
-        "similarity": 0.107,
+        "similarity": 0.114,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
       "3142": {
@@ -1503,8 +1503,19 @@
         "lane": "",
         "pr": 3442,
         "recommendedAction": "independent-review",
-        "similarity": 0.088,
+        "similarity": 0.379,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
+      },
+      "3443": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3443,
+        "recommendedAction": "independent-review",
+        "similarity": 0.431,
+        "title": "[Battery/Range V15] Clear Accessibility XXXL Navigation overlap"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1537,7 +1548,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T13:07:15Z",
+    "liveRefreshAt": "2026-08-15T14:01:54Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5322,10 +5333,10 @@
       "userValue": 7
     }
   },
-  "revision": 649,
+  "revision": 650,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T13:07:17Z",
+  "updatedAt": "2026-08-15T14:01:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5412,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T13:07:15Z",
+      "updatedAt": "2026-08-15T14:01:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
