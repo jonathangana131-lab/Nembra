@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 33,
+    "classifiedPRTotal": 34,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1228,7 +1228,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3354,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.264,
+        "similarity": 0.274,
         "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
       },
       "3355": {
@@ -1338,7 +1338,7 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.19,
+        "similarity": 0.364,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
       },
       "3387": {
@@ -1371,7 +1371,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3392,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.444,
+        "similarity": 0.435,
         "title": "[Capture P0][VISUAL] Re-anchor first-fold evidence to ff779 composition"
       },
       "3394": {
@@ -1382,30 +1382,19 @@
         "lane": "capture-private-read-lease",
         "pr": 3394,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.272,
+        "similarity": 0.35,
         "title": "[Capture P0][RED TEAM] Reject inode-reuse ABA in planned lease identity"
       },
       "3395": {
-        "classification": "validation",
+        "classification": "superseded",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "2452bca778d4870f443a80e214e265cf62179e97",
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3395,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.447,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.44,
         "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
-      },
-      "3396": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3396,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.319,
-        "title": "[Capture P0][SECURITY] Keep accepted generated inputs owner-only"
       },
       "3397": {
         "classification": "validation",
@@ -1415,7 +1404,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3397,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.311,
+        "similarity": 0.204,
         "title": "[Capture P0][RED TEAM] Reject APFS case-fold generated-input aliases"
       },
       "3398": {
@@ -1428,6 +1417,28 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.273,
         "title": "[Capture P0][SECURITY] Enforce full numeric-principal admission and retirement"
+      },
+      "3399": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3399,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.354,
+        "title": "[Capture P0][SECURITY][RECOVERY] Pre-scrub frozen tool exec on current carrier"
+      },
+      "3400": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3400,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.35,
+        "title": "[Capture P0][RED TEAM] Reject mixed-generation private lease planning"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1460,7 +1471,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:12:18Z",
+    "liveRefreshAt": "2026-08-15T03:12:36Z",
     "liveRefreshDuplicatesSuppressed": [
       3397
     ],
@@ -5245,10 +5256,10 @@
       "userValue": 7
     }
   },
-  "revision": 496,
+  "revision": 497,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:12:18Z",
+  "updatedAt": "2026-08-15T03:12:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5335,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:12:18Z",
+      "updatedAt": "2026-08-15T03:12:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
