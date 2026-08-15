@@ -1,0 +1,69 @@
+name: Capture Build Root Mutable Snapshot Root Exec Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_build_root_mutable_snapshot_root_exec_red_team.py
+      - .github/workflows/capture-build-root-mutable-snapshot-root-exec-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-build-root-mutable-snapshot-root-exec-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ATTACKED_PARENT: 3e65f6a4aa9792ea48c924f3ca9f7e9bc4557d6d
+
+jobs:
+  macos-exploit-positive:
+    name: Prove field-mutable adjacent module executes as root
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact root-custody parent and diagnostic-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
+          test "$(git rev-parse "$EXACT_ATTACKED_PARENT:scripts/ci/capture_accepted_build_root_custody.py")" = \
+               "$(git rev-parse "HEAD:scripts/ci/capture_accepted_build_root_custody.py")"
+          changed="$(git diff --name-only "$EXACT_ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-build-root-mutable-snapshot-root-exec-red-team.yml \
+            scripts/ci/tests/test_capture_build_root_mutable_snapshot_root_exec_red_team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_ATTACKED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute root-code-ingress witness with real field identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          field_uid="$(id -u)"
+          field_gid="$(id -g)"
+          test "$field_uid" -gt 0
+          test "$field_gid" -gt 0
+          export PYTHONDONTWRITEBYTECODE=1
+          sudo -E env \
+            PYTHONDONTWRITEBYTECODE=1 \
+            NEMBRA_FIELD_UID="$field_uid" \
+            NEMBRA_FIELD_GID="$field_gid" \
+            /usr/bin/python3 -B -I scripts/ci/tests/test_capture_build_root_mutable_snapshot_root_exec_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve expected-red truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_BUILD_ROOT_MUTABLE_SNAPSHOT_ROOT_EXEC exploitReproduced=true productionAccepted=false signingAuthorityCreated=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
