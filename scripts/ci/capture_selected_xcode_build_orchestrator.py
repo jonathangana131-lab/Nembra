@@ -424,7 +424,21 @@ class _PrivateReadLease:
                 }
                 # Record ownership before mutation so every partial grant is reversible.
                 self._opened.append(record)
-                _chmod_acl(descriptor, "+a", acl)
+                try:
+                    _chmod_acl(descriptor, "+a", acl)
+                except Exception:
+                    # A command-level failure does not prove the kernel left the ACL
+                    # unchanged. Classify the descriptor after the call while exact
+                    # rollback custody is still held. Ambiguity is treated as a
+                    # possible mutation so revoke must attempt removal and surface any
+                    # cleanup failure rather than silently forgetting authority.
+                    try:
+                        after_failed = _acl_listing(descriptor)
+                    except Exception:
+                        record["added"] = True
+                    else:
+                        record["added"] = after_failed != before
+                    raise
                 record["added"] = True
                 after = _acl_listing(descriptor)
                 if after == before or not _principal_already_present(after, principal):
@@ -643,7 +657,7 @@ def _flag_path(command: Sequence[str], flag: str) -> Path:
     return _absolute_lexical(Path(value))
 
 
-def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Path]:
+def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, ...]:
     repo = _absolute_lexical(repo)
     live_guard = repo / ACCEPTED_GUARD_RELATIVE
     guard_indices = [index for index, value in enumerate(command) if value == str(live_guard)]
@@ -674,7 +688,12 @@ def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Pa
         raise SelectedXcodeBuildOrchestratorError(
             "private-input guard build separator is ambiguous"
         )
-    return repo / CANONICAL_SDK_RELATIVE, repo / CANONICAL_RUNTIME_RELATIVE
+    return (
+        expected["--security-podspec"],
+        expected["--security-build"],
+        expected["--identity-podspec"],
+        expected["--identity-sources"],
+    )
 
 
 def _bind_private_read_lease(build_origin: dict[str, object], lease: _PrivateReadLease) -> None:
