@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 33,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1417,6 +1417,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.281,
         "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
+      },
+      "3387": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-flagship-convergence",
+        "pr": 3387,
+        "recommendedAction": "independent-review",
+        "similarity": 0.092,
+        "title": "[Capture P0][CONVERGENCE] Compose stationary runbook + AX5 VoiceOver product"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1449,7 +1460,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:05:27Z",
+    "liveRefreshAt": "2026-08-15T03:05:46Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5234,10 +5245,10 @@
       "userValue": 7
     }
   },
-  "revision": 473,
+  "revision": 474,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:05:28Z",
+  "updatedAt": "2026-08-15T03:05:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5324,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:05:27Z",
+      "updatedAt": "2026-08-15T03:05:46Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
