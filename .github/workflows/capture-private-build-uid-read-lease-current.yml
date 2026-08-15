@@ -27,6 +27,26 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Anchor Darwin fixtures under a real no-symlink temp root
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          import os
+          from pathlib import Path
+          import stat
+
+          root = Path('/private/tmp')
+          metadata = root.lstat()
+          if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+              raise SystemExit('/private/tmp is not one real directory')
+          if root.resolve(strict=True) != root:
+              raise SystemExit('/private/tmp does not resolve to itself')
+          if not os.access(root, os.W_OK | os.X_OK):
+              raise SystemExit('/private/tmp is not writable/searchable by the runner')
+          PY
+          echo 'TMPDIR=/private/tmp' >> "$GITHUB_ENV"
+
       - name: Bind evidence to exact checked-out source
         shell: bash
         env:
