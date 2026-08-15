@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           export PYTHONDONTWRITEBYTECODE=1
-          /usr/bin/python3 -B - <<'PY'
+          /usr/bin/python3 -B - 2>&1 <<'PY' | tee /tmp/nembra-shared-ancestor-materializer.log
           from pathlib import Path
 
           source = Path('.github/workflows/capture-generated-shared-ancestor-cache-materialize-once.yml')
@@ -62,8 +62,17 @@ jobs:
           exec(payload, namespace, namespace)
           PY
 
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py 2>&1 | tee -a /tmp/nembra-shared-ancestor-materializer.log
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py 2>&1 | tee -a /tmp/nembra-shared-ancestor-materializer.log
+
+      - name: Retain materialization diagnostic
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-generated-shared-ancestor-materializer-${{ github.sha }}
+          path: /tmp/nembra-shared-ancestor-materializer.log
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Publish permanent three-path repair
         shell: bash
