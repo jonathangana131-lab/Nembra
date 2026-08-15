@@ -1239,7 +1239,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3354,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.309,
+        "similarity": 0.223,
         "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
       },
       "3355": {
@@ -1294,7 +1294,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3360,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.319,
+        "similarity": 0.251,
         "title": "[Capture P0][SECURITY] Anchor private lease component traversal"
       },
       "3363": {
@@ -1349,19 +1349,19 @@
         "lane": "capture-build-authority",
         "pr": 3380,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.19,
+        "similarity": 0.272,
         "title": "[Capture P0][SECURITY] Scrub DYLD before frozen-tool external exec"
       },
-      "3382": {
-        "classification": "validation",
+      "3383": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3382,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.299,
-        "title": "[Capture P0][RED TEAM] Reject real-directory substitution after lease planning"
+        "lane": "capture-build-authority",
+        "pr": 3383,
+        "recommendedAction": "independent-review",
+        "similarity": 0.284,
+        "title": "[Capture P0][CI] Fix Python 3.9 provenance guard loader"
       },
       "3387": {
         "classification": "validation",
@@ -1438,7 +1438,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:10:22Z",
+    "liveRefreshAt": "2026-08-15T03:10:39Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5223,10 +5223,10 @@
       "userValue": 7
     }
   },
-  "revision": 490,
+  "revision": 491,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:10:23Z",
+  "updatedAt": "2026-08-15T03:10:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5302,7 +5302,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:10:22Z",
+      "updatedAt": "2026-08-15T03:10:39Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
