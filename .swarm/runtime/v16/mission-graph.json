@@ -1074,7 +1074,7 @@
         "lane": "navigation-app-visible",
         "pr": 2959,
         "recommendedAction": "independent-review",
-        "similarity": 0.097,
+        "similarity": 0.099,
         "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
       },
       "3142": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.109,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3320": {
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.0,
+        "similarity": 0.152,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
@@ -1151,7 +1151,7 @@
         "lane": "capture-standalone-runtime-visual-evidence",
         "pr": 3334,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
+        "similarity": 0.107,
         "title": "[Capture P0][VISUAL] Bind ba615 evidence and reject blank launch frames"
       },
       "3335": {
@@ -1184,7 +1184,7 @@
         "lane": "capture-physical-runbook-authority",
         "pr": 3341,
         "recommendedAction": "independent-review",
-        "similarity": 0.0,
+        "similarity": 0.143,
         "title": "[Capture P0][NO-GO] Re-anchor stationary field procedure to ba615"
       },
       "3343": {
@@ -1197,17 +1197,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.45,
         "title": "[Capture P0][REPAIR] Make full numeric-principal witness PID-0 aware"
-      },
-      "3344": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-energyrail-unavailable-projection",
-        "pr": 3344,
-        "recommendedAction": "independent-review",
-        "similarity": 0.181,
-        "title": "Keep physical Energy Rail truthfully unavailable"
       },
       "3345": {
         "classification": "validation",
@@ -1371,8 +1360,19 @@
         "lane": "dashboard-energyrail-unavailable-projection",
         "pr": 3366,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.192,
+        "similarity": 0.133,
         "title": "[Dashboard V17] Re-anchor physical Energy Rail unavailable state on current main"
+      },
+      "3367": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3367,
+        "recommendedAction": "independent-review",
+        "similarity": 0.252,
+        "title": "[Capture][P0][recovery] Materialize component-anchored private read lease"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1405,7 +1405,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T02:58:53Z",
+    "liveRefreshAt": "2026-08-15T02:59:08Z",
     "liveRefreshDuplicatesSuppressed": [
       3359
     ],
@@ -5190,10 +5190,10 @@
       "userValue": 7
     }
   },
-  "revision": 451,
+  "revision": 452,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T02:58:53Z",
+  "updatedAt": "2026-08-15T02:59:09Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5269,7 +5269,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T02:58:53Z",
+      "updatedAt": "2026-08-15T02:59:08Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
