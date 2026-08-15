@@ -436,7 +436,21 @@ class _PrivateReadLease:
                 }
                 # Track before mutation so every partial grant is reversibly owned.
                 self._opened.append(record)
-                _chmod_acl(descriptor, "+a", acl)
+                try:
+                    _chmod_acl(descriptor, "+a", acl)
+                except Exception:
+                    # A command-level failure does not prove the kernel left the ACL
+                    # unchanged. Classify the descriptor after the call while exact
+                    # rollback custody is still held. Ambiguity is treated as a
+                    # possible mutation so revoke must attempt removal and surface any
+                    # cleanup failure rather than silently forgetting authority.
+                    try:
+                        after_failed = _acl_listing(descriptor)
+                    except Exception:
+                        record["added"] = True
+                    else:
+                        record["added"] = after_failed != before
+                    raise
                 record["added"] = True
 
                 after = _acl_listing(descriptor)
@@ -448,11 +462,14 @@ class _PrivateReadLease:
                     raise SelectedXcodeBuildOrchestratorError(
                         f"private read-lease pathname changed after grant: {path}"
                     )
-        except Exception:
-            # Preserve the original admission error. Rollback is best-effort here;
-            # the caller still fails closed and the build principal is subsequently
-            # retired by the accepted build-origin helper.
-            self.revoke(suppress_errors=True)
+        except Exception as error:
+            try:
+                self.revoke(suppress_errors=False)
+            except Exception as rollback_error:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "private read-lease grant failed and rollback failed: "
+                    + str(rollback_error)
+                ) from error
             raise
 
     def revoke(self, *, suppress_errors: bool = False) -> None:
@@ -644,7 +661,7 @@ def _flag_path(command: Sequence[str], flag: str) -> Path:
     return _absolute_lexical(Path(value))
 
 
-def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Path]:
+def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, ...]:
     repo = _absolute_lexical(repo)
     live_guard = repo / ACCEPTED_GUARD_RELATIVE
     guard_indices = [index for index, value in enumerate(command) if value == str(live_guard)]
@@ -669,7 +686,12 @@ def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Pa
     separators = [index for index, value in enumerate(command) if value == "--" and index > guard_index]
     if len(separators) != 1:
         raise SelectedXcodeBuildOrchestratorError("private-input guard build separator is ambiguous")
-    return repo / CANONICAL_SDK_RELATIVE, repo / CANONICAL_RUNTIME_RELATIVE
+    return (
+        expected["--security-podspec"],
+        expected["--security-build"],
+        expected["--identity-podspec"],
+        expected["--identity-sources"],
+    )
 
 
 def _bind_private_read_lease(build_origin: dict[str, object], lease: _PrivateReadLease) -> None:
