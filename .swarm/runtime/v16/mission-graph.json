@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 33,
+    "classifiedPRTotal": 32,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1352,17 +1352,6 @@
         "similarity": 0.08,
         "title": "[Capture P0][VISUAL] Re-anchor hardened iPhone 12 evidence to ff779"
       },
-      "3397": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3397,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.204,
-        "title": "[Capture P0][RED TEAM] Reject APFS case-fold generated-input aliases"
-      },
       "3398": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1460,9 +1449,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:21:36Z",
+    "liveRefreshAt": "2026-08-15T03:22:04Z",
     "liveRefreshDuplicatesSuppressed": [
-      3397
+      3359
     ],
     "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5245,10 +5234,10 @@
       "userValue": 7
     }
   },
-  "revision": 521,
+  "revision": 522,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:21:37Z",
+  "updatedAt": "2026-08-15T03:22:05Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5324,7 +5313,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:21:36Z",
+      "updatedAt": "2026-08-15T03:22:04Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
