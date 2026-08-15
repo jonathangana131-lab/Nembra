@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 36,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.171,
+        "similarity": 0.178,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3334": {
@@ -1228,7 +1228,7 @@
         "lane": "capture-runtime-accessibility",
         "pr": 3352,
         "recommendedAction": "independent-review",
-        "similarity": 0.289,
+        "similarity": 0.448,
         "title": "[Capture P0][ACCESSIBILITY] Compose validated AX5 lock VoiceOver priority"
       },
       "3353": {
@@ -1250,7 +1250,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3354,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.233,
+        "similarity": 0.351,
         "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
       },
       "3355": {
@@ -1274,6 +1274,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.347,
         "title": "[Capture P0][REPAIR] Preaccept private Tuya provenance before field build"
+      },
+      "3357": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-runtime-accessibility",
+        "pr": 3357,
+        "recommendedAction": "independent-review",
+        "similarity": 0.458,
+        "title": "[Capture P0][ACCESSIBILITY][RECOVERY] Materialize AX5 lock priority on ba615"
       },
       "3358": {
         "classification": "requires-review",
@@ -1318,17 +1329,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.096,
         "title": "[Navigation V15] Port accessibility surface onto current main"
-      },
-      "3364": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-runtime-accessibility",
-        "pr": 3364,
-        "recommendedAction": "independent-review",
-        "similarity": 0.249,
-        "title": "[Capture P0][ACCESSIBILITY][RECOVERY] Fix AX5 materializer working-tree scope"
       },
       "3366": {
         "classification": "superseded",
@@ -1404,7 +1404,7 @@
         "lane": "capture-build-authority",
         "pr": 3373,
         "recommendedAction": "independent-review",
-        "similarity": 0.173,
+        "similarity": 0.491,
         "title": "[Capture P0][TEST] Repair dedicated frozen-device DYLD witness"
       },
       "3374": {
@@ -1415,8 +1415,52 @@
         "lane": "capture-private-read-lease",
         "pr": 3374,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.241,
+        "similarity": 0.48,
         "title": "[Capture P0][SECURITY][VALIDATION] Prove real-directory lease replacement gap"
+      },
+      "3375": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3375,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.479,
+        "title": "[Capture P0][RED TEAM] Reject real-directory replacement after lease planning"
+      },
+      "3376": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3376,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.483,
+        "title": "[Capture P0][RED TEAM] Pin plan-to-grant real-directory replacement"
+      },
+      "3377": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3377,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.498,
+        "title": "[Capture P0][RED TEAM] Prove real-directory read-lease replacement race"
+      },
+      "3378": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "5bae55f431555146367771c76fafc5e9f7defd91",
+        "lane": "capture-build-authority",
+        "pr": 3378,
+        "recommendedAction": "independent-review",
+        "similarity": 0.509,
+        "title": "[Capture P0][TEST][RECOVERY] Re-anchor dedicated frozen-device DYLD witness"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1449,7 +1493,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:01:14Z",
+    "liveRefreshAt": "2026-08-15T03:01:34Z",
     "liveRefreshDuplicatesSuppressed": [
       3370
     ],
@@ -5234,10 +5278,10 @@
       "userValue": 7
     }
   },
-  "revision": 459,
+  "revision": 460,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:01:14Z",
+  "updatedAt": "2026-08-15T03:01:35Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5357,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:01:14Z",
+      "updatedAt": "2026-08-15T03:01:34Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
