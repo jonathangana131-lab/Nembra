@@ -6,6 +6,7 @@ on:
       - NembraApp/App/NembraCaptureBuildIdentity.swift
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraCapture.xcodeproj/project.pbxproj
+      - NembraCapture-Info.plist
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_tuya_private_input_build_guard.py
       - Scripts/capture_tuya_private_input_provenance.py
