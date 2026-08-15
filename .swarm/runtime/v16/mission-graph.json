@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 19,
+    "classifiedPRTotal": 20,
     "classifiedPRs": {
       "2507": {
         "classification": "requires-review",
@@ -1129,7 +1129,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3332,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.318,
+        "similarity": 0.325,
         "title": "[Capture P0][ORACLE] Rebase install-custody regression on live carrier"
       },
       "3333": {
@@ -1274,6 +1274,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.35,
         "title": "[Capture P0][RED TEAM] Pin private provenance resnapshot authority gap"
+      },
+      "3350": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3350,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.378,
+        "title": "[Capture P0][RED TEAM] Re-anchor whole-source compiler-window mutation on current carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1306,9 +1317,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T00:13:57Z",
+    "liveRefreshAt": "2026-08-15T00:15:02Z",
     "liveRefreshDuplicatesSuppressed": [
-      3349
+      3350
     ],
     "liveRefreshMainSHA": "44946ca3b91ad5deee1003024534e64bda1511d2",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5091,10 +5102,10 @@
       "userValue": 7
     }
   },
-  "revision": 377,
+  "revision": 378,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T00:13:58Z",
+  "updatedAt": "2026-08-15T00:15:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5181,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T00:13:57Z",
+      "updatedAt": "2026-08-15T00:15:02Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
