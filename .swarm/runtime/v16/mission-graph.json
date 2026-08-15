@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 37,
+    "classifiedPRTotal": 36,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1396,17 +1396,6 @@
         "similarity": 0.39,
         "title": "[Capture P0][RED TEAM] Reject unadmitted LocalSecrets ancestor escape"
       },
-      "3410": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "3e65f6a4aa9792ea48c924f3ca9f7e9bc4557d6d",
-        "lane": "capture-signed-install-custody",
-        "pr": 3410,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.434,
-        "title": "[Capture P0][VALIDATION] Root-custody the accepted compiler-input tree"
-      },
       "3411": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1470,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3419,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.426,
+        "similarity": 0.326,
         "title": "[Capture P0][VALIDATION] Root-custody accepted build root after selector repair"
       }
     },
@@ -1504,7 +1493,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:41:00Z",
+    "liveRefreshAt": "2026-08-15T03:41:15Z",
     "liveRefreshDuplicatesSuppressed": [
       3419
     ],
@@ -5289,10 +5278,10 @@
       "userValue": 7
     }
   },
-  "revision": 563,
+  "revision": 564,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:41:01Z",
+  "updatedAt": "2026-08-15T03:41:16Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5368,7 +5357,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:41:00Z",
+      "updatedAt": "2026-08-15T03:41:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
