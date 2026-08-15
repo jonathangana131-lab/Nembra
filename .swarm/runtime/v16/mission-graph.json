@@ -1393,7 +1393,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3409,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.391,
+        "similarity": 0.39,
         "title": "[Capture P0][RED TEAM] Reject unadmitted LocalSecrets ancestor escape"
       },
       "3410": {
@@ -1440,17 +1440,6 @@
         "similarity": 0.407,
         "title": "[Capture P0][RED TEAM] Reject mutable snapshot module under root custody"
       },
-      "3415": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "23f50c498e116422f131848392d6a33354464227",
-        "lane": "capture-signed-install-custody",
-        "pr": 3415,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.385,
-        "title": "[Capture P0][REPAIR] Hold generated private selectors by descriptor"
-      },
       "3416": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1472,6 +1461,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.187,
         "title": "[Capture P0][INTERNAL] Re-anchor root custody onto fe40 admission"
+      },
+      "3418": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3418,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.37,
+        "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1504,9 +1504,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T03:39:30Z",
+    "liveRefreshAt": "2026-08-15T03:39:54Z",
     "liveRefreshDuplicatesSuppressed": [
-      3416
+      3418
     ],
     "liveRefreshMainSHA": "b7627975bd3e51a23fc8b6fff95f4db67d43f9d1",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5289,10 +5289,10 @@
       "userValue": 7
     }
   },
-  "revision": 559,
+  "revision": 560,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T03:39:32Z",
+  "updatedAt": "2026-08-15T03:39:55Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5368,7 +5368,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T03:39:30Z",
+      "updatedAt": "2026-08-15T03:39:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
