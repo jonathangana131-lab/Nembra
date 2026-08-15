@@ -1,0 +1,53 @@
+name: Capture Generated Shared Ancestor Cache Dup FD Leak Red Team
+
+on:
+  pull_request:
+    branches:
+      - recovery/v17-capture-shared-ancestor-direct-publish-sol-20260815
+    paths:
+      - scripts/ci/tests/test_capture_generated_shared_ancestor_cache_dup_fd_leak_red_team.py
+      - .github/workflows/capture-generated-shared-ancestor-cache-dup-fd-leak-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXACT_ATTACKED_PARENT: 5ff7af463c80ee47bc92f796dbc0c85347f0790d
+
+jobs:
+  exploit-positive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind exact validation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
+          changed="$(git diff --name-only "$EXACT_ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-cache-dup-fd-leak-red-team.yml \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_cache_dup_fd_leak_red_team.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_ATTACKED_PARENT"...HEAD
+      - name: Require exploit-positive descriptor leak witness
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_cache_dup_fd_leak_red_team.py
+      - name: Preserve attacked product and truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$EXACT_ATTACKED_PARENT:scripts/ci/capture_accepted_build_input_snapshot.py")" = \
+               "$(git rev-parse "HEAD:scripts/ci/capture_accepted_build_input_snapshot.py")"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'Expected-red validation only: green reproduces an FD cleanup leak and creates no signing/install/device/Bluetooth/Tuya/telemetry/command/physical authority.'
