@@ -1,0 +1,503 @@
+name: Capture Read Lease Planned Identity Materializer
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-read-lease-planned-identity-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-read-lease-planned-identity-materialize-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 64d3433e2ae5a507ec685e6703996bb8e7aec868
+  MATERIALIZER: .github/workflows/capture-read-lease-planned-identity-materialize.yml
+
+jobs:
+  materialize:
+    name: Materialize planned-object identity continuity
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact recovery input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = "$MATERIALIZER"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize identity-carrying lease admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          helper = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          source = helper.read_text(encoding='utf-8')
+
+          plan_start = source.index('def _subject_entries(subject: Path)')
+          plan_end = source.index('\ndef _acl_text(', plan_start)
+          planned = textwrap.dedent('''\
+          def _metadata_signature(metadata: os.stat_result) -> tuple[int, int, int]:
+              return metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode)
+
+
+          def _subject_entries(
+              subject: Path,
+          ) -> tuple[tuple[Path, bool, tuple[int, int, int]], ...]:
+              try:
+                  root_metadata = subject.lstat()
+              except OSError as error:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease subject is unavailable: {subject}"
+                  ) from error
+              if stat.S_ISLNK(root_metadata.st_mode):
+                  raise SelectedXcodeBuildOrchestratorError("private read-lease subject root may not be a symlink")
+              if stat.S_ISREG(root_metadata.st_mode):
+                  return ((subject, False, _metadata_signature(root_metadata)),)
+              if not stat.S_ISDIR(root_metadata.st_mode):
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease subject root has unsupported type: {subject}"
+                  )
+
+              entries: list[tuple[Path, bool, tuple[int, int, int]]] = [
+                  (subject, True, _metadata_signature(root_metadata))
+              ]
+              for current_raw, directory_names, file_names in os.walk(subject, topdown=True, followlinks=False):
+                  current = Path(current_raw)
+                  kept_directories: list[str] = []
+                  for name in directory_names:
+                      candidate = current / name
+                      metadata = candidate.lstat()
+                      if stat.S_ISLNK(metadata.st_mode):
+                          _validate_internal_symlink(candidate, subject)
+                          continue
+                      if not stat.S_ISDIR(metadata.st_mode):
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease directory entry changed type: {candidate}"
+                          )
+                      entries.append((candidate, True, _metadata_signature(metadata)))
+                      kept_directories.append(name)
+                  directory_names[:] = kept_directories
+                  for name in file_names:
+                      candidate = current / name
+                      metadata = candidate.lstat()
+                      if stat.S_ISLNK(metadata.st_mode):
+                          _validate_internal_symlink(candidate, subject)
+                          continue
+                      if not stat.S_ISREG(metadata.st_mode):
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease file entry is not regular: {candidate}"
+                          )
+                      entries.append((candidate, False, _metadata_signature(metadata)))
+              return tuple(entries)
+
+
+          def _lease_plan(
+              subjects: Sequence[Path],
+              repo: Path,
+          ) -> tuple[tuple[Path, bool, bool, tuple[int, int, int]], ...]:
+              """Freeze pathname policy and accepted object identity in one validation pass."""
+
+              repo = _absolute_lexical(repo)
+              repo_metadata = _require_real_directory(repo, "repository root")
+              if not subjects:
+                  raise SelectedXcodeBuildOrchestratorError("private read lease has no subjects")
+
+              ordered: list[tuple[Path, bool, bool, tuple[int, int, int]]] = []
+              seen: set[Path] = set()
+
+              def admit(path: Path, host_only: bool, is_directory: bool, metadata: os.stat_result) -> None:
+                  if path in seen:
+                      return
+                  ordered.append((path, host_only, is_directory, _metadata_signature(metadata)))
+                  seen.add(path)
+
+              # Widen host traversal only until the first ancestor already searchable by all.
+              current = repo.parent
+              private_hosts: list[tuple[Path, os.stat_result]] = []
+              while current != current.parent:
+                  metadata = _require_real_directory(current, "repository host ancestry")
+                  if metadata.st_mode & stat.S_IXOTH:
+                      break
+                  private_hosts.append((current, metadata))
+                  current = current.parent
+              for path, metadata in reversed(private_hosts):
+                  admit(path, True, True, metadata)
+
+              admit(repo, False, True, repo_metadata)
+
+              for raw_subject in subjects:
+                  subject = _absolute_lexical(raw_subject)
+                  try:
+                      relative = subject.relative_to(repo)
+                  except ValueError as error:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          "private read-lease subject escaped the repository"
+                      ) from error
+                  if not relative.parts:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          "private read-lease subject may not be the repository root"
+                      )
+
+                  cursor = repo
+                  for component in relative.parts:
+                      if component in ("", ".", ".."):
+                          raise SelectedXcodeBuildOrchestratorError(
+                              "private read-lease subject has unsafe ancestry"
+                          )
+                      cursor = cursor / component
+                      try:
+                          metadata = cursor.lstat()
+                      except OSError as error:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease subject ancestry is unavailable: {cursor}"
+                          ) from error
+                      if stat.S_ISLNK(metadata.st_mode):
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease subject ancestry contains a symlink: {cursor}"
+                          )
+                      is_directory = stat.S_ISDIR(metadata.st_mode)
+                      if cursor != subject and not is_directory:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease subject ancestry is not a directory: {cursor}"
+                          )
+                      if cursor == subject and not is_directory and not stat.S_ISREG(metadata.st_mode):
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease subject root has unsupported type: {cursor}"
+                          )
+                      admit(cursor, False, is_directory, metadata)
+
+                  for path, is_directory, signature in _subject_entries(subject):
+                      if path not in seen:
+                          ordered.append((path, False, is_directory, signature))
+                          seen.add(path)
+
+              return tuple(ordered)
+
+
+          def _lease_paths(subjects: Sequence[Path], repo: Path) -> tuple[tuple[Path, bool], ...]:
+              """Compatibility projection of the identity-bearing private read-lease plan."""
+              return tuple((path, host_only) for path, host_only, _is_directory, _signature in _lease_plan(subjects, repo))
+          ''')
+          source = source[:plan_start] + planned + source[plan_end:]
+
+          open_start = source.index('def _open_pinned_path(')
+          open_end = source.index('\ndef _descriptor_path(', open_start)
+          opener = textwrap.dedent('''\
+          def _open_pinned_path(
+              path: Path,
+              is_directory: bool,
+              accepted_signature: tuple[int, int, int],
+          ) -> int:
+              """Open one planned lease subject without following components or changing identity."""
+              path = _absolute_lexical(path)
+              parts = path.parts
+              if len(parts) < 2 or parts[0] != os.sep:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease path has no admissible absolute component walk: {path}"
+                  )
+              if os.open not in os.supports_dir_fd:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "private read-lease component walk requires openat/dir_fd support"
+                  )
+              nofollow = getattr(os, "O_NOFOLLOW", 0)
+              odirectory = getattr(os, "O_DIRECTORY", 0)
+              if nofollow == 0 or odirectory == 0:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "private read-lease component walk requires O_NOFOLLOW and O_DIRECTORY"
+                  )
+
+              common = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow
+              current = -1
+              descriptor = -1
+              try:
+                  current = os.open(
+                      os.sep,
+                      os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | odirectory,
+                  )
+                  for index, component in enumerate(parts[1:]):
+                      if component in ("", ".", "..") or os.sep in component:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease path contains an unsafe component: {path}"
+                          )
+                      final = index == len(parts) - 2
+                      flags = common
+                      if not final or is_directory:
+                          flags |= odirectory
+                      try:
+                          next_descriptor = os.open(component, flags, dir_fd=current)
+                      except OSError as error:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease component could not be pinned without following links: {path}"
+                          ) from error
+                      os.close(current)
+                      current = next_descriptor
+
+                  descriptor = current
+                  current = -1
+                  mode = os.fstat(descriptor).st_mode
+                  if is_directory != stat.S_ISDIR(mode):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease descriptor type disagrees with plan: {path}"
+                      )
+                  if not is_directory and not stat.S_ISREG(mode):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease file descriptor is not regular: {path}"
+                      )
+                  descriptor_signature = _descriptor_signature(descriptor)
+                  if descriptor_signature != accepted_signature:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease object changed identity after planning: {path}"
+                      )
+                  # Current pathname lookup is only a later fail-closed liveness/rename
+                  # diagnostic. It is never the identity accepted by the plan.
+                  if descriptor_signature != _path_signature(path):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease pathname changed during anchored component walk: {path}"
+                      )
+                  result = descriptor
+                  descriptor = -1
+                  return result
+              except Exception:
+                  if current >= 0:
+                      os.close(current)
+                  if descriptor >= 0:
+                      os.close(descriptor)
+                  raise
+          ''')
+          source = source[:open_start] + opener + source[open_end:]
+
+          old_grant = '''            for path, host_only in _lease_paths(self._subjects, self._repository):
+                          metadata = path.lstat()
+                          if stat.S_ISLNK(metadata.st_mode):
+                              raise SelectedXcodeBuildOrchestratorError(
+                                  f"private read-lease plan targeted a symlink: {path}"
+                              )
+                          is_directory = stat.S_ISDIR(metadata.st_mode)
+                          if not is_directory and not stat.S_ISREG(metadata.st_mode):
+                              raise SelectedXcodeBuildOrchestratorError(
+                                  f"private read-lease plan targeted unsupported type: {path}"
+                              )
+                          descriptor = _open_pinned_path(path, is_directory)
+          '''.replace('          ', '')
+          new_grant = '''            for path, host_only, is_directory, accepted_signature in _lease_plan(
+                              self._subjects, self._repository
+                          ):
+                              descriptor = _open_pinned_path(path, is_directory, accepted_signature)
+          '''.replace('          ', '')
+          if source.count(old_grant) != 1:
+              raise SystemExit(f'expected exact grant seam once, found {source.count(old_grant)}')
+          source = source.replace(old_grant, new_grant)
+          helper.write_text(source, encoding='utf-8')
+
+          test = Path('scripts/ci/tests/test_capture_private_read_lease_component_walk.py')
+          test.write_text(textwrap.dedent('''\
+          #!/usr/bin/env python3
+          """Portable regression for component-anchored, identity-bound private read-lease admission."""
+          from __future__ import annotations
+
+          import importlib.util
+          import inspect
+          import os
+          from pathlib import Path
+          import tempfile
+          import unittest
+
+          REPO = Path(__file__).resolve().parents[3]
+          HELPER = REPO / "scripts/ci/capture_selected_xcode_build_orchestrator.py"
+
+
+          def load():
+              spec = importlib.util.spec_from_file_location("nembra_component_walk", HELPER)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError("could not load selected-Xcode orchestrator")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+
+
+          class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
+              def _entry(self, helper, subject: Path, repo: Path):
+                  entries = [entry for entry in helper._lease_plan((subject,), repo) if entry[0] == subject]
+                  self.assertEqual(len(entries), 1)
+                  return entries[0]
+
+              def test_intermediate_symlink_swap_is_rejected_after_plan(self) -> None:
+                  helper = load()
+                  with tempfile.TemporaryDirectory(prefix="nembra-component-walk-") as raw:
+                      outer = Path(raw)
+                      repo = outer / "repo"
+                      legitimate = repo / "LocalSecrets/TuyaSDK/Build"
+                      legitimate.mkdir(parents=True)
+                      path, _host_only, is_directory, accepted_signature = self._entry(helper, legitimate, repo)
+
+                      sdk = repo / "LocalSecrets/TuyaSDK"
+                      sdk.rename(repo / "LocalSecrets/TuyaSDK.original")
+                      attacker = outer / "attacker/TuyaSDK"
+                      attacker_build = attacker / "Build"
+                      attacker_build.mkdir(parents=True)
+                      sdk.symlink_to(attacker, target_is_directory=True)
+
+                      plain = os.open(legitimate, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                      try:
+                          self.assertEqual(os.fstat(plain).st_ino, attacker_build.stat().st_ino)
+                      finally:
+                          os.close(plain)
+
+                      with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                          helper._open_pinned_path(path, is_directory, accepted_signature)
+
+              def test_real_directory_replacement_is_rejected_against_accepted_plan(self) -> None:
+                  helper = load()
+                  with tempfile.TemporaryDirectory(prefix="nembra-component-identity-") as raw:
+                      outer = Path(raw)
+                      repo = outer / "repo"
+                      legitimate = repo / "LocalSecrets/TuyaSDK/Build"
+                      legitimate.mkdir(parents=True)
+                      path, _host_only, is_directory, accepted_signature = self._entry(helper, legitimate, repo)
+
+                      sdk = repo / "LocalSecrets/TuyaSDK"
+                      sdk.rename(repo / "LocalSecrets/TuyaSDK.accepted")
+                      replacement = sdk / "Build"
+                      replacement.mkdir(parents=True)
+                      self.assertNotEqual(helper._path_signature(replacement), accepted_signature)
+                      self.assertFalse(sdk.is_symlink())
+                      self.assertFalse(replacement.is_symlink())
+
+                      with self.assertRaisesRegex(
+                          helper.SelectedXcodeBuildOrchestratorError,
+                          "changed identity after planning",
+                      ):
+                          helper._open_pinned_path(path, is_directory, accepted_signature)
+
+              def test_grant_rejects_real_directory_replacement_before_acl_inspection(self) -> None:
+                  helper = load()
+                  with tempfile.TemporaryDirectory(prefix="nembra-component-grant-identity-") as raw:
+                      repo = Path(raw) / "repo"
+                      legitimate = repo / "LocalSecrets/TuyaSDK/Build"
+                      legitimate.mkdir(parents=True)
+                      original_plan = helper._lease_plan
+
+                      def raced_plan(subjects, repository):
+                          plan = original_plan(subjects, repository)
+                          accepted = [entry for entry in plan if entry[0] == legitimate]
+                          self.assertEqual(len(accepted), 1)
+                          sdk = repo / "LocalSecrets/TuyaSDK"
+                          sdk.rename(repo / "LocalSecrets/TuyaSDK.accepted")
+                          (sdk / "Build").mkdir(parents=True)
+                          return tuple(accepted)
+
+                      def unexpected_acl(_descriptor):
+                          raise AssertionError("replacement descriptor reached ACL inspection")
+
+                      helper._lease_plan = raced_plan
+                      helper._acl_listing = unexpected_acl
+                      lease = helper._PrivateReadLease((legitimate,), repo)
+                      with self.assertRaisesRegex(
+                          helper.SelectedXcodeBuildOrchestratorError,
+                          "changed identity after planning",
+                      ):
+                          lease.grant("nembrabuildfixture")
+
+              def test_real_directory_and_regular_file_still_open(self) -> None:
+                  helper = load()
+                  with tempfile.TemporaryDirectory(prefix="nembra-component-walk-control-") as raw:
+                      root = Path(raw)
+                      directory = root / "a/b/c"
+                      directory.mkdir(parents=True)
+                      file = directory / "private.fixture"
+                      file.write_bytes(b"fixture\\n")
+                      for path, is_directory in ((directory, True), (file, False)):
+                          accepted_signature = helper._path_signature(path)
+                          descriptor = helper._open_pinned_path(path, is_directory, accepted_signature)
+                          try:
+                              self.assertEqual(helper._descriptor_signature(descriptor), accepted_signature)
+                          finally:
+                              os.close(descriptor)
+
+              def test_lease_paths_preserves_two_field_policy_projection(self) -> None:
+                  helper = load()
+                  with tempfile.TemporaryDirectory(prefix="nembra-component-policy-projection-") as raw:
+                      repo = Path(raw) / "repo"
+                      subject = repo / "LocalSecrets/TuyaSDK/Build"
+                      subject.mkdir(parents=True)
+                      projected = helper._lease_paths((subject,), repo)
+                      self.assertTrue(projected)
+                      self.assertTrue(all(len(entry) == 2 for entry in projected))
+                      self.assertIn((subject, False), projected)
+
+              def test_source_carries_planned_identity_into_component_opener(self) -> None:
+                  helper = load()
+                  opener = inspect.getsource(helper._open_pinned_path)
+                  grant = inspect.getsource(helper._PrivateReadLease.grant)
+                  self.assertIn("dir_fd=current", opener)
+                  self.assertIn("O_NOFOLLOW", opener)
+                  self.assertIn("accepted_signature", opener)
+                  self.assertLess(
+                      opener.index("descriptor_signature != accepted_signature"),
+                      opener.index("_path_signature(path)"),
+                  )
+                  self.assertIn("for path, host_only, is_directory, accepted_signature in _lease_plan", grant)
+                  self.assertIn("_open_pinned_path(path, is_directory, accepted_signature)", grant)
+                  self.assertNotIn("metadata = path.lstat()", grant)
+
+
+          if __name__ == "__main__":
+              unittest.main(verbosity=2)
+          '''), encoding='utf-8')
+          PY
+
+          git diff --check
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+
+      - name: Publish clean recovery head
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          test -n "$HEAD_REF"
+          git config user.name 'nembra-swarm-bot'
+          git config user.email 'nembra-swarm-bot@users.noreply.github.com'
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git commit -m 'capture: bind private lease to planned object identity'
+          git rm "$MATERIALIZER"
+          git commit -m 'capture: remove planned-identity materializer'
+          final="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          test "$final" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git push origin "HEAD:$HEAD_REF"
