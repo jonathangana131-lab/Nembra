@@ -1,0 +1,77 @@
+name: Capture Generated Shared Ancestor Repair Publish Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-generated-shared-ancestor-set-sol-20260814
+    paths:
+      - .github/workflows/capture-generated-shared-ancestor-repair-publish-once.yml
+
+permissions:
+  contents: write
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+
+      - name: Bind authoring-only lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=fe40c025eb10247c73820f4001ab63affaa60af7
+          test "$(git merge-base HEAD "$base")" = "$base"
+          actual="$(git diff --name-only "$base"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-generated-shared-ancestor-repair-materialize-once.yml' \
+            '.github/workflows/capture-generated-shared-ancestor-repair-publish-once.yml' | LC_ALL=C sort)"
+          printf 'authoring lineage paths:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+
+      - name: Replay already-passed materialization and suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/capture-generated-shared-ancestor-repair-materialize-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if "python3 -B - <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(lines)) if lines[i].strip() == 'PY')
+          program = textwrap.dedent('\n'.join(lines[start:end]))
+          exec(compile(program, str(workflow), 'exec'), {})
+          PY
+          python3 -B scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+
+      - name: Publish exact two-file repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=fe40c025eb10247c73820f4001ab63affaa60af7
+          rm \
+            .github/workflows/capture-generated-shared-ancestor-repair-materialize-once.yml \
+            .github/workflows/capture-generated-shared-ancestor-repair-publish-once.yml
+          git config user.name "nembra-capture-materializer"
+          git config user.email "capture-materializer@users.noreply.github.com"
+          git add -A
+          printf 'staged name-status vs attacked parent:\n'
+          git diff --cached --name-status "$base"
+          staged="$(git diff --cached --name-only "$base" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            'scripts/ci/capture_accepted_build_input_snapshot.py' \
+            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' | LC_ALL=C sort)"
+          test "$staged" = "$expected"
+          test -z "$(git diff --cached --name-only | grep -E '(__pycache__|\.pyc$)' || true)"
+          git commit -m "Hold generated subject shared ancestor generation"
+          git push origin HEAD:repair/v17-capture-generated-shared-ancestor-set-sol-20260814
