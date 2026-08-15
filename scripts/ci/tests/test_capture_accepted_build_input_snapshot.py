@@ -95,6 +95,31 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
                 'let secret = "APP-SECRET-A"\n',
             )
 
+    def test_staged_generated_inputs_remain_owner_only(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "repo"
+            root.mkdir()
+            source_sha = seed_repo(root)
+            seed_generated(root)
+            accepted = snapshot.generated_manifest_sha256(root, source_sha)
+            destination = Path(raw) / "stage"
+            snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
+
+            for subject in snapshot.GENERATED_SUBJECTS:
+                subject_path = destination / subject
+                candidates = [subject_path]
+                if subject_path.is_dir() and not subject_path.is_symlink():
+                    candidates.extend(subject_path.rglob("*"))
+                for candidate in candidates:
+                    if candidate.is_symlink():
+                        continue
+                    with self.subTest(path=candidate.relative_to(destination)):
+                        self.assertEqual(
+                            candidate.stat().st_mode & 0o077,
+                            0,
+                            f"generated/private staged subject widened group/other authority: {candidate}",
+                        )
+
     def test_changed_private_input_fails_manifest_and_destroys_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "repo"
