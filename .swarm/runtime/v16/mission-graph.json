@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 51,
+    "classifiedPRTotal": 52,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1382,7 +1382,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.289,
+        "similarity": 0.297,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1426,7 +1426,7 @@
         "lane": "",
         "pr": 3432,
         "recommendedAction": "independent-review",
-        "similarity": 0.214,
+        "similarity": 0.199,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
@@ -1495,17 +1495,6 @@
         "similarity": 0.295,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
-      "3462": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3462,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.403,
-        "title": "[Capture P0][RED TEAM] Prove final-child swap after parent revalidation"
-      },
       "3467": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1569,7 +1558,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3479,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.411,
+        "similarity": 0.39,
         "title": "[Capture P0][RED TEAM] Attack generated root sibling continuity"
       },
       "3480": {
@@ -1591,7 +1580,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3481,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.504,
+        "similarity": 0.422,
         "title": "[Capture P0][REPAIR] Revalidate held ancestor after final child admission"
       },
       "3483": {
@@ -1602,19 +1591,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3483,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.454,
+        "similarity": 0.437,
         "title": "[Capture P0][REPAIR] Revalidate generated parent after final-child open"
-      },
-      "3484": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3484,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.407,
-        "title": "[Capture P0][RED TEAM] Prove cached-parent postcheck sibling splice"
       },
       "3485": {
         "classification": "validation",
@@ -1624,8 +1602,41 @@
         "lane": "capture-signed-install-custody",
         "pr": 3485,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.311,
+        "similarity": 0.328,
         "title": "[Capture P0][QA] Prove composed accepted-input admission on macOS"
+      },
+      "3486": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "804dc58ede0c9dd62bafb5eb0dd1dd4c8170d623",
+        "lane": "capture-field-build-provenance",
+        "pr": 3486,
+        "recommendedAction": "independent-review",
+        "similarity": 0.143,
+        "title": "[Capture P0][CI] Make field-provenance launcher contract structural"
+      },
+      "3487": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3487,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.397,
+        "title": "[Capture P0][RED TEAM] Prove composed postcheck sibling splice"
+      },
+      "3488": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3488,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.466,
+        "title": "[Capture P0][REPAIR] Close final-child splice on live accepted-input carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1658,7 +1669,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:30:27Z",
+    "liveRefreshAt": "2026-08-16T06:30:47Z",
     "liveRefreshDuplicatesSuppressed": [
       3485
     ],
@@ -5443,10 +5454,10 @@
       "userValue": 7
     }
   },
-  "revision": 729,
+  "revision": 730,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:30:30Z",
+  "updatedAt": "2026-08-16T06:30:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5522,7 +5533,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:30:27Z",
+      "updatedAt": "2026-08-16T06:30:47Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
