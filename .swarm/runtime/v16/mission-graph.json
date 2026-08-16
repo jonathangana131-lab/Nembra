@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 50,
+    "classifiedPRTotal": 51,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1565,11 +1565,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "fe105b0d9018e05a131422a1949a2169ef44d23f",
+        "headSHA": "80e311283ad15456c907626fdb4f260a43496c78",
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3475,
         "recommendedAction": "independent-review",
-        "similarity": 0.073,
+        "similarity": 0.072,
         "title": "[Dashboard V17] Make the battery itself the range toggle"
       },
       "3476": {
@@ -1602,7 +1602,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3478,
         "recommendedAction": "independent-review",
-        "similarity": 0.374,
+        "similarity": 0.415,
         "title": "[Capture P0][TEST] Use structured field credentials in root-custody witness"
       },
       "3479": {
@@ -1615,6 +1615,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.39,
         "title": "[Capture P0][RED TEAM] Attack generated root sibling continuity"
+      },
+      "3480": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "038cb264109c91b9e44e148f5d8496d77167bfd6",
+        "lane": "capture-signed-install-custody",
+        "pr": 3480,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.417,
+        "title": "[Capture P0][VALIDATION] Re-run root custody with structured credentials"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1647,9 +1658,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:28:17Z",
+    "liveRefreshAt": "2026-08-16T06:28:35Z",
     "liveRefreshDuplicatesSuppressed": [
-      3479
+      3480
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5432,10 +5443,10 @@
       "userValue": 7
     }
   },
-  "revision": 722,
+  "revision": 723,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:28:20Z",
+  "updatedAt": "2026-08-16T06:28:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5511,7 +5522,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:28:17Z",
+      "updatedAt": "2026-08-16T06:28:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
