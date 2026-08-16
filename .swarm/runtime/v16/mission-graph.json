@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.258,
+        "similarity": 0.255,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1550,16 +1550,16 @@
         "similarity": 0.426,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
-      "3459": {
+      "3460": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "cb32096a4d40feb77f2f90d4e6dbea229a2daa43",
-        "lane": "capture-signed-install-custody",
-        "pr": 3459,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3460,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.289,
-        "title": "[Capture P0][REPAIR] Make accepted-input casefold gate macOS-exact"
+        "similarity": 0.402,
+        "title": "[Capture P0][REPAIR] Revalidate symlinks at private-lease handoff"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1592,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:22:08Z",
+    "liveRefreshAt": "2026-08-16T06:22:27Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5377,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 703,
+  "revision": 704,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:22:10Z",
+  "updatedAt": "2026-08-16T06:22:29Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:22:08Z",
+      "updatedAt": "2026-08-16T06:22:27Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
