@@ -56,7 +56,13 @@ jobs:
                   XCTAssertTrue(connected.descendants(matching: .any)["vehicle-controls.status"].waitForExistence(timeout: 3))
                   XCTAssertTrue(connected.descendants(matching: .any)["vehicle-controls.battery-range"].waitForExistence(timeout: 2))
                   XCTAssertTrue(connected.descendants(matching: .any)["vehicle-controls.headlight.off"].waitForExistence(timeout: 2))
-                  XCTAssertTrue(connected.descendants(matching: .any)["vehicle-controls.lock.locked"].waitForExistence(timeout: 2))
+
+                  let locked = connected.descendants(matching: .any)["vehicle-controls.lock.locked"]
+                  let unlocked = connected.descendants(matching: .any)["vehicle-controls.lock.unlocked"]
+                  XCTAssertTrue(
+                      locked.waitForExistence(timeout: 1) || unlocked.waitForExistence(timeout: 1),
+                      "Connected-stopped must expose one confirmed lock-state choice without assuming which fixture value is selected."
+                  )
                   keepScreenshot(named: "Vehicle Controls Connected Upper")
 
                   let connectedSurface = connected.scrollViews.firstMatch
