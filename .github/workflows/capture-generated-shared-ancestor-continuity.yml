@@ -43,6 +43,7 @@ jobs:
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-build-input-snapshot-validation.yml \
             .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_input_snapshot.py \
             scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
