@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   repair:
-    name: Materialize Xcode 27 provenance plist repair
+    name: Materialize product-only Xcode 27 provenance plist repair
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -25,27 +25,27 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = 'capture/one-time-ble-dump-gpt56'
           parent="$(git rev-parse HEAD^)"
-          test "$parent" = '6951d3d5405dc4fac13184b3823ed13d2259e16f'
+          test "$parent" = 'ca1e18727c293329136907bf8fc1937d96562448'
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize reviewed plist stamping repair
+      - name: Materialize product stamping repair
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_exact(path: str, old: str, new: str, count: int = 1):
+          def replace_exact(path: str, old: str, new: str):
               p = Path(path)
               text = p.read_text()
               actual = text.count(old)
-              if actual != count:
-                  raise SystemExit(f"{path}: expected {count} copies of anchor, found {actual}: {old!r}")
+              if actual != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {actual}: {old!r}")
               p.write_text(text.replace(old, new))
 
           plist = Path('NembraCaptureProvenance.plist')
           if plist.exists():
-              raise SystemExit('NembraCaptureProvenance.plist already exists; refusing ambiguous repair')
+              raise SystemExit('NembraCaptureProvenance.plist already exists')
           plist.write_text('''<?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -62,61 +62,17 @@ jobs:
           </plist>
           ''')
 
-          installer = 'scripts/field/install_one_time_capture.command'
           replace_exact(
-              installer,
+              'scripts/field/install_one_time_capture.command',
               '    "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \\\n    "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID" \\\n',
               '    "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=$TUYA_DEPENDENCY_LOCK_SHA256" \\\n    "NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID" \\\n    "INFOPLIST_FILE=NembraCaptureProvenance.plist" \\\n'
           )
-
-          procedure_test = 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'
           replace_exact(
-              procedure_test,
+              'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift',
               '#expect(installer.contains("INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"))',
               '#expect(installer.contains("NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID"))\n        #expect(installer.contains("INFOPLIST_FILE=NembraCaptureProvenance.plist"))'
           )
-
-          provenance = '.github/workflows/capture-field-build-provenance.yml'
-          replace_exact(
-              provenance,
-              "          project='NembraCapture.xcodeproj/project.pbxproj'\n          installer='scripts/field/install_one_time_capture.command'\n",
-              "          project='NembraCapture.xcodeproj/project.pbxproj'\n          provenance_plist='NembraCaptureProvenance.plist'\n          installer='scripts/field/install_one_time_capture.command'\n"
-          )
-          replace_exact(
-              provenance,
-              "          grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID' \"$installer\"\n",
-              "          grep -Fq 'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID' \"$installer\"\n          grep -Fq 'INFOPLIST_FILE=NembraCaptureProvenance.plist' \"$installer\"\n"
-          )
-          replace_exact(
-              provenance,
-              "          grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = \"$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)\";' \"$project\"\n",
-              "          grep -Fq 'INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = \"$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)\";' \"$project\"\n          /usr/bin/plutil -lint \"$provenance_plist\" >/dev/null\n          grep -Fq '<string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>' \"$provenance_plist\"\n          grep -Fq '<string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>' \"$provenance_plist\"\n          grep -Fq '<string>$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)</string>' \"$provenance_plist\"\n          grep -Fq '<string>$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)</string>' \"$provenance_plist\"\n"
-          )
-          replace_exact(
-              provenance,
-              "          grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID' \"$procedure_test\"\n",
-              "          grep -Fq 'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID' \"$procedure_test\"\n          grep -Fq 'INFOPLIST_FILE=NembraCaptureProvenance.plist' \"$procedure_test\"\n"
-          )
-          replace_exact(
-              provenance,
-              '            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \\\n            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \\\n            build\n',
-              '            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \\\n            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" \\\n            INFOPLIST_FILE=NembraCaptureProvenance.plist \\\n            build\n'
-          )
-
-          for workflow in [
-              '.github/workflows/capture-field-build-diagnostic.yml',
-              '.github/workflows/capture-field-precheck-build-diagnostic.yml',
-              '.github/workflows/capture-field-stamp-diagnostic.yml',
-          ]:
-              replace_exact(
-                  workflow,
-                  '            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \\\n            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \\\n            build',
-                  '            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \\\n            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" \\\n            INFOPLIST_FILE=NembraCaptureProvenance.plist \\\n            build'
-              )
           PY
-
-          rm -f .github/workflows/capture-provenance-plist-one-shot.yml
-          /usr/bin/plutil --version >/dev/null 2>&1 || true
           python3 - <<'PY'
           import plistlib
           with open('NembraCaptureProvenance.plist', 'rb') as f:
@@ -128,23 +84,17 @@ jobs:
               'NembraCaptureProcedureIdentifier': '$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)',
           }
           if data != expected:
-              raise SystemExit(f'unexpected provenance plist contents: {data!r}')
+              raise SystemExit(f'unexpected plist contents: {data!r}')
           PY
           bash -n scripts/field/install_one_time_capture.command
           git diff --check
 
-      - name: Verify exact repair delta
+      - name: Verify product-only delta
         shell: bash
         run: |
           set -euo pipefail
           mapfile -t changed < <(git status --porcelain=v1 --untracked-files=all | sed -E 's/^.. //' | sort)
-          printf '%s\n' "${changed[@]}"
           expected=(
-            '.github/workflows/capture-field-build-diagnostic.yml'
-            '.github/workflows/capture-field-build-provenance.yml'
-            '.github/workflows/capture-field-precheck-build-diagnostic.yml'
-            '.github/workflows/capture-field-stamp-diagnostic.yml'
-            '.github/workflows/capture-provenance-plist-one-shot.yml'
             'NembraCaptureProvenance.plist'
             'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'
             'scripts/field/install_one_time_capture.command'
@@ -155,14 +105,14 @@ jobs:
           ! grep -R -n -F 'publishDps(' NembraApp/App/NembraCaptureEntrypoint.swift NembraApp/Features/Research/TuyaAccountBridge.swift
           ! grep -R -n -F 'writeValue(' NembraApp/App/NembraCaptureEntrypoint.swift NembraApp/Features/Research/TuyaAccountBridge.swift
 
-      - name: Publish coherent successor
+      - name: Publish product successor
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add NembraCaptureProvenance.plist \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift \
+            scripts/field/install_one_time_capture.command
           git commit -m 'Capture: stamp provenance through explicit plist input'
           git push origin HEAD:capture/one-time-ble-dump-gpt56
