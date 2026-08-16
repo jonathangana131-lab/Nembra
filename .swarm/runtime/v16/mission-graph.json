@@ -1492,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3513,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.273,
+        "similarity": 0.272,
         "title": "[Capture P0][REPAIR] Compose current selector fences with two-OS QA scope"
       },
       "3514": {
@@ -1548,7 +1548,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:41:52Z",
+    "liveRefreshAt": "2026-08-16T06:42:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3512
     ],
@@ -5333,10 +5333,10 @@
       "userValue": 7
     }
   },
-  "revision": 765,
+  "revision": 766,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:41:54Z",
+  "updatedAt": "2026-08-16T06:42:08Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5412,7 +5412,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:41:52Z",
+      "updatedAt": "2026-08-16T06:42:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
