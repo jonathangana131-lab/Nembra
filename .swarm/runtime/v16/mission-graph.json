@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 55,
+    "classifiedPRTotal": 57,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1382,7 +1382,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.315,
+        "similarity": 0.325,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3428": {
@@ -1624,7 +1624,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3496,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.396,
+        "similarity": 0.448,
         "title": "[Capture P0][REPAIR] Hold generated repository-root generation"
       },
       "3497": {
@@ -1670,6 +1670,28 @@
         "recommendedAction": "independent-review",
         "similarity": 0.525,
         "title": "[Capture P0][TEST] Carry structured field launch onto F1BE root custody"
+      },
+      "3501": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3501,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.445,
+        "title": "[Capture P0][REPAIR] Hold generated repository-root generation"
+      },
+      "3502": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3502,
+        "recommendedAction": "independent-review",
+        "similarity": 0.115,
+        "title": "[Capture P0][INTERNAL] Re-anchor repaired root custody onto 682e QA parent"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1702,7 +1724,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:33:56Z",
+    "liveRefreshAt": "2026-08-16T06:34:15Z",
     "liveRefreshDuplicatesSuppressed": [
       3499
     ],
@@ -5487,10 +5509,10 @@
       "userValue": 7
     }
   },
-  "revision": 740,
+  "revision": 741,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:34:00Z",
+  "updatedAt": "2026-08-16T06:34:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5566,7 +5588,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:33:56Z",
+      "updatedAt": "2026-08-16T06:34:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
