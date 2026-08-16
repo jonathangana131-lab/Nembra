@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 53,
+    "classifiedPRTotal": 52,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1484,17 +1484,6 @@
         "similarity": 0.373,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
-      "3438": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3438,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.42,
-        "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
-      },
       "3439": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1547,7 +1536,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3454,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.325,
+        "similarity": 0.366,
         "title": "[Capture P0][CI] Re-anchor inherited read-lease rollback fixtures on Darwin"
       },
       "3457": {
@@ -1558,7 +1547,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3457,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.426,
+        "similarity": 0.35,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
       "3460": {
@@ -1680,7 +1669,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:24:26Z",
+    "liveRefreshAt": "2026-08-16T06:24:45Z",
     "liveRefreshDuplicatesSuppressed": [
       3463
     ],
@@ -5465,10 +5454,10 @@
       "userValue": 7
     }
   },
-  "revision": 710,
+  "revision": 711,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:24:30Z",
+  "updatedAt": "2026-08-16T06:24:48Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5544,7 +5533,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:24:26Z",
+      "updatedAt": "2026-08-16T06:24:45Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
