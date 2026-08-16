@@ -1,34 +1,40 @@
-# connected synchronize re-arm
-name: Capture Final Child Generation Fence Materializer
+name: Capture Generated Shared Ancestor Continuity
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: capture-final-child-generation-fence-materializer-${{ github.event.pull_request.number || github.ref }}
+  group: capture-generated-shared-ancestor-continuity-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: 3a824e5301b5e1208c955b15af0ea5b1f38f7568
+  EXACT_PARENT: 1f9c5213d99116b93635e48061f29c88bffc2db8
 
 jobs:
-  materialize:
-    runs-on: ubuntu-latest
+  exact-portable:
+    name: Exact generated-input continuity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Bind one-shot authoring head
+      - name: Bind serial repair delta
         shell: bash
         run: |
           set -euo pipefail
@@ -36,137 +42,64 @@ jobs:
           test "$(git rev-parse HEAD)" = "$expected_head"
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-          test "$changed" = '.github/workflows/capture-generated-shared-ancestor-continuity.yml'
-          git diff --check "$EXACT_PARENT"...HEAD
-
-      - name: Materialize final-child generation fence and regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          from pathlib import Path
-
-          helper = Path('scripts/ci/capture_accepted_build_input_snapshot.py')
-          source = helper.read_text(encoding='utf-8')
-          old = '''            child = _open_directory_at(current, component, relative)\n            held: int | None = None\n            try:\n                if not is_last and directory_cache is not None:\n                    held = os.dup(child)\n                    admitted = os.fstat(held)\n                    directory_cache[relative] = (held, admitted)\n                    held = None\n            except Exception:\n                if held is not None:\n                    try:\n                        os.close(held)\n                    except OSError:\n                        pass\n                os.close(child)\n                raise\n            os.close(current)\n            current = child\n'''
-          new = '''            child = _open_directory_at(current, component, relative)\n            held: int | None = None\n            try:\n                if directory_cache is not None and index > 0:\n                    parent_relative = Path(*subject.parts[:index])\n                    cached_parent = directory_cache.get(parent_relative)\n                    if cached_parent is not None:\n                        _cached_descriptor, parent_admitted = cached_parent\n                        _assert_directory_generation(current, parent_admitted, parent_relative)\n                if not is_last and directory_cache is not None:\n                    held = os.dup(child)\n                    admitted = os.fstat(held)\n                    directory_cache[relative] = (held, admitted)\n                    held = None\n            except Exception:\n                if held is not None:\n                    try:\n                        os.close(held)\n                    except OSError:\n                        pass\n                try:\n                    os.close(child)\n                except OSError:\n                    pass\n                raise\n            os.close(current)\n            current = child\n'''
-          if source.count(old) != 1:
-              raise SystemExit('expected one final-child admission seam')
-          helper.write_text(source.replace(old, new), encoding='utf-8')
-
-          test = Path('scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py')
-          source = test.read_text(encoding='utf-8')
-          marker = '\n\nif __name__ == "__main__":\n    unittest.main(verbosity=2)\n'
-          regression = r'''
-
-    def test_manifest_rejects_or_holds_final_child_swap_after_parent_revalidation(self) -> None:
-        helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-final-child-manifest-") as raw:
-            root = Path(raw)
-            seed_common(root)
-            generation_a = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
-            generation_b = make_generation(root, "LocalSecrets.B", b"SDK-B\n", b"RUNTIME-B\n")
-            generation_a.rename(root / "LocalSecrets")
-            pure_a = helper.canonical_generated_manifest(root, SOURCE_SHA)
-            original_open = helper._open_directory_at
-            swapped = False
-
-            def splice_after_parent_check(parent_fd: int, name: str, relative: Path):
-                nonlocal swapped
-                if relative == Path("LocalSecrets/TuyaRuntime") and not swapped:
-                    active = root / "LocalSecrets"
-                    (active / "TuyaRuntime").rename(active / "TuyaRuntime.A.attack")
-                    (generation_b / "TuyaRuntime").rename(active / "TuyaRuntime")
-                    swapped = True
-                return original_open(parent_fd, name, relative)
-
-            try:
-                with mock.patch.object(helper, "_open_directory_at", side_effect=splice_after_parent_check):
-                    attacked = helper.canonical_generated_manifest(root, SOURCE_SHA)
-            except helper.AcceptedBuildInputSnapshotError:
-                self.assertTrue(swapped)
-                return
-
-            self.assertTrue(swapped)
-            self.assertEqual(attacked, pure_a)
-
-    def test_copy_rejects_or_holds_final_child_swap_after_parent_revalidation(self) -> None:
-        helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-final-child-copy-") as raw:
-            root = Path(raw)
-            seed_common(root)
-            generation_a = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
-            generation_b = make_generation(root, "LocalSecrets.B", b"SDK-B\n", b"RUNTIME-B\n")
-            generation_a.rename(root / "LocalSecrets")
-            destination = root / "stage"
-            destination.mkdir()
-            original_open = helper._open_directory_at
-            swapped = False
-
-            def splice_after_parent_check(parent_fd: int, name: str, relative: Path):
-                nonlocal swapped
-                if relative == Path("LocalSecrets/TuyaRuntime") and not swapped:
-                    active = root / "LocalSecrets"
-                    (active / "TuyaRuntime").rename(active / "TuyaRuntime.A.attack")
-                    (generation_b / "TuyaRuntime").rename(active / "TuyaRuntime")
-                    swapped = True
-                return original_open(parent_fd, name, relative)
-
-            try:
-                with mock.patch.object(helper, "_open_directory_at", side_effect=splice_after_parent_check):
-                    helper._copy_generated_subjects(root, destination)
-            except helper.AcceptedBuildInputSnapshotError:
-                self.assertTrue(swapped)
-                return
-
-            self.assertTrue(swapped)
-            self.assertEqual((destination / "LocalSecrets/TuyaSDK/sdk.bin").read_bytes(), b"SDK-A\n")
-            self.assertEqual(
-                (destination / "LocalSecrets/TuyaRuntime/identity.bin").read_bytes(),
-                b"RUNTIME-A\n",
-            )
-'''
-          if source.count(marker) != 1:
-              raise SystemExit('unexpected continuity test footer')
-          test.write_text(source.replace(marker, regression + marker), encoding='utf-8')
-          PY
-
-      - name: Prove repair before publication
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PYTHONDONTWRITEBYTECODE=1
-          /usr/bin/python3 -B -I - <<'PY'
-          from pathlib import Path
-          for raw in (
-              'scripts/ci/capture_accepted_build_input_snapshot.py',
-              'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py',
-          ):
-              path = Path(raw)
-              compile(path.read_bytes(), str(path), 'exec', dont_inherit=True)
-          PY
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
-
-      - name: Restore permanent carrier and publish exact two-path repair
-        shell: bash
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          set -euo pipefail
-          git show "$EXACT_PARENT:.github/workflows/capture-generated-shared-ancestor-continuity.yml" > \
-            .github/workflows/capture-generated-shared-ancestor-continuity.yml
-          changed="$(git diff --name-only "$EXACT_PARENT" -- | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_input_snapshot.py \
             scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
-          git diff --check "$EXACT_PARENT" --
-          test -n "$HEAD_REF"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py \
-            .github/workflows/capture-generated-shared-ancestor-continuity.yml
-          git commit -m 'fix(capture): revalidate generated parent after child open'
-          git push origin HEAD:"$HEAD_REF"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Run generated shared-ancestor continuity regression
+        id: continuity
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py \
+            2>&1 | tee "$RUNNER_TEMP/generated-shared-ancestor-continuity-${{ matrix.os }}.log"
+
+      - name: Run inherited accepted-input regression
+        id: inherited
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py \
+            2>&1 | tee "$RUNNER_TEMP/accepted-build-input-snapshot-${{ matrix.os }}.log"
+
+      - name: Capture checkout cleanliness diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --porcelain=v1 --untracked-files=all > "$RUNNER_TEMP/checkout-status-${{ matrix.os }}.log"
+          git diff --no-ext-diff -- > "$RUNNER_TEMP/checkout-unstaged-diff-${{ matrix.os }}.log"
+          git diff --cached --no-ext-diff -- > "$RUNNER_TEMP/checkout-staged-diff-${{ matrix.os }}.log"
+
+      - name: Retain platform diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-shared-ancestor-continuity-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/generated-shared-ancestor-continuity-${{ matrix.os }}.log
+            ${{ runner.temp }}/accepted-build-input-snapshot-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-status-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-unstaged-diff-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-staged-diff-${{ matrix.os }}.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce regression verdict and clean checkout
+        if: always()
+        shell: bash
+        env:
+          CONTINUITY_OUTCOME: ${{ steps.continuity.outcome }}
+          INHERITED_OUTCOME: ${{ steps.inherited.outcome }}
+        run: |
+          set -euo pipefail
+          test "$CONTINUITY_OUTCOME" = success
+          test "$INHERITED_OUTCOME" = success
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
