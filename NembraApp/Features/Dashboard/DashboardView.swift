@@ -650,7 +650,7 @@ struct DashboardView: View {
             return "LAST KNOWN CHARGE"
         }
         if batteryReadout == .range {
-            return isBatteryLow ? "LOW CHARGE • RANGE UNAVAILABLE" : "RANGE UNAVAILABLE"
+            return isBatteryLow ? "LOW CHARGE" : "RANGE UNAVAILABLE"
         }
         if batteryPercent == nil {
             return "CHARGE UNAVAILABLE"
@@ -676,12 +676,12 @@ struct DashboardView: View {
 
     private var batteryChargeFillColor: Color {
         if isBatteryLow, !isRetainedBatteryData, batteryPercent != nil {
-            return .red.opacity(0.82)
+            return .red.opacity(colorSchemeContrast == .increased ? 0.30 : 0.20)
         }
         if isRetainedBatteryData {
-            return .white.opacity(colorSchemeContrast == .increased ? 0.42 : 0.26)
+            return .white.opacity(colorSchemeContrast == .increased ? 0.18 : 0.10)
         }
-        return .white.opacity(colorSchemeContrast == .increased ? 0.86 : 0.72)
+        return .white.opacity(colorSchemeContrast == .increased ? 0.26 : 0.16)
     }
 
     private var batteryFillFraction: CGFloat? {
