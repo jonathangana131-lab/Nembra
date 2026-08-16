@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.301,
+        "similarity": 0.213,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1484,17 +1484,6 @@
         "similarity": 0.359,
         "title": "[Capture P0][RED TEAM] Prove sealed root omits compiler read lease"
       },
-      "3521": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c4ae540b7e9217aaf92f469d564d055cd3b86b92",
-        "lane": "capture-signed-install-custody",
-        "pr": 3521,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.405,
-        "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody to selector-accepted head"
-      },
       "3522": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1503,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3522,
         "recommendedAction": "independent-review",
-        "similarity": 0.363,
+        "similarity": 0.346,
         "title": "[Capture P0][CUSTODY] Seal accepted build root on current selector head"
       },
       "3525": {
@@ -1514,8 +1503,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3525,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.393,
+        "similarity": 0.37,
         "title": "[Capture P0][INTEGRATION] Re-anchor accepted build-root custody on current selector"
+      },
+      "3526": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "a22b6e48bd307db85c25d1db8cf91e48e882e784",
+        "lane": "capture-signed-install-custody",
+        "pr": 3526,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.393,
+        "title": "[Capture P0][VALIDATION] Seal current root helper sibling pair"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1548,9 +1548,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:50:45Z",
+    "liveRefreshAt": "2026-08-16T06:51:06Z",
     "liveRefreshDuplicatesSuppressed": [
-      3521
+      3526
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5333,10 +5333,10 @@
       "userValue": 7
     }
   },
-  "revision": 787,
+  "revision": 788,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:50:47Z",
+  "updatedAt": "2026-08-16T06:51:08Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5412,7 +5412,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:50:45Z",
+      "updatedAt": "2026-08-16T06:51:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
