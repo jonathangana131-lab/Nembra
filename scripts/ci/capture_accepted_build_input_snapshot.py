@@ -396,11 +396,24 @@ def _open_subject(
             if not is_last and directory_cache is not None and relative in directory_cache:
                 cached_descriptor, admitted = directory_cache[relative]
                 _assert_directory_generation(cached_descriptor, admitted, relative)
-                os.close(current)
-                current = os.dup(cached_descriptor)
+                replacement = os.dup(cached_descriptor)
+                previous = current
+                current = replacement
+                os.close(previous)
                 continue
             if is_last and expected_kind == "file":
                 descriptor, metadata = _open_file_at(current, component, relative)
+                try:
+                    if directory_cache is not None:
+                        for cached_relative, (cached_descriptor, admitted) in directory_cache.items():
+                            _assert_directory_generation(
+                                cached_descriptor,
+                                admitted,
+                                cached_relative,
+                            )
+                except Exception:
+                    os.close(descriptor)
+                    raise
                 os.close(current)
                 return descriptor, metadata, "file"
             child = _open_directory_at(current, component, relative)
@@ -422,6 +435,13 @@ def _open_subject(
             os.close(current)
             current = child
         metadata = os.fstat(current)
+        if directory_cache is not None:
+            for cached_relative, (cached_descriptor, admitted) in directory_cache.items():
+                _assert_directory_generation(
+                    cached_descriptor,
+                    admitted,
+                    cached_relative,
+                )
         return current, metadata, "directory"
     except Exception:
         try:
