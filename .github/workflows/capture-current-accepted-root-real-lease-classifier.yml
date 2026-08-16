@@ -1,0 +1,54 @@
+name: Capture Current Accepted Root Real Lease Classifier
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    if: github.head_ref == 'integration/v17-capture-current-accepted-root-compiler-gpt56sol-20260815'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Surface real whole-root lease failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+          field_user="$(/usr/bin/id -un)"
+          set +e
+          output="$(/usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
+            --field-user "$field_user" 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if (( status != 0 )); then
+            detail="$(printf '%s\n' "$output" | tail -n 80 | tail -c 12000)"
+            detail="${detail//'%'/'%25'}"
+            detail="${detail//$'\r'/'%0D'}"
+            detail="${detail//$'\n'/'%0A'}"
+            printf '::error file=scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py,title=Real whole-root lease classifier::%s\n' "$detail"
+            exit "$status"
+          fi
+
+      - name: Preserve diagnostic-only boundary
+        if: always()
+        shell: bash
+        run: echo 'NEMBRA_REAL_LEASE_CLASSIFIER validationOnly=true productAuthorityChanged=false physicalAuthorityCreated=false'
