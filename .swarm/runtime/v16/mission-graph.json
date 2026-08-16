@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 38,
+    "classifiedPRTotal": 37,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1074,7 +1074,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.191,
+        "similarity": 0.18,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3316": {
@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.209,
+        "similarity": 0.189,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1459,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3516,
         "recommendedAction": "independent-review",
-        "similarity": 0.238,
+        "similarity": 0.229,
         "title": "[Capture P0][REPAIR INGREDIENT] Bind strict workspace to accepted root"
       },
       "3527": {
@@ -1472,17 +1472,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.322,
         "title": "[Capture P0][CI] Make launcher provenance contract semantic (clean)"
-      },
-      "3532": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3532,
-        "recommendedAction": "independent-review",
-        "similarity": 0.248,
-        "title": "[Capture P0][SYNC] Promote pre-sealed custody witness onto live carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1515,7 +1504,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:58:54Z",
+    "liveRefreshAt": "2026-08-16T06:59:10Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5300,10 +5289,10 @@
       "userValue": 7
     }
   },
-  "revision": 809,
+  "revision": 810,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:58:55Z",
+  "updatedAt": "2026-08-16T06:59:12Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5379,7 +5368,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:58:54Z",
+      "updatedAt": "2026-08-16T06:59:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
