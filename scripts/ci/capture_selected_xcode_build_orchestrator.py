@@ -754,6 +754,28 @@ def _verify_descriptor_plan(
             diagnostic = _open_pinned_path(path, is_directory, signature)
         os.close(diagnostic)
 
+
+def _revalidate_held_subject_symlink_policy(
+    subjects: Sequence[Path],
+    plan: Sequence[tuple[Path, bool, tuple[int, int, int], int]],
+) -> None:
+    """Reprove held-subject symlink policy after ACL mutation and before success."""
+    by_path = {Path(path): (signature, int(descriptor)) for path, _host_only, signature, descriptor in plan}
+    for raw_subject in subjects:
+        subject = _absolute_lexical(Path(raw_subject))
+        held = by_path.get(subject)
+        if held is None:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held subject disappeared from grant plan: {subject}"
+            )
+        accepted_signature, descriptor = held
+        if _descriptor_signature(descriptor) != accepted_signature:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease held subject changed identity before grant completed: {subject}"
+            )
+        _validate_subject_symlinks_from_descriptor(subject, descriptor)
+
+
 def _descriptor_path(descriptor: int) -> str:
     if descriptor < 0:
         raise SelectedXcodeBuildOrchestratorError("read-lease descriptor is invalid")
@@ -883,6 +905,13 @@ class _PrivateReadLease:
                     path, is_directory, accepted_signature
                 )
                 os.close(diagnostic)
+
+            # The initial held-directory policy check happens before ACL mutation.
+            # Reprove those same held subject generations after the final ACL has
+            # materialized so grant cannot return a policy decision made stale while
+            # authority was being installed. The accepted build-window guard owns
+            # mutation detection after this admission boundary and through xcodebuild.
+            _revalidate_held_subject_symlink_policy(self._subjects, pinned_plan)
         except Exception as error:
             try:
                 self.revoke()
