@@ -1,0 +1,90 @@
+name: Capture Accepted Root Build Composition
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_accepted_root_build_composition.py
+      - .github/workflows/capture-accepted-root-build-composition.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-accepted-root-build-composition-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 662a63cf5179d54712214d78d01542e51e71148e
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  composition:
+    name: Prove selected Xcode consumes sealed accepted root
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact additive compiler-composition child
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-root-build-composition.yml \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exact composition surface without artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
+              "scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py",
+              "scripts/ci/tests/test_capture_accepted_root_build_composition.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve legacy selected-Xcode composition contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove strict accepted-root compiler composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve physical boundary truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq -- '--accepted-generated-manifest-sha256' "$helper"
+          grep -Fq 'create_accepted_build_root' "$helper"
+          grep -Fq '_rebase_private_guard_paths' "$helper"
+          grep -Fq 'accepted_build_root_fingerprint' "$helper"
+          grep -Fq 'destroy_accepted_build_root' "$helper"
+          echo "NEMBRA_ACCEPTED_ROOT_BUILD_BOUNDARY compilerCompositionProved=true installerWired=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
