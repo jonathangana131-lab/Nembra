@@ -1,0 +1,60 @@
+name: Capture Accepted Root Absolute Workspace Escape Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_accepted_root_absolute_workspace_escape_red_team.py
+      - .github/workflows/capture-accepted-root-absolute-workspace-escape-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-accepted-root-absolute-workspace-escape-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: bf2f1e1d718849ef6741ec532e28975527311e95
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  exploit-positive:
+    name: Prove absolute workspace escapes forced accepted-root cwd
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation-only child
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-root-absolute-workspace-escape-red-team.yml \
+            scripts/ci/tests/test_capture_accepted_root_absolute_workspace_escape_red_team.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run exploit-positive absolute workspace oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_absolute_workspace_escape_red_team.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve interpretation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_ACCEPTED_ROOT_WORKSPACE_ESCAPE exploitReproduced=true productAcceptance=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
