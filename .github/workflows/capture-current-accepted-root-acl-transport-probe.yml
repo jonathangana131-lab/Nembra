@@ -1,0 +1,133 @@
+name: Capture Current Accepted Root ACL Transport Probe
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'integration/v17-capture-current-accepted-root-compiler-gpt56sol-20260815'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Probe Darwin ACL descriptor and pathname transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+          field_user="$(/usr/bin/id -un)"
+          set +e
+          output="$(/usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I - <<'PY' 2>&1
+          from __future__ import annotations
+          import importlib.util
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import tempfile
+
+          repo = Path.cwd()
+          helper_path = repo / 'scripts/ci/capture_selected_xcode_build_orchestrator.py'
+          spec = importlib.util.spec_from_file_location('nembra_acl_probe', helper_path)
+          if spec is None or spec.loader is None:
+              raise SystemExit('could not load orchestrator')
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+
+          principal = os.environ['NEMBRA_TEST_FIELD_USER']
+          outer = Path(tempfile.mkdtemp(prefix='nembra-acl-transport-', dir='/private/tmp'))
+          os.chown(outer, 0, 0)
+          os.chmod(outer, 0o700)
+          descriptor = os.open(str(outer), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+          descriptor_path = f'/dev/fd/{descriptor}'
+
+          def run(argv, *, pass_descriptor=False):
+              completed = subprocess.run(
+                  argv,
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+                  pass_fds=((descriptor,) if pass_descriptor else ()),
+              )
+              return completed.returncode, completed.stdout, completed.stderr
+
+          def listing(target, *, pass_descriptor=False):
+              return run(['/bin/ls', '-Hlde', target], pass_descriptor=pass_descriptor)
+
+          def emit(label, value):
+              print(f'--- {label} ---')
+              if isinstance(value, tuple):
+                  code, stdout, stderr = value
+                  print(f'rc={code}')
+                  print('stdout=' + repr(stdout))
+                  print('stderr=' + repr(stderr))
+              else:
+                  print(value)
+
+          try:
+              emit('principal', principal)
+              emit('host-only helper acl', helper._acl_text(principal, True, True))
+              emit('normal directory helper acl', helper._acl_text(principal, True, False))
+              emit('before descriptor', listing(descriptor_path, pass_descriptor=True))
+              emit('before pathname', listing(str(outer)))
+
+              for rights in ('search', 'list,search', 'list,search,readattr,readextattr,readsecurity'):
+                  acl = f'user:{principal} allow {rights}'
+                  emit(f'descriptor +a {rights}', run(['/bin/chmod', '+a', acl, descriptor_path], pass_descriptor=True))
+                  fd_after = listing(descriptor_path, pass_descriptor=True)
+                  path_after = listing(str(outer))
+                  emit(f'descriptor after {rights}', fd_after)
+                  emit(f'pathname after descriptor {rights}', path_after)
+                  emit(f'parser after descriptor {rights}', helper._principal_already_present(fd_after[1], principal))
+                  emit(f'descriptor -a {rights}', run(['/bin/chmod', '-a', acl, descriptor_path], pass_descriptor=True))
+                  emit(f'descriptor after remove {rights}', listing(descriptor_path, pass_descriptor=True))
+                  run(['/bin/chmod', '-N', str(outer)])
+
+              for rights in ('search', 'list,search', 'list,search,readattr,readextattr,readsecurity'):
+                  acl = f'user:{principal} allow {rights}'
+                  emit(f'pathname +a {rights}', run(['/bin/chmod', '+a', acl, str(outer)]))
+                  path_after = listing(str(outer))
+                  fd_after = listing(descriptor_path, pass_descriptor=True)
+                  emit(f'pathname after {rights}', path_after)
+                  emit(f'descriptor after pathname {rights}', fd_after)
+                  emit(f'parser after pathname {rights}', helper._principal_already_present(path_after[1], principal))
+                  emit(f'pathname -a {rights}', run(['/bin/chmod', '-a', acl, str(outer)]))
+                  emit(f'pathname after remove {rights}', listing(str(outer)))
+                  run(['/bin/chmod', '-N', str(outer)])
+          finally:
+              os.close(descriptor)
+              shutil.rmtree(outer, ignore_errors=True)
+          PY
+          )"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          detail="$(printf '%s\n' "$output" | tail -c 30000)"
+          detail="${detail//'%'/'%25'}"
+          detail="${detail//$'\r'/'%0D'}"
+          detail="${detail//$'\n'/'%0A'}"
+          printf '::error file=scripts/ci/capture_selected_xcode_build_orchestrator.py,title=Darwin ACL transport probe::%s\n' "$detail"
+          # Diagnostic is intentionally red so its output remains unambiguously non-acceptance.
+          exit 1
+
+      - name: Preserve diagnostic-only boundary
+        if: always()
+        shell: bash
+        run: echo 'NEMBRA_ACL_TRANSPORT_PROBE validationOnly=true productAuthorityChanged=false physicalAuthorityCreated=false'
