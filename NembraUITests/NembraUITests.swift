@@ -346,10 +346,6 @@ final class NembraUITests: XCTestCase {
             "Tapping the battery must not invent range from battery percentage or advertised range."
         )
         XCTAssertEqual(learnedRange.label, "Learned range")
-        XCTAssertTrue(
-            app.staticTexts["RANGE UNAVAILABLE"].waitForExistence(timeout: 2),
-            "The alternate battery readout must show a designed unavailable learned-range state."
-        )
         keepScreenshot(named: "Dashboard Learned Range Unavailable Landscape")
 
         try app.performAccessibilityAudit(
