@@ -8,12 +8,11 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: capture-generated-cache-fd-cleanup-materialize
-  cancel-in-progress: false
-
 env:
   EXACT_PARENT: a183b50e14391b1b562966d4a56e558229d3a9a9
+  OLD_B64: ICAgICAgICAgICAgY2hpbGQgPSBfb3Blbl9kaXJlY3RvcnlfYXQoY3VycmVudCwgY29tcG9uZW50LCByZWxhdGl2ZSkKICAgICAgICAgICAgaWYgbm90IGlzX2xhc3QgYW5kIGRpcmVjdG9yeV9jYWNoZSBpcyBub3QgTm9uZToKICAgICAgICAgICAgICAgIGhlbGQgPSBvcy5kdXAoY2hpbGQpCiAgICAgICAgICAgICAgICBkaXJlY3RvcnlfY2FjaGVbcmVsYXRpdmVdID0gKGhlbGQsIG9zLmZzdGF0KGhlbGQpKQogICAgICAgICAgICBvcy5jbG9zZShjdXJyZW50KQogICAgICAgICAgICBjdXJyZW50ID0gY2hpbGQK
+  NEW_B64: ICAgICAgICAgICAgY2hpbGQgPSBfb3Blbl9kaXJlY3RvcnlfYXQoY3VycmVudCwgY29tcG9uZW50LCByZWxhdGl2ZSkKICAgICAgICAgICAgaGVsZDogaW50IHwgTm9uZSA9IE5vbmUKICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgaWYgbm90IGlzX2xhc3QgYW5kIGRpcmVjdG9yeV9jYWNoZSBpcyBub3QgTm9uZToKICAgICAgICAgICAgICAgICAgICBoZWxkID0gb3MuZHVwKGNoaWxkKQogICAgICAgICAgICAgICAgICAgIGFkbWl0dGVkID0gb3MuZnN0YXQoaGVsZCkKICAgICAgICAgICAgICAgICAgICBkaXJlY3RvcnlfY2FjaGVbcmVsYXRpdmVdID0gKGhlbGQsIGFkbWl0dGVkKQogICAgICAgICAgICAgICAgICAgIGhlbGQgPSBOb25lCiAgICAgICAgICAgIGV4Y2VwdCBFeGNlcHRpb246CiAgICAgICAgICAgICAgICBpZiBoZWxkIGlzIG5vdCBOb25lOgogICAgICAgICAgICAgICAgICAgIHRyeToKICAgICAgICAgICAgICAgICAgICAgICAgb3MuY2xvc2UoaGVsZCkKICAgICAgICAgICAgICAgICAgICBleGNlcHQgT1NFcnJvcjoKICAgICAgICAgICAgICAgICAgICAgICAgcGFzcwogICAgICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgICAgIG9zLmNsb3NlKGNoaWxkKQogICAgICAgICAgICAgICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgICAgICAgICAgICAgcGFzcwogICAgICAgICAgICAgICAgcmFpc2UKICAgICAgICAgICAgb3MuY2xvc2UoY3VycmVudCkKICAgICAgICAgICAgY3VycmVudCA9IGNoaWxkCg==
+  METHODS_B64: CgogICAgZGVmIHRlc3RfY2FjaGVfZHVwX2ZhaWx1cmVfY2xvc2VzX25ld2x5X29wZW5lZF9jaGlsZF9kZXNjcmlwdG9yKHNlbGYpIC0+IE5vbmU6CiAgICAgICAgaGVscGVyID0gbG9hZCgpCiAgICAgICAgd2l0aCB0ZW1wZmlsZS5UZW1wb3JhcnlEaXJlY3RvcnkocHJlZml4PSJuZW1icmEtY2FjaGUtZHVwLWNsZWFudXAtIikgYXMgcmF3OgogICAgICAgICAgICByb290ID0gUGF0aChyYXcpCiAgICAgICAgICAgIChyb290IC8gIkxvY2FsU2VjcmV0cy9UdXlhU0RLIikubWtkaXIocGFyZW50cz1UcnVlKQogICAgICAgICAgICByb290X2ZkID0gaGVscGVyLl9vcGVuX3JlcG9zaXRvcnlfcm9vdChyb290KQogICAgICAgICAgICByZWFsX2R1cCA9IG9zLmR1cAogICAgICAgICAgICByZWFsX29wZW5fZGlyZWN0b3J5ID0gaGVscGVyLl9vcGVuX2RpcmVjdG9yeV9hdAogICAgICAgICAgICBvcGVuZWRfY2hpbGRyZW46IGxpc3RbaW50XSA9IFtdCiAgICAgICAgICAgIGR1cF9jYWxscyA9IDAKCiAgICAgICAgICAgIGRlZiBjYXB0dXJlX29wZW4ocGFyZW50X2ZkOiBpbnQsIG5hbWU6IHN0ciwgcmVsYXRpdmU6IFBhdGgpIC0+IGludDoKICAgICAgICAgICAgICAgIGRlc2NyaXB0b3IgPSByZWFsX29wZW5fZGlyZWN0b3J5KHBhcmVudF9mZCwgbmFtZSwgcmVsYXRpdmUpCiAgICAgICAgICAgICAgICBvcGVuZWRfY2hpbGRyZW4uYXBwZW5kKGRlc2NyaXB0b3IpCiAgICAgICAgICAgICAgICByZXR1cm4gZGVzY3JpcHRvcgoKICAgICAgICAgICAgZGVmIGZhaWxfY2FjaGVfZHVwKGRlc2NyaXB0b3I6IGludCkgLT4gaW50OgogICAgICAgICAgICAgICAgbm9ubG9jYWwgZHVwX2NhbGxzCiAgICAgICAgICAgICAgICBkdXBfY2FsbHMgKz0gMQogICAgICAgICAgICAgICAgaWYgZHVwX2NhbGxzID09IDI6CiAgICAgICAgICAgICAgICAgICAgcmFpc2UgT1NFcnJvcihlcnJuby5FTUZJTEUsICJzeW50aGV0aWMgY2FjaGUtZHVwIGV4aGF1c3Rpb24iKQogICAgICAgICAgICAgICAgcmV0dXJuIHJlYWxfZHVwKGRlc2NyaXB0b3IpCgogICAgICAgICAgICBjYWNoZTogZGljdFtQYXRoLCB0dXBsZVtpbnQsIG9zLnN0YXRfcmVzdWx0XV0gPSB7fQogICAgICAgICAgICB0cnk6CiAgICAgICAgICAgICAgICB3aXRoICgKICAgICAgICAgICAgICAgICAgICBtb2NrLnBhdGNoLm9iamVjdChoZWxwZXIsICJfb3Blbl9kaXJlY3RvcnlfYXQiLCBzaWRlX2VmZmVjdD1jYXB0dXJlX29wZW4pLAogICAgICAgICAgICAgICAgICAgIG1vY2sucGF0Y2gub2JqZWN0KGhlbHBlci5vcywgImR1cCIsIHNpZGVfZWZmZWN0PWZhaWxfY2FjaGVfZHVwKSwKICAgICAgICAgICAgICAgICk6CiAgICAgICAgICAgICAgICAgICAgd2l0aCBzZWxmLmFzc2VydFJhaXNlc1JlZ2V4KE9TRXJyb3IsICJzeW50aGV0aWMgY2FjaGUtZHVwIGV4aGF1c3Rpb24iKToKICAgICAgICAgICAgICAgICAgICAgICAgaGVscGVyLl9vcGVuX3N1YmplY3Qocm9vdF9mZCwgUGF0aCgiTG9jYWxTZWNyZXRzL1R1eWFTREsiKSwgY2FjaGUpCgogICAgICAgICAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChkdXBfY2FsbHMsIDIpCiAgICAgICAgICAgICAgICBzZWxmLmFzc2VydEVxdWFsKGNhY2hlLCB7fSkKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwobGVuKG9wZW5lZF9jaGlsZHJlbiksIDEpCiAgICAgICAgICAgICAgICB3aXRoIHNlbGYuYXNzZXJ0UmFpc2VzKE9TRXJyb3IpOgogICAgICAgICAgICAgICAgICAgIG9zLmZzdGF0KG9wZW5lZF9jaGlsZHJlblswXSkKICAgICAgICAgICAgZmluYWxseToKICAgICAgICAgICAgICAgIGZvciBkZXNjcmlwdG9yIGluIG9wZW5lZF9jaGlsZHJlbjoKICAgICAgICAgICAgICAgICAgICB0cnk6CiAgICAgICAgICAgICAgICAgICAgICAgIG9zLmNsb3NlKGRlc2NyaXB0b3IpCiAgICAgICAgICAgICAgICAgICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgICAgICAgICAgICAgICAgIHBhc3MKICAgICAgICAgICAgICAgIG9zLmNsb3NlKHJvb3RfZmQpCgogICAgZGVmIHRlc3RfY2FjaGVfZ2VuZXJhdGlvbl9mc3RhdF9mYWlsdXJlX2Nsb3Nlc19jaGlsZF9hbmRfZHVwbGljYXRlKHNlbGYpIC0+IE5vbmU6CiAgICAgICAgaGVscGVyID0gbG9hZCgpCiAgICAgICAgd2l0aCB0ZW1wZmlsZS5UZW1wb3JhcnlEaXJlY3RvcnkocHJlZml4PSJuZW1icmEtY2FjaGUtZnN0YXQtY2xlYW51cC0iKSBhcyByYXc6CiAgICAgICAgICAgIHJvb3QgPSBQYXRoKHJhdykKICAgICAgICAgICAgKHJvb3QgLyAiTG9jYWxTZWNyZXRzL1R1eWFTREsiKS5ta2RpcihwYXJlbnRzPVRydWUpCiAgICAgICAgICAgIHJvb3RfZmQgPSBoZWxwZXIuX29wZW5fcmVwb3NpdG9yeV9yb290KHJvb3QpCiAgICAgICAgICAgIHJlYWxfZHVwID0gb3MuZHVwCiAgICAgICAgICAgIHJlYWxfZnN0YXQgPSBvcy5mc3RhdAogICAgICAgICAgICByZWFsX29wZW5fZGlyZWN0b3J5ID0gaGVscGVyLl9vcGVuX2RpcmVjdG9yeV9hdAogICAgICAgICAgICBvcGVuZWRfY2hpbGRyZW46IGxpc3RbaW50XSA9IFtdCiAgICAgICAgICAgIGhlbGRfZGVzY3JpcHRvcnM6IGxpc3RbaW50XSA9IFtdCiAgICAgICAgICAgIGR1cF9jYWxscyA9IDAKCiAgICAgICAgICAgIGRlZiBjYXB0dXJlX29wZW4ocGFyZW50X2ZkOiBpbnQsIG5hbWU6IHN0ciwgcmVsYXRpdmU6IFBhdGgpIC0+IGludDoKICAgICAgICAgICAgICAgIGRlc2NyaXB0b3IgPSByZWFsX29wZW5fZGlyZWN0b3J5KHBhcmVudF9mZCwgbmFtZSwgcmVsYXRpdmUpCiAgICAgICAgICAgICAgICBvcGVuZWRfY2hpbGRyZW4uYXBwZW5kKGRlc2NyaXB0b3IpCiAgICAgICAgICAgICAgICByZXR1cm4gZGVzY3JpcHRvcgoKICAgICAgICAgICAgZGVmIGNhcHR1cmVfY2FjaGVfZHVwKGRlc2NyaXB0b3I6IGludCkgLT4gaW50OgogICAgICAgICAgICAgICAgbm9ubG9jYWwgZHVwX2NhbGxzCiAgICAgICAgICAgICAgICBkdXBfY2FsbHMgKz0gMQogICAgICAgICAgICAgICAgZHVwbGljYXRlZCA9IHJlYWxfZHVwKGRlc2NyaXB0b3IpCiAgICAgICAgICAgICAgICBpZiBkdXBfY2FsbHMgPT0gMjoKICAgICAgICAgICAgICAgICAgICBoZWxkX2Rlc2NyaXB0b3JzLmFwcGVuZChkdXBsaWNhdGVkKQogICAgICAgICAgICAgICAgcmV0dXJuIGR1cGxpY2F0ZWQKCiAgICAgICAgICAgIGRlZiBmYWlsX2hlbGRfZnN0YXQoZGVzY3JpcHRvcjogaW50KToKICAgICAgICAgICAgICAgIGlmIGhlbGRfZGVzY3JpcHRvcnMgYW5kIGRlc2NyaXB0b3IgPT0gaGVsZF9kZXNjcmlwdG9yc1swXToKICAgICAgICAgICAgICAgICAgICByYWlzZSBPU0Vycm9yKGVycm5vLkVJTywgInN5bnRoZXRpYyBjYWNoZS1nZW5lcmF0aW9uIGZzdGF0IGZhaWx1cmUiKQogICAgICAgICAgICAgICAgcmV0dXJuIHJlYWxfZnN0YXQoZGVzY3JpcHRvcikKCiAgICAgICAgICAgIGNhY2hlOiBkaWN0W1BhdGgsIHR1cGxlW2ludCwgb3Muc3RhdF9yZXN1bHRdXSA9IHt9CiAgICAgICAgICAgIHRyeToKICAgICAgICAgICAgICAgIHdpdGggKAogICAgICAgICAgICAgICAgICAgIG1vY2sucGF0Y2gub2JqZWN0KGhlbHBlciwgIl9vcGVuX2RpcmVjdG9yeV9hdCIsIHNpZGVfZWZmZWN0PWNhcHR1cmVfb3BlbiksCiAgICAgICAgICAgICAgICAgICAgbW9jay5wYXRjaC5vYmplY3QoaGVscGVyLm9zLCAiZHVwIiwgc2lkZV9lZmZlY3Q9Y2FwdHVyZV9jYWNoZV9kdXApLAogICAgICAgICAgICAgICAgICAgIG1vY2sucGF0Y2gub2JqZWN0KGhlbHBlci5vcywgImZzdGF0Iiwgc2lkZV9lZmZlY3Q9ZmFpbF9oZWxkX2ZzdGF0KSwKICAgICAgICAgICAgICAgICk6CiAgICAgICAgICAgICAgICAgICAgd2l0aCBzZWxmLmFzc2VydFJhaXNlc1JlZ2V4KE9TRXJyb3IsICJzeW50aGV0aWMgY2FjaGUtZ2VuZXJhdGlvbiBmc3RhdCBmYWlsdXJlIik6CiAgICAgICAgICAgICAgICAgICAgICAgIGhlbHBlci5fb3Blbl9zdWJqZWN0KHJvb3RfZmQsIFBhdGgoIkxvY2FsU2VjcmV0cy9UdXlhU0RLIiksIGNhY2hlKQoKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwoZHVwX2NhbGxzLCAyKQogICAgICAgICAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChjYWNoZSwge30pCiAgICAgICAgICAgICAgICBzZWxmLmFzc2VydEVxdWFsKGxlbihvcGVuZWRfY2hpbGRyZW4pLCAxKQogICAgICAgICAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChsZW4oaGVsZF9kZXNjcmlwdG9ycyksIDEpCiAgICAgICAgICAgICAgICB3aXRoIHNlbGYuYXNzZXJ0UmFpc2VzKE9TRXJyb3IpOgogICAgICAgICAgICAgICAgICAgIHJlYWxfZnN0YXQob3BlbmVkX2NoaWxkcmVuWzBdKQogICAgICAgICAgICAgICAgd2l0aCBzZWxmLmFzc2VydFJhaXNlcyhPU0Vycm9yKToKICAgICAgICAgICAgICAgICAgICByZWFsX2ZzdGF0KGhlbGRfZGVzY3JpcHRvcnNbMF0pCiAgICAgICAgICAgIGZpbmFsbHk6CiAgICAgICAgICAgICAgICBmb3IgZGVzY3JpcHRvciBpbiAoKm9wZW5lZF9jaGlsZHJlbiwgKmhlbGRfZGVzY3JpcHRvcnMpOgogICAgICAgICAgICAgICAgICAgIHRyeToKICAgICAgICAgICAgICAgICAgICAgICAgb3MuY2xvc2UoZGVzY3JpcHRvcikKICAgICAgICAgICAgICAgICAgICBleGNlcHQgT1NFcnJvcjoKICAgICAgICAgICAgICAgICAgICAgICAgcGFzcwogICAgICAgICAgICAgICAgb3MuY2xvc2Uocm9vdF9mZCkK
 
 jobs:
   materialize:
@@ -26,149 +25,37 @@ jobs:
           fetch-depth: 0
 
       - name: Bind exact authoring parent
-        shell: bash
         run: |
           set -euo pipefail
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
-          test "$changed" = '.github/workflows/capture-generated-cache-fd-cleanup-materialize.yml'
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-generated-cache-fd-cleanup-materialize.yml'
 
-      - name: Apply fail-path custody repair and permanent regressions
-        shell: bash
+      - name: Apply repair
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64, os
           from pathlib import Path
-
+          decode = lambda name: base64.b64decode(os.environ[name]).decode()
           helper = Path('scripts/ci/capture_accepted_build_input_snapshot.py')
           text = helper.read_text()
-          old = '''            child = _open_directory_at(current, component, relative)\n            if not is_last and directory_cache is not None:\n                held = os.dup(child)\n                directory_cache[relative] = (held, os.fstat(held))\n            os.close(current)\n            current = child\n'''
-          new = '''            child = _open_directory_at(current, component, relative)\n            held: int | None = None\n            try:\n                if not is_last and directory_cache is not None:\n                    held = os.dup(child)\n                    admitted = os.fstat(held)\n                    directory_cache[relative] = (held, admitted)\n                    held = None\n            except Exception:\n                if held is not None:\n                    try:\n                        os.close(held)\n                    except OSError:\n                        pass\n                try:\n                    os.close(child)\n                except OSError:\n                    pass\n                raise\n            os.close(current)\n            current = child\n'''
+          old, new = decode('OLD_B64'), decode('NEW_B64')
           if text.count(old) != 1:
-              raise SystemExit('expected exact current cache-admission seam once')
+              raise SystemExit('exact helper seam mismatch')
           helper.write_text(text.replace(old, new, 1))
-
           test = Path('scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py')
           text = test.read_text()
           if 'import errno\n' not in text:
               text = text.replace('import hashlib\n', 'import errno\nimport hashlib\n', 1)
           if 'import os\n' not in text:
               text = text.replace('import json\n', 'import json\nimport os\n', 1)
-
           marker = '\n\nif __name__ == "__main__":\n    unittest.main(verbosity=2)\n'
-          if text.count(marker) != 1:
-              raise SystemExit('expected exact unittest main marker once')
-          methods = r'''
-
-    def test_cache_dup_failure_closes_newly_opened_child_descriptor(self) -> None:
-        helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-cache-dup-cleanup-") as raw:
-            root = Path(raw)
-            (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
-            root_fd = helper._open_repository_root(root)
-            real_dup = os.dup
-            real_open_directory = helper._open_directory_at
-            opened_children: list[int] = []
-            dup_calls = 0
-
-            def capture_open(parent_fd: int, name: str, relative: Path) -> int:
-                descriptor = real_open_directory(parent_fd, name, relative)
-                opened_children.append(descriptor)
-                return descriptor
-
-            def fail_cache_dup(descriptor: int) -> int:
-                nonlocal dup_calls
-                dup_calls += 1
-                if dup_calls == 2:
-                    raise OSError(errno.EMFILE, "synthetic cache-dup exhaustion")
-                return real_dup(descriptor)
-
-            cache: dict[Path, tuple[int, os.stat_result]] = {}
-            try:
-                with (
-                    mock.patch.object(helper, "_open_directory_at", side_effect=capture_open),
-                    mock.patch.object(helper.os, "dup", side_effect=fail_cache_dup),
-                ):
-                    with self.assertRaisesRegex(OSError, "synthetic cache-dup exhaustion"):
-                        helper._open_subject(root_fd, Path("LocalSecrets/TuyaSDK"), cache)
-
-                self.assertEqual(dup_calls, 2)
-                self.assertEqual(cache, {})
-                self.assertEqual(len(opened_children), 1)
-                with self.assertRaises(OSError):
-                    os.fstat(opened_children[0])
-            finally:
-                for descriptor in opened_children:
-                    try:
-                        os.close(descriptor)
-                    except OSError:
-                        pass
-                os.close(root_fd)
-
-    def test_cache_generation_fstat_failure_closes_child_and_duplicate(self) -> None:
-        helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-cache-fstat-cleanup-") as raw:
-            root = Path(raw)
-            (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
-            root_fd = helper._open_repository_root(root)
-            real_dup = os.dup
-            real_fstat = os.fstat
-            real_open_directory = helper._open_directory_at
-            opened_children: list[int] = []
-            held_descriptors: list[int] = []
-            dup_calls = 0
-
-            def capture_open(parent_fd: int, name: str, relative: Path) -> int:
-                descriptor = real_open_directory(parent_fd, name, relative)
-                opened_children.append(descriptor)
-                return descriptor
-
-            def capture_cache_dup(descriptor: int) -> int:
-                nonlocal dup_calls
-                dup_calls += 1
-                duplicated = real_dup(descriptor)
-                if dup_calls == 2:
-                    held_descriptors.append(duplicated)
-                return duplicated
-
-            def fail_held_fstat(descriptor: int):
-                if held_descriptors and descriptor == held_descriptors[0]:
-                    raise OSError(errno.EIO, "synthetic cache-generation fstat failure")
-                return real_fstat(descriptor)
-
-            cache: dict[Path, tuple[int, os.stat_result]] = {}
-            try:
-                with (
-                    mock.patch.object(helper, "_open_directory_at", side_effect=capture_open),
-                    mock.patch.object(helper.os, "dup", side_effect=capture_cache_dup),
-                    mock.patch.object(helper.os, "fstat", side_effect=fail_held_fstat),
-                ):
-                    with self.assertRaisesRegex(OSError, "synthetic cache-generation fstat failure"):
-                        helper._open_subject(root_fd, Path("LocalSecrets/TuyaSDK"), cache)
-
-                self.assertEqual(dup_calls, 2)
-                self.assertEqual(cache, {})
-                self.assertEqual(len(opened_children), 1)
-                self.assertEqual(len(held_descriptors), 1)
-                with self.assertRaises(OSError):
-                    real_fstat(opened_children[0])
-                with self.assertRaises(OSError):
-                    real_fstat(held_descriptors[0])
-            finally:
-                for descriptor in (*opened_children, *held_descriptors):
-                    try:
-                        os.close(descriptor)
-                    except OSError:
-                        pass
-                os.close(root_fd)
-'''
-          if 'test_cache_dup_failure_closes_newly_opened_child_descriptor' in text:
-              raise SystemExit('cleanup regression already present')
-          test.write_text(text.replace(marker, methods + marker, 1))
+          if text.count(marker) != 1 or 'test_cache_dup_failure_closes_newly_opened_child_descriptor' in text:
+              raise SystemExit('test insertion seam mismatch')
+          test.write_text(text.replace(marker, decode('METHODS_B64') + marker, 1))
           PY
 
-      - name: Run focused accepted-input regressions
-        shell: bash
+      - name: Verify
         run: |
           set -euo pipefail
           export PYTHONDONTWRITEBYTECODE=1
@@ -176,14 +63,13 @@ jobs:
           python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
           python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
           git diff --check
-
-      - name: Publish two-file product repair
-        shell: bash
-        run: |
-          set -euo pipefail
           changed="$(git diff --name-only | LC_ALL=C sort)"
           expected="$(printf '%s\n' scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
+
+      - name: Publish two-file repair
+        run: |
+          set -euo pipefail
           git config user.name 'nembra-swarm-bot'
           git config user.email 'nembra-swarm-bot@users.noreply.github.com'
           git add scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
