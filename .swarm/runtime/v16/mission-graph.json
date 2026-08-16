@@ -1459,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3516,
         "recommendedAction": "independent-review",
-        "similarity": 0.229,
+        "similarity": 0.21,
         "title": "[Capture P0][REPAIR INGREDIENT] Bind strict workspace to accepted root"
       },
       "3527": {
@@ -1492,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3534,
         "recommendedAction": "independent-review",
-        "similarity": 0.198,
+        "similarity": 0.212,
         "title": "[Capture P0][CI] Admit composed root custody in selector gates"
       }
     },
@@ -1526,7 +1526,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T07:00:34Z",
+    "liveRefreshAt": "2026-08-16T07:00:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5311,10 +5311,10 @@
       "userValue": 7
     }
   },
-  "revision": 814,
+  "revision": 815,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T07:00:35Z",
+  "updatedAt": "2026-08-16T07:00:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5390,7 +5390,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T07:00:34Z",
+      "updatedAt": "2026-08-16T07:00:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
