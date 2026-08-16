@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 42,
+    "classifiedPRTotal": 39,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1429,17 +1429,6 @@
         "similarity": 0.28,
         "title": "[Capture P0][RED TEAM] Re-anchor whole-source compiler window to live #3333"
       },
-      "3489": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3489,
-        "recommendedAction": "independent-review",
-        "similarity": 0.489,
-        "title": "[Capture P0][CI] Make launcher provenance contract semantic"
-      },
       "3492": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1448,7 +1437,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3492,
         "recommendedAction": "independent-review",
-        "similarity": 0.374,
+        "similarity": 0.331,
         "title": "[Capture P0][CI] Anchor private UID lease fixtures under real Darwin temp"
       },
       "3497": {
@@ -1492,30 +1481,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3522,
         "recommendedAction": "independent-review",
-        "similarity": 0.346,
+        "similarity": 0.227,
         "title": "[Capture P0][CUSTODY] Seal accepted build root on current selector head"
-      },
-      "3525": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "bd29d6d3c366259773bde883b706c3a2d9edff4f",
-        "lane": "capture-signed-install-custody",
-        "pr": 3525,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.37,
-        "title": "[Capture P0][INTEGRATION] Re-anchor accepted build-root custody on current selector"
-      },
-      "3526": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "a22b6e48bd307db85c25d1db8cf91e48e882e784",
-        "lane": "capture-signed-install-custody",
-        "pr": 3526,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.393,
-        "title": "[Capture P0][VALIDATION] Seal current root helper sibling pair"
       },
       "3527": {
         "classification": "requires-review",
@@ -1525,7 +1492,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3527,
         "recommendedAction": "independent-review",
-        "similarity": 0.483,
+        "similarity": 0.322,
         "title": "[Capture P0][CI] Make launcher provenance contract semantic (clean)"
       }
     },
@@ -1559,9 +1526,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:51:21Z",
+    "liveRefreshAt": "2026-08-16T06:51:35Z",
     "liveRefreshDuplicatesSuppressed": [
-      3526
+      3519
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5344,10 +5311,10 @@
       "userValue": 7
     }
   },
-  "revision": 789,
+  "revision": 790,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:51:23Z",
+  "updatedAt": "2026-08-16T06:51:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5390,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:51:21Z",
+      "updatedAt": "2026-08-16T06:51:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
