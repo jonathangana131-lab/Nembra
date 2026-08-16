@@ -1515,7 +1515,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T07:20:19Z",
+    "liveRefreshAt": "2026-08-16T07:22:41Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5300,10 +5300,10 @@
       "userValue": 7
     }
   },
-  "revision": 838,
+  "revision": 839,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T07:20:21Z",
+  "updatedAt": "2026-08-16T07:22:42Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5379,7 +5379,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T07:20:19Z",
+      "updatedAt": "2026-08-16T07:22:41Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
